@@ -1,0 +1,81 @@
+name: EVENexusSimple
+options:
+  bundleIdPrefix: com.local
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "26.0"
+packages:
+  EVEStaticDataKit:
+    path: Packages/EVEStaticDataKit
+targets:
+  CSQLite:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: XcodeSupport/CSQLite
+        excludes:
+          - module.modulemap
+    dependencies:
+      - sdk: libsqlite3.tbd
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: CSQLite
+        DEFINES_MODULE: YES
+        MODULEMAP_FILE: $(SRCROOT)/XcodeSupport/CSQLite/module.modulemap
+        SKIP_INSTALL: YES
+  EVENexusCore:
+    type: framework
+    platform: macOS
+    sources:
+      - Sources/EVENexusCore
+    dependencies:
+      - target: CSQLite
+      - package: EVEStaticDataKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.EVENexusSimple.Core
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/XcodeSupport/CSQLite
+        HEADER_SEARCH_PATHS: $(SRCROOT)/XcodeSupport/CSQLite
+  EVENexusSimple:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/EVENexusSimpleApp
+    dependencies:
+      - target: EVENexusCore
+      - target: CSQLite
+      - package: EVEStaticDataKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.EVENexusSimple
+        PRODUCT_NAME: EVE Nexus Simple
+        INFOPLIST_KEY_CFBundleDisplayName: EVE Nexus Simple
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/XcodeSupport/CSQLite
+        HEADER_SEARCH_PATHS: $(SRCROOT)/XcodeSupport/CSQLite
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+    scheme:
+      testTargets:
+        - EVENexusCoreTests
+  EVENexusCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/EVENexusCoreTests
+    dependencies:
+      - target: EVENexusCore
+      - target: CSQLite
+      - package: EVEStaticDataKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.EVENexusSimple.Tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/XcodeSupport/CSQLite
+        HEADER_SEARCH_PATHS: $(SRCROOT)/XcodeSupport/CSQLite

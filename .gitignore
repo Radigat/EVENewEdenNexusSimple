@@ -1,0 +1,24 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local credentials, signing material, and machine-specific configuration.
+.env
+.env.*
+!.env.example
+Secrets.xcconfig
+*.key
+*.pem
+*.p12
+*.pfx
+*.cer
+*.mobileprovision
+*.keychain-db
+
+# Never keep local runtime databases or downloaded application data in Git.
+LocalData/
+*.sqlite-wal
+*.sqlite-shm
