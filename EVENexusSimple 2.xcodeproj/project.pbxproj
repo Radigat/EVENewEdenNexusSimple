@@ -7,85 +7,50 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		012EB53DCA55C2E96CBDD71F /* IndustrySystemIndexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */; };
-		0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */; };
 		0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */; };
-		12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */; };
 		12F1A7A8D6783124366E5F97 /* libCSQLite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */; };
 		180F00EAEA55A5FECB622EDF /* EVESSOService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE377FA66F95657D70359168 /* EVESSOService.swift */; };
 		193BFA6E9BD748A36AF3F1C0 /* EVEStaticDataKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7CEEFE85E6390715988E7128 /* EVEStaticDataKit */; };
-		1CB911B38DC28B953AB16ED1 /* EVEStaticDataKit in Frameworks */ = {isa = PBXBuildFile; productRef = AC79578EDDF540A631FCA360 /* EVEStaticDataKit */; };
-		1D00ECB0F3388C5B32184441 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */; };
 		1E600417C5B848EEAF4C1755 /* CharacterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F452FB1FDAFBD6E12B798D6 /* CharacterModels.swift */; };
 		20EFB0D2B0CE105388134CB5 /* libCSQLite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */; };
-		228924544F2948A22F9CFF98 /* UniverseNameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */; };
-		237C28B3A49F5D209A81A7D1 /* BlueprintsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEED60D10F72549632C98A56 /* BlueprintsView.swift */; };
 		2671DB95E43D8F7804261A61 /* ReactionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29789B46A3F6749D2E76BCE3 /* ReactionModels.swift */; };
-		29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */; };
 		2CC54DEFE7E2D3E040F82060 /* SDELifecycleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 424A87E3AA508792CF9D2B55 /* SDELifecycleService.swift */; };
 		2F272FC5588FAFBD87D0ADED /* IndustryPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1121279592F9529DC639AF4 /* IndustryPlannerTests.swift */; };
-		33C2EA30560570E2B46B970C /* AssetWarehouseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE347DEDC4E3894E787D864C /* AssetWarehouseTests.swift */; };
 		356CA43B1852389B5D0DE060 /* MarketPricingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBDCD301666D06C8735887C /* MarketPricingTests.swift */; };
-		37E0E5FA5A0363629021A1D4 /* EVEOnlineServiceStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABFE684E5A71C609C27CB96 /* EVEOnlineServiceStatusTests.swift */; };
-		383E12D84DF9DD209D9BCE9E /* BlueprintResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80890EE30D14B70D9D82FE1 /* BlueprintResearch.swift */; };
 		42BA88660D950E4031482CB1 /* RuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 312D142B1E16A8C378F71587 /* RuntimeState.swift */; };
 		43C3510286F776B3AF65C7E1 /* ReservationLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A4B40B0706769D9277F8172 /* ReservationLedger.swift */; };
 		52E07FEADEEE4A083D76F969 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF480041A24E3F7755C5897D /* AuthModels.swift */; };
-		57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */; };
 		5D6F2CE98F6969D5DF667A41 /* ESIDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */; };
 		61D17934EACACE799E4EC123 /* EVENexusCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E58C6EA5E4842768987863A4 /* EVENexusCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		6B9BE172F270727A6C945825 /* IndustrySystemIndices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2752B0216E3CA21C973CDD83 /* IndustrySystemIndices.swift */; };
-		70F0B9F4FAE35585BD4438A2 /* ProductionOverviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */; };
-		72A0AE3856DC15D00E66A898 /* EVEMultibuyExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2BC6C4AAF1431FE92F2A7D4 /* EVEMultibuyExportTests.swift */; };
-		73ABADB15A2BD4FA5FEE2E30 /* IndustryPlannerPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D63C6D9737BFB95A38ED859 /* IndustryPlannerPerformanceTests.swift */; };
 		75C7B721D66FEDE97C71A2F8 /* AssetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB7BC1BC4CDE816CB4D47688 /* AssetModels.swift */; };
 		77707C0132DD1407672A8302 /* IndustryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2F5055B38824F803FA5FBA /* IndustryModels.swift */; };
 		7BF70B89D9677B57CB5C3EC4 /* EVENexusCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E58C6EA5E4842768987863A4 /* EVENexusCore.framework */; };
-		7F3AFE42523B5E194D8DA2C8 /* InventionReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */; };
 		83ACBCF3A448CEFBA0AA0E3F /* ReactionContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */; };
-		846C933BB3EE4FAB48F2584B /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3B2A02A5E5E404AE59488DEC /* Localizable.strings */; };
 		86036D000AFAB3C9F34E7BFB /* ProductionProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8EE2273BE23D5140708B334 /* ProductionProfiles.swift */; };
 		8E3573528203570A8979C490 /* SQLiteStaticCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9780FAB529764838D786B7C4 /* SQLiteStaticCatalog.swift */; };
 		8E5C6CA4FF0B174287D6FA79 /* sqlite_shim.c in Sources */ = {isa = PBXBuildFile; fileRef = B2BFE7C47283A7F343E89FA0 /* sqlite_shim.c */; };
 		8FD2CE145EBDB8FC5C443674 /* BlueprintModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63E840AAB5750A598C980F11 /* BlueprintModels.swift */; };
-		9492F8F84CA2B812F38B0730 /* ProfilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */; };
-		9822FE3C1410EB6A12E07294 /* SolarSystemSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200372FAEF4F92809C607302 /* SolarSystemSearchService.swift */; };
 		98497C10BA5823BCC7904928 /* EVENexusSimpleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0125A339DC2931CACBE9D073 /* EVENexusSimpleApp.swift */; };
-		99D95412344E68545253E28B /* EVEOnlineServiceStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520CD44233AFF34B9A2A5C8F /* EVEOnlineServiceStatus.swift */; };
 		9D4F26AF76B35CCCCF6C13DA /* AuthAndBlueprintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */; };
-		9EF04E083678916EF31CE726 /* AssetsWarehouseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */; };
-		A1A07595FEE9253FD0A90517 /* MemoizedIndustryCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55562529E8D8E64E9E34055C /* MemoizedIndustryCatalog.swift */; };
 		A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */; };
-		A5E4B7A644B743FE3142871D /* ProductionJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A555FBA531B59AA843FDF2BD /* ProductionJournal.swift */; };
 		B26DFBC6B437551764D94E8A /* ProductionInputParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED06FCDEA88E08CFA55E851 /* ProductionInputParser.swift */; };
-		B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */; };
 		B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */; };
 		B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AC75DF5C57565C1C95D785 /* ContentView.swift */; };
-		B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */; };
 		BC748CDBAC934DCA02A356B9 /* EVENexusCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E58C6EA5E4842768987863A4 /* EVENexusCore.framework */; };
 		BC8A106455EAE98782C571DE /* KeychainRefreshTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E6D99D0A74D9DCEC012888 /* KeychainRefreshTokenStore.swift */; };
 		BEA11B8D265EC2E4FD4781CD /* PersistenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFB57B367931C4810737C463 /* PersistenceModels.swift */; };
 		C06F91A81025FE554EB56413 /* LoopbackCallbackServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEA7D7D00A16AD19F38B956B /* LoopbackCallbackServer.swift */; };
 		C1331DC10EACED041A875426 /* MarketModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34B7BB4788BEBA60D7A5800B /* MarketModels.swift */; };
-		C13D7DC0C18469290C1E5363 /* PlayerStructureSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C7C78585E5BA3B164F251BC /* PlayerStructureSearchService.swift */; };
 		C303BFC5D96562616A2E5B31 /* ESIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2075A47C979DE7B546D22CEC /* ESIClient.swift */; };
-		C36B7F038721A4D9DFA14505 /* AssetWarehouse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79314710617118DE88CEF5C0 /* AssetWarehouse.swift */; };
-		D0D842AFB26403A28F33D42C /* InventionReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DC8486F6DF515AE09308AE1 /* InventionReadiness.swift */; };
-		D4671D4D939AE4D7E702B4C0 /* ProductionOverview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39DBB992564EF207D526DC27 /* ProductionOverview.swift */; };
-		D62B077B861F9F4B2F8E9A9E /* StoredAssetWarehouseProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B95C5D772248BAA6E187FCEE /* StoredAssetWarehouseProjection.swift */; };
 		D64C9AA4A9EB1B7CB07EA070 /* PKCE.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CD3BB5854BA5A2394B61DB0 /* PKCE.swift */; };
-		DA9466989E79A87D182A532E /* EVEStaticDataKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0CDE0EFE6BFA16002DE39A5 /* EVEStaticDataKit */; };
 		DD19E3B4FC77E9C95E109CB9 /* EVENexusCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E58C6EA5E4842768987863A4 /* EVENexusCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		DECA0A6F7B397D308D8B6CFD /* SourceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5083443D1BA0C9BAC3493E20 /* SourceState.swift */; };
 		E0F526CDDC40158A77B76CF6 /* ProductionInputParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58053BB787C584ABA9902B32 /* ProductionInputParserTests.swift */; };
 		E5380BF0913F7CD882038A4E /* JitaMarketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D774BDC3DB16984A0AE06E68 /* JitaMarketService.swift */; };
-		E72AA3735B44ADC887C56093 /* ProductionBasis.swift in Sources */ = {isa = PBXBuildFile; fileRef = A91941A4CADEFD1746872D53 /* ProductionBasis.swift */; };
 		E843EF4851D47C6138475C27 /* sqlite_shim.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 7EC853A700690D67F134C4BE /* sqlite_shim.h */; };
 		EA30DEE9EDC4BAFD7B575678 /* IndustryRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */; };
 		FB83EC72B2B6E644781E1DB4 /* ESIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C80E158DF92CE41088EDE05 /* ESIClientTests.swift */; };
 		FBAAAD153AB20096A45B5A73 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 8496FDA859C1C053F3404F93 /* libsqlite3.tbd */; };
-		FCA1B225E89C22DE8A61E6C8 /* ProductionBasisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */; };
-		FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -163,55 +128,31 @@
 
 /* Begin PBXFileReference section */
 		0125A339DC2931CACBE9D073 /* EVENexusSimpleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVENexusSimpleApp.swift; sourceTree = "<group>"; };
-		0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustrySystemIndexService.swift; sourceTree = "<group>"; };
-		117EBA1775ABC2E46A9C6C4B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIDTOs.swift; sourceTree = "<group>"; };
 		1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libCSQLite.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		1F452FB1FDAFBD6E12B798D6 /* CharacterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterModels.swift; sourceTree = "<group>"; };
-		200372FAEF4F92809C607302 /* SolarSystemSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarSystemSearchService.swift; sourceTree = "<group>"; };
 		2075A47C979DE7B546D22CEC /* ESIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIClient.swift; sourceTree = "<group>"; };
-		2752B0216E3CA21C973CDD83 /* IndustrySystemIndices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustrySystemIndices.swift; sourceTree = "<group>"; };
 		29789B46A3F6749D2E76BCE3 /* ReactionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionModels.swift; sourceTree = "<group>"; };
 		312D142B1E16A8C378F71587 /* RuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeState.swift; sourceTree = "<group>"; };
 		34B7BB4788BEBA60D7A5800B /* MarketModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketModels.swift; sourceTree = "<group>"; };
 		352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryRulesTests.swift; sourceTree = "<group>"; };
-		38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseNameService.swift; sourceTree = "<group>"; };
-		39DBB992564EF207D526DC27 /* ProductionOverview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionOverview.swift; sourceTree = "<group>"; };
-		3C5E612A0056AAB168E0190B /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
-		41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryFacilityReference.swift; sourceTree = "<group>"; };
 		424A87E3AA508792CF9D2B55 /* SDELifecycleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SDELifecycleService.swift; sourceTree = "<group>"; };
-		4C7C78585E5BA3B164F251BC /* PlayerStructureSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerStructureSearchService.swift; sourceTree = "<group>"; };
 		4C80E158DF92CE41088EDE05 /* ESIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIClientTests.swift; sourceTree = "<group>"; };
 		4CD3BB5854BA5A2394B61DB0 /* PKCE.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PKCE.swift; sourceTree = "<group>"; };
-		4D63C6D9737BFB95A38ED859 /* IndustryPlannerPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryPlannerPerformanceTests.swift; sourceTree = "<group>"; };
 		5083443D1BA0C9BAC3493E20 /* SourceState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceState.swift; sourceTree = "<group>"; };
-		520CD44233AFF34B9A2A5C8F /* EVEOnlineServiceStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEOnlineServiceStatus.swift; sourceTree = "<group>"; };
-		55562529E8D8E64E9E34055C /* MemoizedIndustryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoizedIndustryCatalog.swift; sourceTree = "<group>"; };
 		556E4D9E564D673C4B552828 /* EVENexusSimple.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EVENexusSimple.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		58053BB787C584ABA9902B32 /* ProductionInputParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionInputParserTests.swift; sourceTree = "<group>"; };
 		5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderViews.swift; sourceTree = "<group>"; };
 		63E840AAB5750A598C980F11 /* BlueprintModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlueprintModels.swift; sourceTree = "<group>"; };
-		653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBookViews.swift; sourceTree = "<group>"; };
 		788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryPlanner.swift; sourceTree = "<group>"; };
-		79314710617118DE88CEF5C0 /* AssetWarehouse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetWarehouse.swift; sourceTree = "<group>"; };
 		7A4B40B0706769D9277F8172 /* ReservationLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReservationLedger.swift; sourceTree = "<group>"; };
 		7EC853A700690D67F134C4BE /* sqlite_shim.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sqlite_shim.h; sourceTree = "<group>"; };
 		8496FDA859C1C053F3404F93 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
-		8DC8486F6DF515AE09308AE1 /* InventionReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventionReadiness.swift; sourceTree = "<group>"; };
 		9780FAB529764838D786B7C4 /* SQLiteStaticCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLiteStaticCatalog.swift; sourceTree = "<group>"; };
 		9A0261C40A57129D5175FDC7 /* EVENexusCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EVENexusCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetsWarehouseView.swift; sourceTree = "<group>"; };
 		A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAndBlueprintTests.swift; sourceTree = "<group>"; };
-		A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLiteStaticCatalogTests.swift; sourceTree = "<group>"; };
-		A555FBA531B59AA843FDF2BD /* ProductionJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionJournal.swift; sourceTree = "<group>"; };
-		A80890EE30D14B70D9D82FE1 /* BlueprintResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlueprintResearch.swift; sourceTree = "<group>"; };
-		A91941A4CADEFD1746872D53 /* ProductionBasis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBasis.swift; sourceTree = "<group>"; };
-		AABFE684E5A71C609C27CB96 /* EVEOnlineServiceStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEOnlineServiceStatusTests.swift; sourceTree = "<group>"; };
-		ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SDEUpdatePreviewTests.swift; sourceTree = "<group>"; };
-		AEED60D10F72549632C98A56 /* BlueprintsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlueprintsView.swift; sourceTree = "<group>"; };
 		AFB57B367931C4810737C463 /* PersistenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceModels.swift; sourceTree = "<group>"; };
 		B2BFE7C47283A7F343E89FA0 /* sqlite_shim.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sqlite_shim.c; sourceTree = "<group>"; };
-		B95C5D772248BAA6E187FCEE /* StoredAssetWarehouseProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoredAssetWarehouseProjection.swift; sourceTree = "<group>"; };
 		BB7BC1BC4CDE816CB4D47688 /* AssetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetModels.swift; sourceTree = "<group>"; };
 		BBBDCD301666D06C8735887C /* MarketPricingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketPricingTests.swift; sourceTree = "<group>"; };
 		BE377FA66F95657D70359168 /* EVESSOService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVESSOService.swift; sourceTree = "<group>"; };
@@ -220,23 +161,13 @@
 		CA2F5055B38824F803FA5FBA /* IndustryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryModels.swift; sourceTree = "<group>"; };
 		CED06FCDEA88E08CFA55E851 /* ProductionInputParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionInputParser.swift; sourceTree = "<group>"; };
 		CF480041A24E3F7755C5897D /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
-		D2BC6C4AAF1431FE92F2A7D4 /* EVEMultibuyExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEMultibuyExportTests.swift; sourceTree = "<group>"; };
 		D774BDC3DB16984A0AE06E68 /* JitaMarketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JitaMarketService.swift; sourceTree = "<group>"; };
 		D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterSyncService.swift; sourceTree = "<group>"; };
 		E1121279592F9529DC639AF4 /* IndustryPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryPlannerTests.swift; sourceTree = "<group>"; };
-		E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBasisTests.swift; sourceTree = "<group>"; };
 		E4AC75DF5C57565C1C95D785 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		E58C6EA5E4842768987863A4 /* EVENexusCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = EVENexusCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileReferenceComponents.swift; sourceTree = "<group>"; };
-		E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventionReadinessTests.swift; sourceTree = "<group>"; };
 		E8EE2273BE23D5140708B334 /* ProductionProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionProfiles.swift; sourceTree = "<group>"; };
-		EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEMultibuyExport.swift; sourceTree = "<group>"; };
-		EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionOverviewTests.swift; sourceTree = "<group>"; };
-		EE347DEDC4E3894E787D864C /* AssetWarehouseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetWarehouseTests.swift; sourceTree = "<group>"; };
-		F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesView.swift; sourceTree = "<group>"; };
 		F4E6D99D0A74D9DCEC012888 /* KeychainRefreshTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainRefreshTokenStore.swift; sourceTree = "<group>"; };
-		F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPersistenceController.swift; sourceTree = "<group>"; };
-		FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		FEE2812212934D7FCB3FA513 /* EVEStaticDataKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = EVEStaticDataKit; path = Packages/EVEStaticDataKit; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -247,7 +178,6 @@
 			files = (
 				7BF70B89D9677B57CB5C3EC4 /* EVENexusCore.framework in Frameworks */,
 				12F1A7A8D6783124366E5F97 /* libCSQLite.a in Frameworks */,
-				DA9466989E79A87D182A532E /* EVEStaticDataKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -273,7 +203,6 @@
 			files = (
 				BC748CDBAC934DCA02A356B9 /* EVENexusCore.framework in Frameworks */,
 				20EFB0D2B0CE105388134CB5 /* libCSQLite.a in Frameworks */,
-				1CB911B38DC28B953AB16ED1 /* EVEStaticDataKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -284,7 +213,6 @@
 			isa = PBXGroup;
 			children = (
 				63E840AAB5750A598C980F11 /* BlueprintModels.swift */,
-				A80890EE30D14B70D9D82FE1 /* BlueprintResearch.swift */,
 			);
 			path = Blueprints;
 			sourceTree = "<group>";
@@ -305,11 +233,6 @@
 				D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */,
 				2075A47C979DE7B546D22CEC /* ESIClient.swift */,
 				1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */,
-				520CD44233AFF34B9A2A5C8F /* EVEOnlineServiceStatus.swift */,
-				0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */,
-				4C7C78585E5BA3B164F251BC /* PlayerStructureSearchService.swift */,
-				200372FAEF4F92809C607302 /* SolarSystemSearchService.swift */,
-				38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */,
 			);
 			path = ESI;
 			sourceTree = "<group>";
@@ -367,17 +290,9 @@
 		65E245F83F78D7C05B730807 /* Industry */ = {
 			isa = PBXGroup;
 			children = (
-				EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */,
-				41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */,
 				CA2F5055B38824F803FA5FBA /* IndustryModels.swift */,
 				788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */,
-				2752B0216E3CA21C973CDD83 /* IndustrySystemIndices.swift */,
-				8DC8486F6DF515AE09308AE1 /* InventionReadiness.swift */,
-				55562529E8D8E64E9E34055C /* MemoizedIndustryCatalog.swift */,
-				A91941A4CADEFD1746872D53 /* ProductionBasis.swift */,
 				CED06FCDEA88E08CFA55E851 /* ProductionInputParser.swift */,
-				A555FBA531B59AA843FDF2BD /* ProductionJournal.swift */,
-				39DBB992564EF207D526DC27 /* ProductionOverview.swift */,
 				E8EE2273BE23D5140708B334 /* ProductionProfiles.swift */,
 			);
 			path = Industry;
@@ -397,14 +312,6 @@
 				8496FDA859C1C053F3404F93 /* libsqlite3.tbd */,
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		83ADF6F74477FE61397D3AEE /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				3B2A02A5E5E404AE59488DEC /* Localizable.strings */,
-			);
-			path = Resources;
 			sourceTree = "<group>";
 		};
 		A6273A1E936ABCE457B4A8C7 /* EVENexusCore */ = {
@@ -429,20 +336,11 @@
 		C95F62BB297D5C07BCE53145 /* EVENexusSimpleApp */ = {
 			isa = PBXGroup;
 			children = (
-				FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */,
-				A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */,
-				AEED60D10F72549632C98A56 /* BlueprintsView.swift */,
 				E4AC75DF5C57565C1C95D785 /* ContentView.swift */,
 				0125A339DC2931CACBE9D073 /* EVENexusSimpleApp.swift */,
 				AFB57B367931C4810737C463 /* PersistenceModels.swift */,
 				5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */,
-				F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */,
-				653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */,
-				E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */,
-				F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */,
 				312D142B1E16A8C378F71587 /* RuntimeState.swift */,
-				B95C5D772248BAA6E187FCEE /* StoredAssetWarehouseProjection.swift */,
-				83ADF6F74477FE61397D3AEE /* Resources */,
 			);
 			name = EVENexusSimpleApp;
 			path = Sources/EVENexusSimpleApp;
@@ -451,22 +349,13 @@
 		CF66EE833DB5E2A7CB2DCC5C /* EVENexusCoreTests */ = {
 			isa = PBXGroup;
 			children = (
-				EE347DEDC4E3894E787D864C /* AssetWarehouseTests.swift */,
 				A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */,
 				4C80E158DF92CE41088EDE05 /* ESIClientTests.swift */,
-				D2BC6C4AAF1431FE92F2A7D4 /* EVEMultibuyExportTests.swift */,
-				AABFE684E5A71C609C27CB96 /* EVEOnlineServiceStatusTests.swift */,
-				4D63C6D9737BFB95A38ED859 /* IndustryPlannerPerformanceTests.swift */,
 				E1121279592F9529DC639AF4 /* IndustryPlannerTests.swift */,
 				352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */,
-				E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */,
 				BBBDCD301666D06C8735887C /* MarketPricingTests.swift */,
-				E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */,
 				58053BB787C584ABA9902B32 /* ProductionInputParserTests.swift */,
-				EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */,
 				C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */,
-				ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */,
-				A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */,
 			);
 			name = EVENexusCoreTests;
 			path = Tests/EVENexusCoreTests;
@@ -503,7 +392,6 @@
 			isa = PBXGroup;
 			children = (
 				BB7BC1BC4CDE816CB4D47688 /* AssetModels.swift */,
-				79314710617118DE88CEF5C0 /* AssetWarehouse.swift */,
 				7A4B40B0706769D9277F8172 /* ReservationLedger.swift */,
 			);
 			path = Assets;
@@ -545,7 +433,6 @@
 			buildConfigurationList = 93BADB480FE34CD097C60CBC /* Build configuration list for PBXNativeTarget "EVENexusSimple" */;
 			buildPhases = (
 				EBBBD272A3336D733AA14E79 /* Sources */,
-				4A4FA68D08B05BD01336DE9A /* Resources */,
 				D224A8FDD52147F5C9B3B527 /* Frameworks */,
 				2824846A04A41D078148CB94 /* Embed Frameworks */,
 			);
@@ -557,7 +444,6 @@
 			);
 			name = EVENexusSimple;
 			packageProductDependencies = (
-				AC79578EDDF540A631FCA360 /* EVEStaticDataKit */,
 			);
 			productName = EVENexusSimple;
 			productReference = 556E4D9E564D673C4B552828 /* EVENexusSimple.app */;
@@ -598,7 +484,6 @@
 			);
 			name = EVENexusCoreTests;
 			packageProductDependencies = (
-				C0CDE0EFE6BFA16002DE39A5 /* EVEStaticDataKit */,
 			);
 			productName = EVENexusCoreTests;
 			productReference = 9A0261C40A57129D5175FDC7 /* EVENexusCoreTests.xctest */;
@@ -623,7 +508,6 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
-				de,
 				en,
 			);
 			mainGroup = 5281636AC21706175E4C71EF;
@@ -644,38 +528,18 @@
 		};
 /* End PBXProject section */
 
-/* Begin PBXResourcesBuildPhase section */
-		4A4FA68D08B05BD01336DE9A /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				846C933BB3EE4FAB48F2584B /* Localizable.strings in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXResourcesBuildPhase section */
-
 /* Begin PBXSourcesBuildPhase section */
 		7AA611AD819D28D6F5108319 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				33C2EA30560570E2B46B970C /* AssetWarehouseTests.swift in Sources */,
 				9D4F26AF76B35CCCCF6C13DA /* AuthAndBlueprintTests.swift in Sources */,
 				FB83EC72B2B6E644781E1DB4 /* ESIClientTests.swift in Sources */,
-				72A0AE3856DC15D00E66A898 /* EVEMultibuyExportTests.swift in Sources */,
-				37E0E5FA5A0363629021A1D4 /* EVEOnlineServiceStatusTests.swift in Sources */,
-				73ABADB15A2BD4FA5FEE2E30 /* IndustryPlannerPerformanceTests.swift in Sources */,
 				2F272FC5588FAFBD87D0ADED /* IndustryPlannerTests.swift in Sources */,
 				EA30DEE9EDC4BAFD7B575678 /* IndustryRulesTests.swift in Sources */,
-				7F3AFE42523B5E194D8DA2C8 /* InventionReadinessTests.swift in Sources */,
 				356CA43B1852389B5D0DE060 /* MarketPricingTests.swift in Sources */,
-				FCA1B225E89C22DE8A61E6C8 /* ProductionBasisTests.swift in Sources */,
 				E0F526CDDC40158A77B76CF6 /* ProductionInputParserTests.swift in Sources */,
-				70F0B9F4FAE35585BD4438A2 /* ProductionOverviewTests.swift in Sources */,
 				83ACBCF3A448CEFBA0AA0E3F /* ReactionContractTests.swift in Sources */,
-				0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */,
-				12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -691,19 +555,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1D00ECB0F3388C5B32184441 /* AppLanguage.swift in Sources */,
-				9EF04E083678916EF31CE726 /* AssetsWarehouseView.swift in Sources */,
-				237C28B3A49F5D209A81A7D1 /* BlueprintsView.swift in Sources */,
 				B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */,
 				98497C10BA5823BCC7904928 /* EVENexusSimpleApp.swift in Sources */,
 				BEA11B8D265EC2E4FD4781CD /* PersistenceModels.swift in Sources */,
 				A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */,
-				B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */,
-				FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */,
-				29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */,
-				9492F8F84CA2B812F38B0730 /* ProfilesView.swift in Sources */,
 				42BA88660D950E4031482CB1 /* RuntimeState.swift in Sources */,
-				D62B077B861F9F4B2F8E9A9E /* StoredAssetWarehouseProjection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -712,42 +568,27 @@
 			buildActionMask = 2147483647;
 			files = (
 				75C7B721D66FEDE97C71A2F8 /* AssetModels.swift in Sources */,
-				C36B7F038721A4D9DFA14505 /* AssetWarehouse.swift in Sources */,
 				52E07FEADEEE4A083D76F969 /* AuthModels.swift in Sources */,
 				8FD2CE145EBDB8FC5C443674 /* BlueprintModels.swift in Sources */,
-				383E12D84DF9DD209D9BCE9E /* BlueprintResearch.swift in Sources */,
 				1E600417C5B848EEAF4C1755 /* CharacterModels.swift in Sources */,
 				B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */,
 				C303BFC5D96562616A2E5B31 /* ESIClient.swift in Sources */,
 				5D6F2CE98F6969D5DF667A41 /* ESIDTOs.swift in Sources */,
-				57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */,
-				99D95412344E68545253E28B /* EVEOnlineServiceStatus.swift in Sources */,
 				180F00EAEA55A5FECB622EDF /* EVESSOService.swift in Sources */,
-				B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */,
 				77707C0132DD1407672A8302 /* IndustryModels.swift in Sources */,
 				0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */,
-				012EB53DCA55C2E96CBDD71F /* IndustrySystemIndexService.swift in Sources */,
-				6B9BE172F270727A6C945825 /* IndustrySystemIndices.swift in Sources */,
-				D0D842AFB26403A28F33D42C /* InventionReadiness.swift in Sources */,
 				E5380BF0913F7CD882038A4E /* JitaMarketService.swift in Sources */,
 				BC8A106455EAE98782C571DE /* KeychainRefreshTokenStore.swift in Sources */,
 				C06F91A81025FE554EB56413 /* LoopbackCallbackServer.swift in Sources */,
 				C1331DC10EACED041A875426 /* MarketModels.swift in Sources */,
-				A1A07595FEE9253FD0A90517 /* MemoizedIndustryCatalog.swift in Sources */,
 				D64C9AA4A9EB1B7CB07EA070 /* PKCE.swift in Sources */,
-				C13D7DC0C18469290C1E5363 /* PlayerStructureSearchService.swift in Sources */,
-				E72AA3735B44ADC887C56093 /* ProductionBasis.swift in Sources */,
 				B26DFBC6B437551764D94E8A /* ProductionInputParser.swift in Sources */,
-				A5E4B7A644B743FE3142871D /* ProductionJournal.swift in Sources */,
-				D4671D4D939AE4D7E702B4C0 /* ProductionOverview.swift in Sources */,
 				86036D000AFAB3C9F34E7BFB /* ProductionProfiles.swift in Sources */,
 				2671DB95E43D8F7804261A61 /* ReactionModels.swift in Sources */,
 				43C3510286F776B3AF65C7E1 /* ReservationLedger.swift in Sources */,
 				2CC54DEFE7E2D3E040F82060 /* SDELifecycleService.swift in Sources */,
 				8E3573528203570A8979C490 /* SQLiteStaticCatalog.swift in Sources */,
-				9822FE3C1410EB6A12E07294 /* SolarSystemSearchService.swift in Sources */,
 				DECA0A6F7B397D308D8B6CFD /* SourceState.swift in Sources */,
-				228924544F2948A22F9CFF98 /* UniverseNameService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -780,18 +621,6 @@
 			targetProxy = E9DDF92EE14CB37077CD51F2 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
-
-/* Begin PBXVariantGroup section */
-		3B2A02A5E5E404AE59488DEC /* Localizable.strings */ = {
-			isa = PBXVariantGroup;
-			children = (
-				3C5E612A0056AAB168E0190B /* de */,
-				117EBA1775ABC2E46A9C6C4B /* en */,
-			);
-			name = Localizable.strings;
-			sourceTree = "<group>";
-		};
-/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		212AB001A183918830B1F3B2 /* Debug */ = {
@@ -1160,14 +989,6 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		7CEEFE85E6390715988E7128 /* EVEStaticDataKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = EVEStaticDataKit;
-		};
-		AC79578EDDF540A631FCA360 /* EVEStaticDataKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = EVEStaticDataKit;
-		};
-		C0CDE0EFE6BFA16002DE39A5 /* EVEStaticDataKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = EVEStaticDataKit;
 		};

@@ -53,6 +53,7 @@ final class StoredCharacter {
   var authorizationSnapshot: Data
   var capabilitySnapshot: Data?
   var assetSnapshot: Data?
+  var blueprintSnapshot: Data?
   var walletBalanceSnapshot: Data?
   var lastSyncAt: Date?
   var walletLastSyncAt: Date?
@@ -63,6 +64,7 @@ final class StoredCharacter {
     authorizationSnapshot: Data,
     capabilitySnapshot: Data? = nil,
     assetSnapshot: Data? = nil,
+    blueprintSnapshot: Data? = nil,
     walletBalanceSnapshot: Data? = nil,
     lastSyncAt: Date? = nil,
     walletLastSyncAt: Date? = nil
@@ -72,6 +74,7 @@ final class StoredCharacter {
     self.authorizationSnapshot = authorizationSnapshot
     self.capabilitySnapshot = capabilitySnapshot
     self.assetSnapshot = assetSnapshot
+    self.blueprintSnapshot = blueprintSnapshot
     self.walletBalanceSnapshot = walletBalanceSnapshot
     self.lastSyncAt = lastSyncAt
     self.walletLastSyncAt = walletLastSyncAt

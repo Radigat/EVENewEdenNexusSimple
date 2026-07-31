@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "EVENexusSimple",
+  defaultLocalization: "en",
   platforms: [.macOS(.v14)],
   products: [
     .library(name: "EVENexusCore", targets: ["EVENexusCore"]),
@@ -26,7 +27,8 @@ let package = Package(
     ),
     .executableTarget(
       name: "EVENexusSimpleApp",
-      dependencies: ["EVENexusCore"]
+      dependencies: ["EVENexusCore"],
+      resources: [.process("Resources")]
     ),
     .executableTarget(
       name: "EVENexusLiveAcceptance",

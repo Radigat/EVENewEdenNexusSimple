@@ -71,6 +71,7 @@ public struct IndustryPlanner: Sendable {
       throw IndustryPlannerError.invalidInput(parsed.errors)
     }
     var result = Set<Int64>()
+    var visited = Set<Int64>()
     for request in parsed.requests {
       guard
         let typeID = try await catalog.typeID(
@@ -86,6 +87,7 @@ public struct IndustryPlanner: Sendable {
         typeID: typeID,
         catalog: catalog,
         path: [],
+        visited: &visited,
         result: &result
       )
     }
@@ -409,10 +411,11 @@ public struct IndustryPlanner: Sendable {
     context: IndustryPlanningContext,
     state: BuildState
   ) async throws -> IndustryPlanSnapshot {
-    var quotes: [Int64: PriceQuote] = [:]
+    var purchaseQuotes: [Int64: PriceQuote] = [:]
+    var stockQuotes: [Int64: PriceQuote] = [:]
     var warnings = state.warnings
-    var materialCost = 0.0
-    var materialCostComplete = true
+    var purchasedMaterialCost = 0.0
+    var purchasedMaterialCostComplete = true
     for (typeID, quantity) in state.toBuy.sorted(by: { $0.key < $1.key }) {
       let quote = JitaPriceEngine.quote(
         typeID: typeID,
@@ -420,19 +423,44 @@ public struct IndustryPlanner: Sendable {
         scenario: .materialBuy,
         snapshot: context.market
       )
-      quotes[typeID] = quote
+      purchaseQuotes[typeID] = quote
       warnings.append(contentsOf: quote.warnings)
       if let total = quote.total {
-        let updatedCost = materialCost + total
+        let updatedCost = purchasedMaterialCost + total
         if updatedCost.isFinite, updatedCost >= 0 {
-          materialCost = updatedCost
+          purchasedMaterialCost = updatedCost
         } else {
-          materialCostComplete = false
+          purchasedMaterialCostComplete = false
         }
       } else {
-        materialCostComplete = false
+        purchasedMaterialCostComplete = false
       }
     }
+    var stockMaterialCost = 0.0
+    var stockMaterialCostComplete = true
+    for (typeID, quantity) in state.stockUsed.sorted(by: { $0.key < $1.key }) {
+      let quote = JitaPriceEngine.quote(
+        typeID: typeID,
+        quantity: quantity,
+        scenario: .materialBuy,
+        snapshot: context.market
+      )
+      stockQuotes[typeID] = quote
+      warnings.append(contentsOf: quote.warnings)
+      if let total = quote.total {
+        let updatedCost = stockMaterialCost + total
+        if updatedCost.isFinite, updatedCost >= 0 {
+          stockMaterialCost = updatedCost
+        } else {
+          stockMaterialCostComplete = false
+        }
+      } else {
+        stockMaterialCostComplete = false
+      }
+    }
+    let materialCostComplete =
+      purchasedMaterialCostComplete && stockMaterialCostComplete
+    let materialCost = purchasedMaterialCost + stockMaterialCost
 
     var jobs: [IndustryJobCost] = []
     var totalSeconds: Int64 = 0
@@ -661,7 +689,8 @@ public struct IndustryPlanner: Sendable {
           fromStock: state.stockUsed[typeID, default: 0],
           toBuy: state.toBuy[typeID, default: 0],
           toProduce: state.toProduce[typeID, default: 0],
-          quote: quotes[typeID],
+          quote: purchaseQuotes[typeID],
+          stockQuote: stockQuotes[typeID],
           sourceCategory: classification?.categoryName,
           sourceGroup: classification?.groupName,
           productionActivity: productionActivity
@@ -754,6 +783,10 @@ public struct IndustryPlanner: Sendable {
       : nil
     let costBreakdown = IndustryCostBreakdown(
       materialCost: materialCostComplete ? materialCost : nil,
+      purchasedMaterialCost:
+        purchasedMaterialCostComplete ? purchasedMaterialCost : nil,
+      stockMaterialCost:
+        stockMaterialCostComplete ? stockMaterialCost : nil,
       blueprintCosts: blueprintCosts,
       systemIndexCost:
         installationCostComplete ? systemIndexCost : nil,
@@ -1463,11 +1496,13 @@ public struct IndustryPlanner: Sendable {
     typeID: Int64,
     catalog: any IndustryCatalogQuerying,
     path: [Int64],
+    visited: inout Set<Int64>,
     result: inout Set<Int64>
   ) async throws {
     guard !path.contains(typeID) else {
       throw IndustryPlannerError.cycle(path + [typeID])
     }
+    guard visited.insert(typeID).inserted else { return }
     result.insert(typeID)
     guard
       let definition = try await catalog.productionDefinition(
@@ -1476,16 +1511,13 @@ public struct IndustryPlanner: Sendable {
     else { return }
     for material in definition.activity.materials {
       result.insert(material.typeID)
-      if try await catalog.productionDefinition(
-        productTypeID: material.typeID
-      ) != nil {
-        try await collectMarketTypes(
-          typeID: material.typeID,
-          catalog: catalog,
-          path: path + [typeID],
-          result: &result
-        )
-      }
+      try await collectMarketTypes(
+        typeID: material.typeID,
+        catalog: catalog,
+        path: path + [typeID],
+        visited: &visited,
+        result: &result
+      )
     }
   }
 }

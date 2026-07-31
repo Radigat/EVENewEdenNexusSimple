@@ -237,29 +237,74 @@ public struct CharacterSyncService: Sendable {
     )
 
     let assetsRaw = await assetsResult
-    let assetValue = sourceValue(
-      assetsRaw,
-      transform: { values in
-        AssetSnapshot(
-          characterID: authorization.characterID,
-          state: .fresh,
-          items: values.map {
-            AssetItem(
-              id: $0.itemID,
-              typeID: $0.typeID,
-              quantity: $0.quantity,
-              locationID: $0.locationID,
-              locationKind: AssetLocationKind(
-                esiValue: $0.locationType
-              ),
-              locationFlag: $0.locationFlag,
-              singleton: $0.singleton
-            )
-          }
+    let assetValue: Sourced<AssetSnapshot>
+    if let assetResponse = assetsRaw.value {
+      let rawItems = assetResponse.value.map {
+        AssetItem(
+          id: $0.itemID,
+          typeID: $0.typeID,
+          quantity: $0.quantity,
+          locationID: $0.locationID,
+          locationKind: AssetLocationKind(
+            esiValue: $0.locationType,
+            locationID: $0.locationID
+          ),
+          locationFlag: $0.locationFlag,
+          singleton: $0.singleton
         )
-      },
-      fallbackSource: source
-    )
+      }
+      let structureIDs = AssetLocationClassifier.structureCandidateIDs(
+        in: rawItems
+      )
+      let items = AssetLocationClassifier.applyingStructureRoots(
+        to: rawItems,
+        candidateIDs: structureIDs
+      )
+      let resolvedStructures = await PlayerStructureSearchService(esi: esi)
+        .resolveKnownStructures(
+          structureIDs: structureIDs,
+          lease: lease
+        )
+      let resolvedNames = Dictionary(
+        uniqueKeysWithValues: (resolvedStructures.value ?? []).map {
+          ($0.id, $0.name)
+        }
+      )
+      let resolvedTypeIDs = Dictionary(
+        uniqueKeysWithValues: (resolvedStructures.value ?? [])
+          .compactMap { structure in
+            structure.typeID.map { (structure.id, $0) }
+          }
+      )
+      let unresolvedNameIDs = structureIDs.subtracting(resolvedNames.keys)
+      let assetState: DataFreshness =
+        unresolvedNameIDs.isEmpty ? .fresh : .partial
+      assetValue = Sourced(
+        state: assetState,
+        value: AssetSnapshot(
+          characterID: authorization.characterID,
+          state: assetState,
+          items: items,
+          resolvedLocationNames: resolvedNames,
+          unresolvedLocationNameIDs: unresolvedNameIDs,
+          resolvedStructureTypeIDs: resolvedTypeIDs
+        ),
+        source: assetResponse.source,
+        diagnostics: resolvedStructures.diagnostics
+      )
+    } else {
+      assetValue = sourceValue(
+        assetsRaw,
+        transform: { _ in
+          AssetSnapshot(
+            characterID: authorization.characterID,
+            state: .unavailable,
+            items: []
+          )
+        },
+        fallbackSource: source
+      )
+    }
     let blueprintRaw = await blueprintsResult
     let blueprintValue = sourceValue(
       blueprintRaw,

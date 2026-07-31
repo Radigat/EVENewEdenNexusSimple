@@ -43,6 +43,8 @@ targets:
     platform: macOS
     sources:
       - Sources/EVENexusSimpleApp
+    resources:
+      - Sources/EVENexusSimpleApp/Resources
     dependencies:
       - target: EVENexusCore
       - target: CSQLite

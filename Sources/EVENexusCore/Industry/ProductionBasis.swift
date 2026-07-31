@@ -946,6 +946,13 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
     return brokerFeeRate
   }
 
+  public func isTraderSelectionValid(
+    connectedCharacterIDs: Set<Int64>
+  ) -> Bool {
+    guard let traderCharacterID else { return true }
+    return connectedCharacterIDs.contains(traderCharacterID)
+  }
+
   public mutating func selectTrader(
     characterID: Int64?,
     capability: CharacterCapabilitySnapshot?
@@ -1492,6 +1499,38 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     }
   }
 
+  public func eligibleActivities(
+    for structure: ConfiguredIndustryStructure
+  ) -> [IndustryActivitySystem] {
+    IndustryActivitySystem.allCases.filter { activity in
+      let hasMatchingSystem: Bool
+      switch activity {
+      case .manufacturing:
+        hasMatchingSystem = manufacturingSystems.contains {
+          $0.solarSystemID > 0
+            && $0.solarSystemID == structure.solarSystemID
+        }
+      case .reaction:
+        hasMatchingSystem =
+          reactionSystem.solarSystemID > 0
+          && reactionSystem.solarSystemID == structure.solarSystemID
+      case .invention, .copying, .materialResearch, .timeResearch:
+        hasMatchingSystem =
+          systemConfiguration(for: activity)?.solarSystemID
+          == structure.solarSystemID
+          && structure.solarSystemID > 0
+      }
+      guard hasMatchingSystem else { return false }
+      if activity == .reaction {
+        return structure.isReactionCapable
+      }
+      if activity.isScienceActivity {
+        return structure.isScienceCapable(for: activity)
+      }
+      return structure.supportsActivity(activity)
+    }
+  }
+
   public mutating func applySystemDetails(_ details: SolarSystemDetails) {
     for index in manufacturingSystems.indices
     where manufacturingSystems[index].solarSystemID == details.id {
@@ -1953,8 +1992,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
 
   private var automaticReactionStructure: ConfiguredIndustryStructure? {
     structures.filter {
-      configuredSystem(for: $0)?.solarSystemID
-        == reactionSystem.solarSystemID
+      $0.solarSystemID == reactionSystem.solarSystemID
         && $0.isReactionCapable
     }.sorted {
       if $0.reactionMaterialMultiplier != $1.reactionMaterialMultiplier {
@@ -1997,9 +2035,8 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       selected.jobCostMultiplier > 0
       ? jobCostMultiplier / selected.jobCostMultiplier
       : 1
-    let assignedSystem = configuredSystem(for: selected)
     let matchesSystem =
-      assignedSystem?.solarSystemID == system.solarSystemID
+      selected.solarSystemID == system.solarSystemID
     return ScienceFacilitySelection(
       activity: activity,
       structureID: selected.id,
@@ -2029,7 +2066,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       system.solarSystemID > 0
     else { return nil }
     return structures.filter {
-      configuredSystem(for: $0)?.solarSystemID == system.solarSystemID
+      $0.solarSystemID == system.solarSystemID
         && $0.isScienceCapable(for: activity)
     }.sorted {
       let lhsCost = $0.scienceJobCostMultiplier(for: activity)

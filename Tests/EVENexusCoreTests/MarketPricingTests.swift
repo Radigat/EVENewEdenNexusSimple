@@ -88,6 +88,24 @@ struct MarketPricingTests {
     #expect(invalidFees.total == nil)
   }
 
+  @Test
+  func marketOrderRequestsUseBoundedConcurrency() async throws {
+    let transport = ConcurrentMarketTransport()
+    let service = JitaMarketService(
+      esi: ESIClient(transport: transport),
+      maximumConcurrentOrderRequests: 3
+    )
+
+    let snapshot = try await service.orderSnapshot(
+      typeIDs: Set((1...12).map(Int64.init))
+    )
+
+    #expect(snapshot.ordersByType.count == 12)
+    #expect(await transport.requestCount == 12)
+    #expect(await transport.maximumConcurrentRequests > 1)
+    #expect(await transport.maximumConcurrentRequests <= 3)
+  }
+
   private func makeSnapshot(orders: [MarketOrder]) -> MarketOrderSnapshot {
     MarketOrderSnapshot(
       id: UUID(),
@@ -116,6 +134,37 @@ struct MarketPricingTests {
       volumeRemaining: volume,
       minimumVolume: 1,
       issued: .now
+    )
+  }
+}
+
+private actor ConcurrentMarketTransport: ESIHTTPTransporting {
+  private(set) var requestCount = 0
+  private(set) var maximumConcurrentRequests = 0
+  private var activeRequests = 0
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    requestCount += 1
+    activeRequests += 1
+    maximumConcurrentRequests = max(
+      maximumConcurrentRequests,
+      activeRequests
+    )
+    defer { activeRequests -= 1 }
+    try await Task.sleep(for: .milliseconds(15))
+    return (
+      Data("[]".utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: [
+          "Expires": "Wed, 30 Jul 2026 10:00:00 GMT",
+          "X-Pages": "1",
+        ]
+      )!
     )
   }
 }

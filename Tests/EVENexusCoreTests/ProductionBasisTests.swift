@@ -383,6 +383,86 @@ struct ProductionBasisTests {
   }
 
   @Test
+  func oneStructureIsAutomaticallyEligibleForMultipleActivities() {
+    let source = SourceIdentity(provider: "CCP SDE", version: "fixture")
+    let solarSystemID: Int64 = 30_004_807
+    let manufacturingSystem = ActivitySystemConfiguration(
+      activity: .manufacturing,
+      solarSystemID: solarSystemID,
+      solarSystemName: "B9E-H6",
+      securityStatus: -0.37
+    )
+    let inventionSystem = ActivitySystemConfiguration(
+      activity: .invention,
+      solarSystemID: solarSystemID,
+      solarSystemName: "B9E-H6",
+      securityStatus: -0.37
+    )
+    let copyingSystem = ActivitySystemConfiguration(
+      activity: .copying,
+      solarSystemID: solarSystemID,
+      solarSystemName: "B9E-H6",
+      securityStatus: -0.37
+    )
+    let manufacturingService = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 35_890,
+        name: "Standup Manufacturing Plant I",
+        activities: [.manufacturing],
+        source: source
+      )
+    )
+    let inventionService = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 35_886,
+        name: "Standup Invention Lab I",
+        activities: [.invention],
+        source: source
+      )
+    )
+    let researchService = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 35_891,
+        name: "Standup Research Lab I",
+        activities: [.copying, .materialResearch, .timeResearch],
+        source: source
+      )
+    )
+    let sotiyo = ConfiguredIndustryStructure(
+      name: "Multi-purpose Sotiyo",
+      kind: .sotiyo,
+      manufacturingSystemID: manufacturingSystem.id,
+      solarSystemID: solarSystemID,
+      solarSystemName: "B9E-H6",
+      securityStatus: -0.37,
+      serviceModules: [
+        manufacturingService,
+        inventionService,
+        researchService,
+      ]
+    )
+
+    let basis = ProductionBasis(
+      manufacturingSystems: [manufacturingSystem],
+      inventionSystem: inventionSystem,
+      copyingSystem: copyingSystem,
+      structures: [sotiyo]
+    )
+
+    #expect(
+      basis.eligibleActivities(for: sotiyo)
+        == [.manufacturing, .invention, .copying]
+    )
+    #expect(basis.selection(for: .capital)?.structureID == sotiyo.id)
+    #expect(
+      basis.scienceSelection(for: .invention)?.structureID == sotiyo.id
+    )
+    #expect(
+      basis.scienceSelection(for: .copying)?.structureID == sotiyo.id
+    )
+  }
+
+  @Test
   func marketFeesAreDerivedFromTraderSkillsAndUnmodifiedJitaStandings() {
     let source = SourceIdentity(
       provider: "ESI",
@@ -454,6 +534,20 @@ struct ProductionBasisTests {
     #expect(taxes.effectiveSalesTaxRate == nil)
     #expect(taxes.effectiveBrokerFeeRate == nil)
     #expect(taxes.calculation?.freshness == .forbidden)
+  }
+
+  @Test
+  func traderSelectionIsOptionalUntilACharacterIsConnected() {
+    var taxes = MarketTaxConfiguration()
+
+    #expect(taxes.isTraderSelectionValid(connectedCharacterIDs: []))
+
+    taxes.selectTrader(characterID: 42, capability: nil)
+
+    #expect(!taxes.isTraderSelectionValid(connectedCharacterIDs: []))
+    #expect(
+      taxes.isTraderSelectionValid(connectedCharacterIDs: [7, 42])
+    )
   }
 
   @Test

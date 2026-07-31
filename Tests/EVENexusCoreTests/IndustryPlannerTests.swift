@@ -107,6 +107,87 @@ struct IndustryPlannerTests {
   }
 
   @Test
+  func keepsWarehouseMaterialsInTotalCostAndSeparatesTheirValue()
+    async throws
+  {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let product = BlueprintDefinition(
+      blueprintTypeID: 150,
+      productTypeID: 15,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 16, quantity: 10)],
+        products: [
+          BlueprintProduct(typeID: 15, quantity: 1, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    let context = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      catalog: FixtureCatalog(
+        names: [15: "Stocked Product", 16: "Stocked Material"],
+        definitions: [15: product]
+      ),
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          15: [
+            makeOrder(typeID: 15, side: .buy, price: 1_000),
+            makeOrder(typeID: 15, side: .sell, price: 1_200),
+          ],
+          16: [makeOrder(typeID: 16, side: .sell, price: 10)],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        16: AdjustedPrice(typeID: 16, adjustedPrice: 5, averagePrice: 5)
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0.01
+        )
+      ],
+      availableStock: [16: 4],
+      assetSource: StockSource(
+        kind: .warehouse,
+        reference: "all-character-assets"
+      ),
+      sdeBuild: 1
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Stocked Product 1 0 0",
+      context: context
+    )
+
+    let material = try #require(
+      plan.materials.first { $0.typeID == 16 }
+    )
+    let costs = try #require(plan.costBreakdown)
+    #expect(material.fromStock == 4)
+    #expect(material.toBuy == 6)
+    #expect(material.quote?.quantity == 6)
+    #expect(material.stockQuote?.quantity == 4)
+    #expect(costs.purchasedMaterialCost == 60)
+    #expect(costs.stockMaterialCost == 40)
+    #expect(costs.materialCost == 100)
+    #expect(plan.materialCost == 100)
+    #expect(
+      costs.totalProductionCost
+        == plan.materialCost! + plan.installationCost!
+    )
+  }
+
+  @Test
   func convertsWantToRunsAndAppliesBlueprintAndFacilityEfficiencies()
     async throws
   {

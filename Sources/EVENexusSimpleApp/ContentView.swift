@@ -4,20 +4,35 @@ import SwiftData
 import SwiftUI
 
 enum NavigationSection: String, CaseIterable, Identifiable {
-  case planner = "Planner"
-  case assets = "Assets & Warehouse"
-  case productionBook = "Production Overview"
-  case profiles = "Profile"
-  case characters = "Characters"
-  case wallet = "Wallet"
-  case data = "Data & Settings"
+  case planner
+  case assets
+  case blueprints
+  case productionBook
+  case profiles
+  case characters
+  case wallet
+  case data
 
   var id: Self { self }
+
+  var title: LocalizedStringKey {
+    switch self {
+    case .planner: "Planner"
+    case .assets: "Assets & Warehouse"
+    case .blueprints: "Blueprints"
+    case .productionBook: "Production Overview"
+    case .profiles: "Profile"
+    case .characters: "Characters"
+    case .wallet: "Wallet"
+    case .data: "Data & Settings"
+    }
+  }
 
   var icon: String {
     switch self {
     case .planner: "hammer.fill"
     case .assets: "shippingbox.fill"
+    case .blueprints: "doc.on.doc.fill"
     case .productionBook: "books.vertical.fill"
     case .profiles: "slider.horizontal.3"
     case .characters: "person.2.fill"
@@ -29,6 +44,8 @@ enum NavigationSection: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
   @EnvironmentObject private var runtime: RuntimeState
+  @AppStorage(AppLanguage.storageKey)
+  private var storedLanguage = AppLanguage.defaultLanguage.rawValue
   @Query(sort: \StoredProductionBasis.updatedAt, order: .reverse)
   private var storedBases: [StoredProductionBasis]
   @State private var selection: NavigationSection? = .planner
@@ -39,9 +56,9 @@ struct ContentView: View {
   var body: some View {
     NavigationSplitView {
       List(NavigationSection.allCases, selection: guardedSelection) { item in
-        Label(item.rawValue, systemImage: item.icon)
+        Label(item.title, systemImage: item.icon)
           .tag(item)
-          .accessibilityIdentifier("navigation.\(item.id)")
+          .accessibilityIdentifier("navigation.\(item.rawValue)")
       }
       .navigationSplitViewColumnWidth(
         min: DesignTokens.sidebarMinimum,
@@ -59,26 +76,32 @@ struct ContentView: View {
         .padding(DesignTokens.spacingMD)
       }
     } detail: {
-      Group {
-        switch selection ?? .planner {
-        case .planner:
-          PlannerView()
-        case .assets:
-          AssetsWarehouseView()
-        case .productionBook:
-          ProductionBookView()
-        case .profiles:
-          ProfilesView()
-        case .characters:
-          CharactersView()
-        case .wallet:
-          WalletView()
-        case .data:
-          DataSettingsView()
+      VStack(spacing: 0) {
+        EVEOnlineServiceBanner()
+        Group {
+          switch selection ?? .planner {
+          case .planner:
+            PlannerView()
+          case .assets:
+            AssetsWarehouseView()
+          case .blueprints:
+            BlueprintsView()
+          case .productionBook:
+            ProductionBookView()
+          case .profiles:
+            ProfilesView()
+          case .characters:
+            CharactersView()
+          case .wallet:
+            WalletView()
+          case .data:
+            DataSettingsView()
+          }
         }
+        .background(DesignTokens.canvas)
+        .tint(DesignTokens.accent)
       }
-      .background(DesignTokens.canvas)
-      .tint(DesignTokens.accent)
+      .id(storedLanguage)
     }
     .environmentObject(profileNavigationGuard)
     .task {
@@ -87,6 +110,16 @@ struct ContentView: View {
       await runtime.preparePlannerConfiguration(
         encodedBasis: storedBases.first?.encodedBasis
       )
+    }
+    .task {
+      while !Task.isCancelled {
+        await runtime.refreshEVEOnlineServiceStatus()
+        do {
+          try await Task.sleep(for: .seconds(300))
+        } catch {
+          break
+        }
+      }
     }
     .confirmationDialog(
       "Unsaved profile changes",
@@ -124,6 +157,124 @@ struct ContentView: View {
         }
       }
     )
+  }
+}
+
+private struct EVEOnlineServiceBanner: View {
+  @EnvironmentObject private var runtime: RuntimeState
+
+  private struct Notice {
+    let title: String
+    let message: String
+    let systemImage: String
+    let color: Color
+  }
+
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 60)) { context in
+      if let notice = notice(at: context.date) {
+        HStack(alignment: .top, spacing: DesignTokens.spacingSM) {
+          Image(systemName: notice.systemImage)
+            .foregroundStyle(notice.color)
+            .accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+            Text(AppLocalization.text(notice.title))
+              .font(.subheadline.bold())
+            Text(AppLocalization.text(notice.message))
+              .font(.caption)
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
+          Spacer(minLength: DesignTokens.spacingSM)
+          Link(
+            AppLocalization.text("Open CCP status"),
+            destination: URL(string: "https://status.eveonline.com/")!
+          )
+          .font(.caption)
+        }
+        .padding(.horizontal, DesignTokens.spacingMD)
+        .padding(.vertical, DesignTokens.spacingSM)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(notice.color.opacity(0.12))
+        .overlay(alignment: .bottom) {
+          Divider()
+        }
+        .accessibilityElement(children: .combine)
+      }
+    }
+  }
+
+  private func notice(at date: Date) -> Notice? {
+    let status = recentStatus(at: date)
+    if status?.hasLoginIssue == true && status?.hasESIIssue == true {
+      return Notice(
+        title: "EVE services affected",
+        message:
+          "CCP currently reports problems with both EVE Login (SSO) and ESI. Authorization and data synchronization can fail; locally stored data remains available.",
+        systemImage: "network.slash",
+        color: DesignTokens.negative
+      )
+    }
+    if status?.hasLoginIssue == true {
+      return Notice(
+        title: "EVE SSO affected",
+        message:
+          "CCP currently reports a problem with EVE Login (SSO). New authorization or token renewal can fail; this is separate from an ESI data error.",
+        systemImage: "person.crop.circle.badge.exclamationmark",
+        color: DesignTokens.negative
+      )
+    }
+    if status?.hasESIIssue == true {
+      return Notice(
+        title: "EVE ESI affected",
+        message:
+          "CCP currently reports a problem with ESI. SSO can still work while character, asset, blueprint, market or wallet data cannot be refreshed.",
+        systemImage: "arrow.triangle.2.circlepath.circle.fill",
+        color: DesignTokens.negative
+      )
+    }
+    if status?.isGameServerUnderMaintenance == true {
+      let confirmsLoginAndESI =
+        status?.login == .operational && status?.esi == .operational
+      return Notice(
+        title: "EVE downtime",
+        message:
+          confirmsLoginAndESI
+          ? "Tranquility is in maintenance. CCP currently reports Login (SSO) and ESI as operational, but data synchronization can still be slow or incomplete. Wait a few minutes and try again."
+          : "Tranquility is in maintenance. Authorization and data synchronization may be temporarily delayed. Wait a few minutes and try again.",
+        systemImage: "wrench.and.screwdriver.fill",
+        color: DesignTokens.caution
+      )
+    }
+    if EVEOnlineDailyDowntime.isExpected(at: date) {
+      return Notice(
+        title: "Expected EVE downtime",
+        message:
+          "The daily Tranquility restart begins at 11:00 UTC and usually lasts only a few minutes. SSO and ESI are separate services, but synchronization can still be temporarily slow or incomplete.",
+        systemImage: "clock.badge.exclamationmark.fill",
+        color: DesignTokens.caution
+      )
+    }
+    if status?.hasGameServerIssue == true {
+      return Notice(
+        title: "EVE game server affected",
+        message:
+          "CCP currently reports a Tranquility problem. Login and ESI have separate status, so the app keeps their errors distinct.",
+        systemImage: "exclamationmark.triangle.fill",
+        color: DesignTokens.caution
+      )
+    }
+    return nil
+  }
+
+  private func recentStatus(
+    at date: Date
+  ) -> EVEOnlineServiceStatusSnapshot? {
+    guard let status = runtime.eveOnlineServiceStatus,
+      abs(date.timeIntervalSince(status.fetchedAt)) < 15 * 60
+    else {
+      return nil
+    }
+    return status
   }
 }
 
@@ -237,12 +388,13 @@ enum DesignTokens {
 }
 
 struct Panel<Content: View>: View {
-  let title: String
+  let title: LocalizedStringKey
   @ViewBuilder var content: Content
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-      Text(title.uppercased())
+      Text(title)
+        .textCase(.uppercase)
         .font(.caption.weight(.semibold))
         .tracking(1.1)
         .foregroundStyle(DesignTokens.textSecondary)

@@ -56,6 +56,25 @@ public struct AdjustedPrice: Codable, Hashable, Sendable {
   public let averagePrice: Double?
 }
 
+public struct ReferencePriceSnapshot: Identifiable, Codable, Sendable {
+  public let id: UUID
+  public let capturedAt: Date
+  public let prices: [Int64: AdjustedPrice]
+  public let source: SourceIdentity
+
+  public init(
+    id: UUID = UUID(),
+    capturedAt: Date,
+    prices: [Int64: AdjustedPrice],
+    source: SourceIdentity
+  ) {
+    self.id = id
+    self.capturedAt = capturedAt
+    self.prices = prices
+    self.source = source
+  }
+}
+
 public struct IndustrySystemIndex: Codable, Hashable, Sendable {
   public let solarSystemID: Int64
   public let activity: BlueprintActivityDefinition.Kind

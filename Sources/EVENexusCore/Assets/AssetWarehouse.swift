@@ -71,15 +71,21 @@ public struct AssetWarehouseOwner: Identifiable, Codable, Sendable {
 public struct AssetWarehouseLocation: Identifiable, Codable, Sendable {
   public let id: Int64
   public let kind: AssetLocationKind
+  public let resolvedName: String?
+  public let resolvedTypeID: Int64?
   public let owners: [AssetWarehouseOwner]
 
   public init(
     id: Int64,
     kind: AssetLocationKind,
+    resolvedName: String? = nil,
+    resolvedTypeID: Int64? = nil,
     owners: [AssetWarehouseOwner]
   ) {
     self.id = id
     self.kind = kind
+    self.resolvedName = resolvedName
+    self.resolvedTypeID = resolvedTypeID
     self.owners = owners
   }
 
@@ -150,38 +156,51 @@ public struct AssetWarehouse: Codable, Sendable {
   public let unresolvedLocationIDs: Set<Int64>
 
   public init(inventories: [AssetOwnerInventory]) {
-    struct LocationOwnerKey: Hashable {
-      let location: AssetRootLocation
-      let ownerID: Int64
-    }
-
-    var grouped: [LocationOwnerKey: [AssetWarehouseItem]] = [:]
+    var grouped: [AssetRootLocation: [Int64: [AssetWarehouseItem]]] = [:]
     var ownerDetails: [Int64: (name: String, state: DataFreshness, date: Date, id: UUID)] = [:]
     var snapshotIDs: [UUID] = []
     var sourceStates: [DataFreshness] = []
     var unresolved = Set<Int64>()
+    var resolvedLocationNames: [Int64: (name: String, capturedAt: Date)] = [:]
+    var resolvedStructureTypeIDs: [Int64: (typeID: Int64, capturedAt: Date)] = [:]
 
     for inventory in inventories.sorted(by: { $0.ownerID < $1.ownerID }) {
       sourceStates.append(inventory.assets.state)
       guard let snapshot = inventory.assets.value else { continue }
       snapshotIDs.append(snapshot.id)
       unresolved.formUnion(snapshot.unresolvedLocationIDs)
+      for (locationID, name) in snapshot.resolvedLocationNames ?? [:] {
+        if resolvedLocationNames[locationID]?.capturedAt ?? .distantPast
+          <= snapshot.capturedAt
+        {
+          resolvedLocationNames[locationID] = (name, snapshot.capturedAt)
+        }
+      }
+      for (locationID, typeID) in snapshot.resolvedStructureTypeIDs ?? [:] {
+        if resolvedStructureTypeIDs[locationID]?.capturedAt ?? .distantPast
+          <= snapshot.capturedAt
+        {
+          resolvedStructureTypeIDs[locationID] = (
+            typeID,
+            snapshot.capturedAt
+          )
+        }
+      }
       ownerDetails[inventory.ownerID] = (
         inventory.ownerName,
         inventory.assets.state,
         snapshot.capturedAt,
         snapshot.id
       )
-      for item in snapshot.items {
-        guard let location = snapshot.rootLocation(for: item) else {
+      for (item, resolvedLocation) in snapshot.itemsWithRootLocations() {
+        guard let location = resolvedLocation else {
           unresolved.insert(item.locationID)
           continue
         }
-        let key = LocationOwnerKey(
-          location: location,
-          ownerID: inventory.ownerID
-        )
-        grouped[key, default: []].append(
+        grouped[location, default: [:]][
+          inventory.ownerID,
+          default: []
+        ].append(
           AssetWarehouseItem(
             id: item.id,
             typeID: item.typeID,
@@ -193,19 +212,18 @@ public struct AssetWarehouse: Codable, Sendable {
       }
     }
 
-    let locationKeys = Set(grouped.keys.map(\.location))
-    locations = locationKeys.map { location in
-      let owners = grouped.keys
-        .filter { $0.location == location }
-        .compactMap { key -> AssetWarehouseOwner? in
-          guard let detail = ownerDetails[key.ownerID] else { return nil }
+    locations = grouped.map { location, itemsByOwner in
+      let owners =
+        itemsByOwner
+        .compactMap { ownerID, items -> AssetWarehouseOwner? in
+          guard let detail = ownerDetails[ownerID] else { return nil }
           return AssetWarehouseOwner(
-            ownerID: key.ownerID,
+            ownerID: ownerID,
             ownerName: detail.name,
             state: detail.state,
             capturedAt: detail.date,
             snapshotID: detail.id,
-            items: grouped[key, default: []].sorted {
+            items: items.sorted {
               if $0.typeID == $1.typeID { return $0.id < $1.id }
               return $0.typeID < $1.typeID
             }
@@ -218,6 +236,8 @@ public struct AssetWarehouse: Codable, Sendable {
       return AssetWarehouseLocation(
         id: location.id,
         kind: location.kind,
+        resolvedName: resolvedLocationNames[location.id]?.name,
+        resolvedTypeID: resolvedStructureTypeIDs[location.id]?.typeID,
         owners: owners
       )
     }

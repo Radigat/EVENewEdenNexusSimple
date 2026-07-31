@@ -19,6 +19,10 @@ struct SQLiteStaticCatalogTests {
     _ = try await catalog.activate(first)
     #expect(try await catalog.typeID(named: "fixture ship") == 1)
     #expect(
+      try await catalog.typeNames(ids: [1, 2, 999])
+        == [1: "Fixture Ship", 2: "Fixture Mineral"]
+    )
+    #expect(
       try await catalog.productionDefinition(productTypeID: 1)?
         .blueprintTypeID == 100
     )
@@ -26,6 +30,15 @@ struct SQLiteStaticCatalogTests {
       try await catalog.productionDefinition(productTypeID: 1)?
         .activity.materials.first?.quantity == 7
     )
+    let research = try #require(
+      try await catalog.blueprintResearchDefinition(blueprintTypeID: 100)
+    )
+    #expect(research.blueprintName == "Fixture Blueprint")
+    #expect(research.basePrice == 1_000)
+    #expect(research.materialResearchTimeSeconds == 105)
+    #expect(research.timeResearchTimeSeconds == 105)
+    #expect(research.manufacturingMaterials.first?.quantity == 7)
+    #expect(!research.hasUnresolvedReferences)
     #expect(
       try await catalog.industryClassification(productTypeID: 1)?
         .manufacturingCategory == .module
@@ -219,7 +232,7 @@ struct SQLiteStaticCatalogTests {
       itemType(id: 1, name: productName),
       itemType(id: 2, name: "Fixture Mineral"),
       itemType(id: 99, name: "Unpublished Test Blueprint", published: false),
-      itemType(id: 100, name: "Fixture Blueprint"),
+      itemType(id: 100, name: "Fixture Blueprint", basePrice: 1_000),
       StaticItemTypeSnapshot(
         externalID: 200,
         groupExternalID: 270,
@@ -282,7 +295,19 @@ struct SQLiteStaticCatalogTests {
               sortOrder: 0
             )
           ]
-        )
+        ),
+        StaticBlueprintActivitySnapshot(
+          activity: .researchMaterial,
+          timeSeconds: 105,
+          materials: [],
+          products: []
+        ),
+        StaticBlueprintActivitySnapshot(
+          activity: .researchTime,
+          timeSeconds: 105,
+          materials: [],
+          products: []
+        ),
       ]
     )
     let unpublishedTestBlueprint = StaticBlueprintSnapshot(
@@ -346,6 +371,7 @@ struct SQLiteStaticCatalogTests {
   private func itemType(
     id: Int64,
     name: String,
+    basePrice: Double? = nil,
     published: Bool = true
   ) -> StaticItemTypeSnapshot {
     StaticItemTypeSnapshot(
@@ -357,7 +383,7 @@ struct SQLiteStaticCatalogTests {
       description: nil,
       volume: 1,
       packagedVolume: 1,
-      basePrice: nil,
+      basePrice: basePrice,
       portionSize: 1,
       published: published,
       iconExternalID: nil

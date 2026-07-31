@@ -198,12 +198,14 @@ public struct IndustryRuleSet: Codable, Equatable, Sendable {
   public let version: String
   public let manufacturingSCCRate: Double
   public let reactionSCCRate: Double
+  public let researchSCCRate: Double
   public let alphaSurchargeRate: Double
 
   public static let current = IndustryRuleSet(
     version: "2026.07-v1",
     manufacturingSCCRate: 0.04,
     reactionSCCRate: 0.04,
+    researchSCCRate: 0.02,
     alphaSurchargeRate: 0.0025
   )
 }

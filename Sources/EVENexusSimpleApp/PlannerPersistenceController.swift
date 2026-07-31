@@ -220,17 +220,21 @@ enum PlannerPersistenceController {
     for requestID: UUID,
     in plan: IndustryPlanSnapshot
   ) -> Double? {
-    let purchases = plan.nodes.filter {
-      $0.topLevelRequestID == requestID && $0.action == .buy
+    let materialInputs = plan.nodes.filter {
+      $0.topLevelRequestID == requestID
+        && ($0.action == .buy || $0.action == .useStock)
     }
     var total = 0.0
-    for purchase in purchases {
+    for input in materialInputs {
       guard
-        let unitPrice = plan.materials.first(where: {
-          $0.typeID == purchase.typeID
-        })?.quote?.weightedUnitPrice
+        let material = plan.materials.first(where: {
+          $0.typeID == input.typeID
+        })
       else { return nil }
-      total += unitPrice * Double(purchase.requiredQuantity)
+      let quote =
+        input.action == .useStock ? material.stockQuote : material.quote
+      guard let unitPrice = quote?.weightedUnitPrice else { return nil }
+      total += unitPrice * Double(input.requiredQuantity)
     }
     return total
   }

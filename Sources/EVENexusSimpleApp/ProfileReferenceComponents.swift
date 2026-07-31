@@ -39,10 +39,12 @@ struct IndustryIndexSummary: View {
               $0.activity != IndustryCostActivity.none
             }
           ) { index in
-            LabeledContent(index.displayName) {
+            LabeledContent(index.displayName.localizedUI) {
               Text(
                 index.value.formatted(
-                  .percent.precision(.fractionLength(3...5))
+                  .percent
+                    .locale(AppLocalization.currentLanguage.locale)
+                    .precision(.fractionLength(3...5))
                 )
               )
               .font(.caption.monospacedDigit())
@@ -80,7 +82,7 @@ struct ProductionLabelPicker: View {
             toggle(label)
           } label: {
             Label(
-              label.displayName,
+              label.displayName.localizedUI,
               systemImage:
                 configuration.productionLabels.contains(label)
                 ? "checkmark" : "circle"
@@ -88,7 +90,7 @@ struct ProductionLabelPicker: View {
           }
         }
       } label: {
-        Text(configuration.productionLabelSummary)
+        Text(configuration.productionLabelSummary.localizedUI)
           .lineLimit(2)
       }
       .menuStyle(.borderlessButton)

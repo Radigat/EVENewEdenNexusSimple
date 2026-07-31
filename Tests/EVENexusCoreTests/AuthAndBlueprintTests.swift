@@ -327,6 +327,212 @@ struct AuthAndBlueprintTests {
   }
 
   @Test
+  func researchCostUsesLevelMultipliersAndSeparateFacilityContexts() throws {
+    let source = SourceIdentity(
+      provider: "fixture",
+      version: "1",
+      capturedAt: .distantPast
+    )
+    let original = OwnedBlueprintInstance(
+      id: 1,
+      blueprintTypeID: 100,
+      locationID: 3,
+      quantity: -1,
+      runs: -1,
+      materialEfficiency: 2,
+      timeEfficiency: 4,
+      source: source
+    )
+    let definition = BlueprintResearchDefinition(
+      blueprintTypeID: 100,
+      blueprintName: "Fixture Blueprint",
+      basePrice: 1_000,
+      manufacturingMaterials: [
+        BlueprintMaterial(typeID: 2, quantity: 7)
+      ],
+      materialResearchTimeSeconds: 60,
+      timeResearchTimeSeconds: 60,
+      source: source
+    )
+    let materialFacility = BlueprintResearchFacilityContext(
+      activity: .materialEfficiency,
+      solarSystemID: 30_000_142,
+      solarSystemName: "Jita",
+      facilityName: "Fixture Lab",
+      systemCostIndex: 0.1,
+      jobCostMultiplier: 0.9,
+      facilityTaxRate: 0.01,
+      sccSurchargeRate: 0.02,
+      alphaSurchargeRate: 0,
+      needsReview: false,
+      source: source
+    )
+    let timeFacility = BlueprintResearchFacilityContext(
+      activity: .timeEfficiency,
+      solarSystemID: 30_000_142,
+      solarSystemName: "Jita",
+      facilityName: "Fixture Lab",
+      systemCostIndex: 0.2,
+      jobCostMultiplier: 1,
+      facilityTaxRate: 0,
+      sccSurchargeRate: 0.02,
+      alphaSurchargeRate: 0,
+      needsReview: false,
+      source: source
+    )
+    let pricing = BlueprintResearchPricingInput(
+      adjustedPrices: [
+        2: AdjustedPrice(
+          typeID: 2,
+          adjustedPrice: 100,
+          averagePrice: nil
+        )
+      ],
+      adjustedPriceSource: source,
+      materialFacility: materialFacility,
+      timeFacility: timeFacility
+    )
+    let quote = BlueprintResearchCostCalculator.quote(
+      instance: original,
+      definition: definition,
+      pricing: pricing,
+      calculatedAt: .distantPast
+    )
+
+    #expect(quote.manufacturingBaseCost == 700)
+    #expect(abs(try #require(quote.levels[0].materialStepCost) - 1.68) < 0.000_001)
+    #expect(abs(try #require(quote.currentMaterialResearchValue) - 4) < 0.000_001)
+    #expect(
+      abs(try #require(quote.currentTimeResearchValue) - 7.333_333_333)
+        < 0.000_001
+    )
+    #expect(
+      abs(try #require(quote.estimatedReplacementValue) - 1_011.333_333_333)
+        < 0.000_001
+    )
+    #expect(quote.ruleVersion == "ccp-blueprint-research-2026-07-v1")
+
+    let asymmetricQuote = BlueprintResearchCostCalculator.quote(
+      instance: OwnedBlueprintInstance(
+        id: 2,
+        blueprintTypeID: 100,
+        locationID: 3,
+        quantity: -1,
+        runs: -1,
+        materialEfficiency: 9,
+        timeEfficiency: 14,
+        source: source
+      ),
+      definition: definition,
+      pricing: pricing,
+      calculatedAt: .distantPast
+    )
+    #expect(asymmetricQuote.isMaterialLevelResearched(9))
+    #expect(!asymmetricQuote.isMaterialLevelResearched(10))
+    #expect(asymmetricQuote.isTimeLevelResearched(7))
+    #expect(!asymmetricQuote.isTimeLevelResearched(8))
+  }
+
+  @Test
+  func copiesAndUnverifiedResearchMaterialsNeverGainInventedValue() {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let copy = OwnedBlueprintInstance(
+      id: 2,
+      blueprintTypeID: 100,
+      locationID: 3,
+      quantity: -2,
+      runs: 4,
+      materialEfficiency: 10,
+      timeEfficiency: 20,
+      source: source
+    )
+    let definition = BlueprintResearchDefinition(
+      blueprintTypeID: 100,
+      blueprintName: "Fixture Blueprint",
+      basePrice: 1_000,
+      manufacturingMaterials: [
+        BlueprintMaterial(typeID: 2, quantity: 7)
+      ],
+      materialResearchMaterials: [
+        BlueprintMaterial(typeID: 3, quantity: 1)
+      ],
+      materialResearchTimeSeconds: 60,
+      timeResearchTimeSeconds: 60,
+      source: source
+    )
+    let quote = BlueprintResearchCostCalculator.quote(
+      instance: copy,
+      definition: definition,
+      pricing: BlueprintResearchPricingInput(
+        adjustedPrices: [
+          2: AdjustedPrice(
+            typeID: 2,
+            adjustedPrice: 100,
+            averagePrice: nil
+          )
+        ],
+        adjustedPriceSource: source,
+        materialFacility: nil,
+        timeFacility: nil
+      )
+    )
+
+    #expect(!quote.isResearchable)
+    #expect(quote.estimatedReplacementValue == nil)
+    #expect(
+      quote.warnings.contains {
+        $0.code == "blueprint.copy-not-researchable"
+      }
+    )
+    #expect(
+      quote.warnings.contains {
+        $0.code == "blueprint.research-additional-materials"
+          && $0.severity == .blocking
+      }
+    )
+  }
+
+  @Test
+  func blueprintPortfolioPreservesOwnerAndUnavailableSourceState() {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let original = OwnedBlueprintInstance(
+      id: 1,
+      blueprintTypeID: 100,
+      locationID: 3,
+      quantity: -1,
+      runs: -1,
+      materialEfficiency: 0,
+      timeEfficiency: 0,
+      source: source
+    )
+    let portfolio = BlueprintPortfolio(
+      inventories: [
+        OwnedBlueprintInventory(
+          ownerID: 2,
+          ownerName: "Zulu",
+          blueprints: Sourced(
+            state: .unavailable,
+            value: nil,
+            source: source
+          )
+        ),
+        OwnedBlueprintInventory(
+          ownerID: 1,
+          ownerName: "Alpha",
+          blueprints: Sourced(
+            state: .fresh,
+            value: [original],
+            source: source
+          )
+        ),
+      ]
+    )
+
+    #expect(portfolio.entries.map(\.ownerName) == ["Alpha"])
+    #expect(portfolio.sourceStates == [.fresh, .unavailable])
+  }
+
+  @Test
   func missingSkillsRemainUnknown() {
     let source = SourceIdentity(provider: "fixture", version: "1")
     let snapshot = CharacterCapabilitySnapshot(

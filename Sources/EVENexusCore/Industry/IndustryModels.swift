@@ -75,6 +75,7 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
   public let toBuy: Int64
   public let toProduce: Int64
   public let quote: PriceQuote?
+  public let stockQuote: PriceQuote?
   public let sourceCategory: String?
   public let sourceGroup: String?
   public let productionActivity: BlueprintActivityDefinition.Kind?
@@ -87,6 +88,7 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
     toBuy: Int64,
     toProduce: Int64,
     quote: PriceQuote?,
+    stockQuote: PriceQuote? = nil,
     sourceCategory: String? = nil,
     sourceGroup: String? = nil,
     productionActivity: BlueprintActivityDefinition.Kind? = nil
@@ -98,6 +100,7 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
     self.toBuy = toBuy
     self.toProduce = toProduce
     self.quote = quote
+    self.stockQuote = stockQuote
     self.sourceCategory = sourceCategory
     self.sourceGroup = sourceGroup
     self.productionActivity = productionActivity
@@ -241,6 +244,8 @@ public struct LogisticsCostBreakdown: Codable, Equatable, Sendable {
 
 public struct IndustryCostBreakdown: Codable, Equatable, Sendable {
   public let materialCost: Double?
+  public let purchasedMaterialCost: Double?
+  public let stockMaterialCost: Double?
   public let blueprintCosts: BlueprintCostBreakdown?
   public let systemIndexCost: Double?
   public let facilityTax: Double?

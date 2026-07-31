@@ -11,9 +11,11 @@ struct ProfilesView: View {
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
   @Query private var settings: [AppSetting]
+  @AppStorage(AppLanguage.storageKey)
+  private var storedLanguage = AppLanguage.defaultLanguage.rawValue
   @State private var didLoad = false
   @State private var showResetConfirmation = false
-  @State private var statusMessage: String?
+  @State private var statusMessage: LocalizedStringKey?
   @State private var showScienceSkillMatrix = false
   @State private var isRefreshingCharacterSkills = false
   @State private var characterSkillMessage: String?
@@ -46,6 +48,7 @@ struct ProfilesView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
         header
+        languageConfiguration
         systemAndCostConfiguration
         structureConfiguration
         productionMatrix
@@ -56,7 +59,7 @@ struct ProfilesView: View {
       }
       .padding(DesignTokens.spacingLG)
     }
-    .navigationTitle("Profile")
+    .navigationTitle(AppLocalization.text("Profile"))
     .task {
       loadStoredBasisOnce()
       await runtime.refreshProfileReferenceData()
@@ -134,11 +137,43 @@ struct ProfilesView: View {
     }
   }
 
+  private var languageConfiguration: some View {
+    Panel(title: "Language & Terminology") {
+      Picker("Language", selection: languageBinding) {
+        ForEach(AppLanguage.allCases) { language in
+          Text(language.title).tag(language.rawValue)
+        }
+      }
+      .pickerStyle(.segmented)
+      .frame(maxWidth: 360)
+      .accessibilityIdentifier("profiles.language")
+
+      Text(
+        "Explanations and EVE industry terminology follow this selection immediately. EVE item names, character names, locations, ESI, SDE, ME and TE remain unchanged so they still match the EVE client and imported data."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private var languageBinding: Binding<String> {
+    Binding(
+      get: { storedLanguage },
+      set: { language in
+        UserDefaults.standard.set(
+          language,
+          forKey: AppLanguage.storageKey
+        )
+        storedLanguage = language
+      }
+    )
+  }
+
   private var systemAndCostConfiguration: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
       Panel(title: "Manufacturing Systems") {
         Text(
-          "Add every manufacturing system you use. Structures and stations are assigned to one of these systems below."
+          "Add every manufacturing system you use. A structure is assigned to one physical location and automatically becomes eligible for every matching activity enabled by its service modules."
         )
         .foregroundStyle(DesignTokens.textSecondary)
         ForEach($runtime.productionBasis.manufacturingSystems) {
@@ -213,7 +248,7 @@ struct ProfilesView: View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           Picker("Clone state", selection: basisBinding(\.cloneState)) {
             ForEach(CloneState.allCases, id: \.self) { state in
-              Text(state.rawValue.capitalized).tag(state)
+              Text(LocalizedStringKey(state.rawValue.capitalized)).tag(state)
             }
           }
           SlotCountField(
@@ -599,7 +634,7 @@ struct ProfilesView: View {
   {
     let selection = runtime.productionBasis.selection(for: category)
     GridRow {
-      Text(category.displayName)
+      Text(LocalizedStringKey(category.displayName))
         .frame(
           minWidth: DesignTokens.efficiencyLabelMinimum,
           alignment: .leading
@@ -650,7 +685,7 @@ struct ProfilesView: View {
   {
     let selection = runtime.productionBasis.scienceSelection(for: activity)
     GridRow {
-      Text(activity.displayName)
+      Text(LocalizedStringKey(activity.displayName))
         .frame(
           minWidth: DesignTokens.efficiencyLabelMinimum,
           alignment: .leading
@@ -877,7 +912,7 @@ struct ProfilesView: View {
         LabeledContent(character.characterName) {
           if let average = character.averageRelevantLevel {
             Text(
-              "\(character.skillState.rawValue.uppercased()) · \(character.trainedRelevantSkills)/\(character.knownRelevantSkills) trained · Ø \(average.formatted(.number.precision(.fractionLength(2)))) · \(character.levelFiveRelevantSkills) at V"
+              "\(character.skillState.rawValue.uppercased()) · \(character.trainedRelevantSkills)/\(character.knownRelevantSkills) trained · Ø \(average.formatted(.number.locale(AppLocalization.currentLanguage.locale).precision(.fractionLength(2)))) · \(character.levelFiveRelevantSkills) at V"
             )
             .font(.body.monospacedDigit())
           } else {
@@ -1205,13 +1240,14 @@ struct ProfilesView: View {
   }
 
   private func saveBasis() {
+    let connectedCharacterIDs = Set(characters.map(\.characterID))
     guard
-      let traderID =
-        runtime.productionBasis.marketTaxes.traderCharacterID,
-      characters.contains(where: { $0.characterID == traderID })
+      runtime.productionBasis.marketTaxes.isTraderSelectionValid(
+        connectedCharacterIDs: connectedCharacterIDs
+      )
     else {
       statusMessage =
-        "Select one of the connected characters as the market trader."
+        "The selected market trader is no longer connected."
       profileNavigationGuard.completeSave(success: false)
       return
     }
@@ -1248,12 +1284,20 @@ struct ProfilesView: View {
   }
 
   private func formatBonus(_ value: Double) -> String {
-    value.formatted(.number.precision(.fractionLength(0...2))) + "%"
+    value.formatted(
+      .number
+        .locale(AppLocalization.currentLanguage.locale)
+        .precision(.fractionLength(0...2))
+    ) + "%"
   }
 
   private func formatRate(_ value: Double?) -> String {
     guard let value else { return "Unavailable" }
-    return value.formatted(.percent.precision(.fractionLength(2...3)))
+    return value.formatted(
+      .percent
+        .locale(AppLocalization.currentLanguage.locale)
+        .precision(.fractionLength(2...3))
+    )
   }
 
   private func skillLevelText(_ level: Int?) -> String {
@@ -1261,7 +1305,11 @@ struct ProfilesView: View {
   }
 
   private func standingText(_ standing: Double?) -> String {
-    standing?.formatted(.number.precision(.fractionLength(2))) ?? "Unavailable"
+    standing?.formatted(
+      .number
+        .locale(AppLocalization.currentLanguage.locale)
+        .precision(.fractionLength(2))
+    ) ?? "Unavailable"
   }
 
   private func feeFreshnessText(_ freshness: DataFreshness) -> String {
@@ -1277,7 +1325,7 @@ struct ProfilesView: View {
 
 private struct ActivitySystemRow: View {
   @EnvironmentObject private var runtime: RuntimeState
-  let title: String
+  let title: LocalizedStringKey
   @Binding var configuration: ActivitySystemConfiguration
   var canDelete = false
   var onDelete: (() -> Void)?
@@ -1334,9 +1382,11 @@ private struct ActivitySystemRow: View {
       if let securityStatus = configuration.securityStatus {
         LabeledContent("Security") {
           Text(
-            "\(configuration.securityBand.displayName) · "
+            "\(configuration.securityBand.displayName.localizedUI) · "
               + securityStatus.formatted(
-                .number.precision(.fractionLength(2))
+                .number
+                  .locale(AppLocalization.currentLanguage.locale)
+                  .precision(.fractionLength(2))
               )
           )
           .font(.body.monospacedDigit())
@@ -1378,7 +1428,6 @@ private struct SolarSystemPicker: View {
   @State private var isShowingResults = false
   @State private var searchMessage: String?
   @State private var searchTask: Task<Void, Never>?
-  @State private var isApplyingSelection = false
 
   init(
     selectedName: String,
@@ -1388,7 +1437,7 @@ private struct SolarSystemPicker: View {
     self.selectedName = selectedName
     self.selectedID = selectedID
     self.onSelect = onSelect
-    _query = State(initialValue: selectedName)
+    _query = State(initialValue: "")
   }
 
   var body: some View {
@@ -1396,10 +1445,6 @@ private struct SolarSystemPicker: View {
       TextField("Search solar system", text: $query)
         .textFieldStyle(.roundedBorder)
         .onChange(of: query) { _, value in
-          if isApplyingSelection {
-            isApplyingSelection = false
-            return
-          }
           scheduleSearch(value)
         }
         .popover(
@@ -1430,11 +1475,6 @@ private struct SolarSystemPicker: View {
       }
       .font(.caption)
     }
-    .onChange(of: selectedName) { _, value in
-      guard value != query else { return }
-      isApplyingSelection = true
-      query = value
-    }
     .onDisappear {
       searchTask?.cancel()
     }
@@ -1454,8 +1494,7 @@ private struct SolarSystemPicker: View {
             ForEach(results) { option in
               Button {
                 onSelect(option)
-                isApplyingSelection = true
-                query = option.name
+                query = ""
                 isShowingResults = false
               } label: {
                 HStack {
@@ -1531,6 +1570,43 @@ private struct StructureEditor: View {
     min(3, max(0, structure.maximumRigSlots ?? 0))
   }
 
+  private var configuredLocations: [ActivitySystemConfiguration] {
+    var seenSystemIDs = Set<Int64>()
+    return configuredSystems.filter {
+      $0.solarSystemID > 0
+        && seenSystemIDs.insert($0.solarSystemID).inserted
+    }
+  }
+
+  private var eligibleActivities: [IndustryActivitySystem] {
+    runtime.productionBasis.eligibleActivities(for: structure)
+  }
+
+  private var locationBinding: Binding<UUID?> {
+    Binding(
+      get: {
+        configuredLocations.first {
+          $0.solarSystemID == structure.solarSystemID
+        }?.id
+      },
+      set: { id in
+        guard
+          let id,
+          let system = configuredLocations.first(where: { $0.id == id })
+        else {
+          structure.manufacturingSystemID = nil
+          return
+        }
+        structure.manufacturingSystemID =
+          system.activity == .manufacturing ? system.id : nil
+        structure.solarSystemID = system.solarSystemID
+        structure.solarSystemName = system.solarSystemName
+        structure.securityStatus = system.securityStatus
+        structure.securityBand = system.securityBand
+      }
+    )
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
       HStack(alignment: .bottom) {
@@ -1574,44 +1650,56 @@ private struct StructureEditor: View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           Picker("Structure / station type", selection: $structure.kind) {
             ForEach(IndustryStructureKind.selectableCases) { kind in
-              Text(kind.displayName).tag(kind)
+              Text(LocalizedStringKey(kind.displayName)).tag(kind)
             }
           }
           .onChange(of: structure.kind) { _, kind in
             applyStructureKind(kind)
           }
           Picker(
-            "Assigned system",
-            selection: $structure.manufacturingSystemID
+            "Structure location",
+            selection: locationBinding
           ) {
             Text("Not assigned").tag(UUID?.none)
-            ForEach(configuredSystems) { system in
+            ForEach(configuredLocations) { system in
               Text(
-                "\(system.activity.displayName) · "
-                  + (system.solarSystemName.isEmpty
-                    ? "Select system" : system.solarSystemName)
+                (system.solarSystemName.isEmpty
+                  ? "Select system" : system.solarSystemName)
+                  + " · "
+                  + activitiesConfigured(
+                    in: system.solarSystemID
+                  ).map { $0.displayName.localizedUI }
+                  .joined(separator: ", ")
               )
               .tag(Optional(system.id))
             }
           }
-          .onChange(of: structure.manufacturingSystemID) { _, id in
-            guard
-              let id,
-              let system = configuredSystems.first(where: {
-                $0.id == id
-              })
-            else { return }
-            structure.solarSystemID = system.solarSystemID
-            structure.solarSystemName = system.solarSystemName
-            structure.securityStatus = system.securityStatus
-            structure.securityBand = system.securityBand
+          LabeledContent("Automatic activities") {
+            if eligibleActivities.isEmpty {
+              Text("No matching enabled activity")
+                .foregroundStyle(DesignTokens.caution)
+            } else {
+              Text(
+                eligibleActivities.map {
+                  $0.displayName.localizedUI
+                }.joined(separator: ", ")
+              )
+              .multilineTextAlignment(.trailing)
+            }
           }
+          Text(
+            "The best eligible structure is selected separately for each activity. One structure can therefore be used for Manufacturing, Invention, Blueprint Copying and research at the same time."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
           LabeledContent("Security") {
             if let status = structure.securityStatus {
               Text(
-                "\(structure.securityBand.displayName) · "
+                "\(structure.securityBand.displayName.localizedUI) · "
                   + status.formatted(
-                    .number.precision(.fractionLength(2))
+                    .number
+                      .locale(AppLocalization.currentLanguage.locale)
+                      .precision(.fractionLength(2))
                   )
               )
               .font(.body.monospacedDigit())
@@ -1624,7 +1712,12 @@ private struct StructureEditor: View {
             }
           }
           LabeledContent("Structure size") {
-            Text(structure.rigSize?.displayName ?? "No structure rigs")
+            Text(
+              LocalizedStringKey(
+                structure.rigSize?.displayName.localizedUI
+                  ?? "No structure rigs".localizedUI
+              )
+            )
           }
           if let eveName = structure.eveStructureName,
             let structureID = structure.structureID
@@ -1659,14 +1752,18 @@ private struct StructureEditor: View {
           LabeledContent("Job cost multiplier") {
             Text(
               structure.jobCostMultiplier.formatted(
-                .number.precision(.fractionLength(2...4))
+                .number
+                  .locale(AppLocalization.currentLanguage.locale)
+                  .precision(.fractionLength(2...4))
               )
             )
             .font(.body.monospacedDigit())
           }
-          Text("Source: \(structure.source.displayName)")
-            .font(.caption)
-            .foregroundStyle(DesignTokens.textSecondary)
+          Text(
+            "Source: \(structure.source.displayName.localizedUI)"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
         }
       }
 
@@ -1675,9 +1772,12 @@ private struct StructureEditor: View {
         Text("Service Modules").font(.headline)
         Spacer()
         if structure.kind != .npcStation {
-          Text("\(structure.serviceModules?.count ?? 0) installed")
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(DesignTokens.textSecondary)
+          Text(
+            "\(structure.serviceModules?.count ?? 0) "
+              + "installed".localizedUI
+          )
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(DesignTokens.textSecondary)
         }
       }
       if structure.kind == .npcStation {
@@ -1812,6 +1912,18 @@ private struct StructureEditor: View {
     structure.ownerCorporationID = option.ownerCorporationID
     structure.structureTypeID = option.typeID
     structure.solarSystemID = option.solarSystemID
+    if let matchingSystem = configuredLocations.first(where: {
+      $0.solarSystemID == option.solarSystemID
+    }) {
+      structure.manufacturingSystemID =
+        matchingSystem.activity == .manufacturing
+        ? matchingSystem.id : nil
+      structure.solarSystemName = matchingSystem.solarSystemName
+      structure.securityStatus = matchingSystem.securityStatus
+      structure.securityBand = matchingSystem.securityBand
+    } else {
+      structure.manufacturingSystemID = nil
+    }
     if structure.name.trimmingCharacters(
       in: .whitespacesAndNewlines
     ).isEmpty {
@@ -1827,6 +1939,18 @@ private struct StructureEditor: View {
     }
     structure.kind = kind
     structure.apply(definition: definition)
+  }
+
+  private func activitiesConfigured(
+    in solarSystemID: Int64
+  ) -> [IndustryActivitySystem] {
+    var seenActivities = Set<IndustryActivitySystem>()
+    return configuredSystems.compactMap { system in
+      guard system.solarSystemID == solarSystemID,
+        seenActivities.insert(system.activity).inserted
+      else { return nil }
+      return system.activity
+    }
   }
 
   private func availableRigDefinitions(
@@ -1858,7 +1982,11 @@ private struct StructureEditor: View {
   }
 
   private func formatPercent(_ value: Double) -> String {
-    value.formatted(.number.precision(.fractionLength(0...2))) + "%"
+    value.formatted(
+      .number
+        .locale(AppLocalization.currentLanguage.locale)
+        .precision(.fractionLength(0...2))
+    ) + "%"
   }
 }
 
@@ -1914,13 +2042,13 @@ private struct ServiceModuleEditor: View {
         .foregroundStyle(DesignTokens.caution)
       } else {
         Text(
-          "Enables: "
-            + serviceModule.activities.map(\.displayName)
+          "Enables: ".localizedUI
+            + serviceModule.activities.map { $0.displayName.localizedUI }
             .joined(separator: ", ")
         )
         .font(.caption.weight(.semibold))
         ForEach(serviceModule.activities) { activity in
-          LabeledContent(activity.displayName) {
+          LabeledContent(activity.displayName.localizedUI) {
             Text(bonusSummary(for: activity))
               .font(.caption.monospacedDigit())
           }
@@ -1943,12 +2071,16 @@ private struct ServiceModuleEditor: View {
     switch activity {
     case .manufacturing:
       return
-        "Base ME \(formatPercent(structure.structureMaterialBonusPercent)) · "
-        + "Base TE \(formatPercent(structure.structureTimeBonusPercent))"
+        "Base ME".localizedUI
+        + " \(formatPercent(structure.structureMaterialBonusPercent)) · "
+        + "Base TE".localizedUI
+        + " \(formatPercent(structure.structureTimeBonusPercent))"
     case .reaction:
       return
-        "Material \(formatPercent((1 - structure.reactionMaterialMultiplier) * 100)) · "
-        + "Time \(formatPercent((1 - structure.reactionTimeMultiplier) * 100))"
+        "Material".localizedUI
+        + " \(formatPercent((1 - structure.reactionMaterialMultiplier) * 100)) · "
+        + "Time".localizedUI
+        + " \(formatPercent((1 - structure.reactionTimeMultiplier) * 100))"
     case .invention, .copying, .materialResearch, .timeResearch:
       guard let industryActivity = activity.industryActivity else {
         return "Enabled"
@@ -1962,34 +2094,45 @@ private struct ServiceModuleEditor: View {
       let time =
         1 - structure.scienceTimeMultiplier(for: industryActivity)
       return
-        "Job cost \(formatPercent(max(0, jobCost) * 100)) · "
-        + "Time \(formatPercent(max(0, time) * 100))"
+        "Job cost".localizedUI
+        + " \(formatPercent(max(0, jobCost) * 100)) · "
+        + "Time".localizedUI
+        + " \(formatPercent(max(0, time) * 100))"
     case .reprocessing:
       let values = [
         serviceModule.normalOreYieldMultiplier.map {
-          "Ore \(formatMultiplier($0))"
+          "Ore".localizedUI + " \(formatMultiplier($0))"
         },
         serviceModule.moonOreYieldMultiplier.map {
-          "Moon \(formatMultiplier($0))"
+          "Moon".localizedUI + " \(formatMultiplier($0))"
         },
         serviceModule.iceYieldMultiplier.map {
-          "Ice \(formatMultiplier($0))"
+          "Ice".localizedUI + " \(formatMultiplier($0))"
         },
         serviceModule.gasYieldMultiplier.map {
-          "Gas \(formatMultiplier($0))"
+          "Gas".localizedUI + " \(formatMultiplier($0))"
         },
       ].compactMap { $0 }
       return values.isEmpty
-        ? "Enabled · yield unavailable" : values.joined(separator: " · ")
+        ? "Enabled · yield unavailable".localizedUI
+        : values.joined(separator: " · ")
     }
   }
 
   private func formatPercent(_ value: Double) -> String {
-    value.formatted(.number.precision(.fractionLength(0...2))) + "%"
+    value.formatted(
+      .number
+        .locale(AppLocalization.currentLanguage.locale)
+        .precision(.fractionLength(0...2))
+    ) + "%"
   }
 
   private func formatMultiplier(_ value: Double) -> String {
-    value.formatted(.percent.precision(.fractionLength(0...2)))
+    value.formatted(
+      .percent
+        .locale(AppLocalization.currentLanguage.locale)
+        .precision(.fractionLength(0...2))
+    )
   }
 }
 
@@ -2075,9 +2218,11 @@ private struct RigEditor: View {
           .font(.caption)
           .foregroundStyle(DesignTokens.caution)
         } else {
-          Text("SDE · \(rig.compatibleStructureSize?.displayName ?? "—")")
-            .font(.caption)
-            .foregroundStyle(DesignTokens.textSecondary)
+          Text(
+            "SDE · \(rig.compatibleStructureSize?.displayName.localizedUI ?? "—")"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
         }
       }
     }
@@ -2089,7 +2234,11 @@ private struct RigEditor: View {
   }
 
   private func formatPercent(_ value: Double) -> String {
-    value.formatted(.number.precision(.fractionLength(0...2))) + "%"
+    value.formatted(
+      .number
+        .locale(AppLocalization.currentLanguage.locale)
+        .precision(.fractionLength(0...2))
+    ) + "%"
   }
 }
 
@@ -2320,7 +2469,7 @@ private struct AccessibleStructurePicker: View {
 }
 
 private struct SlotCountField: View {
-  let title: String
+  let title: LocalizedStringKey
   @Binding var value: Int
 
   private var positiveValue: Binding<Int> {
@@ -2336,19 +2485,19 @@ private struct SlotCountField: View {
         TextField(title, value: positiveValue, format: .number)
           .multilineTextAlignment(.trailing)
           .frame(width: DesignTokens.compactNumberWidth)
-          .accessibilityLabel(title)
+          .accessibilityLabel(Text(title))
         Stepper(value: positiveValue, step: 1) {
           EmptyView()
         }
         .labelsHidden()
-        .accessibilityLabel("\(title) increase or decrease")
+        .accessibilityLabel(Text(title))
       }
     }
   }
 }
 
 private struct OptionalSkillStepper: View {
-  let title: String
+  let title: LocalizedStringKey
   @Binding var level: Int?
 
   var body: some View {
@@ -2382,11 +2531,11 @@ private struct OptionalSkillStepper: View {
 extension SecurityBand {
   fileprivate var displayName: String {
     switch self {
-    case .highSecurity: "High Security"
-    case .lowSecurity: "Low Security"
-    case .nullSecurity: "Null Security"
-    case .wormhole: "Wormhole"
-    case .unknown: "Unknown"
+    case .highSecurity: "High Security".localizedUI
+    case .lowSecurity: "Low Security".localizedUI
+    case .nullSecurity: "Null Security".localizedUI
+    case .wormhole: "Wormhole".localizedUI
+    case .unknown: "Unknown".localizedUI
     }
   }
 }
@@ -2394,10 +2543,11 @@ extension SecurityBand {
 extension IndustryModifierSource {
   fileprivate var displayName: String {
     switch self {
-    case .ravworksReference: "Ravworks reference (2026-07-30)"
-    case .manual: "Manual"
+    case .ravworksReference:
+      "Ravworks reference (2026-07-30)".localizedUI
+    case .manual: "Manual".localizedUI
     case .staticData: "CCP SDE"
-    case .unresolved: "Unresolved"
+    case .unresolved: "Unresolved".localizedUI
     }
   }
 }

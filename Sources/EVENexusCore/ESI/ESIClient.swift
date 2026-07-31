@@ -30,6 +30,25 @@ public struct ESIResponse<Value: Sendable>: Sendable {
   public let errorLimitRemain: Int?
 }
 
+public struct ESIResponseCacheUsage: Equatable, Sendable {
+  public let entries: Int
+  public let bytes: Int
+  public let maximumEntries: Int
+  public let maximumBytes: Int
+
+  public init(
+    entries: Int,
+    bytes: Int,
+    maximumEntries: Int,
+    maximumBytes: Int
+  ) {
+    self.entries = entries
+    self.bytes = bytes
+    self.maximumEntries = maximumEntries
+    self.maximumBytes = maximumBytes
+  }
+}
+
 public enum ESIError: Error, Equatable, Sendable {
   case invalidURL
   case authorizationRequired
@@ -82,25 +101,59 @@ public actor ESIClient {
     let lastModified: String?
     let data: Data
     let expiresAt: Date?
+    let pages: Int?
+    let source: SourceIdentity
+    let statusCode: Int
+    var lastAccess: UInt64
   }
 
   private let transport: any ESIHTTPTransporting
   private let decoder: JSONDecoder
   private let maximumResponseBytes: Int
   private let maximumPageCount: Int
+  private let maximumCachedResponses: Int
+  private let maximumCachedBytes: Int
+  private let now: @Sendable () -> Date
   private var validators: [String: Validator] = [:]
+  private var cachedResponseBytes = 0
+  private var cacheAccessSequence: UInt64 = 0
 
   public init(
     transport: any ESIHTTPTransporting = URLSessionESITransport(),
     maximumResponseBytes: Int = 32 * 1_024 * 1_024,
-    maximumPageCount: Int = 1_000
+    maximumPageCount: Int = 1_000,
+    maximumCachedResponses: Int = 512,
+    maximumCachedBytes: Int = 64 * 1_024 * 1_024,
+    now: @escaping @Sendable () -> Date = { Date() }
   ) {
     self.transport = transport
     self.maximumResponseBytes = max(1_024, maximumResponseBytes)
     self.maximumPageCount = min(10_000, max(1, maximumPageCount))
+    self.maximumCachedResponses = max(0, maximumCachedResponses)
+    self.maximumCachedBytes = max(0, maximumCachedBytes)
+    self.now = now
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     self.decoder = decoder
+  }
+
+  public func cachedResponseUsage() -> ESIResponseCacheUsage {
+    ESIResponseCacheUsage(
+      entries: validators.count,
+      bytes: cachedResponseBytes,
+      maximumEntries: maximumCachedResponses,
+      maximumBytes: maximumCachedBytes
+    )
+  }
+
+  public func removeCachedResponses(forCharacterID characterID: Int64) {
+    let prefix = "character:\(characterID)|"
+    removeCachedResponses { $0.hasPrefix(prefix) }
+  }
+
+  public func removeAllCachedResponses() {
+    validators.removeAll(keepingCapacity: false)
+    cachedResponseBytes = 0
   }
 
   public func get<Value: Decodable & Sendable>(
@@ -125,6 +178,29 @@ public actor ESIClient {
     let authorizationPartition =
       lease.map { "character:\($0.characterID)" } ?? "public"
     let cacheKey = "\(authorizationPartition)|\(url.absoluteString)"
+    let cachedAtRequest = cachedValidator(for: cacheKey)
+    if let cachedAtRequest,
+      let expiresAt = cachedAtRequest.expiresAt,
+      expiresAt > now()
+    {
+      let decoded: Value
+      do {
+        decoded = try decoder.decode(Value.self, from: cachedAtRequest.data)
+      } catch {
+        removeCachedResponse(forKey: cacheKey)
+        throw ESIError.decoding
+      }
+      return ESIResponse(
+        value: decoded,
+        source: cachedAtRequest.source,
+        statusCode: cachedAtRequest.statusCode,
+        expiresAt: expiresAt,
+        etag: cachedAtRequest.etag,
+        lastModified: cachedAtRequest.lastModified,
+        pages: cachedAtRequest.pages,
+        errorLimitRemain: nil
+      )
+    }
     var request = URLRequest(url: url)
     request.timeoutInterval = 30
     request.setValue(
@@ -143,7 +219,7 @@ public actor ESIClient {
         forHTTPHeaderField: "Authorization"
       )
     }
-    if let cached = validators[cacheKey] {
+    if let cached = cachedAtRequest {
       if let etag = cached.etag {
         request.setValue(etag, forHTTPHeaderField: "If-None-Match")
       }
@@ -162,7 +238,7 @@ public actor ESIClient {
         try validateSize(data, response: response)
         let usableData: Data
         if response.statusCode == 304,
-          let cached = validators[cacheKey]
+          let cached = cachedAtRequest
         {
           usableData = cached.data
         } else {
@@ -178,26 +254,43 @@ public actor ESIClient {
         } catch {
           throw ESIError.decoding
         }
-        let expires = Self.httpDate(
-          response.value(forHTTPHeaderField: "Expires")
-        )
-        let etag = response.value(forHTTPHeaderField: "ETag")
-        let modified = response.value(
-          forHTTPHeaderField: "Last-Modified"
-        )
+        let expires =
+          Self.httpDate(
+            response.value(forHTTPHeaderField: "Expires")
+          ) ?? (response.statusCode == 304 ? cachedAtRequest?.expiresAt : nil)
+        let etag =
+          response.value(forHTTPHeaderField: "ETag")
+          ?? (response.statusCode == 304 ? cachedAtRequest?.etag : nil)
+        let modified =
+          response.value(forHTTPHeaderField: "Last-Modified")
+          ?? (response.statusCode == 304
+            ? cachedAtRequest?.lastModified : nil)
         let pages = try pageCount(response)
-        validators[cacheKey] = Validator(
-          etag: etag,
-          lastModified: modified,
-          data: usableData,
-          expiresAt: expires
+        let source = SourceIdentity(
+          provider: "ESI",
+          version: EVEConstants.esiCompatibilityDate,
+          capturedAt: now()
         )
+        if etag != nil || modified != nil || expires != nil {
+          storeCachedResponse(
+            Validator(
+              etag: etag,
+              lastModified: modified,
+              data: usableData,
+              expiresAt: expires,
+              pages: pages ?? cachedAtRequest?.pages,
+              source: source,
+              statusCode: response.statusCode,
+              lastAccess: 0
+            ),
+            forKey: cacheKey
+          )
+        } else {
+          removeCachedResponse(forKey: cacheKey)
+        }
         return ESIResponse(
           value: decoded,
-          source: SourceIdentity(
-            provider: "ESI",
-            version: EVEConstants.esiCompatibilityDate
-          ),
+          source: source,
           statusCode: response.statusCode,
           expiresAt: expires,
           etag: etag,
@@ -230,6 +323,61 @@ public actor ESIClient {
         }
         throw error
       }
+    }
+  }
+
+  private func cachedValidator(for key: String) -> Validator? {
+    guard var cached = validators[key] else { return nil }
+    cacheAccessSequence &+= 1
+    cached.lastAccess = cacheAccessSequence
+    validators[key] = cached
+    return cached
+  }
+
+  private func storeCachedResponse(
+    _ value: Validator,
+    forKey key: String
+  ) {
+    guard maximumCachedResponses > 0,
+      maximumCachedBytes > 0,
+      value.data.count <= maximumCachedBytes
+    else {
+      removeCachedResponse(forKey: key)
+      return
+    }
+    removeCachedResponse(forKey: key)
+    var accepted = value
+    cacheAccessSequence &+= 1
+    accepted.lastAccess = cacheAccessSequence
+    validators[key] = accepted
+    cachedResponseBytes += accepted.data.count
+    evictCachedResponsesIfNeeded()
+  }
+
+  private func evictCachedResponsesIfNeeded() {
+    while validators.count > maximumCachedResponses
+      || cachedResponseBytes > maximumCachedBytes
+    {
+      guard
+        let oldestKey = validators.min(by: {
+          $0.value.lastAccess < $1.value.lastAccess
+        })?.key
+      else { return }
+      removeCachedResponse(forKey: oldestKey)
+    }
+  }
+
+  private func removeCachedResponse(forKey key: String) {
+    guard let removed = validators.removeValue(forKey: key) else { return }
+    cachedResponseBytes = max(0, cachedResponseBytes - removed.data.count)
+  }
+
+  private func removeCachedResponses(
+    where shouldRemove: (String) -> Bool
+  ) {
+    let keys = validators.keys.filter(shouldRemove)
+    for key in keys {
+      removeCachedResponse(forKey: key)
     }
   }
 

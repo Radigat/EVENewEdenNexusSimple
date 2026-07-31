@@ -23,6 +23,11 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
 
   private let rootURL: URL
   private let fileManager: FileManager
+  private var activePointerCache: ActivePointer?
+  private var activeDatabaseCache:
+    (
+      fileName: String, database: SQLiteDatabase
+    )?
 
   public init(
     rootURL: URL,
@@ -319,6 +324,36 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     return try database.scalarString(
       "SELECT name FROM item_types WHERE id = \(id) LIMIT 1"
     )
+  }
+
+  public func typeNames(ids: Set<Int64>) async throws -> [Int64: String] {
+    let orderedIDs = ids.filter { $0 > 0 }.sorted()
+    guard !orderedIDs.isEmpty else { return [:] }
+    let database = try activeDatabase()
+    var result: [Int64: String] = [:]
+    result.reserveCapacity(orderedIDs.count)
+    for start in stride(from: 0, to: orderedIDs.count, by: 500) {
+      try Task.checkCancellation()
+      let end = min(start + 500, orderedIDs.count)
+      let acceptedIDs = orderedIDs[start..<end]
+        .map(String.init)
+        .joined(separator: ",")
+      let rows = try database.rows(
+        """
+        SELECT id, name
+        FROM item_types
+        WHERE id IN (\(acceptedIDs))
+        """
+      )
+      for row in rows {
+        guard row.count == 2,
+          let id = Int64(row[0] ?? ""),
+          let name = row[1]
+        else { continue }
+        result[id] = name
+      }
+    }
+    return result
   }
 
   public func packagedVolume(typeID: Int64) async throws -> Double? {
@@ -730,6 +765,95 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     throw StaticCatalogError.missingBuild(pointer.buildNumber)
   }
 
+  public func blueprintResearchDefinition(blueprintTypeID: Int64) async throws
+    -> BlueprintResearchDefinition?
+  {
+    let database = try activeDatabase()
+    let header = try database.singleRow(
+      """
+      SELECT t.name, t.base_price
+      FROM blueprints b
+      JOIN item_types t ON t.id = b.blueprint_type_id
+      WHERE b.blueprint_type_id = \(blueprintTypeID)
+        AND t.published = 1
+      LIMIT 1
+      """
+    )
+    guard
+      header.count == 2,
+      let blueprintName = header[0]
+    else { return nil }
+
+    func materials(activity: String) throws -> [BlueprintMaterial] {
+      try database.rows(
+        """
+        SELECT item_type_id, quantity
+        FROM blueprint_materials
+        WHERE blueprint_type_id = \(blueprintTypeID)
+          AND activity = \(sql(activity))
+          AND resolved = 1
+        ORDER BY sort_order
+        """
+      ).compactMap { row in
+        guard row.count == 2,
+          let typeID = Int64(row[0] ?? ""),
+          let quantity = Int64(row[1] ?? "")
+        else { return nil }
+        return BlueprintMaterial(typeID: typeID, quantity: quantity)
+      }
+    }
+
+    let activityRows = try database.rows(
+      """
+      SELECT activity, time_seconds
+      FROM blueprint_activities
+      WHERE blueprint_type_id = \(blueprintTypeID)
+        AND activity IN ('manufacturing', 'research_material', 'research_time')
+      """
+    )
+    let times = Dictionary(
+      uniqueKeysWithValues: activityRows.compactMap {
+        row -> (String, Int64)? in
+        guard row.count == 2,
+          let activity = row[0],
+          let seconds = Int64(row[1] ?? "")
+        else { return nil }
+        return (activity, seconds)
+      }
+    )
+    let unresolvedCount =
+      try database.scalarInt64(
+        """
+        SELECT COUNT(*)
+        FROM blueprint_materials
+        WHERE blueprint_type_id = \(blueprintTypeID)
+          AND activity IN ('manufacturing', 'research_material', 'research_time')
+          AND resolved = 0
+        """
+      ) ?? 0
+    let active = try await activeSDEVersion()
+    return BlueprintResearchDefinition(
+      blueprintTypeID: blueprintTypeID,
+      blueprintName: blueprintName,
+      basePrice: header[1].flatMap(Double.init),
+      manufacturingMaterials: try materials(activity: "manufacturing"),
+      materialResearchMaterials: try materials(
+        activity: "research_material"
+      ),
+      timeResearchMaterials: try materials(activity: "research_time"),
+      materialResearchTimeSeconds: times["research_material"],
+      timeResearchTimeSeconds: times["research_time"],
+      hasUnresolvedReferences:
+        unresolvedCount > 0
+        || times["research_material"] == nil
+        || times["research_time"] == nil,
+      source: SourceIdentity(
+        provider: "CCP SDE",
+        version: String(active?.buildNumber ?? 0)
+      )
+    )
+  }
+
   public func productionDefinition(productTypeID: Int64) async throws
     -> BlueprintDefinition?
   {
@@ -857,6 +981,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   }
 
   private func loadPointer() throws -> ActivePointer? {
+    if let activePointerCache {
+      return activePointerCache
+    }
     guard fileManager.fileExists(atPath: pointerURL.path) else {
       return nil
     }
@@ -865,6 +992,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       from: Data(contentsOf: pointerURL)
     )
     try validate(pointer)
+    activePointerCache = pointer
     return pointer
   }
 
@@ -873,9 +1001,16 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     try ensureDirectories()
     let data = try JSONEncoder().encode(pointer)
     try data.write(to: pointerURL, options: .atomic)
+    activePointerCache = pointer
+    if activeDatabaseCache?.fileName != pointer.fileName {
+      activeDatabaseCache = nil
+    }
   }
 
   private func activeDatabase() throws -> SQLiteDatabase {
+    if let activeDatabaseCache {
+      return activeDatabaseCache.database
+    }
     guard let pointer = try loadPointer() else {
       throw StaticCatalogError.noActiveCatalog
     }
@@ -883,7 +1018,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     guard fileManager.fileExists(atPath: url.path) else {
       throw StaticCatalogError.missingBuild(pointer.buildNumber)
     }
-    return try SQLiteDatabase(url: url, readOnly: true)
+    let database = try SQLiteDatabase(url: url, readOnly: true)
+    activeDatabaseCache = (pointer.fileName, database)
+    return database
   }
 
   private func validate(_ pointer: ActivePointer) throws {

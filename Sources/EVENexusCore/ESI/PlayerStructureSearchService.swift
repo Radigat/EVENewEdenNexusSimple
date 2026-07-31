@@ -45,6 +45,12 @@ private struct ESIPlayerStructureDetails: Decodable, Sendable {
   }
 }
 
+private enum StructureResolutionOutcome: Sendable {
+  case resolved(PlayerStructureOption)
+  case inaccessible
+  case unavailable
+}
+
 public actor PlayerStructureSearchService {
   public static let searchScope = "esi-search.search_structures.v1"
   public static let detailScope = "esi-universe.read_structures.v1"
@@ -53,6 +59,8 @@ public actor PlayerStructureSearchService {
     "esi-industry.read_character_jobs.v1"
   public static let marketOrdersScope =
     "esi-markets.read_character_orders.v1"
+  public static let maximumResolvedStructureCount = 500
+  public static let maximumConcurrentStructureRequests = 6
 
   private let esi: ESIClient
 
@@ -171,7 +179,11 @@ public actor PlayerStructureSearchService {
         successfulSources += 1
         candidateIDs.formUnion(
           response.value.lazy
-            .filter { $0.locationType == "station" }
+            .filter {
+              $0.locationType == "other"
+                || $0.locationID
+                  >= AssetLocationKind.minimumPlayerStructureID
+            }
             .map(\.locationID)
         )
       } catch {
@@ -279,6 +291,138 @@ public actor PlayerStructureSearchService {
         provider: "ESI",
         version: EVEConstants.esiCompatibilityDate
       ),
+      diagnostics: diagnostics
+    )
+  }
+
+  /// Resolves structure IDs already present in an asset snapshot. Missing
+  /// scope, docking ACL, stale IDs, and individual failures remain explicit;
+  /// they never remove the corresponding asset location from the warehouse.
+  public func resolveKnownStructures(
+    structureIDs: Set<Int64>,
+    lease: AccessTokenLease
+  ) async -> Sourced<[PlayerStructureOption]> {
+    let source = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate
+    )
+    guard !structureIDs.isEmpty else {
+      return Sourced(
+        state: .fresh,
+        value: [],
+        source: source
+      )
+    }
+    guard lease.scopes.contains(Self.detailScope) else {
+      return Sourced(
+        state: .forbidden,
+        value: nil,
+        source: source,
+        diagnostics: [
+          "esi.structure-resolution.scope-missing:\(Self.detailScope)"
+        ]
+      )
+    }
+
+    let sortedIDs = structureIDs.sorted()
+    let acceptedIDs = Array(
+      sortedIDs.prefix(Self.maximumResolvedStructureCount)
+    )
+    var values: [PlayerStructureOption] = []
+    var inaccessible = 0
+    var unavailable = 0
+    var wasCancelled = false
+    let esi = self.esi
+    for start in stride(
+      from: 0,
+      to: acceptedIDs.count,
+      by: Self.maximumConcurrentStructureRequests
+    ) {
+      if Task.isCancelled {
+        wasCancelled = true
+        break
+      }
+      let end = min(
+        start + Self.maximumConcurrentStructureRequests,
+        acceptedIDs.count
+      )
+      let batch = acceptedIDs[start..<end]
+      let outcomes = await withTaskGroup(
+        of: StructureResolutionOutcome.self,
+        returning: [StructureResolutionOutcome].self
+      ) { group in
+        for structureID in batch {
+          group.addTask {
+            do {
+              let detail = try await esi.get(
+                ESIPlayerStructureDetails.self,
+                endpoint: ESIEndpoint(
+                  path: "/universe/structures/\(structureID)",
+                  requiresAuthorization: true,
+                  requiredScope: Self.detailScope
+                ),
+                lease: lease
+              )
+              return .resolved(
+                PlayerStructureOption(
+                  id: structureID,
+                  name: detail.value.name,
+                  ownerCorporationID: detail.value.ownerID,
+                  solarSystemID: detail.value.solarSystemID,
+                  typeID: detail.value.typeID,
+                  source: detail.source
+                )
+              )
+            } catch ESIError.forbidden {
+              return .inaccessible
+            } catch ESIError.notFound {
+              return .inaccessible
+            } catch {
+              return .unavailable
+            }
+          }
+        }
+        var collected: [StructureResolutionOutcome] = []
+        for await outcome in group {
+          collected.append(outcome)
+        }
+        return collected
+      }
+      for outcome in outcomes {
+        switch outcome {
+        case .resolved(let option): values.append(option)
+        case .inaccessible: inaccessible += 1
+        case .unavailable: unavailable += 1
+        }
+      }
+    }
+
+    var diagnostics: [String] = []
+    if sortedIDs.count > acceptedIDs.count {
+      diagnostics.append(
+        "esi.structure-resolution.limit:\(acceptedIDs.count)/\(sortedIDs.count)"
+      )
+    }
+    if inaccessible > 0 {
+      diagnostics.append(
+        "esi.structure-resolution.inaccessible:\(inaccessible)"
+      )
+    }
+    if unavailable > 0 {
+      diagnostics.append(
+        "esi.structure-resolution.unavailable:\(unavailable)"
+      )
+    }
+    if wasCancelled {
+      diagnostics.append("esi.structure-resolution.cancelled")
+    }
+    values.sort {
+      $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+    }
+    return Sourced(
+      state: diagnostics.isEmpty ? .fresh : .partial,
+      value: values,
+      source: values.first?.source ?? source,
       diagnostics: diagnostics
     )
   }

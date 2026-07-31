@@ -96,8 +96,11 @@ private struct ESIUniverseRegionDetails: Decodable, Sendable {
 }
 
 public actor SolarSystemSearchService {
+  public static let maximumConcurrentNameRequests = 4
+
   private let esi: ESIClient
   private var cachedSystems: [SolarSystemOption]?
+  private var systemIndexTask: Task<[SolarSystemOption], Error>?
   private var cachedDetails: [Int64: SolarSystemDetails] = [:]
 
   public init(esi: ESIClient) {
@@ -152,25 +155,76 @@ public actor SolarSystemSearchService {
 
   private func allSystems() async throws -> [SolarSystemOption] {
     if let cachedSystems { return cachedSystems }
+    if let systemIndexTask {
+      return try await systemIndexTask.value
+    }
+    let esi = self.esi
+    let task = Task {
+      try await Self.buildSystemIndex(esi: esi)
+    }
+    systemIndexTask = task
+    do {
+      let options = try await task.value
+      cachedSystems = options
+      systemIndexTask = nil
+      return options
+    } catch {
+      systemIndexTask = nil
+      throw error
+    }
+  }
+
+  private static func buildSystemIndex(
+    esi: ESIClient
+  ) async throws -> [SolarSystemOption] {
     let systemIDs = try await esi.get(
       [Int64].self,
       endpoint: ESIEndpoint(path: "/universe/systems")
     )
-    var names: [ESIUniverseName] = []
-    var source = systemIDs.source
-    for start in stride(from: 0, to: systemIDs.value.count, by: 1_000) {
-      try Task.checkCancellation()
-      let end = min(start + 1_000, systemIDs.value.count)
-      let response = try await esi.post(
-        [ESIUniverseName].self,
-        endpoint: ESIEndpoint(path: "/universe/names"),
-        body: Array(systemIDs.value[start..<end])
+    let chunks = stride(from: 0, to: systemIDs.value.count, by: 1_000).map {
+      start in
+      Array(
+        systemIDs.value[
+          start..<min(start + 1_000, systemIDs.value.count)
+        ]
       )
-      source = response.source
-      names.append(contentsOf: response.value)
     }
+    var namesByChunk = [[ESIUniverseName]?](
+      repeating: nil,
+      count: chunks.count
+    )
+    var source = systemIDs.source
+    var nextChunk = 0
+    try await withThrowingTaskGroup(
+      of: (Int, [ESIUniverseName], SourceIdentity).self
+    ) { group in
+      func addNextChunk() {
+        guard nextChunk < chunks.count else { return }
+        let index = nextChunk
+        let ids = chunks[index]
+        nextChunk += 1
+        group.addTask {
+          let response = try await esi.post(
+            [ESIUniverseName].self,
+            endpoint: ESIEndpoint(path: "/universe/names"),
+            body: ids
+          )
+          return (index, response.value, response.source)
+        }
+      }
+
+      for _ in 0..<min(maximumConcurrentNameRequests, chunks.count) {
+        addNextChunk()
+      }
+      while let (index, names, chunkSource) = try await group.next() {
+        namesByChunk[index] = names
+        source = chunkSource
+        addNextChunk()
+      }
+    }
+    let names = namesByChunk.compactMap { $0 }.flatMap { $0 }
     let acceptedIDs = Set(systemIDs.value)
-    let options =
+    return
       names
       .filter {
         $0.category == "solar_system" && acceptedIDs.contains($0.id)
@@ -186,7 +240,5 @@ public actor SolarSystemSearchService {
         $0.name.localizedCaseInsensitiveCompare($1.name)
           == .orderedAscending
       }
-    cachedSystems = options
-    return options
   }
 }

@@ -10,7 +10,7 @@
 | Character | `eve-character-kit` | ESI character responses | character snapshot |
 | Personal wallet | target composition using `eve-auth-kit`, `eve-esi-kit` and `eve-ui-kit` | character authorization and sourced balance | cross-character portfolio |
 | Assets | `eve-assets-kit` | paged per-character asset responses | immutable owner snapshots and station/owner warehouse projection |
-| Blueprints | `eve-blueprints-kit` | SDE definitions and ESI instances | activity candidates |
+| Blueprints | `eve-blueprints-kit` | SDE definitions and ESI instances | owned portfolio and research quote |
 | Market | `eve-market-kit` | ESI orders and prices | order snapshot and quote |
 | Reactions | `eve-reactions-kit` | SDE reaction activities | reaction candidates |
 | Industry | `eve-industry-kit` | accepted domain snapshots | industry plan snapshot |
@@ -25,18 +25,40 @@ prices are never market-price fallbacks.
 The active catalog stores the package-derived `ReactionRuleProfile` unchanged;
 the app does not derive a second set of dogma rules. SwiftData stores production
 profiles, characters, each character's complete sourced asset snapshot, global
-stock targets, plans, a mirror of the active SDE pointer and the latest
-per-character/per-domain ESI snapshot metadata. Updating a domain replaces its
-metadata and prunes older duplicates. Build-specific SDE payloads remain in
-SQLite.
+stock targets, each character's complete sourced blueprint snapshot, plans, a
+mirror of the active SDE pointer and the latest per-character/per-domain ESI
+snapshot metadata. Updating a domain replaces its metadata and prunes older
+duplicates. Build-specific SDE payloads remain in SQLite.
+
+The target also stores the normalized CCP User-Agent owner contact as an
+`AppSetting`; it is not an authentication credential. Update presentation keeps
+installed build, official build and the highest CCP `afterBuildNumber` schema
+boundary separate. A candidate exists only when no catalog is installed or the
+official build is greater than the active build. An older metadata response can
+therefore never trigger a downgrade.
 
 `AssetWarehouse` is a read-only projection over every persisted personal asset
 snapshot. It resolves bounded item/container ancestry, groups the root location
 first and the character owner second, retains inventory flags and snapshot
 freshness, and excludes unresolved roots or container cycles from allocatable
 stock. SDE supplies type names. Public ESI universe names supply NPC station
-names where available; configured ACL-protected player structures reuse their
-accepted Profile names and otherwise remain explicit IDs.
+names where available. Asset locations typed `other`, structure-range IDs
+historically typed `station`, and structure-range `item` parents absent from the
+returned asset IDs become Player Structure roots and remain allocatable. The
+last case matters because ESI may use `item` both for an actual container and
+for a structure-range root: a matching returned item ID stays a container,
+while only the unmatched high parent becomes a structure candidate. Character
+synchronization resolves candidate names and type IDs through the ACL-protected
+structure-detail route and persists successful values in the immutable asset
+snapshot. Missing scope, forbidden docking ACL and stale structure details
+produce a partial source state but never remove the structure's assets;
+unresolved names remain explicit IDs.
+
+The projection builds one item index and resolves each root once. Target
+composition caches the latest projection by persisted snapshot identity so
+Assets and Planner reuse it instead of decoding and rebuilding on every SwiftUI
+render. SDE type names are joined in chunks of at most 500 IDs rather than one
+SQLite query per asset type.
 
 `StoredStockTarget` is an owner-entered minimum per type for the combined
 warehouse. Assets remains factual and immutable. Industry derives
@@ -47,6 +69,25 @@ the shared pool does not claim that assets were transported between locations.
 Invention, copying and research facilities consume the same contract when their
 job planners are added, but version 1 still does not claim executable Science
 job planning.
+
+`BlueprintPortfolio` is a read-only target composition over every persisted
+personal blueprint snapshot. It retains owner identity, source state and
+snapshot provenance while keeping the ESI distinction between an original
+(`quantity = -1`) and a copy (`quantity = -2`). The Blueprint boundary joins a
+selected instance with its active SDE definition. Market supplies a
+provenance-bearing current adjusted-price snapshot, while Industry supplies
+the separately configured ME and TE research systems, facilities, job-cost
+multipliers, taxes and surcharges. `BlueprintResearchCostCalculator` owns the
+ten official level multipliers and returns separate step and cumulative ME/TE
+costs. SwiftUI only presents that quote.
+
+The displayed BPO value is deliberately named a replacement estimate: current
+SDE base price plus current-cost research to the instance's present ME/TE.
+It does not claim historical spend or contract-market value. BPCs are not
+researchable. A missing adjusted price, facility or SDE reference prevents an
+invented total. Blueprints with extra SDE research materials retain a blocking
+warning and omit a replacement total until their level-scaling rule has
+separate verified evidence.
 
 Planner continuity and the Production Overview are target-composition
 persistence.
@@ -88,6 +129,13 @@ explicit Profile input for indivisible oversized items. Sale
 scenarios separately freeze gross revenue, Sales Tax, Broker Fee and net
 revenue.
 
+Material valuation is independent from allocation. Industry retains separate
+Jita sell-depth quotes for `toBuy` and `fromStock`, exposes purchased and stock
+material subtotals, and includes both in material and total production cost.
+This is a current replacement-value estimate, not historical acquisition cost.
+Missing market depth for either consumed quantity keeps the affected subtotal
+and aggregate unavailable instead of valuing owned stock at zero.
+
 When recording a multi-product plan, the compact legacy Production Overview
 still allocates the aggregate installation cost in proportion to known
 material cost, or equally when no positive material cost exists. The
@@ -108,7 +156,10 @@ Manufacturing systems are a list with stable IDs. Every configured structure
 or station references one configured activity-system ID, so facilities in
 different systems can coexist in one production basis. Reaction, invention,
 blueprint copying, material research and time research retain separate system
-configurations. A public ESI universe index supplies system names and IDs.
+configurations. A public ESI universe index supplies system names and IDs. Its
+initial `/universe/names` batches use a bounded concurrency of four, and all
+concurrent searches share the same in-flight index build so that a cancelled
+debounced query cannot restart the complete fetch.
 Public system, constellation and region details supply the saved region and
 security band; the UI never offers `Unknown` as a selectable space type.
 SwiftUI submits a debounced search command only after three characters and
@@ -124,9 +175,13 @@ The target-owned catalog adapter streams the active SDE package's `typeDogma`
 records for structures, Standup service modules and rigs. It publishes
 immutable definitions to Industry; SwiftUI cannot edit Manufacturing ME/TE,
 Reaction material/time, Science job-cost/time or Reprocessing-yield
-modifiers. Service-module compatibility and enabled activities gate automatic
-facility selection. The selected structure size limits the rig picker and both
-the SDE slot count and the owner-specified maximum of three are enforced.
+modifiers. Each structure owns one physical solar-system location, while
+service-module compatibility and enabled activities make it eligible for any
+number of matching Manufacturing, Reaction or Science configurations in that
+location. Industry ranks the best eligible structure independently for every
+activity; the UI does not require a second manual structure assignment. The
+selected structure size limits the rig picker and both the SDE slot count and
+the owner-specified maximum of three are enforced.
 Laboratories enable Invention or Research activities while their job-cost/time
 bonuses remain rig-derived. ESI does not reveal the fitted service modules, so
 the owner records them explicitly and unresolved legacy/NPC capability remains
@@ -138,8 +193,17 @@ two explicit paths: name search for ACL-visible structures, and automatic
 candidate discovery from the character's asset locations, industry facilities,
 and current or historical market-order locations. Every candidate is verified
 through the ACL-protected structure-detail route and filtered to the configured
-system. NPC stations, stale IDs and forbidden details remain distinguishable
-diagnostics. ESI conditional caches are partitioned by character identity.
+system. Asset synchronization additionally resolves the concrete structure
+roots already present in the downloaded character inventory and embeds accepted
+names and type IDs in that snapshot. Detail requests are bounded to six
+concurrent calls. NPC stations, stale IDs and forbidden details remain
+distinguishable diagnostics. ESI conditional caches are partitioned by
+character identity.
+Fresh cached bodies are reused until their server expiry. The in-memory cache
+is least-recently-used bounded to 512 entries and 64 MiB, and disconnecting a
+character purges only that character's private entries. Jita order-book fan-out
+is cancellable and limited to six concurrent per-type requests; it does not
+create unbounded tasks for a large plan.
 There is no parallel structure, service-module, facility-tax or rig
 implementation in the UI.
 
@@ -183,6 +247,17 @@ for reauthorization or creates a new record; the UI never asks the owner to
 preselect the same local row. The refresh token is stored only under that
 verified character ID, so selecting one character cannot replace another
 character's credential.
+
+`EVEOnlineStatusClient` reads CCP's public Statuspage summary through a bounded
+10-second, 1-MiB transport and maps Game Server, Login and ESI independently.
+`RuntimeState` refreshes this snapshot after the previous check rather than
+bursting requests. SwiftUI presents one global service banner and uses the
+official status as the primary source. A deterministic 11:00–11:20 UTC window
+is only a fallback for the documented daily Tranquility restart; it never
+asserts that SSO or ESI failed. The character authorization progress changes
+from browser callback to SSO verification and then ESI synchronization, and a
+completed batch reports how many characters retained incomplete or unavailable
+domain states instead of calling every result complete.
 
 Each character row also presents an exclusive scope disclosure. Expanding one
 character collapses the previous selection and renders only that character's

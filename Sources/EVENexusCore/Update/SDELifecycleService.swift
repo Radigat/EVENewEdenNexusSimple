@@ -7,8 +7,32 @@ public struct SDEUpdatePreview: Equatable, Sendable {
   public let releasedAt: Date
   public let schemaHighestAfterBuild: Int
   public let schemaEntryCount: Int
-  public let requiresUpdate: Bool
-  public let requiresSchemaReview: Bool
+
+  public var availability: SDEUpdateAvailability {
+    guard let activeBuild else { return .notInstalled }
+    if officialBuild > activeBuild {
+      return .updateAvailable
+    }
+    if officialBuild < activeBuild {
+      return .localBuildAhead
+    }
+    return .current
+  }
+
+  public var requiresUpdate: Bool {
+    availability == .notInstalled || availability == .updateAvailable
+  }
+
+  public var requiresSchemaReview: Bool {
+    schemaHighestAfterBuild > (activeBuild ?? 0)
+  }
+}
+
+public enum SDEUpdateAvailability: Equatable, Sendable {
+  case notInstalled
+  case updateAvailable
+  case current
+  case localBuildAhead
 }
 
 public struct SDEActivationSummary: Equatable, Sendable {
@@ -105,10 +129,7 @@ public actor SDELifecycleService {
       officialBuild: release.buildNumber,
       releasedAt: release.releasedAt,
       schemaHighestAfterBuild: schema.highestAfterBuildNumber,
-      schemaEntryCount: schema.entryCount,
-      requiresUpdate: active?.buildNumber != release.buildNumber,
-      requiresSchemaReview:
-        schema.highestAfterBuildNumber > (active?.buildNumber ?? 0)
+      schemaEntryCount: schema.entryCount
     )
     latestPreview = preview
     return preview

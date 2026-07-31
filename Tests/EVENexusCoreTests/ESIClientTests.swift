@@ -174,6 +174,108 @@ struct ESIClientTests {
   }
 
   @Test
+  func freshResponsesAreReusedWithoutAnotherNetworkRequest() async throws {
+    let transport = ExpiringCacheTransport()
+    let now = Date(timeIntervalSince1970: 1_000)
+    let client = ESIClient(
+      transport: transport,
+      now: { now }
+    )
+
+    let first = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: ESIEndpoint(path: "/cache/fresh")
+    )
+    let second = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: ESIEndpoint(path: "/cache/fresh")
+    )
+
+    #expect(first.value.value == 1)
+    #expect(second.value.value == 1)
+    #expect(first.source == second.source)
+    #expect(await transport.requestCount == 1)
+  }
+
+  @Test
+  func responseCacheEvictsLeastRecentlyUsedEntries() async throws {
+    let transport = ExpiringCacheTransport()
+    let client = ESIClient(
+      transport: transport,
+      maximumCachedResponses: 2,
+      maximumCachedBytes: 1_024,
+      now: { Date(timeIntervalSince1970: 1_000) }
+    )
+
+    for id in 1...3 {
+      _ = try await client.get(
+        CharacterPartitionValue.self,
+        endpoint: ESIEndpoint(path: "/cache/\(id)")
+      )
+    }
+    let usage = await client.cachedResponseUsage()
+    #expect(usage.entries == 2)
+    #expect(usage.bytes > 0)
+    #expect(usage.bytes <= usage.maximumBytes)
+
+    _ = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: ESIEndpoint(path: "/cache/1")
+    )
+    #expect(await transport.requestCount == 4)
+  }
+
+  @Test
+  func disconnectPurgeRemovesOnlyTheCharactersCachedBodies() async throws {
+    let transport = ExpiringCacheTransport()
+    let client = ESIClient(
+      transport: transport,
+      now: { Date(timeIntervalSince1970: 1_000) }
+    )
+    let endpoint = ESIEndpoint(
+      path: "/private/cache",
+      requiresAuthorization: true
+    )
+    let firstLease = AccessTokenLease(
+      characterID: 1,
+      accessToken: "one",
+      expiresAt: .distantFuture,
+      scopes: []
+    )
+    let secondLease = AccessTokenLease(
+      characterID: 2,
+      accessToken: "two",
+      expiresAt: .distantFuture,
+      scopes: []
+    )
+
+    _ = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: endpoint,
+      lease: firstLease
+    )
+    _ = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: endpoint,
+      lease: secondLease
+    )
+    await client.removeCachedResponses(forCharacterID: 1)
+
+    _ = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: endpoint,
+      lease: firstLease
+    )
+    _ = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: endpoint,
+      lease: secondLease
+    )
+    #expect(await transport.requestCount == 3)
+    #expect(await client.cachedResponseUsage().entries == 2)
+  }
+
+  @Test
   func solarSystemSearchWaitsForThreeCharacters() async throws {
     let transport = SolarSystemSearchTransport()
     let service = SolarSystemSearchService(
@@ -198,10 +300,65 @@ struct ESIClientTests {
     #expect(results.map(\.name) == ["Jita", "Jitara"])
     #expect(results.map(\.id) == [30_000_142, 30_000_143])
     #expect(await transport.requestMethods == ["GET", "POST"])
-    #expect(await transport.postedIDs == [30_000_143, 30_000_142])
+    #expect(
+      await transport.postedIDs
+        == [30_000_143, 30_000_142, 30_004_807]
+    )
 
     _ = try await service.search(query: "ita")
     #expect(await transport.requestCount == 2)
+  }
+
+  @Test
+  func solarSystemSearchMatchesANameBeforeItsHyphenAtThreeCharacters()
+    async throws
+  {
+    let service = SolarSystemSearchService(
+      esi: ESIClient(transport: SolarSystemSearchTransport())
+    )
+
+    let results = try await service.search(query: "B9E")
+
+    #expect(results.map(\.name) == ["B9E-H6"])
+    #expect(results.map(\.id) == [30_004_807])
+  }
+
+  @Test
+  func cancelledSearchDoesNotRestartTheSharedUniverseIndex() async throws {
+    let transport = SolarSystemSearchTransport(postDelayMilliseconds: 80)
+    let service = SolarSystemSearchService(
+      esi: ESIClient(transport: transport)
+    )
+    let first = Task {
+      try await service.search(query: "B9E")
+    }
+    try await Task.sleep(for: .milliseconds(20))
+    first.cancel()
+
+    let results = try await service.search(query: "B9E")
+    _ = try? await first.value
+
+    #expect(results.map(\.name) == ["B9E-H6"])
+    #expect(await transport.requestCount == 2)
+  }
+
+  @Test
+  func universeNameIndexBuildUsesBoundedParallelBatches() async throws {
+    let transport = BatchedSolarSystemSearchTransport(systemCount: 4_001)
+    let service = SolarSystemSearchService(
+      esi: ESIClient(transport: transport)
+    )
+
+    let results = try await service.search(query: "SYS")
+
+    #expect(results.count == 4_001)
+    #expect(
+      await transport.maximumConcurrentPostCount > 1
+    )
+    #expect(
+      await transport.maximumConcurrentPostCount
+        <= SolarSystemSearchService.maximumConcurrentNameRequests
+    )
   }
 
   @Test
@@ -356,6 +513,56 @@ struct ESIClientTests {
         "esi.structure-discovery.jobs-scope-missing"
       )
     )
+  }
+
+  @Test
+  func resolvesKnownAssetStructuresWithoutDroppingInaccessibleIDs()
+    async
+  {
+    let service = PlayerStructureSearchService(
+      esi: ESIClient(transport: AssetStructureResolutionTransport())
+    )
+    let lease = AccessTokenLease(
+      characterID: 99,
+      accessToken: "fixture",
+      expiresAt: .distantFuture,
+      scopes: [PlayerStructureSearchService.detailScope]
+    )
+
+    let result = await service.resolveKnownStructures(
+      structureIDs: [
+        1_000_000_000_001,
+        1_000_000_000_002,
+      ],
+      lease: lease
+    )
+
+    #expect(result.state == .partial)
+    #expect(result.value?.map(\.id) == [1_000_000_000_001])
+    #expect(
+      result.diagnostics.contains(
+        "esi.structure-resolution.inaccessible:1"
+      )
+    )
+  }
+
+  @Test
+  func knownAssetStructureResolutionPreservesMissingScope() async {
+    let service = PlayerStructureSearchService(
+      esi: ESIClient(transport: AssetStructureResolutionTransport())
+    )
+    let result = await service.resolveKnownStructures(
+      structureIDs: [1_000_000_000_001],
+      lease: AccessTokenLease(
+        characterID: 99,
+        accessToken: "fixture",
+        expiresAt: .distantFuture,
+        scopes: []
+      )
+    )
+
+    #expect(result.state == .forbidden)
+    #expect(result.value == nil)
   }
 }
 
@@ -567,6 +774,28 @@ private actor CharacterPartitionTransport: ESIHTTPTransporting {
   }
 }
 
+private actor ExpiringCacheTransport: ESIHTTPTransporting {
+  private(set) var requestCount = 0
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    requestCount += 1
+    return (
+      Data(#"{"value":1}"#.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: [
+          "ETag": #""cache-fixture""#,
+          "Expires": "Wed, 30 Jul 2026 10:00:00 GMT",
+        ]
+      )!
+    )
+  }
+}
+
 private struct SolarSystemDetailsTransport: ESIHTTPTransporting {
   func data(for request: URLRequest) async throws
     -> (Data, HTTPURLResponse)
@@ -712,9 +941,14 @@ private actor FailingPostTransport: ESIHTTPTransporting {
 }
 
 private actor SolarSystemSearchTransport: ESIHTTPTransporting {
+  private let postDelayMilliseconds: Int
   private(set) var requestCount = 0
   private(set) var requestMethods: [String] = []
   private(set) var postedIDs: [Int64] = []
+
+  init(postDelayMilliseconds: Int = 0) {
+    self.postDelayMilliseconds = postDelayMilliseconds
+  }
 
   func data(for request: URLRequest) async throws
     -> (Data, HTTPURLResponse)
@@ -723,6 +957,11 @@ private actor SolarSystemSearchTransport: ESIHTTPTransporting {
     requestMethods.append(request.httpMethod ?? "GET")
     let body: String
     if request.httpMethod == "POST" {
+      if postDelayMilliseconds > 0 {
+        try await Task.sleep(
+          for: .milliseconds(postDelayMilliseconds)
+        )
+      }
       postedIDs = try JSONDecoder().decode(
         [Int64].self,
         from: request.httpBody ?? Data()
@@ -731,11 +970,12 @@ private actor SolarSystemSearchTransport: ESIHTTPTransporting {
         """
         [
           {"category":"solar_system","id":30000143,"name":"Jitara"},
-          {"category":"solar_system","id":30000142,"name":"Jita"}
+          {"category":"solar_system","id":30000142,"name":"Jita"},
+          {"category":"solar_system","id":30004807,"name":"B9E-H6"}
         ]
         """
     } else {
-      body = "[30000143,30000142]"
+      body = "[30000143,30000142,30004807]"
     }
     let response = HTTPURLResponse(
       url: request.url!,
@@ -744,6 +984,56 @@ private actor SolarSystemSearchTransport: ESIHTTPTransporting {
       headerFields: [:]
     )!
     return (Data(body.utf8), response)
+  }
+}
+
+private actor BatchedSolarSystemSearchTransport: ESIHTTPTransporting {
+  private let systemIDs: [Int64]
+  private var activePostCount = 0
+  private(set) var maximumConcurrentPostCount = 0
+
+  init(systemCount: Int) {
+    systemIDs = (0..<systemCount).map {
+      30_000_000 + Int64($0)
+    }
+  }
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let data: Data
+    if request.httpMethod == "POST" {
+      activePostCount += 1
+      maximumConcurrentPostCount = max(
+        maximumConcurrentPostCount,
+        activePostCount
+      )
+      defer { activePostCount -= 1 }
+      try await Task.sleep(for: .milliseconds(20))
+      let ids = try JSONDecoder().decode(
+        [Int64].self,
+        from: request.httpBody ?? Data()
+      )
+      let values: [[String: Any]] = ids.map {
+        [
+          "category": "solar_system",
+          "id": $0,
+          "name": "SYS-\($0)",
+        ]
+      }
+      data = try JSONSerialization.data(withJSONObject: values)
+    } else {
+      data = try JSONEncoder().encode(systemIDs)
+    }
+    return (
+      data,
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
   }
 }
 
@@ -896,6 +1186,36 @@ private struct StructureDiscoveryTransport: ESIHTTPTransporting {
       status = 404
       body = "{}"
     }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: status,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+}
+
+private actor AssetStructureResolutionTransport: ESIHTTPTransporting {
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let accessible =
+      request.url?.path == "/universe/structures/1000000000001"
+    let status = accessible ? 200 : 403
+    let body =
+      accessible
+      ? """
+      {
+        "name":"Low-sec Industry Hub",
+        "owner_id":98000001,
+        "solar_system_id":30000142,
+        "type_id":35826
+      }
+      """
+      : "{}"
     return (
       Data(body.utf8),
       HTTPURLResponse(

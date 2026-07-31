@@ -5,11 +5,18 @@ import SwiftUI
 @main
 struct EVENexusSimpleApp: App {
   @StateObject private var runtime = RuntimeState()
+  @AppStorage(AppLanguage.storageKey)
+  private var storedLanguage = AppLanguage.defaultLanguage.rawValue
+
+  private var appLanguage: AppLanguage {
+    AppLanguage(rawValue: storedLanguage) ?? .english
+  }
 
   var body: some Scene {
     WindowGroup {
       ContentView()
         .environmentObject(runtime)
+        .environment(\.locale, appLanguage.locale)
         .preferredColorScheme(.dark)
     }
     .modelContainer(

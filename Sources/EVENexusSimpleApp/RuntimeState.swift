@@ -2,6 +2,13 @@ import AppKit
 import EVENexusCore
 import Foundation
 
+enum CharacterConnectionPhase: Equatable {
+  case idle
+  case waitingForBrowser
+  case completingSSO
+  case synchronizingESI
+}
+
 @MainActor
 final class RuntimeState: ObservableObject {
   @Published var productionBasis = ProductionBasis()
@@ -12,6 +19,7 @@ final class RuntimeState: ObservableObject {
   @Published var statusMessage = "Ready"
   @Published var errorMessage: String?
   @Published var updatePreview: SDEUpdatePreview?
+  @Published private(set) var sdeLastCheckedAt: Date?
   @Published var activeSDEBuild: Int?
   @Published var activeSDEContentSHA256: String?
   @Published var installationPhase: String?
@@ -29,14 +37,23 @@ final class RuntimeState: ObservableObject {
     >?
   @Published var isLoadingProfileReferenceData = false
   @Published private(set) var isPlannerConfigurationReady = false
+  @Published private(set) var eveOnlineServiceStatus: EVEOnlineServiceStatusSnapshot?
+  @Published private(set) var eveOnlineStatusCheckFailed = false
+  @Published private(set) var characterConnectionPhase: CharacterConnectionPhase = .idle
 
   private let esi: ESIClient
+  private let eveOnlineStatusClient = EVEOnlineStatusClient()
   private let solarSystemSearch: SolarSystemSearchService
   private let playerStructureSearch: PlayerStructureSearchService
   private let universeNameService: UniverseNameService
   private let catalog: SQLiteStaticCatalog
+  private let assetWarehouseProjectionCache =
+    StoredAssetWarehouseProjectionCache()
   private let dataRoot: URL
   private var authServices: [String: EVESSOService] = [:]
+  private var hasLoadedProfileReferenceData = false
+  private var profileReferenceRefreshTask: Task<Void, Never>?
+  private var lastEVEOnlineStatusCheckAt: Date?
 
   init() {
     let esi = ESIClient()
@@ -64,7 +81,10 @@ final class RuntimeState: ObservableObject {
         .appendingPathComponent("sde", isDirectory: true)
         .appendingPathComponent("catalog-store", isDirectory: true)
     )
-    Task { await refreshActiveBuild() }
+    Task {
+      await refreshActiveBuild()
+      await refreshEVEOnlineServiceStatus()
+    }
   }
 
   func preparePlannerConfiguration(encodedBasis: Data?) async {
@@ -88,7 +108,7 @@ final class RuntimeState: ObservableObject {
     input: String,
     manualStockInput: String = "",
     existingReservations: [StockAllocation] = [],
-    assetInventories: [AssetOwnerInventory] = [],
+    assetWarehouse: AssetWarehouse? = nil,
     stockTargets: [Int64: Int64] = [:]
   ) async {
     await perform("Calculating production plan") {
@@ -96,9 +116,10 @@ final class RuntimeState: ObservableObject {
         throw StaticCatalogError.noActiveCatalog
       }
       let planner = IndustryPlanner()
+      let planningCatalog = MemoizedIndustryCatalog(base: catalog)
       let typeIDs = try await planner.requiredMarketTypeIDs(
         input: input,
-        catalog: catalog
+        catalog: planningCatalog
       )
       let marketService = JitaMarketService(esi: esi)
       async let market = marketService.orderSnapshot(typeIDs: typeIDs)
@@ -113,8 +134,10 @@ final class RuntimeState: ObservableObject {
       if !manualStock.isEmpty {
         availableStock = manualStock
         assetSource = StockSource(kind: .manual, reference: "planner-input")
-      } else if warehouseStockEnabled, !assetInventories.isEmpty {
-        let warehouse = AssetWarehouse(inventories: assetInventories)
+      } else if warehouseStockEnabled,
+        let warehouse = assetWarehouse,
+        !warehouse.snapshotIDs.isEmpty
+      {
         let availability = warehouse.availability(
           targetQuantities: stockTargets
         )
@@ -173,7 +196,7 @@ final class RuntimeState: ObservableObject {
         manufacturingProfile: manufacturingProfile,
         reactionProfile: configuredReaction,
         productionBasis: productionBasis,
-        catalog: catalog,
+        catalog: planningCatalog,
         market: values.0,
         adjustedPrices: values.1,
         systemIndices: values.2,
@@ -245,13 +268,17 @@ final class RuntimeState: ObservableObject {
   func resolveAssetTypeNames(_ typeIDs: Set<Int64>) async
     -> [Int64: String]
   {
-    var result: [Int64: String] = [:]
-    for typeID in typeIDs.sorted() {
-      if let name = try? await catalog.typeName(id: typeID) {
-        result[typeID] = name
-      }
-    }
-    return result
+    (try? await catalog.typeNames(ids: typeIDs)) ?? [:]
+  }
+
+  func prepareAssetWarehouse(
+    identity: String,
+    payloads: [StoredAssetSnapshotPayload]
+  ) async -> PreparedAssetWarehouse {
+    await assetWarehouseProjectionCache.prepare(
+      identity: identity,
+      payloads: payloads
+    )
   }
 
   func resolveAssetLocationNames(_ locationIDs: Set<Int64>) async
@@ -262,6 +289,107 @@ final class RuntimeState: ObservableObject {
 
   func resolveAssetTypeID(named name: String) async throws -> Int64? {
     try await catalog.typeID(named: name)
+  }
+
+  func blueprintResearchQuote(
+    for instance: OwnedBlueprintInstance
+  ) async throws -> BlueprintResearchCostQuote {
+    async let definitionValue = catalog.blueprintResearchDefinition(
+      blueprintTypeID: instance.blueprintTypeID
+    )
+    async let priceValue = JitaMarketService(esi: esi)
+      .adjustedPriceSnapshot()
+    let definition = try await definitionValue
+    guard let definition else {
+      throw BlueprintResearchError.definitionUnavailable(
+        instance.blueprintTypeID
+      )
+    }
+    let prices = try await priceValue
+    if industrySystemIndices == nil {
+      industrySystemIndices = await loadIndustrySystemIndices()
+    }
+    let pricing = BlueprintResearchPricingInput(
+      adjustedPrices: prices.prices,
+      adjustedPriceSource: prices.source,
+      materialFacility: researchFacilityContext(
+        activity: .materialEfficiency
+      ),
+      timeFacility: researchFacilityContext(
+        activity: .timeEfficiency
+      )
+    )
+    return BlueprintResearchCostCalculator.quote(
+      instance: instance,
+      definition: definition,
+      pricing: pricing
+    )
+  }
+
+  private func researchFacilityContext(
+    activity: BlueprintResearchActivity
+  ) -> BlueprintResearchFacilityContext? {
+    let industryActivity = activity.industryActivity
+    guard
+      let system = productionBasis.systemConfiguration(
+        for: industryActivity
+      ),
+      system.solarSystemID > 0,
+      let selection = productionBasis.scienceSelection(
+        for: industryActivity
+      ),
+      let structure = productionBasis.structure(id: selection.structureID)
+    else { return nil }
+
+    let index: Double
+    let source: SourceIdentity
+    let indexNeedsReview: Bool
+    if let override = system.costIndexOverride,
+      override.isFinite,
+      override >= 0
+    {
+      index = override
+      source = SourceIdentity(
+        provider: "Production Basis",
+        version: productionBasis.ruleVersion
+      )
+      indexNeedsReview = false
+    } else {
+      guard
+        let sourcedIndices = industrySystemIndices,
+        let systems = sourcedIndices.value,
+        let systemIndices = systems.first(where: {
+          $0.solarSystemID == system.solarSystemID
+        }),
+        let activityIndex = systemIndices.indices.first(where: {
+          $0.activity == industryActivity.costActivity
+        }),
+        activityIndex.value.isFinite,
+        activityIndex.value >= 0
+      else { return nil }
+      index = activityIndex.value
+      source = sourcedIndices.source
+      indexNeedsReview = sourcedIndices.state != .fresh
+    }
+
+    let alphaRate =
+      productionBasis.cloneState == .alpha
+      ? IndustryRuleSet.current.alphaSurchargeRate : 0
+    return BlueprintResearchFacilityContext(
+      activity: activity,
+      solarSystemID: system.solarSystemID,
+      solarSystemName: system.solarSystemName,
+      facilityName: structure.displayName,
+      systemCostIndex: index,
+      jobCostMultiplier: selection.jobCostMultiplier,
+      facilityTaxRate: structure.facilityTaxRate,
+      sccSurchargeRate: IndustryRuleSet.current.researchSCCRate,
+      alphaSurchargeRate: alphaRate,
+      needsReview:
+        selection.needsReview
+        || indexNeedsReview,
+      source: source
+    )
   }
 
   func searchSolarSystems(matching query: String) async throws
@@ -310,20 +438,31 @@ final class RuntimeState: ObservableObject {
     )
   }
 
-  func refreshProfileReferenceData() async {
-    isLoadingProfileReferenceData = true
-    defer { isLoadingProfileReferenceData = false }
-    async let indices = loadIndustrySystemIndices()
-    async let skills = loadScienceSkillDefinitions()
-    async let facilities = loadIndustryFacilityReferences()
-    let values = await (indices, skills, facilities)
-    industrySystemIndices = values.0
-    scienceSkillDefinitions = values.1
-    industryFacilityReferences = values.2
-    if let reference = values.2.value {
-      productionBasis.applyFacilityReferences(reference)
+  func refreshProfileReferenceData(force: Bool = false) async {
+    if let profileReferenceRefreshTask {
+      await profileReferenceRefreshTask.value
+      return
     }
-    await refreshConfiguredSystemDetails()
+    guard force || !hasLoadedProfileReferenceData else { return }
+    isLoadingProfileReferenceData = true
+    let task = Task { @MainActor in
+      async let indices = loadIndustrySystemIndices()
+      async let skills = loadScienceSkillDefinitions()
+      async let facilities = loadIndustryFacilityReferences()
+      let values = await (indices, skills, facilities)
+      industrySystemIndices = values.0
+      scienceSkillDefinitions = values.1
+      industryFacilityReferences = values.2
+      if let reference = values.2.value {
+        productionBasis.applyFacilityReferences(reference)
+      }
+      await refreshConfiguredSystemDetails()
+      hasLoadedProfileReferenceData = true
+      isLoadingProfileReferenceData = false
+    }
+    profileReferenceRefreshTask = task
+    await task.value
+    profileReferenceRefreshTask = nil
   }
 
   func syncCharacterCapabilities(
@@ -409,12 +548,25 @@ final class RuntimeState: ObservableObject {
     let systemIDs = Set(
       productionBasis.configuredActivitySystems.map(\.solarSystemID)
     )
-    for systemID in systemIDs where systemID > 0 {
-      guard
-        let details = try? await solarSystemSearch.details(
-          systemID: systemID
-        )
-      else { continue }
+    let acceptedIDs = systemIDs.filter { $0 > 0 }.sorted()
+    let details = await withTaskGroup(
+      of: SolarSystemDetails?.self,
+      returning: [SolarSystemDetails].self
+    ) { group in
+      for systemID in acceptedIDs {
+        group.addTask { [solarSystemSearch] in
+          try? await solarSystemSearch.details(systemID: systemID)
+        }
+      }
+      var values: [SolarSystemDetails] = []
+      for await details in group {
+        if let details {
+          values.append(details)
+        }
+      }
+      return values.sorted { $0.id < $1.id }
+    }
+    for details in details {
       productionBasis.applySystemDetails(details)
     }
   }
@@ -423,6 +575,7 @@ final class RuntimeState: ObservableObject {
     await perform("Checking current SDE metadata") {
       let service = try makeSDELifecycle(ownerContact: ownerContact)
       updatePreview = try await service.check()
+      sdeLastCheckedAt = .now
     }
   }
 
@@ -454,6 +607,8 @@ final class RuntimeState: ObservableObject {
   func connectCharacter(clientID: String) async throws
     -> AuthorizationSnapshot
   {
+    characterConnectionPhase = .waitingForBrowser
+    defer { characterConnectionPhase = .idle }
     let service = authService(clientID: clientID)
     let pending = try await service.beginAuthorization()
     let server = LoopbackCallbackServer()
@@ -463,10 +618,12 @@ final class RuntimeState: ObservableObject {
     let callback = try await server.waitForCallback(
       expectedState: pending.state
     )
+    characterConnectionPhase = .completingSSO
     let (authorization, lease) = try await service.completeAuthorization(
       callbackURL: callback,
       pending: pending
     )
+    characterConnectionPhase = .synchronizingESI
     lastCharacterSync = await CharacterSyncService(esi: esi).synchronize(
       authorization: authorization,
       lease: lease
@@ -494,6 +651,7 @@ final class RuntimeState: ObservableObject {
   ) async throws {
     let service = authService(clientID: clientID)
     try await service.revokeLocalAuthorization(characterID: characterID)
+    await esi.removeCachedResponses(forCharacterID: characterID)
     if lastCharacterSync?.authorization.characterID == characterID {
       lastCharacterSync = nil
       selectedAssetLocationID = nil
@@ -534,6 +692,25 @@ final class RuntimeState: ObservableObject {
     activeSDEContentSHA256 = active?.contentSHA256
   }
 
+  func refreshEVEOnlineServiceStatus(force: Bool = false) async {
+    let now = Date()
+    if !force,
+      let lastEVEOnlineStatusCheckAt,
+      now.timeIntervalSince(lastEVEOnlineStatusCheckAt) < 60
+    {
+      return
+    }
+    lastEVEOnlineStatusCheckAt = now
+    do {
+      eveOnlineServiceStatus = try await eveOnlineStatusClient.fetch()
+      eveOnlineStatusCheckFailed = false
+    } catch is CancellationError {
+      return
+    } catch {
+      eveOnlineStatusCheckFailed = true
+    }
+  }
+
   private func makeSDELifecycle(ownerContact: String) throws
     -> SDELifecycleService
   {
@@ -552,10 +729,16 @@ final class RuntimeState: ObservableObject {
     statusMessage = status
     defer {
       isWorking = false
-      if errorMessage == nil { statusMessage = "Ready" }
+      if errorMessage == nil, statusMessage == status {
+        statusMessage = "Ready"
+      }
     }
     do {
       try await operation()
+    } catch is CancellationError {
+      statusMessage = "Cancelled"
+    } catch ESIError.cancelled {
+      statusMessage = "Cancelled"
     } catch {
       errorMessage = String(describing: error)
       statusMessage = "Failed"

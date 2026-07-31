@@ -167,7 +167,7 @@ struct ProductionBookView: View {
       }
     }
     .padding(DesignTokens.spacingLG)
-    .navigationTitle("Production Overview")
+    .navigationTitle(AppLocalization.text("Production Overview"))
     .confirmationDialog(
       "Produktionseintrag löschen?",
       isPresented: $isConfirmingDeletion,
@@ -201,7 +201,7 @@ struct ProductionBookView: View {
     value: String,
     exactValue: Double? = nil
   ) -> some View {
-    Panel(title: title) {
+    Panel(title: LocalizedStringKey(title)) {
       Text(value)
         .font(.title3.monospacedDigit())
         .foregroundStyle(DesignTokens.highlight)
@@ -486,7 +486,7 @@ private struct ProductionOverviewGrid: View {
     Text(
       value?.formatted(
         .percent
-          .locale(Locale(identifier: "de_DE"))
+          .locale(AppLocalization.currentLanguage.locale)
           .precision(.fractionLength(0...1))
       )
         ?? "—"
@@ -498,7 +498,7 @@ private struct ProductionOverviewGrid: View {
     .help(
       value?.formatted(
         .percent
-          .locale(Locale(identifier: "de_DE"))
+          .locale(AppLocalization.currentLanguage.locale)
           .precision(.fractionLength(0...4))
       ) ?? "Wert nicht verfügbar"
     )
@@ -770,10 +770,10 @@ private func compactISK(
   let scaledValue = unit.map { value / $0.threshold } ?? value
   let number = scaledValue.formatted(
     .number
-      .locale(Locale(identifier: "de_DE"))
+      .locale(AppLocalization.currentLanguage.locale)
       .precision(.fractionLength(0...4))
   )
-  let suffix = unit.map { " \($0.suffix)" } ?? ""
+  let suffix = unit.map { " \($0.suffix.localizedUI)" } ?? ""
   return number + suffix + (includesCurrency ? " ISK" : "")
 }
 
@@ -781,7 +781,7 @@ private func exactISK(_ value: Double) -> String {
   guard value.isFinite else { return "—" }
   return value.formatted(
     .currency(code: "ISK")
-      .locale(Locale(identifier: "de_DE"))
+      .locale(AppLocalization.currentLanguage.locale)
       .precision(.fractionLength(0...2))
   )
 }
@@ -802,13 +802,13 @@ private func compactCount(_ value: Int64) -> String {
   guard let unit else { return exactCount(value) }
   return (numericValue / unit.threshold).formatted(
     .number
-      .locale(Locale(identifier: "de_DE"))
+      .locale(AppLocalization.currentLanguage.locale)
       .precision(.fractionLength(0...2))
-  ) + " " + unit.suffix
+  ) + " " + unit.suffix.localizedUI
 }
 
 private func exactCount(_ value: Int64) -> String {
   value.formatted(
-    .number.locale(Locale(identifier: "de_DE"))
+    .number.locale(AppLocalization.currentLanguage.locale)
   )
 }

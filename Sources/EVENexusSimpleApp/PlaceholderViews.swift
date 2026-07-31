@@ -29,6 +29,12 @@ struct PlannerView: View {
   @State private var persistenceMessage: String?
   @State private var persistenceError: String?
   @State private var shoppingListCopyStatus: ShoppingListCopyStatus?
+  @State private var assetWarehouse = AssetWarehouse(inventories: [])
+  @State private var warehouseFactualQuantities: [Int64: Int64] = [:]
+  @State private var isPreparingAssetWarehouse = false
+  @State private var calculationTask: Task<Void, Never>?
+  @State private var isImmediateSaleDetailsExpanded = false
+  @State private var isListedSaleDetailsExpanded = false
 
   var body: some View {
     ScrollView {
@@ -52,20 +58,19 @@ struct PlannerView: View {
             .accessibilityLabel("Production jobs")
             .accessibilityIdentifier("planner.input")
           HStack {
-            Button("Validate") {
-              parseResult = ProductionInputParser.parse(input)
-            }
             Button("Calculate") {
-              Task {
+              calculationTask = Task { @MainActor in
+                defer { calculationTask = nil }
                 guard runtime.isPlannerConfigurationReady else { return }
                 persistDraft()
                 await runtime.calculate(
                   input: input,
                   manualStockInput: manualStockInput,
                   existingReservations: activeReservations,
-                  assetInventories: assetInventories,
+                  assetWarehouse: assetWarehouse,
                   stockTargets: targetQuantities
                 )
+                guard !Task.isCancelled else { return }
                 guard runtime.errorMessage == nil, let plan = runtime.plan
                 else { return }
                 saveActivePlan(plan)
@@ -75,22 +80,42 @@ struct PlannerView: View {
             .buttonStyle(.borderedProminent)
             .disabled(
               !parseResult.isValid || runtime.isWorking
+                || isPreparingAssetWarehouse
                 || !runtime.isPlannerConfigurationReady
             )
             Spacer()
             if runtime.isWorking {
               ProgressView().controlSize(.small)
+              Button("Cancel") {
+                calculationTask?.cancel()
+              }
+              .buttonStyle(.bordered)
+              .accessibilityIdentifier("planner.cancel")
             }
-            Text("\(parseResult.requests.count) valid products")
-              .font(.callout.monospacedDigit())
+            Label(
+              "\(parseResult.requests.count) valid products",
+              systemImage:
+                parseResult.errors.isEmpty
+                ? "checkmark.circle" : "exclamationmark.triangle"
+            )
+            .font(.callout.monospacedDigit())
+            .help("The input is checked automatically while typing.")
           }
           Toggle(
             "Use combined warehouse from all synchronized characters",
             isOn: $runtime.warehouseStockEnabled
           )
           .help(
-            "Uses every stored character asset snapshot. Configured target quantities remain protected and are not allocated to this plan."
+            "Uses every stored character asset snapshot. Configured target quantities remain protected. Used warehouse materials remain included in total production cost at their current Jita replacement value."
           )
+          if isPreparingAssetWarehouse {
+            Label(
+              "Preparing the combined warehouse once…",
+              systemImage: "shippingbox.and.arrow.backward"
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
           DisclosureGroup("Manual stock") {
             TextEditor(text: $manualStockInput)
               .font(.body.monospaced())
@@ -156,18 +181,22 @@ struct PlannerView: View {
       }
       .padding(DesignTokens.spacingLG)
     }
-    .navigationTitle("Planner")
+    .navigationTitle(AppLocalization.text("Planner"))
     .onAppear {
       restoreStateIfNeeded()
       parseResult = ProductionInputParser.parse(input)
     }
     .onDisappear {
+      calculationTask?.cancel()
       persistDraft(reportErrors: false)
     }
     .onChange(of: input) {
       parseResult = ProductionInputParser.parse(input)
       persistenceMessage = nil
       shoppingListCopyStatus = nil
+    }
+    .task(id: assetProjectionIdentity) {
+      await prepareAssetWarehouse()
     }
   }
 
@@ -184,7 +213,15 @@ struct PlannerView: View {
       spacing: DesignTokens.spacingMD
     ) {
       Panel(title: "Costs") {
-        metric("Materials", plan.materialCost)
+        metric("Materials (total)", plan.materialCost)
+        metric(
+          "Materials to buy",
+          plan.costBreakdown?.purchasedMaterialCost
+        )
+        metric(
+          stockCostLabel(for: plan),
+          plan.costBreakdown?.stockMaterialCost
+        )
         metric(
           "BPC/BPO",
           plan.costBreakdown?.blueprintCosts?.total
@@ -210,7 +247,7 @@ struct PlannerView: View {
             }
         )
         Text(
-          "System-index cost is part of Installation. Sales taxes and broker fees reduce revenue and are shown separately."
+          "Warehouse and manual-stock materials remain included at current Jita replacement value. System-index cost is part of Installation. Sales taxes and broker fees reduce revenue and are shown separately."
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
@@ -225,20 +262,18 @@ struct PlannerView: View {
         metric("Listed sales tax", plan.listedSale.salesTax)
         metric("Listed broker fee", plan.listedSale.brokerFee)
       }
-      Panel(title: "Immediate sale") {
-        metric("Gross revenue", plan.immediateSale.grossRevenue)
-        metric("Net revenue", plan.immediateSale.grossOrNetRevenue)
-        metric("Profit", plan.immediateSale.profit)
-        percent("Margin", plan.immediateSale.margin)
-        percent("ROI", plan.immediateSale.roi)
-      }
-      Panel(title: "Listed sale") {
-        metric("Gross revenue", plan.listedSale.grossRevenue)
-        metric("Net revenue", plan.listedSale.grossOrNetRevenue)
-        metric("Profit", plan.listedSale.profit)
-        percent("Margin", plan.listedSale.margin)
-        percent("ROI", plan.listedSale.roi)
-      }
+      saleScenarioPanel(
+        title: "Immediate sale",
+        result: plan.immediateSale,
+        totalCost: plan.costBreakdown?.totalProductionCost,
+        plan: plan
+      )
+      saleScenarioPanel(
+        title: "Listed sale",
+        result: plan.listedSale,
+        totalCost: plan.costBreakdown?.totalProductionCost,
+        plan: plan
+      )
     }
     if let logistics = plan.costBreakdown?.logistics {
       logisticsPanel(logistics)
@@ -324,14 +359,365 @@ struct PlannerView: View {
     }
   }
 
-  private func percent(_ label: String, _ value: Double?) -> some View {
-    LabeledContent(
-      label,
-      value: value.map {
-        $0.formatted(.percent.precision(.fractionLength(2)))
-      } ?? "Unavailable"
+  private func saleScenarioPanel(
+    title: String,
+    result: SaleScenarioResult,
+    totalCost: Double?,
+    plan: IndustryPlanSnapshot
+  ) -> some View {
+    Panel(title: LocalizedStringKey(title)) {
+      Text(scenarioSummary(result.scenario))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+
+      explainedMetric(
+        "Gross revenue",
+        result.grossRevenue,
+        explanation: grossRevenueExplanation(for: result.scenario)
+      )
+      explainedMetric(
+        "Net revenue",
+        result.grossOrNetRevenue,
+        explanation:
+          "Gross revenue minus sales tax and broker fee. This is the amount left from the sale before production costs."
+      )
+      explainedMetric(
+        "Profit",
+        result.profit,
+        explanation:
+          "Net revenue minus all production costs shown in the Costs panel. A negative value means the plan would make a loss."
+      )
+      explainedPercent(
+        "Margin",
+        result.margin,
+        explanation:
+          "Profit divided by net revenue. It shows how much of every ISK received after market fees remains as profit."
+      )
+      explainedPercent(
+        "ROI",
+        result.roi,
+        explanation:
+          "Profit divided by total production cost. It shows the estimated return on the ISK invested in this production plan."
+      )
+
+      Button {
+        toggleSaleDetails(for: result.scenario)
+      } label: {
+        HStack {
+          Text(
+            isSaleDetailsExpanded(result.scenario)
+              ? "Hide calculation details"
+              : "Show calculation details"
+          )
+          Spacer()
+          Image(
+            systemName:
+              isSaleDetailsExpanded(result.scenario)
+              ? "chevron.down" : "chevron.right"
+          )
+          .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(
+        isSaleDetailsExpanded(result.scenario)
+          ? "Hide calculation details"
+          : "Show calculation details"
+      )
+      .accessibilityValue(
+        isSaleDetailsExpanded(result.scenario) ? "Expanded" : "Collapsed"
+      )
+      .accessibilityIdentifier(
+        "planner.sale.\(result.scenario.rawValue).details"
+      )
+
+      if isSaleDetailsExpanded(result.scenario) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+          calculationDetail(
+            title: "Market valuation",
+            text: marketValuationDetail(for: result)
+          )
+          calculationDetail(
+            title: "Net revenue",
+            text: netRevenueEquation(result)
+          )
+          calculationDetail(
+            title: "Profit",
+            text: profitEquation(result, totalCost: totalCost)
+          )
+          calculationDetail(
+            title: "Margin",
+            text: percentageEquation(
+              numerator: result.profit,
+              denominator: result.grossOrNetRevenue,
+              result: result.margin
+            )
+          )
+          calculationDetail(
+            title: "ROI",
+            text: percentageEquation(
+              numerator: result.profit,
+              denominator: totalCost,
+              result: result.roi
+            )
+          )
+
+          if !result.quotes.isEmpty {
+            Divider()
+            Text("Market inputs")
+              .font(.caption.bold())
+              .foregroundStyle(DesignTokens.textSecondary)
+            ForEach(result.quotes) { quote in
+              marketQuoteDetail(
+                quote,
+                scenario: result.scenario,
+                result: result,
+                productName: productName(for: quote.typeID, in: plan)
+              )
+            }
+          }
+        }
+        .padding(.top, DesignTokens.spacingSM)
+      }
+    }
+  }
+
+  private func explainedMetric(
+    _ label: String,
+    _ value: Double?,
+    explanation: String
+  ) -> some View {
+    ExplainedPlannerMetricRow(
+      label: label,
+      value: formatISK(value),
+      explanation: explanation,
+      highlightsValue: true
     )
-    .fontDesign(.monospaced)
+  }
+
+  private func explainedPercent(
+    _ label: String,
+    _ value: Double?,
+    explanation: String
+  ) -> some View {
+    ExplainedPlannerMetricRow(
+      label: label,
+      value: formatPercent(value),
+      explanation: explanation,
+      highlightsValue: false
+    )
+  }
+
+  private func isSaleDetailsExpanded(_ scenario: PriceScenario) -> Bool {
+    switch scenario {
+    case .immediateSale:
+      isImmediateSaleDetailsExpanded
+    case .listedSale:
+      isListedSaleDetailsExpanded
+    case .materialBuy:
+      false
+    }
+  }
+
+  private func toggleSaleDetails(for scenario: PriceScenario) {
+    switch scenario {
+    case .immediateSale:
+      isImmediateSaleDetailsExpanded.toggle()
+    case .listedSale:
+      isListedSaleDetailsExpanded.toggle()
+    case .materialBuy:
+      break
+    }
+  }
+
+  private func calculationDetail(
+    title: String,
+    text: String
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Text(LocalizedStringKey(title))
+        .font(.caption.bold())
+      Text(text)
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+        .textSelection(.enabled)
+    }
+  }
+
+  private func marketQuoteDetail(
+    _ quote: PriceQuote,
+    scenario: PriceScenario,
+    result: SaleScenarioResult,
+    productName: String
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Text(productName)
+        .font(.caption.bold())
+      Text(quoteDetail(quote, scenario: scenario, result: result))
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+        .textSelection(.enabled)
+    }
+    .padding(.vertical, DesignTokens.spacingXS)
+  }
+
+  private func scenarioSummary(_ scenario: PriceScenario) -> String {
+    switch scenario {
+    case .immediateSale:
+      "Sells the planned output into current Jita IV-4 buy orders, starting with the highest price. The full requested quantity must be covered."
+    case .listedSale:
+      "Estimates a sell order at the current lowest Jita IV-4 sell price. It assumes the full quantity sells at that price; competition, price changes, relisting, and time to sale are not simulated."
+    case .materialBuy:
+      "Uses current Jita IV-4 sell orders to estimate a material purchase."
+    }
+  }
+
+  private func grossRevenueExplanation(
+    for scenario: PriceScenario
+  ) -> String {
+    switch scenario {
+    case .immediateSale:
+      "The sum of planned product quantities multiplied by the current Jita IV-4 buy orders that can fill them, from highest price downward."
+    case .listedSale:
+      "The planned product quantities multiplied by the current lowest Jita IV-4 sell-order price for each product."
+    case .materialBuy:
+      "The material quantity multiplied by the current Jita IV-4 sell-order prices needed to fill it."
+    }
+  }
+
+  private func marketValuationDetail(
+    for result: SaleScenarioResult
+  ) -> String {
+    let quotedProducts = result.quotes.count
+    let quotedUnits = result.quotes.reduce(Int64(0)) {
+      safeAdd($0, $1.quantity)
+    }
+    let filledUnits = result.quotes.reduce(Int64(0)) {
+      safeAdd($0, $1.filledQuantity)
+    }
+    let productText =
+      "\(quotedProducts) \(quotedProducts == 1 ? "product" : "products")"
+    switch result.scenario {
+    case .immediateSale:
+      return
+        "\(productText), \(quotedUnits.formatted()) planned units, \(filledUnits.formatted()) units matched against Jita IV-4 buy orders. Gross revenue: \(formatISK(result.grossRevenue))."
+    case .listedSale:
+      return
+        "\(productText), \(quotedUnits.formatted()) planned units, valued at the current lowest Jita IV-4 sell-order price. Gross revenue: \(formatISK(result.grossRevenue))."
+    case .materialBuy:
+      return
+        "\(productText), \(quotedUnits.formatted()) units valued against Jita IV-4 sell orders."
+    }
+  }
+
+  private func netRevenueEquation(_ result: SaleScenarioResult) -> String {
+    guard let gross = result.grossRevenue,
+      let salesTax = result.salesTax,
+      let brokerFee = result.brokerFee,
+      let net = result.grossOrNetRevenue
+    else {
+      return "Unavailable because at least one market or fee input is missing."
+    }
+    let salesTaxRate = rate(amount: salesTax, base: gross)
+    let brokerFeeRate = rate(amount: brokerFee, base: gross)
+    return
+      "\(formatISK(gross)) gross − \(formatISK(salesTax)) sales tax (\(formatPercent(salesTaxRate))) − \(formatISK(brokerFee)) broker fee (\(formatPercent(brokerFeeRate))) = \(formatISK(net)) net revenue."
+  }
+
+  private func profitEquation(
+    _ result: SaleScenarioResult,
+    totalCost: Double?
+  ) -> String {
+    guard let net = result.grossOrNetRevenue,
+      let totalCost,
+      let profit = result.profit
+    else {
+      return "Unavailable because net revenue or total production cost is missing."
+    }
+    return
+      "\(formatISK(net)) net revenue − \(formatISK(totalCost)) total production cost = \(formatISK(profit)) profit."
+  }
+
+  private func percentageEquation(
+    numerator: Double?,
+    denominator: Double?,
+    result: Double?
+  ) -> String {
+    guard let numerator, let denominator, let result else {
+      return "Unavailable because one of the required values is missing or zero."
+    }
+    return
+      "\(formatISK(numerator)) ÷ \(formatISK(denominator)) × 100 = \(formatPercent(result))."
+  }
+
+  private func quoteDetail(
+    _ quote: PriceQuote,
+    scenario: PriceScenario,
+    result: SaleScenarioResult
+  ) -> String {
+    let capturedAt = quote.capturedAt.formatted(
+      date: .abbreviated,
+      time: .shortened
+    )
+    guard quote.isComplete else {
+      return
+        "\(quote.filledQuantity.formatted()) of \(quote.quantity.formatted()) units covered · quote incomplete · market snapshot \(capturedAt)."
+    }
+    switch scenario {
+    case .immediateSale, .materialBuy:
+      return
+        "\(quote.quantity.formatted()) units × \(formatISK(quote.weightedUnitPrice)) weighted market price = \(formatISK(quote.total)) · snapshot \(capturedAt)."
+    case .listedSale:
+      let grossUnitPrice = listedGrossUnitPrice(
+        quote: quote,
+        result: result
+      )
+      return
+        "\(quote.quantity.formatted()) units × \(formatISK(grossUnitPrice)) lowest sell-order price = \(formatISK(grossUnitPrice.map { $0 * Double(quote.quantity) })) gross · snapshot \(capturedAt)."
+    }
+  }
+
+  private func listedGrossUnitPrice(
+    quote: PriceQuote,
+    result: SaleScenarioResult
+  ) -> Double? {
+    guard let weightedNetPrice = quote.weightedUnitPrice,
+      let gross = result.grossRevenue,
+      gross > 0,
+      let salesTax = result.salesTax,
+      let brokerFee = result.brokerFee
+    else { return nil }
+    let retainedShare = 1 - (salesTax + brokerFee) / gross
+    guard retainedShare > 0 else { return nil }
+    return weightedNetPrice / retainedShare
+  }
+
+  private func productName(
+    for typeID: Int64,
+    in plan: IndustryPlanSnapshot
+  ) -> String {
+    plan.nodes.first {
+      $0.typeID == typeID && $0.action == .produce
+        && $0.topLevelRequestID != nil
+    }?.name ?? "Type \(typeID)"
+  }
+
+  private func rate(amount: Double, base: Double) -> Double? {
+    guard base != 0 else { return nil }
+    let value = amount / base
+    return value.isFinite ? value : nil
+  }
+
+  private func safeAdd(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+    let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+    return overflow ? Int64.max : sum
+  }
+
+  private func formatPercent(_ value: Double?) -> String {
+    value.map {
+      $0.formatted(.percent.precision(.fractionLength(2)))
+    } ?? "Unavailable"
   }
 
   private func logisticsPanel(
@@ -389,7 +775,7 @@ struct PlannerView: View {
             Text(entry.productName)
               .font(.headline)
             Spacer()
-            Text(entry.kind.rawValue)
+            Text(LocalizedStringKey(entry.kind.rawValue))
               .font(.caption.bold())
               .foregroundStyle(DesignTokens.highlight)
           }
@@ -437,7 +823,7 @@ struct PlannerView: View {
     sections: [PlannerMaterialSection]
   ) -> some View {
     if !sections.isEmpty {
-      Panel(title: title) {
+      Panel(title: LocalizedStringKey(title)) {
         Text(description)
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
@@ -472,7 +858,7 @@ struct PlannerView: View {
         Text("Still needed")
         Text("Produce")
         Text("Buy")
-        Text("Jita cost")
+        Text("Cost split")
       }
       .font(.caption.bold())
       .foregroundStyle(DesignTokens.textSecondary)
@@ -487,9 +873,16 @@ struct PlannerView: View {
           number(max(0, material.required - material.fromStock))
           number(material.toProduce)
           number(material.toBuy)
-          Text(formatISK(material.quote?.total))
-            .font(.body.monospacedDigit())
-            .foregroundStyle(DesignTokens.highlight)
+          VStack(alignment: .trailing, spacing: 2) {
+            Text(
+              "Buy: \(formatISK(materialCost(for: material.toBuy, quote: material.quote)))"
+            )
+            Text(
+              "Stock: \(formatISK(materialCost(for: material.fromStock, quote: material.stockQuote)))"
+            )
+          }
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(DesignTokens.highlight)
         }
       }
     }
@@ -579,6 +972,24 @@ struct PlannerView: View {
     )
   }
 
+  private func materialCost(
+    for quantity: Int64,
+    quote: PriceQuote?
+  ) -> Double? {
+    quantity == 0 ? 0 : quote?.total
+  }
+
+  private func stockCostLabel(for plan: IndustryPlanSnapshot) -> String {
+    switch plan.stockAllocations.first?.source.kind {
+    case .manual:
+      "Materials from manual stock"
+    case .warehouse, .assetSnapshot:
+      "Materials from warehouse"
+    case nil:
+      "Materials from stock"
+    }
+  }
+
   private func restoreStateIfNeeded() {
     guard !hasRestoredState else { return }
     hasRestoredState = true
@@ -650,22 +1061,6 @@ struct PlannerView: View {
     }
   }
 
-  private var assetInventories: [AssetOwnerInventory] {
-    storedCharacters.compactMap { character in
-      guard let data = character.assetSnapshot,
-        let sourced = try? JSONDecoder().decode(
-          Sourced<AssetSnapshot>.self,
-          from: data
-        )
-      else { return nil }
-      return AssetOwnerInventory(
-        ownerID: character.characterID,
-        ownerName: character.characterName,
-        assets: sourced
-      )
-    }
-  }
-
   private var targetQuantities: [Int64: Int64] {
     Dictionary(
       uniqueKeysWithValues: stockTargets.map {
@@ -674,8 +1069,102 @@ struct PlannerView: View {
     )
   }
 
-  private var warehouseFactualQuantities: [Int64: Int64] {
-    AssetWarehouse(inventories: assetInventories).factualQuantities
+  private var assetProjectionIdentity: String {
+    storedCharacters.map { character in
+      [
+        String(character.characterID),
+        character.characterName,
+        String(character.assetSnapshot?.count ?? 0),
+        String(character.lastSyncAt?.timeIntervalSince1970 ?? 0),
+      ].joined(separator: ":")
+    }
+    .joined(separator: "|")
+  }
+
+  private func prepareAssetWarehouse() async {
+    isPreparingAssetWarehouse = true
+    defer { isPreparingAssetWarehouse = false }
+    let payloads = storedCharacters.compactMap { character in
+      character.assetSnapshot.map {
+        StoredAssetSnapshotPayload(
+          ownerID: character.characterID,
+          ownerName: character.characterName,
+          encodedSnapshot: $0
+        )
+      }
+    }
+    let prepared = await runtime.prepareAssetWarehouse(
+      identity: assetProjectionIdentity,
+      payloads: payloads
+    )
+    guard !Task.isCancelled else { return }
+    assetWarehouse = prepared.warehouse
+    warehouseFactualQuantities = prepared.factualQuantities
+  }
+}
+
+private struct ExplainedPlannerMetricRow: View {
+  let label: String
+  let value: String
+  let explanation: String
+  let highlightsValue: Bool
+
+  @State private var isExplanationPresented = false
+
+  var body: some View {
+    Button {
+      isExplanationPresented.toggle()
+    } label: {
+      LabeledContent {
+        Text(value)
+          .font(.body.monospacedDigit())
+          .foregroundStyle(
+            highlightsValue
+              ? DesignTokens.highlight : DesignTokens.textPrimary
+          )
+      } label: {
+        HStack(spacing: DesignTokens.spacingXS) {
+          Text(LocalizedStringKey(label))
+          Image(systemName: "info.circle")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.information)
+            .accessibilityHidden(true)
+        }
+      }
+      .frame(maxWidth: .infinity)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .contentShape(Rectangle())
+    .help("Click for an explanation of \(label).")
+    .popover(
+      isPresented: $isExplanationPresented,
+      attachmentAnchor: .rect(.bounds),
+      arrowEdge: .bottom
+    ) {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        HStack {
+          Text(LocalizedStringKey(label))
+            .font(.headline)
+          Spacer()
+          Button {
+            isExplanationPresented = false
+          } label: {
+            Image(systemName: "xmark")
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Close explanation")
+        }
+        Text(explanation)
+          .foregroundStyle(DesignTokens.textPrimary)
+          .fixedSize(horizontal: false, vertical: true)
+          .textSelection(.enabled)
+      }
+      .padding(DesignTokens.spacingMD)
+      .frame(width: 360)
+    }
+    .accessibilityLabel("\(label), \(value)")
+    .accessibilityHint("Shows an explanation of this value.")
   }
 }
 
@@ -740,7 +1229,7 @@ extension String {
               selection: $runtime.manufacturingProfile.securityBand
             ) {
               ForEach(SecurityBand.allCases, id: \.self) {
-                Text($0.rawValue).tag($0)
+                Text(LocalizedStringKey($0.rawValue)).tag($0)
               }
             }
             Picker(
@@ -748,7 +1237,7 @@ extension String {
               selection: $runtime.manufacturingProfile.cloneState
             ) {
               ForEach(CloneState.allCases, id: \.self) {
-                Text($0.rawValue).tag($0)
+                Text(LocalizedStringKey($0.rawValue)).tag($0)
               }
             }
             HStack {
@@ -833,7 +1322,7 @@ extension String {
                 selection: reactionBinding(\.securityBand)
               ) {
                 ForEach(SecurityBand.allCases, id: \.self) {
-                  Text($0.rawValue).tag($0)
+                  Text(LocalizedStringKey($0.rawValue)).tag($0)
                 }
               }
               TextField(
@@ -867,7 +1356,7 @@ extension String {
         }
         .padding(DesignTokens.spacingLG)
       }
-      .navigationTitle("Profiles")
+      .navigationTitle(AppLocalization.text("Profiles"))
     }
 
     private func saveManufacturing() {
@@ -1029,7 +1518,7 @@ struct CharactersView: View {
             }
             if isConnecting {
               ProgressView().controlSize(.small)
-              Text("Waiting for secure browser callback…")
+              Text(AppLocalization.text(connectionPhaseText))
                 .foregroundStyle(DesignTokens.textSecondary)
             }
           }
@@ -1063,7 +1552,7 @@ struct CharactersView: View {
       }
       .padding(DesignTokens.spacingLG)
     }
-    .navigationTitle("Characters")
+    .navigationTitle(AppLocalization.text("Characters"))
     .confirmationDialog(
       disconnectDialogTitle,
       isPresented: Binding(
@@ -1093,6 +1582,17 @@ struct CharactersView: View {
 
   private var isBusy: Bool {
     isConnecting || isSyncingAll
+  }
+
+  private var connectionPhaseText: String {
+    switch runtime.characterConnectionPhase {
+    case .idle, .waitingForBrowser:
+      "Waiting for secure browser callback…"
+    case .completingSSO:
+      "EVE SSO accepted the callback; verifying authorization…"
+    case .synchronizingESI:
+      "SSO connected; synchronizing character data from ESI…"
+    }
   }
 
   private var disconnectDialogTitle: String {
@@ -1204,6 +1704,7 @@ struct CharactersView: View {
     localError = nil
     do {
       try await synchronize(character)
+      batchMessage = completionMessage(for: character.characterName)
     } catch {
       localError = userMessage(for: error)
     }
@@ -1243,6 +1744,7 @@ struct CharactersView: View {
     isSyncingAll = true
     localError = nil
     var failures: [String] = []
+    var incompleteCharacters = 0
     let ordered = characters.sorted {
       $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
         == .orderedAscending
@@ -1251,7 +1753,10 @@ struct CharactersView: View {
       isSyncingAll = false
       batchMessage =
         failures.isEmpty
-        ? "All \(ordered.count) characters were synchronized."
+        ? allCharactersCompletionMessage(
+          total: ordered.count,
+          incomplete: incompleteCharacters
+        )
         : "\(ordered.count - failures.count) of \(ordered.count) characters were synchronized."
       if !failures.isEmpty {
         localError = failures.joined(separator: "\n")
@@ -1262,6 +1767,9 @@ struct CharactersView: View {
         "Synchronizing \(character.characterName) (\(index + 1)/\(ordered.count))…"
       do {
         try await synchronize(character)
+        if latestIncompleteDomainCount > 0 {
+          incompleteCharacters += 1
+        }
       } catch {
         failures.append(
           "\(character.characterName): \(userMessage(for: error))"
@@ -1319,6 +1827,9 @@ struct CharactersView: View {
     character.assetSnapshot = try runtime.lastCharacterSync.map {
       try JSONEncoder().encode($0.assets)
     }
+    character.blueprintSnapshot = try runtime.lastCharacterSync.map {
+      try JSONEncoder().encode($0.blueprints)
+    }
     character.walletBalanceSnapshot = try runtime.lastCharacterSync.map {
       try JSONEncoder().encode($0.walletBalance)
     }
@@ -1349,7 +1860,136 @@ struct CharactersView: View {
       return
         "The wrong EVE character was selected (expected \(expected), received \(received)). No token was saved."
     }
-    return String(describing: error)
+    if let authError = error as? AuthError {
+      switch authError {
+      case .missingClientID, .invalidClientID:
+        return AppLocalization.text(
+          "The EVE client ID is missing or invalid."
+        )
+      case .noStoredAuthorization:
+        return AppLocalization.text(
+          "The local EVE authorization is missing. Authorize this character again."
+        )
+      case .tokenExchangeFailed(let status):
+        return String(
+          format: AppLocalization.text(
+            "EVE SSO rejected the token request (HTTP %lld)."
+          ),
+          Int64(status)
+        )
+      case .keychain(_):
+        return AppLocalization.text(
+          "The EVE refresh token could not be read from the macOS Keychain."
+        )
+      case .callbackDenied(_):
+        return AppLocalization.text(
+          "EVE SSO authorization was cancelled or denied."
+        )
+      case .invalidIdentityToken:
+        return AppLocalization.text(
+          "EVE SSO returned an identity token that could not be verified."
+        )
+      default:
+        return AppLocalization.text(
+          "EVE SSO authorization could not be completed."
+        )
+      }
+    }
+    if let esiError = error as? ESIError {
+      switch esiError {
+      case .rateLimited(_):
+        return AppLocalization.text(
+          "EVE ESI is rate-limiting requests. Wait briefly and try again."
+        )
+      case .server(_):
+        return AppLocalization.text(
+          "EVE ESI reported a temporary server error."
+        )
+      case .forbidden, .missingScope(_), .authorizationRequired:
+        return AppLocalization.text(
+          "EVE ESI rejected the authorization or a required permission is missing."
+        )
+      case .cancelled:
+        return AppLocalization.text("Synchronization was cancelled.")
+      default:
+        return AppLocalization.text(
+          "EVE ESI data could not be synchronized."
+        )
+      }
+    }
+    if let urlError = error as? URLError {
+      switch urlError.code {
+      case .timedOut:
+        return AppLocalization.text(
+          "The EVE service did not respond in time. Check the CCP status and try again."
+        )
+      case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
+        .networkConnectionLost:
+        return AppLocalization.text(
+          "The EVE service is currently unreachable. Check the network and CCP status."
+        )
+      default:
+        break
+      }
+    }
+    return AppLocalization.text(
+      "The EVE connection failed for an unknown reason."
+    )
+  }
+
+  private var latestIncompleteDomainCount: Int {
+    guard let sync = runtime.lastCharacterSync else { return 0 }
+    let states = [
+      sync.capabilities.skills.state,
+      sync.capabilities.standings.state,
+      sync.assets.state,
+      sync.blueprints.state,
+      sync.jobs.state,
+      sync.openOrders.state,
+      sync.orderHistory.state,
+      sync.walletBalance.state,
+      sync.walletJournal.state,
+      sync.walletTransactions.state,
+    ]
+    return states.filter { $0 != .fresh }.count
+  }
+
+  private func completionMessage(for characterName: String) -> String {
+    let incomplete = latestIncompleteDomainCount
+    guard incomplete > 0 else {
+      return String(
+        format: AppLocalization.text("%@ was synchronized completely."),
+        characterName
+      )
+    }
+    return String(
+      format: AppLocalization.text(
+        "%@ was synchronized; %lld data areas need attention."
+      ),
+      characterName,
+      Int64(incomplete)
+    )
+  }
+
+  private func allCharactersCompletionMessage(
+    total: Int,
+    incomplete: Int
+  ) -> String {
+    guard incomplete > 0 else {
+      return String(
+        format: AppLocalization.text(
+          "All %lld characters were synchronized completely."
+        ),
+        Int64(total)
+      )
+    }
+    return String(
+      format: AppLocalization.text(
+        "All %lld characters finished; %lld have incomplete or unavailable ESI data."
+      ),
+      Int64(total),
+      Int64(incomplete)
+    )
   }
 
   private func persistLatestSnapshotMetadata() throws {
@@ -1428,7 +2068,7 @@ struct CharactersView: View {
     _ state: DataFreshness
   ) -> some View {
     LabeledContent(title) {
-      Text(state.rawValue.uppercased())
+      Text(LocalizedStringKey(state.rawValue.uppercased()))
         .font(.caption.bold())
         .foregroundStyle(
           state == .fresh
@@ -1490,7 +2130,7 @@ struct WalletView: View {
       }
       .padding(DesignTokens.spacingLG)
     }
-    .navigationTitle("Wallet")
+    .navigationTitle(AppLocalization.text("Wallet"))
   }
 
   private var totalPanel: some View {
@@ -1708,7 +2348,7 @@ struct WalletView: View {
   private func freshnessBadge(
     _ state: DataFreshness
   ) -> some View {
-    Text(state.rawValue.uppercased())
+    Text(LocalizedStringKey(state.rawValue.uppercased()))
       .font(.caption2.bold())
       .padding(.horizontal, DesignTokens.spacingSM)
       .padding(.vertical, DesignTokens.spacingXS)
@@ -1743,6 +2383,7 @@ struct DataSettingsView: View {
   @State private var ownerContact = ""
   @State private var showInstallConfirmation = false
   @State private var schemaReviewConfirmed = false
+  @State private var ownerContactMessage: String?
   @State private var settingsMessage: String?
   @State private var settingsError: String?
 
@@ -1764,20 +2405,45 @@ struct DataSettingsView: View {
             text: $ownerContact
           )
           .textFieldStyle(.roundedBorder)
+          .onSubmit {
+            _ = saveOwnerContact()
+          }
+          .onChange(of: ownerContact) {
+            ownerContactMessage = nil
+          }
+          Text(
+            "This contact is saved locally on this Mac and sent to CCP only as part of SDE requests."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
           HStack {
-            Button("Check for SDE update") {
-              schemaReviewConfirmed = false
-              Task { await runtime.checkSDE(ownerContact: ownerContact) }
+            Button("Save contact") {
+              _ = saveOwnerContact()
             }
-            .disabled(ownerContact.isEmpty || runtime.isWorking)
+            .disabled(normalizedOwnerContact.isEmpty || runtime.isWorking)
+            Button("Check for SDE update") {
+              checkSDEUpdate()
+            }
+            .disabled(normalizedOwnerContact.isEmpty || runtime.isWorking)
             if runtime.isWorking {
               ProgressView().controlSize(.small)
               Text(runtime.installationPhase ?? runtime.statusMessage)
                 .font(.caption.monospaced())
             }
           }
+          if let ownerContactMessage {
+            Text(ownerContactMessage)
+              .font(.caption)
+              .foregroundStyle(DesignTokens.positive)
+          }
           if let preview = runtime.updatePreview {
             Divider()
+            if let checkedAt = runtime.sdeLastCheckedAt {
+              LabeledContent(
+                "Checked",
+                value: checkedAt.formatted()
+              )
+            }
             LabeledContent(
               "Official build",
               value: String(preview.officialBuild)
@@ -1790,10 +2456,20 @@ struct DataSettingsView: View {
               "Schema entries",
               value: String(preview.schemaEntryCount)
             )
+            LabeledContent(
+              "Latest CCP schema boundary",
+              value: String(preview.schemaHighestAfterBuild)
+            )
+            Label(
+              updateAvailabilityMessage(preview),
+              systemImage: preview.requiresUpdate
+                ? "arrow.down.circle"
+                : "checkmark.circle"
+            )
             Label(
               preview.requiresSchemaReview
                 ? "Schema review confirmation is required."
-                : "No newer schema boundary was reported.",
+                : "No schema boundary newer than the installed build was reported by CCP.",
               systemImage: preview.requiresSchemaReview
                 ? "exclamationmark.shield"
                 : "checkmark.shield"
@@ -1875,7 +2551,7 @@ struct DataSettingsView: View {
       }
       .padding(DesignTokens.spacingLG)
     }
-    .navigationTitle("Data & Settings")
+    .navigationTitle(AppLocalization.text("Data & Settings"))
     .onAppear {
       clientID =
         settings.first(where: { $0.key == "eve.clientID" })?
@@ -1884,6 +2560,9 @@ struct DataSettingsView: View {
         settings.first(
           where: { $0.key == "sde.ownerContact" }
         )?.value ?? ""
+    }
+    .onDisappear {
+      persistOwnerContactOnExit()
     }
     .confirmationDialog(
       "Install current SDE build?",
@@ -1928,15 +2607,89 @@ struct DataSettingsView: View {
     }
   }
 
-  private func beginSDEInstallation() {
+  private var normalizedOwnerContact: String {
+    ownerContact.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var isOwnerContactValid: Bool {
+    let normalized = normalizedOwnerContact
+    return !normalized.isEmpty
+      && normalized.utf8.count <= 512
+      && normalized.unicodeScalars.allSatisfy {
+        $0.value >= 32 && $0.value <= 126
+          && $0 != "(" && $0 != ")"
+      }
+  }
+
+  @discardableResult
+  private func saveOwnerContact(showMessage: Bool = true) -> Bool {
+    let normalized = normalizedOwnerContact
+    guard isOwnerContactValid else {
+      if showMessage {
+        ownerContactMessage = nil
+        settingsError =
+          "The CCP User-Agent contact must use visible ASCII characters, must not contain parentheses, and must be no longer than 512 bytes."
+      }
+      return false
+    }
     do {
-      try saveSetting(key: "sde.ownerContact", value: ownerContact)
+      try saveSetting(key: "sde.ownerContact", value: normalized)
+      ownerContact = normalized
       settingsError = nil
-      Task { await installSDEAndRecordActivation() }
+      if showMessage {
+        ownerContactMessage =
+          "The CCP User-Agent contact was saved locally."
+      }
+      return true
     } catch {
+      if showMessage {
+        ownerContactMessage = nil
+        settingsError =
+          "The CCP User-Agent contact could not be saved. The previous value remains active."
+      }
+      return false
+    }
+  }
+
+  private func persistOwnerContactOnExit() {
+    let stored =
+      settings.first(where: { $0.key == "sde.ownerContact" })?
+      .value ?? ""
+    guard !normalizedOwnerContact.isEmpty,
+      normalizedOwnerContact != stored
+    else { return }
+    _ = saveOwnerContact(showMessage: false)
+  }
+
+  private func checkSDEUpdate() {
+    guard saveOwnerContact() else { return }
+    schemaReviewConfirmed = false
+    Task { await runtime.checkSDE(ownerContact: ownerContact) }
+  }
+
+  private func updateAvailabilityMessage(
+    _ preview: SDEUpdatePreview
+  ) -> LocalizedStringKey {
+    switch preview.availability {
+    case .notInstalled:
+      "No SDE catalog is installed yet."
+    case .updateAvailable:
+      "A newer official SDE build is available."
+    case .current:
+      "The installed SDE catalog matches the current official build."
+    case .localBuildAhead:
+      "The installed build is newer than the official metadata response. No downgrade will be offered."
+    }
+  }
+
+  private func beginSDEInstallation() {
+    guard saveOwnerContact(showMessage: false) else {
       settingsError =
         "The owner contact could not be saved, so the SDE installation was not started."
+      return
     }
+    settingsError = nil
+    Task { await installSDEAndRecordActivation() }
   }
 
   private func installSDEAndRecordActivation() async {
