@@ -184,6 +184,43 @@ private struct AssetRootLocationResolver {
   }
 }
 
+private struct AssetAncestorTypeResolver {
+  private let itemsByID: [Int64: AssetItem]
+  private var cache: [Int64: [Int64]] = [:]
+
+  init(items: [AssetItem]) {
+    itemsByID = items.reduce(into: [Int64: AssetItem]()) {
+      $0[$1.id] = $0[$1.id] ?? $1
+    }
+  }
+
+  mutating func ancestorTypeIDs(for item: AssetItem) -> [Int64] {
+    guard item.locationKind == .item else { return [] }
+    if let cached = cache[item.locationID] { return cached }
+
+    var locationID = item.locationID
+    var path: [AssetItem] = []
+    var visited = Set<Int64>()
+    var suffix: [Int64] = []
+    while let container = itemsByID[locationID] {
+      if let cached = cache[locationID] {
+        suffix = cached
+        break
+      }
+      guard visited.insert(locationID).inserted else { return [] }
+      path.append(container)
+      guard container.locationKind == .item else { break }
+      locationID = container.locationID
+    }
+
+    let result = path.map(\.typeID) + suffix
+    for index in path.indices {
+      cache[path[index].id] = Array(result.dropFirst(index))
+    }
+    return result
+  }
+}
+
 public struct AssetSnapshot: Identifiable, Codable, Sendable {
   public let id: UUID
   public let characterID: Int64
@@ -241,6 +278,22 @@ public struct AssetSnapshot: Identifiable, Codable, Sendable {
     var resolver = AssetRootLocationResolver(items: items)
     return items.map { item in
       (item, resolver.rootLocation(for: item))
+    }
+  }
+
+  func itemsWithWarehouseContexts() -> [(
+    item: AssetItem,
+    location: AssetRootLocation?,
+    ancestorTypeIDs: [Int64]
+  )] {
+    var rootResolver = AssetRootLocationResolver(items: items)
+    var ancestorResolver = AssetAncestorTypeResolver(items: items)
+    return items.map { item in
+      (
+        item,
+        rootResolver.rootLocation(for: item),
+        ancestorResolver.ancestorTypeIDs(for: item)
+      )
     }
   }
 

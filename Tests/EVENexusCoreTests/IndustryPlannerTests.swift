@@ -72,6 +72,7 @@ struct IndustryPlannerTests {
         3: AdjustedPrice(typeID: 3, adjustedPrice: 2, averagePrice: 2),
       ],
       systemIndices: [],
+      availableStock: [2: 100],
       sdeBuild: 1
     )
 
@@ -89,6 +90,10 @@ struct IndustryPlannerTests {
       plan.materials.first { $0.typeID == 3 }
     )
     #expect(intermediate.isProducedMaterial)
+    #expect(intermediate.fromStock == 0)
+    #expect(intermediate.toProduce == 2)
+    #expect(intermediate.procurement?.supplyMode == .produce)
+    #expect(intermediate.canProduce)
     #expect(intermediate.productionActivity == .manufacturing)
     #expect(intermediate.sourceGroup == "Construction Components")
     #expect(!rawMaterial.isProducedMaterial)
@@ -104,6 +109,99 @@ struct IndustryPlannerTests {
           && $0.severity == .blocking
       }
     )
+  }
+
+  @Test
+  func buysIntermediateInsteadOfCreatingItsProductionJob() async throws {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .buy,
+        purchaseLocation: .amarr
+      )
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: context
+    )
+
+    let intermediate = try #require(
+      plan.materials.first { $0.typeID == 82 }
+    )
+    #expect(intermediate.canProduce)
+    #expect(intermediate.procurement?.supplyMode == .buy)
+    #expect(intermediate.procurement?.purchaseLocation == .amarr)
+    #expect(intermediate.toBuy == 2)
+    #expect(intermediate.toProduce == 0)
+    #expect(!plan.nodes.contains { $0.typeID == 82 && $0.action == .produce })
+    #expect(!plan.materials.contains { $0.typeID == 83 })
+    #expect(plan.materialCost == 30)
+  }
+
+  @Test
+  func buyingReactionIntermediateDoesNotBuyItsReactionInputs() async throws {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .buy,
+        purchaseLocation: .jita
+      ),
+      intermediateActivity: .reaction,
+      directRawQuantity: 3
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: context
+    )
+
+    let intermediate = try #require(
+      plan.materials.first { $0.typeID == 82 }
+    )
+    let directlyRequiredRawMaterial = try #require(
+      plan.materials.first { $0.typeID == 83 }
+    )
+    #expect(intermediate.productionActivity == .reaction)
+    #expect(intermediate.toBuy == 2)
+    #expect(intermediate.toProduce == 0)
+    #expect(directlyRequiredRawMaterial.required == 3)
+    #expect(directlyRequiredRawMaterial.toBuy == 3)
+    #expect(!plan.nodes.contains { $0.typeID == 82 && $0.action == .produce })
+    #expect(!plan.jobs.contains { $0.typeID == 82 })
+    #expect(plan.materialCost == 36)
+  }
+
+  @Test
+  func usesIntermediateWarehouseStockAndValuesItAtTheFullQuoteUnitPrice()
+    async throws
+  {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .warehouse,
+        purchaseLocation: .amarr
+      ),
+      availableStock: 1
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: context
+    )
+
+    let intermediate = try #require(
+      plan.materials.first { $0.typeID == 82 }
+    )
+    #expect(intermediate.fromStock == 1)
+    #expect(intermediate.toBuy == 1)
+    #expect(intermediate.toProduce == 0)
+    #expect(intermediate.stockQuote?.total == 10)
+    #expect(intermediate.replacementQuote?.total == 30)
+    #expect(intermediate.replacementQuote?.weightedUnitPrice == 15)
+    #expect(intermediate.warehouseConsumptionValue == 15)
+    #expect(plan.warehouseConsumptionValue == 15)
+    #expect(plan.costBreakdown?.stockMaterialCost == 15)
+    #expect(plan.materialCost == 30)
+    #expect(!plan.nodes.contains { $0.typeID == 82 && $0.action == .produce })
+    #expect(!plan.materials.contains { $0.typeID == 83 })
   }
 
   @Test
@@ -157,6 +255,12 @@ struct IndustryPlannerTests {
         )
       ],
       availableStock: [16: 4],
+      procurementPreferences: [
+        16: MaterialProcurementPreference(
+          supplyMode: .warehouse,
+          purchaseLocation: .amarr
+        )
+      ],
       assetSource: StockSource(
         kind: .warehouse,
         reference: "all-character-assets"
@@ -177,6 +281,8 @@ struct IndustryPlannerTests {
     #expect(material.toBuy == 6)
     #expect(material.quote?.quantity == 6)
     #expect(material.stockQuote?.quantity == 4)
+    #expect(material.replacementQuote?.quantity == 10)
+    #expect(material.procurement?.purchaseLocation == .amarr)
     #expect(costs.purchasedMaterialCost == 60)
     #expect(costs.stockMaterialCost == 40)
     #expect(costs.materialCost == 100)
@@ -269,6 +375,14 @@ struct IndustryPlannerTests {
     #expect(job.materialEfficiency == 10)
     #expect(job.timeEfficiency == 20)
     #expect(job.facilityName == "Fixture Station")
+    let listedJob = try #require(plan.jobs.first { $0.typeID == 10 })
+    #expect(listedJob.productName == "Batch Product")
+    #expect(listedJob.runs == 3)
+    #expect(listedJob.outputQuantity == 300)
+    #expect(listedJob.materialEfficiency == 10)
+    #expect(listedJob.timeEfficiency == 20)
+    #expect(listedJob.isTopLevel == true)
+    #expect(listedJob.facilityName == "Fixture Station")
     #expect(rawMaterial.required == 10)
     #expect(rawMaterial.toBuy == 10)
     #expect(plan.totalJobSeconds == 72)
@@ -374,7 +488,10 @@ struct IndustryPlannerTests {
       $0.code == "industry.production-blacklist"
     }
     #expect(blacklistWarnings.count == 1)
-    #expect(blacklistWarnings.first?.message == "Helium Fuel Block is bought.")
+    #expect(
+      blacklistWarnings.first?.message
+        == "Helium Fuel Block cannot be produced and uses the selected purchase or warehouse source."
+    )
     #expect(
       plan.materials.first { $0.typeID == 33 }?.toBuy == 5
     )
@@ -458,7 +575,7 @@ struct IndustryPlannerTests {
     let costs = try #require(plan.costBreakdown)
     let blueprintCosts = try #require(costs.blueprintCosts)
     let logistics = try #require(costs.logistics)
-    #expect(logistics.legs.count == 2)
+    #expect(logistics.legs.count == 1)
     #expect(
       logistics.legs.first { $0.kind == .inboundMaterials }?.chargedBy
         == .volume
@@ -467,15 +584,9 @@ struct IndustryPlannerTests {
       logistics.legs.first { $0.kind == .inboundMaterials }?.roundedCharge
         == 1_000_000
     )
-    #expect(
-      logistics.legs.first { $0.kind == .outboundProducts }?.chargedBy
-        == .collateral
-    )
-    #expect(
-      logistics.legs.first { $0.kind == .outboundProducts }?.roundedCharge
-        == 2_000_000
-    )
-    #expect(logistics.total == 3_000_000)
+    #expect(logistics.legs[0].origin == ProcurementLocation.jita.name)
+    #expect(logistics.legs[0].destination == "Production")
+    #expect(logistics.total == 1_000_000)
     #expect(costs.materialCost == 1_000)
     #expect(blueprintCosts.total == 7_000_000)
     #expect(blueprintCosts.entries.first?.kind == .bpc)
@@ -486,7 +597,15 @@ struct IndustryPlannerTests {
     #expect(costs.sccSurcharge == 20)
     #expect(costs.alphaSurcharge == 0)
     #expect(costs.installationCost == 25)
-    #expect(costs.totalProductionCost == 10_001_025)
+    #expect(
+      costs.installationCost
+        == costs.systemIndexCost! + costs.facilityTax!
+        + costs.sccSurcharge! + costs.alphaSurcharge!
+    )
+    #expect(costs.logisticsCost == 1_000_000)
+    #expect(costs.totalProductionCost == 8_001_025)
+    #expect(costs.recomputedTotalProductionCost == 8_001_025)
+    #expect(costs.hasConsistentTotal)
     #expect(plan.immediateSale.grossRevenue == 250_000_000)
     #expect(plan.immediateSale.salesTax == 12_500_000)
     #expect(plan.immediateSale.brokerFee == 0)
@@ -495,6 +614,432 @@ struct IndustryPlannerTests {
     #expect(plan.listedSale.salesTax == 15_000_000)
     #expect(plan.listedSale.brokerFee == 3_000_000)
     #expect(plan.listedSale.grossOrNetRevenue == 282_000_000)
+  }
+
+  @Test
+  func transportsAllPurchasedRawMaterialsFromMainHubToProduction()
+    async throws
+  {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let product = BlueprintDefinition(
+      blueprintTypeID: 701,
+      productTypeID: 71,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 1,
+        materials: [
+          BlueprintMaterial(typeID: 72, quantity: 2),
+          BlueprintMaterial(typeID: 73, quantity: 3),
+        ],
+        products: [
+          BlueprintProduct(typeID: 71, quantity: 1, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    let basis = ProductionBasis(
+      logistics: LogisticsConfiguration(
+        isEnabled: true,
+        productionLocationName: "UALX Production",
+        homeTradeHub: .jita,
+        iskPerCubicMeter: 10
+      )
+    )
+    let context = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: FixtureCatalog(
+        names: [71: "Product", 72: "Amarr Raw", 73: "Local Raw"],
+        definitions: [71: product],
+        packagedVolumes: [72: 10, 73: 20]
+      ),
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          71: [
+            makeOrder(typeID: 71, side: .buy, price: 100),
+            makeOrder(typeID: 71, side: .sell, price: 110),
+          ],
+          72: [makeOrder(typeID: 72, side: .sell, price: 4)],
+          73: [makeOrder(typeID: 73, side: .sell, price: 5)],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        72: AdjustedPrice(typeID: 72, adjustedPrice: 1, averagePrice: 1),
+        73: AdjustedPrice(typeID: 73, adjustedPrice: 1, averagePrice: 1),
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        )
+      ],
+      procurementPreferences: [
+        72: MaterialProcurementPreference(
+          supplyMode: .buy,
+          purchaseLocation: .amarr
+        ),
+        73: MaterialProcurementPreference(
+          supplyMode: .buy,
+          purchaseLocation: .jita
+        ),
+      ],
+      sdeBuild: 1
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Product 1 0 0",
+      context: context
+    )
+
+    let logistics = try #require(plan.costBreakdown?.logistics)
+    #expect(logistics.legs.count == 1)
+    #expect(logistics.legs[0].origin == ProcurementLocation.jita.name)
+    #expect(logistics.legs[0].destination == "UALX Production")
+    #expect(plan.materialCost == 23)
+  }
+
+  @Test
+  func recommendsBuildAndShowsSavingsForTheCompleteRequiredQuantity()
+    async throws
+  {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let component = BlueprintDefinition(
+      blueprintTypeID: 902,
+      productTypeID: 92,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 93, quantity: 3)],
+        products: [BlueprintProduct(typeID: 92, quantity: 2, probability: nil)]
+      ),
+      source: source
+    )
+    let product = BlueprintDefinition(
+      blueprintTypeID: 901,
+      productTypeID: 91,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 92, quantity: 5)],
+        products: [BlueprintProduct(typeID: 91, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let manufacturingService = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 9_001,
+        name: "Fixture Manufacturing Service",
+        activities: [.manufacturing],
+        source: source
+      )
+    )
+    let manufacturingSystem = ActivitySystemConfiguration(
+      activity: .manufacturing,
+      solarSystemID: EVEConstants.jitaSystemID,
+      solarSystemName: "Jita",
+      regionID: EVEConstants.theForgeRegionID,
+      securityStatus: 0.9,
+      securityClass: "highsec"
+    )
+    let basis = ProductionBasis(
+      manufacturingSystems: [manufacturingSystem],
+      logistics: LogisticsConfiguration(
+        isEnabled: true,
+        productionLocationName: "Production",
+        homeTradeHub: .jita,
+        iskPerCubicMeter: 1
+      ),
+      structures: [
+        ConfiguredIndustryStructure(
+          name: "Production",
+          kind: .custom,
+          manufacturingSystemID: manufacturingSystem.id,
+          securityBand: .highSecurity,
+          serviceModules: [manufacturingService],
+          source: .manual
+        )
+      ]
+    )
+    let context = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: FixtureCatalog(
+        names: [91: "Product", 92: "Component", 93: "Raw"],
+        definitions: [91: product, 92: component],
+        packagedVolumes: [92: 1, 93: 1]
+      ),
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          91: [
+            makeOrder(typeID: 91, side: .buy, price: 5_000_000),
+            makeOrder(typeID: 91, side: .sell, price: 6_000_000),
+          ],
+          92: [makeOrder(typeID: 92, side: .sell, price: 500_000)],
+          93: [makeOrder(typeID: 93, side: .sell, price: 10)],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        92: AdjustedPrice(typeID: 92, adjustedPrice: 1, averagePrice: 1),
+        93: AdjustedPrice(typeID: 93, adjustedPrice: 1, averagePrice: 1),
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        )
+      ],
+      defaultPurchaseLocation: .jita,
+      sdeBuild: 1
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Product 1 0 0",
+      context: context
+    )
+
+    let componentMaterial = try #require(
+      plan.materials.first { $0.typeID == 92 }
+    )
+    let analysis = try #require(componentMaterial.makeOrBuyAnalysis)
+    #expect(analysis.requiredQuantity == 5)
+    #expect(analysis.productionRuns == 3)
+    #expect(analysis.producedQuantity == 6)
+    #expect(analysis.purchaseQuote.filledQuantity == 5)
+    #expect(analysis.purchaseQuote.isComplete)
+    #expect(analysis.purchaseTotalCost == 3_500_000)
+    #expect(analysis.buildMaterialCost == 90)
+    #expect(analysis.buildLogisticsCost == 1_000_000)
+    #expect(analysis.buildInstallationCost == 0.36)
+    #expect(analysis.buildTotalCost == 1_000_090.36)
+    #expect(analysis.recommendation == .produce)
+    #expect(analysis.savings == 2_499_909.64)
+
+    let produceApplication = MakeOrBuyRecommendationApplication(
+      materials: plan.materials,
+      existingPreferences: [
+        92: MaterialProcurementPreference(
+          supplyMode: .warehouse,
+          purchaseLocation: .amarr
+        )
+      ],
+      mainHub: .jita
+    )
+    #expect(produceApplication.appliedCount == 1)
+    #expect(produceApplication.produceCount == 1)
+    #expect(produceApplication.buyCount == 0)
+    #expect(produceApplication.unavailableCount == 0)
+    #expect(produceApplication.preferences[92]?.supplyMode == .produce)
+    #expect(produceApplication.preferences[92]?.purchaseLocation == .jita)
+
+    let buyContext = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: FixtureCatalog(
+        names: [91: "Product", 92: "Component", 93: "Raw"],
+        definitions: [91: product, 92: component],
+        packagedVolumes: [92: 1, 93: 1]
+      ),
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          91: [makeOrder(typeID: 91, side: .sell, price: 6_000_000)],
+          92: [makeOrder(typeID: 92, side: .sell, price: 500_000)],
+          93: [makeOrder(typeID: 93, side: .sell, price: 500_000)],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        92: AdjustedPrice(typeID: 92, adjustedPrice: 1, averagePrice: 1),
+        93: AdjustedPrice(typeID: 93, adjustedPrice: 1, averagePrice: 1),
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        )
+      ],
+      defaultPurchaseLocation: .jita,
+      sdeBuild: 1
+    )
+    let buyPlan = try await IndustryPlanner().plan(
+      input: "Product 1 0 0",
+      context: buyContext
+    )
+    let buyAnalysis = try #require(
+      buyPlan.materials.first { $0.typeID == 92 }?.makeOrBuyAnalysis
+    )
+    #expect(buyAnalysis.recommendation == .buy)
+    #expect(buyAnalysis.buildTotalCost == 5_500_000.36)
+    #expect(buyAnalysis.purchaseTotalCost == 3_500_000)
+    #expect(abs((buyAnalysis.savings ?? 0) - 2_000_000.36) < 0.001)
+
+    let buyApplication = MakeOrBuyRecommendationApplication(
+      materials: buyPlan.materials,
+      existingPreferences: [
+        92: MaterialProcurementPreference(
+          supplyMode: .warehouse,
+          purchaseLocation: .amarr
+        ),
+        999: MaterialProcurementPreference(
+          supplyMode: .warehouse,
+          purchaseLocation: .amarr
+        ),
+      ],
+      mainHub: .jita
+    )
+    #expect(buyApplication.appliedCount == 1)
+    #expect(buyApplication.produceCount == 0)
+    #expect(buyApplication.buyCount == 1)
+    #expect(buyApplication.preferences[92]?.supplyMode == .buy)
+    #expect(buyApplication.preferences[92]?.purchaseLocation == .jita)
+    #expect(buyApplication.preferences[999]?.supplyMode == .warehouse)
+    #expect(buyApplication.preferences[999]?.purchaseLocation == .amarr)
+  }
+
+  @Test
+  func neverRecommendsBuyingWhenMainHubDepthCannotFillTheQuantity()
+    async throws
+  {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let component = BlueprintDefinition(
+      blueprintTypeID: 912,
+      productTypeID: 112,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .reaction,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 113, quantity: 1)],
+        products: [BlueprintProduct(typeID: 112, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let product = BlueprintDefinition(
+      blueprintTypeID: 911,
+      productTypeID: 111,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 112, quantity: 5)],
+        products: [BlueprintProduct(typeID: 111, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let limitedOrder = MarketOrder(
+      id: 9_120,
+      typeID: 112,
+      locationID: EVEConstants.jitaIV4StationID,
+      systemID: EVEConstants.jitaSystemID,
+      side: .sell,
+      price: 100,
+      volumeRemaining: 4,
+      minimumVolume: 1,
+      issued: .now
+    )
+    let context = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      reactionProfile: ReactionProfile(
+        structureName: "Reaction Facility",
+        manualEffectiveMaterialMultiplier: 1,
+        manualEffectiveTimeMultiplier: 1,
+        manualEffectiveJobCostMultiplier: 1
+      ),
+      productionBasis: ProductionBasis(
+        logistics: LogisticsConfiguration(
+          isEnabled: true,
+          productionLocationName: "Production",
+          homeTradeHub: .jita,
+          iskPerCubicMeter: 1
+        )
+      ),
+      catalog: FixtureCatalog(
+        names: [111: "Product", 112: "Reaction Intermediate", 113: "Moon Input"],
+        definitions: [111: product, 112: component],
+        packagedVolumes: [112: 1, 113: 1]
+      ),
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          111: [makeOrder(typeID: 111, side: .sell, price: 1_000)],
+          112: [limitedOrder],
+          113: [makeOrder(typeID: 113, side: .sell, price: 1)],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        112: AdjustedPrice(typeID: 112, adjustedPrice: 1, averagePrice: 1),
+        113: AdjustedPrice(typeID: 113, adjustedPrice: 1, averagePrice: 1),
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        ),
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .reaction,
+          costIndex: 0
+        ),
+      ],
+      sdeBuild: 1
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Product 1 0 0",
+      context: context
+    )
+    let analysis = try #require(
+      plan.materials.first { $0.typeID == 112 }?.makeOrBuyAnalysis
+    )
+    #expect(analysis.purchaseQuote.filledQuantity == 4)
+    #expect(analysis.purchaseQuote.total == nil)
+    #expect(analysis.purchaseTotalCost == nil)
+    #expect(analysis.recommendation == .unavailable)
+    #expect(
+      analysis.warnings.contains { $0.code == "market.insufficient-depth" }
+    )
+
+    let application = MakeOrBuyRecommendationApplication(
+      materials: plan.materials,
+      existingPreferences: [
+        112: MaterialProcurementPreference(
+          supplyMode: .warehouse,
+          purchaseLocation: .amarr
+        )
+      ],
+      mainHub: .jita
+    )
+    #expect(!application.hasApplicableRecommendations)
+    #expect(application.unavailableCount == 1)
+    #expect(application.preferences[112]?.supplyMode == .warehouse)
+    #expect(application.preferences[112]?.purchaseLocation == .amarr)
   }
 
   @Test
@@ -588,7 +1133,7 @@ struct IndustryPlannerTests {
       activity: BlueprintActivityDefinition(
         kind: .manufacturing,
         durationSeconds: 1,
-        materials: [],
+        materials: [BlueprintMaterial(typeID: 62, quantity: 1)],
         products: [
           BlueprintProduct(typeID: 61, quantity: 1, probability: nil)
         ]
@@ -596,17 +1141,17 @@ struct IndustryPlannerTests {
       source: source
     )
     let catalog = FixtureCatalog(
-      names: [61: "Oversized Product"],
+      names: [61: "Oversized Product", 62: "Oversized Material"],
       definitions: [61: product],
-      packagedVolumes: [61: 350_001]
+      packagedVolumes: [62: 350_001]
     )
     let context = IndustryPlanningContext(
       manufacturingProfile: ManufacturingProfile(),
       productionBasis: ProductionBasis(
         logistics: LogisticsConfiguration(
           isEnabled: true,
-          includeInboundMaterials: false,
-          includeOutboundProducts: true,
+          includeInboundMaterials: true,
+          includeOutboundProducts: false,
           iskPerCubicMeter: 1
         )
       ),
@@ -621,11 +1166,14 @@ struct IndustryPlannerTests {
           61: [
             makeOrder(typeID: 61, side: .buy, price: 10),
             makeOrder(typeID: 61, side: .sell, price: 11),
-          ]
+          ],
+          62: [makeOrder(typeID: 62, side: .sell, price: 1)],
         ],
         source: source
       ),
-      adjustedPrices: [:],
+      adjustedPrices: [
+        62: AdjustedPrice(typeID: 62, adjustedPrice: 1, averagePrice: 1)
+      ],
       systemIndices: [
         IndustrySystemIndex(
           solarSystemID: EVEConstants.jitaSystemID,
@@ -667,6 +1215,125 @@ struct IndustryPlannerTests {
       calculatedAt: .now,
       ruleVersion: MarketTaxConfiguration.ruleVersion,
       warnings: []
+    )
+  }
+
+  private func intermediateChoiceContext(
+    preference: MaterialProcurementPreference,
+    availableStock: Int64 = 0,
+    intermediateActivity: BlueprintActivityDefinition.Kind = .manufacturing,
+    directRawQuantity: Int64 = 0
+  ) -> IndustryPlanningContext {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let intermediate = BlueprintDefinition(
+      blueprintTypeID: 802,
+      productTypeID: 82,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: intermediateActivity,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 83, quantity: 4)],
+        products: [
+          BlueprintProduct(typeID: 82, quantity: 1, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    var productMaterials = [BlueprintMaterial(typeID: 82, quantity: 2)]
+    if directRawQuantity > 0 {
+      productMaterials.append(
+        BlueprintMaterial(typeID: 83, quantity: directRawQuantity)
+      )
+    }
+    let product = BlueprintDefinition(
+      blueprintTypeID: 801,
+      productTypeID: 81,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: productMaterials,
+        products: [
+          BlueprintProduct(typeID: 81, quantity: 1, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    let firstDepth = MarketOrder(
+      id: 8201,
+      typeID: 82,
+      locationID: EVEConstants.jitaIV4StationID,
+      systemID: EVEConstants.jitaSystemID,
+      side: .sell,
+      price: 10,
+      volumeRemaining: 1,
+      minimumVolume: 1,
+      issued: .now
+    )
+    let secondDepth = MarketOrder(
+      id: 8202,
+      typeID: 82,
+      locationID: EVEConstants.jitaIV4StationID,
+      systemID: EVEConstants.jitaSystemID,
+      side: .sell,
+      price: 20,
+      volumeRemaining: 100,
+      minimumVolume: 1,
+      issued: .now
+    )
+    return IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      reactionProfile:
+        intermediateActivity == .reaction
+        ? ReactionProfile(
+          structureName: "Reaction Facility",
+          manualEffectiveMaterialMultiplier: 1,
+          manualEffectiveTimeMultiplier: 1,
+          manualEffectiveJobCostMultiplier: 1
+        ) : nil,
+      catalog: FixtureCatalog(
+        names: [
+          81: "Choice Product",
+          82: "Choice Intermediate",
+          83: "Choice Raw",
+        ],
+        definitions: [81: product, 82: intermediate]
+      ),
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          81: [
+            makeOrder(typeID: 81, side: .buy, price: 100),
+            makeOrder(typeID: 81, side: .sell, price: 110),
+          ],
+          82: [firstDepth, secondDepth],
+          83: [makeOrder(typeID: 83, side: .sell, price: 2)],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        82: AdjustedPrice(typeID: 82, adjustedPrice: 5, averagePrice: 5),
+        83: AdjustedPrice(typeID: 83, adjustedPrice: 1, averagePrice: 1),
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        ),
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .reaction,
+          costIndex: 0
+        ),
+      ],
+      availableStock: availableStock > 0 ? [82: availableStock] : [:],
+      procurementPreferences: [82: preference],
+      sdeBuild: 1
     )
   }
 

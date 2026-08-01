@@ -19,6 +19,30 @@ struct PreparedAssetWarehouse: Sendable {
     factualQuantities: [:],
     totalUnits: 0
   )
+
+  func filtered(
+    locationIDs: Set<Int64>,
+    excludingTypeIDs: Set<Int64>,
+    excludingContentsOfTypeIDs: Set<Int64> = []
+  ) -> PreparedAssetWarehouse {
+    let filteredWarehouse = warehouse.filtered(
+      locationIDs: locationIDs,
+      excludingTypeIDs: excludingTypeIDs,
+      excludingContentsOfTypeIDs: excludingContentsOfTypeIDs
+    )
+    let filteredQuantities = filteredWarehouse.factualQuantities
+    return PreparedAssetWarehouse(
+      warehouse: filteredWarehouse,
+      inventoryCount: Set(
+        filteredWarehouse.locations.flatMap(\.owners).map(\.ownerID)
+      ).count,
+      factualQuantities: filteredQuantities,
+      totalUnits: filteredQuantities.values.reduce(
+        0,
+        AssetWarehouse.saturatedAdd
+      )
+    )
+  }
 }
 
 enum StoredAssetWarehouseProjection {

@@ -86,6 +86,136 @@ struct ProductionBasisTests {
     #expect(basis.structures[0].serviceModules == nil)
     #expect(basis.structures[0].serviceCapabilityNeedsReview)
     #expect(basis.logistics.isEnabled == false)
+    #expect(basis.priceSourceTradingLocation?.location == .jita)
+    #expect(basis.homeTradingLocation == nil)
+    #expect(basis.mainTradingLocation?.location == basis.logistics.homeTradeHub)
+  }
+
+  @Test
+  func managesTradingLocationsHomeHubAndPerLocationTraders() {
+    var basis = ProductionBasis(
+      marketTaxes: MarketTaxConfiguration(traderCharacterID: 7),
+      logistics: LogisticsConfiguration(homeTradeHub: .amarr)
+    )
+
+    #expect(
+      basis.configuredProcurementLocations.map(\.id)
+        == [ProcurementLocation.amarr.id]
+    )
+    #expect(basis.priceSourceTradingLocation?.traderCharacterID == 7)
+    #expect(basis.mainTradingLocation?.location == .amarr)
+    #expect(basis.homeTradingLocation == nil)
+    #expect(basis.mainTradeHub == .amarr)
+
+    let addedDodixie = basis.addTradingLocation(.dodixie)
+    let addedDodixieAgain = basis.addTradingLocation(.dodixie)
+    #expect(addedDodixie)
+    #expect(!addedDodixieAgain)
+    let dodixieID = basis.tradingLocations.first {
+      $0.location == .dodixie
+    }!.id
+    basis.selectTrader(
+      characterID: 42,
+      forTradingLocationID: dodixieID
+    )
+    basis.setMainTradingLocation(id: dodixieID)
+
+    let home = ProcurementLocation(
+      id: "structure:1",
+      name: "UALX-3 - Marva Ship Bellicos",
+      locationID: 1_000_000_000_001,
+      kind: .playerStructure,
+      solarSystemID: 30_004_807
+    )
+    let addedHome = basis.addTradingLocation(home)
+    #expect(addedHome)
+    let homeID = basis.tradingLocations.first { $0.location == home }!.id
+    basis.setHomeTradingLocation(id: homeID)
+
+    #expect(
+      basis.tradingLocations.first { $0.id == dodixieID }?
+        .traderCharacterID == 42
+    )
+    #expect(basis.homeTradingLocation?.location == home)
+    #expect(basis.logistics.homeTradeHub == .dodixie)
+    #expect(basis.mainTradeHub == .dodixie)
+    let removedHome = basis.removeTradingLocation(id: homeID)
+    let mainID = basis.priceSourceTradingLocation!.id
+    #expect(!removedHome)
+    let removedMain = basis.removeTradingLocation(id: mainID)
+    #expect(!removedMain)
+
+    let amarrID = basis.tradingLocations.first {
+      $0.location == .amarr
+    }!.id
+    basis.setMainTradingLocation(id: amarrID)
+    let removedDodixie = basis.removeTradingLocation(id: dodixieID)
+    #expect(removedDodixie)
+    #expect(!basis.configuredProcurementLocations.contains(.dodixie))
+    #expect(
+      basis.areTraderSelectionsValid(connectedCharacterIDs: [7])
+    )
+  }
+
+  @Test
+  func tradingLocationConfigurationSurvivesRoundTrip() throws {
+    var original = ProductionBasis(
+      logistics: LogisticsConfiguration(homeTradeHub: .jita)
+    )
+    original.addTradingLocation(.hek)
+    let hekID = try #require(
+      original.tradingLocations.first { $0.location == .hek }?.id
+    )
+    original.selectTrader(characterID: 99, forTradingLocationID: hekID)
+    original.setMainTradingLocation(id: hekID)
+    original.setHomeTradingLocation(id: hekID)
+
+    let decoded = try JSONDecoder().decode(
+      ProductionBasis.self,
+      from: JSONEncoder().encode(original)
+    )
+
+    #expect(decoded.priceSourceTradingLocation?.location == .hek)
+    #expect(decoded.homeTradingLocation?.location == .hek)
+    #expect(decoded.logistics.homeTradeHub == .hek)
+    #expect(decoded.mainTradeHub == .hek)
+    #expect(
+      decoded.homeTradingLocation?.traderCharacterID == 99
+    )
+  }
+
+  @Test
+  func migratesFormerHomeFieldToMainHubAndLegacyTraderField() throws {
+    let locationID = UUID()
+    let locationObject = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(ProcurementLocation.amarr)
+      ) as? [String: Any]
+    )
+    let data = try JSONSerialization.data(
+      withJSONObject: [
+        "marketTaxes": ["traderCharacterID": 7],
+        "tradingLocations": [
+          [
+            "id": locationID.uuidString,
+            "location": locationObject,
+            "traderCharacterID": 7,
+          ]
+        ],
+        "homeTradingLocationID": locationID.uuidString,
+        "logistics": [
+          "homeTradeHub": locationObject,
+          "productionLocationName": "Production",
+        ],
+      ]
+    )
+
+    let basis = try JSONDecoder().decode(ProductionBasis.self, from: data)
+
+    #expect(basis.mainTradingLocationID == locationID)
+    #expect(basis.mainTradingLocation?.location == .amarr)
+    #expect(basis.mainTradingLocation?.traderCharacterID == 7)
+    #expect(basis.homeTradingLocationID == nil)
   }
 
   @Test
@@ -534,6 +664,75 @@ struct ProductionBasisTests {
     #expect(taxes.effectiveSalesTaxRate == nil)
     #expect(taxes.effectiveBrokerFeeRate == nil)
     #expect(taxes.calculation?.freshness == .forbidden)
+  }
+
+  @Test
+  func marketFeesRemainBoundToTraderAndTradingLocation() {
+    let source = SourceIdentity(provider: "ESI", version: "fixture")
+    let capability = CharacterCapabilitySnapshot(
+      character: CharacterIdentity(id: 42, name: "Trader"),
+      cloneState: .omega,
+      skills: Sourced(
+        state: .fresh,
+        value: [
+          TrainedSkill(
+            skillID: EVEConstants.accountingSkillTypeID,
+            trainedLevel: 5,
+            activeLevel: 5,
+            skillpoints: 1
+          ),
+          TrainedSkill(
+            skillID: EVEConstants.brokerRelationsSkillTypeID,
+            trainedLevel: 4,
+            activeLevel: 4,
+            skillpoints: 1
+          ),
+        ],
+        source: source
+      ),
+      standings: Sourced(
+        state: .fresh,
+        value: [500_002: -1, 1_000_004: 2],
+        source: source
+      )
+    )
+    let station = ProcurementLocation(
+      id: "npc:1",
+      name: "Fixture NPC Station",
+      locationID: 60_000_001,
+      kind: .npcTradeHub,
+      solarSystemID: 30_000_001,
+      ownerCorporationID: 1_000_004,
+      ownerFactionID: 500_002
+    )
+    var taxes = MarketTaxConfiguration(traderCharacterID: 42)
+
+    taxes.apply(capability: capability, at: station)
+
+    #expect(abs((taxes.effectiveBrokerFeeRate ?? 0) - 0.0179) < 0.000_001)
+    #expect(taxes.calculation?.locationID == station.locationID)
+    #expect(taxes.calculation?.locationName == station.name)
+    #expect(taxes.calculation?.brokerFeeSource == .npcStation)
+
+    let structure = ProcurementLocation(
+      id: "structure:1",
+      name: "Fixture Player Structure",
+      locationID: 1_000_000_000_001,
+      kind: .playerStructure
+    )
+    taxes.apply(capability: capability, at: structure)
+
+    #expect(taxes.effectiveSalesTaxRate != nil)
+    #expect(taxes.effectiveBrokerFeeRate == nil)
+    #expect(
+      taxes.calculation?.brokerFeeSource
+        == .playerStructureNotExposedByESI
+    )
+    #expect(
+      taxes.calculation?.warnings.contains {
+        $0.contains("not exposed by ESI")
+      } == true
+    )
   }
 
   @Test

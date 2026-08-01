@@ -74,6 +74,33 @@ public actor PlayerStructureSearchService {
     characterID: Int64,
     lease: AccessTokenLease
   ) async throws -> Sourced<[PlayerStructureOption]> {
+    try await search(
+      query: query,
+      restrictingToSolarSystemID: solarSystemID,
+      characterID: characterID,
+      lease: lease
+    )
+  }
+
+  public func search(
+    query: String,
+    characterID: Int64,
+    lease: AccessTokenLease
+  ) async throws -> Sourced<[PlayerStructureOption]> {
+    try await search(
+      query: query,
+      restrictingToSolarSystemID: nil,
+      characterID: characterID,
+      lease: lease
+    )
+  }
+
+  private func search(
+    query: String,
+    restrictingToSolarSystemID solarSystemID: Int64?,
+    characterID: Int64,
+    lease: AccessTokenLease
+  ) async throws -> Sourced<[PlayerStructureOption]> {
     let accepted = query.trimmingCharacters(
       in: .whitespacesAndNewlines
     )
@@ -117,7 +144,11 @@ public actor PlayerStructureSearchService {
           ),
           lease: lease
         )
-        guard detail.value.solarSystemID == solarSystemID else { continue }
+        if let solarSystemID,
+          detail.value.solarSystemID != solarSystemID
+        {
+          continue
+        }
         values.append(
           PlayerStructureOption(
             id: structureID,
@@ -453,6 +484,172 @@ public actor PlayerStructureSearchService {
       solarSystemID: detail.value.solarSystemID,
       typeID: detail.value.typeID,
       source: detail.source
+    )
+  }
+}
+
+public struct TradingLocationSearchOption: Identifiable, Codable, Equatable,
+  Sendable
+{
+  public let id: Int64
+  public let name: String
+  public let solarSystemID: Int64
+  public let ownerCorporationID: Int64
+  public let ownerFactionID: Int64?
+  public let source: SourceIdentity
+
+  public init(
+    id: Int64,
+    name: String,
+    solarSystemID: Int64,
+    ownerCorporationID: Int64,
+    ownerFactionID: Int64?,
+    source: SourceIdentity
+  ) {
+    self.id = id
+    self.name = name
+    self.solarSystemID = solarSystemID
+    self.ownerCorporationID = ownerCorporationID
+    self.ownerFactionID = ownerFactionID
+    self.source = source
+  }
+
+  public var procurementLocation: ProcurementLocation {
+    ProcurementLocation(
+      id: "npc:\(id)",
+      name: name,
+      locationID: id,
+      kind: .npcTradeHub,
+      solarSystemID: solarSystemID,
+      ownerCorporationID: ownerCorporationID,
+      ownerFactionID: ownerFactionID
+    )
+  }
+}
+
+private struct ESIStationSearchResult: Decodable, Sendable {
+  let station: [Int64]?
+}
+
+private struct ESIStationDetails: Decodable, Sendable {
+  let name: String
+  let ownerCorporationID: Int64
+  let solarSystemID: Int64
+
+  private enum CodingKeys: String, CodingKey {
+    case name
+    case ownerCorporationID = "owner"
+    case solarSystemID = "system_id"
+  }
+}
+
+private struct ESICorporationFaction: Decodable, Sendable {
+  let factionID: Int64?
+
+  private enum CodingKeys: String, CodingKey {
+    case factionID = "faction_id"
+  }
+}
+
+public actor TradingLocationSearchService {
+  public static let maximumResultCount = 50
+  public static let maximumConcurrentRequests = 6
+
+  private let esi: ESIClient
+
+  public init(esi: ESIClient) {
+    self.esi = esi
+  }
+
+  public func searchNPCStations(
+    query: String
+  ) async throws -> Sourced<[TradingLocationSearchOption]> {
+    let accepted = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard accepted.count >= 3 else {
+      return Sourced(
+        state: .fresh,
+        value: [],
+        source: SourceIdentity(
+          provider: "ESI",
+          version: EVEConstants.esiCompatibilityDate
+        ),
+        diagnostics: ["esi.station-search.minimum-three-characters"]
+      )
+    }
+    let response = try await esi.get(
+      ESIStationSearchResult.self,
+      endpoint: ESIEndpoint(
+        path: "/search/",
+        query: [
+          URLQueryItem(name: "categories", value: "station"),
+          URLQueryItem(name: "search", value: accepted),
+          URLQueryItem(name: "strict", value: "false"),
+        ]
+      )
+    )
+    let stationIDs = Array(
+      (response.value.station ?? []).prefix(Self.maximumResultCount)
+    )
+    var options: [TradingLocationSearchOption] = []
+    var unavailable = 0
+    for start in stride(
+      from: 0,
+      to: stationIDs.count,
+      by: Self.maximumConcurrentRequests
+    ) {
+      let end = min(
+        start + Self.maximumConcurrentRequests,
+        stationIDs.count
+      )
+      let results = await withTaskGroup(
+        of: TradingLocationSearchOption?.self,
+        returning: [TradingLocationSearchOption?].self
+      ) { group in
+        for stationID in stationIDs[start..<end] {
+          group.addTask {
+            try? await self.resolveNPCStation(stationID: stationID)
+          }
+        }
+        var values: [TradingLocationSearchOption?] = []
+        for await value in group { values.append(value) }
+        return values
+      }
+      unavailable += results.filter { $0 == nil }.count
+      options.append(contentsOf: results.compactMap { $0 })
+    }
+    options.sort {
+      $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+    }
+    return Sourced(
+      state: unavailable == 0 ? .fresh : .partial,
+      value: options,
+      source: response.source,
+      diagnostics:
+        unavailable == 0
+        ? [] : ["esi.station-search.unavailable:\(unavailable)"]
+    )
+  }
+
+  public func resolveNPCStation(
+    stationID: Int64
+  ) async throws -> TradingLocationSearchOption {
+    let station = try await esi.get(
+      ESIStationDetails.self,
+      endpoint: ESIEndpoint(path: "/universe/stations/\(stationID)/")
+    )
+    let corporation = try? await esi.get(
+      ESICorporationFaction.self,
+      endpoint: ESIEndpoint(
+        path: "/corporations/\(station.value.ownerCorporationID)/"
+      )
+    )
+    return TradingLocationSearchOption(
+      id: stationID,
+      name: station.value.name,
+      solarSystemID: station.value.solarSystemID,
+      ownerCorporationID: station.value.ownerCorporationID,
+      ownerFactionID: corporation?.value.factionID,
+      source: station.source
     )
   }
 }

@@ -65,6 +65,238 @@ struct AssetWarehouseTests {
   }
 
   @Test
+  func productionWarehouseKeepsOnlyLooseAndContainerStock() {
+    let productionLocation: Int64 = 1_000_000_000_001
+    let otherLocation: Int64 = 60_003_760
+    let warehouse = AssetWarehouse(
+      inventories: [
+        AssetOwnerInventory(
+          ownerID: 11,
+          ownerName: "Alpha",
+          assets: sourcedAssets(
+            ownerID: 11,
+            items: [
+              asset(
+                id: 100,
+                typeID: 34,
+                quantity: 250,
+                locationID: productionLocation,
+                kind: .structure
+              ),
+              asset(
+                id: 101,
+                typeID: 587,
+                quantity: 1,
+                locationID: productionLocation,
+                kind: .structure
+              ),
+              asset(
+                id: 102,
+                typeID: 35,
+                quantity: 50,
+                locationID: otherLocation,
+                kind: .station
+              ),
+              asset(
+                id: 103,
+                typeID: 2_048,
+                quantity: 4,
+                locationID: 101,
+                kind: .item,
+                locationFlag: "HiSlot0"
+              ),
+              asset(
+                id: 104,
+                typeID: 23,
+                quantity: 1,
+                locationID: productionLocation,
+                kind: .structure
+              ),
+              asset(
+                id: 105,
+                typeID: 35,
+                quantity: 75,
+                locationID: 104,
+                kind: .item,
+                locationFlag: "Unlocked"
+              ),
+              asset(
+                id: 106,
+                typeID: 23,
+                quantity: 1,
+                locationID: 101,
+                kind: .item,
+                locationFlag: "Cargo"
+              ),
+              asset(
+                id: 107,
+                typeID: 36,
+                quantity: 500,
+                locationID: 106,
+                kind: .item,
+                locationFlag: "Unlocked"
+              ),
+            ]
+          )
+        )
+      ]
+    )
+
+    let productionWarehouse = warehouse.filtered(
+      locationIDs: [productionLocation],
+      excludingTypeIDs: [587],
+      excludingContentsOfTypeIDs: [587]
+    )
+
+    #expect(productionWarehouse.locations.map(\.id) == [productionLocation])
+    #expect(
+      productionWarehouse.factualQuantities
+        == [23: 1, 34: 250, 35: 75]
+    )
+    #expect(productionWarehouse.snapshotIDs == warehouse.snapshotIDs)
+    #expect(productionWarehouse.sourceStates == warehouse.sourceStates)
+  }
+
+  @Test
+  func groupsOwnerContentsOnceByTypeAndInventoryFlag() {
+    let locationID: Int64 = 60_003_760
+    let warehouse = AssetWarehouse(
+      inventories: [
+        AssetOwnerInventory(
+          ownerID: 11,
+          ownerName: "Alpha",
+          assets: sourcedAssets(
+            ownerID: 11,
+            items: [
+              asset(
+                id: 100,
+                typeID: 34,
+                quantity: 10,
+                locationID: locationID,
+                kind: .station
+              ),
+              asset(
+                id: 101,
+                typeID: 34,
+                quantity: 15,
+                locationID: locationID,
+                kind: .station
+              ),
+              asset(
+                id: 102,
+                typeID: 34,
+                quantity: 2,
+                locationID: locationID,
+                kind: .station,
+                locationFlag: "AutoFit"
+              ),
+            ]
+          )
+        )
+      ]
+    )
+
+    let rows = warehouse.groupedOwnerContents()[
+      AssetWarehouseOwnerContentKey(locationID: locationID, ownerID: 11)
+    ]
+
+    #expect(
+      rows == [
+        AssetWarehouseOwnerContentLine(
+          typeID: 34,
+          locationFlag: "AutoFit",
+          quantity: 2
+        ),
+        AssetWarehouseOwnerContentLine(
+          typeID: 34,
+          locationFlag: "Hangar",
+          quantity: 25
+        ),
+      ]
+    )
+  }
+
+  @Test
+  func organizesOwnerContentsAlphabeticallyAndBySDEHierarchy() {
+    let rows = [
+      AssetWarehouseOwnerContentLine(
+        typeID: 3,
+        locationFlag: "Hangar",
+        quantity: 7
+      ),
+      AssetWarehouseOwnerContentLine(
+        typeID: 1,
+        locationFlag: "Hangar",
+        quantity: 5
+      ),
+      AssetWarehouseOwnerContentLine(
+        typeID: 2,
+        locationFlag: "Hangar",
+        quantity: 6
+      ),
+      AssetWarehouseOwnerContentLine(
+        typeID: 4,
+        locationFlag: "Hangar",
+        quantity: 8
+      ),
+    ]
+    let metadata: [Int64: AssetTypeGroupingMetadata] = [
+      1: AssetTypeGroupingMetadata(
+        typeID: 1,
+        typeName: "Zydrine",
+        categoryName: "Material",
+        groupName: "Mineral"
+      ),
+      2: AssetTypeGroupingMetadata(
+        typeID: 2,
+        typeName: "Antimatter Charge S",
+        categoryName: "Charge",
+        groupName: "Hybrid Charge"
+      ),
+      3: AssetTypeGroupingMetadata(
+        typeID: 3,
+        typeName: "Mexallon",
+        categoryName: "Material",
+        groupName: "Mineral"
+      ),
+    ]
+
+    let alphabetical = AssetWarehouseContentOrganizer.sections(
+      rows: rows,
+      metadata: metadata,
+      organization: .alphabetical
+    )
+    #expect(alphabetical.count == 1)
+    #expect(alphabetical[0].title == nil)
+    #expect(alphabetical[0].rows.map(\.typeID) == [2, 3, 4, 1])
+
+    let groups = AssetWarehouseContentOrganizer.sections(
+      rows: rows,
+      metadata: metadata,
+      organization: .group
+    )
+    #expect(
+      groups.compactMap(\.title) == [
+        "Hybrid Charge", "Mineral", "Unclassified",
+      ]
+    )
+    #expect(groups[1].rows.map(\.typeID) == [3, 1])
+    #expect(groups[2].rows.map(\.typeID) == [4])
+
+    let mainGroups = AssetWarehouseContentOrganizer.sections(
+      rows: rows,
+      metadata: metadata,
+      organization: .mainGroup
+    )
+    #expect(
+      mainGroups.compactMap(\.title) == [
+        "Charge", "Material", "Unclassified",
+      ]
+    )
+    #expect(mainGroups[1].rows.map(\.typeID) == [3, 1])
+  }
+
+  @Test
   func promotesLargeOrphanItemParentsToStructureRoots() {
     let structureID: Int64 = 1_000_000_000_001
     let rawItems = [
@@ -311,6 +543,14 @@ struct AssetWarehouseTests {
     #expect(warehouse.locations[0].id == stationID)
     #expect(warehouse.locations[0].owners[0].items.count == itemCount + 1)
     #expect(warehouse.factualQuantities[34] == Int64(itemCount))
+    let displayRows = warehouse.groupedOwnerContents()[
+      AssetWarehouseOwnerContentKey(locationID: stationID, ownerID: 11)
+    ]
+    #expect(displayRows?.count == 2)
+    #expect(
+      displayRows?.first(where: { $0.typeID == 34 })?.quantity
+        == Int64(itemCount)
+    )
   }
 
   private func sourcedAssets(
@@ -350,7 +590,8 @@ struct AssetWarehouseTests {
     typeID: Int64,
     quantity: Int64,
     locationID: Int64,
-    kind: AssetLocationKind
+    kind: AssetLocationKind,
+    locationFlag: String = "Hangar"
   ) -> AssetItem {
     AssetItem(
       id: id,
@@ -358,7 +599,7 @@ struct AssetWarehouseTests {
       quantity: quantity,
       locationID: locationID,
       locationKind: kind,
-      locationFlag: "Hangar",
+      locationFlag: locationFlag,
       singleton: false
     )
   }

@@ -231,9 +231,13 @@ enum PlannerPersistenceController {
           $0.typeID == input.typeID
         })
       else { return nil }
-      let quote =
+      let legacyQuote =
         input.action == .useStock ? material.stockQuote : material.quote
-      guard let unitPrice = quote?.weightedUnitPrice else { return nil }
+      guard
+        let unitPrice =
+          material.replacementQuote?.weightedUnitPrice
+          ?? legacyQuote?.weightedUnitPrice
+      else { return nil }
       total += unitPrice * Double(input.requiredQuantity)
     }
     return total

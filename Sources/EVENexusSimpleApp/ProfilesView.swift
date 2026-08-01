@@ -19,10 +19,11 @@ struct ProfilesView: View {
   @State private var showScienceSkillMatrix = false
   @State private var isRefreshingCharacterSkills = false
   @State private var characterSkillMessage: String?
-  @State private var isRefreshingTraderFees = false
-  @State private var traderFeeMessage: String?
+  @State private var refreshingTraderFeeLocationID: UUID?
+  @State private var traderFeeMessages: [UUID: String] = [:]
   @State private var savedBasis: ProductionBasis?
   @State private var showSchedulingConfiguration = false
+  @State private var tradingLocationToAddID: String?
 
   private var columns: [GridItem] {
     [
@@ -69,6 +70,7 @@ struct ProfilesView: View {
     }
     .onChange(of: runtime.productionBasis) { _, newValue in
       var normalized = newValue
+      normalized.normalizeTradingLocations()
       normalized.refreshAutomaticFacilityAssignments()
       if normalized != newValue {
         runtime.productionBasis = normalized
@@ -241,10 +243,9 @@ struct ProfilesView: View {
 
   private var schedulingConfiguration: some View {
     Panel(title: "Job Mode, Slots & Account") {
-      DisclosureGroup(
-        "Scheduling and slot settings",
-        isExpanded: $showSchedulingConfiguration
-      ) {
+      FullWidthDisclosure(isExpanded: $showSchedulingConfiguration) {
+        Text("Scheduling and slot settings")
+      } content: {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           Picker("Clone state", selection: basisBinding(\.cloneState)) {
             ForEach(CloneState.allCases, id: \.self) { state in
@@ -296,91 +297,74 @@ struct ProfilesView: View {
 
   private var marketAndBlueprintConfiguration: some View {
     LazyVGrid(columns: columns, spacing: DesignTokens.spacingMD) {
-      Panel(title: "Market Taxes") {
-        Picker("Trader", selection: traderCharacterBinding) {
-          Text("Select a connected character").tag(Int64?.none)
-          ForEach(characters) { character in
-            Text(character.characterName)
-              .tag(Optional(character.characterID))
-          }
-        }
-        .accessibilityIdentifier("profiles.market-trader")
-
-        LabeledContent("Market location") {
-          Text("Jita IV-4")
-        }
-        LabeledContent("Sales Tax") {
-          Text(formatRate(runtime.productionBasis.marketTaxes.salesTaxRate))
-            .font(.body.monospacedDigit())
-        }
-        LabeledContent("Broker Fee") {
-          Text(formatRate(runtime.productionBasis.marketTaxes.brokerFeeRate))
-            .font(.body.monospacedDigit())
-        }
-
-        if let calculation = runtime.productionBasis.marketTaxes.calculation {
-          LabeledContent("Accounting") {
-            Text(skillLevelText(calculation.accountingLevel))
-              .font(.body.monospacedDigit())
-          }
-          LabeledContent("Broker Relations") {
-            Text(skillLevelText(calculation.brokerRelationsLevel))
-              .font(.body.monospacedDigit())
-          }
-          LabeledContent("Caldari State standing") {
-            Text(standingText(calculation.factionStanding))
-              .font(.body.monospacedDigit())
-          }
-          LabeledContent("Caldari Navy standing") {
-            Text(standingText(calculation.corporationStanding))
-              .font(.body.monospacedDigit())
-          }
-          Label(
-            feeFreshnessText(calculation.freshness),
-            systemImage:
-              calculation.freshness == .fresh
-              ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-          )
-          .font(.caption)
-          .foregroundStyle(
-            calculation.freshness == .fresh
-              ? DesignTokens.positive : DesignTokens.caution
-          )
-          Text(
-            "Calculated \(calculation.calculatedAt.formatted()) · \(calculation.ruleVersion)"
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-          ForEach(calculation.warnings, id: \.self) { warning in
-            Text(warning)
-              .font(.caption)
-              .foregroundStyle(DesignTokens.caution)
-          }
-        } else {
-          Text(
-            "Choose a connected character. Sales tax is derived from Accounting; the Jita IV-4 broker fee also uses Broker Relations and unmodified Caldari State/Caldari Navy standings."
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.caution)
-        }
-
-        Button {
-          Task { await refreshTraderFees() }
-        } label: {
-          if isRefreshingTraderFees {
-            ProgressView()
-          } else {
-            Label("Refresh Trader Fees from ESI", systemImage: "arrow.clockwise")
-          }
-        }
-        .disabled(
-          isRefreshingTraderFees
-            || runtime.productionBasis.marketTaxes.traderCharacterID == nil
+      Panel(
+        title: LocalizedStringKey(
+          AppLocalization.text("Trading Locations & Market Taxes")
         )
-        if let traderFeeMessage {
-          Text(traderFeeMessage)
-            .font(.caption)
+      ) {
+        Text(
+          AppLocalization.text(
+            "The Main Hub is one of the standard Highsec trade hubs and supplies Planner prices and purchase availability. The Home Hub is your own preferred station or Player Structure. Additional Trading Locations remain independent."
+          )
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+
+        Picker(AppLocalization.text("Main Hub"), selection: mainTradeHubBinding) {
+          ForEach(MarketTradeHub.allCases) { hub in
+            Text(hub.name).tag(hub)
+          }
+        }
+        LabeledContent(AppLocalization.text("Main Hub purpose")) {
+          Text(AppLocalization.text("Planner prices, purchases and inbound logistics"))
             .foregroundStyle(DesignTokens.textSecondary)
+        }
+
+        Picker(AppLocalization.text("Home Hub"), selection: homeTradingLocationBinding) {
+          Text(AppLocalization.text("Not configured")).tag(UUID?.none)
+          ForEach(runtime.productionBasis.tradingLocations) { configuration in
+            Text(configuration.location.name).tag(Optional(configuration.id))
+          }
+        }
+        Text(
+          AppLocalization.text(
+            "The Home Hub is a saved operational location and does not replace the Main Hub as the Planner price source."
+          )
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+
+        HStack {
+          Picker(
+            AppLocalization.text("Add prepared Trading Location"),
+            selection: $tradingLocationToAddID
+          ) {
+            Text(AppLocalization.text("Select a standard Highsec hub"))
+              .tag(String?.none)
+            ForEach(tradingLocationCandidates) { location in
+              Text(location.name).tag(Optional(location.id))
+            }
+          }
+          Button {
+            addSelectedTradingLocation()
+          } label: {
+            Label(AppLocalization.text("Add"), systemImage: "plus.circle")
+          }
+          .disabled(tradingLocationToAddID == nil)
+        }
+
+        TradingLocationESIPicker(
+          authorizations: authorizationSnapshots,
+          clientID: clientID
+        ) { location in
+          _ = runtime.productionBasis.addTradingLocation(location)
+        }
+
+        Divider()
+        Text(AppLocalization.text("Configured Trading Locations"))
+          .font(.headline)
+        ForEach(runtime.productionBasis.tradingLocations) { configuration in
+          tradingLocationCard(configuration)
         }
       }
 
@@ -410,21 +394,20 @@ struct ProfilesView: View {
         )
         if runtime.productionBasis.logistics.isEnabled {
           Toggle(
-            "Jita purchases → production location",
+            "Main Hub → production",
             isOn: basisBinding(\.logistics.includeInboundMaterials)
           )
-          Toggle(
-            "Finished products → Jita",
-            isOn: basisBinding(\.logistics.includeOutboundProducts)
+          LabeledContent("Main Hub") {
+            Text(
+              runtime.productionBasis.mainTradingLocation?.location.name
+                ?? "Not configured"
+            )
+          }
+          Text(
+            "Purchased items and make-or-buy input materials are transported from the Main Hub to the configured production facility."
           )
-          TextField(
-            "Production location",
-            text: basisBinding(\.logistics.productionLocationName)
-          )
-          TextField(
-            "Market delivery location",
-            text: basisBinding(\.logistics.marketLocationName)
-          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
           LabeledContent("Standard rate") {
             HStack(spacing: DesignTokens.spacingSM) {
               TextField(
@@ -801,25 +784,14 @@ struct ProfilesView: View {
           .foregroundStyle(DesignTokens.textSecondary)
       }
 
-      Button {
-        withAnimation(.easeInOut(duration: 0.18)) {
-          showScienceSkillMatrix.toggle()
-        }
-      } label: {
+      FullWidthDisclosureButton(
+        isExpanded: showScienceSkillMatrix,
+        action: { showScienceSkillMatrix.toggle() }
+      ) {
         let count = runtime.scienceSkillDefinitions?.value?.count ?? 0
-        HStack(spacing: DesignTokens.spacingSM) {
-          Image(
-            systemName:
-              showScienceSkillMatrix
-              ? "chevron.down" : "chevron.right"
-          )
-          Text("Science skill matrix (\(count) skills)")
-            .font(.headline)
-          Spacer()
-        }
-        .contentShape(Rectangle())
+        Text("Science skill matrix (\(count) skills)")
+          .font(.headline)
       }
-      .buttonStyle(.plain)
       .accessibilityLabel("Science skill matrix")
       .accessibilityValue(showScienceSkillMatrix ? "Expanded" : "Collapsed")
 
@@ -940,6 +912,164 @@ struct ProfilesView: View {
     )
   }
 
+  private func tradingLocationCard(
+    _ configuration: TradingLocationConfiguration
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack {
+        Text(configuration.location.name)
+          .font(.headline)
+        if configuration.id == runtime.productionBasis.mainTradingLocationID {
+          Text(AppLocalization.text("MAIN HUB"))
+            .font(.caption2.bold())
+            .foregroundStyle(DesignTokens.positive)
+        }
+        if configuration.id == runtime.productionBasis.homeTradingLocationID {
+          Text(AppLocalization.text("HOME HUB"))
+            .font(.caption2.bold())
+            .foregroundStyle(DesignTokens.highlight)
+        }
+        Spacer()
+        if configuration.id != runtime.productionBasis.mainTradingLocationID,
+          configuration.id != runtime.productionBasis.homeTradingLocationID
+        {
+          Button(role: .destructive) {
+            _ = runtime.productionBasis.removeTradingLocation(
+              id: configuration.id
+            )
+          } label: {
+            Label(
+              AppLocalization.text("Remove"),
+              systemImage: "minus.circle"
+            )
+          }
+          .buttonStyle(.borderless)
+        }
+      }
+
+      Picker(
+        AppLocalization.text("Trader for this location"),
+        selection: tradingLocationTraderBinding(id: configuration.id)
+      ) {
+        Text(AppLocalization.text("No trader selected")).tag(Int64?.none)
+        ForEach(characters) { character in
+          Text(character.characterName)
+            .tag(Optional(character.characterID))
+        }
+      }
+
+      if let traderID = configuration.traderCharacterID {
+        let traderName = characters.first {
+          $0.characterID == traderID
+        }?.characterName ?? "Character \(traderID)"
+        Text(
+          AppLocalization.format(
+            "Fee context: %@ at %@",
+            traderName,
+            configuration.location.name
+          )
+        )
+          .font(.caption.bold())
+        Text(
+          AppLocalization.text(
+            "Accounting and Broker Relations come from this character's ESI skill sheet. Standings are this character's unmodified standings toward the selected NPC station owner."
+          )
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        Text(
+          AppLocalization.text(
+            "Select a connected character to make the character reference for taxes and fees explicit."
+          )
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
+
+      LabeledContent(AppLocalization.text("Sales Tax")) {
+        Text(formatRate(configuration.marketTaxes.salesTaxRate))
+          .font(.body.monospacedDigit())
+      }
+      LabeledContent(AppLocalization.text("Broker Fee")) {
+        Text(formatRate(configuration.marketTaxes.brokerFeeRate))
+          .font(.body.monospacedDigit())
+      }
+
+      if let calculation = configuration.marketTaxes.calculation {
+        LabeledContent(AppLocalization.text("Accounting")) {
+          Text(skillLevelText(calculation.accountingLevel))
+            .font(.body.monospacedDigit())
+        }
+        LabeledContent(AppLocalization.text("Broker Relations")) {
+          Text(skillLevelText(calculation.brokerRelationsLevel))
+            .font(.body.monospacedDigit())
+        }
+        LabeledContent(AppLocalization.text("Faction standing")) {
+          Text(standingText(calculation.factionStanding))
+            .font(.body.monospacedDigit())
+        }
+        LabeledContent(AppLocalization.text("Station corporation standing")) {
+          Text(standingText(calculation.corporationStanding))
+            .font(.body.monospacedDigit())
+        }
+        Label(
+          AppLocalization.text(feeFreshnessText(calculation.freshness)),
+          systemImage:
+            calculation.freshness == .fresh
+            ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(
+          calculation.freshness == .fresh
+            ? DesignTokens.positive : DesignTokens.caution
+        )
+        Text(
+          AppLocalization.format(
+            "Calculated for %@ at %@ · %@",
+            calculation.locationName ?? configuration.location.name,
+            calculation.calculatedAt.formatted(),
+            calculation.ruleVersion
+          )
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        ForEach(calculation.warnings, id: \.self) { warning in
+          Text(AppLocalization.text(warning))
+            .font(.caption)
+            .foregroundStyle(DesignTokens.caution)
+        }
+      }
+
+      Button {
+        Task { await refreshTraderFees(for: configuration.id) }
+      } label: {
+        if refreshingTraderFeeLocationID == configuration.id {
+          ProgressView()
+        } else {
+          Label(
+            AppLocalization.text(
+              "Refresh fees for this location from ESI"
+            ),
+            systemImage: "arrow.clockwise"
+          )
+        }
+      }
+      .disabled(
+        refreshingTraderFeeLocationID != nil
+          || configuration.traderCharacterID == nil
+      )
+      if let message = traderFeeMessages[configuration.id] {
+        Text(message)
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    .padding(DesignTokens.spacingSM)
+    .background(DesignTokens.canvas.opacity(0.55))
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+  }
+
   private func optionalStructureBinding(
     _ keyPath: WritableKeyPath<ProductionBasis, UUID?>
   ) -> Binding<UUID?> {
@@ -972,23 +1102,64 @@ struct ProfilesView: View {
     )
   }
 
-  private var traderCharacterBinding: Binding<Int64?> {
+  private func tradingLocationTraderBinding(id: UUID) -> Binding<Int64?> {
     Binding(
-      get: { runtime.productionBasis.marketTaxes.traderCharacterID },
+      get: {
+        runtime.productionBasis.tradingLocations.first {
+          $0.id == id
+        }?.traderCharacterID
+      },
       set: { characterID in
         let capability = capabilitySnapshots.first {
           $0.character.id == characterID
         }
-        runtime.productionBasis.marketTaxes.selectTrader(
+        runtime.productionBasis.selectTrader(
           characterID: characterID,
+          forTradingLocationID: id,
           capability: capability
         )
-        traderFeeMessage =
+        traderFeeMessages[id] =
           capability == nil && characterID != nil
-          ? "No usable skill snapshot is stored yet. Refresh the trader fees."
+          ? "No usable skill snapshot is stored yet. Refresh this location's trader fees."
           : nil
       }
     )
+  }
+
+  private var mainTradeHubBinding: Binding<MarketTradeHub> {
+    Binding(
+      get: { runtime.productionBasis.mainTradeHub },
+      set: { runtime.productionBasis.setMainTradeHub($0) }
+    )
+  }
+
+  private var homeTradingLocationBinding: Binding<UUID?> {
+    Binding(
+      get: { runtime.productionBasis.homeTradingLocationID },
+      set: { id in
+        runtime.productionBasis.setHomeTradingLocation(id: id)
+      }
+    )
+  }
+
+  private var tradingLocationCandidates: [ProcurementLocation] {
+    let configured = Set(
+      runtime.productionBasis.tradingLocations.map { $0.location.id }
+    )
+    return ProcurementLocation.standardTradeHubs.filter {
+      !configured.contains($0.id)
+    }
+    .sorted { $0.name < $1.name }
+  }
+
+  private func addSelectedTradingLocation() {
+    guard let tradingLocationToAddID,
+      let location = tradingLocationCandidates.first(where: {
+        $0.id == tradingLocationToAddID
+      })
+    else { return }
+    runtime.productionBasis.addTradingLocation(location)
+    self.tradingLocationToAddID = nil
   }
 
   private func blacklistBinding(
@@ -1124,34 +1295,40 @@ struct ProfilesView: View {
   }
 
   private func applyStoredTraderFeesIfNeeded() {
-    let taxes = runtime.productionBasis.marketTaxes
-    guard taxes.calculation == nil, let characterID = taxes.traderCharacterID,
-      let capability = capabilitySnapshots.first(where: {
-        $0.character.id == characterID
-      })
-    else { return }
-    runtime.productionBasis.marketTaxes.apply(capability: capability)
+    for configuration in runtime.productionBasis.tradingLocations
+    where configuration.marketTaxes.calculation == nil {
+      guard let characterID = configuration.traderCharacterID,
+        let capability = capabilitySnapshots.first(where: {
+          $0.character.id == characterID
+        })
+      else { continue }
+      runtime.productionBasis.applyMarketFees(
+        capability: capability,
+        forTradingLocationID: configuration.id
+      )
+    }
   }
 
-  private func refreshTraderFees() async {
-    guard
-      let characterID =
-        runtime.productionBasis.marketTaxes.traderCharacterID,
+  private func refreshTraderFees(for locationID: UUID) async {
+    guard let configuration = runtime.productionBasis.tradingLocations.first(
+      where: { $0.id == locationID }
+    ),
+      let characterID = configuration.traderCharacterID,
       let character = characters.first(where: {
         $0.characterID == characterID
       })
     else {
-      traderFeeMessage = "Select a connected trader first."
+      traderFeeMessages[locationID] = "Select a connected trader first."
       return
     }
     guard !clientID.isEmpty else {
-      traderFeeMessage =
+      traderFeeMessages[locationID] =
         "Save the EVE application client ID in Data & Settings first."
       return
     }
-    isRefreshingTraderFees = true
-    traderFeeMessage = nil
-    defer { isRefreshingTraderFees = false }
+    refreshingTraderFeeLocationID = locationID
+    traderFeeMessages[locationID] = nil
+    defer { refreshingTraderFeeLocationID = nil }
     do {
       let authorization = try JSONDecoder().decode(
         AuthorizationSnapshot.self,
@@ -1164,11 +1341,30 @@ struct ProfilesView: View {
       character.capabilitySnapshot = try JSONEncoder().encode(capability)
       character.lastSyncAt = .now
       try modelContext.save()
-      runtime.productionBasis.marketTaxes.apply(capability: capability)
-      traderFeeMessage =
-        "Trader skills and standings refreshed from ESI."
+      var locationWasResolved = true
+      if configuration.location.kind == .npcTradeHub {
+        do {
+          let resolved = try await runtime.resolveNPCTradingLocation(
+            configuration.location
+          )
+          runtime.productionBasis.updateTradingLocation(
+            id: locationID,
+            location: resolved
+          )
+        } catch {
+          locationWasResolved = false
+        }
+      }
+      runtime.productionBasis.applyMarketFees(
+        capability: capability,
+        forTradingLocationID: locationID
+      )
+      traderFeeMessages[locationID] =
+        locationWasResolved
+        ? "Trader skills, standings and location context refreshed from ESI."
+        : "Trader skills and standings were refreshed, but the NPC station owner could not be resolved; the broker fee remains unavailable."
     } catch {
-      traderFeeMessage =
+      traderFeeMessages[locationID] =
         "Trader fees could not be refreshed. Check scopes and reauthorize this character."
     }
   }
@@ -1240,14 +1436,15 @@ struct ProfilesView: View {
   }
 
   private func saveBasis() {
+    runtime.productionBasis.normalizeTradingLocations()
     let connectedCharacterIDs = Set(characters.map(\.characterID))
     guard
-      runtime.productionBasis.marketTaxes.isTraderSelectionValid(
+      runtime.productionBasis.areTraderSelectionsValid(
         connectedCharacterIDs: connectedCharacterIDs
       )
     else {
       statusMessage =
-        "The selected market trader is no longer connected."
+        "A trader selected for a Trading Location is no longer connected."
       profileNavigationGuard.completeSave(success: false)
       return
     }
@@ -1292,7 +1489,7 @@ struct ProfilesView: View {
   }
 
   private func formatRate(_ value: Double?) -> String {
-    guard let value else { return "Unavailable" }
+    guard let value else { return AppLocalization.text("Unavailable") }
     return value.formatted(
       .percent
         .locale(AppLocalization.currentLanguage.locale)
@@ -1301,7 +1498,7 @@ struct ProfilesView: View {
   }
 
   private func skillLevelText(_ level: Int?) -> String {
-    level.map { "Level \($0)" } ?? "Unavailable"
+    level.map { "Level \($0)" } ?? AppLocalization.text("Unavailable")
   }
 
   private func standingText(_ standing: Double?) -> String {
@@ -1309,7 +1506,7 @@ struct ProfilesView: View {
       .number
         .locale(AppLocalization.currentLanguage.locale)
         .precision(.fractionLength(2))
-    ) ?? "Unavailable"
+    ) ?? AppLocalization.text("Unavailable")
   }
 
   private func feeFreshnessText(_ freshness: DataFreshness) -> String {
@@ -1514,9 +1711,8 @@ private struct SolarSystemPicker: View {
     }
     .padding(DesignTokens.spacingMD)
     .frame(
-      minWidth: 320,
-      idealWidth: 380,
-      maxHeight: 320,
+      width: 560,
+      height: 400,
       alignment: .topLeading
     )
   }
@@ -2239,6 +2435,220 @@ private struct RigEditor: View {
         .locale(AppLocalization.currentLanguage.locale)
         .precision(.fractionLength(0...2))
     ) + "%"
+  }
+}
+
+private struct TradingLocationESIPicker: View {
+  @EnvironmentObject private var runtime: RuntimeState
+  let authorizations: [AuthorizationSnapshot]
+  let clientID: String
+  let onSelect: (ProcurementLocation) -> Void
+
+  @State private var selectedCharacterID: Int64?
+  @State private var query = ""
+  @State private var stationResults: [TradingLocationSearchOption] = []
+  @State private var structureResults: [PlayerStructureOption] = []
+  @State private var isSearching = false
+  @State private var message: String?
+
+  init(
+    authorizations: [AuthorizationSnapshot],
+    clientID: String,
+    onSelect: @escaping (ProcurementLocation) -> Void
+  ) {
+    self.authorizations = authorizations
+    self.clientID = clientID
+    self.onSelect = onSelect
+    _selectedCharacterID = State(
+      initialValue: authorizations.first?.characterID
+    )
+  }
+
+  private var authorization: AuthorizationSnapshot? {
+    authorizations.first { $0.characterID == selectedCharacterID }
+  }
+
+  private var canSearchStructures: Bool {
+    guard let authorization else { return false }
+    return authorization.scopes.contains(
+      PlayerStructureSearchService.searchScope
+    ) && authorization.scopes.contains(
+      PlayerStructureSearchService.detailScope
+    )
+  }
+
+  private var acceptedQuery: String {
+    query.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text(AppLocalization.text("Add a Trading Location from ESI"))
+        .font(.headline)
+      Text(
+        AppLocalization.text(
+          "Search public NPC stations directly. For an ACL-visible Player Structure, select a connected character whose ESI authorization can search and resolve structures. Type at least three characters."
+        )
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      TextField(
+        AppLocalization.text("Station or Player Structure name"),
+        text: $query
+      )
+        .textFieldStyle(.roundedBorder)
+      HStack(spacing: DesignTokens.spacingSM) {
+        Button {
+          Task { await searchStations() }
+        } label: {
+          Label(
+            AppLocalization.text("Search NPC stations"),
+            systemImage: "building.columns"
+          )
+        }
+        .disabled(isSearching || acceptedQuery.count < 3)
+
+        Picker(
+          AppLocalization.text("Character for Player Structure search"),
+          selection: $selectedCharacterID
+        ) {
+          Text(AppLocalization.text("Select character")).tag(Int64?.none)
+          ForEach(authorizations) { authorization in
+            Text(authorization.characterName)
+              .tag(Optional(authorization.characterID))
+          }
+        }
+
+        Button {
+          Task { await searchStructures() }
+        } label: {
+          Label(
+            AppLocalization.text("Search Player Structures"),
+            systemImage: "building.2"
+          )
+        }
+        .disabled(
+          isSearching || acceptedQuery.count < 3 || !canSearchStructures
+            || clientID.isEmpty
+        )
+      }
+
+      if isSearching {
+        ProgressView(AppLocalization.text("Searching ESI…"))
+          .controlSize(.small)
+      }
+      if !stationResults.isEmpty {
+        Menu {
+          ForEach(stationResults) { option in
+            Button(option.name) {
+              onSelect(option.procurementLocation)
+              message = "Added \(option.name)."
+            }
+          }
+        } label: {
+          Label(
+            AppLocalization.format(
+              "Select one of %lld NPC stations",
+              Int64(stationResults.count)
+            ),
+            systemImage: "building.columns"
+          )
+        }
+      }
+      if !structureResults.isEmpty {
+        Menu {
+          ForEach(structureResults) { option in
+            Button(option.name) {
+              onSelect(
+                ProcurementLocation(
+                  id: "structure:\(option.id)",
+                  name: option.name,
+                  locationID: option.id,
+                  kind: .playerStructure,
+                  solarSystemID: option.solarSystemID,
+                  ownerCorporationID: option.ownerCorporationID
+                )
+              )
+              message = "Added \(option.name)."
+            }
+          }
+        } label: {
+          Label(
+            AppLocalization.format(
+              "Select one of %lld Player Structures",
+              Int64(structureResults.count)
+            ),
+            systemImage: "building.2"
+          )
+        }
+      }
+      if let message {
+        Text(message)
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    .onChange(of: query) { _, _ in
+      stationResults = []
+      structureResults = []
+      message = nil
+    }
+  }
+
+  private func searchStations() async {
+    isSearching = true
+    stationResults = []
+    structureResults = []
+    message = nil
+    defer { isSearching = false }
+    do {
+      let snapshot = try await runtime.searchNPCTradingLocations(
+        matching: acceptedQuery
+      )
+      stationResults = snapshot.value ?? []
+      message = stationResults.isEmpty
+        ? "No matching NPC station was found."
+        : snapshot.state == .partial
+          ? "Some matching NPC stations could not be resolved."
+          : nil
+    } catch {
+      message = "ESI station search is currently unavailable."
+    }
+  }
+
+  private func searchStructures() async {
+    guard let authorization else {
+      message = "Select a connected character first."
+      return
+    }
+    guard canSearchStructures else {
+      message =
+        "Reauthorize this character for structure search and structure details."
+      return
+    }
+    isSearching = true
+    stationResults = []
+    structureResults = []
+    message = nil
+    defer { isSearching = false }
+    do {
+      let snapshot = try await runtime.searchAccessibleStructures(
+        matching: acceptedQuery,
+        authorization: authorization,
+        clientID: clientID
+      )
+      structureResults = snapshot.value ?? []
+      message = structureResults.isEmpty
+        ? "No accessible matching Player Structure was found."
+        : snapshot.state == .partial
+          ? "Some matching Player Structures were inaccessible."
+          : nil
+    } catch ESIError.missingScope {
+      message = "Reauthorize this character with the current structure scopes."
+    } catch {
+      message = "ESI Player Structure search is currently unavailable."
+    }
   }
 }
 

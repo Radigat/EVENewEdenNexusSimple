@@ -174,9 +174,11 @@ public struct ESIMarketOrderDTO: Codable, Sendable {
   public let minVolume: Int64
   public let orderID: Int64
   public let price: Double
+  public let range: String
   public let systemID: Int64
   public let typeID: Int64
   public let volumeRemain: Int64
+  public let volumeTotal: Int64
 
   enum CodingKeys: String, CodingKey {
     case duration
@@ -186,9 +188,11 @@ public struct ESIMarketOrderDTO: Codable, Sendable {
     case minVolume = "min_volume"
     case orderID = "order_id"
     case price
+    case range
     case systemID = "system_id"
     case typeID = "type_id"
     case volumeRemain = "volume_remain"
+    case volumeTotal = "volume_total"
   }
 }
 

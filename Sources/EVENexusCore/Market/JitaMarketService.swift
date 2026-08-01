@@ -1,6 +1,6 @@
 import Foundation
 
-public struct JitaMarketService: Sendable {
+public struct TradeHubMarketService: Sendable {
   private let esi: ESIClient
   private let maximumConcurrentOrderRequests: Int
 
@@ -15,9 +15,35 @@ public struct JitaMarketService: Sendable {
     )
   }
 
-  public func orderSnapshot(typeIDs: Set<Int64>) async throws
+  public func orderSnapshot(
+    typeIDs: Set<Int64>,
+    tradeHub: MarketTradeHub = .jita
+  ) async throws
     -> MarketOrderSnapshot
   {
+    try await orderSnapshot(
+      typeIDs: typeIDs,
+      regionID: tradeHub.regionID,
+      locationID: tradeHub.stationID
+    )
+  }
+
+  public func orderSnapshot(
+    typeIDs: Set<Int64>,
+    location: MoonMaterialMarketLocation
+  ) async throws -> MarketOrderSnapshot {
+    try await orderSnapshot(
+      typeIDs: typeIDs,
+      regionID: location.regionID,
+      locationID: location.locationID
+    )
+  }
+
+  public func orderSnapshot(
+    typeIDs: Set<Int64>,
+    regionID: Int64,
+    locationID: Int64
+  ) async throws -> MarketOrderSnapshot {
     var ordersByType: [Int64: [MarketOrder]] = [:]
     var source = SourceIdentity(
       provider: "ESI",
@@ -36,7 +62,7 @@ public struct JitaMarketService: Sendable {
         let typeID = orderedTypeIDs[nextIndex]
         nextIndex += 1
         group.addTask {
-          try await fetchOrders(typeID: typeID)
+          try await fetchOrders(typeID: typeID, regionID: regionID)
         }
       }
 
@@ -50,15 +76,15 @@ public struct JitaMarketService: Sendable {
           let typeID = orderedTypeIDs[nextIndex]
           nextIndex += 1
           group.addTask {
-            try await fetchOrders(typeID: typeID)
+            try await fetchOrders(typeID: typeID, regionID: regionID)
           }
         }
       }
     }
     return MarketOrderSnapshot(
       id: UUID(),
-      regionID: EVEConstants.theForgeRegionID,
-      locationID: EVEConstants.jitaIV4StationID,
+      regionID: regionID,
+      locationID: locationID,
       capturedAt: .now,
       state: .fresh,
       ordersByType: ordersByType,
@@ -66,12 +92,15 @@ public struct JitaMarketService: Sendable {
     )
   }
 
-  private func fetchOrders(typeID: Int64) async throws -> MarketOrderBatch {
+  private func fetchOrders(
+    typeID: Int64,
+    regionID: Int64
+  ) async throws -> MarketOrderBatch {
     try Task.checkCancellation()
     let response = try await esi.getAllPages(
       [ESIMarketOrderDTO].self,
       endpoint: ESIEndpoint(
-        path: "/markets/\(EVEConstants.theForgeRegionID)/orders/",
+        path: "/markets/\(regionID)/orders/",
         query: [
           URLQueryItem(name: "order_type", value: "all"),
           URLQueryItem(name: "type_id", value: String(typeID)),
@@ -146,6 +175,8 @@ public struct JitaMarketService: Sendable {
     }
   }
 }
+
+public typealias JitaMarketService = TradeHubMarketService
 
 private struct MarketOrderBatch: Sendable {
   let typeID: Int64

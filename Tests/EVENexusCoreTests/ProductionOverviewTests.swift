@@ -28,6 +28,25 @@ struct ProductionOverviewTests {
   }
 
   @Test
+  func realProfitFollowsNotSoldPartialAndFullySoldQuantities() {
+    func calculation(soldUnits: Int64) -> ProductionOverviewCalculation {
+      ProductionOverviewCalculation(
+        units: 10,
+        materialCost: 100,
+        indexCost: 20,
+        blueprintCost: 10,
+        marketTax: 5,
+        salePricePerUnit: 20,
+        soldUnits: soldUnits
+      )
+    }
+
+    #expect(calculation(soldUnits: 0).realProfit == -135)
+    #expect(calculation(soldUnits: 4).realProfit == -55)
+    #expect(calculation(soldUnits: 10).realProfit == 65)
+  }
+
+  @Test
   func keepsUnavailableInputsUnavailableInsteadOfInventingZero() {
     let calculation = ProductionOverviewCalculation(
       units: 1,

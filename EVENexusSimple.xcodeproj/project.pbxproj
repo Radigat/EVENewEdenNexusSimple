@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		019FBE470000000000000011 /* MarketBrowserModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000001 /* MarketBrowserModels.swift */; };
+		019FBE470000000000000012 /* MarketBrowserService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000002 /* MarketBrowserService.swift */; };
+		019FBE470000000000000013 /* MarketBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000003 /* MarketBrowserView.swift */; };
+		019FBE470000000000000014 /* MarketBrowserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000004 /* MarketBrowserTests.swift */; };
 		012EB53DCA55C2E96CBDD71F /* IndustrySystemIndexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */; };
 		0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */; };
 		0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */; };
@@ -16,6 +20,7 @@
 		193BFA6E9BD748A36AF3F1C0 /* EVEStaticDataKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7CEEFE85E6390715988E7128 /* EVEStaticDataKit */; };
 		1CB911B38DC28B953AB16ED1 /* EVEStaticDataKit in Frameworks */ = {isa = PBXBuildFile; productRef = AC79578EDDF540A631FCA360 /* EVEStaticDataKit */; };
 		1D00ECB0F3388C5B32184441 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */; };
+		019FBDB4A2CA78E19C87A002 /* MoonMaterialPurchaseAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBDB4A2CA78E19C87A001 /* MoonMaterialPurchaseAnalysisView.swift */; };
 		1E600417C5B848EEAF4C1755 /* CharacterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F452FB1FDAFBD6E12B798D6 /* CharacterModels.swift */; };
 		20EFB0D2B0CE105388134CB5 /* libCSQLite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */; };
 		228924544F2948A22F9CFF98 /* UniverseNameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */; };
@@ -82,6 +87,8 @@
 		E72AA3735B44ADC887C56093 /* ProductionBasis.swift in Sources */ = {isa = PBXBuildFile; fileRef = A91941A4CADEFD1746872D53 /* ProductionBasis.swift */; };
 		E843EF4851D47C6138475C27 /* sqlite_shim.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 7EC853A700690D67F134C4BE /* sqlite_shim.h */; };
 		EA30DEE9EDC4BAFD7B575678 /* IndustryRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */; };
+		EEDD4F60A1E90EF08684F7D8 /* PersistenceStabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40B81E1970CDE5ECE390B481 /* PersistenceStabilityTests.swift */; };
+		F42CFC0584909BF14A0EA729 /* AppDataPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06AC99CCF87D838E4211AD71 /* AppDataPaths.swift */; };
 		FB83EC72B2B6E644781E1DB4 /* ESIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C80E158DF92CE41088EDE05 /* ESIClientTests.swift */; };
 		FBAAAD153AB20096A45B5A73 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 8496FDA859C1C053F3404F93 /* libsqlite3.tbd */; };
 		FCA1B225E89C22DE8A61E6C8 /* ProductionBasisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */; };
@@ -162,8 +169,14 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		019FBE470000000000000001 /* MarketBrowserModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserModels.swift; sourceTree = "<group>"; };
+		019FBE470000000000000002 /* MarketBrowserService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserService.swift; sourceTree = "<group>"; };
+		019FBE470000000000000003 /* MarketBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserView.swift; sourceTree = "<group>"; };
+		019FBE470000000000000004 /* MarketBrowserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserTests.swift; sourceTree = "<group>"; };
 		0125A339DC2931CACBE9D073 /* EVENexusSimpleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVENexusSimpleApp.swift; sourceTree = "<group>"; };
+		019FBDB4A2CA78E19C87A001 /* MoonMaterialPurchaseAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonMaterialPurchaseAnalysisView.swift; sourceTree = "<group>"; };
 		0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustrySystemIndexService.swift; sourceTree = "<group>"; };
+		06AC99CCF87D838E4211AD71 /* AppDataPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataPaths.swift; sourceTree = "<group>"; };
 		117EBA1775ABC2E46A9C6C4B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIDTOs.swift; sourceTree = "<group>"; };
 		1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libCSQLite.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -178,6 +191,7 @@
 		38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseNameService.swift; sourceTree = "<group>"; };
 		39DBB992564EF207D526DC27 /* ProductionOverview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionOverview.swift; sourceTree = "<group>"; };
 		3C5E612A0056AAB168E0190B /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
+		40B81E1970CDE5ECE390B481 /* PersistenceStabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceStabilityTests.swift; sourceTree = "<group>"; };
 		41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryFacilityReference.swift; sourceTree = "<group>"; };
 		424A87E3AA508792CF9D2B55 /* SDELifecycleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SDELifecycleService.swift; sourceTree = "<group>"; };
 		4C7C78585E5BA3B164F251BC /* PlayerStructureSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerStructureSearchService.swift; sourceTree = "<group>"; };
@@ -334,6 +348,8 @@
 			isa = PBXGroup;
 			children = (
 				D774BDC3DB16984A0AE06E68 /* JitaMarketService.swift */,
+				019FBE470000000000000001 /* MarketBrowserModels.swift */,
+				019FBE470000000000000002 /* MarketBrowserService.swift */,
 				34B7BB4788BEBA60D7A5800B /* MarketModels.swift */,
 			);
 			path = Market;
@@ -407,6 +423,14 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		8C00666658917EAC29B7853B /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				06AC99CCF87D838E4211AD71 /* AppDataPaths.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
 		A6273A1E936ABCE457B4A8C7 /* EVENexusCore */ = {
 			isa = PBXGroup;
 			children = (
@@ -418,6 +442,7 @@
 				FBF2B685850EFE36CED5E79E /* Foundation */,
 				65E245F83F78D7C05B730807 /* Industry */,
 				51DBC7FEF4A13BC195483499 /* Market */,
+				8C00666658917EAC29B7853B /* Persistence */,
 				4B4586BC5695874E69B96E1B /* Reactions */,
 				DA1EA4A5243116C02137A0CC /* SDE */,
 				4AF4E25A3F6A792D0513C7E3 /* Update */,
@@ -434,6 +459,8 @@
 				AEED60D10F72549632C98A56 /* BlueprintsView.swift */,
 				E4AC75DF5C57565C1C95D785 /* ContentView.swift */,
 				0125A339DC2931CACBE9D073 /* EVENexusSimpleApp.swift */,
+				019FBE470000000000000003 /* MarketBrowserView.swift */,
+				019FBDB4A2CA78E19C87A001 /* MoonMaterialPurchaseAnalysisView.swift */,
 				AFB57B367931C4810737C463 /* PersistenceModels.swift */,
 				5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */,
 				F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */,
@@ -460,7 +487,9 @@
 				E1121279592F9529DC639AF4 /* IndustryPlannerTests.swift */,
 				352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */,
 				E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */,
+				019FBE470000000000000004 /* MarketBrowserTests.swift */,
 				BBBDCD301666D06C8735887C /* MarketPricingTests.swift */,
+				40B81E1970CDE5ECE390B481 /* PersistenceStabilityTests.swift */,
 				E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */,
 				58053BB787C584ABA9902B32 /* ProductionInputParserTests.swift */,
 				EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */,
@@ -669,7 +698,9 @@
 				2F272FC5588FAFBD87D0ADED /* IndustryPlannerTests.swift in Sources */,
 				EA30DEE9EDC4BAFD7B575678 /* IndustryRulesTests.swift in Sources */,
 				7F3AFE42523B5E194D8DA2C8 /* InventionReadinessTests.swift in Sources */,
+				019FBE470000000000000014 /* MarketBrowserTests.swift in Sources */,
 				356CA43B1852389B5D0DE060 /* MarketPricingTests.swift in Sources */,
+				EEDD4F60A1E90EF08684F7D8 /* PersistenceStabilityTests.swift in Sources */,
 				FCA1B225E89C22DE8A61E6C8 /* ProductionBasisTests.swift in Sources */,
 				E0F526CDDC40158A77B76CF6 /* ProductionInputParserTests.swift in Sources */,
 				70F0B9F4FAE35585BD4438A2 /* ProductionOverviewTests.swift in Sources */,
@@ -696,6 +727,8 @@
 				237C28B3A49F5D209A81A7D1 /* BlueprintsView.swift in Sources */,
 				B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */,
 				98497C10BA5823BCC7904928 /* EVENexusSimpleApp.swift in Sources */,
+				019FBE470000000000000013 /* MarketBrowserView.swift in Sources */,
+				019FBDB4A2CA78E19C87A002 /* MoonMaterialPurchaseAnalysisView.swift in Sources */,
 				BEA11B8D265EC2E4FD4781CD /* PersistenceModels.swift in Sources */,
 				A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */,
 				B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */,
@@ -711,6 +744,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F42CFC0584909BF14A0EA729 /* AppDataPaths.swift in Sources */,
 				75C7B721D66FEDE97C71A2F8 /* AssetModels.swift in Sources */,
 				C36B7F038721A4D9DFA14505 /* AssetWarehouse.swift in Sources */,
 				52E07FEADEEE4A083D76F969 /* AuthModels.swift in Sources */,
@@ -732,6 +766,8 @@
 				E5380BF0913F7CD882038A4E /* JitaMarketService.swift in Sources */,
 				BC8A106455EAE98782C571DE /* KeychainRefreshTokenStore.swift in Sources */,
 				C06F91A81025FE554EB56413 /* LoopbackCallbackServer.swift in Sources */,
+				019FBE470000000000000011 /* MarketBrowserModels.swift in Sources */,
+				019FBE470000000000000012 /* MarketBrowserService.swift in Sources */,
 				C1331DC10EACED041A875426 /* MarketModels.swift in Sources */,
 				A1A07595FEE9253FD0A90517 /* MemoizedIndustryCatalog.swift in Sources */,
 				D64C9AA4A9EB1B7CB07EA070 /* PKCE.swift in Sources */,

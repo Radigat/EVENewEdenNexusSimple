@@ -5,7 +5,11 @@ import SwiftUI
 
 enum NavigationSection: String, CaseIterable, Identifiable {
   case planner
-  case assets
+  case marketBrowser
+  case reactions
+  case moonMaterialAnalysis
+  case items
+  case warehouse
   case blueprints
   case productionBook
   case profiles
@@ -18,7 +22,11 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   var title: LocalizedStringKey {
     switch self {
     case .planner: "Planner"
-    case .assets: "Assets & Warehouse"
+    case .marketBrowser: "Market Browser"
+    case .reactions: "Reactions"
+    case .moonMaterialAnalysis: "Moon purchase analysis"
+    case .items: "All items"
+    case .warehouse: "Warehouse"
     case .blueprints: "Blueprints"
     case .productionBook: "Production Overview"
     case .profiles: "Profile"
@@ -31,7 +39,11 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   var icon: String {
     switch self {
     case .planner: "hammer.fill"
-    case .assets: "shippingbox.fill"
+    case .marketBrowser: "chart.bar.doc.horizontal"
+    case .reactions: "atom"
+    case .moonMaterialAnalysis: "chart.xyaxis.line"
+    case .items: "square.grid.2x2.fill"
+    case .warehouse: "shippingbox.fill"
     case .blueprints: "doc.on.doc.fill"
     case .productionBook: "books.vertical.fill"
     case .profiles: "slider.horizontal.3"
@@ -68,7 +80,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           Text("EVE NEXUS SIMPLE")
             .font(.caption.bold())
-          Text("Local • Jita • \(EVEConstants.esiCompatibilityDate)")
+          Text("Local • ESI/SDE • \(EVEConstants.esiCompatibilityDate)")
             .font(.caption2.monospaced())
             .foregroundStyle(DesignTokens.textSecondary)
         }
@@ -82,8 +94,16 @@ struct ContentView: View {
           switch selection ?? .planner {
           case .planner:
             PlannerView()
-          case .assets:
-            AssetsWarehouseView()
+          case .marketBrowser:
+            MarketBrowserView()
+          case .reactions:
+            ReactionsView()
+          case .moonMaterialAnalysis:
+            MoonMaterialPurchaseAnalysisView()
+          case .items:
+            AssetsWarehouseView(mode: .allItems)
+          case .warehouse:
+            AssetsWarehouseView(mode: .productionWarehouse)
           case .blueprints:
             BlueprintsView()
           case .productionBook:
@@ -400,12 +420,60 @@ struct Panel<Content: View>: View {
         .foregroundStyle(DesignTokens.textSecondary)
       content
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(DesignTokens.spacingMD)
     .background(DesignTokens.panel)
     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
     .overlay {
       RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
         .stroke(DesignTokens.border)
+    }
+  }
+}
+
+struct FullWidthDisclosureButton<Label: View>: View {
+  let isExpanded: Bool
+  let action: () -> Void
+  @ViewBuilder let label: Label
+
+  var body: some View {
+    Button {
+      withAnimation(.easeInOut(duration: 0.18), action)
+    } label: {
+      HStack(spacing: DesignTokens.spacingSM) {
+        label
+        Spacer(minLength: DesignTokens.spacingSM)
+        Image(systemName: "chevron.right")
+          .font(.caption.bold())
+          .foregroundStyle(DesignTokens.textSecondary)
+          .rotationEffect(.degrees(isExpanded ? 90 : 0))
+          .accessibilityHidden(true)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+  }
+}
+
+struct FullWidthDisclosure<Label: View, Content: View>: View {
+  @Binding var isExpanded: Bool
+  @ViewBuilder let label: Label
+  @ViewBuilder let content: Content
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      FullWidthDisclosureButton(
+        isExpanded: isExpanded,
+        action: { isExpanded.toggle() }
+      ) {
+        label
+      }
+      if isExpanded {
+        content
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
     }
   }
 }

@@ -60,12 +60,29 @@ The Characters page also changes its progress text after the browser callback
 so a completed SSO connection is not mistaken for the longer, downstream ESI
 data synchronization.
 
-**Assets & Warehouse** combines the stored asset snapshots of all synchronized
-characters. Locations are shown first, each character owner expands below the
-location, and the owner's contents retain their inventory flags. Set a target
-quantity for any SDE item to protect a minimum combined stock. The Planner can
-use only the quantity above those targets and shows warehouse quantity, target,
-allocated stock and the remaining production need beside every material. Run
+**All items** combines the stored personal asset snapshots of all synchronized
+characters at every location, including finished ships. **Warehouse** is a
+separate production view: it retains only items at exact station or Player
+Structure IDs linked in Profile and excludes SDE category `Ship` plus every
+module, charge or container whose ancestor chain enters a ship. Loose hangar
+items and contents of ordinary hangar containers remain available. Locations are
+shown first, each character owner expands below the location, and the owner's
+contents retain their raw ESI inventory flags with a readable storage-position
+label and an in-app explanation for values such as `AutoFit` and `Unlocked`.
+Both views offer one shared, remembered arrangement: alphabetically, by active-
+SDE group, or by active-SDE main group/category. Grouped sections show their
+type and unit totals; types without resolved SDE classification remain visible
+under `Unclassified`. Large owner lists are organized once off the UI thread,
+rendered lazily, and do not repeat SDE name resolution when a minimum changes.
+Edit the minimum directly beside any visible Warehouse item; Return or leaving
+the field saves it. Additional items use the active SDE name search after at
+least three typed characters, so only an exact published result can be selected. A shortfall
+becomes a visible alarm and the Planner can use only stock above the minimum.
+The inventory filter accepts a partial item name from three letters or an exact
+type ID, reduces the view to matching rows and opens their locations and owners.
+Item and solar-system result popovers use a larger scrollable result area.
+Corporation hangars are not synchronized yet and remain explicitly
+unavailable rather than appearing empty. Run
 **Sync all** once after installing this version so existing characters receive
 their newly persisted asset snapshot. Asset locations with ESI type `other`,
 structure-range station IDs, and structure-range `item` parents that are not
@@ -114,40 +131,87 @@ The Planner saves its input draft and the latest successfully calculated plan
 locally, so moving to Characters, Wallet or another sidebar page does not reset
 the production setup. On launch, it loads the newest saved Production Basis and
 its installation-cost reference inputs before enabling the first calculation.
-Unless disabled, the Planner uses the combined all-character warehouse for
-manufacturing and reaction material allocation. Manual stock remains an
-explicit per-calculation override. The shared pool does not imply that items
-have been moved between stations; logistics remain an owner decision. Material
-costs separately show quantities to buy and quantities consumed from warehouse
-or manual stock. Consumed stock remains included in material and total
-production cost at its current Jita replacement value; it is not treated as
-free merely because it is already owned.
-The result groups true raw inputs by their SDE source category at the top and
-keeps producible materials, including intermediates and reactions, in a
-separate section below.
-**Copy for EVE Multibuy** copies only materials with a positive purchase
-quantity as plain `Item name Quantity` lines. Paste the result into EVE's
-Multibuy **Import from Clipboard** action.
+The Planner initially expands every producible intermediate. Raw inputs offer
+**Buy** or **Use warehouse**; producible materials additionally offer
+**Produce**. Changing this source immediately recalculates the plan. Buying or
+taking an intermediate from the warehouse removes its own production branch,
+its input materials and its installation job. Protected targets and active
+reservations remain unavailable; if selected warehouse stock is short, only
+the uncovered remainder stays on the shopping list. Every input not produced
+inside the plan is valued once at its full current Main Hub replacement depth.
+The Costs panel separately shows the Main Hub countervalue of the quantity actually
+consumed from the warehouse. This value uses the same weighted full-demand
+unit prices, is informational only and is not added to the total again.
+Profile manages Trading Locations and selects one standard NPC station as the
+**Main Hub**. Planner market depth, every planned purchase and its plain
+`Item name Quantity` Multibuy list use only this hub. For every producible
+component, intermediate reaction and base reaction, the Planner compares the
+complete required quantity at the Main Hub with the required production batch.
+Profile separately selects a **Home Hub** from any configured location and can
+add public NPC stations or character-accessible Player Structures through ESI;
+configured production Tatara/Sotiyo entries are not proposed as Trading
+Locations. Every Trading Location has its own trader and fee evidence. Accounting,
+Broker Relations and unmodified standings are explicitly attributed to that
+character and location. Player Structure broker fees remain unavailable because
+ESI does not expose the owner-defined rate.
+The comparison includes direct inputs, installation and Main-Hub-to-production
+logistics, shows the cheaper option and the absolute ISK saving, and remains
+unavailable when the hub cannot fill the required quantity or another input is
+unknown. The user can still override the recommendation.
+**Apply recommendations and calculate** transfers every available analysis to
+the Produce/Buy choices and creates a new immutable plan. Its recalculated cost,
+production-job and Main Hub Multibuy sections are the resulting build and
+shopping lists. The build list shows product, activity, runs, output quantity,
+ME/TE, facility and installation cost. Raw-material choices and unavailable
+analyses remain unchanged.
+The shopping list's **Market** row opens a complete review table before export:
+item, purchase quantity, weighted unit price, line total and covered market
+quantity. It uses the same sorted purchase projection as the Multibuy payload;
+missing or partial sell depth remains unavailable and does not become a zero
+price or an apparently complete purchase total.
 **Record production** appends one row per produced item to the
 **Production Overview**, following the `Produktionsübersicht` worksheet in
 `EVE-indu- Delve.xlsx`. The Planner shows the five newest rows; the full
 overview contains the same 21 business columns from number and date through
 material, index, blueprint and market costs to projected and real profit.
 Blueprint cost, sale price per unit and sold units remain editable after
-recording; calculated values update from those inputs while unresolved source
-costs—including an unentered BPO/BPC cost—stay visibly unavailable.
+recording in both the five-row Planner preview and the complete Production
+Overview. The sale control can mark a row not sold or fully sold, while the
+quantity field retains partial sales. Real profit updates from the persisted
+sale price and sold quantity. Calculated values update from those inputs while
+unresolved source costs—including an unentered BPO/BPC cost—stay visibly
+unavailable.
 The active Planner also separates system-index cost, Facility Tax, SCC, Alpha
-surcharge, Sales Tax and Broker Fee. Optional inbound and outbound logistics
-split oversized routes into whole-item contracts. Each contract uses SDE
-packaged volumes, its allocated Jita replacement collateral, the larger of the
-configured m³ charge or 0.5% collateral, and its own million-ISK upward
-rounding.
+surcharge, Sales Tax and Broker Fee. Optional procurement logistics calculate
+`Main Hub → production facility` for purchases and make-or-buy input materials.
+Each generated contract uses SDE packaged volumes, replacement-value collateral,
+the larger of the configured m³ charge or 0.5% collateral, and its own
+million-ISK upward rounding. A missing tariff, packaged volume, collateral depth
+or production location keeps the affected comparison unavailable instead of
+turning the unknown cost into zero.
 
 Top-level production lines may append `BPC <total ISK>` or
 `BPO <allocated ISK>` after Product, Want, ME and TE. BPC is treated as a
 consumed copy acquisition cost; BPO is an owner-entered allocation for the
 reusable original. Both are shown separately and included in total cost,
 profit, margin and ROI.
+
+**Reactions** evaluates every complete published reaction formula in the active
+SDE catalog. It defaults to 100 runs and Jita, while both the exact run count
+and NPC hub (Jita, Amarr, Dodixie, Rens or Hek) are selectable and persisted.
+The run control no longer uses an arbitrary million-run ceiling. The app derives
+the maximum runs of one 30-day job separately for every formula from its SDE
+duration and the active facility time basis. If one run alone exceeds 30 days,
+that run remains valid; larger analyzed batches show the number of jobs required.
+The result separates input purchases, output replacement value, immediate-sale
+revenue/spread, installation cost, make-or-buy savings and positive, negative
+or unavailable value creation. A verified Profile reaction facility contributes
+its material/time multipliers, system index, facility tax, SCC and clone
+surcharges; otherwise the screen explicitly uses a material-only SDE baseline.
+Search, reaction-type/status filters and ascending or descending value sorting
+cover the full result set. Value creation and margin stay visible on each row,
+and the complete row is the disclosure target for the detailed calculation.
+Missing market depth never becomes zero.
 
 See `Documentation/ACCEPTANCE.md` for the exact split between implemented and
 tested behavior, current-service verification and owner acceptance.

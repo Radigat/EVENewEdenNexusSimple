@@ -7,23 +7,24 @@ struct RecentProductionsView: View {
   let rows: [StoredProductionOverviewRow]
   @State private var deletionCandidate: StoredProductionOverviewRow?
   @State private var isConfirmingDeletion = false
-  @State private var deletionError: String?
+  @State private var persistenceError: String?
 
   var body: some View {
     Panel(title: "Last five productions") {
       GeometryReader { geometry in
         ProductionOverviewGrid(
           rows: rows,
-          isEditable: false,
+          isEditable: true,
           availableWidth: geometry.size.width,
+          onSave: save,
           onRequestDelete: requestDeletion
         )
         .frame(maxHeight: .infinity, alignment: .top)
       }
       .frame(height: ProductionOverviewGrid.requiredHeight(for: rows.count))
 
-      if let deletionError {
-        Label(deletionError, systemImage: "trash.slash")
+      if let persistenceError {
+        Label(persistenceError, systemImage: "externaldrive.badge.xmark")
           .font(.caption)
           .foregroundStyle(DesignTokens.negative)
       }
@@ -36,7 +37,7 @@ struct RecentProductionsView: View {
         .foregroundStyle(DesignTokens.textSecondary)
 
         Text(
-          "The complete table and editable sales fields are available under Production Overview."
+          "Sale price and sold units can be changed here or in Production Overview. Use the checkbox for not sold or fully sold; enter a quantity for a partial sale."
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
@@ -77,6 +78,17 @@ struct RecentProductionsView: View {
     isConfirmingDeletion = true
   }
 
+  private func save() {
+    do {
+      try modelContext.save()
+      persistenceError = nil
+    } catch {
+      modelContext.rollback()
+      persistenceError =
+        "Der Produktionseintrag konnte nicht gespeichert werden: \(error.localizedDescription)"
+    }
+  }
+
   private func confirmDeletion() {
     guard let deletionCandidate else { return }
     do {
@@ -84,9 +96,9 @@ struct RecentProductionsView: View {
         deletionCandidate,
         in: modelContext
       )
-      deletionError = nil
+      persistenceError = nil
     } catch {
-      deletionError =
+      persistenceError =
         "Der Produktionseintrag konnte nicht gelöscht werden: \(error.localizedDescription)"
     }
     self.deletionCandidate = nil
@@ -140,6 +152,12 @@ struct ProductionBookView: View {
 
       Text(
         "Beträge sind platzsparend gerundet. Der genaue ISK-Wert erscheint beim Darüberfahren mit der Maus."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      Text(
+        "Sale price and sold units can be changed here or in Production Overview. Use the checkbox for not sold or fully sold; enter a quantity for a partial sale."
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -215,7 +233,9 @@ struct ProductionBookView: View {
       try modelContext.save()
       saveError = nil
     } catch {
-      saveError = error.localizedDescription
+      modelContext.rollback()
+      saveError =
+        "Der Produktionseintrag konnte nicht gespeichert werden: \(error.localizedDescription)"
     }
   }
 
@@ -254,7 +274,6 @@ private struct ProductionOverviewGrid: View {
   let availableWidth: CGFloat
   var onSave: () -> Void = {}
   var onRequestDelete: (StoredProductionOverviewRow) -> Void = { _ in }
-  @FocusState private var focusedField: EditableField?
 
   private let headers: [(short: String, full: String)] = [
     ("Nr", "Nummer"),
@@ -282,7 +301,7 @@ private struct ProductionOverviewGrid: View {
 
   private let widthWeights: [CGFloat] = [
     28, 50, 94, 36, 26, 26, 56, 40, 50, 46, 50, 42, 52, 54, 50,
-    54, 54, 54, 42, 42, 52,
+    54, 54, 54, 42, 52, 52,
   ]
 
   private let cellHorizontalPadding: CGFloat = 3
@@ -520,32 +539,24 @@ private struct ProductionOverviewGrid: View {
     rowIndex: Int
   ) -> some View {
     if isEditable {
-      let field = EditableField.blueprintCost(row.id)
-      Group {
-        if focusedField == field {
-          TextField(
-            "",
-            value: Binding(
-              get: { row[keyPath: keyPath] },
-              set: {
-                row[keyPath: keyPath] = sanitizedMoney($0)
-                onSave()
-              }
-            ),
-            format: .number.precision(.fractionLength(0...2))
-          )
-          .textFieldStyle(.plain)
-          .font(.caption.monospacedDigit())
-          .multilineTextAlignment(.trailing)
-          .focused($focusedField, equals: field)
-          .onSubmit { focusedField = nil }
-        } else {
-          compactEditButton(
-            value: compactISK(row[keyPath: keyPath]),
-            field: field
-          )
-        }
-      }
+      TextField(
+        "",
+        value: Binding(
+          get: { row[keyPath: keyPath] },
+          set: {
+            row[keyPath: keyPath] = sanitizedMoney($0)
+            onSave()
+          }
+        ),
+        format: .number.precision(.fractionLength(0...2))
+      )
+      .textFieldStyle(.plain)
+      .font(.caption.monospacedDigit())
+      .multilineTextAlignment(.trailing)
+      .accessibilityLabel("BPO/BPC-Kosten bearbeiten")
+      .accessibilityIdentifier(
+        "production-overview.\(row.id).blueprint-cost"
+      )
       .frame(
         width: widths[column],
         alignment: .trailing
@@ -571,32 +582,24 @@ private struct ProductionOverviewGrid: View {
     rowIndex: Int
   ) -> some View {
     if isEditable {
-      let field = EditableField.salePrice(row.id)
-      Group {
-        if focusedField == field {
-          TextField(
-            "",
-            value: Binding(
-              get: { row.salePricePerUnit },
-              set: {
-                row.salePricePerUnit = sanitizedMoney($0)
-                onSave()
-              }
-            ),
-            format: .number.precision(.fractionLength(0...2))
-          )
-          .textFieldStyle(.plain)
-          .font(.caption.monospacedDigit())
-          .multilineTextAlignment(.trailing)
-          .focused($focusedField, equals: field)
-          .onSubmit { focusedField = nil }
-        } else {
-          compactEditButton(
-            value: compactISK(row.salePricePerUnit),
-            field: field
-          )
-        }
-      }
+      TextField(
+        "",
+        value: Binding(
+          get: { row.salePricePerUnit },
+          set: {
+            row.salePricePerUnit = sanitizedMoney($0)
+            onSave()
+          }
+        ),
+        format: .number.precision(.fractionLength(0...2))
+      )
+      .textFieldStyle(.plain)
+      .font(.caption.monospacedDigit())
+      .multilineTextAlignment(.trailing)
+      .accessibilityLabel("Verkaufspreis pro Unit bearbeiten")
+      .accessibilityIdentifier(
+        "production-overview.\(row.id).sale-price"
+      )
       .frame(
         width: widths[column],
         alignment: .trailing
@@ -622,31 +625,54 @@ private struct ProductionOverviewGrid: View {
     rowIndex: Int
   ) -> some View {
     if isEditable {
-      let field = EditableField.soldUnits(row.id)
-      Group {
-        if focusedField == field {
-          TextField(
-            "",
-            value: Binding(
-              get: { row.soldUnits },
-              set: {
-                row.soldUnits = min(row.units, max(0, $0))
-                onSave()
-              }
-            ),
-            format: .number
+      HStack(spacing: 2) {
+        Button {
+          row.soldUnits = row.soldUnits > 0 ? 0 : row.units
+          onSave()
+        } label: {
+          Image(
+            systemName:
+              row.soldUnits > 0 ? "checkmark.square.fill" : "square"
           )
-          .textFieldStyle(.plain)
-          .font(.caption.monospacedDigit())
-          .multilineTextAlignment(.trailing)
-          .focused($focusedField, equals: field)
-          .onSubmit { focusedField = nil }
-        } else {
-          compactEditButton(
-            value: compactCount(row.soldUnits),
-            field: field
+          .font(.caption)
+          .foregroundStyle(
+            row.soldUnits > 0
+              ? DesignTokens.positive : DesignTokens.textSecondary
           )
         }
+        .buttonStyle(.plain)
+        .help(
+          row.soldUnits > 0
+            ? "Als nicht verkauft markieren"
+            : "Als vollständig verkauft markieren"
+        )
+        .accessibilityLabel(
+          row.soldUnits > 0
+            ? "Als nicht verkauft markieren"
+            : "Als vollständig verkauft markieren"
+        )
+        .accessibilityIdentifier(
+          "production-overview.\(row.id).sold-toggle"
+        )
+
+        TextField(
+          "",
+          value: Binding(
+            get: { row.soldUnits },
+            set: {
+              row.soldUnits = min(row.units, max(0, $0))
+              onSave()
+            }
+          ),
+          format: .number
+        )
+        .textFieldStyle(.plain)
+        .font(.caption.monospacedDigit())
+        .multilineTextAlignment(.trailing)
+        .accessibilityLabel("Verkaufte Units bearbeiten")
+        .accessibilityIdentifier(
+          "production-overview.\(row.id).sold-units"
+        )
       }
       .frame(
         width: widths[column],
@@ -656,28 +682,12 @@ private struct ProductionOverviewGrid: View {
       .padding(.horizontal, cellHorizontalPadding)
       .background(DesignTokens.positive.opacity(0.18))
       .overlay(cellBorder)
-      .help(exactCount(row.soldUnits))
+      .help(
+        "\(exactCount(row.soldUnits)) von \(exactCount(row.units)) Units verkauft"
+      )
     } else {
       numberCell(row.soldUnits, column: column, row: rowIndex)
     }
-  }
-
-  private func compactEditButton(
-    value: String,
-    field: EditableField
-  ) -> some View {
-    Button {
-      focusedField = field
-    } label: {
-      Text(value)
-        .font(.caption.monospacedDigit())
-        .lineLimit(1)
-        .minimumScaleFactor(0.55)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityHint("Zum Bearbeiten aktivieren")
   }
 
   private func rowBackground(_ row: Int) -> Color {
@@ -718,11 +728,6 @@ private struct ProductionOverviewGrid: View {
     case profit
   }
 
-  private enum EditableField: Hashable {
-    case blueprintCost(UUID)
-    case salePrice(UUID)
-    case soldUnits(UUID)
-  }
 }
 
 private func calculation(

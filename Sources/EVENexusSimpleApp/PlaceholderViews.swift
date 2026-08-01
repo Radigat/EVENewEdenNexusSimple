@@ -23,8 +23,11 @@ struct PlannerView: View {
   private var stockTargets: [StoredStockTarget]
   @State private var input = ""
   @State private var manualStockInput = ""
+  @AppStorage("planner.disclosure.manual-stock")
+  private var isManualStockExpanded = false
   @State private var parseResult = ProductionInputParser.parse("")
-  @State private var areWarningsExpanded = false
+  @AppStorage("planner.disclosure.warnings")
+  private var areWarningsExpanded = false
   @State private var hasRestoredState = false
   @State private var persistenceMessage: String?
   @State private var persistenceError: String?
@@ -33,8 +36,26 @@ struct PlannerView: View {
   @State private var warehouseFactualQuantities: [Int64: Int64] = [:]
   @State private var isPreparingAssetWarehouse = false
   @State private var calculationTask: Task<Void, Never>?
-  @State private var isImmediateSaleDetailsExpanded = false
-  @State private var isListedSaleDetailsExpanded = false
+  @AppStorage("planner.disclosure.sale.immediate")
+  private var isImmediateSaleDetailsExpanded = false
+  @AppStorage("planner.disclosure.sale.listed")
+  private var isListedSaleDetailsExpanded = false
+  @AppStorage("planner.disclosure.logistics")
+  private var expandedLogisticsDisclosureIDs = "[]"
+  @AppStorage("planner.disclosure.blueprints")
+  private var expandedBlueprintDisclosureIDs = "[]"
+  @AppStorage("planner.disclosure.material-groups")
+  private var expandedMaterialDisclosureIDs = "[]"
+  @AppStorage("planner.disclosure.shopping-list-markets")
+  private var expandedShoppingListMarketDisclosureIDs = "[]"
+  @AppStorage("planner.disclosure.production-job-list")
+  private var isProductionJobListExpanded = false
+  @AppStorage("planner.disclosure.warehouse-replenishment-list")
+  private var isWarehouseReplenishmentListExpanded = false
+  @AppStorage("planner.disclosure.shopping-list")
+  private var isShoppingListExpanded = false
+  @State private var procurementPreferences: [Int64: MaterialProcurementPreference] = [:]
+  @State private var recommendationApplicationMessage: String?
 
   var body: some View {
     ScrollView {
@@ -59,22 +80,7 @@ struct PlannerView: View {
             .accessibilityIdentifier("planner.input")
           HStack {
             Button("Calculate") {
-              calculationTask = Task { @MainActor in
-                defer { calculationTask = nil }
-                guard runtime.isPlannerConfigurationReady else { return }
-                persistDraft()
-                await runtime.calculate(
-                  input: input,
-                  manualStockInput: manualStockInput,
-                  existingReservations: activeReservations,
-                  assetWarehouse: assetWarehouse,
-                  stockTargets: targetQuantities
-                )
-                guard !Task.isCancelled else { return }
-                guard runtime.errorMessage == nil, let plan = runtime.plan
-                else { return }
-                saveActivePlan(plan)
-              }
+              calculatePlan()
             }
             .keyboardShortcut(.return, modifiers: [.command])
             .buttonStyle(.borderedProminent)
@@ -106,7 +112,7 @@ struct PlannerView: View {
             isOn: $runtime.warehouseStockEnabled
           )
           .help(
-            "Uses every stored character asset snapshot. Configured target quantities remain protected. Used warehouse materials remain included in total production cost at their current Jita replacement value."
+            "Makes protected, unreserved warehouse quantities available. Stock is consumed only for raw materials that you explicitly set to Use warehouse."
           )
           if isPreparingAssetWarehouse {
             Label(
@@ -116,7 +122,9 @@ struct PlannerView: View {
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           }
-          DisclosureGroup("Manual stock") {
+          FullWidthDisclosure(isExpanded: $isManualStockExpanded) {
+            Text("Manual stock")
+          } content: {
             TextEditor(text: $manualStockInput)
               .font(.body.monospaced())
               .frame(minHeight: DesignTokens.stockInputMinimumHeight)
@@ -130,6 +138,7 @@ struct PlannerView: View {
             )
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
+            .padding(.top, DesignTokens.spacingSM)
           }
         }
         RecentProductionsView(
@@ -194,6 +203,7 @@ struct PlannerView: View {
       parseResult = ProductionInputParser.parse(input)
       persistenceMessage = nil
       shoppingListCopyStatus = nil
+      recommendationApplicationMessage = nil
     }
     .task(id: assetProjectionIdentity) {
       await prepareAssetWarehouse()
@@ -205,62 +215,17 @@ struct PlannerView: View {
     LazyVGrid(
       columns: [
         GridItem(
-          .adaptive(minimum: 270),
+          .adaptive(minimum: 320, maximum: 480),
           alignment: .top
         )
       ],
       alignment: .leading,
       spacing: DesignTokens.spacingMD
     ) {
-      Panel(title: "Costs") {
-        metric("Materials (total)", plan.materialCost)
-        metric(
-          "Materials to buy",
-          plan.costBreakdown?.purchasedMaterialCost
-        )
-        metric(
-          stockCostLabel(for: plan),
-          plan.costBreakdown?.stockMaterialCost
-        )
-        metric(
-          "BPC/BPO",
-          plan.costBreakdown?.blueprintCosts?.total
-        )
-        metric(
-          "System cost index",
-          plan.costBreakdown?.systemIndexCost
-        )
-        metric("Installation", plan.installationCost)
-        metric(
-          "Logistics",
-          plan.costBreakdown.flatMap {
-            $0.logistics?.total
-              ?? ($0.totalProductionCost == nil ? nil : 0)
-          }
-        )
-        Divider()
-        metric(
-          "Total",
-          plan.costBreakdown?.totalProductionCost
-            ?? plan.materialCost.flatMap { materialCost in
-              plan.installationCost.map { materialCost + $0 }
-            }
-        )
-        Text(
-          "Warehouse and manual-stock materials remain included at current Jita replacement value. System-index cost is part of Installation. Sales taxes and broker fees reduce revenue and are shown separately."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-      }
-      Panel(title: "Taxes & fees") {
-        metric("Facility tax", plan.costBreakdown?.facilityTax)
-        metric("SCC surcharge", plan.costBreakdown?.sccSurcharge)
-        metric("Alpha surcharge", plan.costBreakdown?.alphaSurcharge)
-        Divider()
-        metric("Immediate sales tax", plan.immediateSale.salesTax)
-        metric("Immediate broker fee", plan.immediateSale.brokerFee)
-        metric("Listed sales tax", plan.listedSale.salesTax)
-        metric("Listed broker fee", plan.listedSale.brokerFee)
+      plannerCostsPanel(plan)
+      VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+        warehouseConsumptionPanel(plan)
+        taxesAndFeesPanel(plan)
       }
       saleScenarioPanel(
         title: "Immediate sale",
@@ -284,27 +249,44 @@ struct PlannerView: View {
     materialPanel(
       title: "Raw materials",
       description:
-        "Only non-producible inputs are shown here, grouped by their SDE source category.",
+        "Choose Buy or Use warehouse for every raw input. Every purchase is assigned to the Profile Main Hub.",
       sections: materialSections(
         for: plan.materials.filter { !$0.isProducedMaterial },
         fallback: "Other raw materials"
-      )
+      ),
+      allowsProcurement: true
     )
     materialPanel(
       title: "Produced materials & intermediates",
       description:
-        "Items with a manufacturing or reaction recipe are kept separate from raw materials.",
+        "Every component and reaction intermediate compares building with buying the complete required quantity at the Profile Main Hub, including logistics. You can still override the recommended source.",
       sections: materialSections(
         for: plan.materials.filter(\.isProducedMaterial),
         fallback: "Other produced materials"
-      )
+      ),
+      allowsProcurement: true
     )
+    makeOrBuyRecommendationPanel(plan)
+    productionJobListPanel(plan)
+    warehouseReplenishmentPanel(plan)
     shoppingListPanel(plan)
     Panel(title: "Jobs and provenance") {
       LabeledContent("Jobs", value: "\(plan.jobs.count)")
-      LabeledContent(
-        "Total job time",
-        value: Duration.seconds(plan.totalJobSeconds).formatted()
+      ExplainedPlannerMetricRow(
+        label: "Estimated job time",
+        value: formatJobDuration(plan.makespanSeconds),
+        explanation: AppLocalization.text(
+          "Estimated elapsed time uses the configured manufacturing and reaction slot counts. Manufacturing and reaction work can run in parallel; within each activity, jobs are distributed across the available slots."
+        ),
+        highlightsValue: true
+      )
+      ExplainedPlannerMetricRow(
+        label: "Total job workload",
+        value: formatJobDuration(plan.totalJobSeconds),
+        explanation: AppLocalization.text(
+          "Total workload adds the effective duration of every selected job. Each duration uses SDE base time, runs, the selected facility time multiplier and manufacturing TE; reactions do not use TE."
+        ),
+        highlightsValue: false
       )
       LabeledContent(
         "SDE build",
@@ -329,7 +311,11 @@ struct PlannerView: View {
     }
     if !plan.warnings.isEmpty {
       Panel(title: "Warnings") {
-        DisclosureGroup(isExpanded: $areWarningsExpanded) {
+        FullWidthDisclosure(isExpanded: $areWarningsExpanded) {
+          Text(
+            "\(plan.warnings.count) \(plan.warnings.count == 1 ? "warning" : "warnings")"
+          )
+        } content: {
           VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
             ForEach(plan.warnings) { warning in
               Label(warning.message, systemImage: "exclamationmark.triangle")
@@ -341,22 +327,184 @@ struct PlannerView: View {
             }
           }
           .padding(.top, DesignTokens.spacingSM)
-        } label: {
-          Text(
-            "\(plan.warnings.count) \(plan.warnings.count == 1 ? "warning" : "warnings")"
-          )
         }
         .accessibilityIdentifier("planner.warnings.disclosure")
       }
     }
   }
 
+  private func plannerCostsPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    Panel(title: "Costs") {
+      costMetric(
+        "Material replacement (Main Hub)",
+        plan.materialCost,
+        explanation:
+          "Values every input that is not produced inside this plan at the current weighted Main Hub price for the full required quantity. Purchased and warehouse quantities are valued together so market depth is not reused."
+      )
+      costMetric(
+        "BPC/BPO",
+        plan.costBreakdown?.blueprintCosts?.total,
+        explanation:
+          "Adds the entered acquisition cost of consumed BPCs and the owner-entered cost allocation for reusable BPOs. Missing blueprint costs remain excluded and are reported separately."
+      )
+      costMetric(
+        "Installation",
+        plan.installationCost,
+        explanation:
+          "The sum of system-index cost, facility tax, SCC surcharge and any clone surcharge for every job selected for production in this plan."
+      )
+      Text(installationCostEquation(plan))
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      costMetric(
+        "Logistics",
+        plan.costBreakdown?.effectiveLogisticsCost,
+        explanation:
+          "The sum of the generated courier contracts. Each contract uses the higher of volume charge or collateral charge and is then rounded up according to the saved logistics rule."
+      )
+      Divider()
+      costMetric(
+        "Total",
+        plan.costBreakdown?.totalProductionCost,
+        explanation:
+          "Material replacement plus BPC/BPO allocation, installation and logistics. The separately displayed warehouse-consumption value and installation components are already included and are not added twice."
+      )
+      Text(totalCostEquation(plan))
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Text(
+        "Material replacement covers every input that is not produced inside this plan at its current full-requirement Main Hub value. Installation contains its system-index, facility-tax, SCC and clone-surcharge components. Logistics is included whenever the saved logistics rule is enabled and complete."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func warehouseConsumptionPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    Panel(title: "Warehouse consumption") {
+      costMetric(
+        "Main Hub value of warehouse consumption",
+        plan.warehouseConsumptionValue,
+        explanation:
+          "The current weighted Main Hub replacement value of materials consumed from the combined warehouse. It is already included in material replacement and is shown separately for information, so it is not added again."
+      )
+    }
+  }
+
+  private func taxesAndFeesPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    Panel(title: "Taxes & fees") {
+      Text(
+        "Installation components below are already included in Installation. Market fees reduce sale revenue and are not production costs."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      explainedMetric(
+        "System cost index",
+        plan.costBreakdown?.systemIndexCost,
+        explanation:
+          "The EIV of each selected production job multiplied by its system cost index and applicable job-cost modifier. This amount is already part of Installation."
+      )
+      explainedMetric(
+        "Facility tax",
+        plan.costBreakdown?.facilityTax,
+        explanation:
+          "The estimated item value of each selected production job multiplied by the configured facility tax. It is already part of Installation."
+      )
+      explainedMetric(
+        "SCC surcharge",
+        plan.costBreakdown?.sccSurcharge,
+        explanation:
+          "The estimated item value multiplied by the applicable SCC surcharge for each selected production job. It is already part of Installation."
+      )
+      explainedMetric(
+        "Alpha surcharge",
+        plan.costBreakdown?.alphaSurcharge,
+        explanation:
+          "The clone surcharge applied to eligible production jobs when the configured clone state is Alpha. It is already part of Installation."
+      )
+      Divider()
+      explainedMetric(
+        "Immediate sales tax",
+        plan.immediateSale.salesTax,
+        explanation:
+          "Sales tax deducted from the gross immediate-sale value. It reduces revenue and is not added to production cost."
+      )
+      explainedMetric(
+        "Immediate broker fee",
+        plan.immediateSale.brokerFee,
+        explanation:
+          "An immediate sale normally uses existing buy orders and therefore has no listing broker fee. Any calculated value is deducted from revenue, not added to production cost."
+      )
+      explainedMetric(
+        "Listed sales tax",
+        plan.listedSale.salesTax,
+        explanation:
+          "Sales tax deducted from the gross listed-sale value. It reduces revenue and is not added to production cost."
+      )
+      explainedMetric(
+        "Listed broker fee",
+        plan.listedSale.brokerFee,
+        explanation:
+          "Broker fee for placing the listed sell order. It reduces listed-sale revenue and is not added to production cost."
+      )
+    }
+  }
+
+  private func totalCostEquation(_ plan: IndustryPlanSnapshot) -> String {
+    AppLocalization.format(
+      "%@ material replacement + %@ BPC/BPO + %@ installation + %@ logistics = %@ total production cost.",
+      formatISK(plan.materialCost),
+      formatISK(plan.costBreakdown?.blueprintCosts?.total),
+      formatISK(plan.installationCost),
+      formatISK(
+        plan.costBreakdown?.effectiveLogisticsCost
+      ),
+      formatISK(plan.costBreakdown?.totalProductionCost)
+    )
+  }
+
+  private func installationCostEquation(
+    _ plan: IndustryPlanSnapshot
+  ) -> String {
+    AppLocalization.format(
+      "%@ system cost index + %@ facility tax + %@ SCC surcharge + %@ Alpha surcharge = %@ installation.",
+      formatISK(plan.costBreakdown?.systemIndexCost),
+      formatISK(plan.costBreakdown?.facilityTax),
+      formatISK(plan.costBreakdown?.sccSurcharge),
+      formatISK(plan.costBreakdown?.alphaSurcharge),
+      formatISK(plan.installationCost)
+    )
+  }
+
   private func metric(_ label: String, _ value: Double?) -> some View {
-    LabeledContent(label) {
+    LabeledContent {
       Text(formatISK(value))
         .font(.body.monospacedDigit())
         .foregroundStyle(DesignTokens.highlight)
+    } label: {
+      Text(LocalizedStringKey(label))
     }
+  }
+
+  private func costMetric(
+    _ label: String,
+    _ value: Double?,
+    explanation: String
+  ) -> some View {
+    ExplainedPlannerMetricRow(
+      label: label,
+      value: formatISK(value),
+      explanation: AppLocalization.text(explanation),
+      highlightsValue: true
+    )
   }
 
   private func saleScenarioPanel(
@@ -400,26 +548,16 @@ struct PlannerView: View {
           "Profit divided by total production cost. It shows the estimated return on the ISK invested in this production plan."
       )
 
-      Button {
-        toggleSaleDetails(for: result.scenario)
-      } label: {
-        HStack {
-          Text(
-            isSaleDetailsExpanded(result.scenario)
-              ? "Hide calculation details"
-              : "Show calculation details"
-          )
-          Spacer()
-          Image(
-            systemName:
-              isSaleDetailsExpanded(result.scenario)
-              ? "chevron.down" : "chevron.right"
-          )
-          .accessibilityHidden(true)
-        }
-        .contentShape(Rectangle())
+      FullWidthDisclosureButton(
+        isExpanded: isSaleDetailsExpanded(result.scenario),
+        action: { toggleSaleDetails(for: result.scenario) }
+      ) {
+        Text(
+          isSaleDetailsExpanded(result.scenario)
+            ? "Hide calculation details"
+            : "Show calculation details"
+        )
       }
-      .buttonStyle(.plain)
       .accessibilityLabel(
         isSaleDetailsExpanded(result.scenario)
           ? "Hide calculation details"
@@ -491,7 +629,7 @@ struct PlannerView: View {
     ExplainedPlannerMetricRow(
       label: label,
       value: formatISK(value),
-      explanation: explanation,
+      explanation: AppLocalization.text(explanation),
       highlightsValue: true
     )
   }
@@ -504,7 +642,7 @@ struct PlannerView: View {
     ExplainedPlannerMetricRow(
       label: label,
       value: formatPercent(value),
-      explanation: explanation,
+      explanation: AppLocalization.text(explanation),
       highlightsValue: false
     )
   }
@@ -563,32 +701,53 @@ struct PlannerView: View {
   }
 
   private func scenarioSummary(_ scenario: PriceScenario) -> String {
-    switch scenario {
+    let mainHubName = runtime.productionBasis.mainTradeHub.procurementLocation.name
+    return switch scenario {
     case .immediateSale:
-      "Sells the planned output into current Jita IV-4 buy orders, starting with the highest price. The full requested quantity must be covered."
+      AppLocalization.format(
+        "Sells the planned output into current %@ buy orders, starting with the highest price. The full requested quantity must be covered.",
+        mainHubName
+      )
     case .listedSale:
-      "Estimates a sell order at the current lowest Jita IV-4 sell price. It assumes the full quantity sells at that price; competition, price changes, relisting, and time to sale are not simulated."
+      AppLocalization.format(
+        "Estimates a sell order at the current lowest %@ sell price. It assumes the full quantity sells at that price; competition, price changes, relisting, and time to sale are not simulated.",
+        mainHubName
+      )
     case .materialBuy:
-      "Uses current Jita IV-4 sell orders to estimate a material purchase."
+      AppLocalization.format(
+        "Uses current %@ sell orders to estimate a material purchase.",
+        mainHubName
+      )
     }
   }
 
   private func grossRevenueExplanation(
     for scenario: PriceScenario
   ) -> String {
-    switch scenario {
+    let mainHubName = runtime.productionBasis.mainTradeHub.procurementLocation.name
+    return switch scenario {
     case .immediateSale:
-      "The sum of planned product quantities multiplied by the current Jita IV-4 buy orders that can fill them, from highest price downward."
+      AppLocalization.format(
+        "The sum of planned product quantities multiplied by the current %@ buy orders that can fill them, from highest price downward.",
+        mainHubName
+      )
     case .listedSale:
-      "The planned product quantities multiplied by the current lowest Jita IV-4 sell-order price for each product."
+      AppLocalization.format(
+        "The planned product quantities multiplied by the current lowest %@ sell-order price for each product.",
+        mainHubName
+      )
     case .materialBuy:
-      "The material quantity multiplied by the current Jita IV-4 sell-order prices needed to fill it."
+      AppLocalization.format(
+        "The material quantity multiplied by the current %@ sell-order prices needed to fill it.",
+        mainHubName
+      )
     }
   }
 
   private func marketValuationDetail(
     for result: SaleScenarioResult
   ) -> String {
+    let mainHubName = runtime.productionBasis.mainTradeHub.procurementLocation.name
     let quotedProducts = result.quotes.count
     let quotedUnits = result.quotes.reduce(Int64(0)) {
       safeAdd($0, $1.quantity)
@@ -596,18 +755,35 @@ struct PlannerView: View {
     let filledUnits = result.quotes.reduce(Int64(0)) {
       safeAdd($0, $1.filledQuantity)
     }
-    let productText =
-      "\(quotedProducts) \(quotedProducts == 1 ? "product" : "products")"
+    let productText = AppLocalization.format(
+      quotedProducts == 1 ? "%lld product" : "%lld products",
+      Int64(quotedProducts)
+    )
     switch result.scenario {
     case .immediateSale:
-      return
-        "\(productText), \(quotedUnits.formatted()) planned units, \(filledUnits.formatted()) units matched against Jita IV-4 buy orders. Gross revenue: \(formatISK(result.grossRevenue))."
+      return AppLocalization.format(
+        "%@, %@ planned units, %@ units matched against %@ buy orders. Gross revenue: %@.",
+        productText,
+        quotedUnits.formatted(),
+        filledUnits.formatted(),
+        mainHubName,
+        formatISK(result.grossRevenue)
+      )
     case .listedSale:
-      return
-        "\(productText), \(quotedUnits.formatted()) planned units, valued at the current lowest Jita IV-4 sell-order price. Gross revenue: \(formatISK(result.grossRevenue))."
+      return AppLocalization.format(
+        "%@, %@ planned units, valued at the current lowest %@ sell-order price. Gross revenue: %@.",
+        productText,
+        quotedUnits.formatted(),
+        mainHubName,
+        formatISK(result.grossRevenue)
+      )
     case .materialBuy:
-      return
-        "\(productText), \(quotedUnits.formatted()) units valued against Jita IV-4 sell orders."
+      return AppLocalization.format(
+        "%@, %@ units valued against %@ sell orders.",
+        productText,
+        quotedUnits.formatted(),
+        mainHubName
+      )
     }
   }
 
@@ -617,12 +793,21 @@ struct PlannerView: View {
       let brokerFee = result.brokerFee,
       let net = result.grossOrNetRevenue
     else {
-      return "Unavailable because at least one market or fee input is missing."
+      return AppLocalization.text(
+        "Unavailable because at least one market or fee input is missing."
+      )
     }
     let salesTaxRate = rate(amount: salesTax, base: gross)
     let brokerFeeRate = rate(amount: brokerFee, base: gross)
-    return
-      "\(formatISK(gross)) gross − \(formatISK(salesTax)) sales tax (\(formatPercent(salesTaxRate))) − \(formatISK(brokerFee)) broker fee (\(formatPercent(brokerFeeRate))) = \(formatISK(net)) net revenue."
+    return AppLocalization.format(
+      "%@ gross − %@ sales tax (%@) − %@ broker fee (%@) = %@ net revenue.",
+      formatISK(gross),
+      formatISK(salesTax),
+      formatPercent(salesTaxRate),
+      formatISK(brokerFee),
+      formatPercent(brokerFeeRate),
+      formatISK(net)
+    )
   }
 
   private func profitEquation(
@@ -633,10 +818,16 @@ struct PlannerView: View {
       let totalCost,
       let profit = result.profit
     else {
-      return "Unavailable because net revenue or total production cost is missing."
+      return AppLocalization.text(
+        "Unavailable because net revenue or total production cost is missing."
+      )
     }
-    return
-      "\(formatISK(net)) net revenue − \(formatISK(totalCost)) total production cost = \(formatISK(profit)) profit."
+    return AppLocalization.format(
+      "%@ net revenue − %@ total production cost = %@ profit.",
+      formatISK(net),
+      formatISK(totalCost),
+      formatISK(profit)
+    )
   }
 
   private func percentageEquation(
@@ -645,10 +836,16 @@ struct PlannerView: View {
     result: Double?
   ) -> String {
     guard let numerator, let denominator, let result else {
-      return "Unavailable because one of the required values is missing or zero."
+      return AppLocalization.text(
+        "Unavailable because one of the required values is missing or zero."
+      )
     }
-    return
-      "\(formatISK(numerator)) ÷ \(formatISK(denominator)) × 100 = \(formatPercent(result))."
+    return AppLocalization.format(
+      "%@ ÷ %@ × 100 = %@.",
+      formatISK(numerator),
+      formatISK(denominator),
+      formatPercent(result)
+    )
   }
 
   private func quoteDetail(
@@ -661,20 +858,34 @@ struct PlannerView: View {
       time: .shortened
     )
     guard quote.isComplete else {
-      return
-        "\(quote.filledQuantity.formatted()) of \(quote.quantity.formatted()) units covered · quote incomplete · market snapshot \(capturedAt)."
+      return AppLocalization.format(
+        "%@ of %@ units covered · quote incomplete · market snapshot %@.",
+        quote.filledQuantity.formatted(),
+        quote.quantity.formatted(),
+        capturedAt
+      )
     }
     switch scenario {
     case .immediateSale, .materialBuy:
-      return
-        "\(quote.quantity.formatted()) units × \(formatISK(quote.weightedUnitPrice)) weighted market price = \(formatISK(quote.total)) · snapshot \(capturedAt)."
+      return AppLocalization.format(
+        "%@ units × %@ weighted market price = %@ · snapshot %@.",
+        quote.quantity.formatted(),
+        formatISK(quote.weightedUnitPrice),
+        formatISK(quote.total),
+        capturedAt
+      )
     case .listedSale:
       let grossUnitPrice = listedGrossUnitPrice(
         quote: quote,
         result: result
       )
-      return
-        "\(quote.quantity.formatted()) units × \(formatISK(grossUnitPrice)) lowest sell-order price = \(formatISK(grossUnitPrice.map { $0 * Double(quote.quantity) })) gross · snapshot \(capturedAt)."
+      return AppLocalization.format(
+        "%@ units × %@ lowest sell-order price = %@ gross · snapshot %@.",
+        quote.quantity.formatted(),
+        formatISK(grossUnitPrice),
+        formatISK(grossUnitPrice.map { $0 * Double(quote.quantity) }),
+        capturedAt
+      )
     }
   }
 
@@ -717,7 +928,7 @@ struct PlannerView: View {
   private func formatPercent(_ value: Double?) -> String {
     value.map {
       $0.formatted(.percent.precision(.fractionLength(2)))
-    } ?? "Unavailable"
+    } ?? AppLocalization.text("Unavailable")
   }
 
   private func logisticsPanel(
@@ -725,39 +936,73 @@ struct PlannerView: View {
   ) -> some View {
     Panel(title: "Logistics breakdown") {
       ForEach(logistics.legs) { leg in
-        VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-          Text(
-            "\(leg.kind.displayName) · Contract \(leg.contractNumber ?? 1) of \(leg.contractCount ?? 1)"
+        FullWidthDisclosure(
+          isExpanded: disclosureBinding(
+            id: logisticsDisclosureID(leg),
+            encodedIDs: $expandedLogisticsDisclosureIDs
           )
-          .font(.headline)
-          Text("\(leg.origin) → \(leg.destination)")
-            .font(.caption)
-            .foregroundStyle(DesignTokens.textSecondary)
-          LabeledContent("Cargo volume") {
-            Text(
-              leg.cargoVolumeM3.formatted(
-                .number.precision(.fractionLength(0...2))
-              ) + " m³"
-            )
-            .font(.body.monospacedDigit())
+        ) {
+          HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
+            VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+              Text(
+                AppLocalization.format(
+                  "%@ · Contract %lld of %lld",
+                  AppLocalization.text(leg.kind.displayName),
+                  Int64(leg.contractNumber ?? 1),
+                  Int64(leg.contractCount ?? 1)
+                )
+              )
+              .font(.headline)
+              Text("\(leg.origin) → \(leg.destination)")
+                .font(.caption)
+                .foregroundStyle(DesignTokens.textSecondary)
+            }
+            Spacer(minLength: DesignTokens.spacingMD)
+            Text(formatISK(leg.roundedCharge))
+              .font(.headline.monospacedDigit())
+              .foregroundStyle(DesignTokens.highlight)
           }
-          metric("Accurate collateral", leg.collateral)
-          metric("Volume charge", leg.volumeCharge)
-          metric("0.5% collateral charge", leg.collateralCharge)
-          LabeledContent("Charged by") {
-            Text(
-              leg.chargedBy == .volume ? "Cargo volume" : "Collateral"
-            )
+        } content: {
+          VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+            LabeledContent {
+              Text(
+                leg.cargoVolumeM3.formatted(
+                  .number.precision(.fractionLength(0...2))
+                ) + " m³"
+              )
+              .font(.body.monospacedDigit())
+            } label: {
+              Text("Cargo volume")
+            }
+            metric("Accurate collateral", leg.collateral)
+            metric("Volume charge", leg.volumeCharge)
+            metric("0.5% collateral charge", leg.collateralCharge)
+            LabeledContent {
+              Text(
+                LocalizedStringKey(
+                  leg.chargedBy == .volume ? "Cargo volume" : "Collateral"
+                )
+              )
+            } label: {
+              Text("Charged by")
+            }
+            metric("Before rounding", leg.unroundedCharge)
+            metric("Rounded contract", leg.roundedCharge)
           }
-          metric("Before rounding", leg.unroundedCharge)
-          metric("Rounded contract", leg.roundedCharge)
+          .padding(.top, DesignTokens.spacingMD)
         }
-        .padding(.vertical, DesignTokens.spacingSM)
-        Divider()
+        .padding(DesignTokens.spacingSM)
+        .background(DesignTokens.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
       }
       metric("Total logistics", logistics.total)
       Text(
-        "Maximum \(logistics.maximumContractVolumeM3.formatted()) m³ per contract · oversized routes are split automatically · each contract is rounded up in \(formatISK(logistics.roundingIncrement)) steps · \(logistics.ruleVersion)"
+        AppLocalization.format(
+          "Maximum %@ m³ per contract · oversized routes are split automatically · each contract is rounded up in %@ steps · %@",
+          logistics.maximumContractVolumeM3.formatted(),
+          formatISK(logistics.roundingIncrement),
+          logistics.ruleVersion
+        )
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -770,22 +1015,34 @@ struct PlannerView: View {
   ) -> some View {
     Panel(title: "BPC/BPO costs") {
       ForEach(blueprintCosts.entries) { entry in
-        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-          HStack {
-            Text(entry.productName)
-              .font(.headline)
-            Spacer()
-            Text(LocalizedStringKey(entry.kind.rawValue))
-              .font(.caption.bold())
+        FullWidthDisclosure(
+          isExpanded: disclosureBinding(
+            id: blueprintDisclosureID(entry),
+            encodedIDs: $expandedBlueprintDisclosureIDs
+          )
+        ) {
+          HStack(spacing: DesignTokens.spacingMD) {
+            VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+              Text(entry.productName)
+                .font(.headline)
+              Text(LocalizedStringKey(entry.kind.rawValue))
+                .font(.caption.bold())
+                .foregroundStyle(DesignTokens.highlight)
+            }
+            Spacer(minLength: DesignTokens.spacingMD)
+            Text(formatISK(entry.amount))
+              .font(.headline.monospacedDigit())
               .foregroundStyle(DesignTokens.highlight)
           }
-          metric("Entered cost", entry.amount)
-          Text(entry.treatment)
+        } content: {
+          Text(LocalizedStringKey(entry.treatment))
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
+            .padding(.top, DesignTokens.spacingSM)
         }
-        .padding(.vertical, DesignTokens.spacingXS)
-        Divider()
+        .padding(DesignTokens.spacingSM)
+        .background(DesignTokens.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
       }
       if !blueprintCosts.requestsWithoutEnteredCost.isEmpty {
         let names =
@@ -796,7 +1053,10 @@ struct PlannerView: View {
           .map(\.productName)
           .joined(separator: ", ")
         Label(
-          "No blueprint cost entered for: \(names). These costs are not included.",
+          AppLocalization.format(
+            "No blueprint cost entered for: %@. These costs are not included.",
+            names
+          ),
           systemImage: "info.circle"
         )
         .font(.caption)
@@ -820,71 +1080,350 @@ struct PlannerView: View {
   private func materialPanel(
     title: String,
     description: String,
-    sections: [PlannerMaterialSection]
+    sections: [PlannerMaterialSection],
+    allowsProcurement: Bool = false
   ) -> some View {
     if !sections.isEmpty {
       Panel(title: LocalizedStringKey(title)) {
-        Text(description)
+        Text(AppLocalization.text(description))
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         ForEach(sections) { section in
-          VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-            Text(section.name)
-              .font(.headline)
-            materialGrid(section.materials)
+          FullWidthDisclosure(
+            isExpanded: disclosureBinding(
+              id: "\(title):\(section.id)",
+              encodedIDs: $expandedMaterialDisclosureIDs
+            )
+          ) {
+            HStack(spacing: DesignTokens.spacingSM) {
+              Text(section.name)
+                .font(.headline)
+              Text(
+                AppLocalization.format(
+                  "%lld items",
+                  Int64(section.materials.count)
+                )
+              )
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+            }
+          } content: {
+            materialGrid(
+              section.materials,
+              allowsProcurement: allowsProcurement
+            )
+            .padding(.top, DesignTokens.spacingMD)
           }
-          .padding(.top, DesignTokens.spacingSM)
+          .padding(DesignTokens.spacingSM)
+          .background(DesignTokens.elevated)
+          .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
         }
       }
     }
   }
 
+  @ViewBuilder
   private func materialGrid(
-    _ materials: [MaterialRequirement]
+    _ materials: [MaterialRequirement],
+    allowsProcurement: Bool
   ) -> some View {
     let factualQuantities = warehouseFactualQuantities
     let targets = targetQuantities
-    return Grid(
-      alignment: .leading,
-      horizontalSpacing: 18,
-      verticalSpacing: 8
-    ) {
-      GridRow {
-        Text("Item")
-        Text("Required")
-        Text("Warehouse")
-        Text("Target")
-        Text("Used")
-        Text("Still needed")
-        Text("Produce")
-        Text("Buy")
-        Text("Cost split")
-      }
-      .font(.caption.bold())
-      .foregroundStyle(DesignTokens.textSecondary)
-      Divider()
-      ForEach(materials) { material in
-        GridRow {
-          Text(material.name)
-          number(material.required)
-          number(factualQuantities[material.typeID, default: 0])
-          number(targets[material.typeID, default: 0])
-          number(material.fromStock)
-          number(max(0, material.required - material.fromStock))
-          number(material.toProduce)
-          number(material.toBuy)
-          VStack(alignment: .trailing, spacing: 2) {
-            Text(
-              "Buy: \(formatISK(materialCost(for: material.toBuy, quote: material.quote)))"
-            )
-            Text(
-              "Stock: \(formatISK(materialCost(for: material.fromStock, quote: material.stockQuote)))"
-            )
+    if allowsProcurement {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        ForEach(materials) { material in
+          VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+            HStack {
+              Text(material.name).font(.headline)
+              Spacer()
+              Text("Required \(material.required.formatted())")
+                .font(.body.monospacedDigit())
+            }
+            HStack(spacing: DesignTokens.spacingMD) {
+              procurementQuantity(
+                "Warehouse",
+                factualQuantities[material.typeID, default: 0]
+              )
+              procurementQuantity(
+                "Protected",
+                targets[material.typeID, default: 0]
+              )
+              procurementQuantity("Used", material.fromStock)
+              procurementQuantity("To buy", material.toBuy)
+              if material.canProduce {
+                procurementQuantity("To produce", material.toProduce)
+              }
+              Spacer()
+              VStack(alignment: .trailing, spacing: 1) {
+                Text("Full replacement")
+                Text(formatISK(material.replacementQuote?.total))
+                  .font(.caption.monospacedDigit())
+              }
+              .foregroundStyle(DesignTokens.highlight)
+            }
+            HStack(spacing: DesignTokens.spacingSM) {
+              Picker(
+                "Source",
+                selection: supplyModeBinding(for: material)
+              ) {
+                ForEach(supplyModes(for: material), id: \.self) { mode in
+                  Text(LocalizedStringKey(mode.displayName)).tag(mode)
+                }
+              }
+              .labelsHidden()
+              .pickerStyle(.segmented)
+              .frame(width: material.canProduce ? 315 : 210)
+              .disabled(runtime.isWorking)
+              Label(
+                preference(for: material).purchaseLocation.name,
+                systemImage: "building.columns"
+              )
+              .font(.caption)
+              .foregroundStyle(DesignTokens.textSecondary)
+              .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            if let analysis = material.makeOrBuyAnalysis {
+              makeOrBuyAnalysisView(analysis)
+            }
           }
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(DesignTokens.highlight)
+          Divider()
+        }
+        Label(
+          "Changing a source immediately recalculates materials, costs, production jobs, Main Hub shopping lists and transport.",
+          systemImage: "arrow.triangle.2.circlepath"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+    } else {
+      Grid(
+        alignment: .leading,
+        horizontalSpacing: 24,
+        verticalSpacing: 8
+      ) {
+        GridRow {
+          Text("Item")
+          Text("Required")
+          Text("Produced")
+          Text("Activity")
+        }
+        .font(.caption.bold())
+        .foregroundStyle(DesignTokens.textSecondary)
+        Divider()
+        ForEach(materials) { material in
+          GridRow {
+            Text(material.name)
+            number(material.required)
+            number(material.toProduce)
+            Text(material.productionActivity?.rawValue ?? "—")
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
         }
       }
+    }
+  }
+
+  private func procurementQuantity(_ label: String, _ value: Int64)
+    -> some View
+  {
+    VStack(alignment: .leading, spacing: 1) {
+      Text(AppLocalization.text(label))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      number(value)
+    }
+  }
+
+  private func makeOrBuyRecommendationPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    let application = MakeOrBuyRecommendationApplication(
+      materials: plan.materials,
+      existingPreferences: procurementPreferences,
+      mainHub: runtime.productionBasis.mainTradeHub.procurementLocation
+    )
+
+    return Panel(title: "Apply make-or-buy analysis") {
+      Text(
+        "Applies every available build or buy recommendation, recalculates all costs, and then creates the matching production jobs and Main Hub shopping list. Raw-material and unavailable choices remain unchanged."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      if application.hasApplicableRecommendations {
+        Text(
+          AppLocalization.format(
+            "Recommendations: %lld total · %lld build · %lld buy · %lld unavailable. Unavailable choices remain unchanged.",
+            Int64(application.appliedCount),
+            Int64(application.produceCount),
+            Int64(application.buyCount),
+            Int64(application.unavailableCount)
+          )
+        )
+        .font(.callout.monospacedDigit())
+      } else {
+        Label(
+          "No usable recommendation is available. Calculate the plan first or resolve its warnings.",
+          systemImage: "exclamationmark.triangle"
+        )
+        .font(.callout)
+        .foregroundStyle(DesignTokens.caution)
+      }
+
+      Button {
+        applyMakeOrBuyRecommendations(application)
+      } label: {
+        Label(
+          "Apply recommendations and calculate",
+          systemImage: "wand.and.stars"
+        )
+      }
+      .buttonStyle(.borderedProminent)
+      .disabled(
+        !application.hasApplicableRecommendations
+          || runtime.isWorking
+          || !parseResult.isValid
+          || isPreparingAssetWarehouse
+          || !runtime.isPlannerConfigurationReady
+      )
+      .accessibilityIdentifier("planner.make-or-buy.apply")
+
+      if let recommendationApplicationMessage {
+        Label(
+          recommendationApplicationMessage,
+          systemImage: "checkmark.circle.fill"
+        )
+        .font(.callout)
+        .foregroundStyle(DesignTokens.positive)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func makeOrBuyAnalysisView(
+    _ analysis: MaterialMakeOrBuyAnalysis
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        Label(
+          makeOrBuyRecommendationText(analysis.recommendation),
+          systemImage: makeOrBuyRecommendationIcon(analysis.recommendation)
+        )
+        .font(.headline)
+        .foregroundStyle(makeOrBuyRecommendationColor(analysis.recommendation))
+        Spacer()
+        if let savings = analysis.savings {
+          Text(
+            AppLocalization.format(
+              "Save %@ with the recommended option",
+              formatISK(savings)
+            )
+          )
+          .font(.headline.monospacedDigit())
+          .foregroundStyle(DesignTokens.positive)
+        }
+      }
+
+      Text(
+        AppLocalization.format(
+          "Main Hub: %@ · available %lld of %lld",
+          analysis.mainHub.name,
+          analysis.purchaseQuote.filledQuantity,
+          analysis.requiredQuantity
+        )
+      )
+      .font(.caption)
+      .foregroundStyle(
+        analysis.purchaseQuote.isComplete
+          ? DesignTokens.textSecondary : DesignTokens.caution
+      )
+
+      Grid(
+        alignment: .leading,
+        horizontalSpacing: DesignTokens.spacingLG,
+        verticalSpacing: DesignTokens.spacingXS
+      ) {
+        GridRow {
+          Text("")
+          Text("Buy at Main Hub")
+          Text("Build")
+        }
+        .font(.caption.bold())
+        .foregroundStyle(DesignTokens.textSecondary)
+        GridRow {
+          Text("Market / inputs")
+          Text(formatISK(analysis.purchaseQuote.total))
+          Text(formatISK(analysis.buildMaterialCost))
+        }
+        GridRow {
+          Text("Installation")
+          Text(formatISK(0))
+          Text(formatISK(analysis.buildInstallationCost))
+        }
+        GridRow {
+          Text("Logistics")
+          Text(formatISK(analysis.purchaseLogisticsCost))
+          Text(formatISK(analysis.buildLogisticsCost))
+        }
+        GridRow {
+          Text("Total")
+            .font(.body.bold())
+          Text(formatISK(analysis.purchaseTotalCost))
+          Text(formatISK(analysis.buildTotalCost))
+        }
+        .font(.body.monospacedDigit())
+      }
+
+      Text(
+        AppLocalization.format(
+          "Build quantity: %lld from %lld runs for %lld required units.",
+          analysis.producedQuantity,
+          Int64(analysis.productionRuns),
+          analysis.requiredQuantity
+        )
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      ForEach(analysis.warnings.filter { $0.severity != .information }) {
+        warning in
+        Label(warning.message, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
+      }
+    }
+    .padding(DesignTokens.spacingSM)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+  }
+
+  private func makeOrBuyRecommendationText(
+    _ recommendation: MakeOrBuyRecommendation
+  ) -> String {
+    switch recommendation {
+    case .produce: AppLocalization.text("Recommendation: Build")
+    case .buy: AppLocalization.text("Recommendation: Buy")
+    case .unavailable: AppLocalization.text("Recommendation unavailable")
+    }
+  }
+
+  private func makeOrBuyRecommendationIcon(
+    _ recommendation: MakeOrBuyRecommendation
+  ) -> String {
+    switch recommendation {
+    case .produce: "hammer.fill"
+    case .buy: "cart.fill"
+    case .unavailable: "questionmark.diamond.fill"
+    }
+  }
+
+  private func makeOrBuyRecommendationColor(
+    _ recommendation: MakeOrBuyRecommendation
+  ) -> Color {
+    switch recommendation {
+    case .produce: DesignTokens.positive
+    case .buy: DesignTokens.highlight
+    case .unavailable: DesignTokens.caution
     }
   }
 
@@ -917,42 +1456,445 @@ struct PlannerView: View {
   private func shoppingListPanel(
     _ plan: IndustryPlanSnapshot
   ) -> some View {
-    let export = EVEMultibuyExport.make(from: plan.materials)
-    return Panel(title: "EVE shopping list") {
-      if export.itemCount == 0 {
-        Label(
-          "This plan has no materials to buy.",
-          systemImage: "checkmark.circle"
-        )
-        .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        Text(
-          "Copies \(export.itemCount) \(export.itemCount == 1 ? "item" : "items") in EVE Multibuy format. In EVE, open Multibuy and choose Import from Clipboard."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-        Button {
-          copyShoppingList(export)
-        } label: {
-          Label("Copy for EVE Multibuy", systemImage: "doc.on.doc")
-        }
-        .buttonStyle(.borderedProminent)
-        .accessibilityIdentifier("planner.shopping-list.copy")
-      }
-      if let shoppingListCopyStatus {
-        Label(
-          shoppingListCopyStatus.message,
-          systemImage:
-            shoppingListCopyStatus.isFailure
-            ? "xmark.octagon.fill" : "checkmark.circle.fill"
-        )
-        .font(.callout)
-        .foregroundStyle(
-          shoppingListCopyStatus.isFailure
-            ? DesignTokens.negative : DesignTokens.positive
-        )
-      }
+    let groups = Dictionary(
+      grouping: plan.materials.filter { $0.toBuy > 0 }
+    ) {
+      $0.procurement?.purchaseLocation ?? .jita
     }
+    .map { (location: $0.key, materials: $0.value) }
+    .sorted { $0.location.name < $1.location.name }
+    let purchasedMaterials = groups.flatMap(\.materials)
+    let totalQuantity = purchasedMaterials.reduce(Int64(0)) {
+      safeAdd($0, $1.toBuy)
+    }
+    return Panel(title: "EVE shopping list") {
+      FullWidthDisclosure(isExpanded: $isShoppingListExpanded) {
+        Label {
+          Text(
+            AppLocalization.format(
+              "%lld items · %lld units to buy",
+              Int64(purchasedMaterials.count),
+              totalQuantity
+            )
+          )
+          .font(.headline.monospacedDigit())
+        } icon: {
+          Image(systemName: "cart")
+        }
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          if groups.isEmpty {
+            Label(
+              "This plan has no materials to buy.",
+              systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text(
+              "The EVE Multibuy list contains the complete uncovered quantity to buy at the Profile Main Hub."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+            ForEach(groups, id: \.location.id) { group in
+              let shoppingList = EVEShoppingList.make(from: group.materials)
+              let export = EVEMultibuyExport.make(from: group.materials)
+              VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+                FullWidthDisclosure(
+                  isExpanded: disclosureBinding(
+                    id: group.location.id,
+                    encodedIDs: $expandedShoppingListMarketDisclosureIDs
+                  )
+                ) {
+                  HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
+                    Label("Market", systemImage: "cart")
+                      .font(.headline)
+                    VStack(alignment: .leading, spacing: 2) {
+                      Text(group.location.name)
+                      Text(
+                        AppLocalization.format(
+                          "%lld items · %lld units to buy",
+                          Int64(shoppingList.items.count),
+                          shoppingList.totalQuantity
+                        )
+                      )
+                      .font(.caption.monospacedDigit())
+                      .foregroundStyle(DesignTokens.textSecondary)
+                    }
+                  }
+                } content: {
+                  shoppingListDetails(shoppingList)
+                    .padding(.top, DesignTokens.spacingMD)
+                }
+                .accessibilityIdentifier(
+                  "planner.shopping-list.market.\(group.location.id)"
+                )
+                HStack {
+                  Text(
+                    "Open Market to review every item before exporting it to EVE."
+                  )
+                  .font(.caption)
+                  .foregroundStyle(DesignTokens.textSecondary)
+                  Spacer()
+                  Button {
+                    copyShoppingList(export)
+                  } label: {
+                    Label("Copy Multibuy", systemImage: "doc.on.doc")
+                  }
+                  .buttonStyle(.borderedProminent)
+                  .accessibilityIdentifier("planner.shopping-list.copy")
+                }
+              }
+              .padding(DesignTokens.spacingMD)
+              .background(DesignTokens.elevated)
+              .clipShape(
+                RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+              )
+            }
+          }
+          if let shoppingListCopyStatus {
+            Label(
+              shoppingListCopyStatus.message,
+              systemImage:
+                shoppingListCopyStatus.isFailure
+                ? "xmark.octagon.fill" : "checkmark.circle.fill"
+            )
+            .font(.callout)
+            .foregroundStyle(
+              shoppingListCopyStatus.isFailure
+                ? DesignTokens.negative : DesignTokens.positive
+            )
+          }
+        }
+        .padding(.top, DesignTokens.spacingMD)
+      }
+      .accessibilityIdentifier("planner.shopping-list.disclosure")
+    }
+  }
+
+  private func shoppingListDetails(
+    _ shoppingList: EVEShoppingList
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Grid(
+        alignment: .leading,
+        horizontalSpacing: DesignTokens.spacingLG,
+        verticalSpacing: DesignTokens.spacingSM
+      ) {
+        GridRow {
+          Text("Item")
+          Text("Quantity")
+          Text("Unit price")
+          Text("Total")
+          Text("Market coverage")
+        }
+        .font(.caption.bold())
+        .foregroundStyle(DesignTokens.textSecondary)
+        Divider()
+        ForEach(shoppingList.items) { item in
+          let quote = item.hasCompleteMarketCoverage ? item.marketQuote : nil
+          GridRow {
+            Text(item.name)
+            Text(item.quantity.formatted())
+              .monospacedDigit()
+            Text(formatISK(quote?.weightedUnitPrice))
+              .monospacedDigit()
+            Text(formatISK(quote?.total))
+              .monospacedDigit()
+            Text(marketCoverageText(for: item))
+              .foregroundStyle(
+                item.hasCompleteMarketCoverage
+                  ? DesignTokens.positive : DesignTokens.caution
+              )
+          }
+        }
+        Divider()
+        GridRow {
+          Text("Market purchase total")
+            .fontWeight(.semibold)
+          Text(shoppingList.totalQuantity.formatted())
+            .fontWeight(.semibold)
+            .monospacedDigit()
+          Text("—")
+            .foregroundStyle(DesignTokens.textSecondary)
+          Text(formatISK(shoppingList.purchaseTotal))
+            .fontWeight(.semibold)
+            .monospacedDigit()
+          Text(
+            AppLocalization.text(
+              shoppingList.purchaseTotal == nil
+                ? "Incomplete market data" : "Complete"
+            )
+          )
+          .foregroundStyle(
+            shoppingList.purchaseTotal == nil
+              ? DesignTokens.caution : DesignTokens.positive
+          )
+        }
+      }
+      Text(
+        "Prices and totals are shown only when sell orders cover the complete quantity at the Profile Main Hub. Logistics remains separate in the logistics breakdown."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func marketCoverageText(
+    for item: EVEShoppingListItem
+  ) -> String {
+    guard let quote = item.marketQuote else {
+      return AppLocalization.text("Unavailable")
+    }
+    guard item.hasCompleteMarketCoverage else {
+      return AppLocalization.format(
+        "%lld of %lld units",
+        quote.filledQuantity,
+        item.quantity
+      )
+    }
+    return AppLocalization.text("Complete")
+  }
+
+  private func productionJobListPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    let jobs = plan.jobs.sorted { lhs, rhs in
+      if lhs.isTopLevel != rhs.isTopLevel {
+        return lhs.isTopLevel == true
+      }
+      return (lhs.productName ?? "Type \(lhs.typeID)")
+        .localizedCaseInsensitiveCompare(
+          rhs.productName ?? "Type \(rhs.typeID)"
+        ) == .orderedAscending
+    }
+
+    return Panel(title: "Production job list") {
+      FullWidthDisclosure(isExpanded: $isProductionJobListExpanded) {
+        Label {
+          Text(
+            AppLocalization.format(
+              "%lld production jobs",
+              Int64(jobs.count)
+            )
+          )
+          .font(.headline.monospacedDigit())
+        } icon: {
+          Image(systemName: "hammer.fill")
+        }
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          if jobs.isEmpty {
+            Label(
+              "This plan has no production jobs.",
+              systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text(
+              "These are the production jobs from the recalculated plan. Purchased items are excluded and appear in the Main Hub shopping list instead."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            ForEach(jobs) { job in
+              VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+                HStack(alignment: .firstTextBaseline) {
+                  Text(job.productName ?? "Type \(job.typeID)")
+                    .font(.headline)
+                  Text(
+                    LocalizedStringKey(
+                      job.isTopLevel == true
+                        ? "Final product" : "Intermediate"
+                    )
+                  )
+                  .font(.caption.bold())
+                  .foregroundStyle(
+                    job.isTopLevel == true
+                      ? DesignTokens.highlight : DesignTokens.textSecondary
+                  )
+                  Spacer()
+                  VStack(alignment: .trailing, spacing: 1) {
+                    Text("Installation")
+                      .font(.caption)
+                      .foregroundStyle(DesignTokens.textSecondary)
+                    Text(formatISK(job.total))
+                      .font(.body.monospacedDigit())
+                      .foregroundStyle(DesignTokens.highlight)
+                  }
+                }
+
+                HStack(spacing: DesignTokens.spacingLG) {
+                  Label {
+                    Text(LocalizedStringKey(job.activity.rawValue.capitalized))
+                  } icon: {
+                    Image(
+                      systemName:
+                        job.activity == .reaction ? "atom" : "hammer.fill"
+                    )
+                  }
+                  if let runs = job.runs,
+                    let outputQuantity = job.outputQuantity
+                  {
+                    Text(
+                      AppLocalization.format(
+                        "%lld runs · %lld output units",
+                        Int64(runs),
+                        outputQuantity
+                      )
+                    )
+                    .font(.body.monospacedDigit())
+                  } else {
+                    Text("Recalculate to resolve runs and output quantity.")
+                      .foregroundStyle(DesignTokens.caution)
+                  }
+                  if let materialEfficiency = job.materialEfficiency,
+                    let timeEfficiency = job.timeEfficiency
+                  {
+                    Text("ME \(materialEfficiency) · TE \(timeEfficiency)")
+                      .font(.body.monospacedDigit())
+                  }
+                  Spacer()
+                }
+                .font(.callout)
+
+                if let facilityName = job.facilityName?.nonEmpty {
+                  Label(facilityName, systemImage: "building.2")
+                    .font(.caption)
+                    .foregroundStyle(DesignTokens.textSecondary)
+                }
+              }
+              .padding(.vertical, DesignTokens.spacingXS)
+              Divider()
+            }
+          }
+        }
+        .padding(.top, DesignTokens.spacingMD)
+      }
+      .accessibilityIdentifier("planner.production-job-list.disclosure")
+    }
+  }
+
+  private func warehouseReplenishmentPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    let groups = warehouseReplenishmentGroups(plan.materials)
+    let replenishmentMaterials = groups.flatMap(\.materials)
+    let totalQuantity = replenishmentMaterials.reduce(Int64(0)) {
+      safeAdd($0, $1.fromStock)
+    }
+
+    return Panel(title: "Warehouse replenishment list") {
+      FullWidthDisclosure(isExpanded: $isWarehouseReplenishmentListExpanded) {
+        Label {
+          Text(
+            AppLocalization.format(
+              "%lld items · %lld units to replenish",
+              Int64(replenishmentMaterials.count),
+              totalQuantity
+            )
+          )
+          .font(.headline.monospacedDigit())
+        } icon: {
+          Image(systemName: "shippingbox.and.arrow.backward")
+        }
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          if groups.isEmpty {
+            Label(
+              "This plan consumes no warehouse materials.",
+              systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text(
+              "These quantities were consumed from warehouse stock and must be bought back to restore it. This is a separate future replenishment list; it is not added to the immediate shopping list or charged twice. Unit prices and values use the current Main Hub replacement quote."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            ForEach(groups, id: \.location.id) { group in
+              let export = EVEMultibuyExport.makeWarehouseReplenishment(
+                from: group.materials
+              )
+              HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(group.location.name).font(.headline)
+                  Text("Planned replacement hub")
+                    .font(.caption)
+                    .foregroundStyle(DesignTokens.textSecondary)
+                }
+                Spacer()
+                Button {
+                  copyShoppingList(export)
+                } label: {
+                  Label(
+                    "Copy replenishment Multibuy",
+                    systemImage: "doc.on.doc"
+                  )
+                }
+                .buttonStyle(.bordered)
+              }
+
+              Grid(
+                alignment: .leading,
+                horizontalSpacing: 20,
+                verticalSpacing: 7
+              ) {
+                GridRow {
+                  Text("Item")
+                  Text("Quantity")
+                  Text("Main Hub unit price")
+                  Text("Replacement value")
+                }
+                .font(.caption.bold())
+                .foregroundStyle(DesignTokens.textSecondary)
+                Divider()
+                ForEach(group.materials) { material in
+                  GridRow {
+                    Text(material.name)
+                    Text(material.fromStock.formatted())
+                      .font(.body.monospacedDigit())
+                    Text(
+                      formatISK(
+                        material.replacementQuote?.weightedUnitPrice
+                      )
+                    )
+                    .font(.body.monospacedDigit())
+                    Text(formatISK(material.warehouseConsumptionValue))
+                      .font(.body.monospacedDigit())
+                      .foregroundStyle(DesignTokens.highlight)
+                  }
+                }
+              }
+            }
+          }
+        }
+        .padding(.top, DesignTokens.spacingMD)
+      }
+      .accessibilityIdentifier(
+        "planner.warehouse-replenishment-list.disclosure"
+      )
+    }
+  }
+
+  private func warehouseReplenishmentGroups(
+    _ materials: [MaterialRequirement]
+  ) -> [PlannerWarehouseReplenishmentGroup] {
+    let consumed = materials.filter { $0.fromStock > 0 }
+    let grouped: [ProcurementLocation: [MaterialRequirement]] = Dictionary(
+      grouping: consumed,
+      by: { $0.procurement?.purchaseLocation ?? .jita }
+    )
+    return grouped.map { location, groupedMaterials in
+      PlannerWarehouseReplenishmentGroup(
+        location: location,
+        materials: groupedMaterials.sorted {
+          $0.name.localizedCaseInsensitiveCompare($1.name)
+            == .orderedAscending
+        }
+      )
+    }
+    .sorted { $0.location.name < $1.location.name }
   }
 
   private func copyShoppingList(_ export: EVEMultibuyExport) {
@@ -966,10 +1908,62 @@ struct PlannerView: View {
   }
 
   private func formatISK(_ value: Double?) -> String {
-    guard let value else { return "Unavailable" }
+    guard let value else { return AppLocalization.text("Unavailable") }
     return value.formatted(
       .currency(code: "ISK").precision(.fractionLength(0))
     )
+  }
+
+  private func formatJobDuration(_ seconds: Int64) -> String {
+    guard seconds >= 0, seconds < Int64.max else {
+      return AppLocalization.text("Unavailable")
+    }
+    let wholeMinutes = seconds / 60
+    let roundedMinutes = wholeMinutes + (seconds % 60 == 0 ? 0 : 1)
+    let days = roundedMinutes / (24 * 60)
+    let hours = (roundedMinutes % (24 * 60)) / 60
+    let minutes = roundedMinutes % 60
+    if days > 0 {
+      return AppLocalization.format(
+        "%lld d %lld h %lld min",
+        days,
+        hours,
+        minutes
+      )
+    }
+    if hours > 0 {
+      return AppLocalization.format("%lld h %lld min", hours, minutes)
+    }
+    return AppLocalization.format("%lld min", minutes)
+  }
+
+  private func disclosureBinding(
+    id: String,
+    encodedIDs: Binding<String>
+  ) -> Binding<Bool> {
+    Binding(
+      get: { PlannerDisclosureStorage.contains(id, in: encodedIDs.wrappedValue) },
+      set: { isExpanded in
+        encodedIDs.wrappedValue = PlannerDisclosureStorage.updating(
+          encodedIDs.wrappedValue,
+          id: id,
+          isExpanded: isExpanded
+        )
+      }
+    )
+  }
+
+  private func logisticsDisclosureID(_ leg: LogisticsCostLeg) -> String {
+    [
+      leg.kind.rawValue,
+      leg.origin,
+      leg.destination,
+      String(leg.contractNumber ?? 1),
+    ].joined(separator: "|")
+  }
+
+  private func blueprintDisclosureID(_ entry: BlueprintCostEntry) -> String {
+    "\(entry.productName)|\(entry.kind.rawValue)"
   }
 
   private func materialCost(
@@ -977,17 +1971,6 @@ struct PlannerView: View {
     quote: PriceQuote?
   ) -> Double? {
     quantity == 0 ? 0 : quote?.total
-  }
-
-  private func stockCostLabel(for plan: IndustryPlanSnapshot) -> String {
-    switch plan.stockAllocations.first?.source.kind {
-    case .manual:
-      "Materials from manual stock"
-    case .warehouse, .assetSnapshot:
-      "Materials from warehouse"
-    case nil:
-      "Materials from stock"
-    }
   }
 
   private func restoreStateIfNeeded() {
@@ -1002,6 +1985,122 @@ struct PlannerView: View {
     manualStockInput = restored.manualStockInput
     if runtime.plan == nil {
       runtime.plan = restored.plan
+    }
+    if let plan = restored.plan {
+      procurementPreferences = Dictionary(
+        uniqueKeysWithValues: plan.materials.compactMap { material in
+          material.procurement.map { (material.typeID, $0) }
+        }
+      )
+    }
+  }
+
+  private var procurementLocations: [ProcurementLocation] {
+    let locations = runtime.productionBasis.configuredProcurementLocations
+    return (locations.isEmpty ? [.jita] : locations)
+      .sorted { $0.name < $1.name }
+  }
+
+  private func preference(for material: MaterialRequirement)
+    -> MaterialProcurementPreference
+  {
+    var candidate =
+      procurementPreferences[material.typeID]
+      ?? material.procurement
+      ?? MaterialProcurementPreference(
+        supplyMode:
+          material.canProduce && material.toProduce > 0 ? .produce : .buy
+      )
+    if candidate.supplyMode == .produce, !material.canProduce {
+      candidate.supplyMode = .buy
+    }
+    candidate.purchaseLocation =
+      runtime.productionBasis.mainTradeHub.procurementLocation
+    return candidate
+  }
+
+  private func supplyModeBinding(for material: MaterialRequirement)
+    -> Binding<MaterialSupplyMode>
+  {
+    Binding(
+      get: { preference(for: material).supplyMode },
+      set: { value in
+        var updated = preference(for: material)
+        guard updated.supplyMode != value else { return }
+        updated.supplyMode = value
+        var requestedPreferences = procurementPreferences
+        requestedPreferences[material.typeID] = updated
+        procurementPreferences = requestedPreferences
+        recommendationApplicationMessage = nil
+        calculatePlan(preferences: requestedPreferences)
+      }
+    )
+  }
+
+  private func supplyModes(for material: MaterialRequirement)
+    -> [MaterialSupplyMode]
+  {
+    material.canProduce ? [.produce, .buy, .warehouse] : [.buy, .warehouse]
+  }
+
+  private func purchaseLocationBinding(for material: MaterialRequirement)
+    -> Binding<ProcurementLocation>
+  {
+    Binding(
+      get: { preference(for: material).purchaseLocation },
+      set: { value in
+        var updated = preference(for: material)
+        updated.purchaseLocation = value
+        procurementPreferences[material.typeID] = updated
+      }
+    )
+  }
+
+  private func applyMakeOrBuyRecommendations(
+    _ application: MakeOrBuyRecommendationApplication
+  ) {
+    guard application.hasApplicableRecommendations else { return }
+    procurementPreferences = application.preferences
+    recommendationApplicationMessage = nil
+    let successMessage = AppLocalization.format(
+      "Applied %lld recommendations (%lld build, %lld buy). Costs, production jobs and the Main Hub shopping list were recalculated. Unavailable choices left unchanged: %lld.",
+      Int64(application.appliedCount),
+      Int64(application.produceCount),
+      Int64(application.buyCount),
+      Int64(application.unavailableCount)
+    )
+    calculatePlan(
+      preferences: application.preferences,
+      recommendationSuccessMessage: successMessage
+    )
+  }
+
+  private func calculatePlan(
+    preferences: [Int64: MaterialProcurementPreference]? = nil,
+    recommendationSuccessMessage: String? = nil
+  ) {
+    let requestedPreferences = preferences ?? procurementPreferences
+    calculationTask = Task { @MainActor in
+      defer { calculationTask = nil }
+      guard runtime.isPlannerConfigurationReady else { return }
+      persistDraft()
+      await runtime.calculate(
+        input: input,
+        manualStockInput: manualStockInput,
+        existingReservations: activeReservations,
+        assetWarehouse: assetWarehouse,
+        stockTargets: targetQuantities,
+        procurementPreferences: requestedPreferences
+      )
+      guard !Task.isCancelled else { return }
+      guard runtime.errorMessage == nil, let plan = runtime.plan else { return }
+      procurementPreferences = Dictionary(
+        uniqueKeysWithValues: plan.materials.compactMap { material in
+          material.procurement.map { (material.typeID, $0) }
+        }
+      )
+      saveActivePlan(plan)
+      recommendationApplicationMessage = recommendationSuccessMessage
     }
   }
 
@@ -1070,7 +2169,7 @@ struct PlannerView: View {
   }
 
   private var assetProjectionIdentity: String {
-    storedCharacters.map { character in
+    let characterPart = storedCharacters.map { character in
       [
         String(character.characterID),
         character.characterName,
@@ -1079,6 +2178,10 @@ struct PlannerView: View {
       ].joined(separator: ":")
     }
     .joined(separator: "|")
+    let productionPart = runtime.productionBasis.structures.map {
+      "\($0.id.uuidString):\($0.structureID ?? 0)"
+    }.sorted().joined(separator: "|")
+    return characterPart + "|production:" + productionPart
   }
 
   private func prepareAssetWarehouse() async {
@@ -1098,8 +2201,47 @@ struct PlannerView: View {
       payloads: payloads
     )
     guard !Task.isCancelled else { return }
-    assetWarehouse = prepared.warehouse
-    warehouseFactualQuantities = prepared.factualQuantities
+    let productionWarehouse = await runtime.prepareProductionWarehouse(
+      from: prepared
+    )
+    guard !Task.isCancelled else { return }
+    assetWarehouse = productionWarehouse.warehouse
+    warehouseFactualQuantities = productionWarehouse.factualQuantities
+  }
+}
+
+private enum PlannerDisclosureStorage {
+  static func contains(_ id: String, in encodedIDs: String) -> Bool {
+    decoded(encodedIDs).contains(id)
+  }
+
+  static func updating(
+    _ encodedIDs: String,
+    id: String,
+    isExpanded: Bool
+  ) -> String {
+    var ids = decoded(encodedIDs)
+    if isExpanded {
+      ids.insert(id)
+    } else {
+      ids.remove(id)
+    }
+    guard
+      let data = try? JSONEncoder().encode(ids.sorted()),
+      let encoded = String(data: data, encoding: .utf8)
+    else {
+      return encodedIDs
+    }
+    return encoded
+  }
+
+  private static func decoded(_ encodedIDs: String) -> Set<String> {
+    guard let data = encodedIDs.data(using: .utf8),
+      let ids = try? JSONDecoder().decode([String].self, from: data)
+    else {
+      return []
+    }
+    return Set(ids)
   }
 }
 
@@ -1112,31 +2254,40 @@ private struct ExplainedPlannerMetricRow: View {
   @State private var isExplanationPresented = false
 
   var body: some View {
+    let localizedLabel = AppLocalization.text(label)
     Button {
       isExplanationPresented.toggle()
     } label: {
-      LabeledContent {
-        Text(value)
-          .font(.body.monospacedDigit())
-          .foregroundStyle(
-            highlightsValue
-              ? DesignTokens.highlight : DesignTokens.textPrimary
-          )
-      } label: {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         HStack(spacing: DesignTokens.spacingXS) {
           Text(LocalizedStringKey(label))
           Image(systemName: "info.circle")
             .font(.caption)
             .foregroundStyle(DesignTokens.information)
             .accessibilityHidden(true)
+          Spacer(minLength: DesignTokens.spacingSM)
         }
+        Text(value)
+          .font(.body.monospacedDigit())
+          .foregroundStyle(
+            highlightsValue
+              ? DesignTokens.highlight : DesignTokens.textPrimary
+          )
+          .lineLimit(1)
+          .fixedSize(horizontal: true, vertical: false)
+          .frame(maxWidth: .infinity, alignment: .trailing)
       }
-      .frame(maxWidth: .infinity)
+      .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .contentShape(Rectangle())
-    .help("Click for an explanation of \(label).")
+    .help(
+      AppLocalization.format(
+        "Click for an explanation of %@.",
+        localizedLabel
+      )
+    )
     .popover(
       isPresented: $isExplanationPresented,
       attachmentAnchor: .rect(.bounds),
@@ -1161,10 +2312,12 @@ private struct ExplainedPlannerMetricRow: View {
           .textSelection(.enabled)
       }
       .padding(DesignTokens.spacingMD)
-      .frame(width: 360)
+      .frame(width: 460)
     }
-    .accessibilityLabel("\(label), \(value)")
-    .accessibilityHint("Shows an explanation of this value.")
+    .accessibilityLabel("\(localizedLabel), \(value)")
+    .accessibilityHint(
+      AppLocalization.text("Shows an explanation of this value.")
+    )
   }
 }
 
@@ -1172,6 +2325,651 @@ private struct PlannerMaterialSection: Identifiable {
   var id: String { name }
   let name: String
   let materials: [MaterialRequirement]
+}
+
+private struct PlannerWarehouseReplenishmentGroup: Identifiable {
+  var id: String { location.id }
+  let location: ProcurementLocation
+  let materials: [MaterialRequirement]
+}
+
+struct ReactionsView: View {
+  @EnvironmentObject private var runtime: RuntimeState
+  @AppStorage("reactions.analysis-runs") private var runs = 100
+  @AppStorage("reactions.trade-hub") private var tradeHubRaw =
+    MarketTradeHub.jita.rawValue
+  @State private var searchText = ""
+  @State private var valueFilter = ReactionValueFilter.all
+  @State private var selectedGroup = ReactionGroupFilter.all
+  @State private var sortOrder = ReactionAnalysisSortOrder.valueCreationDescending
+  @State private var expandedReactionIDs = Set<Int64>()
+  @State private var analysisTask: Task<Void, Never>?
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingLG) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Text("Reaction profitability")
+            .font(.largeTitle.bold())
+          Text(
+            "Compares every complete published SDE reaction against live order depth at the selected trade hub. Inputs are bought from sell orders; outputs are valued both as a replacement purchase and as an immediate sale to buy orders."
+          )
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
+
+        controls
+
+        if runtime.isAnalyzingReactions {
+          Panel(title: "Market analysis") {
+            HStack(spacing: DesignTokens.spacingMD) {
+              ProgressView()
+              VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+                Text("Analyzing all reactions…")
+                  .font(.headline)
+                Text(
+                  "The app is loading every required input and output order book. The previous complete result remains visible while prices refresh."
+                )
+                .font(.caption)
+                .foregroundStyle(DesignTokens.textSecondary)
+              }
+            }
+          }
+        }
+
+        if let error = runtime.reactionAnalysisError {
+          Panel(title: "Analysis unavailable") {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+              .foregroundStyle(DesignTokens.negative)
+            Button("Try again") { startAnalysis() }
+              .buttonStyle(.borderedProminent)
+          }
+        }
+
+        if let snapshot = runtime.reactionAnalysis {
+          basisPanel(snapshot)
+          summary(snapshot)
+          results(snapshot)
+        } else if !runtime.isAnalyzingReactions,
+          runtime.reactionAnalysisError == nil
+        {
+          Panel(title: "No analysis yet") {
+            Text(
+              "Start the analysis to evaluate all reactions from the active SDE catalog."
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+      }
+      .padding(DesignTokens.spacingLG)
+      .frame(maxWidth: 1_500, alignment: .leading)
+    }
+    .searchable(text: $searchText, prompt: "Search reactions or materials")
+    .task(id: runtime.isPlannerConfigurationReady) {
+      guard runtime.isPlannerConfigurationReady,
+        runtime.reactionAnalysis == nil,
+        !runtime.isAnalyzingReactions
+      else { return }
+      runs = sanitizedRuns
+      await runtime.analyzeReactions(
+        runs: sanitizedRuns,
+        tradeHub: selectedTradeHub
+      )
+    }
+    .onDisappear { analysisTask?.cancel() }
+  }
+
+  private var controls: some View {
+    Panel(title: "Calculation settings") {
+      HStack(alignment: .bottom, spacing: DesignTokens.spacingMD) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Text("Trade hub")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          Picker("Trade hub", selection: $tradeHubRaw) {
+            ForEach(MarketTradeHub.allCases) { hub in
+              Text(hub.name).tag(hub.rawValue)
+            }
+          }
+          .labelsHidden()
+          .frame(minWidth: 330)
+          .accessibilityIdentifier("reactions.trade-hub")
+        }
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Text("Runs")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          HStack(spacing: DesignTokens.spacingSM) {
+            TextField("Runs", value: $runs, format: .number)
+              .frame(width: 110)
+              .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("reactions.runs")
+            Stepper("", value: $runs, in: 1...maximumSelectableRuns)
+              .labelsHidden()
+          }
+        }
+        Button {
+          startAnalysis()
+        } label: {
+          Label("Analyze all reactions", systemImage: "arrow.clockwise")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(runtime.isAnalyzingReactions)
+        .accessibilityIdentifier("reactions.analyze")
+        Spacer()
+      }
+      VStack(alignment: .leading, spacing: 2) {
+        Text(
+          "100 runs are preconfigured. CCP does not define one global reaction-run maximum: the 30-day job limit is calculated per formula from its SDE duration and the current time basis. If one run already exceeds 30 days, that single run remains allowed."
+        )
+        HStack(spacing: 3) {
+          Text("Current analysis range")
+          Text(verbatim: "1–\(maximumSelectableRuns.formatted())")
+          Text("runs")
+          Text(
+            "The per-formula job limit and required job count are shown in every result."
+          )
+        }
+      }
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      if let snapshot = runtime.reactionAnalysis,
+        snapshot.runs != sanitizedRuns
+          || snapshot.tradeHub != selectedTradeHub
+      {
+        Label(
+          "Settings changed. Analyze again to replace the displayed snapshot.",
+          systemImage: "arrow.triangle.2.circlepath"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
+    }
+  }
+
+  private func basisPanel(_ snapshot: ReactionAnalysisSnapshot) -> some View {
+    Panel(title: "Calculation basis") {
+      HStack(alignment: .firstTextBaseline) {
+        Label(
+          snapshot.basis == .configuredFacility
+            ? "Configured reaction facility"
+            : "SDE material baseline",
+          systemImage:
+            snapshot.basis == .configuredFacility
+            ? "building.2.fill" : "doc.text.magnifyingglass"
+        )
+        .font(.headline)
+        Spacer()
+        if snapshot.basis == .configuredFacility {
+          Text(verbatim: snapshot.basisName)
+            .foregroundStyle(DesignTokens.highlight)
+        }
+      }
+      if snapshot.basis == .configuredFacility {
+        Text(
+          "Material multipliers, reaction time, system cost index, facility tax, SCC surcharge and clone surcharge are included from the verified Profile configuration."
+        )
+      } else {
+        Text(
+          "Value creation and make-or-buy use unmodified SDE material quantities only. Installation, structure, rig and clone costs are unavailable and are not treated as zero. Configure a valid reaction refinery and system in Profile for a complete facility comparison."
+        )
+      }
+      Text(
+        "Positive value creation means buying the produced output from sell orders costs more than the evaluated reaction cost. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      ForEach(snapshot.warnings) { warning in
+        Label(
+          localizedWarning(warning),
+          systemImage: warning.severity == .blocking
+            ? "xmark.octagon.fill" : "exclamationmark.triangle.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(
+          warning.severity == .blocking
+            ? DesignTokens.negative : DesignTokens.caution
+        )
+      }
+      Divider()
+      HStack {
+        Text("SDE build")
+        Text(verbatim: snapshot.sdeSource.version)
+        Text("•")
+        Text("Market")
+        Text(verbatim: snapshot.tradeHub.name)
+        Text("•")
+        Text(snapshot.marketSource.capturedAt.formatted(date: .abbreviated, time: .shortened))
+      }
+      .font(.caption.monospacedDigit())
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func summary(_ snapshot: ReactionAnalysisSnapshot) -> some View {
+    let rows = snapshot.rows
+    let positive = rows.filter { $0.valueStatus == .positive }.count
+    let negative = rows.filter { $0.valueStatus == .negative }.count
+    let unavailable = rows.filter { $0.valueStatus == .unavailable }.count
+    let cheaperToMake = rows.filter { $0.makeIsCheaperThanBuy == true }.count
+    return LazyVGrid(
+      columns: [GridItem(.adaptive(minimum: 180, maximum: 280))],
+      alignment: .leading,
+      spacing: DesignTokens.spacingMD
+    ) {
+      summaryCard("All reactions", rows.count, DesignTokens.information)
+      summaryCard("Positive value", positive, DesignTokens.positive)
+      summaryCard("Negative value", negative, DesignTokens.negative)
+      summaryCard("Cheaper to make", cheaperToMake, DesignTokens.highlight)
+      if unavailable > 0 {
+        summaryCard("Price unavailable", unavailable, DesignTokens.caution)
+      }
+    }
+  }
+
+  private func summaryCard(
+    _ title: String,
+    _ value: Int,
+    _ color: Color
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Text(LocalizedStringKey(title))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(value.formatted())
+        .font(.title2.bold().monospacedDigit())
+        .foregroundStyle(color)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(DesignTokens.spacingMD)
+    .background(DesignTokens.panel)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+        .stroke(DesignTokens.border)
+    }
+  }
+
+  private func results(_ snapshot: ReactionAnalysisSnapshot) -> some View {
+    let rows = filteredRows(snapshot.rows)
+    return Panel(title: "All reaction results") {
+      HStack(spacing: DesignTokens.spacingMD) {
+        Picker("Value", selection: $valueFilter) {
+          ForEach(ReactionValueFilter.allCases) { filter in
+            Text(filter.title).tag(filter)
+          }
+        }
+        .frame(width: 180)
+        Picker("Reaction type", selection: $selectedGroup) {
+          Text("All reaction types").tag(ReactionGroupFilter.all)
+          ForEach(groupNames(snapshot.rows), id: \.self) { group in
+            Text(group).tag(ReactionGroupFilter.named(group))
+          }
+        }
+        .frame(minWidth: 260)
+        Picker("Sort", selection: $sortOrder) {
+          ForEach(ReactionAnalysisSortOrder.allCases, id: \.self) { order in
+            Text(order.title).tag(order)
+          }
+        }
+        .frame(width: 220)
+        Spacer()
+        Text("\(rows.count) / \(snapshot.rows.count)")
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      if rows.isEmpty {
+        Text("No reactions match the current filters.")
+          .foregroundStyle(DesignTokens.textSecondary)
+          .padding(.vertical, DesignTokens.spacingLG)
+      } else {
+        LazyVStack(spacing: DesignTokens.spacingSM) {
+          ForEach(rows) { row in
+            reactionRow(row)
+          }
+        }
+      }
+    }
+  }
+
+  private func reactionRow(_ row: ReactionAnalysisRow) -> some View {
+    FullWidthDisclosure(isExpanded: reactionExpansionBinding(row.id)) {
+      HStack(spacing: DesignTokens.spacingMD) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(row.productName).font(.headline)
+          Text(row.groupName)
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+        Spacer()
+        VStack(alignment: .trailing, spacing: 2) {
+          Text("Value creation")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          Text(formatSignedISK(row.valueCreation))
+            .font(.body.bold().monospacedDigit())
+            .foregroundStyle(statusColor(row.valueStatus))
+        }
+        .frame(minWidth: 145, alignment: .trailing)
+        VStack(alignment: .trailing, spacing: 2) {
+          Text("Value margin")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          Text(formatPercent(row.valueCreationMargin))
+            .font(.body.bold().monospacedDigit())
+            .foregroundStyle(statusColor(row.valueStatus))
+        }
+        .frame(minWidth: 105, alignment: .trailing)
+        VStack(alignment: .trailing, spacing: 2) {
+          Text("Make or buy")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          Text(makeOrBuyLabel(row))
+            .font(.body.weight(.semibold))
+            .foregroundStyle(
+              row.makeIsCheaperThanBuy == nil
+                ? DesignTokens.textDisabled
+                : row.makeIsCheaperThanBuy == true
+                  ? DesignTokens.positive : DesignTokens.negative
+            )
+        }
+        .frame(minWidth: 130, alignment: .trailing)
+      }
+      .padding(DesignTokens.spacingMD)
+    } content: {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+        LazyVGrid(
+          columns: [GridItem(.adaptive(minimum: 180, maximum: 280))],
+          alignment: .leading,
+          spacing: DesignTokens.spacingSM
+        ) {
+          reactionMetric("Input purchase", row.materialCost)
+          reactionMetric("Installation", row.installationCost)
+          reactionMetric("Evaluated reaction cost", row.evaluatedCost)
+          reactionMetric("Buy produced output", row.outputBuyCost)
+          reactionMetric("Immediate-sale revenue", row.immediateSaleRevenue)
+          reactionMetric("Immediate-sale spread", row.immediateSaleSpread)
+          reactionMetric("Make-or-buy savings", row.makeOrBuySavings)
+          reactionMetric("Value creation", row.valueCreation)
+          reactionMetricPercent("Value margin", row.valueCreationMargin)
+        }
+        Divider()
+        HStack(alignment: .top, spacing: DesignTokens.spacingLG) {
+          materialList("Inputs", row.inputs)
+          materialList("Outputs", row.outputs)
+        }
+        HStack {
+          Label("\(row.runs.formatted()) runs", systemImage: "repeat")
+          Label(formatDuration(row.durationSeconds), systemImage: "clock")
+          Label(
+            "Max. \(row.maximumRunsPerJob.formatted()) runs per job",
+            systemImage: "calendar.badge.clock"
+          )
+          if row.requiredJobCount > 1 {
+            Label(
+              "\(row.requiredJobCount.formatted()) jobs required",
+              systemImage: "square.stack.3d.up"
+            )
+          }
+          Text("Formula")
+          Text(row.blueprintTypeID.formatted())
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+        if !row.warnings.isEmpty {
+          Divider()
+          ForEach(row.warnings) { warning in
+            Label(
+              localizedWarning(warning),
+              systemImage: "exclamationmark.triangle"
+            )
+            .font(.caption)
+            .foregroundStyle(
+              warning.severity == .blocking
+                ? DesignTokens.negative : DesignTokens.caution
+            )
+          }
+        }
+      }
+      .padding(.horizontal, DesignTokens.spacingMD)
+      .padding(.bottom, DesignTokens.spacingMD)
+    }
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+        .stroke(DesignTokens.border)
+    }
+  }
+
+  private func reactionMetric(_ title: String, _ value: Double?) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(LocalizedStringKey(title))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(formatISK(value))
+        .font(.body.monospacedDigit())
+        .foregroundStyle(DesignTokens.highlight)
+    }
+  }
+
+  private func reactionMetricPercent(
+    _ title: String,
+    _ value: Double?
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(LocalizedStringKey(title))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(value?.formatted(.percent.precision(.fractionLength(1))) ?? "—")
+        .font(.body.monospacedDigit())
+        .foregroundStyle(DesignTokens.highlight)
+    }
+  }
+
+  private func materialList(
+    _ title: String,
+    _ materials: [ReactionMaterialValuation]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text(LocalizedStringKey(title)).font(.headline)
+      ForEach(materials) { material in
+        HStack {
+          VStack(alignment: .leading, spacing: 1) {
+            Text(material.name)
+            HStack(spacing: 3) {
+              Text(material.quantity.formatted())
+              Text("units")
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+          Spacer()
+          Text(formatISK(material.quote.total))
+            .font(.body.monospacedDigit())
+            .foregroundStyle(DesignTokens.highlight)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func filteredRows(
+    _ rows: [ReactionAnalysisRow]
+  ) -> [ReactionAnalysisRow] {
+    let needle = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let filtered = rows.filter { row in
+      let matchesSearch =
+        needle.isEmpty
+        || row.productName.localizedCaseInsensitiveContains(needle)
+        || row.groupName.localizedCaseInsensitiveContains(needle)
+        || row.inputs.contains {
+          $0.name.localizedCaseInsensitiveContains(needle)
+        }
+        || row.outputs.contains {
+          $0.name.localizedCaseInsensitiveContains(needle)
+        }
+      let matchesValue = valueFilter.matches(row.valueStatus)
+      let matchesGroup: Bool
+      switch selectedGroup {
+      case .all: matchesGroup = true
+      case .named(let group): matchesGroup = row.groupName == group
+      }
+      return matchesSearch && matchesValue && matchesGroup
+    }
+    return sortOrder.sorted(filtered)
+  }
+
+  private func groupNames(_ rows: [ReactionAnalysisRow]) -> [String] {
+    Array(Set(rows.map(\.groupName))).sorted {
+      $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+    }
+  }
+
+  private var selectedTradeHub: MarketTradeHub {
+    MarketTradeHub(rawValue: tradeHubRaw) ?? .jita
+  }
+
+  private var sanitizedRuns: Int {
+    min(max(1, runs), maximumSelectableRuns)
+  }
+
+  private var maximumSelectableRuns: Int {
+    max(
+      1,
+      runtime.reactionAnalysis?.maximumSelectableRuns
+        ?? ReactionJobRules.neutralMaximumSelectableRuns
+    )
+  }
+
+  private func reactionExpansionBinding(_ id: Int64) -> Binding<Bool> {
+    Binding(
+      get: { expandedReactionIDs.contains(id) },
+      set: { isExpanded in
+        if isExpanded {
+          expandedReactionIDs.insert(id)
+        } else {
+          expandedReactionIDs.remove(id)
+        }
+      }
+    )
+  }
+
+  private func startAnalysis() {
+    runs = sanitizedRuns
+    analysisTask?.cancel()
+    analysisTask = Task { @MainActor in
+      defer { analysisTask = nil }
+      await runtime.analyzeReactions(
+        runs: sanitizedRuns,
+        tradeHub: selectedTradeHub
+      )
+    }
+  }
+
+  private func makeOrBuyLabel(
+    _ row: ReactionAnalysisRow
+  ) -> LocalizedStringKey {
+    guard let make = row.makeIsCheaperThanBuy else { return "Unavailable" }
+    return make ? "Make" : "Buy"
+  }
+
+  private func statusColor(_ status: ReactionValueStatus) -> Color {
+    switch status {
+    case .positive: DesignTokens.positive
+    case .negative: DesignTokens.negative
+    case .neutral: DesignTokens.textSecondary
+    case .unavailable: DesignTokens.caution
+    }
+  }
+
+  private func localizedWarning(
+    _ warning: DomainWarning
+  ) -> LocalizedStringKey {
+    switch warning.code {
+    case "market.insufficient-depth":
+      "The selected trade hub does not have enough order-book depth for the configured runs."
+    default:
+      LocalizedStringKey(warning.message)
+    }
+  }
+
+  private func formatISK(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "—" }
+    return value.formatted(
+      .currency(code: "ISK")
+        .precision(.fractionLength(0))
+    )
+  }
+
+  private func formatSignedISK(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "—" }
+    let formatted = abs(value).formatted(
+      .currency(code: "ISK").precision(.fractionLength(0))
+    )
+    if value > 0 { return "+\(formatted)" }
+    if value < 0 { return "−\(formatted)" }
+    return formatted
+  }
+
+  private func formatPercent(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "—" }
+    return value.formatted(.percent.precision(.fractionLength(1)))
+  }
+
+  private func formatDuration(_ seconds: Int64) -> String {
+    guard seconds < Int64.max else { return "—" }
+    return Duration.seconds(seconds).formatted(
+      .units(allowed: [.days, .hours, .minutes], width: .abbreviated)
+    )
+  }
+}
+
+private enum ReactionValueFilter: String, CaseIterable, Identifiable {
+  case all
+  case positive
+  case negative
+  case neutral
+  case unavailable
+
+  var id: Self { self }
+
+  var title: LocalizedStringKey {
+    switch self {
+    case .all: "All values"
+    case .positive: "Positive"
+    case .negative: "Negative"
+    case .neutral: "Neutral"
+    case .unavailable: "Unavailable"
+    }
+  }
+
+  func matches(_ status: ReactionValueStatus) -> Bool {
+    switch self {
+    case .all: true
+    case .positive: status == .positive
+    case .negative: status == .negative
+    case .neutral: status == .neutral
+    case .unavailable: status == .unavailable
+    }
+  }
+}
+
+private enum ReactionGroupFilter: Hashable {
+  case all
+  case named(String)
+}
+
+extension ReactionAnalysisSortOrder {
+  fileprivate var title: LocalizedStringKey {
+    switch self {
+    case .valueCreationDescending: "Value creation (highest first)"
+    case .valueCreationAscending: "Value creation (lowest first)"
+    case .makeSavingsDescending: "Make savings (highest first)"
+    case .marginDescending: "Margin (highest first)"
+    case .nameAscending: "Name"
+    }
+  }
 }
 
 private enum ShoppingListCopyStatus {
@@ -1436,17 +3234,12 @@ struct CharactersView: View {
             ForEach(characters) { character in
               VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
                 HStack {
-                  Button {
-                    toggleScopeDetails(for: character)
-                  } label: {
+                  FullWidthDisclosureButton(
+                    isExpanded:
+                      selectedScopeCharacterID == character.characterID,
+                    action: { toggleScopeDetails(for: character) }
+                  ) {
                     HStack(spacing: DesignTokens.spacingSM) {
-                      Image(
-                        systemName:
-                          selectedScopeCharacterID == character.characterID
-                          ? "chevron.down" : "chevron.right"
-                      )
-                      .font(.caption.bold())
-                      .frame(width: 12)
                       Image(systemName: "person.crop.circle.fill")
                       VStack(alignment: .leading, spacing: 2) {
                         Text(character.characterName)
@@ -1458,10 +3251,12 @@ struct CharactersView: View {
                               : DesignTokens.caution
                           )
                       }
+                      Spacer()
+                      Text(character.lastSyncAt?.formatted() ?? "Never synced")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(DesignTokens.textSecondary)
                     }
                   }
-                  .buttonStyle(.plain)
-                  .contentShape(Rectangle())
                   .accessibilityLabel(
                     "Show loaded scopes for \(character.characterName)"
                   )
@@ -1469,10 +3264,6 @@ struct CharactersView: View {
                     selectedScopeCharacterID == character.characterID
                       ? "Expanded" : "Collapsed"
                   )
-                  Spacer()
-                  Text(character.lastSyncAt?.formatted() ?? "Never synced")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(DesignTokens.textSecondary)
                   Button("Sync") {
                     Task {
                       await sync(character)
@@ -1821,22 +3612,53 @@ struct CharactersView: View {
   }
 
   private func applyLatestSync(to character: StoredCharacter) throws {
-    character.capabilitySnapshot = try runtime.lastCharacterSync.map {
-      try JSONEncoder().encode($0.capabilities)
+    guard let latest = runtime.lastCharacterSync else { return }
+    let previousCapabilities = character.capabilitySnapshot.flatMap {
+      try? JSONDecoder().decode(CharacterCapabilitySnapshot.self, from: $0)
     }
-    character.assetSnapshot = try runtime.lastCharacterSync.map {
-      try JSONEncoder().encode($0.assets)
-    }
-    character.blueprintSnapshot = try runtime.lastCharacterSync.map {
-      try JSONEncoder().encode($0.blueprints)
-    }
-    character.walletBalanceSnapshot = try runtime.lastCharacterSync.map {
-      try JSONEncoder().encode($0.walletBalance)
-    }
+    let retainedCapabilities = CharacterCapabilitySnapshot(
+      id: latest.capabilities.id,
+      character: latest.capabilities.character,
+      cloneState: latest.capabilities.cloneState,
+      skills: latest.capabilities.skills.retainingLastKnownValue(
+        from: previousCapabilities?.skills
+      ),
+      standings: latest.capabilities.standings.retainingLastKnownValue(
+        from: previousCapabilities?.standings
+      )
+    )
+    character.capabilitySnapshot = try JSONEncoder().encode(
+      retainedCapabilities
+    )
+    character.assetSnapshot = try retainedSnapshotData(
+      latest.assets,
+      previousData: character.assetSnapshot
+    )
+    character.blueprintSnapshot = try retainedSnapshotData(
+      latest.blueprints,
+      previousData: character.blueprintSnapshot
+    )
+    character.walletBalanceSnapshot = try retainedSnapshotData(
+      latest.walletBalance,
+      previousData: character.walletBalanceSnapshot
+    )
     character.lastSyncAt = .now
-    character.walletLastSyncAt =
-      runtime.lastCharacterSync?.walletBalance.value == nil ? nil : .now
+    if latest.walletBalance.value != nil {
+      character.walletLastSyncAt = latest.walletBalance.source.capturedAt
+    }
     try persistLatestSnapshotMetadata()
+  }
+
+  private func retainedSnapshotData<Value: Codable & Sendable>(
+    _ latest: Sourced<Value>,
+    previousData: Data?
+  ) throws -> Data {
+    let previous = previousData.flatMap {
+      try? JSONDecoder().decode(Sourced<Value>.self, from: $0)
+    }
+    return try JSONEncoder().encode(
+      latest.retainingLastKnownValue(from: previous)
+    )
   }
 
   private func missingScopeCount(for character: StoredCharacter) -> Int {
@@ -2326,8 +4148,14 @@ struct WalletView: View {
         authorization: authorization,
         clientID: clientID
       )
-      character.walletBalanceSnapshot = try JSONEncoder().encode(balance)
-      character.walletLastSyncAt = balance.source.capturedAt
+      let previous = character.walletBalanceSnapshot.flatMap {
+        try? JSONDecoder().decode(Sourced<Double>.self, from: $0)
+      }
+      let retained = balance.retainingLastKnownValue(from: previous)
+      character.walletBalanceSnapshot = try JSONEncoder().encode(retained)
+      if balance.value != nil {
+        character.walletLastSyncAt = balance.source.capturedAt
+      }
       try modelContext.upsertESISnapshotMetadata(
         characterID: character.characterID,
         domain: "wallet-balance",
@@ -2560,6 +4388,7 @@ struct DataSettingsView: View {
         settings.first(
           where: { $0.key == "sde.ownerContact" }
         )?.value ?? ""
+      Task { await reconcileSDEActivationPointer() }
     }
     .onDisappear {
       persistOwnerContactOnExit()
@@ -2733,6 +4562,35 @@ struct DataSettingsView: View {
     } catch {
       modelContext.rollback()
       throw error
+    }
+  }
+
+  private func reconcileSDEActivationPointer() async {
+    await runtime.refreshActiveBuild()
+    guard let build = runtime.activeSDEBuild,
+      let hash = runtime.activeSDEContentSHA256
+    else { return }
+    if let pointer = activationPointers.first(where: { $0.key == "active" }) {
+      guard pointer.buildNumber != build || pointer.contentSHA256 != hash else {
+        return
+      }
+      pointer.buildNumber = build
+      pointer.contentSHA256 = hash
+      pointer.activatedAt = .now
+    } else {
+      modelContext.insert(
+        StoredSDEActivationPointer(
+          buildNumber: build,
+          contentSHA256: hash
+        )
+      )
+    }
+    do {
+      try modelContext.save()
+    } catch {
+      modelContext.rollback()
+      settingsError =
+        "The active SDE catalog was found, but its local database pointer could not be reconciled. The catalog files were not changed."
     }
   }
 }

@@ -453,6 +453,54 @@ struct ESIClientTests {
   }
 
   @Test
+  func tradingLocationSearchResolvesNPCStationOwnerContext() async throws {
+    let service = TradingLocationSearchService(
+      esi: ESIClient(transport: TradingLocationSearchTransport())
+    )
+
+    let result = try await service.searchNPCStations(query: "fixture")
+    let option = try #require(result.value?.first)
+
+    #expect(result.state == .fresh)
+    #expect(option.id == 60_000_001)
+    #expect(option.name == "Fixture Trade Station")
+    #expect(option.solarSystemID == 30_000_001)
+    #expect(option.ownerCorporationID == 1_000_004)
+    #expect(option.ownerFactionID == 500_002)
+    #expect(option.procurementLocation.kind == .npcTradeHub)
+  }
+
+  @Test
+  func tradingLocationStructureSearchIsNotRestrictedToProductionSystems()
+    async throws
+  {
+    let service = PlayerStructureSearchService(
+      esi: ESIClient(transport: StructureSearchTransport())
+    )
+    let lease = AccessTokenLease(
+      characterID: 99,
+      accessToken: "fixture",
+      expiresAt: .distantFuture,
+      scopes: [
+        PlayerStructureSearchService.searchScope,
+        PlayerStructureSearchService.detailScope,
+      ]
+    )
+
+    let result = try await service.search(
+      query: "hub",
+      characterID: 99,
+      lease: lease
+    )
+
+    #expect(
+      result.value?.map(\.id) == [
+        1_000_000_000_001, 1_000_000_000_002,
+      ]
+    )
+  }
+
+  @Test
   func discoversStructuresFromUsedCharacterLocations() async throws {
     let service = PlayerStructureSearchService(
       esi: ESIClient(transport: StructureDiscoveryTransport())
@@ -1053,6 +1101,35 @@ private struct IndustryIndexTransport: ESIHTTPTransporting {
         ]
       }]
       """
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+}
+
+private struct TradingLocationSearchTransport: ESIHTTPTransporting {
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    let body: String
+    switch path {
+    case "/search", "/search/":
+      body = #"{"station":[60000001]}"#
+    case "/universe/stations/60000001", "/universe/stations/60000001/":
+      body =
+        #"{"name":"Fixture Trade Station","owner":1000004,"system_id":30000001}"#
+    case "/corporations/1000004", "/corporations/1000004/":
+      body = #"{"faction_id":500002}"#
+    default:
+      body = "{}"
+    }
     return (
       Data(body.utf8),
       HTTPURLResponse(

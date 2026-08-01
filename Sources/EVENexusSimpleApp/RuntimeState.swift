@@ -15,6 +15,15 @@ final class RuntimeState: ObservableObject {
   @Published var manufacturingProfile = ManufacturingProfile()
   @Published var reactionProfile: ReactionProfile?
   @Published var plan: IndustryPlanSnapshot?
+  @Published private(set) var reactionAnalysis: ReactionAnalysisSnapshot?
+  @Published private(set) var isAnalyzingReactions = false
+  @Published private(set) var reactionAnalysisError: String?
+  @Published private(set) var moonMaterialAnalysis: MoonMaterialPurchaseAnalysisSnapshot?
+  @Published private(set) var isRefreshingMoonMaterialAnalysis = false
+  @Published private(set) var moonMaterialAnalysisError: String?
+  @Published private(set) var marketBrowserState: Sourced<MarketBrowserSnapshot>?
+  @Published private(set) var isRefreshingMarketBrowser = false
+  @Published private(set) var marketBrowserError: String?
   @Published var isWorking = false
   @Published var statusMessage = "Ready"
   @Published var errorMessage: String?
@@ -45,6 +54,7 @@ final class RuntimeState: ObservableObject {
   private let eveOnlineStatusClient = EVEOnlineStatusClient()
   private let solarSystemSearch: SolarSystemSearchService
   private let playerStructureSearch: PlayerStructureSearchService
+  private let tradingLocationSearch: TradingLocationSearchService
   private let universeNameService: UniverseNameService
   private let catalog: SQLiteStaticCatalog
   private let assetWarehouseProjectionCache =
@@ -55,12 +65,28 @@ final class RuntimeState: ObservableObject {
   private var profileReferenceRefreshTask: Task<Void, Never>?
   private var lastEVEOnlineStatusCheckAt: Date?
 
-  init() {
+  init(dataRoot providedDataRoot: URL? = nil) {
     let esi = ESIClient()
     self.esi = esi
     self.solarSystemSearch = SolarSystemSearchService(esi: esi)
     self.playerStructureSearch = PlayerStructureSearchService(esi: esi)
+    self.tradingLocationSearch = TradingLocationSearchService(esi: esi)
     self.universeNameService = UniverseNameService(esi: esi)
+    let resolvedDataRoot = providedDataRoot ?? Self.fallbackDataRoot()
+    dataRoot = resolvedDataRoot
+    catalog = SQLiteStaticCatalog(
+      rootURL:
+        resolvedDataRoot
+        .appendingPathComponent("sde", isDirectory: true)
+        .appendingPathComponent("catalog-store", isDirectory: true)
+    )
+    Task {
+      await refreshActiveBuild()
+      await refreshEVEOnlineServiceStatus()
+    }
+  }
+
+  private static func fallbackDataRoot() -> URL {
     let applicationSupport =
       FileManager.default.urls(
         for: .applicationSupportDirectory,
@@ -71,20 +97,10 @@ final class RuntimeState: ObservableObject {
         "Library/Application Support",
         isDirectory: true
       )
-    dataRoot = applicationSupport.appendingPathComponent(
-      "com.local.EVENexusSimple",
+    return applicationSupport.appendingPathComponent(
+      AppDataPaths.applicationIdentifier,
       isDirectory: true
     )
-    catalog = SQLiteStaticCatalog(
-      rootURL:
-        dataRoot
-        .appendingPathComponent("sde", isDirectory: true)
-        .appendingPathComponent("catalog-store", isDirectory: true)
-    )
-    Task {
-      await refreshActiveBuild()
-      await refreshEVEOnlineServiceStatus()
-    }
   }
 
   func preparePlannerConfiguration(encodedBasis: Data?) async {
@@ -109,7 +125,9 @@ final class RuntimeState: ObservableObject {
     manualStockInput: String = "",
     existingReservations: [StockAllocation] = [],
     assetWarehouse: AssetWarehouse? = nil,
-    stockTargets: [Int64: Int64] = [:]
+    stockTargets: [Int64: Int64] = [:],
+    procurementPreferences: [Int64: MaterialProcurementPreference] = [:],
+    defaultPurchaseLocation: ProcurementLocation? = nil
   ) async {
     await perform("Calculating production plan") {
       guard let active = try await catalog.activeSDEVersion() else {
@@ -121,8 +139,14 @@ final class RuntimeState: ObservableObject {
         input: input,
         catalog: planningCatalog
       )
+      let mainTradeHub = productionBasis.mainTradeHub
+      let mainPurchaseLocation =
+        defaultPurchaseLocation ?? mainTradeHub.procurementLocation
       let marketService = JitaMarketService(esi: esi)
-      async let market = marketService.orderSnapshot(typeIDs: typeIDs)
+      async let market = marketService.orderSnapshot(
+        typeIDs: typeIDs,
+        tradeHub: mainTradeHub
+      )
       async let adjusted = marketService.adjustedPrices()
       async let systems = marketService.industrySystems()
       let values = try await (market, adjusted, systems)
@@ -144,7 +168,7 @@ final class RuntimeState: ObservableObject {
         availableStock = availability.allocatableQuantities
         assetSource = StockSource(
           kind: .warehouse,
-          reference: "all-character-assets"
+          reference: "production-location-personal-assets"
         )
         snapshotIDs.append(contentsOf: warehouse.snapshotIDs)
         let incompleteStates = Set(
@@ -155,7 +179,7 @@ final class RuntimeState: ObservableObject {
             DomainWarning(
               code: "industry.warehouse-source-not-fresh",
               message:
-                "The combined warehouse contains non-fresh or unavailable character asset sources: \(incompleteStates.map(\.rawValue).sorted().joined(separator: ", ")).",
+                "The production warehouse contains non-fresh or unavailable character asset sources: \(incompleteStates.map(\.rawValue).sorted().joined(separator: ", ")).",
               severity: .warning
             )
           )
@@ -192,6 +216,13 @@ final class RuntimeState: ObservableObject {
       }
       let configuredReaction =
         productionBasis.configuredReactionProfile ?? reactionProfile
+      let acceptedProcurementPreferences = procurementPreferences.mapValues {
+        preference in
+        MaterialProcurementPreference(
+          supplyMode: preference.supplyMode,
+          purchaseLocation: mainPurchaseLocation
+        )
+      }
       let context = IndustryPlanningContext(
         manufacturingProfile: manufacturingProfile,
         reactionProfile: configuredReaction,
@@ -201,6 +232,8 @@ final class RuntimeState: ObservableObject {
         adjustedPrices: values.1,
         systemIndices: values.2,
         availableStock: availableStock,
+        procurementPreferences: acceptedProcurementPreferences,
+        defaultPurchaseLocation: mainPurchaseLocation,
         assetSource: assetSource,
         sdeBuild: active.buildNumber,
         snapshotIDs: snapshotIDs,
@@ -210,6 +243,263 @@ final class RuntimeState: ObservableObject {
       )
       plan = try await planner.plan(input: input, context: context)
     }
+  }
+
+  func analyzeReactions(
+    runs requestedRuns: Int,
+    tradeHub: MarketTradeHub
+  ) async {
+    let maximumRuns =
+      reactionAnalysis?.maximumSelectableRuns
+      ?? ReactionJobRules.neutralMaximumSelectableRuns
+    let runs = min(max(1, requestedRuns), maximumRuns)
+    isAnalyzingReactions = true
+    reactionAnalysisError = nil
+    defer { isAnalyzingReactions = false }
+    do {
+      guard try await catalog.activeSDEVersion() != nil else {
+        throw StaticCatalogError.noActiveCatalog
+      }
+      let definitions = try await catalog.reactionDefinitions()
+      try Task.checkCancellation()
+      let typeIDs = Set(
+        definitions.flatMap { definition in
+          [definition.productTypeID]
+            + definition.activity.materials.map(\.typeID)
+            + definition.activity.products.map(\.typeID)
+        }
+      )
+      let marketService = TradeHubMarketService(esi: esi)
+      async let namesValue = catalog.typeNames(ids: typeIDs)
+      async let classificationsValue = catalog.industryClassifications(
+        typeIDs: Set(definitions.map(\.productTypeID))
+      )
+      async let marketValue = marketService.orderSnapshot(
+        typeIDs: typeIDs,
+        tradeHub: tradeHub
+      )
+      async let adjustedValue = marketService.adjustedPrices()
+      async let systemsValue = marketService.industrySystems()
+      let (names, classifications, market, adjusted, systems) = try await (
+        namesValue,
+        classificationsValue,
+        marketValue,
+        adjustedValue,
+        systemsValue
+      )
+      try Task.checkCancellation()
+      let facility = reactionFacilityCostContext(systemIndices: systems)
+      reactionAnalysis = try ReactionProfitabilityAnalyzer.analyze(
+        definitions: definitions,
+        typeNames: names,
+        classifications: classifications,
+        runs: runs,
+        tradeHub: tradeHub,
+        market: market,
+        adjustedPrices: adjusted,
+        facility: facility
+      )
+    } catch is CancellationError {
+      return
+    } catch StaticCatalogError.noActiveCatalog {
+      reactionAnalysisError =
+        "No active SDE catalog is installed. Install or activate static data first."
+    } catch ReactionAnalysisError.noReactionDefinitions {
+      reactionAnalysisError =
+        "The active SDE catalog contains no complete published reaction definitions."
+    } catch {
+      reactionAnalysisError =
+        "The reaction analysis could not be completed. \(error.localizedDescription)"
+    }
+  }
+
+  func refreshMoonMaterialAnalysis() async {
+    guard !isRefreshingMoonMaterialAnalysis else { return }
+    isRefreshingMoonMaterialAnalysis = true
+    moonMaterialAnalysisError = nil
+    defer { isRefreshingMoonMaterialAnalysis = false }
+
+    do {
+      let materialCatalog = try await catalog.moonMaterials()
+      let typeIDs = Set(materialCatalog.materials.map(\.id))
+      let marketService = TradeHubMarketService(esi: esi)
+      let locationIDs = Dictionary(
+        uniqueKeysWithValues: MoonMaterialMarketLocation.allCases.map {
+          location in
+          let configuredStructureID =
+            location.isPlayerStructure
+            ? productionBasis.structures.first {
+              $0.solarSystemID == location.systemID && $0.structureID != nil
+            }?.structureID : nil
+          return (location, configuredStructureID ?? location.locationID)
+        }
+      )
+      let attempts = await withTaskGroup(
+        of: MoonMaterialMarketRefreshResult?.self,
+        returning: [
+          MoonMaterialMarketLocation: Sourced<MarketOrderSnapshot>
+        ].self
+      ) { group in
+        for location in MoonMaterialMarketLocation.allCases {
+          group.addTask {
+            do {
+              guard let locationID = locationIDs[location] else {
+                return nil
+              }
+              let snapshot = try await marketService.orderSnapshot(
+                typeIDs: typeIDs,
+                regionID: location.regionID,
+                locationID: locationID
+              )
+              return MoonMaterialMarketRefreshResult(
+                location: location,
+                result: Sourced(
+                  state: .fresh,
+                  value: snapshot,
+                  source: snapshot.source
+                )
+              )
+            } catch is CancellationError {
+              return nil
+            } catch {
+              let failure = Self.moonMaterialMarketFailure(error)
+              return MoonMaterialMarketRefreshResult(
+                location: location,
+                result: Sourced(
+                  state: failure.state,
+                  value: nil,
+                  source: SourceIdentity(
+                    provider: "ESI",
+                    version: EVEConstants.esiCompatibilityDate
+                  ),
+                  diagnostics: [failure.diagnostic]
+                )
+              )
+            }
+          }
+        }
+        var values: [MoonMaterialMarketLocation: Sourced<MarketOrderSnapshot>] = [:]
+        for await attempt in group {
+          guard let attempt else { continue }
+          values[attempt.location] = attempt.result
+        }
+        return values
+      }
+      guard !Task.isCancelled else { return }
+
+      let canRetainPreviousMarkets =
+        moonMaterialAnalysis?.materialCatalog.source.version
+        == materialCatalog.source.version
+      var markets: [MoonMaterialMarketLocation: Sourced<MarketOrderSnapshot>] = [:]
+      for location in MoonMaterialMarketLocation.allCases {
+        guard let attempt = attempts[location] else { continue }
+        markets[location] = attempt.retainingLastKnownValue(
+          from: canRetainPreviousMarkets
+            ? moonMaterialAnalysis?.markets[location] : nil
+        )
+      }
+      moonMaterialAnalysis = MoonMaterialPurchaseAnalysisSnapshot(
+        materialCatalog: materialCatalog,
+        markets: markets,
+        refreshedAt: .now
+      )
+    } catch is CancellationError {
+      return
+    } catch StaticCatalogError.noActiveCatalog {
+      moonMaterialAnalysisError =
+        "No active SDE catalog is installed. Install or activate static data first."
+    } catch {
+      moonMaterialAnalysisError =
+        "Moon materials could not be loaded from the active SDE catalog."
+    }
+  }
+
+  func refreshMarketBrowser(
+    typeID: Int64,
+    itemName: String,
+    originSystemID: Int64?,
+    originSystemName: String?
+  ) async {
+    guard !isRefreshingMarketBrowser else { return }
+    isRefreshingMarketBrowser = true
+    marketBrowserError = nil
+    defer { isRefreshingMarketBrowser = false }
+
+    do {
+      let latest = try await MarketBrowserService(
+        esi: esi,
+        universeNames: universeNameService
+      ).snapshot(
+        typeID: typeID,
+        itemName: itemName,
+        originSystemID: originSystemID,
+        originSystemName: originSystemName
+      )
+      guard !Task.isCancelled else { return }
+      let previous: Sourced<MarketBrowserSnapshot>? = marketBrowserState.flatMap {
+        state in
+        guard state.value?.typeID == typeID,
+          state.value?.originSystemID == originSystemID
+        else { return nil }
+        return state
+      }
+      marketBrowserState = latest.retainingLastKnownValue(from: previous)
+    } catch is CancellationError {
+      return
+    } catch ESIError.cancelled {
+      return
+    } catch StaticCatalogError.noActiveCatalog {
+      marketBrowserError =
+        "No active SDE catalog is installed. Install or activate static data first."
+    } catch {
+      marketBrowserError =
+        "The cross-region market could not be refreshed. Existing market data was not replaced."
+    }
+  }
+
+  nonisolated private static func moonMaterialMarketFailure(
+    _ error: Error
+  ) -> (state: DataFreshness, diagnostic: String) {
+    guard let esiError = error as? ESIError else {
+      return (.unavailable, "esi.moon-market.unavailable")
+    }
+    switch esiError {
+    case .forbidden, .authorizationRequired, .missingScope:
+      return (.forbidden, "esi.moon-market.forbidden")
+    case .rateLimited:
+      return (.unavailable, "esi.moon-market.rate-limited")
+    default:
+      return (.unavailable, "esi.moon-market.unavailable")
+    }
+  }
+
+  private func reactionFacilityCostContext(
+    systemIndices: [IndustrySystemIndex]
+  ) -> ReactionFacilityCostContext? {
+    guard let selection = productionBasis.reactionSelection,
+      !selection.needsReview,
+      let profile = productionBasis.configuredReactionProfile
+    else { return nil }
+    let systemIndex =
+      productionBasis.reactionSystem.costIndexOverride
+      ?? systemIndices.first {
+        $0.solarSystemID == profile.solarSystemID
+          && $0.activity == .reaction
+      }?.costIndex
+    guard let systemIndex else { return nil }
+    return ReactionFacilityCostContext(
+      name: "\(profile.structureName) · \(productionBasis.reactionSystem.solarSystemName)",
+      materialMultiplier: profile.effectiveMaterialMultiplier,
+      timeMultiplier: profile.effectiveTimeMultiplier,
+      jobCostMultiplier: profile.effectiveJobCostMultiplier,
+      facilityTaxRate: profile.facilityTaxRate,
+      systemCostIndex: systemIndex,
+      sccSurchargeRate: IndustryRuleSet.current.reactionSCCRate,
+      alphaSurchargeRate:
+        profile.cloneState == .alpha
+        ? IndustryRuleSet.current.alphaSurchargeRate : 0,
+      ruleVersion: profile.ruleVersion
+    )
   }
 
   private func parseManualStock(_ input: String) async throws
@@ -271,6 +561,12 @@ final class RuntimeState: ObservableObject {
     (try? await catalog.typeNames(ids: typeIDs)) ?? [:]
   }
 
+  func resolveAssetTypeClassifications(_ typeIDs: Set<Int64>) async
+    -> [Int64: IndustryItemClassification]
+  {
+    (try? await catalog.industryClassifications(typeIDs: typeIDs)) ?? [:]
+  }
+
   func prepareAssetWarehouse(
     identity: String,
     payloads: [StoredAssetSnapshotPayload]
@@ -278,6 +574,32 @@ final class RuntimeState: ObservableObject {
     await assetWarehouseProjectionCache.prepare(
       identity: identity,
       payloads: payloads
+    )
+  }
+
+  func prepareProductionWarehouse(
+    from prepared: PreparedAssetWarehouse
+  ) async -> PreparedAssetWarehouse {
+    let locationIDs = Set(
+      productionBasis.structures.compactMap(\.structureID)
+    )
+    guard !locationIDs.isEmpty else {
+      return prepared.filtered(locationIDs: [], excludingTypeIDs: [])
+    }
+    let classifications =
+      (try? await catalog.industryClassifications(
+        typeIDs: Set(prepared.factualQuantities.keys)
+      )) ?? [:]
+    let shipTypeIDs = Set(
+      classifications.compactMap { typeID, classification in
+        classification.categoryName.caseInsensitiveCompare("Ship")
+          == .orderedSame ? typeID : nil
+      }
+    )
+    return prepared.filtered(
+      locationIDs: locationIDs,
+      excludingTypeIDs: shipTypeIDs,
+      excludingContentsOfTypeIDs: shipTypeIDs
     )
   }
 
@@ -289,6 +611,18 @@ final class RuntimeState: ObservableObject {
 
   func resolveAssetTypeID(named name: String) async throws -> Int64? {
     try await catalog.typeID(named: name)
+  }
+
+  func searchAssetTypes(matching query: String) async throws
+    -> [ItemTypeSearchResult]
+  {
+    try await catalog.searchItemTypes(matching: query, limit: 80)
+  }
+
+  func searchMarketTypes(matching query: String) async throws
+    -> [ItemTypeSearchResult]
+  {
+    try await catalog.searchItemTypes(matching: query, limit: 50)
   }
 
   func blueprintResearchQuote(
@@ -420,6 +754,37 @@ final class RuntimeState: ObservableObject {
       characterID: authorization.characterID,
       lease: lease
     )
+  }
+
+  func searchAccessibleStructures(
+    matching query: String,
+    authorization: AuthorizationSnapshot,
+    clientID: String
+  ) async throws -> Sourced<[PlayerStructureOption]> {
+    let auth = authService(clientID: clientID)
+    let lease = try await auth.accessTokenLease(
+      characterID: authorization.characterID
+    )
+    return try await playerStructureSearch.search(
+      query: query,
+      characterID: authorization.characterID,
+      lease: lease
+    )
+  }
+
+  func searchNPCTradingLocations(
+    matching query: String
+  ) async throws -> Sourced<[TradingLocationSearchOption]> {
+    try await tradingLocationSearch.searchNPCStations(query: query)
+  }
+
+  func resolveNPCTradingLocation(
+    _ location: ProcurementLocation
+  ) async throws -> ProcurementLocation {
+    guard let stationID = location.locationID else { return location }
+    return try await tradingLocationSearch.resolveNPCStation(
+      stationID: stationID
+    ).procurementLocation
   }
 
   func discoverKnownAccessibleStructures(
@@ -744,4 +1109,9 @@ final class RuntimeState: ObservableObject {
       statusMessage = "Failed"
     }
   }
+}
+
+private struct MoonMaterialMarketRefreshResult: Sendable {
+  let location: MoonMaterialMarketLocation
+  let result: Sourced<MarketOrderSnapshot>
 }

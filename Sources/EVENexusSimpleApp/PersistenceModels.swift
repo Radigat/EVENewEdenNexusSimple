@@ -1,5 +1,53 @@
+import EVENexusCore
 import Foundation
 import SwiftData
+
+enum EVENexusSchemaV1: VersionedSchema {
+  static let versionIdentifier = Schema.Version(1, 0, 0)
+  static let models: [any PersistentModel.Type] = [
+    StoredProductionBasis.self,
+    StoredManufacturingProfile.self,
+    StoredReactionProfile.self,
+    StoredCharacter.self,
+    StoredStockTarget.self,
+    StoredPlan.self,
+    StoredPlannerDraft.self,
+    StoredProductionRecord.self,
+    StoredProductionOverviewRow.self,
+    StoredSDEActivationPointer.self,
+    StoredESISnapshotMetadata.self,
+    AppSetting.self,
+  ]
+}
+
+enum EVENexusMigrationPlan: SchemaMigrationPlan {
+  static let schemas: [any VersionedSchema.Type] = [EVENexusSchemaV1.self]
+  static let stages: [MigrationStage] = []
+}
+
+enum AppPersistence {
+  static let schemaVersion = 1
+
+  static func open(paths: AppDataPaths) throws -> ModelContainer {
+    try paths.prepareDirectories()
+    _ = try PersistenceSafetyBackup.createIfNeeded(
+      paths: paths,
+      schemaVersion: schemaVersion
+    )
+    let schema = Schema(versionedSchema: EVENexusSchemaV1.self)
+    let configuration = ModelConfiguration(
+      "EVENexusSimple",
+      schema: schema,
+      url: paths.swiftDataStoreURL,
+      cloudKitDatabase: .none
+    )
+    return try ModelContainer(
+      for: schema,
+      migrationPlan: EVENexusMigrationPlan.self,
+      configurations: [configuration]
+    )
+  }
+}
 
 @Model
 final class StoredProductionBasis {

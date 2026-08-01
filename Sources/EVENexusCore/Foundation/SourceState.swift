@@ -44,6 +44,33 @@ public struct Sourced<Value: Codable & Sendable>: Codable, Sendable {
     self.source = source
     self.diagnostics = diagnostics
   }
+
+  /// Keeps a previously persisted value when the newest refresh could not
+  /// produce one. The retained value is explicitly stale and the latest
+  /// failure remains in diagnostics; callers can persist the current attempt
+  /// separately as synchronization metadata.
+  public func retainingLastKnownValue(
+    from previous: Sourced<Value>?
+  ) -> Sourced<Value> {
+    guard value == nil, let previous, let previousValue = previous.value else {
+      return self
+    }
+    var retainedDiagnostics: [String] = []
+    for diagnostic in diagnostics
+      + ["latest-refresh-state:\(state.rawValue)"]
+      + previous.diagnostics
+    where !retainedDiagnostics.contains(diagnostic)
+      && retainedDiagnostics.count < 32
+    {
+      retainedDiagnostics.append(diagnostic)
+    }
+    return Sourced(
+      state: .stale,
+      value: previousValue,
+      source: previous.source,
+      diagnostics: retainedDiagnostics
+    )
+  }
 }
 
 public enum DomainWarningSeverity: String, Codable, Sendable {

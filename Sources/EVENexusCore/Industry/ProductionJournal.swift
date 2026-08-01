@@ -26,7 +26,7 @@ public struct ProductionJournalMetrics: Equatable, Sendable {
     blueprintCost = plan.costBreakdown?.blueprintCosts?.total
     installationCost = plan.installationCost
     logisticsCost = plan.costBreakdown.flatMap {
-      $0.logistics?.total ?? ($0.totalProductionCost == nil ? nil : 0)
+      $0.effectiveLogisticsCost
     }
     totalCost =
       plan.costBreakdown?.totalProductionCost

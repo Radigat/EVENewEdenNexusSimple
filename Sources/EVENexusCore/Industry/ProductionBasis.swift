@@ -885,8 +885,17 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   }
 }
 
+public enum MarketBrokerFeeSource: String, Codable, Equatable, Sendable {
+  case npcStation
+  case playerStructureNotExposedByESI
+  case unresolvedLocation
+}
+
 public struct MarketFeeCalculation: Codable, Equatable, Sendable {
   public let characterID: Int64
+  public let locationID: Int64?
+  public let locationName: String?
+  public let brokerFeeSource: MarketBrokerFeeSource?
   public let accountingLevel: Int?
   public let brokerRelationsLevel: Int?
   public let factionStanding: Double?
@@ -898,6 +907,40 @@ public struct MarketFeeCalculation: Codable, Equatable, Sendable {
   public let calculatedAt: Date
   public let ruleVersion: String
   public let warnings: [String]
+
+  public init(
+    characterID: Int64,
+    locationID: Int64? = nil,
+    locationName: String? = nil,
+    brokerFeeSource: MarketBrokerFeeSource? = nil,
+    accountingLevel: Int?,
+    brokerRelationsLevel: Int?,
+    factionStanding: Double?,
+    corporationStanding: Double?,
+    skillsState: DataFreshness,
+    standingsState: DataFreshness,
+    skillsSource: SourceIdentity,
+    standingsSource: SourceIdentity,
+    calculatedAt: Date,
+    ruleVersion: String,
+    warnings: [String]
+  ) {
+    self.characterID = characterID
+    self.locationID = locationID
+    self.locationName = locationName
+    self.brokerFeeSource = brokerFeeSource
+    self.accountingLevel = accountingLevel
+    self.brokerRelationsLevel = brokerRelationsLevel
+    self.factionStanding = factionStanding
+    self.corporationStanding = corporationStanding
+    self.skillsState = skillsState
+    self.standingsState = standingsState
+    self.skillsSource = skillsSource
+    self.standingsSource = standingsSource
+    self.calculatedAt = calculatedAt
+    self.ruleVersion = ruleVersion
+    self.warnings = warnings
+  }
 
   public var freshness: DataFreshness {
     if skillsState == .forbidden || standingsState == .forbidden {
@@ -970,7 +1013,10 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
     apply(capability: capability)
   }
 
-  public mutating func apply(capability: CharacterCapabilitySnapshot) {
+  public mutating func apply(
+    capability: CharacterCapabilitySnapshot,
+    at location: ProcurementLocation = .jita
+  ) {
     traderCharacterID = capability.character.id
     let acceptedSkillStates: Set<DataFreshness> = [.fresh, .stale]
     let acceptedStandingStates: Set<DataFreshness> = [.fresh, .stale]
@@ -990,19 +1036,24 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
         $0.skillID == EVEConstants.brokerRelationsSkillTypeID
       }?.activeLevel ?? 0
     }
-    let factionStanding = standingValues.map {
-      $0[EVEConstants.jitaIV4OwnerFactionID] ?? 0
+    let factionStanding = standingValues.flatMap { standings in
+      location.ownerFactionID.map { standings[$0] ?? 0 }
     }
-    let corporationStanding = standingValues.map {
-      $0[EVEConstants.jitaIV4OwnerCorporationID] ?? 0
+    let corporationStanding = standingValues.flatMap { standings in
+      location.ownerCorporationID.map { standings[$0] ?? 0 }
     }
 
     salesTaxRate = accountingLevel.map {
       max(0, 0.075 * (1 - 0.11 * Double(min(max($0, 0), 5))))
     }
-    if let brokerRelationsLevel, let factionStanding,
+    let brokerFeeSource: MarketBrokerFeeSource
+    if location.kind == .playerStructure {
+      brokerFeeSource = .playerStructureNotExposedByESI
+      brokerFeeRate = nil
+    } else if let brokerRelationsLevel, let factionStanding,
       let corporationStanding
     {
+      brokerFeeSource = .npcStation
       brokerFeeRate = max(
         0.01,
         0.03
@@ -1011,6 +1062,7 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
           - 0.0002 * min(max(corporationStanding, -10), 10)
       )
     } else {
+      brokerFeeSource = .unresolvedLocation
       brokerFeeRate = nil
     }
 
@@ -1018,8 +1070,14 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
     if salesTaxRate == nil {
       warnings.append("Accounting skill data is unavailable.")
     }
-    if brokerFeeRate == nil {
-      warnings.append("Broker Relations or standing data is unavailable.")
+    if brokerFeeSource == .playerStructureNotExposedByESI {
+      warnings.append(
+        "The Player Structure broker fee is owner-defined and is not exposed by ESI."
+      )
+    } else if brokerFeeRate == nil {
+      warnings.append(
+        "The station owner, Broker Relations or standing data is unavailable."
+      )
     }
     if capability.skills.state == .stale
       || capability.standings.state == .stale
@@ -1028,6 +1086,9 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
     }
     calculation = MarketFeeCalculation(
       characterID: capability.character.id,
+      locationID: location.locationID,
+      locationName: location.name,
+      brokerFeeSource: brokerFeeSource,
       accountingLevel: accountingLevel,
       brokerRelationsLevel: brokerRelationsLevel,
       factionStanding: factionStanding,
@@ -1104,7 +1165,7 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
 }
 
 public struct LogisticsConfiguration: Codable, Equatable, Sendable {
-  public static let ruleVersion = "standard-haulage-split-2026-07-30"
+  public static let ruleVersion = "main-hub-to-production-2026-08-01"
   public static let legacySingleContractRuleVersion =
     "standard-haulage-2026-07-30"
   public static let collateralRate = 0.005
@@ -1116,6 +1177,7 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
   public var includeOutboundProducts: Bool
   public var productionLocationName: String
   public var marketLocationName: String
+  public var homeTradeHub: ProcurementLocation
   public var iskPerCubicMeter: Double?
   public var maximumContractVolumeM3: Double
   public var ruleVersion: String
@@ -1123,10 +1185,11 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
   public init(
     isEnabled: Bool = false,
     includeInboundMaterials: Bool = true,
-    includeOutboundProducts: Bool = true,
+    includeOutboundProducts: Bool = false,
     productionLocationName: String = "UALX-3 - Mothership Bellicose",
     marketLocationName: String =
       "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+    homeTradeHub: ProcurementLocation? = nil,
     iskPerCubicMeter: Double? = nil,
     maximumContractVolumeM3: Double =
       LogisticsConfiguration.defaultMaximumContractVolumeM3,
@@ -1137,6 +1200,8 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
     self.includeOutboundProducts = includeOutboundProducts
     self.productionLocationName = productionLocationName
     self.marketLocationName = marketLocationName
+    self.homeTradeHub =
+      homeTradeHub ?? .legacy(name: productionLocationName)
     self.iskPerCubicMeter = iskPerCubicMeter
     self.maximumContractVolumeM3 = maximumContractVolumeM3
     self.ruleVersion = ruleVersion
@@ -1156,8 +1221,118 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
   }
 
   public var effectiveRuleVersion: String {
-    ruleVersion == Self.legacySingleContractRuleVersion
-      ? Self.ruleVersion : ruleVersion
+    Self.ruleVersion
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case isEnabled, includeInboundMaterials, includeOutboundProducts
+    case productionLocationName, marketLocationName, homeTradeHub
+    case iskPerCubicMeter, maximumContractVolumeM3, ruleVersion
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+    includeInboundMaterials =
+      try container.decodeIfPresent(Bool.self, forKey: .includeInboundMaterials) ?? true
+    includeOutboundProducts =
+      try container.decodeIfPresent(Bool.self, forKey: .includeOutboundProducts) ?? false
+    productionLocationName =
+      try container.decodeIfPresent(String.self, forKey: .productionLocationName) ?? "UALX"
+    marketLocationName =
+      try container.decodeIfPresent(String.self, forKey: .marketLocationName)
+      ?? ProcurementLocation.jita.name
+    homeTradeHub =
+      try container.decodeIfPresent(ProcurementLocation.self, forKey: .homeTradeHub)
+      ?? .legacy(name: productionLocationName)
+    iskPerCubicMeter = try container.decodeIfPresent(Double.self, forKey: .iskPerCubicMeter)
+    maximumContractVolumeM3 =
+      try container.decodeIfPresent(Double.self, forKey: .maximumContractVolumeM3)
+      ?? Self.defaultMaximumContractVolumeM3
+    ruleVersion =
+      try container.decodeIfPresent(String.self, forKey: .ruleVersion) ?? Self.ruleVersion
+  }
+}
+
+public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
+  Sendable
+{
+  public let id: UUID
+  public var location: ProcurementLocation
+  public var marketTaxes: MarketTaxConfiguration
+
+  public init(
+    id: UUID = UUID(),
+    location: ProcurementLocation,
+    traderCharacterID: Int64? = nil,
+    marketTaxes: MarketTaxConfiguration? = nil
+  ) {
+    self.id = id
+    self.location = location
+    self.marketTaxes =
+      marketTaxes
+      ?? MarketTaxConfiguration(traderCharacterID: traderCharacterID)
+  }
+
+  public var traderCharacterID: Int64? {
+    get { marketTaxes.traderCharacterID }
+    set {
+      marketTaxes.selectTrader(characterID: newValue, capability: nil)
+    }
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case location
+    case traderCharacterID
+    case marketTaxes
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    location = try container.decode(
+      ProcurementLocation.self,
+      forKey: .location
+    )
+    if let decodedTaxes = try container.decodeIfPresent(
+      MarketTaxConfiguration.self,
+      forKey: .marketTaxes
+    ) {
+      marketTaxes = decodedTaxes
+    } else {
+      marketTaxes = MarketTaxConfiguration(
+        traderCharacterID: try container.decodeIfPresent(
+          Int64.self,
+          forKey: .traderCharacterID
+        )
+      )
+    }
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(location, forKey: .location)
+    try container.encode(marketTaxes, forKey: .marketTaxes)
+  }
+}
+
+extension ProcurementLocation {
+  public static func playerStructure(
+    _ structure: ConfiguredIndustryStructure
+  ) -> ProcurementLocation? {
+    guard structure.structureID != nil || structure.eveStructureName != nil else {
+      return nil
+    }
+    return ProcurementLocation(
+      id: structure.structureID.map { "structure:\($0)" }
+        ?? "structure:\(structure.id.uuidString)",
+      name: structure.displayName,
+      locationID: structure.structureID,
+      kind: .playerStructure,
+      solarSystemID: structure.solarSystemID
+    )
   }
 }
 
@@ -1335,6 +1510,9 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   public var timeResearchSystem: ActivitySystemConfiguration
   public var cloneState: CloneState
   public var marketTaxes: MarketTaxConfiguration
+  public var tradingLocations: [TradingLocationConfiguration]
+  public var mainTradingLocationID: UUID?
+  public var homeTradingLocationID: UUID?
   public var logistics: LogisticsConfiguration
   public var scheduling: ProductionSchedulingConfiguration
   public var invention: InventionConfiguration
@@ -1381,6 +1559,9 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     ),
     cloneState: CloneState = .unknown,
     marketTaxes: MarketTaxConfiguration = .init(),
+    tradingLocations: [TradingLocationConfiguration] = [],
+    mainTradingLocationID: UUID? = nil,
+    homeTradingLocationID: UUID? = nil,
     logistics: LogisticsConfiguration = .init(),
     scheduling: ProductionSchedulingConfiguration = .init(),
     invention: InventionConfiguration = .init(),
@@ -1408,6 +1589,9 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     self.timeResearchSystem = timeResearchSystem
     self.cloneState = cloneState
     self.marketTaxes = marketTaxes
+    self.tradingLocations = tradingLocations
+    self.mainTradingLocationID = mainTradingLocationID
+    self.homeTradingLocationID = homeTradingLocationID
     self.logistics = logistics
     self.scheduling = scheduling
     self.invention = invention
@@ -1431,6 +1615,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     self.defaultIntermediateME = defaultIntermediateME
     self.defaultIntermediateTE = defaultIntermediateTE
     self.ruleVersion = ruleVersion
+    normalizeTradingLocations()
     synchronizeStructuresWithManufacturingSystems()
     refreshAutomaticFacilityAssignments()
   }
@@ -1447,6 +1632,218 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       materialResearchSystem,
       timeResearchSystem,
     ]
+  }
+
+  public var priceSourceTradingLocation: TradingLocationConfiguration? {
+    mainTradingLocation
+  }
+
+  public var mainTradingLocation: TradingLocationConfiguration? {
+    guard let mainTradingLocationID else { return nil }
+    return tradingLocations.first { $0.id == mainTradingLocationID }
+  }
+
+  public var homeTradingLocation: TradingLocationConfiguration? {
+    guard let homeTradingLocationID else { return nil }
+    return tradingLocations.first { $0.id == homeTradingLocationID }
+  }
+
+  public var mainTradeHub: MarketTradeHub {
+    guard let stationID = mainTradingLocation?.location.locationID,
+      let hub = MarketTradeHub.matching(stationID: stationID)
+    else {
+      return .jita
+    }
+    return hub
+  }
+
+  public var configuredProcurementLocations: [ProcurementLocation] {
+    tradingLocations.map(\.location)
+  }
+
+  public mutating func normalizeTradingLocations() {
+    var seenLocationIDs = Set<String>()
+    tradingLocations = tradingLocations.filter {
+      seenLocationIDs.insert($0.location.id).inserted
+    }
+
+    let legacyMainLocation = ProcurementLocation.standardTradeHubs.first {
+      $0.locationID == logistics.homeTradeHub.locationID
+    } ?? .jita
+    if !tradingLocations.contains(where: {
+      $0.location.id == legacyMainLocation.id
+    }) {
+      tradingLocations.insert(
+        TradingLocationConfiguration(
+          location: legacyMainLocation,
+          marketTaxes: marketTaxes
+        ),
+        at: 0
+      )
+    }
+
+    let mainIsValid = mainTradingLocationID.map { mainID in
+      tradingLocations.contains {
+        $0.id == mainID
+          && $0.location.locationID.map {
+            MarketTradeHub.matching(stationID: $0) != nil
+          } == true
+      }
+    } ?? false
+    if !mainIsValid {
+      mainTradingLocationID =
+        tradingLocations.first {
+          $0.location.id == legacyMainLocation.id
+        }?.id
+        ?? tradingLocations.first {
+          $0.location.id == ProcurementLocation.jita.id
+        }?.id
+    }
+
+    if let mainIndex = tradingLocations.firstIndex(where: {
+      $0.id == mainTradingLocationID
+    }) {
+      let configuredTaxes = tradingLocations[mainIndex].marketTaxes
+      if configuredTaxes.calculation == nil,
+        marketTaxes.calculation != nil,
+        configuredTaxes.traderCharacterID == marketTaxes.traderCharacterID
+      {
+        tradingLocations[mainIndex].marketTaxes = marketTaxes
+      } else if configuredTaxes.traderCharacterID == nil,
+        marketTaxes.traderCharacterID != nil
+      {
+        tradingLocations[mainIndex].marketTaxes = marketTaxes
+      } else {
+        marketTaxes = tradingLocations[mainIndex].marketTaxes
+      }
+      logistics.homeTradeHub = tradingLocations[mainIndex].location
+    }
+
+    if let homeTradingLocationID,
+      !tradingLocations.contains(where: { $0.id == homeTradingLocationID })
+    {
+      self.homeTradingLocationID = nil
+    }
+  }
+
+  @discardableResult
+  public mutating func addTradingLocation(
+    _ location: ProcurementLocation
+  ) -> Bool {
+    guard
+      !tradingLocations.contains(where: {
+        $0.location.id == location.id
+      })
+    else { return false }
+    tradingLocations.append(
+      TradingLocationConfiguration(location: location)
+    )
+    normalizeTradingLocations()
+    return true
+  }
+
+  @discardableResult
+  public mutating func removeTradingLocation(id: UUID) -> Bool {
+    guard tradingLocations.contains(where: { $0.id == id }),
+      id != mainTradingLocationID,
+      id != homeTradingLocationID
+    else { return false }
+    tradingLocations.removeAll { $0.id == id }
+    normalizeTradingLocations()
+    return true
+  }
+
+  public mutating func setMainTradingLocation(id: UUID) {
+    guard let location = tradingLocations.first(where: { $0.id == id }),
+      location.location.locationID.map({
+        MarketTradeHub.matching(stationID: $0) != nil
+      }) == true
+    else { return }
+    mainTradingLocationID = id
+    normalizeTradingLocations()
+  }
+
+  public mutating func setMainTradeHub(_ hub: MarketTradeHub) {
+    let location = hub.procurementLocation
+    if let existing = tradingLocations.first(where: {
+      $0.location.id == location.id
+    }) {
+      setMainTradingLocation(id: existing.id)
+      return
+    }
+    tradingLocations.append(TradingLocationConfiguration(location: location))
+    mainTradingLocationID = tradingLocations.last?.id
+    normalizeTradingLocations()
+  }
+
+  public mutating func setHomeTradingLocation(id: UUID?) {
+    guard let id else {
+      homeTradingLocationID = nil
+      return
+    }
+    guard tradingLocations.contains(where: { $0.id == id }) else { return }
+    homeTradingLocationID = id
+  }
+
+  public mutating func selectTrader(
+    characterID: Int64?,
+    forTradingLocationID id: UUID,
+    capability: CharacterCapabilitySnapshot? = nil
+  ) {
+    guard let index = tradingLocations.firstIndex(where: { $0.id == id })
+    else { return }
+    tradingLocations[index].marketTaxes.selectTrader(
+      characterID: characterID,
+      capability: nil
+    )
+    if let capability, capability.character.id == characterID {
+      tradingLocations[index].marketTaxes.apply(
+        capability: capability,
+        at: tradingLocations[index].location
+      )
+    }
+    if id == mainTradingLocationID {
+      marketTaxes = tradingLocations[index].marketTaxes
+    }
+  }
+
+  public mutating func updateTradingLocation(
+    id: UUID,
+    location: ProcurementLocation
+  ) {
+    guard let index = tradingLocations.firstIndex(where: { $0.id == id })
+    else { return }
+    tradingLocations[index].location = location
+    if id == mainTradingLocationID {
+      logistics.homeTradeHub = location
+    }
+  }
+
+  public mutating func applyMarketFees(
+    capability: CharacterCapabilitySnapshot,
+    forTradingLocationID id: UUID
+  ) {
+    guard let index = tradingLocations.firstIndex(where: { $0.id == id }),
+      tradingLocations[index].traderCharacterID == capability.character.id
+    else { return }
+    tradingLocations[index].marketTaxes.apply(
+      capability: capability,
+      at: tradingLocations[index].location
+    )
+    if id == mainTradingLocationID {
+      marketTaxes = tradingLocations[index].marketTaxes
+    }
+  }
+
+  public func areTraderSelectionsValid(
+    connectedCharacterIDs: Set<Int64>
+  ) -> Bool {
+    tradingLocations.allSatisfy { configuration in
+      guard let traderCharacterID = configuration.traderCharacterID else {
+        return true
+      }
+      return connectedCharacterIDs.contains(traderCharacterID)
+    }
   }
 
   public func systemConfiguration(
@@ -1676,6 +2073,9 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     case timeResearchSystem
     case cloneState
     case marketTaxes
+    case tradingLocations
+    case mainTradingLocationID
+    case homeTradingLocationID
     case logistics
     case scheduling
     case invention
@@ -1791,6 +2191,28 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
         MarketTaxConfiguration.self,
         forKey: .marketTaxes
       ) ?? .init()
+    tradingLocations =
+      try container.decodeIfPresent(
+        [TradingLocationConfiguration].self,
+        forKey: .tradingLocations
+      ) ?? []
+    let decodedLegacyOrHomeTradingLocationID = try container.decodeIfPresent(
+      UUID.self,
+      forKey: .homeTradingLocationID
+    )
+    mainTradingLocationID = try container.decodeIfPresent(
+      UUID.self,
+      forKey: .mainTradingLocationID
+    )
+    if mainTradingLocationID == nil {
+      // Before the split, homeTradingLocationID actually named the Planner
+      // Main Hub. Preserve that selection while leaving the new Home Hub
+      // explicitly unconfigured.
+      mainTradingLocationID = decodedLegacyOrHomeTradingLocationID
+      homeTradingLocationID = nil
+    } else {
+      homeTradingLocationID = decodedLegacyOrHomeTradingLocationID
+    }
     logistics =
       try container.decodeIfPresent(
         LogisticsConfiguration.self,
@@ -1844,6 +2266,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     ruleVersion =
       try container.decodeIfPresent(String.self, forKey: .ruleVersion)
       ?? IndustryRuleSet.current.version
+    normalizeTradingLocations()
     synchronizeStructuresWithManufacturingSystems()
     refreshAutomaticFacilityAssignments()
   }
@@ -1863,6 +2286,15 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     try container.encode(timeResearchSystem, forKey: .timeResearchSystem)
     try container.encode(cloneState, forKey: .cloneState)
     try container.encode(marketTaxes, forKey: .marketTaxes)
+    try container.encode(tradingLocations, forKey: .tradingLocations)
+    try container.encodeIfPresent(
+      mainTradingLocationID,
+      forKey: .mainTradingLocationID
+    )
+    try container.encodeIfPresent(
+      homeTradingLocationID,
+      forKey: .homeTradingLocationID
+    )
     try container.encode(logistics, forKey: .logistics)
     try container.encode(scheduling, forKey: .scheduling)
     try container.encode(invention, forKey: .invention)

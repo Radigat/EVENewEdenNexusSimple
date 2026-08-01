@@ -9,6 +9,8 @@ public struct IndustryPlanningContext: Sendable {
   public let adjustedPrices: [Int64: AdjustedPrice]
   public let systemIndices: [IndustrySystemIndex]
   public let availableStock: [Int64: Int64]
+  public let procurementPreferences: [Int64: MaterialProcurementPreference]
+  public let defaultPurchaseLocation: ProcurementLocation
   public let assetSource: StockSource?
   public let sdeBuild: Int
   public let snapshotIDs: [UUID]
@@ -25,6 +27,8 @@ public struct IndustryPlanningContext: Sendable {
     adjustedPrices: [Int64: AdjustedPrice],
     systemIndices: [IndustrySystemIndex],
     availableStock: [Int64: Int64] = [:],
+    procurementPreferences: [Int64: MaterialProcurementPreference] = [:],
+    defaultPurchaseLocation: ProcurementLocation = .jita,
     assetSource: StockSource? = nil,
     sdeBuild: Int,
     snapshotIDs: [UUID] = [],
@@ -40,6 +44,8 @@ public struct IndustryPlanningContext: Sendable {
     self.adjustedPrices = adjustedPrices
     self.systemIndices = systemIndices
     self.availableStock = availableStock
+    self.procurementPreferences = procurementPreferences
+    self.defaultPurchaseLocation = defaultPurchaseLocation
     self.assetSource = assetSource
     self.sdeBuild = sdeBuild
     self.snapshotIDs = snapshotIDs
@@ -241,37 +247,6 @@ public struct IndustryPlanner: Sendable {
         state.required[material.typeID, default: 0],
         required
       )
-      let available = state.stock[material.typeID, default: 0]
-      let fromStock = min(available, required)
-      if fromStock > 0 {
-        state.stock[material.typeID] = available - fromStock
-        state.stockUsed[material.typeID] = Self.saturatedAdd(
-          state.stockUsed[material.typeID, default: 0],
-          fromStock
-        )
-        let stockID = UUID()
-        childIDs.append(stockID)
-        state.nodes.append(
-          PlanNode(
-            id: stockID,
-            typeID: material.typeID,
-            name: try await context.catalog.typeName(
-              id: material.typeID
-            ) ?? "Type \(material.typeID)",
-            requiredQuantity: fromStock,
-            action: .useStock,
-            activity: nil,
-            runs: nil,
-            materialEfficiency: nil,
-            timeEfficiency: nil,
-            children: [],
-            topLevelRequestID: topLevelID
-          )
-        )
-      }
-      let remaining = required - fromStock
-      guard remaining > 0 else { continue }
-
       let childName =
         try await context.catalog.typeName(id: material.typeID)
         ?? "Type \(material.typeID)"
@@ -284,17 +259,43 @@ public struct IndustryPlanner: Sendable {
           typeName: childName,
           classification: childClassification
         ) ?? false
-      if let childDefinition = try await context.catalog
-        .productionDefinition(productTypeID: material.typeID),
-        childDefinition.activity.kind != .invention,
-        !isBlacklisted
+      let childDefinition = try await context.catalog
+        .productionDefinition(productTypeID: material.typeID)
+      let hasSupportedDefinition =
+        childDefinition.map { $0.activity.kind != .invention } ?? false
+      let canProduce = hasSupportedDefinition && !isBlacklisted
+      let defaultMode: MaterialSupplyMode = canProduce ? .produce : .buy
+      var preference =
+        context.procurementPreferences[material.typeID]
+        ?? MaterialProcurementPreference(
+          supplyMode: defaultMode,
+          purchaseLocation: context.defaultPurchaseLocation
+        )
+      if preference.supplyMode == .produce, !canProduce {
+        preference.supplyMode = .buy
+        if state.invalidProductionPreferenceTypeIDs.insert(material.typeID)
+          .inserted
+        {
+          state.warnings.append(
+            DomainWarning(
+              code: "industry.production-unavailable",
+              message:
+                "\(childName) cannot be produced in this plan and remains a purchase.",
+              severity: .information
+            )
+          )
+        }
+      }
+      state.procurement[material.typeID] = preference
+      if preference.supplyMode == .produce,
+        let childDefinition
       {
         let childOutput = max(
           1,
           childDefinition.activity.products.first?.quantity ?? 1
         )
         let childRuns = Self.runsRequired(
-          wantedQuantity: remaining,
+          wantedQuantity: required,
           outputPerRun: childOutput
         )
         let before = state.nodes.count
@@ -328,14 +329,56 @@ public struct IndustryPlanner: Sendable {
           state.warnings.append(
             DomainWarning(
               code: "industry.production-blacklist",
-              message: "\(childName) is bought.",
+              message:
+                "\(childName) cannot be produced and uses the selected purchase or warehouse source.",
               severity: .information
             )
           )
         }
+        let available = state.stock[material.typeID, default: 0]
+        let fromStock =
+          preference.supplyMode == .warehouse
+          ? min(available, required) : 0
+        if fromStock > 0 {
+          state.stock[material.typeID] = available - fromStock
+          state.stockUsed[material.typeID] = Self.saturatedAdd(
+            state.stockUsed[material.typeID, default: 0],
+            fromStock
+          )
+          let stockID = UUID()
+          childIDs.append(stockID)
+          state.nodes.append(
+            PlanNode(
+              id: stockID,
+              typeID: material.typeID,
+              name: childName,
+              requiredQuantity: fromStock,
+              action: .useStock,
+              activity: nil,
+              runs: nil,
+              materialEfficiency: nil,
+              timeEfficiency: nil,
+              children: [],
+              topLevelRequestID: topLevelID
+            )
+          )
+        }
+        let remaining = required - fromStock
+        if preference.supplyMode == .warehouse, remaining > 0,
+          state.stockShortfallWarningTypeIDs.insert(material.typeID).inserted
+        {
+          state.warnings.append(
+            DomainWarning(
+              code: "industry.warehouse-shortfall",
+              message:
+                "Only \(fromStock) of \(required) \(childName) can be supplied by the warehouse; the remainder stays on the shopping list.",
+              severity: .information
+            )
+          )
+        }
+        guard remaining > 0 else { continue }
         state.toBuy[material.typeID] = Self.saturatedAdd(
-          state.toBuy[material.typeID, default: 0],
-          remaining
+          state.toBuy[material.typeID, default: 0], remaining
         )
         let buyID = UUID()
         childIDs.append(buyID)
@@ -413,6 +456,7 @@ public struct IndustryPlanner: Sendable {
   ) async throws -> IndustryPlanSnapshot {
     var purchaseQuotes: [Int64: PriceQuote] = [:]
     var stockQuotes: [Int64: PriceQuote] = [:]
+    var replacementQuotes: [Int64: PriceQuote] = [:]
     var warnings = state.warnings
     var purchasedMaterialCost = 0.0
     var purchasedMaterialCostComplete = true
@@ -436,8 +480,6 @@ public struct IndustryPlanner: Sendable {
         purchasedMaterialCostComplete = false
       }
     }
-    var stockMaterialCost = 0.0
-    var stockMaterialCostComplete = true
     for (typeID, quantity) in state.stockUsed.sorted(by: { $0.key < $1.key }) {
       let quote = JitaPriceEngine.quote(
         typeID: typeID,
@@ -447,20 +489,48 @@ public struct IndustryPlanner: Sendable {
       )
       stockQuotes[typeID] = quote
       warnings.append(contentsOf: quote.warnings)
-      if let total = quote.total {
-        let updatedCost = stockMaterialCost + total
-        if updatedCost.isFinite, updatedCost >= 0 {
-          stockMaterialCost = updatedCost
-        } else {
-          stockMaterialCostComplete = false
-        }
+    }
+    var replacementMaterialCost = 0.0
+    var materialCostComplete = true
+    let replacementLeafTypeIDs = Set(state.toBuy.keys).union(
+      state.stockUsed.keys
+    )
+    for typeID in replacementLeafTypeIDs.sorted() {
+      let quantity = state.required[typeID, default: 0]
+      let quote = JitaPriceEngine.quote(
+        typeID: typeID,
+        quantity: quantity,
+        scenario: .materialBuy,
+        snapshot: context.market
+      )
+      replacementQuotes[typeID] = quote
+      warnings.append(contentsOf: quote.warnings)
+      if let total = quote.total,
+        (replacementMaterialCost + total).isFinite
+      {
+        replacementMaterialCost += total
+      } else {
+        materialCostComplete = false
+      }
+    }
+    let materialCost = replacementMaterialCost
+    var stockMaterialCost = 0.0
+    var stockMaterialCostComplete = true
+    for (typeID, quantity) in state.stockUsed.sorted(by: { $0.key < $1.key }) {
+      guard let unitPrice = replacementQuotes[typeID]?.weightedUnitPrice,
+        unitPrice.isFinite,
+        unitPrice >= 0
+      else {
+        stockMaterialCostComplete = false
+        continue
+      }
+      let updatedCost = stockMaterialCost + Double(quantity) * unitPrice
+      if updatedCost.isFinite, updatedCost >= 0 {
+        stockMaterialCost = updatedCost
       } else {
         stockMaterialCostComplete = false
       }
     }
-    let materialCostComplete =
-      purchasedMaterialCostComplete && stockMaterialCostComplete
-    let materialCost = purchasedMaterialCost + stockMaterialCost
 
     var jobs: [IndustryJobCost] = []
     var totalSeconds: Int64 = 0
@@ -627,7 +697,24 @@ public struct IndustryPlanner: Sendable {
         IndustryJobCost(
           id: UUID(),
           typeID: job.definition.productTypeID,
+          productName:
+            try await context.catalog.typeName(
+              id: job.definition.productTypeID
+            ),
           activity: activity,
+          runs: job.runs,
+          outputQuantity: Self.saturatedMultiply(
+            Int64(job.runs),
+            max(
+              1,
+              job.definition.activity.products.first(where: {
+                $0.typeID == job.definition.productTypeID
+              })?.quantity ?? 1
+            )
+          ),
+          materialEfficiency: activity == .reaction ? nil : job.me,
+          timeEfficiency: activity == .reaction ? nil : job.te,
+          isTopLevel: job.isTopLevel,
           estimatedItemValue: eiv,
           systemCostIndex: index,
           bonusMultiplier: bonusMultiplier,
@@ -681,6 +768,27 @@ public struct IndustryPlanner: Sendable {
         try await context.catalog.productionDefinition(
           productTypeID: typeID
         )?.activity.kind
+      let productionAllowed =
+        productionActivity != nil
+        && productionActivity != .invention
+        && !(context.productionBasis?.blacklist.blocks(
+          typeName: resolvedName ?? "Type \(typeID)",
+          classification: classification
+        ) ?? false)
+      let analysis: MaterialMakeOrBuyAnalysis?
+      if productionAllowed,
+        let definition = try await context.catalog.productionDefinition(
+          productTypeID: typeID
+        )
+      {
+        analysis = try await makeOrBuyAnalysis(
+          definition: definition,
+          requiredQuantity: state.required[typeID, default: 0],
+          context: context
+        )
+      } else {
+        analysis = nil
+      }
       materials.append(
         MaterialRequirement(
           typeID: typeID,
@@ -691,9 +799,13 @@ public struct IndustryPlanner: Sendable {
           toProduce: state.toProduce[typeID, default: 0],
           quote: purchaseQuotes[typeID],
           stockQuote: stockQuotes[typeID],
+          replacementQuote: replacementQuotes[typeID],
+          procurement: state.procurement[typeID],
           sourceCategory: classification?.categoryName,
           sourceGroup: classification?.groupName,
-          productionActivity: productionActivity
+          productionActivity: productionActivity,
+          productionAllowed: productionAllowed,
+          makeOrBuyAnalysis: analysis
         )
       )
     }
@@ -761,10 +873,7 @@ public struct IndustryPlanner: Sendable {
     let logisticsResult = try await logisticsBreakdown(
       configuration: context.productionBasis?.logistics,
       materials: materials,
-      requests: requests,
-      nodes: state.nodes,
-      catalog: context.catalog,
-      market: context.market
+      catalog: context.catalog
     )
     warnings.append(contentsOf: logisticsResult.warnings)
     let logisticsIsEnabled =
@@ -773,16 +882,15 @@ public struct IndustryPlanner: Sendable {
       !logisticsIsEnabled || logisticsResult.breakdown != nil
     let logisticsCost =
       logisticsIsEnabled ? logisticsResult.breakdown?.total : 0
-    let totalCost =
-      materialCostComplete && logisticsComplete
-      ? acceptedInstallation.flatMap { installation in
-        logisticsCost.map {
-          materialCost + blueprintCost + installation + $0
-        }
-      }
-      : nil
+    let acceptedMaterialCost = materialCostComplete ? materialCost : nil
+    let totalCost = IndustryCostBreakdown.total(
+      materialCost: acceptedMaterialCost,
+      blueprintCost: blueprintCost,
+      installationCost: acceptedInstallation,
+      logisticsCost: logisticsComplete ? logisticsCost : nil
+    )
     let costBreakdown = IndustryCostBreakdown(
-      materialCost: materialCostComplete ? materialCost : nil,
+      materialCost: acceptedMaterialCost,
       purchasedMaterialCost:
         purchasedMaterialCostComplete ? purchasedMaterialCost : nil,
       stockMaterialCost:
@@ -798,6 +906,7 @@ public struct IndustryPlanner: Sendable {
         installationCostComplete ? alphaSurchargeCost : nil,
       installationCost: acceptedInstallation,
       logistics: logisticsResult.breakdown,
+      logisticsCost: logisticsComplete ? logisticsCost : nil,
       totalProductionCost: totalCost
     )
     let saleResults = saleScenarios(
@@ -994,10 +1103,7 @@ public struct IndustryPlanner: Sendable {
   private func logisticsBreakdown(
     configuration: LogisticsConfiguration?,
     materials: [MaterialRequirement],
-    requests: [ProductionRequestLine],
-    nodes: [PlanNode],
-    catalog: any IndustryCatalogQuerying,
-    market: MarketOrderSnapshot
+    catalog: any IndustryCatalogQuerying
   ) async throws -> (
     breakdown: LogisticsCostBreakdown?,
     warnings: [DomainWarning]
@@ -1039,51 +1145,35 @@ public struct IndustryPlanner: Sendable {
 
     if configuration.includeInboundMaterials {
       let cargo = materials.filter { $0.toBuy > 0 }
-      let result = try await logisticsLegs(
-        kind: .inboundMaterials,
-        origin: configuration.marketLocationName,
-        destination: configuration.productionLocationName,
-        cargo: cargo.map {
-          ($0.typeID, $0.toBuy, $0.quote?.total)
-        },
-        rate: rate,
-        maximumContractVolume: maximumContractVolume,
-        catalog: catalog
-      )
-      legs.append(contentsOf: result.legs)
-      warnings.append(contentsOf: result.warnings)
-    }
-
-    if configuration.includeOutboundProducts {
-      let topLevelProducts = requests.compactMap { request in
-        nodes.last {
-          $0.topLevelRequestID == request.id && $0.action == .produce
-        }
-      }
-      var cargo: [(Int64, Int64, Double?)] = []
-      for node in topLevelProducts {
-        let collateralQuote = JitaPriceEngine.quote(
-          typeID: node.typeID,
-          quantity: node.requiredQuantity,
-          scenario: .materialBuy,
-          snapshot: market
+      if !cargo.isEmpty,
+        configuration.homeTradeHub.name != configuration.productionLocationName
+      {
+        let result = try await logisticsLegs(
+          kind: .inboundMaterials,
+          origin: configuration.homeTradeHub.name,
+          destination: configuration.productionLocationName,
+          cargo: cargo.map { material in
+            let unitPrice = material.replacementQuote?.weightedUnitPrice
+            let collateral: Double?
+            if let unitPrice, unitPrice.isFinite, unitPrice >= 0 {
+              let total = unitPrice * Double(material.toBuy)
+              collateral = total.isFinite ? total : nil
+            } else {
+              collateral = nil
+            }
+            return (
+              material.typeID,
+              material.toBuy,
+              collateral
+            )
+          },
+          rate: rate,
+          maximumContractVolume: maximumContractVolume,
+          catalog: catalog
         )
-        warnings.append(contentsOf: collateralQuote.warnings)
-        cargo.append(
-          (node.typeID, node.requiredQuantity, collateralQuote.total)
-        )
+        legs.append(contentsOf: result.legs)
+        warnings.append(contentsOf: result.warnings)
       }
-      let result = try await logisticsLegs(
-        kind: .outboundProducts,
-        origin: configuration.productionLocationName,
-        destination: configuration.marketLocationName,
-        cargo: cargo,
-        rate: rate,
-        maximumContractVolume: maximumContractVolume,
-        catalog: catalog
-      )
-      legs.append(contentsOf: result.legs)
-      warnings.append(contentsOf: result.warnings)
     }
 
     guard !warnings.contains(where: { $0.severity == .blocking }) else {
@@ -1115,6 +1205,435 @@ public struct IndustryPlanner: Sendable {
       ),
       warnings
     )
+  }
+
+  private func makeOrBuyAnalysis(
+    definition: BlueprintDefinition,
+    requiredQuantity: Int64,
+    context: IndustryPlanningContext
+  ) async throws -> MaterialMakeOrBuyAnalysis? {
+    guard requiredQuantity > 0,
+      definition.activity.kind != .invention,
+      let outputQuantity = definition.activity.products.first(where: {
+        $0.typeID == definition.productTypeID
+      })?.quantity,
+      outputQuantity > 0
+    else { return nil }
+
+    let runs = Self.runsRequired(
+      wantedQuantity: requiredQuantity,
+      outputPerRun: outputQuantity
+    )
+    let producedQuantity = Self.saturatedMultiply(
+      Int64(runs),
+      outputQuantity
+    )
+    let mainHub = context.defaultPurchaseLocation
+    let marketMatchesMainHub =
+      mainHub.locationID == context.market.locationID
+    let purchaseQuote = MarketPriceEngine.quote(
+      typeID: definition.productTypeID,
+      quantity: requiredQuantity,
+      scenario: .materialBuy,
+      snapshot: context.market
+    )
+    var warnings = purchaseQuote.warnings
+    if !marketMatchesMainHub {
+      warnings.append(
+        DomainWarning(
+          code: "make-or-buy.market-location-mismatch",
+          message:
+            "The market snapshot does not belong to the configured Main Hub.",
+          severity: .blocking
+        )
+      )
+    }
+
+    let facility = try await makeOrBuyFacility(
+      definition: definition,
+      context: context
+    )
+    warnings.append(contentsOf: facility.warnings)
+
+    let inputQuantities = try await makeOrBuyInputQuantities(
+      definition: definition,
+      runs: runs,
+      context: context
+    )
+    var inputQuotes: [(typeID: Int64, quantity: Int64, quote: PriceQuote)] = []
+    var buildMaterialCost = 0.0
+    var buildMaterialCostComplete = true
+    for input in inputQuantities {
+      let quote = MarketPriceEngine.quote(
+        typeID: input.typeID,
+        quantity: input.quantity,
+        scenario: .materialBuy,
+        snapshot: context.market
+      )
+      inputQuotes.append((input.typeID, input.quantity, quote))
+      warnings.append(contentsOf: quote.warnings)
+      guard let total = quote.total,
+        total.isFinite,
+        total >= 0,
+        (buildMaterialCost + total).isFinite
+      else {
+        buildMaterialCostComplete = false
+        continue
+      }
+      buildMaterialCost += total
+    }
+
+    let installation = makeOrBuyInstallationCost(
+      definition: definition,
+      runs: runs,
+      facility: facility,
+      context: context
+    )
+    warnings.append(contentsOf: installation.warnings)
+
+    let purchaseLogistics = try await makeOrBuyLogisticsCost(
+      configuration: context.productionBasis?.logistics,
+      origin: mainHub,
+      destinationName: facility.name,
+      destinationLocationID: facility.locationID,
+      cargo: [
+        (
+          definition.productTypeID,
+          requiredQuantity,
+          purchaseQuote.total
+        )
+      ],
+      catalog: context.catalog
+    )
+    warnings.append(contentsOf: purchaseLogistics.warnings)
+
+    let buildLogistics = try await makeOrBuyLogisticsCost(
+      configuration: context.productionBasis?.logistics,
+      origin: mainHub,
+      destinationName: facility.name,
+      destinationLocationID: facility.locationID,
+      cargo: inputQuotes.map { ($0.typeID, $0.quantity, $0.quote.total) },
+      catalog: context.catalog
+    )
+    warnings.append(contentsOf: buildLogistics.warnings)
+
+    let purchaseTotal =
+      marketMatchesMainHub
+      ? Self.acceptedCostTotal([
+        purchaseQuote.total,
+        purchaseLogistics.cost,
+      ]) : nil
+    let acceptedBuildMaterialCost =
+      buildMaterialCostComplete ? buildMaterialCost : nil
+    let buildTotal =
+      marketMatchesMainHub
+      ? Self.acceptedCostTotal([
+        acceptedBuildMaterialCost,
+        installation.cost,
+        buildLogistics.cost,
+      ]) : nil
+    let recommendation: MakeOrBuyRecommendation
+    let savings: Double?
+    if let purchaseTotal, let buildTotal {
+      if buildTotal <= purchaseTotal {
+        recommendation = .produce
+        savings = purchaseTotal - buildTotal
+      } else {
+        recommendation = .buy
+        savings = buildTotal - purchaseTotal
+      }
+    } else {
+      recommendation = .unavailable
+      savings = nil
+    }
+
+    return MaterialMakeOrBuyAnalysis(
+      requiredQuantity: requiredQuantity,
+      productionRuns: runs,
+      producedQuantity: producedQuantity,
+      mainHub: mainHub,
+      purchaseQuote: purchaseQuote,
+      purchaseLogisticsCost: purchaseLogistics.cost,
+      purchaseTotalCost: purchaseTotal,
+      buildMaterialCost: acceptedBuildMaterialCost,
+      buildInstallationCost: installation.cost,
+      buildLogisticsCost: buildLogistics.cost,
+      buildTotalCost: buildTotal,
+      recommendation: recommendation,
+      savings: savings,
+      warnings: Self.deduplicatedWarnings(warnings)
+    )
+  }
+
+  private func makeOrBuyInputQuantities(
+    definition: BlueprintDefinition,
+    runs: Int,
+    context: IndustryPlanningContext
+  ) async throws -> [(typeID: Int64, quantity: Int64)] {
+    let isReaction = definition.activity.kind == .reaction
+    let classification = try await context.catalog.industryClassification(
+      productTypeID: definition.productTypeID
+    )
+    let category = classification?.manufacturingCategory ?? .module
+    let facilitySelection =
+      isReaction ? nil : context.productionBasis?.selection(for: category)
+    let me =
+      context.productionBasis?.defaultIntermediateME
+      ?? context.manufacturingProfile.defaultIntermediateME
+    return definition.activity.materials.map { material in
+      let rawRequired = Self.saturatedMultiply(Int64(runs), material.quantity)
+      let required =
+        isReaction
+        ? Self.scaledReactionQuantity(
+          rawRequired: rawRequired,
+          runs: runs,
+          multiplier: context.reactionProfile?.effectiveMaterialMultiplier ?? 1
+        )
+        : Self.manufacturingMaterialQuantity(
+          baseQuantity: material.quantity,
+          runs: runs,
+          materialEfficiency: me,
+          facilityMultiplier:
+            facilitySelection?.materialMultiplier
+            ?? context.manufacturingProfile.effectiveMaterialMultiplier
+        )
+      return (material.typeID, required)
+    }
+  }
+
+  private func makeOrBuyFacility(
+    definition: BlueprintDefinition,
+    context: IndustryPlanningContext
+  ) async throws -> MakeOrBuyFacility {
+    if definition.activity.kind == .reaction {
+      guard let reactionProfile = context.reactionProfile else {
+        return MakeOrBuyFacility(
+          name: context.productionBasis?.reactionSystem.solarSystemName
+            ?? "Reaction facility",
+          locationID: nil,
+          systemID: context.productionBasis?.reactionSystem.solarSystemID,
+          systemCostIndexOverride:
+            context.productionBasis?.reactionSystem.costIndexOverride,
+          materialMultiplier: nil,
+          jobCostMultiplier: nil,
+          facilityTaxRate: nil,
+          needsReview: true,
+          warnings: [
+            DomainWarning(
+              code: "make-or-buy.reaction-profile-required",
+              message:
+                "A verified reaction facility is required for the build comparison.",
+              severity: .blocking
+            )
+          ]
+        )
+      }
+      let selected = context.productionBasis?.structure(
+        id: context.productionBasis?.reactionStructureID
+      )
+      return MakeOrBuyFacility(
+        name: reactionProfile.structureName,
+        locationID: selected?.structureID,
+        systemID: reactionProfile.solarSystemID,
+        systemCostIndexOverride:
+          context.productionBasis?.reactionSystem.costIndexOverride,
+        materialMultiplier: reactionProfile.effectiveMaterialMultiplier,
+        jobCostMultiplier: reactionProfile.effectiveJobCostMultiplier,
+        facilityTaxRate:
+          selected?.facilityTaxRate ?? reactionProfile.facilityTaxRate,
+        needsReview: selected?.needsReview == true,
+        warnings: selected?.needsReview == true
+          ? [
+            DomainWarning(
+              code: "make-or-buy.facility-needs-review",
+              message:
+                "The configured reaction facility contains unresolved modifiers.",
+              severity: .blocking
+            )
+          ] : []
+      )
+    }
+
+    let classification = try await context.catalog.industryClassification(
+      productTypeID: definition.productTypeID
+    )
+    let category = classification?.manufacturingCategory ?? .module
+    let selection = context.productionBasis?.selection(for: category)
+    let selected = selection.flatMap {
+      context.productionBasis?.structure(id: $0.structureID)
+    }
+    let system = context.productionBasis?.manufacturingSystem(for: selected)
+    let needsReview = selection?.needsReview == true
+    return MakeOrBuyFacility(
+      name:
+        selection?.structureName
+        ?? context.manufacturingProfile.structureName,
+      locationID: selected?.structureID,
+      systemID:
+        system?.solarSystemID
+        ?? selected?.solarSystemID
+        ?? context.manufacturingProfile.solarSystemID,
+      systemCostIndexOverride: system?.costIndexOverride,
+      materialMultiplier:
+        selection?.materialMultiplier
+        ?? context.manufacturingProfile.effectiveMaterialMultiplier,
+      jobCostMultiplier:
+        selected?.jobCostMultiplier
+        ?? context.manufacturingProfile.effectiveJobCostMultiplier,
+      facilityTaxRate:
+        selected?.facilityTaxRate
+        ?? context.manufacturingProfile.facilityTaxRate,
+      needsReview: needsReview,
+      warnings: needsReview
+        ? [
+          DomainWarning(
+            code: "make-or-buy.facility-needs-review",
+            message:
+              "The configured manufacturing facility contains unresolved modifiers.",
+            severity: .blocking
+          )
+        ] : []
+    )
+  }
+
+  private func makeOrBuyInstallationCost(
+    definition: BlueprintDefinition,
+    runs: Int,
+    facility: MakeOrBuyFacility,
+    context: IndustryPlanningContext
+  ) -> (cost: Double?, warnings: [DomainWarning]) {
+    guard !facility.needsReview,
+      let systemID = facility.systemID,
+      let bonusMultiplier = facility.jobCostMultiplier,
+      let facilityTax = facility.facilityTaxRate
+    else { return (nil, facility.warnings) }
+    guard
+      let index = facility.systemCostIndexOverride
+        ?? context.systemIndices.first(where: {
+          $0.solarSystemID == systemID
+            && $0.activity == definition.activity.kind
+        })?.costIndex
+    else {
+      return (
+        nil,
+        [
+          DomainWarning(
+            code: "make-or-buy.missing-system-index",
+            message:
+              "The system cost index required for the build comparison is unavailable.",
+            severity: .blocking
+          )
+        ]
+      )
+    }
+    var eiv = 0.0
+    for material in definition.activity.materials {
+      guard let adjusted = context.adjustedPrices[material.typeID]?.adjustedPrice,
+        adjusted.isFinite,
+        adjusted >= 0
+      else {
+        return (
+          nil,
+          [
+            DomainWarning(
+              code: "make-or-buy.missing-adjusted-price",
+              message:
+                "An adjusted price required for the build installation cost is unavailable.",
+              severity: .blocking
+            )
+          ]
+        )
+      }
+      eiv += adjusted * Double(material.quantity) * Double(runs)
+      guard eiv.isFinite, eiv >= 0 else { return (nil, []) }
+    }
+    let scc =
+      definition.activity.kind == .reaction
+      ? IndustryRuleSet.current.reactionSCCRate
+      : IndustryRuleSet.current.manufacturingSCCRate
+    let alpha =
+      (context.productionBasis?.cloneState
+        ?? (definition.activity.kind == .reaction
+          ? context.reactionProfile?.cloneState
+          : context.manufacturingProfile.cloneState))
+        == .alpha
+      ? IndustryRuleSet.current.alphaSurchargeRate : 0
+    let cost = eiv * ((index * bonusMultiplier) + facilityTax + scc + alpha)
+    guard cost.isFinite, cost >= 0 else { return (nil, []) }
+    return (cost, [])
+  }
+
+  private func makeOrBuyLogisticsCost(
+    configuration: LogisticsConfiguration?,
+    origin: ProcurementLocation,
+    destinationName: String,
+    destinationLocationID: Int64?,
+    cargo: [(typeID: Int64, quantity: Int64, collateral: Double?)],
+    catalog: any IndustryCatalogQuerying
+  ) async throws -> (cost: Double?, warnings: [DomainWarning]) {
+    if let originID = origin.locationID,
+      originID == destinationLocationID
+    {
+      return (0, [])
+    }
+    guard let configuration,
+      configuration.isEnabled,
+      configuration.includeInboundMaterials,
+      let rate = configuration.effectiveISKPerCubicMeter,
+      let maximumVolume = configuration.effectiveMaximumContractVolumeM3
+    else {
+      return (
+        nil,
+        [
+          DomainWarning(
+            code: "make-or-buy.logistics-unavailable",
+            message:
+              "Enable complete Main Hub logistics in Profile to compare build and purchase costs.",
+            severity: .blocking
+          )
+        ]
+      )
+    }
+    let result = try await logisticsLegs(
+      kind: .inboundMaterials,
+      origin: origin.name,
+      destination: destinationName,
+      cargo: cargo,
+      rate: rate,
+      maximumContractVolume: maximumVolume,
+      catalog: catalog
+    )
+    guard !result.warnings.contains(where: { $0.severity == .blocking }) else {
+      return (nil, result.warnings)
+    }
+    let total = result.legs.reduce(0) { $0 + $1.roundedCharge }
+    return total.isFinite && total >= 0
+      ? (total, result.warnings)
+      : (
+        nil,
+        result.warnings + [
+          DomainWarning(
+            code: "make-or-buy.invalid-logistics-cost",
+            message: "The comparison logistics cost exceeded safe limits.",
+            severity: .blocking
+          )
+        ]
+      )
+  }
+
+  private static func acceptedCostTotal(_ values: [Double?]) -> Double? {
+    guard values.allSatisfy({ $0?.isFinite == true && ($0 ?? -1) >= 0 }) else {
+      return nil
+    }
+    let total = values.compactMap { $0 }.reduce(0, +)
+    return total.isFinite && total >= 0 ? total : nil
+  }
+
+  private static func deduplicatedWarnings(
+    _ warnings: [DomainWarning]
+  ) -> [DomainWarning] {
+    var seen = Set<String>()
+    return warnings.filter { seen.insert($0.code + "|" + $0.message).inserted }
   }
 
   private func logisticsLegs(
@@ -1532,6 +2051,18 @@ private struct JobDefinition: Sendable {
   let selectedStructure: ConfiguredIndustryStructure?
 }
 
+private struct MakeOrBuyFacility: Sendable {
+  let name: String
+  let locationID: Int64?
+  let systemID: Int64?
+  let systemCostIndexOverride: Double?
+  let materialMultiplier: Double?
+  let jobCostMultiplier: Double?
+  let facilityTaxRate: Double?
+  let needsReview: Bool
+  let warnings: [DomainWarning]
+}
+
 private struct JobKey: Hashable, Sendable {
   let productTypeID: Int64
   let activity: BlueprintActivityDefinition.Kind
@@ -1546,10 +2077,13 @@ private struct BuildState: Sendable {
   var stockUsed: [Int64: Int64] = [:]
   var toBuy: [Int64: Int64] = [:]
   var toProduce: [Int64: Int64] = [:]
+  var procurement: [Int64: MaterialProcurementPreference] = [:]
   var nodes: [PlanNode] = []
   var jobDefinitions: [JobDefinition] = []
   var warnings: [DomainWarning] = []
   var blacklistWarningTypeIDs: Set<Int64> = []
+  var stockShortfallWarningTypeIDs: Set<Int64> = []
+  var invalidProductionPreferenceTypeIDs: Set<Int64> = []
   var explanations: [ExplanationEdge] = []
 }
 

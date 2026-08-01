@@ -61,6 +61,14 @@ enum AppLocalization {
     currentLanguage.localized(key)
   }
 
+  static func format(_ key: String, _ arguments: CVarArg...) -> String {
+    String(
+      format: text(key),
+      locale: currentLanguage.locale,
+      arguments: arguments
+    )
+  }
+
   #if SWIFT_PACKAGE
     static let resourceBundle = Bundle.module
   #else
