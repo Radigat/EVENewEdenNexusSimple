@@ -57,6 +57,12 @@ by the `macos-15` GitHub Actions lane. Large SwiftUI refresh fingerprints are
 assembled from explicitly typed component arrays for the same compatibility
 reason; their ordering, separators and domain values remain unchanged.
 
+The public EVE status-page boundary decodes its `updated_at` timestamp with an
+explicit ISO 8601 strategy that accepts both fractional and whole seconds. It
+does not rely on Foundation's toolchain-dependent default `.iso8601` behavior;
+invalid timestamps still make the response explicitly unavailable through the
+existing decoding error.
+
 The normalized CCP User-Agent operator contact is the intentionally public
 project address `projekt-st@gmx.de`, not a user setting or authentication
 credential. It is compiled into the application and can be overridden by a

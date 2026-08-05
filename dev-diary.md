@@ -269,16 +269,25 @@ Entwicklung:
 - vier für Swift 6.1 zu komplexe SwiftUI-Identitäts- und Triggerausdrücke in
   explizit typisierte Teilwerte zerlegt, ohne Felder, Reihenfolge oder Trenner
   zu verändern;
+- nach dem dadurch erstmals vollständigen CI-Build die zwei verbleibenden
+  Statusseiten-Tests abgegrenzt: Foundation unter Swift 6.1 verwarf den
+  offiziellen ISO-8601-Zeitstempel mit Sekundenbruchteilen;
+- den Statusseiten-Decoder auf eine explizite Strategie für Zeitstempel mit und
+  ohne Sekundenbruchteile umgestellt und beide Formen durch Fixtures belegt;
 - Architektur-, Betriebs- und Acceptance-Dokumentation um die öffentliche
   CI-Kompatibilitätsgrenze ergänzt.
 
-Ergebnis: Der bekannte Fehler ist als Compiler-/SDK-Kompatibilitätsproblem
-behoben; die Änderung führt weder eine neue Migration noch neue UI- oder
-Domänenlogik ein.
+Ergebnis: Die bekannten Fehler sind als Compiler-/SDK-Kompatibilitätsprobleme
+behoben. Die Persistenz- und UI-Refaktorierungen führen weder eine neue
+Migration noch neue UI- oder Domänenlogik ein; der Statusseiten-Decoder bildet
+die beiden gültigen Zeitstempelformen jetzt unabhängig von der Toolchain ab.
 
 Prüfung: `git diff --check` und striktes `swift-format` bestanden. Die
 isolierten SwiftPM- und unsigned nativen Xcode-Läufe bauten die Anwendung und
-bestanden jeweils 260 Tests in 21 Suites.
+bestanden auf dem korrigierten Stand jeweils 261 Tests in 21 Suites. Der erste
+Ersatzlauf `30989387141` auf GitHub baute unter Swift 6.1.2 vollständig und
+startete alle damals 260 Tests; nur die zwei anschließend behobenen
+Zeitstempel-Decodierungen schlugen fehl.
 
 Offen: Der neue öffentliche GitHub-Actions-Lauf wird nach dem Push dieses
 dokumentierten Stands erneut ausgeführt.

@@ -182,7 +182,23 @@ public struct EVEOnlineStatusClient: Sendable {
     }
 
     let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
+    decoder.dateDecodingStrategy = .custom { decoder in
+      let container = try decoder.singleValueContainer()
+      let rawValue = try container.decode(String.self)
+      let formatter = ISO8601DateFormatter()
+      formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+      if let date = formatter.date(from: rawValue) {
+        return date
+      }
+      formatter.formatOptions = [.withInternetDateTime]
+      if let date = formatter.date(from: rawValue) {
+        return date
+      }
+      throw DecodingError.dataCorruptedError(
+        in: container,
+        debugDescription: "Expected an ISO 8601 date with optional fractional seconds."
+      )
+    }
     let summary: Summary
     do {
       summary = try decoder.decode(Summary.self, from: data)

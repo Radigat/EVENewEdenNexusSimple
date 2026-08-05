@@ -218,7 +218,10 @@ bereitgestellten Swift-6.1-Werkzeugkette ab. SwiftData-Schemametadaten werden
 deshalb als berechnete statische Werte erzeugt; große SwiftUI-Identitäts- und
 Triggerausdrücke sind in explizit typisierte Zwischenschritte zerlegt. Diese
 Darstellung ändert weder Schema-Versionen noch die erzeugten Identitätswerte,
-verhindert aber toolchainabhängige Sendable- und Type-Checker-Fehler.
+verhindert aber toolchainabhängige Sendable- und Type-Checker-Fehler. Der
+Statusseiten-Decoder akzeptiert sowohl ISO-8601-Zeitstempel mit als auch ohne
+Sekundenbruchteile explizit, weil die Foundation-Standardstrategie diese Formen
+zwischen den eingesetzten Swift-Versionen unterschiedlich behandelt.
 
 Unsigned Xcode-Testlauf:
 
