@@ -6,7 +6,7 @@ import Testing
 @Suite("Persistence stability")
 struct PersistenceStabilityTests {
   @Test
-  func existingLegacyStoreWinsOverEmptyCanonicalLocation() {
+  func existingLegacyStoreIsMigrationSourceButCanonicalRemainsDestination() {
     let root = URL(fileURLWithPath: "/tmp/fixture-support", isDirectory: true)
     let legacy = root.appendingPathComponent("default.store")
     let paths = AppDataPaths.resolve(
@@ -14,8 +14,9 @@ struct PersistenceStabilityTests {
       fileExists: { $0 == legacy.path }
     )
 
-    #expect(paths.swiftDataStoreURL == legacy)
-    #expect(paths.swiftDataStoreLocation == .legacyDefaultStore)
+    #expect(paths.swiftDataStoreURL != legacy)
+    #expect(paths.legacySwiftDataStoreURL == legacy)
+    #expect(paths.swiftDataStoreLocation == .canonical)
   }
 
   @Test
@@ -33,7 +34,37 @@ struct PersistenceStabilityTests {
     )
 
     #expect(paths.swiftDataStoreURL == canonical)
+    #expect(paths.legacySwiftDataStoreURL == legacy)
     #expect(paths.swiftDataStoreLocation == .canonical)
+  }
+
+  @Test
+  func legacyStoreIsCopiedWithoutChangingSource() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      UUID().uuidString,
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: true
+    )
+    let legacy = root.appendingPathComponent("default.store")
+    let source = Data("legacy-store".utf8)
+    try source.write(to: legacy)
+    let paths = AppDataPaths.resolve(
+      applicationSupportRoot: root,
+      fileExists: FileManager.default.fileExists(atPath:)
+    )
+
+    #expect(
+      try PersistenceStoreSeeder.seedCanonicalStoreIfNeeded(paths: paths)
+    )
+    #expect(try Data(contentsOf: legacy) == source)
+    #expect(try Data(contentsOf: paths.swiftDataStoreURL) == source)
+    #expect(
+      try !PersistenceStoreSeeder.seedCanonicalStoreIfNeeded(paths: paths)
+    )
   }
 
   @Test

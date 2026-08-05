@@ -224,6 +224,9 @@ private struct AssetAncestorTypeResolver {
 public struct AssetSnapshot: Identifiable, Codable, Sendable {
   public let id: UUID
   public let characterID: Int64
+  public let corporationID: Int64?
+  public let corporationName: String?
+  public let corporationDivisionNames: [Int: String]?
   public let capturedAt: Date
   public let state: DataFreshness
   public let items: [AssetItem]
@@ -235,6 +238,9 @@ public struct AssetSnapshot: Identifiable, Codable, Sendable {
   public init(
     id: UUID = UUID(),
     characterID: Int64,
+    corporationID: Int64? = nil,
+    corporationName: String? = nil,
+    corporationDivisionNames: [Int: String]? = nil,
     capturedAt: Date = .now,
     state: DataFreshness,
     items: [AssetItem],
@@ -245,6 +251,9 @@ public struct AssetSnapshot: Identifiable, Codable, Sendable {
   ) {
     self.id = id
     self.characterID = characterID
+    self.corporationID = corporationID
+    self.corporationName = corporationName
+    self.corporationDivisionNames = corporationDivisionNames
     self.capturedAt = capturedAt
     self.state = state
     self.items = items
@@ -252,6 +261,10 @@ public struct AssetSnapshot: Identifiable, Codable, Sendable {
     self.resolvedLocationNames = resolvedLocationNames
     self.unresolvedLocationNameIDs = unresolvedLocationNameIDs
     self.resolvedStructureTypeIDs = resolvedStructureTypeIDs
+  }
+
+  public var ownerID: Int64 {
+    corporationID ?? characterID
   }
 
   public func quantities(at locationID: Int64) -> [Int64: Int64] {

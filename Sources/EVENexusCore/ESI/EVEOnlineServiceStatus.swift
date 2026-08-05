@@ -157,7 +157,7 @@ public struct EVEOnlineStatusClient: Sendable {
     request.timeoutInterval = 10
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     request.setValue(
-      "EVE-Nexus-Simple/1.0 local-contact",
+      CCPUserAgentConfiguration.genericValue,
       forHTTPHeaderField: "User-Agent"
     )
     let (data, response) = try await transport.data(for: request)

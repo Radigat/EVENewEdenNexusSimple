@@ -95,13 +95,20 @@ private struct ESIUniverseRegionDetails: Decodable, Sendable {
   }
 }
 
+private enum SolarSystemSecurityOutcome: Sendable {
+  case resolved(Int64, Double, SourceIdentity)
+  case unavailable
+}
+
 public actor SolarSystemSearchService {
   public static let maximumConcurrentNameRequests = 4
+  public static let maximumConcurrentSecurityRequests = 8
 
   private let esi: ESIClient
   private var cachedSystems: [SolarSystemOption]?
   private var systemIndexTask: Task<[SolarSystemOption], Error>?
   private var cachedDetails: [Int64: SolarSystemDetails] = [:]
+  private var cachedSecurityStatuses: [Int64: Double] = [:]
 
   public init(esi: ESIClient) {
     self.esi = esi
@@ -116,6 +123,92 @@ public actor SolarSystemSearchService {
     return systems.filter {
       $0.name.localizedCaseInsensitiveContains(acceptedQuery)
     }
+  }
+
+  public func securityStatuses(
+    for systemIDs: Set<Int64>
+  ) async -> Sourced<[Int64: Double]> {
+    let acceptedIDs = systemIDs.filter { $0 > 0 }
+    let missing = acceptedIDs.filter {
+      cachedSecurityStatuses[$0] == nil
+    }.sorted()
+    let esi = self.esi
+    var outcomes: [SolarSystemSecurityOutcome] = []
+    var nextIndex = 0
+
+    await withTaskGroup(of: SolarSystemSecurityOutcome.self) { group in
+      func addNext() {
+        guard nextIndex < missing.count else { return }
+        let systemID = missing[nextIndex]
+        nextIndex += 1
+        group.addTask {
+          do {
+            let response = try await esi.get(
+              ESIUniverseSystemDetails.self,
+              endpoint: ESIEndpoint(
+                path: "/universe/systems/\(systemID)"
+              )
+            )
+            return .resolved(
+              systemID,
+              response.value.securityStatus,
+              response.source
+            )
+          } catch {
+            return .unavailable
+          }
+        }
+      }
+
+      for _
+        in 0..<min(
+          Self.maximumConcurrentSecurityRequests,
+          missing.count
+        )
+      {
+        addNext()
+      }
+      while let outcome = await group.next() {
+        outcomes.append(outcome)
+        addNext()
+      }
+    }
+
+    var latestSource: SourceIdentity?
+    var unavailableCount = 0
+    for outcome in outcomes {
+      switch outcome {
+      case .resolved(let systemID, let securityStatus, let source):
+        cachedSecurityStatuses[systemID] = securityStatus
+        if latestSource == nil
+          || source.capturedAt > (latestSource?.capturedAt ?? .distantPast)
+        {
+          latestSource = source
+        }
+      case .unavailable:
+        unavailableCount += 1
+      }
+    }
+    let values = Dictionary(
+      uniqueKeysWithValues: acceptedIDs.compactMap { systemID in
+        cachedSecurityStatuses[systemID].map { (systemID, $0) }
+      }
+    )
+    let unresolvedCount = acceptedIDs.count - values.count
+    let diagnostics =
+      unresolvedCount > 0
+      ? ["esi.system-security.unresolved:\(unresolvedCount)"] : []
+    return Sourced(
+      state: unavailableCount == 0 && diagnostics.isEmpty ? .fresh : .partial,
+      value: values,
+      source:
+        latestSource
+        ?? SourceIdentity(
+          provider: "ESI",
+          version: EVEConstants.esiCompatibilityDate
+        ),
+      diagnostics: diagnostics
+    )
   }
 
   public func details(systemID: Int64) async throws -> SolarSystemDetails {
@@ -150,6 +243,7 @@ public actor SolarSystemSearchService {
       source: system.source
     )
     cachedDetails[systemID] = details
+    cachedSecurityStatuses[systemID] = details.securityStatus
     return details
   }
 

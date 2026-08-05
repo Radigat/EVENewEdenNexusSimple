@@ -629,6 +629,22 @@ public struct IndustryServiceModuleConfiguration: Identifiable, Codable,
   }
 }
 
+public enum IndustryStructureActivityAssignmentMode: String, Codable,
+  CaseIterable, Equatable, Identifiable, Sendable
+{
+  case automaticFromServiceModules
+  case manual
+
+  public var id: Self { self }
+
+  public var displayName: String {
+    switch self {
+    case .automaticFromServiceModules: "Automatic from service modules"
+    case .manual: "Manual selection"
+    }
+  }
+}
+
 public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   Sendable
 {
@@ -642,6 +658,10 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   public var facilityTaxRate: Double
   public var rigs: [IndustryRigConfiguration]
   public var serviceModules: [IndustryServiceModuleConfiguration]?
+  /// Optional storage keeps profiles written before activity assignment modes
+  /// backward-compatible. A missing value means automatic inference.
+  public var activityAssignmentMode: IndustryStructureActivityAssignmentMode?
+  public var manuallyEnabledActivities: Set<IndustryActivitySystem>?
   public var structureMaterialBonusPercent: Double
   public var structureTimeBonusPercent: Double
   public var jobCostMultiplier: Double
@@ -668,6 +688,9 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     facilityTaxRate: Double = 0,
     rigs: [IndustryRigConfiguration] = [],
     serviceModules: [IndustryServiceModuleConfiguration]? = nil,
+    activityAssignmentMode: IndustryStructureActivityAssignmentMode =
+      .automaticFromServiceModules,
+    manuallyEnabledActivities: Set<IndustryActivitySystem>? = nil,
     structureMaterialBonusPercent: Double? = nil,
     structureTimeBonusPercent: Double? = nil,
     jobCostMultiplier: Double = 1,
@@ -689,6 +712,8 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     self.facilityTaxRate = facilityTaxRate
     self.rigs = rigs
     self.serviceModules = serviceModules
+    self.activityAssignmentMode = activityAssignmentMode
+    self.manuallyEnabledActivities = manuallyEnabledActivities
     self.structureMaterialBonusPercent =
       structureMaterialBonusPercent
       ?? kind.defaultManufacturingMaterialBonusPercent
@@ -778,13 +803,66 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     securityBand == .unknown
       || source == .unresolved
       || rigs.contains { $0.source == .unresolved }
-      || serviceCapabilityNeedsReview
+      || activityCapabilityNeedsReview
   }
 
   public var serviceCapabilityNeedsReview: Bool {
     kind == .npcStation
       || serviceModules == nil
       || serviceModules?.contains { $0.source == .unresolved } == true
+  }
+
+  public var effectiveActivityAssignmentMode: IndustryStructureActivityAssignmentMode {
+    activityAssignmentMode ?? .automaticFromServiceModules
+  }
+
+  public var automaticallyEnabledActivities: Set<IndustryActivitySystem> {
+    Set(
+      IndustryActivitySystem.allCases.filter {
+        supportsService(IndustryFacilityServiceActivity($0))
+      }
+    )
+  }
+
+  public var enabledActivities: Set<IndustryActivitySystem> {
+    switch effectiveActivityAssignmentMode {
+    case .automaticFromServiceModules:
+      automaticallyEnabledActivities
+    case .manual:
+      manuallyEnabledActivities ?? []
+    }
+  }
+
+  public var activityCapabilityNeedsReview: Bool {
+    effectiveActivityAssignmentMode == .automaticFromServiceModules
+      && serviceCapabilityNeedsReview
+  }
+
+  public mutating func setActivityAssignmentMode(
+    _ mode: IndustryStructureActivityAssignmentMode
+  ) {
+    if mode == .manual,
+      effectiveActivityAssignmentMode != .manual
+    {
+      manuallyEnabledActivities = automaticallyEnabledActivities
+    }
+    activityAssignmentMode = mode
+  }
+
+  public mutating func setActivity(
+    _ activity: IndustryActivitySystem,
+    enabled: Bool
+  ) {
+    if effectiveActivityAssignmentMode != .manual {
+      setActivityAssignmentMode(.manual)
+    }
+    var activities = manuallyEnabledActivities ?? []
+    if enabled {
+      activities.insert(activity)
+    } else {
+      activities.remove(activity)
+    }
+    manuallyEnabledActivities = activities
   }
 
   public func supportsService(
@@ -800,7 +878,7 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   public func supportsActivity(
     _ activity: IndustryActivitySystem
   ) -> Bool {
-    supportsService(IndustryFacilityServiceActivity(activity))
+    enabledActivities.contains(activity)
   }
 
   public var hasReprocessingService: Bool {
@@ -887,6 +965,7 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
 
 public enum MarketBrokerFeeSource: String, Codable, Equatable, Sendable {
   case npcStation
+  case manualFallback
   case playerStructureNotExposedByESI
   case unresolvedLocation
 }
@@ -959,23 +1038,113 @@ public struct MarketFeeCalculation: Codable, Equatable, Sendable {
   }
 }
 
+public enum SalesMarginAssessment: String, Codable, Equatable, Sendable {
+  case belowMinimum
+  case belowTarget
+  case meetsMinimum
+  case meetsTarget
+}
+
+public struct MarketProfitabilityConfiguration: Codable, Equatable, Sendable {
+  public private(set) var minimumSalesMarginRate: Double?
+  public private(set) var targetSalesMarginRate: Double?
+
+  public init(
+    minimumSalesMarginRate: Double? = nil,
+    targetSalesMarginRate: Double? = nil
+  ) {
+    self.minimumSalesMarginRate = Self.validMarginRate(
+      minimumSalesMarginRate
+    )
+    self.targetSalesMarginRate = Self.validMarginRate(targetSalesMarginRate)
+  }
+
+  public var isValid: Bool {
+    guard let minimumSalesMarginRate, let targetSalesMarginRate else {
+      return true
+    }
+    return minimumSalesMarginRate <= targetSalesMarginRate
+  }
+
+  public mutating func setMinimumSalesMarginRate(_ rate: Double?) {
+    guard let rate else {
+      minimumSalesMarginRate = nil
+      return
+    }
+    guard let accepted = Self.validMarginRate(rate) else { return }
+    minimumSalesMarginRate = accepted
+  }
+
+  public mutating func setTargetSalesMarginRate(_ rate: Double?) {
+    guard let rate else {
+      targetSalesMarginRate = nil
+      return
+    }
+    guard let accepted = Self.validMarginRate(rate) else { return }
+    targetSalesMarginRate = accepted
+  }
+
+  public func assessment(for margin: Double?) -> SalesMarginAssessment? {
+    guard isValid, let margin, margin.isFinite else { return nil }
+    if let targetSalesMarginRate, margin >= targetSalesMarginRate {
+      return .meetsTarget
+    }
+    if let minimumSalesMarginRate {
+      return margin >= minimumSalesMarginRate
+        ? .meetsMinimum : .belowMinimum
+    }
+    return targetSalesMarginRate == nil ? nil : .belowTarget
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case minimumSalesMarginRate
+    case targetSalesMarginRate
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      minimumSalesMarginRate: try container.decodeIfPresent(
+        Double.self,
+        forKey: .minimumSalesMarginRate
+      ),
+      targetSalesMarginRate: try container.decodeIfPresent(
+        Double.self,
+        forKey: .targetSalesMarginRate
+      )
+    )
+  }
+
+  private static func validMarginRate(_ rate: Double?) -> Double? {
+    guard let rate, rate.isFinite, rate >= 0, rate < 1 else { return nil }
+    return rate
+  }
+}
+
 public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
   public static let ruleVersion = "ccp-market-fees-2026-07-02"
 
   public var traderCharacterID: Int64?
   public var salesTaxRate: Double?
   public var brokerFeeRate: Double?
+  public var manualBrokerFeeRate: Double?
+  public var manualBrokerFeeUpdatedAt: Date?
   public var calculation: MarketFeeCalculation?
 
   public init(
     traderCharacterID: Int64? = nil,
     salesTaxRate: Double? = nil,
     brokerFeeRate: Double? = nil,
+    manualBrokerFeeRate: Double? = nil,
+    manualBrokerFeeUpdatedAt: Date? = nil,
     calculation: MarketFeeCalculation? = nil
   ) {
     self.traderCharacterID = traderCharacterID
     self.salesTaxRate = salesTaxRate
     self.brokerFeeRate = brokerFeeRate
+    self.manualBrokerFeeRate = Self.validRate(manualBrokerFeeRate)
+    self.manualBrokerFeeUpdatedAt =
+      self.manualBrokerFeeRate == nil ? nil : manualBrokerFeeUpdatedAt
     self.calculation = calculation
   }
 
@@ -985,8 +1154,37 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
   }
 
   public var effectiveBrokerFeeRate: Double? {
+    automaticBrokerFeeRate ?? Self.validRate(manualBrokerFeeRate)
+  }
+
+  public var automaticBrokerFeeRate: Double? {
     guard calculation?.characterID == traderCharacterID else { return nil }
-    return brokerFeeRate
+    return Self.validRate(brokerFeeRate)
+  }
+
+  public var effectiveBrokerFeeSource: MarketBrokerFeeSource? {
+    if automaticBrokerFeeRate != nil {
+      return calculation?.brokerFeeSource
+    }
+    return Self.validRate(manualBrokerFeeRate) == nil ? nil : .manualFallback
+  }
+
+  public var isManualBrokerFeeFallbackActive: Bool {
+    effectiveBrokerFeeSource == .manualFallback
+  }
+
+  public mutating func setManualBrokerFeeRate(
+    _ rate: Double?,
+    updatedAt: Date = .now
+  ) {
+    guard let rate else {
+      manualBrokerFeeRate = nil
+      manualBrokerFeeUpdatedAt = nil
+      return
+    }
+    guard let acceptedRate = Self.validRate(rate) else { return }
+    manualBrokerFeeRate = acceptedRate
+    manualBrokerFeeUpdatedAt = updatedAt
   }
 
   public func isTraderSelectionValid(
@@ -1107,6 +1305,8 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
     case traderCharacterID
     case salesTaxRate
     case brokerFeeRate
+    case manualBrokerFeeRate
+    case manualBrokerFeeUpdatedAt
     case calculation
   }
 
@@ -1124,6 +1324,19 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
       Double.self,
       forKey: .brokerFeeRate
     )
+    manualBrokerFeeRate = Self.validRate(
+      try container.decodeIfPresent(
+        Double.self,
+        forKey: .manualBrokerFeeRate
+      )
+    )
+    manualBrokerFeeUpdatedAt =
+      manualBrokerFeeRate == nil
+      ? nil
+      : try container.decodeIfPresent(
+        Date.self,
+        forKey: .manualBrokerFeeUpdatedAt
+      )
     calculation = try container.decodeIfPresent(
       MarketFeeCalculation.self,
       forKey: .calculation
@@ -1138,7 +1351,20 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
     )
     try container.encodeIfPresent(salesTaxRate, forKey: .salesTaxRate)
     try container.encodeIfPresent(brokerFeeRate, forKey: .brokerFeeRate)
+    try container.encodeIfPresent(
+      manualBrokerFeeRate,
+      forKey: .manualBrokerFeeRate
+    )
+    try container.encodeIfPresent(
+      manualBrokerFeeUpdatedAt,
+      forKey: .manualBrokerFeeUpdatedAt
+    )
     try container.encodeIfPresent(calculation, forKey: .calculation)
+  }
+
+  private static func validRate(_ rate: Double?) -> Double? {
+    guard let rate, rate.isFinite, rate >= 0, rate < 1 else { return nil }
+    return rate
   }
 }
 
@@ -1165,7 +1391,7 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
 }
 
 public struct LogisticsConfiguration: Codable, Equatable, Sendable {
-  public static let ruleVersion = "main-hub-to-production-2026-08-01"
+  public static let ruleVersion = "planner-hub-routes-2026-08-04"
   public static let legacySingleContractRuleVersion =
     "standard-haulage-2026-07-30"
   public static let collateralRate = 0.005
@@ -1499,20 +1725,73 @@ public struct ScienceFacilitySelection: Codable, Equatable, Sendable {
   public let explanation: String
 }
 
+public struct ProductionWarehouseLocation: Identifiable, Codable, Equatable,
+  Sendable
+{
+  public var id: Int64 { locationID }
+  public let locationID: Int64
+  public let structureName: String
+  public let solarSystemID: Int64
+  public let solarSystemName: String
+  public let activities: Set<IndustryActivitySystem>
+
+  public init(
+    locationID: Int64,
+    structureName: String,
+    solarSystemID: Int64,
+    solarSystemName: String,
+    activities: Set<IndustryActivitySystem>
+  ) {
+    self.locationID = locationID
+    self.structureName = structureName
+    self.solarSystemID = solarSystemID
+    self.solarSystemName = solarSystemName
+    self.activities = activities
+  }
+}
+
+public struct ProductionWarehouseScope: Codable, Equatable, Sendable {
+  public let locations: [ProductionWarehouseLocation]
+  public let unresolvedActivities: Set<IndustryActivitySystem>
+
+  public init(
+    locations: [ProductionWarehouseLocation],
+    unresolvedActivities: Set<IndustryActivitySystem> = []
+  ) {
+    self.locations = locations
+    self.unresolvedActivities = unresolvedActivities
+  }
+
+  public var locationIDs: Set<Int64> {
+    Set(locations.map(\.locationID))
+  }
+
+  public var summaryName: String {
+    switch locations.count {
+    case 0: "Production locations unresolved"
+    case 1: locations[0].structureName
+    default: "\(locations.count) production locations"
+    }
+  }
+}
+
 public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   public let id: UUID
   public var name: String
   public var manufacturingSystems: [ActivitySystemConfiguration]
-  public var reactionSystem: ActivitySystemConfiguration
-  public var inventionSystem: ActivitySystemConfiguration
-  public var copyingSystem: ActivitySystemConfiguration
-  public var materialResearchSystem: ActivitySystemConfiguration
-  public var timeResearchSystem: ActivitySystemConfiguration
+  public var reactionSystems: [ActivitySystemConfiguration]
+  public var inventionSystems: [ActivitySystemConfiguration]
+  public var copyingSystems: [ActivitySystemConfiguration]
+  public var materialResearchSystems: [ActivitySystemConfiguration]
+  public var timeResearchSystems: [ActivitySystemConfiguration]
   public var cloneState: CloneState
   public var marketTaxes: MarketTaxConfiguration
+  public var marketProfitability: MarketProfitabilityConfiguration
   public var tradingLocations: [TradingLocationConfiguration]
   public var mainTradingLocationID: UUID?
   public var homeTradingLocationID: UUID?
+  public var coalitionTradingLocationID: UUID?
+  public var comparisonTradingLocationIDs: Set<UUID>
   public var logistics: LogisticsConfiguration
   public var scheduling: ProductionSchedulingConfiguration
   public var invention: InventionConfiguration
@@ -1557,11 +1836,19 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       solarSystemID: 0,
       solarSystemName: "Select time research system"
     ),
+    reactionSystems: [ActivitySystemConfiguration]? = nil,
+    inventionSystems: [ActivitySystemConfiguration]? = nil,
+    copyingSystems: [ActivitySystemConfiguration]? = nil,
+    materialResearchSystems: [ActivitySystemConfiguration]? = nil,
+    timeResearchSystems: [ActivitySystemConfiguration]? = nil,
     cloneState: CloneState = .unknown,
     marketTaxes: MarketTaxConfiguration = .init(),
+    marketProfitability: MarketProfitabilityConfiguration = .init(),
     tradingLocations: [TradingLocationConfiguration] = [],
     mainTradingLocationID: UUID? = nil,
     homeTradingLocationID: UUID? = nil,
+    coalitionTradingLocationID: UUID? = nil,
+    comparisonTradingLocationIDs: Set<UUID> = [],
     logistics: LogisticsConfiguration = .init(),
     scheduling: ProductionSchedulingConfiguration = .init(),
     invention: InventionConfiguration = .init(),
@@ -1575,23 +1862,47 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     defaultIntermediateTE: Int = 20,
     ruleVersion: String = IndustryRuleSet.current.version
   ) {
-    let acceptedManufacturingSystems =
-      manufacturingSystems.isEmpty
-      ? [ActivitySystemConfiguration(activity: .manufacturing)]
-      : manufacturingSystems
+    let acceptedManufacturingSystems = Self.acceptedSystems(
+      manufacturingSystems,
+      activity: .manufacturing,
+      placeholderName: "Select manufacturing system"
+    )
     self.id = id
     self.name = name
     self.manufacturingSystems = acceptedManufacturingSystems
-    self.reactionSystem = reactionSystem
-    self.inventionSystem = inventionSystem
-    self.copyingSystem = copyingSystem
-    self.materialResearchSystem = materialResearchSystem
-    self.timeResearchSystem = timeResearchSystem
+    self.reactionSystems = Self.acceptedSystems(
+      reactionSystems ?? [reactionSystem],
+      activity: .reaction,
+      placeholderName: "Select reaction system"
+    )
+    self.inventionSystems = Self.acceptedSystems(
+      inventionSystems ?? [inventionSystem],
+      activity: .invention,
+      placeholderName: "Select invention system"
+    )
+    self.copyingSystems = Self.acceptedSystems(
+      copyingSystems ?? [copyingSystem],
+      activity: .copying,
+      placeholderName: "Select copying system"
+    )
+    self.materialResearchSystems = Self.acceptedSystems(
+      materialResearchSystems ?? [materialResearchSystem],
+      activity: .materialResearch,
+      placeholderName: "Select material research system"
+    )
+    self.timeResearchSystems = Self.acceptedSystems(
+      timeResearchSystems ?? [timeResearchSystem],
+      activity: .timeResearch,
+      placeholderName: "Select time research system"
+    )
     self.cloneState = cloneState
     self.marketTaxes = marketTaxes
+    self.marketProfitability = marketProfitability
     self.tradingLocations = tradingLocations
     self.mainTradingLocationID = mainTradingLocationID
     self.homeTradingLocationID = homeTradingLocationID
+    self.coalitionTradingLocationID = coalitionTradingLocationID
+    self.comparisonTradingLocationIDs = comparisonTradingLocationIDs
     self.logistics = logistics
     self.scheduling = scheduling
     self.invention = invention
@@ -1624,14 +1935,150 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     manufacturingSystems.first
   }
 
+  public var reactionSystem: ActivitySystemConfiguration {
+    get {
+      reactionSystems.first
+        ?? ActivitySystemConfiguration(
+          activity: .reaction,
+          solarSystemID: 0,
+          solarSystemName: "Select reaction system"
+        )
+    }
+    set {
+      let accepted = Self.acceptedSystem(newValue, for: .reaction)
+      if reactionSystems.isEmpty {
+        reactionSystems = [accepted]
+      } else {
+        reactionSystems[0] = accepted
+      }
+    }
+  }
+
+  public var inventionSystem: ActivitySystemConfiguration {
+    get {
+      inventionSystems.first
+        ?? ActivitySystemConfiguration(
+          activity: .invention,
+          solarSystemID: 0,
+          solarSystemName: "Select invention system"
+        )
+    }
+    set {
+      let accepted = Self.acceptedSystem(newValue, for: .invention)
+      if inventionSystems.isEmpty {
+        inventionSystems = [accepted]
+      } else {
+        inventionSystems[0] = accepted
+      }
+    }
+  }
+
+  public var copyingSystem: ActivitySystemConfiguration {
+    get {
+      copyingSystems.first
+        ?? ActivitySystemConfiguration(
+          activity: .copying,
+          solarSystemID: 0,
+          solarSystemName: "Select copying system"
+        )
+    }
+    set {
+      let accepted = Self.acceptedSystem(newValue, for: .copying)
+      if copyingSystems.isEmpty {
+        copyingSystems = [accepted]
+      } else {
+        copyingSystems[0] = accepted
+      }
+    }
+  }
+
+  public var materialResearchSystem: ActivitySystemConfiguration {
+    get {
+      materialResearchSystems.first
+        ?? ActivitySystemConfiguration(
+          activity: .materialResearch,
+          solarSystemID: 0,
+          solarSystemName: "Select material research system"
+        )
+    }
+    set {
+      let accepted = Self.acceptedSystem(
+        newValue,
+        for: .materialResearch
+      )
+      if materialResearchSystems.isEmpty {
+        materialResearchSystems = [accepted]
+      } else {
+        materialResearchSystems[0] = accepted
+      }
+    }
+  }
+
+  public var timeResearchSystem: ActivitySystemConfiguration {
+    get {
+      timeResearchSystems.first
+        ?? ActivitySystemConfiguration(
+          activity: .timeResearch,
+          solarSystemID: 0,
+          solarSystemName: "Select time research system"
+        )
+    }
+    set {
+      let accepted = Self.acceptedSystem(newValue, for: .timeResearch)
+      if timeResearchSystems.isEmpty {
+        timeResearchSystems = [accepted]
+      } else {
+        timeResearchSystems[0] = accepted
+      }
+    }
+  }
+
+  private static func acceptedSystem(
+    _ system: ActivitySystemConfiguration,
+    for activity: IndustryActivitySystem
+  ) -> ActivitySystemConfiguration {
+    var accepted = system
+    accepted.activity = activity
+    return accepted
+  }
+
+  private static func acceptedSystems(
+    _ systems: [ActivitySystemConfiguration],
+    activity: IndustryActivitySystem,
+    placeholderName: String
+  ) -> [ActivitySystemConfiguration] {
+    guard !systems.isEmpty else {
+      return [
+        ActivitySystemConfiguration(
+          activity: activity,
+          solarSystemID: 0,
+          solarSystemName: placeholderName
+        )
+      ]
+    }
+    return systems.map { acceptedSystem($0, for: activity) }
+  }
+
+  public func systemConfigurations(
+    for activity: IndustryActivitySystem
+  ) -> [ActivitySystemConfiguration] {
+    switch activity {
+    case .manufacturing: manufacturingSystems
+    case .reaction: reactionSystems
+    case .invention: inventionSystems
+    case .copying: copyingSystems
+    case .materialResearch: materialResearchSystems
+    case .timeResearch: timeResearchSystems
+    }
+  }
+
   public var configuredActivitySystems: [ActivitySystemConfiguration] {
-    manufacturingSystems + [
-      reactionSystem,
-      inventionSystem,
-      copyingSystem,
-      materialResearchSystem,
-      timeResearchSystem,
-    ]
+    manufacturingSystems
+      + reactionSystems
+      + inventionSystems
+      + copyingSystems
+      + materialResearchSystems
+      + timeResearchSystems
   }
 
   public var priceSourceTradingLocation: TradingLocationConfiguration? {
@@ -1648,6 +2095,65 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     return tradingLocations.first { $0.id == homeTradingLocationID }
   }
 
+  public var coalitionTradingLocation: TradingLocationConfiguration? {
+    guard let coalitionTradingLocationID else { return nil }
+    return tradingLocations.first { $0.id == coalitionTradingLocationID }
+  }
+
+  public var marketHubSnapshots: [MarketHubConfigurationSnapshot] {
+    var selectedIDs = comparisonTradingLocationIDs
+    selectedIDs.formUnion(
+      [
+        mainTradingLocationID,
+        homeTradingLocationID,
+        coalitionTradingLocationID,
+      ].compactMap { $0 }
+    )
+    return tradingLocations.filter { selectedIDs.contains($0.id) }.map {
+      configuration in
+      var roles = Set<MarketHubRole>()
+      if configuration.id == mainTradingLocationID { roles.insert(.main) }
+      if configuration.id == homeTradingLocationID { roles.insert(.home) }
+      if configuration.id == coalitionTradingLocationID {
+        roles.insert(.coalition)
+      }
+      if roles.isEmpty,
+        comparisonTradingLocationIDs.contains(configuration.id)
+      {
+        roles.insert(.comparison)
+      }
+      return MarketHubConfigurationSnapshot(
+        id: configuration.id,
+        location: configuration.location,
+        roles: roles
+      )
+    }
+    .sorted { lhs, rhs in
+      func priority(_ roles: Set<MarketHubRole>) -> Int {
+        if roles.contains(.main) { return 0 }
+        if roles.contains(.home) { return 1 }
+        if roles.contains(.coalition) { return 2 }
+        if roles.contains(.comparison) { return 3 }
+        return 4
+      }
+      let left = priority(lhs.roles)
+      let right = priority(rhs.roles)
+      return left == right
+        ? lhs.location.name.localizedCaseInsensitiveCompare(rhs.location.name)
+          == .orderedAscending
+        : left < right
+    }
+  }
+
+  public var mainAndHomeAreIdentical: Bool {
+    guard let main = mainTradingLocation?.location,
+      let home = homeTradingLocation?.location
+    else {
+      return false
+    }
+    return main.representsSameLocation(as: home)
+  }
+
   public var mainTradeHub: MarketTradeHub {
     guard let stationID = mainTradingLocation?.location.locationID,
       let hub = MarketTradeHub.matching(stationID: stationID)
@@ -1661,15 +2167,50 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     tradingLocations.map(\.location)
   }
 
+  private static func isResolvedMarketLocation(
+    _ location: ProcurementLocation
+  ) -> Bool {
+    switch location.kind {
+    case .npcTradeHub:
+      location.locationID != nil
+        && location.solarSystemID != nil
+        && location.regionID != nil
+    case .playerStructure:
+      location.locationID != nil && location.solarSystemID != nil
+    case .legacy:
+      false
+    }
+  }
+
   public mutating func normalizeTradingLocations() {
     var seenLocationIDs = Set<String>()
     tradingLocations = tradingLocations.filter {
       seenLocationIDs.insert($0.location.id).inserted
     }
+    for index in tradingLocations.indices {
+      let current = tradingLocations[index].location
+      guard
+        let known = ProcurementLocation.standardTradeHubs.first(where: {
+          $0.locationID == current.locationID
+        })
+      else { continue }
+      tradingLocations[index].location = ProcurementLocation(
+        id: current.id,
+        name: current.name,
+        locationID: current.locationID,
+        kind: current.kind,
+        solarSystemID: current.solarSystemID ?? known.solarSystemID,
+        regionID: current.regionID ?? known.regionID,
+        ownerCorporationID:
+          current.ownerCorporationID ?? known.ownerCorporationID,
+        ownerFactionID: current.ownerFactionID ?? known.ownerFactionID
+      )
+    }
 
-    let legacyMainLocation = ProcurementLocation.standardTradeHubs.first {
-      $0.locationID == logistics.homeTradeHub.locationID
-    } ?? .jita
+    let legacyMainLocation =
+      ProcurementLocation.standardTradeHubs.first {
+        $0.locationID == logistics.homeTradeHub.locationID
+      } ?? .jita
     if !tradingLocations.contains(where: {
       $0.location.id == legacyMainLocation.id
     }) {
@@ -1682,14 +2223,16 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       )
     }
 
-    let mainIsValid = mainTradingLocationID.map { mainID in
-      tradingLocations.contains {
-        $0.id == mainID
-          && $0.location.locationID.map {
-            MarketTradeHub.matching(stationID: $0) != nil
-          } == true
-      }
-    } ?? false
+    let mainIsValid =
+      mainTradingLocationID.map { mainID in
+        tradingLocations.contains {
+          $0.id == mainID
+            && $0.location.kind == .npcTradeHub
+            && $0.location.locationID != nil
+            && $0.location.solarSystemID != nil
+            && $0.location.regionID != nil
+        }
+      } ?? false
     if !mainIsValid {
       mainTradingLocationID =
         tradingLocations.first {
@@ -1724,20 +2267,95 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     {
       self.homeTradingLocationID = nil
     }
+    if let coalitionTradingLocationID,
+      !tradingLocations.contains(where: {
+        $0.id == coalitionTradingLocationID
+          && $0.location.kind == .playerStructure
+          && $0.location.locationID != nil
+      })
+    {
+      self.coalitionTradingLocationID = nil
+    }
+    let resolvedMarketIDs = Set(
+      tradingLocations.filter {
+        Self.isResolvedMarketLocation($0.location)
+      }.map(\.id)
+    )
+    comparisonTradingLocationIDs.formIntersection(resolvedMarketIDs)
+    if let homeTradingLocation {
+      logistics.productionLocationName = homeTradingLocation.location.name
+    }
   }
 
   @discardableResult
   public mutating func addTradingLocation(
-    _ location: ProcurementLocation
+    _ location: ProcurementLocation,
+    includeAsComparison: Bool = true
   ) -> Bool {
     guard
       !tradingLocations.contains(where: {
         $0.location.id == location.id
       })
     else { return false }
-    tradingLocations.append(
-      TradingLocationConfiguration(location: location)
-    )
+    if location.kind == .playerStructure,
+      let legacyIndex = tradingLocations.firstIndex(where: {
+        $0.location.kind == .legacy
+          && $0.location.name.localizedCaseInsensitiveCompare(location.name)
+            == .orderedSame
+      })
+    {
+      tradingLocations[legacyIndex].location = location
+      if includeAsComparison,
+        Self.isResolvedMarketLocation(location)
+      {
+        comparisonTradingLocationIDs.insert(tradingLocations[legacyIndex].id)
+      }
+      normalizeTradingLocations()
+      return true
+    }
+    let configuration = TradingLocationConfiguration(location: location)
+    tradingLocations.append(configuration)
+    if includeAsComparison,
+      Self.isResolvedMarketLocation(location)
+    {
+      comparisonTradingLocationIDs.insert(configuration.id)
+    }
+    normalizeTradingLocations()
+    return true
+  }
+
+  @discardableResult
+  public mutating func replaceTradingLocation(
+    id configurationID: UUID,
+    with location: ProcurementLocation
+  ) -> Bool {
+    guard tradingLocations.contains(where: { $0.id == configurationID })
+    else { return false }
+
+    if let duplicate = tradingLocations.first(where: {
+      $0.id != configurationID && $0.location.id == location.id
+    }) {
+      if mainTradingLocationID == duplicate.id {
+        mainTradingLocationID = configurationID
+      }
+      if homeTradingLocationID == duplicate.id {
+        homeTradingLocationID = configurationID
+      }
+      if coalitionTradingLocationID == duplicate.id {
+        coalitionTradingLocationID = configurationID
+      }
+      if comparisonTradingLocationIDs.remove(duplicate.id) != nil {
+        comparisonTradingLocationIDs.insert(configurationID)
+      }
+      tradingLocations.removeAll { $0.id == duplicate.id }
+    }
+
+    guard
+      let index = tradingLocations.firstIndex(where: {
+        $0.id == configurationID
+      })
+    else { return false }
+    tradingLocations[index].location = location
     normalizeTradingLocations()
     return true
   }
@@ -1746,18 +2364,21 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   public mutating func removeTradingLocation(id: UUID) -> Bool {
     guard tradingLocations.contains(where: { $0.id == id }),
       id != mainTradingLocationID,
-      id != homeTradingLocationID
+      id != homeTradingLocationID,
+      id != coalitionTradingLocationID
     else { return false }
     tradingLocations.removeAll { $0.id == id }
+    comparisonTradingLocationIDs.remove(id)
     normalizeTradingLocations()
     return true
   }
 
   public mutating func setMainTradingLocation(id: UUID) {
     guard let location = tradingLocations.first(where: { $0.id == id }),
-      location.location.locationID.map({
-        MarketTradeHub.matching(stationID: $0) != nil
-      }) == true
+      location.location.kind == .npcTradeHub,
+      location.location.locationID != nil,
+      location.location.solarSystemID != nil,
+      location.location.regionID != nil
     else { return }
     mainTradingLocationID = id
     normalizeTradingLocations()
@@ -1783,6 +2404,38 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     }
     guard tradingLocations.contains(where: { $0.id == id }) else { return }
     homeTradingLocationID = id
+    normalizeTradingLocations()
+  }
+
+  public mutating func setCoalitionTradingLocation(id: UUID?) {
+    guard let id else {
+      coalitionTradingLocationID = nil
+      return
+    }
+    guard
+      tradingLocations.contains(where: {
+        $0.id == id && $0.location.kind == .playerStructure
+          && $0.location.locationID != nil
+      })
+    else { return }
+    coalitionTradingLocationID = id
+    normalizeTradingLocations()
+  }
+
+  public mutating func setComparisonTradingLocation(
+    id: UUID,
+    isSelected: Bool
+  ) {
+    guard isSelected else {
+      comparisonTradingLocationIDs.remove(id)
+      return
+    }
+    guard
+      tradingLocations.contains(where: {
+        $0.id == id && Self.isResolvedMarketLocation($0.location)
+      })
+    else { return }
+    comparisonTradingLocationIDs.insert(id)
   }
 
   public mutating func selectTrader(
@@ -1813,9 +2466,26 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   ) {
     guard let index = tradingLocations.firstIndex(where: { $0.id == id })
     else { return }
-    tradingLocations[index].location = location
+    let previous = tradingLocations[index].location
+    let acceptedLocation: ProcurementLocation
+    if previous.locationID == location.locationID {
+      acceptedLocation = ProcurementLocation(
+        id: location.id,
+        name: location.name,
+        locationID: location.locationID,
+        kind: location.kind,
+        solarSystemID: location.solarSystemID ?? previous.solarSystemID,
+        regionID: location.regionID ?? previous.regionID,
+        ownerCorporationID:
+          location.ownerCorporationID ?? previous.ownerCorporationID,
+        ownerFactionID: location.ownerFactionID ?? previous.ownerFactionID
+      )
+    } else {
+      acceptedLocation = location
+    }
+    tradingLocations[index].location = acceptedLocation
     if id == mainTradingLocationID {
-      logistics.homeTradeHub = location
+      logistics.homeTradeHub = acceptedLocation
     }
   }
 
@@ -1835,6 +2505,43 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     }
   }
 
+  public mutating func setManualBrokerFeeRate(
+    _ rate: Double?,
+    forTradingLocationID id: UUID,
+    updatedAt: Date = .now
+  ) {
+    guard let index = tradingLocations.firstIndex(where: { $0.id == id })
+    else { return }
+    tradingLocations[index].marketTaxes.setManualBrokerFeeRate(
+      rate,
+      updatedAt: updatedAt
+    )
+    if id == mainTradingLocationID {
+      marketTaxes = tradingLocations[index].marketTaxes
+    }
+  }
+
+  public mutating func refreshResolvableMarketFees(
+    capabilities: [CharacterCapabilitySnapshot]
+  ) {
+    for configuration in tradingLocations {
+      let needsCalculation =
+        configuration.marketTaxes.calculation == nil
+        || (configuration.location.kind == .npcTradeHub
+          && configuration.marketTaxes.automaticBrokerFeeRate == nil)
+      guard needsCalculation,
+        let characterID = configuration.traderCharacterID,
+        let capability = capabilities.first(where: {
+          $0.character.id == characterID
+        })
+      else { continue }
+      applyMarketFees(
+        capability: capability,
+        forTradingLocationID: configuration.id
+      )
+    }
+  }
+
   public func areTraderSelectionsValid(
     connectedCharacterIDs: Set<Int64>
   ) -> Bool {
@@ -1849,19 +2556,22 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   public func systemConfiguration(
     for activity: IndustryActivitySystem
   ) -> ActivitySystemConfiguration? {
-    switch activity {
-    case .manufacturing:
-      defaultManufacturingSystem
-    case .reaction:
-      reactionSystem
-    case .invention:
-      inventionSystem
-    case .copying:
-      copyingSystem
-    case .materialResearch:
-      materialResearchSystem
-    case .timeResearch:
-      timeResearchSystem
+    systemConfigurations(for: activity).first
+  }
+
+  public func systemConfiguration(
+    for activity: IndustryActivitySystem,
+    structure: ConfiguredIndustryStructure
+  ) -> ActivitySystemConfiguration? {
+    let systems = systemConfigurations(for: activity)
+    if let configuredID = structure.manufacturingSystemID,
+      let exact = systems.first(where: { $0.id == configuredID })
+    {
+      return exact
+    }
+    return systems.first {
+      $0.solarSystemID > 0
+        && $0.solarSystemID == structure.solarSystemID
     }
   }
 
@@ -1901,21 +2611,9 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   ) -> [IndustryActivitySystem] {
     IndustryActivitySystem.allCases.filter { activity in
       let hasMatchingSystem: Bool
-      switch activity {
-      case .manufacturing:
-        hasMatchingSystem = manufacturingSystems.contains {
-          $0.solarSystemID > 0
-            && $0.solarSystemID == structure.solarSystemID
-        }
-      case .reaction:
-        hasMatchingSystem =
-          reactionSystem.solarSystemID > 0
-          && reactionSystem.solarSystemID == structure.solarSystemID
-      case .invention, .copying, .materialResearch, .timeResearch:
-        hasMatchingSystem =
-          systemConfiguration(for: activity)?.solarSystemID
-          == structure.solarSystemID
-          && structure.solarSystemID > 0
+      hasMatchingSystem = systemConfigurations(for: activity).contains {
+        $0.solarSystemID > 0
+          && $0.solarSystemID == structure.solarSystemID
       }
       guard hasMatchingSystem else { return false }
       if activity == .reaction {
@@ -1929,46 +2627,24 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   }
 
   public mutating func applySystemDetails(_ details: SolarSystemDetails) {
-    for index in manufacturingSystems.indices
-    where manufacturingSystems[index].solarSystemID == details.id {
-      manufacturingSystems[index].solarSystemName = details.name
-      manufacturingSystems[index].constellationID = details.constellationID
-      manufacturingSystems[index].constellationName =
-        details.constellationName
-      manufacturingSystems[index].regionID = details.regionID
-      manufacturingSystems[index].regionName = details.regionName
-      manufacturingSystems[index].securityStatus = details.securityStatus
-      manufacturingSystems[index].securityClass = details.securityClass
-    }
-    if reactionSystem.solarSystemID == details.id {
-      reactionSystem.solarSystemName = details.name
-      reactionSystem.constellationID = details.constellationID
-      reactionSystem.constellationName = details.constellationName
-      reactionSystem.regionID = details.regionID
-      reactionSystem.regionName = details.regionName
-      reactionSystem.securityStatus = details.securityStatus
-      reactionSystem.securityClass = details.securityClass
-    }
-    for activity in IndustryActivitySystem.allCases where activity != .manufacturing {
-      guard systemConfiguration(for: activity)?.solarSystemID == details.id
-      else { continue }
-      switch activity {
-      case .manufacturing:
-        break
-      case .reaction:
-        reactionSystem.apply(details)
-      case .invention:
-        inventionSystem.apply(details)
-      case .copying:
-        copyingSystem.apply(details)
-      case .materialResearch:
-        materialResearchSystem.apply(details)
-      case .timeResearch:
-        timeResearchSystem.apply(details)
-      }
-    }
+    applySystemDetails(details, to: &manufacturingSystems)
+    applySystemDetails(details, to: &reactionSystems)
+    applySystemDetails(details, to: &inventionSystems)
+    applySystemDetails(details, to: &copyingSystems)
+    applySystemDetails(details, to: &materialResearchSystems)
+    applySystemDetails(details, to: &timeResearchSystems)
     synchronizeStructuresWithManufacturingSystems()
     refreshAutomaticFacilityAssignments()
+  }
+
+  private func applySystemDetails(
+    _ details: SolarSystemDetails,
+    to systems: inout [ActivitySystemConfiguration]
+  ) {
+    for index in systems.indices
+    where systems[index].solarSystemID == details.id {
+      systems[index].apply(details)
+    }
   }
 
   private mutating func synchronizeStructuresWithManufacturingSystems() {
@@ -2066,16 +2742,24 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     case name
     case manufacturingSystems
     case manufacturingSystem
+    case reactionSystems
     case reactionSystem
+    case inventionSystems
     case inventionSystem
+    case copyingSystems
     case copyingSystem
+    case materialResearchSystems
     case materialResearchSystem
+    case timeResearchSystems
     case timeResearchSystem
     case cloneState
     case marketTaxes
+    case marketProfitability
     case tradingLocations
     case mainTradingLocationID
     case homeTradingLocationID
+    case coalitionTradingLocationID
+    case comparisonTradingLocationIDs
     case logistics
     case scheduling
     case invention
@@ -2124,7 +2808,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
         decodedStructures[index].manufacturingSystemID =
           systems.first {
             $0.solarSystemID == decodedStructures[index].solarSystemID
-          }?.id ?? systems.first?.id
+          }?.id
       }
     }
 
@@ -2133,56 +2817,66 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       try container.decodeIfPresent(String.self, forKey: .name)
       ?? "Production Basis"
     manufacturingSystems = systems
-    reactionSystem =
+    let legacyReactionSystem = try container.decodeIfPresent(
+      ActivitySystemConfiguration.self,
+      forKey: .reactionSystem
+    )
+    reactionSystems = Self.acceptedSystems(
       try container.decodeIfPresent(
-        ActivitySystemConfiguration.self,
-        forKey: .reactionSystem
-      )
-      ?? ActivitySystemConfiguration(
-        activity: .reaction,
-        solarSystemID: 0,
-        solarSystemName: "Select reaction system"
-      )
-    inventionSystem =
+        [ActivitySystemConfiguration].self,
+        forKey: .reactionSystems
+      ) ?? legacyReactionSystem.map { [$0] } ?? [],
+      activity: .reaction,
+      placeholderName: "Select reaction system"
+    )
+    let legacyInventionSystem = try container.decodeIfPresent(
+      ActivitySystemConfiguration.self,
+      forKey: .inventionSystem
+    )
+    inventionSystems = Self.acceptedSystems(
       try container.decodeIfPresent(
-        ActivitySystemConfiguration.self,
-        forKey: .inventionSystem
-      )
-      ?? ActivitySystemConfiguration(
-        activity: .invention,
-        solarSystemID: 0,
-        solarSystemName: "Select invention system"
-      )
-    copyingSystem =
+        [ActivitySystemConfiguration].self,
+        forKey: .inventionSystems
+      ) ?? legacyInventionSystem.map { [$0] } ?? [],
+      activity: .invention,
+      placeholderName: "Select invention system"
+    )
+    let legacyCopyingSystem = try container.decodeIfPresent(
+      ActivitySystemConfiguration.self,
+      forKey: .copyingSystem
+    )
+    copyingSystems = Self.acceptedSystems(
       try container.decodeIfPresent(
-        ActivitySystemConfiguration.self,
-        forKey: .copyingSystem
-      )
-      ?? ActivitySystemConfiguration(
-        activity: .copying,
-        solarSystemID: 0,
-        solarSystemName: "Select copying system"
-      )
-    materialResearchSystem =
+        [ActivitySystemConfiguration].self,
+        forKey: .copyingSystems
+      ) ?? legacyCopyingSystem.map { [$0] } ?? [],
+      activity: .copying,
+      placeholderName: "Select copying system"
+    )
+    let legacyMaterialResearchSystem = try container.decodeIfPresent(
+      ActivitySystemConfiguration.self,
+      forKey: .materialResearchSystem
+    )
+    materialResearchSystems = Self.acceptedSystems(
       try container.decodeIfPresent(
-        ActivitySystemConfiguration.self,
-        forKey: .materialResearchSystem
-      )
-      ?? ActivitySystemConfiguration(
-        activity: .materialResearch,
-        solarSystemID: 0,
-        solarSystemName: "Select material research system"
-      )
-    timeResearchSystem =
+        [ActivitySystemConfiguration].self,
+        forKey: .materialResearchSystems
+      ) ?? legacyMaterialResearchSystem.map { [$0] } ?? [],
+      activity: .materialResearch,
+      placeholderName: "Select material research system"
+    )
+    let legacyTimeResearchSystem = try container.decodeIfPresent(
+      ActivitySystemConfiguration.self,
+      forKey: .timeResearchSystem
+    )
+    timeResearchSystems = Self.acceptedSystems(
       try container.decodeIfPresent(
-        ActivitySystemConfiguration.self,
-        forKey: .timeResearchSystem
-      )
-      ?? ActivitySystemConfiguration(
-        activity: .timeResearch,
-        solarSystemID: 0,
-        solarSystemName: "Select time research system"
-      )
+        [ActivitySystemConfiguration].self,
+        forKey: .timeResearchSystems
+      ) ?? legacyTimeResearchSystem.map { [$0] } ?? [],
+      activity: .timeResearch,
+      placeholderName: "Select time research system"
+    )
     cloneState =
       try container.decodeIfPresent(CloneState.self, forKey: .cloneState)
       ?? .unknown
@@ -2190,6 +2884,11 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       try container.decodeIfPresent(
         MarketTaxConfiguration.self,
         forKey: .marketTaxes
+      ) ?? .init()
+    marketProfitability =
+      try container.decodeIfPresent(
+        MarketProfitabilityConfiguration.self,
+        forKey: .marketProfitability
       ) ?? .init()
     tradingLocations =
       try container.decodeIfPresent(
@@ -2213,6 +2912,15 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     } else {
       homeTradingLocationID = decodedLegacyOrHomeTradingLocationID
     }
+    coalitionTradingLocationID = try container.decodeIfPresent(
+      UUID.self,
+      forKey: .coalitionTradingLocationID
+    )
+    let decodedComparisonTradingLocationIDs = try container.decodeIfPresent(
+      Set<UUID>.self,
+      forKey: .comparisonTradingLocationIDs
+    )
+    comparisonTradingLocationIDs = decodedComparisonTradingLocationIDs ?? []
     logistics =
       try container.decodeIfPresent(
         LogisticsConfiguration.self,
@@ -2267,6 +2975,21 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       try container.decodeIfPresent(String.self, forKey: .ruleVersion)
       ?? IndustryRuleSet.current.version
     normalizeTradingLocations()
+    if decodedComparisonTradingLocationIDs == nil {
+      let assignedRoleIDs = Set(
+        [
+          mainTradingLocationID,
+          homeTradingLocationID,
+          coalitionTradingLocationID,
+        ].compactMap { $0 }
+      )
+      comparisonTradingLocationIDs = Set(
+        tradingLocations.filter {
+          !assignedRoleIDs.contains($0.id)
+            && Self.isResolvedMarketLocation($0.location)
+        }.map(\.id)
+      )
+    }
     synchronizeStructuresWithManufacturingSystems()
     refreshAutomaticFacilityAssignments()
   }
@@ -2276,16 +2999,25 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     try container.encode(id, forKey: .id)
     try container.encode(name, forKey: .name)
     try container.encode(manufacturingSystems, forKey: .manufacturingSystems)
+    try container.encode(reactionSystems, forKey: .reactionSystems)
     try container.encode(reactionSystem, forKey: .reactionSystem)
+    try container.encode(inventionSystems, forKey: .inventionSystems)
     try container.encode(inventionSystem, forKey: .inventionSystem)
+    try container.encode(copyingSystems, forKey: .copyingSystems)
     try container.encode(copyingSystem, forKey: .copyingSystem)
+    try container.encode(
+      materialResearchSystems,
+      forKey: .materialResearchSystems
+    )
     try container.encode(
       materialResearchSystem,
       forKey: .materialResearchSystem
     )
+    try container.encode(timeResearchSystems, forKey: .timeResearchSystems)
     try container.encode(timeResearchSystem, forKey: .timeResearchSystem)
     try container.encode(cloneState, forKey: .cloneState)
     try container.encode(marketTaxes, forKey: .marketTaxes)
+    try container.encode(marketProfitability, forKey: .marketProfitability)
     try container.encode(tradingLocations, forKey: .tradingLocations)
     try container.encodeIfPresent(
       mainTradingLocationID,
@@ -2294,6 +3026,14 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     try container.encodeIfPresent(
       homeTradingLocationID,
       forKey: .homeTradingLocationID
+    )
+    try container.encodeIfPresent(
+      coalitionTradingLocationID,
+      forKey: .coalitionTradingLocationID
+    )
+    try container.encode(
+      comparisonTradingLocationIDs,
+      forKey: .comparisonTradingLocationIDs
     )
     try container.encode(logistics, forKey: .logistics)
     try container.encode(scheduling, forKey: .scheduling)
@@ -2403,12 +3143,14 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       selected = structure(id: reactionStructureID)
       manual = true
     }
-    guard let selected else { return nil }
+    guard let selected,
+      let system = systemConfiguration(for: .reaction, structure: selected)
+    else { return nil }
     return ReactionFacilitySelection(
       structureID: selected.id,
       structureName: selected.displayName,
-      solarSystemID: reactionSystem.solarSystemID,
-      solarSystemName: reactionSystem.solarSystemName,
+      solarSystemID: system.solarSystemID,
+      solarSystemName: system.solarSystemName,
       materialBonusPercent: (1 - selected.reactionMaterialMultiplier) * 100,
       timeBonusPercent: (1 - selected.reactionTimeMultiplier) * 100,
       materialMultiplier: selected.reactionMaterialMultiplier,
@@ -2424,7 +3166,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
 
   private var automaticReactionStructure: ConfiguredIndustryStructure? {
     structures.filter {
-      $0.solarSystemID == reactionSystem.solarSystemID
+      systemConfiguration(for: .reaction, structure: $0) != nil
         && $0.isReactionCapable
     }.sorted {
       if $0.reactionMaterialMultiplier != $1.reactionMaterialMultiplier {
@@ -2447,10 +3189,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   public func scienceSelection(
     for activity: IndustryActivitySystem
   ) -> ScienceFacilitySelection? {
-    guard activity.isScienceActivity,
-      let system = systemConfiguration(for: activity),
-      system.solarSystemID > 0
-    else { return nil }
+    guard activity.isScienceActivity else { return nil }
     let selected: ConfiguredIndustryStructure?
     let manual: Bool
     if automaticStructureSelection {
@@ -2461,14 +3200,20 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       manual = true
     }
     guard let selected else { return nil }
+    let matchingSystem = systemConfiguration(
+      for: activity,
+      structure: selected
+    )
+    guard let system = matchingSystem ?? systemConfiguration(for: activity),
+      system.solarSystemID > 0
+    else { return nil }
     let timeMultiplier = selected.scienceTimeMultiplier(for: activity)
     let jobCostMultiplier = selected.scienceJobCostMultiplier(for: activity)
     let rigJobCostMultiplier =
       selected.jobCostMultiplier > 0
       ? jobCostMultiplier / selected.jobCostMultiplier
       : 1
-    let matchesSystem =
-      selected.solarSystemID == system.solarSystemID
+    let matchesSystem = matchingSystem != nil
     return ScienceFacilitySelection(
       activity: activity,
       structureID: selected.id,
@@ -2491,14 +3236,120 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     )
   }
 
+  /// The exact ESI asset locations that form the combined production
+  /// warehouse. Only facilities selected for an active manufacturing,
+  /// reaction or science system are included; merely configured but unused
+  /// structures do not become allocatable stock.
+  public var productionWarehouseScope: ProductionWarehouseScope {
+    struct PendingLocation {
+      let locationID: Int64
+      let structureName: String
+      let solarSystemID: Int64
+      let solarSystemName: String
+      var activities: Set<IndustryActivitySystem>
+    }
+
+    var locations: [Int64: PendingLocation] = [:]
+    var unresolved = Set<IndustryActivitySystem>()
+
+    func selectedStructure(
+      configurationID: UUID
+    ) -> ConfiguredIndustryStructure? {
+      structures.first { $0.id == configurationID }
+    }
+
+    func system(
+      for activity: IndustryActivitySystem,
+      structure: ConfiguredIndustryStructure
+    ) -> ActivitySystemConfiguration? {
+      switch activity {
+      case .manufacturing:
+        manufacturingSystem(for: structure)
+      default:
+        systemConfiguration(for: activity, structure: structure)
+      }
+    }
+
+    func add(
+      configurationID: UUID,
+      activity: IndustryActivitySystem
+    ) {
+      guard let structure = selectedStructure(configurationID: configurationID),
+        let locationID = structure.structureID,
+        locationID > 0,
+        let configuredSystem = system(for: activity, structure: structure),
+        configuredSystem.solarSystemID > 0,
+        structure.solarSystemID == configuredSystem.solarSystemID
+      else {
+        unresolved.insert(activity)
+        return
+      }
+      if var existing = locations[locationID] {
+        existing.activities.insert(activity)
+        locations[locationID] = existing
+      } else {
+        locations[locationID] = PendingLocation(
+          locationID: locationID,
+          structureName: structure.displayName,
+          solarSystemID: configuredSystem.solarSystemID,
+          solarSystemName: configuredSystem.solarSystemName,
+          activities: [activity]
+        )
+      }
+    }
+
+    for category in ManufacturingCategory.allCases {
+      guard let selection = selection(for: category) else {
+        unresolved.insert(.manufacturing)
+        continue
+      }
+      add(configurationID: selection.structureID, activity: .manufacturing)
+    }
+
+    if reactionSystems.contains(where: { $0.solarSystemID > 0 }) {
+      if let selection = reactionSelection {
+        add(configurationID: selection.structureID, activity: .reaction)
+      } else {
+        unresolved.insert(.reaction)
+      }
+    }
+
+    for activity in IndustryActivitySystem.allCases
+    where activity.isScienceActivity
+      && systemConfigurations(for: activity).contains(where: {
+        $0.solarSystemID > 0
+      })
+    {
+      if let selection = scienceSelection(for: activity) {
+        add(configurationID: selection.structureID, activity: activity)
+      } else {
+        unresolved.insert(activity)
+      }
+    }
+
+    let resolved = locations.values.map {
+      ProductionWarehouseLocation(
+        locationID: $0.locationID,
+        structureName: $0.structureName,
+        solarSystemID: $0.solarSystemID,
+        solarSystemName: $0.solarSystemName,
+        activities: $0.activities
+      )
+    }.sorted {
+      $0.structureName.localizedCaseInsensitiveCompare($1.structureName)
+        == .orderedAscending
+    }
+    return ProductionWarehouseScope(
+      locations: resolved,
+      unresolvedActivities: unresolved
+    )
+  }
+
   private func automaticScienceStructure(
     for activity: IndustryActivitySystem
   ) -> ConfiguredIndustryStructure? {
-    guard let system = systemConfiguration(for: activity),
-      system.solarSystemID > 0
-    else { return nil }
     return structures.filter {
-      $0.solarSystemID == system.solarSystemID
+      systemConfiguration(for: activity, structure: $0) != nil
         && $0.isScienceCapable(for: activity)
     }.sorted {
       let lhsCost = $0.scienceJobCostMultiplier(for: activity)
@@ -2517,13 +3368,14 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
 
   public var configuredReactionProfile: ReactionProfile? {
     guard let selection = reactionSelection,
-      let structure = structure(id: selection.structureID)
+      let structure = structure(id: selection.structureID),
+      let system = systemConfiguration(for: .reaction, structure: structure)
     else {
       return nil
     }
     return ReactionProfile(
       name: "\(name) — Reactions",
-      solarSystemID: reactionSystem.solarSystemID,
+      solarSystemID: system.solarSystemID,
       securityBand: structure.securityBand,
       structureName: structure.displayName,
       facilityTaxRate: structure.facilityTaxRate,

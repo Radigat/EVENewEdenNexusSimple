@@ -5,6 +5,7 @@ import SwiftUI
 struct RecentProductionsView: View {
   @Environment(\.modelContext) private var modelContext
   let rows: [StoredProductionOverviewRow]
+  let onOpenHistoricalPlan: (StoredProductionOverviewRow) -> Void
   @State private var deletionCandidate: StoredProductionOverviewRow?
   @State private var isConfirmingDeletion = false
   @State private var persistenceError: String?
@@ -17,7 +18,8 @@ struct RecentProductionsView: View {
           isEditable: true,
           availableWidth: geometry.size.width,
           onSave: save,
-          onRequestDelete: requestDeletion
+          onRequestDelete: requestDeletion,
+          onOpenHistoricalPlan: onOpenHistoricalPlan
         )
         .frame(maxHeight: .infinity, alignment: .top)
       }
@@ -31,6 +33,12 @@ struct RecentProductionsView: View {
 
       if !rows.isEmpty {
         Text(
+          "Double-click a production to open its saved historical values in the Planner."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+
+        Text(
           "Gerundete Beträge zeigen beim Darüberfahren mit der Maus den genauen ISK-Wert."
         )
         .font(.caption)
@@ -38,6 +46,12 @@ struct RecentProductionsView: View {
 
         Text(
           "Sale price and sold units can be changed here or in Production Overview. Use the checkbox for not sold or fully sold; enter a quantity for a partial sale."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+
+        Text(
+          "Production costs include material, installation, BPO/BPC and logistics. Sales tax and broker fee reduce sale revenue separately."
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
@@ -107,6 +121,7 @@ struct RecentProductionsView: View {
 
 struct ProductionBookView: View {
   @Environment(\.modelContext) private var modelContext
+  let onOpenHistoricalPlan: (StoredProductionOverviewRow) -> Void
   @Query(sort: \StoredProductionOverviewRow.sequenceNumber)
   private var rows: [StoredProductionOverviewRow]
   @State private var saveError: String?
@@ -124,7 +139,16 @@ struct ProductionBookView: View {
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
-      HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
+      LazyVGrid(
+        columns: [
+          GridItem(
+            .adaptive(minimum: 150),
+            spacing: DesignTokens.spacingMD,
+            alignment: .top
+          )
+        ],
+        spacing: DesignTokens.spacingMD
+      ) {
         summaryPanel(
           title: "Productions",
           value: rows.count.formatted()
@@ -162,6 +186,18 @@ struct ProductionBookView: View {
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
+      Text(
+        "Double-click a production to open its saved historical values in the Planner."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      Text(
+        "Production costs include material, installation, BPO/BPC and logistics. Sales tax and broker fee reduce sale revenue separately."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
       GeometryReader { geometry in
         ScrollView(.vertical) {
           ProductionOverviewGrid(
@@ -169,7 +205,8 @@ struct ProductionBookView: View {
             isEditable: true,
             availableWidth: geometry.size.width,
             onSave: save,
-            onRequestDelete: requestDeletion
+            onRequestDelete: requestDeletion,
+            onOpenHistoricalPlan: onOpenHistoricalPlan
           )
           .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -274,6 +311,12 @@ private struct ProductionOverviewGrid: View {
   let availableWidth: CGFloat
   var onSave: () -> Void = {}
   var onRequestDelete: (StoredProductionOverviewRow) -> Void = { _ in }
+  var onOpenHistoricalPlan: (StoredProductionOverviewRow) -> Void = { _ in }
+
+  @State private var sort = AppTableSortDescriptor(
+    column: ProductionOverviewSortColumn.sequence,
+    direction: .ascending
+  )
 
   private let headers: [(short: String, full: String)] = [
     ("Nr", "Nummer"),
@@ -285,9 +328,11 @@ private struct ProductionOverviewGrid: View {
     ("System", "System"),
     ("Units", "Units"),
     ("Material", "Materialkosten"),
-    ("Index", "Indexkosten"),
+    ("Install.", "Installationskosten inklusive Systemindex und Zuschlägen"),
+    ("Logistik", "Logistikkosten"),
     ("BPO/BPC", "BPO/BPC-Kosten"),
-    ("Tax", "Markttax"),
+    ("Tax", "Verkaufssteuer"),
+    ("Broker", "Brokergebühr"),
     ("Prod.-kosten", "Produktionskosten"),
     ("Verkauf ges.", "Verkaufspreis gesamt"),
     ("Kosten/Unit", "Kosten per Unit"),
@@ -300,9 +345,11 @@ private struct ProductionOverviewGrid: View {
   ]
 
   private let widthWeights: [CGFloat] = [
-    28, 50, 94, 36, 26, 26, 56, 40, 50, 46, 50, 42, 52, 54, 50,
-    54, 54, 54, 42, 52, 52,
+    28, 50, 88, 34, 24, 24, 52, 36, 48, 46, 44, 48, 42, 42, 52,
+    54, 50, 54, 54, 54, 42, 52, 52,
   ]
+
+  private let sortColumns = ProductionOverviewSortColumn.allCases
 
   private let cellHorizontalPadding: CGFloat = 3
 
@@ -326,8 +373,12 @@ private struct ProductionOverviewGrid: View {
     ) {
       GridRow {
         ForEach(headers.indices, id: \.self) { index in
-          Text(headers[index].short)
-            .font(.system(size: 9, weight: .semibold))
+          SortableTableHeader(
+            title: LocalizedStringKey(headers[index].short),
+            column: sortColumns[index],
+            sort: $sort
+          )
+            .font(.caption2.weight(.semibold))
             .foregroundStyle(DesignTokens.canvas)
             .lineLimit(3)
             .minimumScaleFactor(0.65)
@@ -361,8 +412,9 @@ private struct ProductionOverviewGrid: View {
         }
       }
 
-      ForEach(Array(rows.enumerated()), id: \.element.id) { offset, row in
-        let metrics = calculation(for: row)
+      ForEach(Array(sortedRows.enumerated()), id: \.element.id) { offset, row in
+        let projection = productionProjection(for: row)
+        let metrics = calculation(for: row, projection: projection)
         GridRow {
           textCell(row.sequenceNumber.formatted(), column: 0, row: offset)
           textCell(
@@ -372,7 +424,7 @@ private struct ProductionOverviewGrid: View {
             column: 1,
             row: offset
           )
-          textCell(row.productName, column: 2, row: offset)
+          entityCell(row.productName, column: 2, row: offset)
           numberCell(row.runs, column: 3, row: offset)
           numberCell(
             Int64(row.materialEfficiency),
@@ -384,44 +436,55 @@ private struct ProductionOverviewGrid: View {
             column: 5,
             row: offset
           )
-          textCell(row.systemName, column: 6, row: offset)
+          entityCell(row.systemName, column: 6, row: offset)
           numberCell(row.units, column: 7, row: offset)
           moneyCell(row.materialCost, column: 8, row: offset)
           moneyCell(row.indexCost, column: 9, row: offset)
+          moneyCell(projection?.logisticsCost, column: 10, row: offset)
           editableMoneyCell(
             row,
             keyPath: \.blueprintCost,
-            column: 10,
+            column: 11,
             rowIndex: offset
           )
-          moneyCell(row.marketTax, column: 11, row: offset)
-          moneyCell(metrics.productionCost, column: 12, row: offset)
-          moneyCell(metrics.saleTotal, column: 13, row: offset)
-          moneyCell(metrics.costPerUnit, column: 14, row: offset)
+          moneyCell(metrics.salesTax, column: 12, row: offset)
+          moneyCell(metrics.brokerFee, column: 13, row: offset)
+          moneyCell(metrics.productionCost, column: 14, row: offset)
+          moneyCell(metrics.saleTotal, column: 15, row: offset)
+          moneyCell(metrics.costPerUnit, column: 16, row: offset)
           moneyCell(
             metrics.minimumSalePricePerUnit,
-            column: 15,
+            column: 17,
             row: offset,
             emphasis: .minimumPrice
           )
-          editableSalePriceCell(row, column: 16, rowIndex: offset)
+          editableSalePriceCell(row, column: 18, rowIndex: offset)
           moneyCell(
             metrics.projectedProfit,
-            column: 17,
+            column: 19,
             row: offset,
             emphasis: .profit
           )
-          percentageCell(metrics.margin, column: 18, row: offset)
-          editableSoldCell(row, column: 19, rowIndex: offset)
+          percentageCell(metrics.margin, column: 20, row: offset)
+          editableSoldCell(row, column: 21, rowIndex: offset)
           moneyCell(
             metrics.realProfit,
-            column: 20,
+            column: 22,
             row: offset,
             emphasis: .profit
           )
         }
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+          onOpenHistoricalPlan(row)
+        }
         .contextMenu {
+          Button {
+            onOpenHistoricalPlan(row)
+          } label: {
+            Label("Open historical plan", systemImage: "clock.arrow.circlepath")
+          }
+          Divider()
           Button(role: .destructive) {
             onRequestDelete(row)
           } label: {
@@ -431,7 +494,99 @@ private struct ProductionOverviewGrid: View {
         .accessibilityAction(named: "Eintrag löschen") {
           onRequestDelete(row)
         }
+        .accessibilityAction(named: "Open historical plan") {
+          onOpenHistoricalPlan(row)
+        }
       }
+    }
+  }
+
+  private var sortedRows: [StoredProductionOverviewRow] {
+    let contexts = rows.map { row in
+      let projection = productionProjection(for: row)
+      return (
+        row: row,
+        projection: projection,
+        metrics: calculation(for: row, projection: projection)
+      )
+    }
+    return contexts.sorted { lhsContext, rhsContext in
+      let lhs = lhsContext.row
+      let rhs = rhsContext.row
+      let lhsProjection = lhsContext.projection
+      let rhsProjection = rhsContext.projection
+      let lhsMetrics = lhsContext.metrics
+      let rhsMetrics = rhsContext.metrics
+      let ordered: Bool?
+      switch sort.column {
+      case .sequence:
+        ordered = compare(lhs.sequenceNumber, rhs.sequenceNumber)
+      case .date:
+        ordered = compare(lhs.recordedAt, rhs.recordedAt)
+      case .product:
+        ordered = compare(lhs.productName, rhs.productName)
+      case .runs:
+        ordered = compare(lhs.runs, rhs.runs)
+      case .materialEfficiency:
+        ordered = compare(lhs.materialEfficiency, rhs.materialEfficiency)
+      case .timeEfficiency:
+        ordered = compare(lhs.timeEfficiency, rhs.timeEfficiency)
+      case .system:
+        ordered = compare(lhs.systemName, rhs.systemName)
+      case .units:
+        ordered = compare(lhs.units, rhs.units)
+      case .materialCost:
+        ordered = compareOptional(lhs.materialCost, rhs.materialCost)
+      case .installationCost:
+        ordered = compareOptional(lhs.indexCost, rhs.indexCost)
+      case .logisticsCost:
+        ordered = compareOptional(lhsProjection?.logisticsCost, rhsProjection?.logisticsCost)
+      case .blueprintCost:
+        ordered = compareOptional(lhs.blueprintCost, rhs.blueprintCost)
+      case .salesTax:
+        ordered = compareOptional(lhsMetrics.salesTax, rhsMetrics.salesTax)
+      case .brokerFee:
+        ordered = compareOptional(lhsMetrics.brokerFee, rhsMetrics.brokerFee)
+      case .productionCost:
+        ordered = compareOptional(lhsMetrics.productionCost, rhsMetrics.productionCost)
+      case .saleTotal:
+        ordered = compareOptional(lhsMetrics.saleTotal, rhsMetrics.saleTotal)
+      case .costPerUnit:
+        ordered = compareOptional(lhsMetrics.costPerUnit, rhsMetrics.costPerUnit)
+      case .minimumSalePrice:
+        ordered = compareOptional(
+          lhsMetrics.minimumSalePricePerUnit,
+          rhsMetrics.minimumSalePricePerUnit
+        )
+      case .salePrice:
+        ordered = compareOptional(lhs.salePricePerUnit, rhs.salePricePerUnit)
+      case .projectedProfit:
+        ordered = compareOptional(lhsMetrics.projectedProfit, rhsMetrics.projectedProfit)
+      case .margin:
+        ordered = compareOptional(lhsMetrics.margin, rhsMetrics.margin)
+      case .soldUnits:
+        ordered = compare(lhs.soldUnits, rhs.soldUnits)
+      case .realProfit:
+        ordered = compareOptional(lhsMetrics.realProfit, rhsMetrics.realProfit)
+      }
+      return ordered ?? (lhs.id.uuidString < rhs.id.uuidString)
+    }.map(\.row)
+  }
+
+  private func compare<Value: Comparable>(_ lhs: Value, _ rhs: Value) -> Bool? {
+    guard lhs != rhs else { return nil }
+    return sort.direction.orders(lhs, before: rhs)
+  }
+
+  private func compareOptional<Value: Comparable>(
+    _ lhs: Value?,
+    _ rhs: Value?
+  ) -> Bool? {
+    switch (lhs, rhs) {
+    case let (lhs?, rhs?): return compare(lhs, rhs)
+    case (nil, nil): return nil
+    case (nil, _): return sort.direction == .descending
+    case (_, nil): return sort.direction == .ascending
     }
   }
 
@@ -449,6 +604,21 @@ private struct ProductionOverviewGrid: View {
         width: widths[column],
         alignment: .leading
       )
+      .frame(minHeight: 28)
+      .padding(.horizontal, cellHorizontalPadding)
+      .background(rowBackground(row))
+      .overlay(cellBorder)
+  }
+
+  private func entityCell(
+    _ value: String,
+    column: Int,
+    row: Int
+  ) -> some View {
+    EVEEntityText(value: value, lineLimit: 1)
+      .minimumScaleFactor(0.6)
+      .help(value)
+      .frame(width: widths[column], alignment: .leading)
       .frame(minHeight: 28)
       .padding(.horizontal, cellHorizontalPadding)
       .background(rowBackground(row))
@@ -588,6 +758,7 @@ private struct ProductionOverviewGrid: View {
           get: { row.salePricePerUnit },
           set: {
             row.salePricePerUnit = sanitizedMoney($0)
+            row.marketTax = calculation(for: row).salesTax
             onSave()
           }
         ),
@@ -730,15 +901,60 @@ private struct ProductionOverviewGrid: View {
 
 }
 
-private func calculation(
+private enum ProductionOverviewSortColumn: Int, CaseIterable, Hashable {
+  case sequence
+  case date
+  case product
+  case runs
+  case materialEfficiency
+  case timeEfficiency
+  case system
+  case units
+  case materialCost
+  case installationCost
+  case logisticsCost
+  case blueprintCost
+  case salesTax
+  case brokerFee
+  case productionCost
+  case saleTotal
+  case costPerUnit
+  case minimumSalePrice
+  case salePrice
+  case projectedProfit
+  case margin
+  case soldUnits
+  case realProfit
+}
+
+private func productionProjection(
   for row: StoredProductionOverviewRow
+) -> ProductionOverviewRequestProjection? {
+  guard
+    let plan = try? JSONDecoder().decode(
+      IndustryPlanSnapshot.self,
+      from: row.sourceSnapshot
+    )
+  else { return nil }
+  return ProductionOverviewProjector.projection(
+    for: row.requestID,
+    in: plan
+  )
+}
+
+private func calculation(
+  for row: StoredProductionOverviewRow,
+  projection: ProductionOverviewRequestProjection? = nil
 ) -> ProductionOverviewCalculation {
-  ProductionOverviewCalculation(
+  let acceptedProjection = projection ?? productionProjection(for: row)
+  return ProductionOverviewCalculation(
     units: row.units,
     materialCost: row.materialCost,
-    indexCost: row.indexCost,
+    installationCost: row.indexCost,
     blueprintCost: row.blueprintCost,
-    marketTax: row.marketTax,
+    logisticsCost: acceptedProjection?.logisticsCost,
+    salesTaxRate: acceptedProjection?.salesTaxRate,
+    brokerFeeRate: acceptedProjection?.brokerFeeRate,
     salePricePerUnit: row.salePricePerUnit,
     soldUnits: row.soldUnits
   )

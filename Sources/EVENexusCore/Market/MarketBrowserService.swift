@@ -3,35 +3,27 @@ import Foundation
 public struct MarketBrowserService: Sendable {
   private let esi: ESIClient
   private let universeNames: UniverseNameService
+  private let systemSecurity: SolarSystemSearchService
   private let maximumConcurrentRegionRequests: Int
-  private let maximumConcurrentRouteRequests: Int
-  private let maximumRouteSystems: Int
 
   public init(
     esi: ESIClient,
     universeNames: UniverseNameService? = nil,
-    maximumConcurrentRegionRequests: Int = 8,
-    maximumConcurrentRouteRequests: Int = 6,
-    maximumRouteSystems: Int = 240
+    systemSecurity: SolarSystemSearchService? = nil,
+    maximumConcurrentRegionRequests: Int = 8
   ) {
     self.esi = esi
     self.universeNames = universeNames ?? UniverseNameService(esi: esi)
+    self.systemSecurity = systemSecurity ?? SolarSystemSearchService(esi: esi)
     self.maximumConcurrentRegionRequests = min(
       12,
       max(1, maximumConcurrentRegionRequests)
     )
-    self.maximumConcurrentRouteRequests = min(
-      8,
-      max(1, maximumConcurrentRouteRequests)
-    )
-    self.maximumRouteSystems = min(1_000, max(0, maximumRouteSystems))
   }
 
   public func snapshot(
     typeID: Int64,
-    itemName: String,
-    originSystemID: Int64? = nil,
-    originSystemName: String? = nil
+    itemName: String
   ) async throws -> Sourced<MarketBrowserSnapshot> {
     guard typeID > 0 else { throw MarketBrowserError.invalidTypeID }
     let directory = try await regionDirectory()
@@ -51,28 +43,41 @@ public struct MarketBrowserService: Sendable {
       return nil
     }.sorted { $0.regionName < $1.regionName }
 
-    let idsToResolve = Set(
-      successful.flatMap { batch in
-        batch.orders.flatMap { [$0.locationID, $0.systemID] }
-      }
+    let allOrders = successful.flatMap(\.orders)
+    let systemIDs = Set(allOrders.map(\.systemID))
+    async let systemNamesValue = universeNames.names(for: systemIDs)
+    async let systemSecurityValue = systemSecurity.securityStatuses(
+      for: systemIDs
     )
-    let resolvedNames = await universeNames.names(for: idsToResolve)
-    let routeResults = await routes(
-      from: originSystemID,
-      batches: successful
+    async let stationNamesValue = universeNames.names(
+      for: Set(
+        allOrders.lazy
+          .map(\.locationID)
+          .filter { $0 < 1_000_000_000_000 }
+      )
     )
+    let (systemNames, securityStatuses, stationNames) = await (
+      systemNamesValue,
+      systemSecurityValue,
+      stationNamesValue
+    )
+    let resolvedNames =
+      (systemNames.value ?? [:])
+      .merging(stationNames.value ?? [:]) { current, _ in current }
     let orders = successful.flatMap { batch in
       batch.orders.map { dto in
-        let route = routeResults[dto.systemID] ?? .notChecked
         return MarketBrowserOrder(
           id: dto.orderID,
           typeID: dto.typeID,
           regionID: batch.region.id,
           regionName: batch.region.name,
           locationID: dto.locationID,
-          locationName: resolvedNames.value?[dto.locationID],
+          locationName:
+            resolvedNames[dto.locationID]
+            ?? MarketTradeHub.matching(stationID: dto.locationID)?.name,
           systemID: dto.systemID,
-          systemName: resolvedNames.value?[dto.systemID],
+          systemName: resolvedNames[dto.systemID],
+          securityStatus: securityStatuses.value?[dto.systemID],
           side: dto.isBuyOrder ? .buy : .sell,
           price: dto.price,
           volumeRemaining: dto.volumeRemain,
@@ -84,9 +89,7 @@ public struct MarketBrowserService: Sendable {
             Double(dto.duration) * 86_400
           ),
           esiLastModifiedAt: batch.lastModifiedAt,
-          observedAt: batch.source.capturedAt,
-          jumps: route.jumps,
-          routeState: route.state
+          observedAt: batch.source.capturedAt
         )
       }
     }
@@ -96,19 +99,14 @@ public struct MarketBrowserService: Sendable {
       } ?? directory.source
     var diagnostics = failures.map(\.diagnostic)
     diagnostics.append(contentsOf: directory.diagnostics)
-    diagnostics.append(contentsOf: resolvedNames.diagnostics)
-    if originSystemID != nil,
-      orders.contains(where: { $0.routeState == .notChecked })
-    {
-      diagnostics.append("esi.market-browser.routes-partial")
-    }
+    diagnostics.append(contentsOf: systemNames.diagnostics)
+    diagnostics.append(contentsOf: stationNames.diagnostics)
+    diagnostics.append(contentsOf: securityStatuses.diagnostics)
     diagnostics = Array(Set(diagnostics)).sorted()
     let state: DataFreshness = diagnostics.isEmpty ? .fresh : .partial
     let value = MarketBrowserSnapshot(
       typeID: typeID,
       itemName: itemName,
-      originSystemID: originSystemID,
-      originSystemName: originSystemName,
       capturedAt: .now,
       regionCount: directory.regions.count,
       loadedRegionCount: successful.count,
@@ -223,71 +221,6 @@ public struct MarketBrowserService: Sendable {
     }
   }
 
-  private func routes(
-    from originSystemID: Int64?,
-    batches: [RegionOrderBatch]
-  ) async -> [Int64: RouteResult] {
-    guard let originSystemID, originSystemID > 0,
-      maximumRouteSystems > 0
-    else { return [:] }
-    let allOrders = batches.flatMap(\.orders)
-    let priorityOrders =
-      allOrders.filter { !$0.isBuyOrder }.sorted { $0.price < $1.price }
-      + allOrders.filter(\.isBuyOrder).sorted { $0.price > $1.price }
-    var seen = Set<Int64>()
-    let systems = priorityOrders.compactMap { order -> Int64? in
-      guard seen.insert(order.systemID).inserted else { return nil }
-      return order.systemID
-    }.prefix(maximumRouteSystems)
-    return await withTaskGroup(
-      of: (Int64, RouteResult).self,
-      returning: [Int64: RouteResult].self
-    ) { group in
-      let accepted = Array(systems)
-      var results: [Int64: RouteResult] = [
-        originSystemID: .reachable(jumps: 0)
-      ]
-      var nextIndex = 0
-
-      func addNext() {
-        guard nextIndex < accepted.count else { return }
-        let destination = accepted[nextIndex]
-        nextIndex += 1
-        group.addTask {
-          if destination == originSystemID {
-            return (destination, .reachable(jumps: 0))
-          }
-          do {
-            let response = try await esi.post(
-              [Int64].self,
-              endpoint: ESIEndpoint(
-                path: "/route/\(originSystemID)/\(destination)"
-              ),
-              body: ESIRouteRequest()
-            )
-            return (
-              destination,
-              .reachable(jumps: max(0, response.value.count - 1))
-            )
-          } catch let error as ESIError where error == .notFound {
-            return (destination, .unreachable)
-          } catch {
-            return (destination, .notChecked)
-          }
-        }
-      }
-
-      for _ in 0..<min(maximumConcurrentRouteRequests, accepted.count) {
-        addNext()
-      }
-      while let (systemID, result) = await group.next() {
-        results[systemID] = result
-        addNext()
-      }
-      return results
-    }
-  }
-
   private static func regionDiagnostic(_ error: Error) -> String {
     guard let error = error as? ESIError else {
       return "esi.market-browser.region-unavailable"
@@ -342,33 +275,4 @@ private struct RegionOrderBatch: Sendable {
 private enum RegionOrderOutcome: Sendable {
   case success(RegionOrderBatch)
   case failure(MarketBrowserRegionFailure)
-}
-
-private enum RouteResult: Sendable {
-  case reachable(jumps: Int)
-  case unreachable
-  case notChecked
-
-  var jumps: Int? {
-    if case .reachable(let jumps) = self { return jumps }
-    return nil
-  }
-
-  var state: MarketBrowserRouteState {
-    switch self {
-    case .reachable: .reachable
-    case .unreachable: .unreachable
-    case .notChecked: .notChecked
-    }
-  }
-}
-
-private struct ESIRouteRequest: Encodable, Sendable {
-  let preference = "Shorter"
-  let securityPenalty = 50
-
-  enum CodingKeys: String, CodingKey {
-    case preference
-    case securityPenalty = "security_penalty"
-  }
 }

@@ -104,6 +104,28 @@ public struct ReactionFacilityCostContext: Codable, Sendable {
   }
 }
 
+public struct ReactionLogisticsCostContext: Sendable {
+  public let configuration: LogisticsConfiguration
+  public let origin: ProcurementLocation
+  public let destinationName: String
+  public let destinationLocationID: Int64?
+  public let packagedVolumes: [Int64: Double]
+
+  public init(
+    configuration: LogisticsConfiguration,
+    origin: ProcurementLocation,
+    destinationName: String,
+    destinationLocationID: Int64?,
+    packagedVolumes: [Int64: Double]
+  ) {
+    self.configuration = configuration
+    self.origin = origin
+    self.destinationName = destinationName
+    self.destinationLocationID = destinationLocationID
+    self.packagedVolumes = packagedVolumes
+  }
+}
+
 public struct ReactionMaterialValuation: Identifiable, Codable, Sendable {
   public var id: Int64 { typeID }
   public let typeID: Int64
@@ -123,9 +145,12 @@ public struct ReactionAnalysisRow: Identifiable, Codable, Sendable {
   public let inputs: [ReactionMaterialValuation]
   public let outputs: [ReactionMaterialValuation]
   public let materialCost: Double?
+  public let inputLogisticsCost: Double?
   public let installationCost: Double?
   public let evaluatedCost: Double?
   public let outputBuyCost: Double?
+  public let outputPurchaseLogisticsCost: Double?
+  public let outputPurchaseTotalCost: Double?
   public let immediateSaleRevenue: Double?
   public let makeOrBuySavings: Double?
   public let valueCreation: Double?
@@ -165,7 +190,7 @@ public struct ReactionAnalysisSnapshot: Identifiable, Codable, Sendable {
   public let id: UUID
   public let createdAt: Date
   public let runs: Int
-  public let tradeHub: MarketTradeHub
+  public let marketLocation: ProcurementLocation
   public let basis: ReactionAnalysisBasis
   public let basisName: String
   public let rows: [ReactionAnalysisRow]
@@ -188,13 +213,41 @@ public struct ReactionAnalysisSnapshot: Identifiable, Codable, Sendable {
     self.id = id
     self.createdAt = createdAt
     self.runs = runs
-    self.tradeHub = tradeHub
+    self.marketLocation = tradeHub.procurementLocation
     self.basis = basis
     self.basisName = basisName
     self.rows = rows
     self.sdeSource = sdeSource
     self.marketSource = marketSource
     self.warnings = warnings
+  }
+
+  public init(
+    id: UUID = UUID(),
+    createdAt: Date = .now,
+    runs: Int,
+    marketLocation: ProcurementLocation,
+    basis: ReactionAnalysisBasis,
+    basisName: String,
+    rows: [ReactionAnalysisRow],
+    sdeSource: SourceIdentity,
+    marketSource: SourceIdentity,
+    warnings: [DomainWarning] = []
+  ) {
+    self.id = id
+    self.createdAt = createdAt
+    self.runs = runs
+    self.marketLocation = marketLocation
+    self.basis = basis
+    self.basisName = basisName
+    self.rows = rows
+    self.sdeSource = sdeSource
+    self.marketSource = marketSource
+    self.warnings = warnings
+  }
+
+  public var tradeHub: MarketTradeHub? {
+    marketLocation.locationID.flatMap(MarketTradeHub.matching(stationID:))
   }
 
   public var maximumSelectableRuns: Int {
@@ -280,11 +333,36 @@ public enum ReactionProfitabilityAnalyzer {
     tradeHub: MarketTradeHub,
     market: MarketOrderSnapshot,
     adjustedPrices: [Int64: AdjustedPrice],
-    facility: ReactionFacilityCostContext?
+    facility: ReactionFacilityCostContext?,
+    logistics: ReactionLogisticsCostContext
+  ) throws -> ReactionAnalysisSnapshot {
+    try analyze(
+      definitions: definitions,
+      typeNames: typeNames,
+      classifications: classifications,
+      runs: runs,
+      marketLocation: tradeHub.procurementLocation,
+      market: market,
+      adjustedPrices: adjustedPrices,
+      facility: facility,
+      logistics: logistics
+    )
+  }
+
+  public static func analyze(
+    definitions: [BlueprintDefinition],
+    typeNames: [Int64: String],
+    classifications: [Int64: IndustryItemClassification],
+    runs: Int,
+    marketLocation: ProcurementLocation,
+    market: MarketOrderSnapshot,
+    adjustedPrices: [Int64: AdjustedPrice],
+    facility: ReactionFacilityCostContext?,
+    logistics: ReactionLogisticsCostContext
   ) throws -> ReactionAnalysisSnapshot {
     guard runs > 0 else { throw ReactionAnalysisError.invalidRuns }
-    guard market.locationID == tradeHub.stationID,
-      market.regionID == tradeHub.regionID
+    guard market.locationID == marketLocation.locationID,
+      marketLocation.regionID.map({ market.regionID == $0 }) ?? true
     else { throw ReactionAnalysisError.inconsistentMarketLocation }
     let reactions = definitions.filter {
       $0.activity.kind == .reaction
@@ -310,6 +388,7 @@ public enum ReactionProfitabilityAnalyzer {
         market: market,
         adjustedPrices: adjustedPrices,
         facility: facility,
+        logistics: logistics,
         basis: basis
       )
     }
@@ -330,9 +409,20 @@ public enum ReactionProfitabilityAnalyzer {
         )
       )
     }
+    if !logistics.configuration.isEnabled {
+      warnings.append(
+        DomainWarning(
+          code: "reaction.logistics-disabled",
+          message:
+            "Logistics is disabled in Profile, so both make and direct-purchase logistics use 0 ISK.",
+          severity: .information,
+          source: sdeSource
+        )
+      )
+    }
     return ReactionAnalysisSnapshot(
       runs: runs,
-      tradeHub: tradeHub,
+      marketLocation: marketLocation,
       basis: basis,
       basisName: basisName,
       rows: rows,
@@ -350,6 +440,7 @@ public enum ReactionProfitabilityAnalyzer {
     market: MarketOrderSnapshot,
     adjustedPrices: [Int64: AdjustedPrice],
     facility: ReactionFacilityCostContext?,
+    logistics: ReactionLogisticsCostContext,
     basis: ReactionAnalysisBasis
   ) -> ReactionAnalysisRow? {
     var warnings: [DomainWarning] = []
@@ -423,6 +514,18 @@ public enum ReactionProfitabilityAnalyzer {
 
     let materialCost = sumQuotes(inputs.map { $0.quote })
     let outputBuyCost = sumQuotes(outputs.map { $0.quote })
+    let inputLogistics = logisticsCost(
+      cargo: inputs,
+      context: logistics,
+      source: definition.source
+    )
+    warnings.append(contentsOf: inputLogistics.warnings)
+    let outputPurchaseLogistics = logisticsCost(
+      cargo: outputs,
+      context: logistics,
+      source: definition.source
+    )
+    warnings.append(contentsOf: outputPurchaseLogistics.warnings)
     let immediateQuotes = outputs.map { output in
       MarketPriceEngine.quote(
         typeID: output.typeID,
@@ -458,18 +561,30 @@ public enum ReactionProfitabilityAnalyzer {
       )
     }
     let evaluatedCost: Double?
-    if let materialCost {
+    if let materialCost, let inputLogisticsCost = inputLogistics.cost {
       if facility == nil {
-        evaluatedCost = materialCost
+        evaluatedCost = safeSum([materialCost, inputLogisticsCost])
       } else if let installationCost {
-        evaluatedCost = safeSum([materialCost, installationCost])
+        evaluatedCost = safeSum([
+          materialCost, inputLogisticsCost, installationCost,
+        ])
       } else {
         evaluatedCost = nil
       }
     } else {
       evaluatedCost = nil
     }
-    let makeOrBuySavings = difference(outputBuyCost, evaluatedCost)
+    let outputPurchaseTotalCost: Double?
+    if let outputBuyCost,
+      let outputPurchaseLogisticsCost = outputPurchaseLogistics.cost
+    {
+      outputPurchaseTotalCost = safeSum([
+        outputBuyCost, outputPurchaseLogisticsCost,
+      ])
+    } else {
+      outputPurchaseTotalCost = nil
+    }
+    let makeOrBuySavings = difference(outputPurchaseTotalCost, evaluatedCost)
     let valueCreation = makeOrBuySavings
     let valueCreationMargin: Double?
     if let valueCreation, let evaluatedCost, evaluatedCost > 0 {
@@ -501,9 +616,12 @@ public enum ReactionProfitabilityAnalyzer {
       inputs: inputs,
       outputs: outputs,
       materialCost: materialCost,
+      inputLogisticsCost: inputLogistics.cost,
       installationCost: installationCost,
       evaluatedCost: evaluatedCost,
       outputBuyCost: outputBuyCost,
+      outputPurchaseLogisticsCost: outputPurchaseLogistics.cost,
+      outputPurchaseTotalCost: outputPurchaseTotalCost,
       immediateSaleRevenue: immediateSaleRevenue,
       makeOrBuySavings: makeOrBuySavings,
       valueCreation: valueCreation,
@@ -511,8 +629,79 @@ public enum ReactionProfitabilityAnalyzer {
       durationSeconds: durationSeconds,
       maximumRunsPerJob: maximumRunsPerJob,
       basis: basis,
-      warnings: warnings
+      warnings: deduplicatedWarnings(warnings)
     )
+  }
+
+  private static func logisticsCost(
+    cargo: [ReactionMaterialValuation],
+    context: ReactionLogisticsCostContext,
+    source: SourceIdentity
+  ) -> (cost: Double?, warnings: [DomainWarning]) {
+    if let originID = context.origin.locationID,
+      originID == context.destinationLocationID
+    {
+      return (0, [])
+    }
+    let configuration = context.configuration
+    guard configuration.isEnabled else { return (0, []) }
+    guard configuration.includeInboundMaterials,
+      let rate = configuration.effectiveISKPerCubicMeter,
+      let maximumVolume = configuration.effectiveMaximumContractVolumeM3
+    else {
+      return (
+        nil,
+        [
+          DomainWarning(
+            code: "reaction.logistics-unavailable",
+            message:
+              "Enable complete Main Hub logistics in Profile to compare reaction and direct-purchase costs.",
+            severity: .blocking,
+            source: source
+          )
+        ]
+      )
+    }
+    let result = LogisticsCostCalculator.calculateLegs(
+      kind: .inboundMaterials,
+      origin: context.origin.name,
+      destination: context.destinationName,
+      cargo: cargo.map {
+        LogisticsCargoItem(
+          typeID: $0.typeID,
+          quantity: $0.quantity,
+          collateral: $0.quote.total,
+          packagedVolumePerUnit: context.packagedVolumes[$0.typeID]
+        )
+      },
+      iskPerCubicMeter: rate,
+      maximumContractVolumeM3: maximumVolume
+    )
+    guard !result.warnings.contains(where: { $0.severity == .blocking }) else {
+      return (nil, result.warnings)
+    }
+    let total = result.legs.reduce(0) { $0 + $1.roundedCharge }
+    guard total.isFinite, total >= 0 else {
+      return (
+        nil,
+        result.warnings + [
+          DomainWarning(
+            code: "reaction.invalid-logistics-cost",
+            message: "The reaction logistics cost exceeded safe limits.",
+            severity: .blocking,
+            source: source
+          )
+        ]
+      )
+    }
+    return (total, result.warnings)
+  }
+
+  private static func deduplicatedWarnings(
+    _ warnings: [DomainWarning]
+  ) -> [DomainWarning] {
+    var seen = Set<String>()
+    return warnings.filter { seen.insert($0.code + "|" + $0.message).inserted }
   }
 
   private static func calculateInstallationCost(

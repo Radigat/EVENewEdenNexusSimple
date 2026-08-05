@@ -442,6 +442,49 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     return result
   }
 
+  public func publicContractItemMetadata(
+    typeIDs: Set<Int64>
+  ) async throws -> [Int64: PublicContractItemTypeMetadata] {
+    guard !typeIDs.isEmpty else { return [:] }
+    let database = try activeDatabase()
+    var result: [Int64: PublicContractItemTypeMetadata] = [:]
+    let sortedTypeIDs = typeIDs.sorted()
+    for start in stride(from: 0, to: sortedTypeIDs.count, by: 500) {
+      let end = min(start + 500, sortedTypeIDs.count)
+      let chunk = sortedTypeIDs[start..<end]
+      let acceptedIDs = chunk.map(String.init).joined(separator: ",")
+      let rows = try database.rows(
+        """
+        SELECT t.id, t.name, g.id, g.name, c.id, c.name
+        FROM item_types t
+        JOIN groups_table g ON g.id = t.group_id
+        JOIN categories c ON c.id = t.category_id
+        WHERE t.id IN (\(acceptedIDs))
+          AND t.published = 1
+        """
+      )
+      for row in rows {
+        guard row.count == 6,
+          let typeID = Int64(row[0] ?? ""),
+          let typeName = row[1],
+          let groupID = Int64(row[2] ?? ""),
+          let groupName = row[3],
+          let categoryID = Int64(row[4] ?? ""),
+          let categoryName = row[5]
+        else { continue }
+        result[typeID] = PublicContractItemTypeMetadata(
+          typeID: typeID,
+          typeName: typeName,
+          groupID: groupID,
+          groupName: groupName,
+          categoryID: categoryID,
+          categoryName: categoryName
+        )
+      }
+    }
+    return result
+  }
+
   public func industryClassifications(
     typeIDs: Set<Int64>
   ) async throws -> [Int64: IndustryItemClassification] {
@@ -500,6 +543,28 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       volume >= 0
     else { return nil }
     return volume
+  }
+
+  public func packagedVolumes(typeIDs: Set<Int64>) async throws
+    -> [Int64: Double]
+  {
+    let accepted = typeIDs.filter { $0 > 0 }.sorted()
+    guard !accepted.isEmpty else { return [:] }
+    let database = try activeDatabase()
+    var result: [Int64: Double] = [:]
+    for start in stride(from: 0, to: accepted.count, by: 500) {
+      let ids = accepted[start..<min(start + 500, accepted.count)]
+        .map(String.init).joined(separator: ",")
+      for row in try database.rows(
+        "SELECT id, COALESCE(packaged_volume, volume) FROM item_types WHERE published = 1 AND id IN (\(ids))"
+      ) {
+        guard row.count == 2, let id = Int64(row[0] ?? ""),
+          let volume = Double(row[1] ?? ""), volume.isFinite, volume >= 0
+        else { continue }
+        result[id] = volume
+      }
+    }
+    return result
   }
 
   public func scienceSkills() async throws -> [ScienceSkillDefinition] {
@@ -1095,6 +1160,16 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   }
 
   public func reactionDefinitions() async throws -> [BlueprintDefinition] {
+    try await completeDefinitions(activity: .reaction)
+  }
+
+  public func manufacturingDefinitions() async throws -> [BlueprintDefinition] {
+    try await completeDefinitions(activity: .manufacturing)
+  }
+
+  private func completeDefinitions(
+    activity: BlueprintActivityDefinition.Kind
+  ) async throws -> [BlueprintDefinition] {
     let database = try activeDatabase()
     let productRows = try database.rows(
       """
@@ -1109,7 +1184,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         ON blueprint_type.id = b.blueprint_type_id
       JOIN item_types product_type
         ON product_type.id = p.item_type_id
-      WHERE a.activity = 'reaction'
+      WHERE a.activity = \(sql(activity.rawValue))
         AND p.resolved = 1
         AND blueprint_type.published = 1
         AND product_type.published = 1
@@ -1120,7 +1195,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
             AND unresolved_material.activity = a.activity
             AND unresolved_material.resolved = 0
         )
-      GROUP BY a.blueprint_type_id
+      GROUP BY p.item_type_id
       ORDER BY product_type.name COLLATE NOCASE
       """
     )
@@ -1138,9 +1213,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       guard
         let definition = try await productionDefinition(
           productTypeID: productTypeID,
-          requiredActivity: .reaction
+          requiredActivity: activity
         ),
-        definition.activity.kind == .reaction
+        definition.activity.kind == activity
       else { continue }
       definitions.append(definition)
     }

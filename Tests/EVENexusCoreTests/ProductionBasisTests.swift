@@ -158,6 +158,92 @@ struct ProductionBasisTests {
   }
 
   @Test
+  func addingESIStructureRepairsLegacyHomeHubInPlace() throws {
+    let structureID: Int64 = 1_046_664_001_931
+    let systemID: Int64 = 30_004_807
+    let legacyHome = ProcurementLocation(
+      id: "legacy:ualx-home",
+      name: "UALX-3 - Mothership Bellicose",
+      kind: .legacy
+    )
+    let main = TradingLocationConfiguration(location: .jita)
+    let home = TradingLocationConfiguration(
+      location: legacyHome,
+      traderCharacterID: 77
+    )
+    var basis = ProductionBasis(
+      tradingLocations: [main, home],
+      mainTradingLocationID: main.id,
+      homeTradingLocationID: home.id
+    )
+    let esiHome = ProcurementLocation(
+      id: "structure:\(structureID)",
+      name: legacyHome.name,
+      locationID: structureID,
+      kind: .playerStructure,
+      solarSystemID: systemID
+    )
+
+    let repaired = basis.addTradingLocation(esiHome)
+    #expect(repaired)
+
+    let resolvedHome = try #require(basis.homeTradingLocation)
+    #expect(resolvedHome.id == home.id)
+    #expect(resolvedHome.location == esiHome)
+    #expect(resolvedHome.traderCharacterID == 77)
+    #expect(
+      basis.marketHubSnapshots.first { $0.id == home.id }?.roles == [.home]
+    )
+  }
+
+  @Test
+  func explicitlyReplacingLegacyHomeHubKeepsRoleTraderAndConfigurationID() throws {
+    let structureID: Int64 = 1_046_664_001_931
+    let systemID: Int64 = 30_004_807
+    let legacyHome = ProcurementLocation(
+      id: "legacy:ualx-home",
+      name: "UALX-3 - Former Structure Name",
+      kind: .legacy
+    )
+    let main = TradingLocationConfiguration(location: .jita)
+    let home = TradingLocationConfiguration(
+      location: legacyHome,
+      traderCharacterID: 77
+    )
+    let esiHome = ProcurementLocation(
+      id: "structure:\(structureID)",
+      name: "UALX-3 - Mothership Bellicose",
+      locationID: structureID,
+      kind: .playerStructure,
+      solarSystemID: systemID
+    )
+    let duplicate = TradingLocationConfiguration(
+      location: esiHome,
+      traderCharacterID: 88
+    )
+    var basis = ProductionBasis(
+      tradingLocations: [main, home, duplicate],
+      mainTradingLocationID: main.id,
+      homeTradingLocationID: home.id
+    )
+
+    let replaced = basis.replaceTradingLocation(
+      id: home.id,
+      with: esiHome
+    )
+
+    #expect(replaced)
+    #expect(basis.tradingLocations.count == 2)
+    let resolvedHome = try #require(basis.homeTradingLocation)
+    #expect(resolvedHome.id == home.id)
+    #expect(resolvedHome.location == esiHome)
+    #expect(resolvedHome.traderCharacterID == 77)
+    #expect(
+      basis.marketHubSnapshots.first { $0.id == home.id }?.roles == [.home]
+    )
+  }
+
+  @Test
   func tradingLocationConfigurationSurvivesRoundTrip() throws {
     var original = ProductionBasis(
       logistics: LogisticsConfiguration(homeTradeHub: .jita)
@@ -593,6 +679,132 @@ struct ProductionBasisTests {
   }
 
   @Test
+  func manualActivitySelectionOverridesModulesAndPreservesESILocation() throws {
+    let source = SourceIdentity(provider: "CCP SDE", version: "fixture")
+    let reactionService = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 35_888,
+        name: "Standup Composite Reactor I",
+        activities: [.reaction],
+        source: source
+      )
+    )
+    var tatara = ConfiguredIndustryStructure(
+      name: "Shared Tatara",
+      kind: .tatara,
+      solarSystemID: 30_004_807,
+      solarSystemName: "UALX-3",
+      securityStatus: -0.19,
+      serviceModules: [reactionService]
+    )
+    tatara.structureID = 1_049_588_174_021
+    tatara.eveStructureName = "UALX-3 - Shared Tatara"
+
+    #expect(tatara.enabledActivities == [.reaction])
+
+    tatara.setActivityAssignmentMode(.manual)
+    tatara.setActivity(.manufacturing, enabled: true)
+
+    #expect(tatara.enabledActivities == [.manufacturing, .reaction])
+    #expect(tatara.supportsActivity(.manufacturing))
+    #expect(tatara.supportsActivity(.reaction))
+    #expect(!tatara.activityCapabilityNeedsReview)
+
+    let decoded = try JSONDecoder().decode(
+      ConfiguredIndustryStructure.self,
+      from: JSONEncoder().encode(tatara)
+    )
+
+    #expect(decoded.effectiveActivityAssignmentMode == .manual)
+    #expect(decoded.enabledActivities == [.manufacturing, .reaction])
+    #expect(decoded.structureID == 1_049_588_174_021)
+    #expect(decoded.eveStructureName == "UALX-3 - Shared Tatara")
+    #expect(decoded.solarSystemID == 30_004_807)
+    #expect(decoded.solarSystemName == "UALX-3")
+  }
+
+  @Test
+  func roundTripPreservesScienceOnlyStructureLocationAndAssignments() throws {
+    let source = SourceIdentity(provider: "CCP SDE", version: "fixture")
+    let manufacturingSystem = ActivitySystemConfiguration(
+      activity: .manufacturing,
+      solarSystemID: 30_002_110,
+      solarSystemName: "B9E-H6",
+      securityStatus: -0.37
+    )
+    let inventionSystem = ActivitySystemConfiguration(
+      activity: .invention,
+      solarSystemID: 30_004_807,
+      solarSystemName: "UALX-3",
+      securityStatus: -0.19
+    )
+    let copyingSystem = ActivitySystemConfiguration(
+      activity: .copying,
+      solarSystemID: inventionSystem.solarSystemID,
+      solarSystemName: inventionSystem.solarSystemName,
+      securityStatus: inventionSystem.securityStatus
+    )
+    let materialResearchSystem = ActivitySystemConfiguration(
+      activity: .materialResearch,
+      solarSystemID: inventionSystem.solarSystemID,
+      solarSystemName: inventionSystem.solarSystemName,
+      securityStatus: inventionSystem.securityStatus
+    )
+    let timeResearchSystem = ActivitySystemConfiguration(
+      activity: .timeResearch,
+      solarSystemID: inventionSystem.solarSystemID,
+      solarSystemName: inventionSystem.solarSystemName,
+      securityStatus: inventionSystem.securityStatus
+    )
+    let inventionLab = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 35_886,
+        name: "Standup Invention Lab I",
+        activities: [.invention],
+        source: source
+      )
+    )
+    let researchLab = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 35_891,
+        name: "Standup Research Lab I",
+        activities: [.copying, .materialResearch, .timeResearch],
+        source: source
+      )
+    )
+    let researchSotiyo = ConfiguredIndustryStructure(
+      name: "Research Sotiyo",
+      kind: .sotiyo,
+      solarSystemID: inventionSystem.solarSystemID,
+      solarSystemName: inventionSystem.solarSystemName,
+      securityStatus: inventionSystem.securityStatus,
+      serviceModules: [inventionLab, researchLab]
+    )
+    let basis = ProductionBasis(
+      manufacturingSystems: [manufacturingSystem],
+      inventionSystem: inventionSystem,
+      copyingSystem: copyingSystem,
+      materialResearchSystem: materialResearchSystem,
+      timeResearchSystem: timeResearchSystem,
+      structures: [researchSotiyo]
+    )
+
+    let data = try JSONEncoder().encode(basis)
+    let decoded = try JSONDecoder().decode(ProductionBasis.self, from: data)
+
+    #expect(decoded.structures[0].solarSystemID == 30_004_807)
+    #expect(decoded.structures[0].solarSystemName == "UALX-3")
+    #expect(decoded.structures[0].manufacturingSystemID == nil)
+    for activity in IndustryActivitySystem.allCases
+    where activity.isScienceActivity {
+      #expect(
+        decoded.scienceSelection(for: activity)?.structureID
+          == researchSotiyo.id
+      )
+    }
+  }
+
+  @Test
   func marketFeesAreDerivedFromTraderSkillsAndUnmodifiedJitaStandings() {
     let source = SourceIdentity(
       provider: "ESI",
@@ -733,6 +945,299 @@ struct ProductionBasisTests {
         $0.contains("not exposed by ESI")
       } == true
     )
+  }
+
+  @Test
+  func manualBrokerFeeFallbackPersistsAndYieldsToAutomaticNPCFee() throws {
+    let source = SourceIdentity(provider: "ESI", version: "fixture")
+    let capability = CharacterCapabilitySnapshot(
+      character: CharacterIdentity(id: 42, name: "Trader"),
+      cloneState: .omega,
+      skills: Sourced(
+        state: .fresh,
+        value: [
+          TrainedSkill(
+            skillID: EVEConstants.accountingSkillTypeID,
+            trainedLevel: 5,
+            activeLevel: 5,
+            skillpoints: 1
+          ),
+          TrainedSkill(
+            skillID: EVEConstants.brokerRelationsSkillTypeID,
+            trainedLevel: 4,
+            activeLevel: 4,
+            skillpoints: 1
+          ),
+        ],
+        source: source
+      ),
+      standings: Sourced(
+        state: .fresh,
+        value: [:],
+        source: source
+      )
+    )
+    let structure = ProcurementLocation(
+      id: "structure:1",
+      name: "Fixture Player Structure",
+      locationID: 1_000_000_000_001,
+      kind: .playerStructure
+    )
+    let updatedAt = Date(timeIntervalSince1970: 123)
+    var taxes = MarketTaxConfiguration(traderCharacterID: 42)
+    taxes.setManualBrokerFeeRate(0.025, updatedAt: updatedAt)
+
+    taxes.apply(capability: capability, at: structure)
+
+    #expect(taxes.automaticBrokerFeeRate == nil)
+    #expect(taxes.effectiveBrokerFeeRate == 0.025)
+    #expect(taxes.effectiveBrokerFeeSource == .manualFallback)
+    #expect(taxes.isManualBrokerFeeFallbackActive)
+    #expect(taxes.manualBrokerFeeUpdatedAt == updatedAt)
+
+    let restored = try JSONDecoder().decode(
+      MarketTaxConfiguration.self,
+      from: JSONEncoder().encode(taxes)
+    )
+    #expect(restored.effectiveBrokerFeeRate == 0.025)
+    #expect(restored.manualBrokerFeeUpdatedAt == updatedAt)
+
+    taxes.apply(capability: capability, at: .amarr)
+
+    #expect(abs((taxes.automaticBrokerFeeRate ?? 0) - 0.018) < 0.000_001)
+    #expect(abs((taxes.effectiveBrokerFeeRate ?? 0) - 0.018) < 0.000_001)
+    #expect(taxes.effectiveBrokerFeeSource == .npcStation)
+    #expect(!taxes.isManualBrokerFeeFallbackActive)
+    #expect(taxes.manualBrokerFeeRate == 0.025)
+  }
+
+  @Test
+  func invalidManualBrokerFeeDoesNotReplaceKnownFallbackWithZero() {
+    let updatedAt = Date(timeIntervalSince1970: 123)
+    var taxes = MarketTaxConfiguration()
+    taxes.setManualBrokerFeeRate(0.02, updatedAt: updatedAt)
+
+    taxes.setManualBrokerFeeRate(-1)
+    taxes.setManualBrokerFeeRate(.infinity)
+    taxes.setManualBrokerFeeRate(1)
+
+    #expect(taxes.manualBrokerFeeRate == 0.02)
+    #expect(taxes.manualBrokerFeeUpdatedAt == updatedAt)
+  }
+
+  @Test
+  func marketProfitabilityMarginsPersistAndRemainReadyForFiltering() throws {
+    let parameters = MarketProfitabilityConfiguration(
+      minimumSalesMarginRate: 0.1,
+      targetSalesMarginRate: 0.2
+    )
+    let basis = ProductionBasis(marketProfitability: parameters)
+
+    let restored = try JSONDecoder().decode(
+      ProductionBasis.self,
+      from: JSONEncoder().encode(basis)
+    )
+
+    #expect(restored.marketProfitability.minimumSalesMarginRate == 0.1)
+    #expect(restored.marketProfitability.targetSalesMarginRate == 0.2)
+    #expect(restored.marketProfitability.isValid)
+    #expect(restored.marketProfitability.assessment(for: 0.05) == .belowMinimum)
+    #expect(restored.marketProfitability.assessment(for: 0.15) == .meetsMinimum)
+    #expect(restored.marketProfitability.assessment(for: 0.25) == .meetsTarget)
+    #expect(restored.marketProfitability.assessment(for: nil) == nil)
+
+    var legacyObject = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(basis)
+      ) as? [String: Any]
+    )
+    legacyObject.removeValue(forKey: "marketProfitability")
+    let migrated = try JSONDecoder().decode(
+      ProductionBasis.self,
+      from: JSONSerialization.data(withJSONObject: legacyObject)
+    )
+    #expect(migrated.marketProfitability.minimumSalesMarginRate == nil)
+    #expect(migrated.marketProfitability.targetSalesMarginRate == nil)
+  }
+
+  @Test
+  func marketProfitabilityRejectsInventedAndMisorderedThresholds() {
+    var parameters = MarketProfitabilityConfiguration()
+
+    parameters.setMinimumSalesMarginRate(-0.1)
+    parameters.setTargetSalesMarginRate(.infinity)
+
+    #expect(parameters.minimumSalesMarginRate == nil)
+    #expect(parameters.targetSalesMarginRate == nil)
+    #expect(parameters.assessment(for: 0.5) == nil)
+
+    parameters.setMinimumSalesMarginRate(0.2)
+    parameters.setTargetSalesMarginRate(0.1)
+
+    #expect(!parameters.isValid)
+    #expect(parameters.assessment(for: 0.5) == nil)
+  }
+
+  @Test
+  func standardAmarrContextContainsBrokerFeeOwnershipFallback() {
+    #expect(ProcurementLocation.amarr.ownerCorporationID == 1_000_086)
+    #expect(ProcurementLocation.amarr.ownerFactionID == 500_003)
+    #expect(ProcurementLocation.dodixie.ownerCorporationID == 1_000_120)
+    #expect(ProcurementLocation.dodixie.ownerFactionID == 500_004)
+    #expect(ProcurementLocation.rens.ownerCorporationID == 1_000_049)
+    #expect(ProcurementLocation.rens.ownerFactionID == 500_002)
+    #expect(ProcurementLocation.hek.ownerCorporationID == 1_000_057)
+    #expect(ProcurementLocation.hek.ownerFactionID == 500_002)
+  }
+
+  @Test
+  func mainHubManualBrokerFeeFlowsIntoEffectivePlanningConfiguration() {
+    let main = ProcurementLocation(
+      id: "npc:fixture",
+      name: "Fixture NPC Market",
+      locationID: 60_000_001,
+      kind: .npcTradeHub,
+      solarSystemID: 30_000_001,
+      regionID: 10_000_001
+    )
+    let configuration = TradingLocationConfiguration(location: main)
+    let updatedAt = Date(timeIntervalSince1970: 123)
+    var basis = ProductionBasis(
+      tradingLocations: [configuration],
+      mainTradingLocationID: configuration.id
+    )
+
+    basis.setManualBrokerFeeRate(
+      0.03,
+      forTradingLocationID: configuration.id,
+      updatedAt: updatedAt
+    )
+
+    #expect(basis.marketTaxes.effectiveBrokerFeeRate == 0.03)
+    #expect(basis.marketTaxes.effectiveBrokerFeeSource == .manualFallback)
+    #expect(
+      basis.mainTradingLocation?.marketTaxes.effectiveBrokerFeeRate == 0.03
+    )
+    #expect(basis.marketTaxes.manualBrokerFeeUpdatedAt == updatedAt)
+  }
+
+  @Test
+  func incompleteRefreshPreservesKnownOwnershipForTheSameTradingLocation() {
+    let configuration = TradingLocationConfiguration(location: .jita)
+    var basis = ProductionBasis(
+      tradingLocations: [configuration],
+      mainTradingLocationID: configuration.id
+    )
+    let incompleteRefresh = ProcurementLocation(
+      id: ProcurementLocation.jita.id,
+      name: ProcurementLocation.jita.name,
+      locationID: ProcurementLocation.jita.locationID,
+      kind: .npcTradeHub,
+      solarSystemID: ProcurementLocation.jita.solarSystemID,
+      ownerCorporationID: ProcurementLocation.jita.ownerCorporationID,
+      ownerFactionID: nil
+    )
+
+    basis.updateTradingLocation(
+      id: configuration.id,
+      location: incompleteRefresh
+    )
+
+    #expect(
+      basis.mainTradingLocation?.location.ownerFactionID
+        == ProcurementLocation.jita.ownerFactionID
+    )
+    #expect(
+      basis.logistics.homeTradeHub.ownerFactionID
+        == ProcurementLocation.jita.ownerFactionID
+    )
+  }
+
+  @Test
+  func normalizationRepairsMissingOwnershipForAKnownTradeHub() {
+    let incompleteJita = ProcurementLocation(
+      id: ProcurementLocation.jita.id,
+      name: ProcurementLocation.jita.name,
+      locationID: ProcurementLocation.jita.locationID,
+      kind: .npcTradeHub,
+      solarSystemID: ProcurementLocation.jita.solarSystemID,
+      ownerCorporationID: ProcurementLocation.jita.ownerCorporationID,
+      ownerFactionID: nil
+    )
+    let configuration = TradingLocationConfiguration(
+      location: incompleteJita
+    )
+
+    let basis = ProductionBasis(
+      tradingLocations: [configuration],
+      mainTradingLocationID: configuration.id
+    )
+
+    #expect(
+      basis.mainTradingLocation?.location.ownerFactionID
+        == ProcurementLocation.jita.ownerFactionID
+    )
+  }
+
+  @Test
+  func repairedJitaContextRecalculatesMissingBrokerFromStoredCapabilities() {
+    let incompleteJita = ProcurementLocation(
+      id: ProcurementLocation.jita.id,
+      name: ProcurementLocation.jita.name,
+      locationID: ProcurementLocation.jita.locationID,
+      kind: .npcTradeHub,
+      solarSystemID: ProcurementLocation.jita.solarSystemID,
+      ownerCorporationID: ProcurementLocation.jita.ownerCorporationID,
+      ownerFactionID: nil
+    )
+    let configuration = TradingLocationConfiguration(
+      location: incompleteJita,
+      traderCharacterID: 42
+    )
+    let source = SourceIdentity(provider: "ESI", version: "fixture")
+    let capability = CharacterCapabilitySnapshot(
+      character: CharacterIdentity(id: 42, name: "Trader"),
+      cloneState: .omega,
+      skills: Sourced(
+        state: .fresh,
+        value: [
+          TrainedSkill(
+            skillID: EVEConstants.accountingSkillTypeID,
+            trainedLevel: 4,
+            activeLevel: 4,
+            skillpoints: 1
+          ),
+          TrainedSkill(
+            skillID: EVEConstants.brokerRelationsSkillTypeID,
+            trainedLevel: 4,
+            activeLevel: 4,
+            skillpoints: 1
+          ),
+        ],
+        source: source
+      ),
+      standings: Sourced(
+        state: .fresh,
+        value: [:],
+        source: source
+      )
+    )
+    var basis = ProductionBasis(
+      tradingLocations: [configuration],
+      mainTradingLocationID: configuration.id
+    )
+
+    basis.refreshResolvableMarketFees(capabilities: [capability])
+
+    #expect(
+      abs((basis.marketTaxes.effectiveSalesTaxRate ?? 0) - 0.042)
+        < 0.000_001
+    )
+    #expect(
+      abs((basis.marketTaxes.effectiveBrokerFeeRate ?? 0) - 0.018)
+        < 0.000_001
+    )
+    #expect(basis.marketTaxes.calculation?.brokerFeeSource == .npcStation)
   }
 
   @Test
@@ -990,5 +1495,359 @@ struct ProductionBasisTests {
         slots: 125
       ) == 10
     )
+  }
+
+  @Test
+  func marketRolesAcceptCustomNPCMainAndAuthenticatedCoalitionStructure()
+    throws
+  {
+    let customStation = ProcurementLocation(
+      id: "npc:60000001",
+      name: "Custom NPC Station",
+      locationID: 60_000_001,
+      kind: .npcTradeHub,
+      solarSystemID: 30_000_001,
+      regionID: 10_000_001
+    )
+    let coalition = ProcurementLocation(
+      id: "structure:1040000000001",
+      name: "Coalition Keepstar",
+      locationID: 1_040_000_000_001,
+      kind: .playerStructure,
+      solarSystemID: 30_000_002,
+      regionID: 10_000_001,
+      ownerCorporationID: 98_000_001
+    )
+    var basis = ProductionBasis()
+    let addedCustom = basis.addTradingLocation(customStation)
+    let addedCoalition = basis.addTradingLocation(coalition)
+    #expect(addedCustom)
+    #expect(addedCoalition)
+    let customID = try #require(
+      basis.tradingLocations.first { $0.location.id == customStation.id }?.id
+    )
+    let coalitionID = try #require(
+      basis.tradingLocations.first { $0.location.id == coalition.id }?.id
+    )
+
+    basis.setMainTradingLocation(id: customID)
+    basis.setHomeTradingLocation(id: customID)
+    basis.setCoalitionTradingLocation(id: coalitionID)
+
+    #expect(basis.mainTradingLocationID == customID)
+    #expect(basis.homeTradingLocationID == customID)
+    #expect(basis.coalitionTradingLocationID == coalitionID)
+    #expect(basis.mainAndHomeAreIdentical)
+    #expect(basis.logistics.productionLocationName == customStation.name)
+    #expect(
+      basis.marketHubSnapshots.first { $0.id == customID }?.roles
+        == [.main, .home]
+    )
+    #expect(
+      basis.marketHubSnapshots.first { $0.id == coalitionID }?.roles
+        == [.coalition]
+    )
+    #expect(basis.marketHubSnapshots.count == 2)
+    #expect(
+      !basis.marketHubSnapshots.contains {
+        $0.location.locationID == ProcurementLocation.jita.locationID
+      }
+    )
+
+    let restored = try JSONDecoder().decode(
+      ProductionBasis.self,
+      from: JSONEncoder().encode(basis)
+    )
+    #expect(restored.mainTradingLocation?.location == customStation)
+    #expect(restored.coalitionTradingLocation?.location == coalition)
+  }
+
+  @Test
+  func addedLocationsBecomeComparisonMarketsAndCoalitionRejectsNPCStations()
+    throws
+  {
+    var basis = ProductionBasis()
+    let addedAmarr = basis.addTradingLocation(.amarr)
+    #expect(addedAmarr)
+    let amarrID = try #require(
+      basis.tradingLocations.first { $0.location.id == ProcurementLocation.amarr.id }?.id
+    )
+
+    basis.setCoalitionTradingLocation(id: amarrID)
+
+    #expect(basis.coalitionTradingLocationID == nil)
+    #expect(basis.comparisonTradingLocationIDs.contains(amarrID))
+    #expect(
+      basis.marketHubSnapshots.first { $0.id == amarrID }?.roles
+        == [.comparison]
+    )
+    basis.setComparisonTradingLocation(id: amarrID, isSelected: false)
+    #expect(!basis.marketHubSnapshots.contains { $0.id == amarrID })
+    basis.setComparisonTradingLocation(id: amarrID, isSelected: true)
+    let removedAmarr = basis.removeTradingLocation(id: amarrID)
+    #expect(removedAmarr)
+    #expect(!basis.comparisonTradingLocationIDs.contains(amarrID))
+  }
+
+  @Test
+  func migratesResolvedUnassignedTradingLocationsToComparisonMarkets() throws {
+    let main = TradingLocationConfiguration(location: .jita)
+    let amarr = TradingLocationConfiguration(location: .amarr)
+    let current = ProductionBasis(
+      tradingLocations: [main, amarr],
+      mainTradingLocationID: main.id,
+      comparisonTradingLocationIDs: []
+    )
+    var legacyObject = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(current)
+      ) as? [String: Any]
+    )
+    legacyObject.removeValue(forKey: "comparisonTradingLocationIDs")
+
+    let migrated = try JSONDecoder().decode(
+      ProductionBasis.self,
+      from: JSONSerialization.data(withJSONObject: legacyObject)
+    )
+
+    #expect(migrated.comparisonTradingLocationIDs == [amarr.id])
+    #expect(
+      migrated.marketHubSnapshots.first { $0.id == amarr.id }?.roles
+        == [.comparison]
+    )
+
+    var optedOut = migrated
+    optedOut.setComparisonTradingLocation(id: amarr.id, isSelected: false)
+    let restored = try JSONDecoder().decode(
+      ProductionBasis.self,
+      from: JSONEncoder().encode(optedOut)
+    )
+    #expect(restored.comparisonTradingLocationIDs.isEmpty)
+    #expect(!restored.marketHubSnapshots.contains { $0.id == amarr.id })
+  }
+
+  @Test
+  func productionWarehouseCombinesOnlyAssignedExactFacilityLocations() throws {
+    let manufacturingSystem = ActivitySystemConfiguration(
+      activity: .manufacturing,
+      solarSystemID: 30_000_001,
+      solarSystemName: "Manufacturing System"
+    )
+    let reactionSystem = ActivitySystemConfiguration(
+      activity: .reaction,
+      solarSystemID: 30_000_002,
+      solarSystemName: "Reaction System"
+    )
+    let inventionSystem = ActivitySystemConfiguration(
+      activity: .invention,
+      solarSystemID: 30_000_003,
+      solarSystemName: "Science System"
+    )
+    let copyingSystem = ActivitySystemConfiguration(
+      activity: .copying,
+      solarSystemID: 30_000_003,
+      solarSystemName: "Science System"
+    )
+
+    var manufacturing = ConfiguredIndustryStructure(
+      name: "Manufacturing Sotiyo",
+      kind: .sotiyo,
+      manufacturingSystemID: manufacturingSystem.id,
+      solarSystemID: manufacturingSystem.solarSystemID,
+      solarSystemName: manufacturingSystem.solarSystemName
+    )
+    manufacturing.structureID = 1_000_000_000_001
+    var reaction = ConfiguredIndustryStructure(
+      name: "Reaction Tatara",
+      kind: .tatara,
+      solarSystemID: reactionSystem.solarSystemID,
+      solarSystemName: reactionSystem.solarSystemName,
+      securityBand: .nullSecurity
+    )
+    reaction.structureID = 1_000_000_000_002
+    var science = ConfiguredIndustryStructure(
+      name: "Science Sotiyo",
+      kind: .sotiyo,
+      solarSystemID: inventionSystem.solarSystemID,
+      solarSystemName: inventionSystem.solarSystemName
+    )
+    science.structureID = 1_000_000_000_003
+    var unused = ConfiguredIndustryStructure(
+      name: "Unused Azbel",
+      kind: .azbel,
+      manufacturingSystemID: manufacturingSystem.id,
+      solarSystemID: manufacturingSystem.solarSystemID,
+      solarSystemName: manufacturingSystem.solarSystemName
+    )
+    unused.structureID = 1_000_000_000_004
+
+    let manufacturingAssignments = Dictionary(
+      uniqueKeysWithValues: ManufacturingCategory.allCases.map {
+        ($0, manufacturing.id)
+      }
+    )
+    let basis = ProductionBasis(
+      manufacturingSystems: [manufacturingSystem],
+      reactionSystem: reactionSystem,
+      inventionSystem: inventionSystem,
+      copyingSystem: copyingSystem,
+      structures: [manufacturing, reaction, science, unused],
+      automaticStructureSelection: false,
+      manufacturingAssignments: manufacturingAssignments,
+      reactionStructureID: reaction.id,
+      scienceAssignments: [
+        .invention: science.id,
+        .copying: science.id,
+      ]
+    )
+
+    let scope = basis.productionWarehouseScope
+
+    #expect(
+      scope.locationIDs == [
+        1_000_000_000_001,
+        1_000_000_000_002,
+        1_000_000_000_003,
+      ]
+    )
+    #expect(!scope.locationIDs.contains(1_000_000_000_004))
+    #expect(scope.unresolvedActivities.isEmpty)
+    #expect(
+      try #require(
+        scope.locations.first { $0.locationID == 1_000_000_000_001 }
+      ).activities == [.manufacturing]
+    )
+    #expect(
+      try #require(
+        scope.locations.first { $0.locationID == 1_000_000_000_002 }
+      ).activities == [.reaction]
+    )
+    #expect(
+      try #require(
+        scope.locations.first { $0.locationID == 1_000_000_000_003 }
+      ).activities == [.invention, .copying]
+    )
+  }
+
+  @Test
+  func productionWarehouseRejectsAFacilityOutsideItsActivitySystem() {
+    let manufacturingSystem = ActivitySystemConfiguration(
+      activity: .manufacturing,
+      solarSystemID: 30_000_001,
+      solarSystemName: "Manufacturing System"
+    )
+    let reactionSystem = ActivitySystemConfiguration(
+      activity: .reaction,
+      solarSystemID: 30_000_002,
+      solarSystemName: "Reaction System"
+    )
+    var wrongSystemFacility = ConfiguredIndustryStructure(
+      name: "Wrong-system Tatara",
+      kind: .tatara,
+      manufacturingSystemID: manufacturingSystem.id,
+      solarSystemID: manufacturingSystem.solarSystemID,
+      solarSystemName: manufacturingSystem.solarSystemName,
+      securityBand: .nullSecurity
+    )
+    wrongSystemFacility.structureID = 1_000_000_000_001
+    let manufacturingAssignments = Dictionary(
+      uniqueKeysWithValues: ManufacturingCategory.allCases.map {
+        ($0, wrongSystemFacility.id)
+      }
+    )
+    let basis = ProductionBasis(
+      manufacturingSystems: [manufacturingSystem],
+      reactionSystem: reactionSystem,
+      structures: [wrongSystemFacility],
+      automaticStructureSelection: false,
+      manufacturingAssignments: manufacturingAssignments,
+      reactionStructureID: wrongSystemFacility.id
+    )
+
+    let scope = basis.productionWarehouseScope
+
+    #expect(scope.locationIDs == [1_000_000_000_001])
+    #expect(scope.locations.first?.activities == [.manufacturing])
+    #expect(scope.unresolvedActivities == [.reaction])
+  }
+
+  @Test
+  func multipleActivitySystemsPersistAndDriveFacilitySelection() throws {
+    let reactionA = ActivitySystemConfiguration(
+      activity: .reaction,
+      solarSystemID: 30_000_101,
+      solarSystemName: "Reaction A",
+      securityStatus: -0.2
+    )
+    let reactionB = ActivitySystemConfiguration(
+      activity: .reaction,
+      solarSystemID: 30_000_102,
+      solarSystemName: "Reaction B",
+      securityStatus: -0.4
+    )
+    let inventionA = ActivitySystemConfiguration(
+      activity: .invention,
+      solarSystemID: 30_000_201,
+      solarSystemName: "Invention A"
+    )
+    let inventionB = ActivitySystemConfiguration(
+      activity: .invention,
+      solarSystemID: 30_000_202,
+      solarSystemName: "Invention B"
+    )
+    let basicRefinery = ConfiguredIndustryStructure(
+      name: "Basic Refinery",
+      kind: .athanor,
+      manufacturingSystemID: reactionA.id,
+      solarSystemID: reactionA.solarSystemID,
+      solarSystemName: reactionA.solarSystemName,
+      securityStatus: reactionA.securityStatus
+    )
+    let optimizedRefinery = ConfiguredIndustryStructure(
+      name: "Optimized Refinery",
+      kind: .tatara,
+      manufacturingSystemID: reactionB.id,
+      solarSystemID: reactionB.solarSystemID,
+      solarSystemName: reactionB.solarSystemName,
+      securityStatus: reactionB.securityStatus,
+      rigs: [
+        IndustryRigConfiguration(
+          kind: .compositeReactionII,
+          securityBand: .nullSecurity
+        )
+      ]
+    )
+
+    let basis = ProductionBasis(
+      reactionSystems: [reactionA, reactionB],
+      inventionSystems: [inventionA, inventionB],
+      structures: [basicRefinery, optimizedRefinery]
+    )
+
+    #expect(basis.reactionSystems.count == 2)
+    #expect(basis.inventionSystems.count == 2)
+    #expect(basis.reactionSelection?.structureID == optimizedRefinery.id)
+    #expect(basis.reactionSelection?.solarSystemName == "Reaction B")
+    #expect(
+      basis.systemConfiguration(
+        for: .invention,
+        structure: ConfiguredIndustryStructure(
+          manufacturingSystemID: inventionB.id,
+          solarSystemID: inventionB.solarSystemID,
+          solarSystemName: inventionB.solarSystemName
+        )
+      )?.id == inventionB.id
+    )
+
+    let restored = try JSONDecoder().decode(
+      ProductionBasis.self,
+      from: JSONEncoder().encode(basis)
+    )
+    #expect(restored.reactionSystems.map(\.id) == [reactionA.id, reactionB.id])
+    #expect(
+      restored.inventionSystems.map(\.id) == [inventionA.id, inventionB.id]
+    )
+    #expect(restored.reactionSystem.id == reactionA.id)
+    #expect(restored.inventionSystem.id == inventionA.id)
   }
 }

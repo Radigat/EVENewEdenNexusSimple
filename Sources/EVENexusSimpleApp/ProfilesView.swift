@@ -10,9 +10,6 @@ struct ProfilesView: View {
   private var storedBases: [StoredProductionBasis]
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
-  @Query private var settings: [AppSetting]
-  @AppStorage(AppLanguage.storageKey)
-  private var storedLanguage = AppLanguage.defaultLanguage.rawValue
   @State private var didLoad = false
   @State private var showResetConfirmation = false
   @State private var statusMessage: LocalizedStringKey?
@@ -38,7 +35,7 @@ struct ProfilesView: View {
   private var activitySystemColumns: [GridItem] {
     [
       GridItem(
-        .adaptive(minimum: 420),
+        .adaptive(minimum: DesignTokens.profileColumnMinimum),
         spacing: DesignTokens.spacingMD,
         alignment: .top
       )
@@ -49,7 +46,6 @@ struct ProfilesView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
         header
-        languageConfiguration
         systemAndCostConfiguration
         structureConfiguration
         productionMatrix
@@ -60,7 +56,7 @@ struct ProfilesView: View {
       }
       .padding(DesignTokens.spacingLG)
     }
-    .navigationTitle(AppLocalization.text("Profile"))
+    .navigationTitle(AppLocalization.text("Industry Settings"))
     .task {
       loadStoredBasisOnce()
       await runtime.refreshProfileReferenceData()
@@ -139,38 +135,6 @@ struct ProfilesView: View {
     }
   }
 
-  private var languageConfiguration: some View {
-    Panel(title: "Language & Terminology") {
-      Picker("Language", selection: languageBinding) {
-        ForEach(AppLanguage.allCases) { language in
-          Text(language.title).tag(language.rawValue)
-        }
-      }
-      .pickerStyle(.segmented)
-      .frame(maxWidth: 360)
-      .accessibilityIdentifier("profiles.language")
-
-      Text(
-        "Explanations and EVE industry terminology follow this selection immediately. EVE item names, character names, locations, ESI, SDE, ME and TE remain unchanged so they still match the EVE client and imported data."
-      )
-      .font(.caption)
-      .foregroundStyle(DesignTokens.textSecondary)
-    }
-  }
-
-  private var languageBinding: Binding<String> {
-    Binding(
-      get: { storedLanguage },
-      set: { language in
-        UserDefaults.standard.set(
-          language,
-          forKey: AppLanguage.storageKey
-        )
-        storedLanguage = language
-      }
-    )
-  }
-
   private var systemAndCostConfiguration: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
       Panel(title: "Manufacturing Systems") {
@@ -178,27 +142,12 @@ struct ProfilesView: View {
           "Add every manufacturing system you use. A structure is assigned to one physical location and automatically becomes eligible for every matching activity enabled by its service modules."
         )
         .foregroundStyle(DesignTokens.textSecondary)
-        ForEach($runtime.productionBasis.manufacturingSystems) {
-          $configuration in
-          ActivitySystemRow(
-            title: "Manufacturing System",
-            configuration: $configuration,
-            canDelete:
-              runtime.productionBasis.manufacturingSystems.count > 1,
-            onDelete: { removeManufacturingSystem(configuration.id) }
-          )
-        }
-        Button {
-          runtime.productionBasis.manufacturingSystems.append(
-            ActivitySystemConfiguration(
-              activity: .manufacturing,
-              solarSystemID: 0,
-              solarSystemName: ""
-            )
-          )
-        } label: {
-          Label("Add Manufacturing System", systemImage: "plus")
-        }
+        ActivitySystemCollectionEditor(
+          rowTitle: "Manufacturing System",
+          addTitle: "Add Manufacturing System",
+          activity: .manufacturing,
+          configurations: $runtime.productionBasis.manufacturingSystems
+        )
         Text(
           "Type at least three letters; ESI supplies the matching solar systems."
         )
@@ -211,25 +160,35 @@ struct ProfilesView: View {
           columns: activitySystemColumns,
           spacing: DesignTokens.spacingMD
         ) {
-          ActivitySystemRow(
-            title: "Reaction System",
-            configuration: basisBinding(\.reactionSystem)
+          ActivitySystemCollectionEditor(
+            rowTitle: "Reaction System",
+            addTitle: "Add Reaction System",
+            activity: .reaction,
+            configurations: $runtime.productionBasis.reactionSystems
           )
-          ActivitySystemRow(
-            title: "Invention System",
-            configuration: basisBinding(\.inventionSystem)
+          ActivitySystemCollectionEditor(
+            rowTitle: "Invention System",
+            addTitle: "Add Invention System",
+            activity: .invention,
+            configurations: $runtime.productionBasis.inventionSystems
           )
-          ActivitySystemRow(
-            title: "Blueprint Copying System",
-            configuration: basisBinding(\.copyingSystem)
+          ActivitySystemCollectionEditor(
+            rowTitle: "Blueprint Copying System",
+            addTitle: "Add Blueprint Copying System",
+            activity: .copying,
+            configurations: $runtime.productionBasis.copyingSystems
           )
-          ActivitySystemRow(
-            title: "Material Research System",
-            configuration: basisBinding(\.materialResearchSystem)
+          ActivitySystemCollectionEditor(
+            rowTitle: "Material Research System",
+            addTitle: "Add Material Research System",
+            activity: .materialResearch,
+            configurations: $runtime.productionBasis.materialResearchSystems
           )
-          ActivitySystemRow(
-            title: "Time Research System",
-            configuration: basisBinding(\.timeResearchSystem)
+          ActivitySystemCollectionEditor(
+            rowTitle: "Time Research System",
+            addTitle: "Add Time Research System",
+            activity: .timeResearch,
+            configurations: $runtime.productionBasis.timeResearchSystems
           )
         }
         Text(
@@ -297,77 +256,6 @@ struct ProfilesView: View {
 
   private var marketAndBlueprintConfiguration: some View {
     LazyVGrid(columns: columns, spacing: DesignTokens.spacingMD) {
-      Panel(
-        title: LocalizedStringKey(
-          AppLocalization.text("Trading Locations & Market Taxes")
-        )
-      ) {
-        Text(
-          AppLocalization.text(
-            "The Main Hub is one of the standard Highsec trade hubs and supplies Planner prices and purchase availability. The Home Hub is your own preferred station or Player Structure. Additional Trading Locations remain independent."
-          )
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-
-        Picker(AppLocalization.text("Main Hub"), selection: mainTradeHubBinding) {
-          ForEach(MarketTradeHub.allCases) { hub in
-            Text(hub.name).tag(hub)
-          }
-        }
-        LabeledContent(AppLocalization.text("Main Hub purpose")) {
-          Text(AppLocalization.text("Planner prices, purchases and inbound logistics"))
-            .foregroundStyle(DesignTokens.textSecondary)
-        }
-
-        Picker(AppLocalization.text("Home Hub"), selection: homeTradingLocationBinding) {
-          Text(AppLocalization.text("Not configured")).tag(UUID?.none)
-          ForEach(runtime.productionBasis.tradingLocations) { configuration in
-            Text(configuration.location.name).tag(Optional(configuration.id))
-          }
-        }
-        Text(
-          AppLocalization.text(
-            "The Home Hub is a saved operational location and does not replace the Main Hub as the Planner price source."
-          )
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-
-        HStack {
-          Picker(
-            AppLocalization.text("Add prepared Trading Location"),
-            selection: $tradingLocationToAddID
-          ) {
-            Text(AppLocalization.text("Select a standard Highsec hub"))
-              .tag(String?.none)
-            ForEach(tradingLocationCandidates) { location in
-              Text(location.name).tag(Optional(location.id))
-            }
-          }
-          Button {
-            addSelectedTradingLocation()
-          } label: {
-            Label(AppLocalization.text("Add"), systemImage: "plus.circle")
-          }
-          .disabled(tradingLocationToAddID == nil)
-        }
-
-        TradingLocationESIPicker(
-          authorizations: authorizationSnapshots,
-          clientID: clientID
-        ) { location in
-          _ = runtime.productionBasis.addTradingLocation(location)
-        }
-
-        Divider()
-        Text(AppLocalization.text("Configured Trading Locations"))
-          .font(.headline)
-        ForEach(runtime.productionBasis.tradingLocations) { configuration in
-          tradingLocationCard(configuration)
-        }
-      }
-
       Panel(title: "Blueprint Defaults") {
         Stepper(
           "Recursive intermediate ME: \(runtime.productionBasis.defaultIntermediateME)",
@@ -388,13 +276,20 @@ struct ProfilesView: View {
       }
 
       Panel(title: "Logistics") {
+        if runtime.productionBasis.mainAndHomeAreIdentical {
+          Label(
+            "Main Hub and Home Hub are identical; no hub-to-home logistics cost is applied.",
+            systemImage: "checkmark.circle.fill"
+          )
+          .foregroundStyle(DesignTokens.positive)
+        }
         Toggle(
           "Include courier costs in every calculation",
           isOn: basisBinding(\.logistics.isEnabled)
         )
         if runtime.productionBasis.logistics.isEnabled {
           Toggle(
-            "Main Hub → production",
+            "Main Hub → Home Hub",
             isOn: basisBinding(\.logistics.includeInboundMaterials)
           )
           LabeledContent("Main Hub") {
@@ -403,8 +298,14 @@ struct ProfilesView: View {
                 ?? "Not configured"
             )
           }
+          LabeledContent("Home Hub") {
+            Text(
+              runtime.productionBasis.homeTradingLocation?.location.name
+                ?? "Not configured"
+            )
+          }
           Text(
-            "Purchased items and make-or-buy input materials are transported from the Main Hub to the configured production facility."
+            "Purchased items and make-or-buy input materials are transported from the Main Hub to the Home Hub. Identical locations create no route and no cost."
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
@@ -542,7 +443,11 @@ struct ProfilesView: View {
       let reactionSelection = runtime.productionBasis.reactionSelection
       LabeledContent("Reaction structure") {
         if runtime.productionBasis.automaticStructureSelection {
-          Text(reactionSelection?.structureName ?? "Not configured")
+          if let structureName = reactionSelection?.structureName {
+            EVEEntityText(value: structureName)
+          } else {
+            Text("Not configured")
+          }
         } else {
           Picker(
             "Reaction structure",
@@ -558,7 +463,11 @@ struct ProfilesView: View {
         }
       }
       LabeledContent("Reaction system") {
-        Text(reactionSelection?.solarSystemName ?? "Not assigned")
+        if let solarSystemName = reactionSelection?.solarSystemName {
+          EVEEntityText(value: solarSystemName)
+        } else {
+          Text("Not assigned")
+        }
       }
       LabeledContent("Reaction material bonus") {
         Text(
@@ -623,7 +532,11 @@ struct ProfilesView: View {
           alignment: .leading
         )
       if runtime.productionBasis.automaticStructureSelection {
-        Text(selection?.structureName ?? "Not configured")
+        if let structureName = selection?.structureName {
+          EVEEntityText(value: structureName)
+        } else {
+          Text("Not configured")
+        }
       } else {
         Picker(
           category.displayName,
@@ -636,11 +549,12 @@ struct ProfilesView: View {
         }
         .labelsHidden()
       }
-      Text(selection?.solarSystemName ?? "Not assigned")
-        .foregroundStyle(
-          selection?.solarSystemName == nil
-            ? DesignTokens.caution : DesignTokens.textPrimary
-        )
+      if let solarSystemName = selection?.solarSystemName {
+        EVEEntityText(value: solarSystemName)
+      } else {
+        Text("Not assigned")
+          .foregroundStyle(DesignTokens.caution)
+      }
       Text(
         selection.map { formatBonus($0.materialBonusPercent) } ?? "—"
       )
@@ -674,7 +588,11 @@ struct ProfilesView: View {
           alignment: .leading
         )
       if runtime.productionBasis.automaticStructureSelection {
-        Text(selection?.structureName ?? "Not configured")
+        if let structureName = selection?.structureName {
+          EVEEntityText(value: structureName)
+        } else {
+          Text("Not configured")
+        }
       } else {
         Picker(
           activity.displayName,
@@ -687,11 +605,12 @@ struct ProfilesView: View {
         }
         .labelsHidden()
       }
-      Text(selection?.solarSystemName ?? "Not assigned")
-        .foregroundStyle(
-          selection == nil
-            ? DesignTokens.caution : DesignTokens.textPrimary
-        )
+      if let solarSystemName = selection?.solarSystemName {
+        EVEEntityText(value: solarSystemName)
+      } else {
+        Text("Not assigned")
+          .foregroundStyle(DesignTokens.caution)
+      }
       Text(selection.map { formatBonus($0.jobCostBonusPercent) } ?? "—")
         .font(.body.monospacedDigit())
       Text(selection.map { formatBonus($0.timeBonusPercent) } ?? "—")
@@ -917,8 +836,7 @@ struct ProfilesView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       HStack {
-        Text(configuration.location.name)
-          .font(.headline)
+        EVEEntityText(value: configuration.location.name)
         if configuration.id == runtime.productionBasis.mainTradingLocationID {
           Text(AppLocalization.text("MAIN HUB"))
             .font(.caption2.bold())
@@ -959,9 +877,10 @@ struct ProfilesView: View {
       }
 
       if let traderID = configuration.traderCharacterID {
-        let traderName = characters.first {
-          $0.characterID == traderID
-        }?.characterName ?? "Character \(traderID)"
+        let traderName =
+          characters.first {
+            $0.characterID == traderID
+          }?.characterName ?? "Disconnected character".localizedUI
         Text(
           AppLocalization.format(
             "Fee context: %@ at %@",
@@ -969,7 +888,7 @@ struct ProfilesView: View {
             configuration.location.name
           )
         )
-          .font(.caption.bold())
+        .font(.caption.bold())
         Text(
           AppLocalization.text(
             "Accounting and Broker Relations come from this character's ESI skill sheet. Standings are this character's unmodified standings toward the selected NPC station owner."
@@ -991,9 +910,25 @@ struct ProfilesView: View {
         Text(formatRate(configuration.marketTaxes.salesTaxRate))
           .font(.body.monospacedDigit())
       }
-      LabeledContent(AppLocalization.text("Broker Fee")) {
-        Text(formatRate(configuration.marketTaxes.brokerFeeRate))
+      LabeledContent(AppLocalization.text("Broker Fee used in calculations")) {
+        Text(formatRate(configuration.marketTaxes.effectiveBrokerFeeRate))
           .font(.body.monospacedDigit())
+      }
+      LabeledContent(AppLocalization.text("Manual broker fee fallback")) {
+        TextField(
+          AppLocalization.text("Enter broker fee"),
+          value: manualBrokerFeeBinding(id: configuration.id),
+          format: .percent.precision(.fractionLength(0...3))
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+      }
+      brokerFeeFallbackStatus(configuration.marketTaxes)
+      if let updatedAt = configuration.marketTaxes.manualBrokerFeeUpdatedAt {
+        LabeledContent(AppLocalization.text("Manual value updated")) {
+          Text(updatedAt.formatted())
+            .font(.caption.monospacedDigit())
+        }
       }
 
       if let calculation = configuration.marketTaxes.calculation {
@@ -1026,10 +961,9 @@ struct ProfilesView: View {
         )
         Text(
           AppLocalization.format(
-            "Calculated for %@ at %@ · %@",
+            "Calculated for %@ at %@",
             calculation.locationName ?? configuration.location.name,
-            calculation.calculatedAt.formatted(),
-            calculation.ruleVersion
+            calculation.calculatedAt.formatted()
           )
         )
         .font(.caption)
@@ -1126,6 +1060,53 @@ struct ProfilesView: View {
     )
   }
 
+  private func manualBrokerFeeBinding(id: UUID) -> Binding<Double?> {
+    Binding(
+      get: {
+        runtime.productionBasis.tradingLocations.first { $0.id == id }?
+          .marketTaxes.manualBrokerFeeRate
+      },
+      set: { rate in
+        runtime.productionBasis.setManualBrokerFeeRate(
+          rate,
+          forTradingLocationID: id
+        )
+      }
+    )
+  }
+
+  @ViewBuilder
+  private func brokerFeeFallbackStatus(
+    _ taxes: MarketTaxConfiguration
+  ) -> some View {
+    if taxes.automaticBrokerFeeRate != nil {
+      Text(
+        AppLocalization.text(
+          "The calculated NPC-station broker fee is active. A saved manual fallback is not used while this value is available."
+        )
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    } else if taxes.isManualBrokerFeeFallbackActive {
+      Label(
+        AppLocalization.text(
+          "Manual fallback is active and is included in all calculations for this market."
+        ),
+        systemImage: "pencil.circle.fill"
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.caution)
+    } else {
+      Text(
+        AppLocalization.text(
+          "Enter the broker fee shown in EVE when ESI cannot provide or derive it. Unknown remains unavailable."
+        )
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.caution)
+    }
+  }
+
   private var mainTradeHubBinding: Binding<MarketTradeHub> {
     Binding(
       get: { runtime.productionBasis.mainTradeHub },
@@ -1140,6 +1121,23 @@ struct ProfilesView: View {
         runtime.productionBasis.setHomeTradingLocation(id: id)
       }
     )
+  }
+
+  private var unresolvedHomeHub: TradingLocationConfiguration? {
+    guard let homeHub = runtime.productionBasis.homeTradingLocation,
+      homeHub.location.kind == .legacy
+        || homeHub.location.locationID == nil
+    else { return nil }
+    return homeHub
+  }
+
+  private func homeHubSearchQuery(for name: String) -> String {
+    let systemName = name.components(separatedBy: " - ").first?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if let systemName, systemName.count >= 3 {
+      return systemName
+    }
+    return name.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private var tradingLocationCandidates: [ProcurementLocation] {
@@ -1192,7 +1190,7 @@ struct ProfilesView: View {
   }
 
   private var clientID: String {
-    settings.first(where: { $0.key == "eve.clientID" })?.value ?? ""
+    EVEConstants.ssoClientID
   }
 
   private var authorizationSnapshots: [AuthorizationSnapshot] {
@@ -1222,8 +1220,10 @@ struct ProfilesView: View {
 
   private var reactionStructures: [ConfiguredIndustryStructure] {
     runtime.productionBasis.structures.filter {
-      $0.solarSystemID == runtime.productionBasis.reactionSystem.solarSystemID
-        && $0.isReactionCapable
+      runtime.productionBasis.systemConfiguration(
+        for: .reaction,
+        structure: $0
+      ) != nil && $0.isReactionCapable
     }
   }
 
@@ -1237,15 +1237,11 @@ struct ProfilesView: View {
   private func scienceStructures(
     for activity: IndustryActivitySystem
   ) -> [ConfiguredIndustryStructure] {
-    guard
-      let system = runtime.productionBasis.systemConfiguration(
-        for: activity
-      )
-    else { return [] }
     return runtime.productionBasis.structures.filter {
-      runtime.productionBasis.configuredSystem(for: $0)?.solarSystemID
-        == system.solarSystemID
-        && $0.isScienceCapable(for: activity)
+      runtime.productionBasis.systemConfiguration(
+        for: activity,
+        structure: $0
+      ) != nil && $0.isScienceCapable(for: activity)
     }
   }
 
@@ -1295,24 +1291,16 @@ struct ProfilesView: View {
   }
 
   private func applyStoredTraderFeesIfNeeded() {
-    for configuration in runtime.productionBasis.tradingLocations
-    where configuration.marketTaxes.calculation == nil {
-      guard let characterID = configuration.traderCharacterID,
-        let capability = capabilitySnapshots.first(where: {
-          $0.character.id == characterID
-        })
-      else { continue }
-      runtime.productionBasis.applyMarketFees(
-        capability: capability,
-        forTradingLocationID: configuration.id
-      )
-    }
+    runtime.productionBasis.refreshResolvableMarketFees(
+      capabilities: capabilitySnapshots
+    )
   }
 
   private func refreshTraderFees(for locationID: UUID) async {
-    guard let configuration = runtime.productionBasis.tradingLocations.first(
-      where: { $0.id == locationID }
-    ),
+    guard
+      let configuration = runtime.productionBasis.tradingLocations.first(
+        where: { $0.id == locationID }
+      ),
       let characterID = configuration.traderCharacterID,
       let character = characters.first(where: {
         $0.characterID == characterID
@@ -1359,10 +1347,25 @@ struct ProfilesView: View {
         capability: capability,
         forTradingLocationID: locationID
       )
-      traderFeeMessages[locationID] =
-        locationWasResolved
-        ? "Trader skills, standings and location context refreshed from ESI."
-        : "Trader skills and standings were refreshed, but the NPC station owner could not be resolved; the broker fee remains unavailable."
+      let refreshedTaxes = runtime.productionBasis.tradingLocations.first {
+        $0.id == locationID
+      }?.marketTaxes
+      if refreshedTaxes?.automaticBrokerFeeRate != nil {
+        traderFeeMessages[locationID] =
+          "Trader skills, standings and location context refreshed from ESI."
+      } else if refreshedTaxes?.isManualBrokerFeeFallbackActive == true {
+        traderFeeMessages[locationID] =
+          "The automatic broker fee remains unavailable; the saved manual fallback is active."
+      } else if configuration.location.kind == .playerStructure {
+        traderFeeMessages[locationID] =
+          "ESI does not expose the owner-defined Player Structure broker fee. Enter it manually."
+      } else if !locationWasResolved {
+        traderFeeMessages[locationID] =
+          "Trader skills and standings were refreshed, but the NPC station owner could not be resolved; the broker fee remains unavailable."
+      } else {
+        traderFeeMessages[locationID] =
+          "The broker fee could not be derived from the available ESI data. Enter it manually."
+      }
     } catch {
       traderFeeMessages[locationID] =
         "Trader fees could not be refreshed. Check scopes and reauthorize this character."
@@ -1520,6 +1523,93 @@ struct ProfilesView: View {
   }
 }
 
+private struct EVESecurityStatusText: View {
+  let securityStatus: Double
+  let securityBand: SecurityBand
+
+  private var displayStatus: Double {
+    MarketSecurityBand.eveDisplayStatus(securityStatus) ?? securityStatus
+  }
+
+  var body: some View {
+    HStack(spacing: DesignTokens.spacingXS) {
+      Text(securityBand.displayName.localizedUI + " ·")
+      Text(
+        displayStatus.formatted(
+          .number
+            .locale(AppLocalization.currentLanguage.locale)
+            .precision(.fractionLength(1))
+        )
+      )
+      .foregroundStyle(eveColor)
+      .fontWeight(.semibold)
+    }
+    .font(.body.monospacedDigit())
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(
+      securityBand.displayName.localizedUI
+        + " "
+        + displayStatus.formatted(
+          .number
+            .locale(AppLocalization.currentLanguage.locale)
+            .precision(.fractionLength(1))
+        )
+    )
+  }
+
+  private var eveColor: Color {
+    switch displayStatus {
+    case 1...: Color(red: 44 / 255, green: 117 / 255, blue: 225 / 255)
+    case 0.9...: Color(red: 57 / 255, green: 154 / 255, blue: 235 / 255)
+    case 0.8...: Color(red: 78 / 255, green: 206 / 255, blue: 248 / 255)
+    case 0.7...: Color(red: 96 / 255, green: 219 / 255, blue: 163 / 255)
+    case 0.6...: Color(red: 113 / 255, green: 231 / 255, blue: 84 / 255)
+    case 0.5...: Color(red: 245 / 255, green: 255 / 255, blue: 131 / 255)
+    case 0.4...: Color(red: 220 / 255, green: 108 / 255, blue: 6 / 255)
+    case 0.3...: Color(red: 206 / 255, green: 68 / 255, blue: 15 / 255)
+    case 0.2...: Color(red: 187 / 255, green: 17 / 255, blue: 22 / 255)
+    case 0.1...: Color(red: 115 / 255, green: 31 / 255, blue: 31 / 255)
+    default: Color(red: 141 / 255, green: 49 / 255, blue: 99 / 255)
+    }
+  }
+}
+
+private struct ActivitySystemCollectionEditor: View {
+  let rowTitle: LocalizedStringKey
+  let addTitle: LocalizedStringKey
+  let activity: IndustryActivitySystem
+  @Binding var configurations: [ActivitySystemConfiguration]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      ForEach($configurations) { $configuration in
+        ActivitySystemRow(
+          title: rowTitle,
+          configuration: $configuration,
+          canDelete: configurations.count > 1,
+          onDelete: { remove(configuration.id) }
+        )
+      }
+      Button {
+        configurations.append(
+          ActivitySystemConfiguration(
+            activity: activity,
+            solarSystemID: 0,
+            solarSystemName: ""
+          )
+        )
+      } label: {
+        Label(addTitle, systemImage: "plus")
+      }
+    }
+  }
+
+  private func remove(_ id: UUID) {
+    guard configurations.count > 1 else { return }
+    configurations.removeAll { $0.id == id }
+  }
+}
+
 private struct ActivitySystemRow: View {
   @EnvironmentObject private var runtime: RuntimeState
   let title: LocalizedStringKey
@@ -1578,15 +1668,10 @@ private struct ActivitySystemRow: View {
       }
       if let securityStatus = configuration.securityStatus {
         LabeledContent("Security") {
-          Text(
-            "\(configuration.securityBand.displayName.localizedUI) · "
-              + securityStatus.formatted(
-                .number
-                  .locale(AppLocalization.currentLanguage.locale)
-                  .precision(.fractionLength(2))
-              )
+          EVESecurityStatusText(
+            securityStatus: securityStatus,
+            securityBand: configuration.securityBand
           )
-          .font(.body.monospacedDigit())
         }
       }
       IndustryIndexSummary(solarSystemID: configuration.solarSystemID)
@@ -1652,11 +1737,9 @@ private struct SolarSystemPicker: View {
         }
       HStack {
         if selectedID > 0, !selectedName.isEmpty {
-          Label(
-            "\(selectedName) · \(selectedID)",
-            systemImage: "checkmark.circle.fill"
-          )
-          .foregroundStyle(DesignTokens.positive)
+          Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(DesignTokens.positive)
+          EVEEntityText(value: selectedName)
         } else {
           Label(
             query.count < 3
@@ -1666,9 +1749,6 @@ private struct SolarSystemPicker: View {
           )
           .foregroundStyle(DesignTokens.textSecondary)
         }
-        Spacer()
-        Text("Source: ESI")
-          .foregroundStyle(DesignTokens.textSecondary)
       }
       .font(.caption)
     }
@@ -1694,13 +1774,8 @@ private struct SolarSystemPicker: View {
                 query = ""
                 isShowingResults = false
               } label: {
-                HStack {
-                  Text(option.name)
-                  Spacer()
-                  Text(String(option.id))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(DesignTokens.textSecondary)
-                }
+                Text(option.name)
+                  .frame(maxWidth: .infinity, alignment: .leading)
               }
               .buttonStyle(.plain)
               .padding(.vertical, DesignTokens.spacingXS)
@@ -1778,6 +1853,30 @@ private struct StructureEditor: View {
     runtime.productionBasis.eligibleActivities(for: structure)
   }
 
+  private var enabledActivities: [IndustryActivitySystem] {
+    IndustryActivitySystem.allCases.filter {
+      structure.enabledActivities.contains($0)
+    }
+  }
+
+  private var activityAssignmentModeBinding: Binding<IndustryStructureActivityAssignmentMode> {
+    Binding(
+      get: { structure.effectiveActivityAssignmentMode },
+      set: { structure.setActivityAssignmentMode($0) }
+    )
+  }
+
+  private var structureKindBinding: Binding<IndustryStructureKind> {
+    Binding(
+      get: { structure.kind },
+      set: { kind in
+        guard structure.kind != kind else { return }
+        structure.kind = kind
+        applyStructureKind(kind)
+      }
+    )
+  }
+
   private var locationBinding: Binding<UUID?> {
     Binding(
       get: {
@@ -1793,8 +1892,12 @@ private struct StructureEditor: View {
           structure.manufacturingSystemID = nil
           return
         }
-        structure.manufacturingSystemID =
-          system.activity == .manufacturing ? system.id : nil
+        if structure.solarSystemID != system.solarSystemID {
+          structure.structureID = nil
+          structure.eveStructureName = nil
+          structure.ownerCorporationID = nil
+        }
+        structure.manufacturingSystemID = system.id
         structure.solarSystemID = system.solarSystemID
         structure.solarSystemName = system.solarSystemName
         structure.securityStatus = system.securityStatus
@@ -1825,13 +1928,55 @@ private struct StructureEditor: View {
         .disabled(!canDelete)
       }
 
-      AccessibleStructurePicker(
+      Picker(
+        "Physical solar system",
+        selection: locationBinding
+      ) {
+        Text("Not assigned").tag(UUID?.none)
+        ForEach(configuredLocations) { system in
+          Text(
+            (system.solarSystemName.isEmpty
+              ? "Select system" : system.solarSystemName)
+              + " · " + String(system.solarSystemID)
+          )
+          .tag(Optional(system.id))
+        }
+      }
+
+      SystemFacilityPicker(
         authorizations: authorizations,
         clientID: clientID,
         solarSystemID: structure.solarSystemID,
-        solarSystemName: structure.solarSystemName
-      ) { option in
-        applyPlayerStructure(option)
+        solarSystemName: structure.solarSystemName,
+        onSelectStation: applyNPCStation,
+        onSelectStructure: applyPlayerStructure
+      )
+
+      if let eveName = structure.eveStructureName,
+        let structureID = structure.structureID
+      {
+        LabeledContent("Linked ESI location") {
+          VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
+            EVEEntityText(value: eveName)
+            Text(String(structureID))
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+        Text(
+          "The linked ESI location belongs to the selected physical solar system. Its EVE name and location ID remain stored with the profile."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+
+      if structure.structureID == nil {
+        Label(
+          "This entry defines a structure type and solar system, but it is not yet linked to an exact EVE station or Player Structure. Link the matching ESI result above so Warehouse can match asset locations.",
+          systemImage: "link.badge.plus"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
       }
 
       LazyVGrid(
@@ -1844,61 +1989,17 @@ private struct StructureEditor: View {
         spacing: DesignTokens.spacingMD
       ) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-          Picker("Structure / station type", selection: $structure.kind) {
+          Picker("Structure / station type", selection: structureKindBinding) {
             ForEach(IndustryStructureKind.selectableCases) { kind in
               Text(LocalizedStringKey(kind.displayName)).tag(kind)
             }
           }
-          .onChange(of: structure.kind) { _, kind in
-            applyStructureKind(kind)
-          }
-          Picker(
-            "Structure location",
-            selection: locationBinding
-          ) {
-            Text("Not assigned").tag(UUID?.none)
-            ForEach(configuredLocations) { system in
-              Text(
-                (system.solarSystemName.isEmpty
-                  ? "Select system" : system.solarSystemName)
-                  + " · "
-                  + activitiesConfigured(
-                    in: system.solarSystemID
-                  ).map { $0.displayName.localizedUI }
-                  .joined(separator: ", ")
-              )
-              .tag(Optional(system.id))
-            }
-          }
-          LabeledContent("Automatic activities") {
-            if eligibleActivities.isEmpty {
-              Text("No matching enabled activity")
-                .foregroundStyle(DesignTokens.caution)
-            } else {
-              Text(
-                eligibleActivities.map {
-                  $0.displayName.localizedUI
-                }.joined(separator: ", ")
-              )
-              .multilineTextAlignment(.trailing)
-            }
-          }
-          Text(
-            "The best eligible structure is selected separately for each activity. One structure can therefore be used for Manufacturing, Invention, Blueprint Copying and research at the same time."
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
           LabeledContent("Security") {
             if let status = structure.securityStatus {
-              Text(
-                "\(structure.securityBand.displayName.localizedUI) · "
-                  + status.formatted(
-                    .number
-                      .locale(AppLocalization.currentLanguage.locale)
-                      .precision(.fractionLength(2))
-                  )
+              EVESecurityStatusText(
+                securityStatus: status,
+                securityBand: structure.securityBand
               )
-              .font(.body.monospacedDigit())
             } else {
               Label(
                 "Resolve the assigned system",
@@ -1914,16 +2015,6 @@ private struct StructureEditor: View {
                   ?? "No structure rigs".localizedUI
               )
             )
-          }
-          if let eveName = structure.eveStructureName,
-            let structureID = structure.structureID
-          {
-            Label(
-              "\(eveName) · \(structureID)",
-              systemImage: "link.circle.fill"
-            )
-            .font(.caption)
-            .foregroundStyle(DesignTokens.positive)
           }
         }
 
@@ -1960,6 +2051,93 @@ private struct StructureEditor: View {
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
+        }
+      }
+
+      Divider()
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        Text("Use structure for").font(.headline)
+        Picker(
+          "Activity assignment",
+          selection: activityAssignmentModeBinding
+        ) {
+          ForEach(IndustryStructureActivityAssignmentMode.allCases) { mode in
+            Text(LocalizedStringKey(mode.displayName)).tag(mode)
+          }
+        }
+        .pickerStyle(.segmented)
+
+        LazyVGrid(
+          columns: [
+            GridItem(
+              .adaptive(minimum: DesignTokens.efficiencyLabelMinimum),
+              spacing: DesignTokens.spacingSM
+            )
+          ],
+          alignment: .leading,
+          spacing: DesignTokens.spacingXS
+        ) {
+          ForEach(IndustryActivitySystem.allCases) { activity in
+            Toggle(
+              LocalizedStringKey(activity.displayName),
+              isOn: activityBinding(for: activity)
+            )
+            .disabled(
+              structure.effectiveActivityAssignmentMode
+                == .automaticFromServiceModules
+            )
+          }
+        }
+
+        if structure.effectiveActivityAssignmentMode
+          == .automaticFromServiceModules
+        {
+          Text(
+            "The installed service modules below determine the enabled activities automatically. Switch to Manual selection when the module evidence is unavailable or you need an explicit override."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        } else {
+          Text(
+            "Manual selection is stored explicitly and may enable several uses for the same physical structure. Service modules remain visible as supporting evidence."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
+
+        if enabledActivities.isEmpty {
+          Label(
+            "Select at least one activity for this structure.",
+            systemImage: "exclamationmark.triangle.fill"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
+        } else {
+          LabeledContent("Enabled activities") {
+            Text(
+              enabledActivities.map { $0.displayName.localizedUI }
+                .joined(separator: ", ")
+            )
+            .multilineTextAlignment(.trailing)
+          }
+        }
+
+        let eligible = Set(eligibleActivities)
+        let missingSystemActivities = structure.enabledActivities.subtracting(
+          eligible
+        )
+        if !missingSystemActivities.isEmpty {
+          Label(
+            AppLocalization.text(
+              "Not eligible for facility selection; check system, structure type and security: "
+            )
+              + missingSystemActivities.sorted { $0.rawValue < $1.rawValue }
+              .map { $0.displayName.localizedUI }
+              .joined(separator: ", "),
+            systemImage: "location.slash"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
         }
       }
 
@@ -2111,9 +2289,7 @@ private struct StructureEditor: View {
     if let matchingSystem = configuredLocations.first(where: {
       $0.solarSystemID == option.solarSystemID
     }) {
-      structure.manufacturingSystemID =
-        matchingSystem.activity == .manufacturing
-        ? matchingSystem.id : nil
+      structure.manufacturingSystemID = matchingSystem.id
       structure.solarSystemName = matchingSystem.solarSystemName
       structure.securityStatus = matchingSystem.securityStatus
       structure.securityBand = matchingSystem.securityBand
@@ -2137,16 +2313,36 @@ private struct StructureEditor: View {
     structure.apply(definition: definition)
   }
 
-  private func activitiesConfigured(
-    in solarSystemID: Int64
-  ) -> [IndustryActivitySystem] {
-    var seenActivities = Set<IndustryActivitySystem>()
-    return configuredSystems.compactMap { system in
-      guard system.solarSystemID == solarSystemID,
-        seenActivities.insert(system.activity).inserted
-      else { return nil }
-      return system.activity
+  private func applyNPCStation(_ option: TradingLocationSearchOption) {
+    guard option.solarSystemID == structure.solarSystemID else { return }
+    structure.structureID = option.id
+    structure.eveStructureName = option.name
+    structure.ownerCorporationID = option.ownerCorporationID
+    structure.kind = .npcStation
+    structure.structureTypeID = nil
+    structure.structureGroupID = nil
+    structure.rigSize = nil
+    structure.maximumRigSlots = 0
+    structure.structureMaterialBonusPercent = 0
+    structure.structureTimeBonusPercent = 0
+    structure.jobCostMultiplier = 1
+    structure.rigs = []
+    structure.serviceModules = []
+    structure.source = .staticData
+    if structure.name.trimmingCharacters(
+      in: .whitespacesAndNewlines
+    ).isEmpty {
+      structure.name = option.name
     }
+  }
+
+  private func activityBinding(
+    for activity: IndustryActivitySystem
+  ) -> Binding<Bool> {
+    Binding(
+      get: { structure.enabledActivities.contains(activity) },
+      set: { structure.setActivity(activity, enabled: $0) }
+    )
   }
 
   private func availableRigDefinitions(
@@ -2222,7 +2418,7 @@ private struct ServiceModuleEditor: View {
             Text(definition.name).tag(Optional(definition.typeID))
           }
         }
-        .frame(minWidth: 420)
+        .frame(maxWidth: .infinity)
         Button(role: .destructive, action: onDelete) {
           Image(systemName: "minus.circle")
         }
@@ -2249,9 +2445,6 @@ private struct ServiceModuleEditor: View {
               .font(.caption.monospacedDigit())
           }
         }
-        Text("SDE service module · bonuses remain source-bound")
-          .font(.caption2)
-          .foregroundStyle(DesignTokens.textSecondary)
       }
     }
     .padding(DesignTokens.spacingSM)
@@ -2371,7 +2564,7 @@ private struct RigEditor: View {
             Text(definition.name).tag(Optional(definition.typeID))
           }
         }
-        .frame(minWidth: 420)
+        .frame(maxWidth: .infinity)
         Button(role: .destructive, action: onDelete) {
           Image(systemName: "minus.circle")
         }
@@ -2438,10 +2631,698 @@ private struct RigEditor: View {
   }
 }
 
+struct MarketSettingsView: View {
+  @EnvironmentObject private var runtime: RuntimeState
+  @EnvironmentObject private var profileNavigationGuard: ProfileNavigationGuard
+  @Environment(\.modelContext) private var modelContext
+  @Query(sort: \StoredProductionBasis.updatedAt, order: .reverse)
+  private var storedBases: [StoredProductionBasis]
+  @Query(sort: \StoredCharacter.characterName)
+  private var characters: [StoredCharacter]
+
+  @State private var didLoad = false
+  @State private var savedBasis: ProductionBasis?
+  @State private var statusMessage: String?
+  @State private var refreshingFeeLocationID: UUID?
+  @State private var feeMessages: [UUID: String] = [:]
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+        header
+        roleConfiguration
+        addMarketConfiguration
+        configuredMarkets
+        profitabilityConfiguration
+      }
+      .padding(DesignTokens.spacingLG)
+    }
+    .navigationTitle("Market Settings")
+    .task {
+      loadStoredBasisOnce()
+      runtime.productionBasis.refreshResolvableMarketFees(
+        capabilities: capabilitySnapshots
+      )
+      savedBasis = runtime.productionBasis
+      profileNavigationGuard.updateDirtyState(false)
+    }
+    .onChange(of: runtime.productionBasis) { _, value in
+      guard let savedBasis else { return }
+      profileNavigationGuard.updateDirtyState(value != savedBasis)
+    }
+    .onChange(of: profileNavigationGuard.saveRequestID) { save() }
+    .onChange(of: profileNavigationGuard.discardRequestID) {
+      if let savedBasis { runtime.productionBasis = savedBasis }
+      profileNavigationGuard.completeDiscard()
+    }
+  }
+
+  private var header: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text("Market Settings")
+        .font(.largeTitle.bold())
+      Text(
+        "One shared market configuration for Planner, Moon purchase analysis, reactions and every other price comparison. The selected Main, Home and Coalition Hubs plus every selected comparison market are loaded."
+      )
+      .foregroundStyle(DesignTokens.textSecondary)
+      HStack {
+        Button("Save Market Settings") { save() }
+          .buttonStyle(.borderedProminent)
+          .keyboardShortcut("s", modifiers: .command)
+        if profileNavigationGuard.hasUnsavedChanges {
+          Label("Unsaved changes", systemImage: "exclamationmark.triangle.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(DesignTokens.caution)
+        }
+        if let statusMessage {
+          Text(statusMessage)
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+      }
+    }
+  }
+
+  private var roleConfiguration: some View {
+    Panel(title: "Hub Roles") {
+      Picker("Main Hub", selection: mainBinding) {
+        ForEach(npcMarkets) { market in
+          Text(market.location.name).tag(market.id)
+        }
+      }
+      Text(
+        "The Main Hub is the default price and purchase market. Jita, Amarr, Rens and Hek are built in; every ESI-resolved NPC station you add also becomes selectable."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      Picker("Home Hub", selection: homeBinding) {
+        Text("Not configured").tag(UUID?.none)
+        ForEach(runtime.productionBasis.tradingLocations) { market in
+          Text(market.location.name).tag(Optional(market.id))
+        }
+      }
+
+      Picker("Coalition Hub", selection: coalitionBinding) {
+        Text("Not configured").tag(UUID?.none)
+        ForEach(playerStructureMarkets) { market in
+          Text(market.location.name).tag(Optional(market.id))
+        }
+      }
+      Text(
+        "A Coalition Hub must be an authenticated ESI Player Structure. Search visibility confirms that ESI can resolve it; market access is still reported from the actual structure-market request."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      if runtime.productionBasis.mainAndHomeAreIdentical {
+        Label(
+          "Main Hub and Home Hub are identical. Hub-to-home logistics costs are disabled.",
+          systemImage: "checkmark.circle.fill"
+        )
+        .foregroundStyle(DesignTokens.positive)
+      }
+
+      Divider()
+      Text("Additional comparison markets")
+        .font(.headline)
+      Text(
+        "Select every additional market that should be loaded alongside the assigned hub roles. Markets already assigned as Main, Home or Coalition Hub are included automatically."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      ForEach(comparisonMarketCandidates) { market in
+        Toggle(isOn: comparisonBinding(market.id)) {
+          HStack(spacing: DesignTokens.spacingSM) {
+            EVEEntityLabel(
+              value: market.location.name,
+              font: .body
+            )
+            Spacer()
+            if hasAssignedHubRole(market.id) {
+              Text("Included through hub role")
+                .font(.caption)
+                .foregroundStyle(DesignTokens.textSecondary)
+            }
+          }
+        }
+        .disabled(hasAssignedHubRole(market.id))
+        .accessibilityIdentifier(
+          "market-settings.comparison.\(market.id.uuidString)"
+        )
+      }
+    }
+  }
+
+  private var addMarketConfiguration: some View {
+    Panel(title: "Add Markets") {
+      Text("Built-in Main Hub stations")
+        .font(.headline)
+      HStack {
+        ForEach(MarketTradeHub.defaultMainHubChoices) { hub in
+          Button {
+            _ = runtime.productionBasis.addTradingLocation(
+              hub.procurementLocation
+            )
+          } label: {
+            Label(hub.rawValue.capitalized, systemImage: "plus.circle")
+          }
+          .disabled(
+            runtime.productionBasis.tradingLocations.contains {
+              $0.location.locationID == hub.stationID
+            }
+          )
+        }
+      }
+
+      Divider()
+      TradingLocationESIPicker(
+        authorizations: authorizationSnapshots,
+        clientID: clientID,
+        title: "Add NPC Station or Player Structure",
+        explanation:
+          "NPC stations are public ESI results. Player Structures require a connected character with structure-search and structure-detail scopes."
+      ) { location in
+        if runtime.productionBasis.addTradingLocation(location) {
+          statusMessage = "Added \(location.name). Save Market Settings to keep it."
+        }
+      }
+    }
+  }
+
+  private var configuredMarkets: some View {
+    Panel(title: "Available Hub Locations") {
+      ForEach(runtime.productionBasis.tradingLocations) { market in
+        marketCard(market)
+      }
+    }
+  }
+
+  private var profitabilityConfiguration: some View {
+    Panel(title: "Market Parameters") {
+      Text(
+        "Define optional profitability thresholds for sales. They are stored with this Production Basis so Planner comparisons and future market filters can use the same values."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      LabeledContent("Minimum sales margin") {
+        TextField(
+          "Not configured",
+          value: minimumSalesMarginBinding,
+          format: .percent.precision(.fractionLength(0...2))
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+        .accessibilityIdentifier("market-settings.minimum-sales-margin")
+      }
+      LabeledContent("Target sales margin") {
+        TextField(
+          "Not configured",
+          value: targetSalesMarginBinding,
+          format: .percent.precision(.fractionLength(0...2))
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+        .accessibilityIdentifier("market-settings.target-sales-margin")
+      }
+
+      if !runtime.productionBasis.marketProfitability.isValid {
+        Label(
+          "The target sales margin must be at least as high as the minimum sales margin.",
+          systemImage: "exclamationmark.triangle.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
+      Text(
+        "Sales margin means profit divided by net sale revenue after Sales Tax and Broker Fee. Leave a value empty when no threshold should be applied; an empty value is not treated as 0%."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func marketCard(
+    _ configuration: TradingLocationConfiguration
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          EVEEntityText(value: configuration.location.name)
+          Text(locationKindText(configuration.location.kind))
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+        Spacer()
+        ForEach(
+          roles(for: configuration).sorted { $0.rawValue < $1.rawValue },
+          id: \.self
+        ) { role in
+          Text(role.rawValue.uppercased())
+            .font(.caption2.bold())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(roleColor(role).opacity(0.18))
+            .foregroundStyle(roleColor(role))
+            .clipShape(Capsule())
+        }
+        if !hasAssignedHubRole(configuration.id) {
+          Button(role: .destructive) {
+            _ = runtime.productionBasis.removeTradingLocation(
+              id: configuration.id
+            )
+          } label: {
+            Label("Remove", systemImage: "minus.circle")
+          }
+          .buttonStyle(.borderless)
+        }
+      }
+
+      if configuration.location.kind == .legacy
+        || configuration.location.locationID == nil
+      {
+        Label(
+          "This migrated location must be resolved and replaced here.",
+          systemImage: "exclamationmark.triangle.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+        TradingLocationESIPicker(
+          authorizations: authorizationSnapshots,
+          clientID: clientID,
+          title: "Resolve this location through ESI",
+          explanation:
+            "Select the matching ESI location. Roles, trader and stored fee context are retained.",
+          initialQuery: searchQuery(for: configuration.location.name),
+          showsNPCStationSearch: true,
+          selectionConfirmationKey: "Replaced with %@."
+        ) { location in
+          _ = runtime.productionBasis.replaceTradingLocation(
+            id: configuration.id,
+            with: location
+          )
+        }
+        .id(configuration.id)
+      }
+
+      Picker("Trader", selection: traderBinding(configuration.id)) {
+        Text("No trader selected").tag(Int64?.none)
+        ForEach(characters) { character in
+          Text(character.characterName).tag(Optional(character.characterID))
+        }
+      }
+      LabeledContent("Sales Tax") {
+        Text(rateText(configuration.marketTaxes.effectiveSalesTaxRate))
+      }
+      LabeledContent("Broker Fee used in calculations") {
+        Text(rateText(configuration.marketTaxes.effectiveBrokerFeeRate))
+      }
+      LabeledContent("Automatic broker fee") {
+        Text(rateText(configuration.marketTaxes.automaticBrokerFeeRate))
+      }
+      LabeledContent("Manual broker fee fallback") {
+        TextField(
+          "Enter broker fee",
+          value: manualBrokerFeeBinding(configuration.id),
+          format: .percent.precision(.fractionLength(0...3))
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+      }
+      brokerFeeFallbackStatus(configuration.marketTaxes)
+      if let updatedAt = configuration.marketTaxes.manualBrokerFeeUpdatedAt {
+        LabeledContent("Manual value updated") {
+          Text(updatedAt.formatted())
+            .font(.caption.monospacedDigit())
+        }
+      }
+      Button {
+        Task { await refreshFees(configuration.id) }
+      } label: {
+        if refreshingFeeLocationID == configuration.id {
+          ProgressView()
+        } else {
+          Label("Refresh trader fees from ESI", systemImage: "arrow.clockwise")
+        }
+      }
+      .disabled(
+        refreshingFeeLocationID != nil
+          || configuration.traderCharacterID == nil
+      )
+      if let message = feeMessages[configuration.id] {
+        Text(message).font(.caption).foregroundStyle(DesignTokens.textSecondary)
+      }
+      Divider()
+    }
+  }
+
+  private var npcMarkets: [TradingLocationConfiguration] {
+    runtime.productionBasis.tradingLocations.filter {
+      $0.location.kind == .npcTradeHub
+        && $0.location.locationID != nil
+        && $0.location.solarSystemID != nil
+        && $0.location.regionID != nil
+    }
+  }
+
+  private var playerStructureMarkets: [TradingLocationConfiguration] {
+    runtime.productionBasis.tradingLocations.filter {
+      $0.location.kind == .playerStructure && $0.location.locationID != nil
+    }
+  }
+
+  private var comparisonMarketCandidates: [TradingLocationConfiguration] {
+    runtime.productionBasis.tradingLocations.filter {
+      switch $0.location.kind {
+      case .npcTradeHub:
+        $0.location.locationID != nil
+          && $0.location.solarSystemID != nil
+          && $0.location.regionID != nil
+      case .playerStructure:
+        $0.location.locationID != nil && $0.location.solarSystemID != nil
+      case .legacy:
+        false
+      }
+    }
+  }
+
+  private var mainBinding: Binding<UUID> {
+    Binding(
+      get: {
+        runtime.productionBasis.mainTradingLocationID
+          ?? npcMarkets.first?.id
+          ?? UUID()
+      },
+      set: { runtime.productionBasis.setMainTradingLocation(id: $0) }
+    )
+  }
+
+  private var homeBinding: Binding<UUID?> {
+    Binding(
+      get: { runtime.productionBasis.homeTradingLocationID },
+      set: { runtime.productionBasis.setHomeTradingLocation(id: $0) }
+    )
+  }
+
+  private var coalitionBinding: Binding<UUID?> {
+    Binding(
+      get: { runtime.productionBasis.coalitionTradingLocationID },
+      set: { runtime.productionBasis.setCoalitionTradingLocation(id: $0) }
+    )
+  }
+
+  private func comparisonBinding(_ id: UUID) -> Binding<Bool> {
+    Binding(
+      get: {
+        hasAssignedHubRole(id)
+          || runtime.productionBasis.comparisonTradingLocationIDs.contains(id)
+      },
+      set: { isSelected in
+        runtime.productionBasis.setComparisonTradingLocation(
+          id: id,
+          isSelected: isSelected
+        )
+      }
+    )
+  }
+
+  private func hasAssignedHubRole(_ id: UUID) -> Bool {
+    id == runtime.productionBasis.mainTradingLocationID
+      || id == runtime.productionBasis.homeTradingLocationID
+      || id == runtime.productionBasis.coalitionTradingLocationID
+  }
+
+  private func roles(
+    for configuration: TradingLocationConfiguration
+  ) -> Set<MarketHubRole> {
+    runtime.productionBasis.marketHubSnapshots.first {
+      $0.id == configuration.id
+    }?.roles ?? []
+  }
+
+  private func roleColor(_ role: MarketHubRole) -> Color {
+    switch role {
+    case .main: DesignTokens.positive
+    case .home: DesignTokens.highlight
+    case .coalition: DesignTokens.accent
+    case .comparison: DesignTokens.caution
+    }
+  }
+
+  private func locationKindText(_ kind: ProcurementLocationKind) -> String {
+    switch kind {
+    case .npcTradeHub: "NPC station"
+    case .playerStructure: "ESI Player Structure"
+    case .legacy: "Unresolved migrated location"
+    }
+  }
+
+  private func rateText(_ rate: Double?) -> String {
+    guard let rate else { return "Unavailable" }
+    return rate.formatted(.percent.precision(.fractionLength(0...3)))
+  }
+
+  private var minimumSalesMarginBinding: Binding<Double?> {
+    Binding(
+      get: {
+        runtime.productionBasis.marketProfitability.minimumSalesMarginRate
+      },
+      set: { rate in
+        runtime.productionBasis.marketProfitability
+          .setMinimumSalesMarginRate(rate)
+      }
+    )
+  }
+
+  private var targetSalesMarginBinding: Binding<Double?> {
+    Binding(
+      get: {
+        runtime.productionBasis.marketProfitability.targetSalesMarginRate
+      },
+      set: { rate in
+        runtime.productionBasis.marketProfitability
+          .setTargetSalesMarginRate(rate)
+      }
+    )
+  }
+
+  private func searchQuery(for name: String) -> String {
+    let system =
+      name.components(separatedBy: " - ").first?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? name
+    return system.count >= 3 ? system : name
+  }
+
+  private func traderBinding(_ id: UUID) -> Binding<Int64?> {
+    Binding(
+      get: {
+        runtime.productionBasis.tradingLocations.first { $0.id == id }?
+          .traderCharacterID
+      },
+      set: { characterID in
+        let capability = capabilitySnapshots.first {
+          $0.character.id == characterID
+        }
+        runtime.productionBasis.selectTrader(
+          characterID: characterID,
+          forTradingLocationID: id,
+          capability: capability
+        )
+      }
+    )
+  }
+
+  private func manualBrokerFeeBinding(_ id: UUID) -> Binding<Double?> {
+    Binding(
+      get: {
+        runtime.productionBasis.tradingLocations.first { $0.id == id }?
+          .marketTaxes.manualBrokerFeeRate
+      },
+      set: { rate in
+        runtime.productionBasis.setManualBrokerFeeRate(
+          rate,
+          forTradingLocationID: id
+        )
+      }
+    )
+  }
+
+  @ViewBuilder
+  private func brokerFeeFallbackStatus(
+    _ taxes: MarketTaxConfiguration
+  ) -> some View {
+    if taxes.automaticBrokerFeeRate != nil {
+      Text(
+        "The calculated NPC-station broker fee is active. A saved manual fallback is not used while this value is available."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    } else if taxes.isManualBrokerFeeFallbackActive {
+      Label(
+        "Manual fallback is active and is included in all calculations for this market.",
+        systemImage: "pencil.circle.fill"
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.caution)
+    } else {
+      Text(
+        "Enter the broker fee shown in EVE when ESI cannot provide or derive it. Unknown remains unavailable."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.caution)
+    }
+  }
+
+  private var clientID: String {
+    EVEConstants.ssoClientID
+  }
+
+  private var authorizationSnapshots: [AuthorizationSnapshot] {
+    characters.compactMap {
+      try? JSONDecoder().decode(
+        AuthorizationSnapshot.self,
+        from: $0.authorizationSnapshot
+      )
+    }
+  }
+
+  private var capabilitySnapshots: [CharacterCapabilitySnapshot] {
+    characters.compactMap { character in
+      character.capabilitySnapshot.flatMap {
+        try? JSONDecoder().decode(CharacterCapabilitySnapshot.self, from: $0)
+      }
+    }
+  }
+
+  private func refreshFees(_ id: UUID) async {
+    guard
+      let market = runtime.productionBasis.tradingLocations.first(
+        where: { $0.id == id }
+      ), let characterID = market.traderCharacterID,
+      let storedCharacter = characters.first(where: {
+        $0.characterID == characterID
+      }), !clientID.isEmpty
+    else {
+      feeMessages[id] = "Select a connected trader and configure the EVE client ID first."
+      return
+    }
+    refreshingFeeLocationID = id
+    defer { refreshingFeeLocationID = nil }
+    do {
+      let authorization = try JSONDecoder().decode(
+        AuthorizationSnapshot.self,
+        from: storedCharacter.authorizationSnapshot
+      )
+      let capability = try await runtime.syncCharacterCapabilities(
+        authorization: authorization,
+        clientID: clientID
+      )
+      storedCharacter.capabilitySnapshot = try JSONEncoder().encode(capability)
+      storedCharacter.lastSyncAt = .now
+      try modelContext.save()
+      if market.location.kind == .npcTradeHub {
+        if let resolved = try? await runtime.resolveNPCTradingLocation(
+          market.location
+        ) {
+          runtime.productionBasis.updateTradingLocation(
+            id: id,
+            location: resolved
+          )
+        }
+      }
+      runtime.productionBasis.applyMarketFees(
+        capability: capability,
+        forTradingLocationID: id
+      )
+      let refreshedTaxes = runtime.productionBasis.tradingLocations.first {
+        $0.id == id
+      }?.marketTaxes
+      if refreshedTaxes?.automaticBrokerFeeRate != nil {
+        feeMessages[id] =
+          "Trader skills, standings and NPC-station broker fee refreshed from ESI."
+      } else if refreshedTaxes?.isManualBrokerFeeFallbackActive == true {
+        feeMessages[id] =
+          "The automatic broker fee remains unavailable; the saved manual fallback is active."
+      } else if market.location.kind == .playerStructure {
+        feeMessages[id] =
+          "ESI does not expose the owner-defined Player Structure broker fee. Enter it manually."
+      } else {
+        feeMessages[id] =
+          "The broker fee could not be derived from the available ESI data. Enter it manually."
+      }
+    } catch {
+      feeMessages[id] = "Fee refresh unavailable. Check authorization and retry."
+    }
+  }
+
+  private func loadStoredBasisOnce() {
+    guard !didLoad else { return }
+    didLoad = true
+    guard let stored = storedBases.first,
+      let basis = try? JSONDecoder().decode(
+        ProductionBasis.self,
+        from: stored.encodedBasis
+      )
+    else { return }
+    runtime.productionBasis = basis
+  }
+
+  private func save() {
+    runtime.productionBasis.normalizeTradingLocations()
+    guard runtime.productionBasis.marketProfitability.isValid else {
+      statusMessage =
+        "The target sales margin must be at least as high as the minimum sales margin."
+      profileNavigationGuard.completeSave(success: false)
+      return
+    }
+    let connectedIDs = Set(characters.map(\.characterID))
+    guard
+      runtime.productionBasis.areTraderSelectionsValid(
+        connectedCharacterIDs: connectedIDs
+      )
+    else {
+      statusMessage = "A selected trader is no longer connected."
+      profileNavigationGuard.completeSave(success: false)
+      return
+    }
+    do {
+      let data = try JSONEncoder().encode(runtime.productionBasis)
+      if let stored = storedBases.first(where: {
+        $0.id == runtime.productionBasis.id
+      }) {
+        stored.name = runtime.productionBasis.name
+        stored.encodedBasis = data
+        stored.updatedAt = .now
+      } else {
+        modelContext.insert(
+          StoredProductionBasis(
+            id: runtime.productionBasis.id,
+            name: runtime.productionBasis.name,
+            encodedBasis: data
+          )
+        )
+      }
+      try modelContext.save()
+      savedBasis = runtime.productionBasis
+      profileNavigationGuard.updateDirtyState(false)
+      profileNavigationGuard.completeSave(success: true)
+      statusMessage = "Saved \(Date.now.formatted())."
+    } catch {
+      statusMessage = "Market settings could not be saved."
+      profileNavigationGuard.completeSave(success: false)
+    }
+  }
+}
+
 private struct TradingLocationESIPicker: View {
   @EnvironmentObject private var runtime: RuntimeState
   let authorizations: [AuthorizationSnapshot]
   let clientID: String
+  let title: String
+  let explanation: String
+  let showsNPCStationSearch: Bool
+  let selectionConfirmationKey: String
   let onSelect: (ProcurementLocation) -> Void
 
   @State private var selectedCharacterID: Int64?
@@ -2454,14 +3335,30 @@ private struct TradingLocationESIPicker: View {
   init(
     authorizations: [AuthorizationSnapshot],
     clientID: String,
+    title: String = "Add a Trading Location from ESI",
+    explanation: String =
+      "Search public NPC stations directly. For an ACL-visible Player Structure, select a connected character whose ESI authorization can search and resolve structures. Type at least three characters.",
+    initialQuery: String = "",
+    showsNPCStationSearch: Bool = true,
+    selectionConfirmationKey: String = "Added %@.",
     onSelect: @escaping (ProcurementLocation) -> Void
   ) {
     self.authorizations = authorizations
     self.clientID = clientID
+    self.title = title
+    self.explanation = explanation
+    self.showsNPCStationSearch = showsNPCStationSearch
+    self.selectionConfirmationKey = selectionConfirmationKey
     self.onSelect = onSelect
+    let preferredAuthorization =
+      authorizations.first {
+        $0.scopes.contains(PlayerStructureSearchService.searchScope)
+          && $0.scopes.contains(PlayerStructureSearchService.detailScope)
+      } ?? authorizations.first
     _selectedCharacterID = State(
-      initialValue: authorizations.first?.characterID
+      initialValue: preferredAuthorization?.characterID
     )
+    _query = State(initialValue: initialQuery)
   }
 
   private var authorization: AuthorizationSnapshot? {
@@ -2472,9 +3369,10 @@ private struct TradingLocationESIPicker: View {
     guard let authorization else { return false }
     return authorization.scopes.contains(
       PlayerStructureSearchService.searchScope
-    ) && authorization.scopes.contains(
-      PlayerStructureSearchService.detailScope
     )
+      && authorization.scopes.contains(
+        PlayerStructureSearchService.detailScope
+      )
   }
 
   private var acceptedQuery: String {
@@ -2483,31 +3381,29 @@ private struct TradingLocationESIPicker: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      Text(AppLocalization.text("Add a Trading Location from ESI"))
+      Text(AppLocalization.text(title))
         .font(.headline)
-      Text(
-        AppLocalization.text(
-          "Search public NPC stations directly. For an ACL-visible Player Structure, select a connected character whose ESI authorization can search and resolve structures. Type at least three characters."
-        )
-      )
-      .font(.caption)
-      .foregroundStyle(DesignTokens.textSecondary)
+      Text(AppLocalization.text(explanation))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
 
       TextField(
         AppLocalization.text("Station or Player Structure name"),
         text: $query
       )
-        .textFieldStyle(.roundedBorder)
+      .textFieldStyle(.roundedBorder)
       HStack(spacing: DesignTokens.spacingSM) {
-        Button {
-          Task { await searchStations() }
-        } label: {
-          Label(
-            AppLocalization.text("Search NPC stations"),
-            systemImage: "building.columns"
-          )
+        if showsNPCStationSearch {
+          Button {
+            Task { await searchStations() }
+          } label: {
+            Label(
+              AppLocalization.text("Search NPC stations"),
+              systemImage: "building.columns"
+            )
+          }
+          .disabled(isSearching || acceptedQuery.count < 3)
         }
-        .disabled(isSearching || acceptedQuery.count < 3)
 
         Picker(
           AppLocalization.text("Character for Player Structure search"),
@@ -2534,6 +3430,26 @@ private struct TradingLocationESIPicker: View {
         )
       }
 
+      if authorizations.isEmpty {
+        Label(
+          AppLocalization.text(
+            "Connect and authorize a character before searching Player Structures."
+          ),
+          systemImage: "person.badge.key"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      } else if !canSearchStructures {
+        Label(
+          AppLocalization.text(
+            "Reauthorize the selected character for structure search and structure details."
+          ),
+          systemImage: "person.badge.key.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
+
       if isSearching {
         ProgressView(AppLocalization.text("Searching ESI…"))
           .controlSize(.small)
@@ -2543,7 +3459,10 @@ private struct TradingLocationESIPicker: View {
           ForEach(stationResults) { option in
             Button(option.name) {
               onSelect(option.procurementLocation)
-              message = "Added \(option.name)."
+              message = AppLocalization.format(
+                selectionConfirmationKey,
+                option.name
+              )
             }
           }
         } label: {
@@ -2567,10 +3486,14 @@ private struct TradingLocationESIPicker: View {
                   locationID: option.id,
                   kind: .playerStructure,
                   solarSystemID: option.solarSystemID,
+                  regionID: option.regionID,
                   ownerCorporationID: option.ownerCorporationID
                 )
               )
-              message = "Added \(option.name)."
+              message = AppLocalization.format(
+                selectionConfirmationKey,
+                option.name
+              )
             }
           }
         } label: {
@@ -2607,7 +3530,8 @@ private struct TradingLocationESIPicker: View {
         matching: acceptedQuery
       )
       stationResults = snapshot.value ?? []
-      message = stationResults.isEmpty
+      message =
+        stationResults.isEmpty
         ? "No matching NPC station was found."
         : snapshot.state == .partial
           ? "Some matching NPC stations could not be resolved."
@@ -2639,7 +3563,8 @@ private struct TradingLocationESIPicker: View {
         clientID: clientID
       )
       structureResults = snapshot.value ?? []
-      message = structureResults.isEmpty
+      message =
+        structureResults.isEmpty
         ? "No accessible matching Player Structure was found."
         : snapshot.state == .partial
           ? "Some matching Player Structures were inaccessible."
@@ -2649,6 +3574,163 @@ private struct TradingLocationESIPicker: View {
     } catch {
       message = "ESI Player Structure search is currently unavailable."
     }
+  }
+}
+
+private struct SystemFacilityPicker: View {
+  @EnvironmentObject private var runtime: RuntimeState
+  let authorizations: [AuthorizationSnapshot]
+  let clientID: String
+  let solarSystemID: Int64
+  let solarSystemName: String
+  let onSelectStation: (TradingLocationSearchOption) -> Void
+  let onSelectStructure: (PlayerStructureOption) -> Void
+
+  @State private var stationResults: [TradingLocationSearchOption] = []
+  @State private var structureResults: [PlayerStructureOption] = []
+  @State private var isLoading = false
+  @State private var message: String?
+
+  private struct LoadKey: Equatable {
+    let solarSystemID: Int64
+    let solarSystemName: String
+    let characterIDs: [Int64]
+    let clientID: String
+  }
+
+  private var loadKey: LoadKey {
+    LoadKey(
+      solarSystemID: solarSystemID,
+      solarSystemName: solarSystemName,
+      characterIDs: authorizations.map(\.characterID).sorted(),
+      clientID: clientID
+    )
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack {
+        Text("Stations & Structures in Selected System")
+          .font(.headline)
+        Spacer()
+        Button {
+          Task { await load(force: true) }
+        } label: {
+          Label("Reload system locations", systemImage: "arrow.clockwise")
+        }
+        .labelStyle(.iconOnly)
+        .disabled(isLoading || solarSystemID <= 0)
+      }
+      Text(
+        "NPC stations are loaded directly from the selected solar system. Player Structures are searched with the already connected authorizations and then strictly filtered to this system; ESI does not provide a complete system-wide list of every docking permission."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      if solarSystemID <= 0 {
+        Label(
+          "Select one of the configured systems first.",
+          systemImage: "location"
+        )
+        .foregroundStyle(DesignTokens.caution)
+      } else if isLoading {
+        ProgressView("Loading locations in selected system…")
+          .controlSize(.small)
+      } else {
+        HStack(spacing: DesignTokens.spacingSM) {
+          Menu {
+            ForEach(stationResults) { option in
+              Button(option.name) { onSelectStation(option) }
+            }
+          } label: {
+            Label(
+              "NPC stations (\(stationResults.count))",
+              systemImage: "building.columns"
+            )
+          }
+          .disabled(stationResults.isEmpty)
+
+          Menu {
+            ForEach(structureResults) { option in
+              Button(option.name) { onSelectStructure(option) }
+            }
+          } label: {
+            Label(
+              "Player Structures (\(structureResults.count))",
+              systemImage: "building.2"
+            )
+          }
+          .disabled(structureResults.isEmpty)
+        }
+      }
+      if let message {
+        Text(message)
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    .task(id: loadKey) {
+      await load(force: false)
+    }
+  }
+
+  private func load(force: Bool) async {
+    guard solarSystemID > 0 else {
+      stationResults = []
+      structureResults = []
+      message = nil
+      return
+    }
+    isLoading = true
+    message = nil
+    defer { isLoading = false }
+
+    async let stationsAttempt = try? runtime.loadNPCStations(
+      in: solarSystemID,
+      force: force
+    )
+    async let structuresAttempt = runtime.loadAccessibleStructures(
+      in: solarSystemID,
+      systemName: solarSystemName,
+      authorizations: authorizations,
+      clientID: clientID
+    )
+    let (stations, structures) = await (
+      stationsAttempt,
+      structuresAttempt
+    )
+    guard !Task.isCancelled else { return }
+    stationResults = stations?.value ?? []
+    structureResults = structures.value ?? []
+
+    var notes: [String] = []
+    if stations == nil || stations?.state == .unavailable {
+      notes.append("NPC stations are currently unavailable.")
+    } else if stations?.state == .partial {
+      notes.append("Some NPC stations could not be resolved.")
+    }
+    switch structures.state {
+    case .forbidden:
+      notes.append(
+        "Player Structures require a connected character with structure-search and structure-detail access."
+      )
+    case .unavailable:
+      notes.append("Player Structure search is currently unavailable.")
+    case .partial:
+      notes.append(
+        "Player Structure results are partial because at least one connected authorization or result was inaccessible."
+      )
+    case .fresh, .stale:
+      if structureResults.isEmpty {
+        notes.append(
+          "No accessible Player Structure matching the system name was returned."
+        )
+      }
+    }
+    if stationResults.isEmpty && structureResults.isEmpty && notes.isEmpty {
+      notes.append("No selectable station or structure was found in this system.")
+    }
+    message = notes.isEmpty ? nil : notes.joined(separator: " ")
   }
 }
 

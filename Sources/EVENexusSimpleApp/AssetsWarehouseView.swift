@@ -17,9 +17,14 @@ struct AssetsWarehouseView: View {
   @Query(sort: \StoredStockTarget.typeName)
   private var stockTargets: [StoredStockTarget]
 
-  @AppStorage("asset.inventory.organization")
+  @AppStorage("asset.inventory.organization", store: AppDefaults.store)
   private var inventoryOrganizationRawValue =
     AssetInventoryOrganization.alphabetical.rawValue
+  @AppStorage(
+    "asset.inventory.include-corporation-hangars",
+    store: AppDefaults.store
+  )
+  private var includeCorporationHangars = false
   @State private var typeNames: [Int64: String] = [:]
   @State private var typeClassifications: [Int64: IndustryItemClassification] = [:]
   @State private var locationNames: [Int64: String] = [:]
@@ -31,6 +36,7 @@ struct AssetsWarehouseView: View {
   @State private var isPreparingWarehouse = false
   @State private var warehouse = AssetWarehouse(inventories: [])
   @State private var inventoryCount = 0
+  @State private var ownerStatuses: [PreparedAssetOwnerStatus] = []
   @State private var factualQuantities: [Int64: Int64] = [:]
   @State private var totalUnits: Int64 = 0
   @State private var expandedLocationIDs = Set<Int64>()
@@ -39,6 +45,14 @@ struct AssetsWarehouseView: View {
     [AssetWarehouseOwnerContentKey: [AssetWarehouseOwnerContentLine]] = [:]
   @State private var ownerSectionsByKey:
     [AssetWarehouseOwnerContentKey: [AssetWarehouseOwnerContentSection]] = [:]
+  @State private var stockTargetSort = AppTableSortDescriptor(
+    column: StockTargetSortColumn.item,
+    direction: .ascending
+  )
+  @State private var ownerContentSort = AppTableSortDescriptor(
+    column: OwnerContentSortColumn.item,
+    direction: .ascending
+  )
 
   var body: some View {
     ScrollView {
@@ -83,23 +97,27 @@ struct AssetsWarehouseView: View {
 
   private var inventoryFilterPanel: some View {
     Panel(title: "Display & filter") {
-      HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
-        Text("Arrange items")
-          .font(.subheadline.weight(.semibold))
-        Picker(
-          "Arrange items",
-          selection: inventoryOrganizationBinding
-        ) {
-          ForEach(AssetInventoryOrganization.allCases) { organization in
-            Text(organizationLabel(organization).localizedUI)
-              .tag(organization)
-          }
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
+          Text("Arrange items")
+            .font(.subheadline.weight(.semibold))
+          inventoryOrganizationPicker
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 520)
+          Spacer()
         }
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 520)
-        .accessibilityIdentifier("warehouse.inventory-organization")
-        Spacer()
+
+        HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
+          Text("Arrange items")
+            .font(.subheadline.weight(.semibold))
+          Spacer(minLength: DesignTokens.spacingSM)
+          inventoryOrganizationPicker
+            .pickerStyle(.menu)
+            .labelsHidden()
+        }
       }
+      .accessibilityIdentifier("warehouse.inventory-organization")
+
       Text(
         "Group and main group use the hierarchy from the active SDE catalog. Unresolved types remain visible under Unclassified."
       )
@@ -108,8 +126,22 @@ struct AssetsWarehouseView: View {
 
       Divider()
 
+      Toggle(
+        "Show corporation hangars",
+        isOn: $includeCorporationHangars
+      )
+      .toggleStyle(.switch)
+      .accessibilityIdentifier("warehouse.include-corporation-hangars")
+      Text(
+        "When enabled, synchronized corporation assets are added to both All items and Warehouse. EVE requires a newly authorized character with the Director role."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      Divider()
+
       HStack(spacing: DesignTokens.spacingSM) {
-        TextField("Filter item name or type ID", text: $inventoryFilter)
+        TextField("Filter item name", text: $inventoryFilter)
           .textFieldStyle(.roundedBorder)
           .accessibilityIdentifier("warehouse.inventory-filter")
         if !inventoryFilter.isEmpty {
@@ -123,16 +155,32 @@ struct AssetsWarehouseView: View {
         }
       }
       Text(
-        "Enter at least 3 letters or a type ID. Matching locations and characters open automatically."
+        "Enter at least 3 letters. Matching locations and characters open automatically."
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
 
+  private var inventoryOrganizationPicker: some View {
+    Picker(
+      "Arrange items",
+      selection: inventoryOrganizationBinding
+    ) {
+      ForEach(AssetInventoryOrganization.allCases) { organization in
+        Text(organizationLabel(organization).localizedUI)
+          .tag(organization)
+      }
+    }
+  }
+
   private var warehouseSummary: some View {
     Panel(title: mode == .allItems ? "All synchronized items" : "Production warehouse") {
-      if inventoryCount == 0 {
+      if mode == .productionWarehouse {
+        productionScopeSummary
+        Divider()
+      }
+      if warehouse.locations.isEmpty {
         Label(
           emptyInventoryMessage.localizedUI,
           systemImage: "shippingbox"
@@ -145,13 +193,13 @@ struct AssetsWarehouseView: View {
           spacing: DesignTokens.spacingSM
         ) {
           summaryMetric("Locations", value: warehouse.locations.count.formatted())
-          summaryMetric("Characters", value: inventoryCount.formatted())
+          summaryMetric("Asset owners", value: inventoryCount.formatted())
           summaryMetric("Item types", value: factualQuantities.count.formatted())
           summaryMetric("Units", value: totalUnits.formatted())
         }
         if warehouse.sourceStates.contains(where: { $0 != .fresh }) {
           Label(
-            "At least one character snapshot is partial, stale, forbidden or unavailable. Its state remains visible under the owner.",
+            "At least one asset-owner snapshot is partial, stale, forbidden or unavailable. Its state remains visible under the owner.",
             systemImage: "exclamationmark.triangle.fill"
           )
           .font(.caption)
@@ -169,13 +217,15 @@ struct AssetsWarehouseView: View {
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
-      if mode == .productionWarehouse {
+      if !includeCorporationHangars {
         Label(
-          "Corporation hangars are not synchronized yet. Their state is therefore unavailable, not empty; this view currently contains personal character assets only.",
+          "Corporation hangars are excluded by the switch.",
           systemImage: "building.2.crop.circle"
         )
         .font(.caption)
-        .foregroundStyle(DesignTokens.caution)
+        .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        corporationAssetStatus
       }
       DisclosureGroup {
         Text(
@@ -187,6 +237,103 @@ struct AssetsWarehouseView: View {
       } label: {
         Label("What does storage position mean?", systemImage: "info.circle")
       }
+    }
+  }
+
+  @ViewBuilder
+  private var productionScopeSummary: some View {
+    let scope = runtime.productionBasis.productionWarehouseScope
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Label(
+        "Combined assigned production locations",
+        systemImage: "point.3.connected.trianglepath.dotted"
+      )
+      .font(.subheadline.weight(.semibold))
+      ForEach(scope.locations) { location in
+        HStack(alignment: .firstTextBaseline) {
+          EVEEntityText(value: location.structureName)
+          Text(verbatim: "·")
+            .foregroundStyle(DesignTokens.textSecondary)
+          EVEEntityText(value: location.solarSystemName)
+          Spacer()
+          Text(
+            location.activities.map(\.displayName).sorted()
+              .map(\.localizedUI).joined(separator: " · ")
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
+      }
+      if !scope.unresolvedActivities.isEmpty {
+        Label(
+          "Some configured production activities have no exact assigned station or player structure and are excluded from allocatable stock.",
+          systemImage: "exclamationmark.triangle.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
+      Text(
+        "Manufacturing stock comes from the selected manufacturing facilities; reaction, invention, copying and research stock comes from their separately assigned facilities. Main Hub market inventory is not part of this Warehouse."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  @ViewBuilder
+  private var corporationAssetStatus: some View {
+    let statuses = ownerStatuses.filter { $0.ownerKind == .corporation }
+    if statuses.isEmpty {
+      if hasCharacterWithCorporationScopes {
+        Label(
+          "Corporation permissions are present, but no corporation-asset snapshot is stored yet. Synchronize the authorized character in Characters.",
+          systemImage: "arrow.triangle.2.circlepath"
+        )
+        .foregroundStyle(DesignTokens.caution)
+      } else {
+        Label(
+          "Corporation assets need updated EVE SSO permissions. In Characters, use Update permissions for a Director and then synchronize.",
+          systemImage: "key.horizontal"
+        )
+        .foregroundStyle(DesignTokens.caution)
+      }
+    } else if statuses.contains(where: {
+      $0.diagnostics.contains("esi.corporation-assets.director-required")
+    }) {
+      Label(
+        "EVE did not confirm the Director role. Corporation hangars remain unavailable and are not treated as empty.",
+        systemImage: "person.badge.shield.checkmark"
+      )
+      .foregroundStyle(DesignTokens.caution)
+    } else if statuses.contains(where: { !$0.hasSnapshot }) {
+      Label(
+        "At least one corporation-asset refresh is forbidden or unavailable. No empty hangar is inferred from that failure.",
+        systemImage: "exclamationmark.triangle.fill"
+      )
+      .foregroundStyle(DesignTokens.caution)
+    } else {
+      Label(
+        "Corporation hangars are included as separate asset owners.",
+        systemImage: "building.2.fill"
+      )
+      .foregroundStyle(
+        statuses.allSatisfy { $0.state == .fresh }
+          ? DesignTokens.positive : DesignTokens.caution
+      )
+    }
+  }
+
+  private var hasCharacterWithCorporationScopes: Bool {
+    characters.contains { character in
+      guard
+        let authorization = try? JSONDecoder().decode(
+          AuthorizationSnapshot.self,
+          from: character.authorizationSnapshot
+        )
+      else { return false }
+      return CorporationAssetSyncService.requiredScopes.isSubset(
+        of: authorization.scopes
+      )
     }
   }
 
@@ -245,17 +392,17 @@ struct AssetsWarehouseView: View {
         )
         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
           GridRow {
-            Text("Item")
-            Text("In warehouse")
-            Text("Target")
-            Text("Free above target")
-            Text("Missing to target")
+            stockTargetHeader("Item", column: .item)
+            stockTargetHeader("In warehouse", column: .factual)
+            stockTargetHeader("Target", column: .target)
+            stockTargetHeader("Free above target", column: .allocatable)
+            stockTargetHeader("Missing to target", column: .missing)
             Text("")
           }
           .font(.caption.bold())
           .foregroundStyle(DesignTokens.textSecondary)
           Divider()
-          ForEach(stockTargets) { target in
+          ForEach(sortedStockTargets) { target in
             StockTargetEditorRow(
               target: target,
               stock: stockLine(typeID: target.typeID),
@@ -311,10 +458,7 @@ struct AssetsWarehouseView: View {
       ) {
         HStack(spacing: DesignTokens.spacingSM) {
           locationIcon(location)
-          Text(locationTitle(location))
-            .font(.headline)
-            .foregroundStyle(DesignTokens.textPrimary)
-            .lineLimit(1)
+          EVEEntityLabel(value: locationTitle(location), lineLimit: 1)
           Spacer(minLength: DesignTokens.spacingMD)
           Text(locationSummary(location))
             .font(.caption.monospacedDigit())
@@ -333,7 +477,7 @@ struct AssetsWarehouseView: View {
         isExpanded ? "Expanded".localizedUI : "Collapsed".localizedUI
       )
       .accessibilityHint(
-        "Show characters and contents at this location".localizedUI
+        "Show owners and contents at this location".localizedUI
       )
 
       if isExpanded {
@@ -347,8 +491,12 @@ struct AssetsWarehouseView: View {
               )
             ) {
               HStack {
-                Text(owner.ownerName)
-                  .font(.subheadline.weight(.semibold))
+                Label(
+                  ownerDisplayName(owner),
+                  systemImage: owner.ownerKind == .corporation
+                    ? "building.2.fill" : "person.fill"
+                )
+                .font(.subheadline.weight(.semibold))
                 freshnessBadge(owner.state)
                 Spacer()
                 Text(
@@ -380,6 +528,16 @@ struct AssetsWarehouseView: View {
     .overlay {
       RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
         .stroke(DesignTokens.border)
+    }
+    .overlay(alignment: .topLeading) {
+      EVEEntityText(
+        value: locationTitle(location),
+        lineLimit: 1,
+        showsTransparentLabel: true,
+        accessibilityIdentifier: "warehouse.copy-location.\(location.id)"
+      )
+      .padding(.leading, 48)
+      .padding(.top, 10)
     }
   }
 
@@ -436,7 +594,7 @@ struct AssetsWarehouseView: View {
           }
           .padding(.top, DesignTokens.spacingXS)
         }
-        ownerContentRows(section.rows, targets: targets)
+        ownerContentRows(section.rows, owner: owner, targets: targets)
       }
     }
     .font(.caption)
@@ -448,11 +606,11 @@ struct AssetsWarehouseView: View {
       alignment: .leading,
       spacing: 7
     ) {
-      Text("Item")
-      Text("Quantity")
-      Text("Storage position")
+      ownerContentHeader("Item", column: .item)
+      ownerContentHeader("Quantity", column: .quantity, alignment: .trailing)
+      ownerContentHeader("Storage position", column: .storage)
       if mode == .productionWarehouse {
-        Text("Minimum")
+        ownerContentHeader("Minimum", column: .minimum, alignment: .trailing)
       }
     }
     .font(.caption.bold())
@@ -461,6 +619,7 @@ struct AssetsWarehouseView: View {
 
   private func ownerContentRows(
     _ rows: [AssetWarehouseOwnerContentLine],
+    owner: AssetWarehouseOwner,
     targets: [Int64: Int64]
   ) -> some View {
     LazyVGrid(
@@ -468,12 +627,14 @@ struct AssetsWarehouseView: View {
       alignment: .leading,
       spacing: 7
     ) {
-      ForEach(rows) { row in
-        Text(typeName(row.typeID))
-          .lineLimit(2)
+      ForEach(sortedOwnerRows(rows, owner: owner, targets: targets)) { row in
+        EVEEntityText(value: typeName(row.typeID), lineLimit: 2)
         Text(row.quantity.formatted())
           .font(.body.monospacedDigit())
-        inventoryFlagView(row.locationFlag)
+        inventoryFlagView(
+          row.locationFlag,
+          corporationDivisionNames: owner.corporationDivisionNames
+        )
         if mode == .productionWarehouse {
           let resolvedName = typeNames[row.typeID]
           WarehouseMinimumEditor(
@@ -509,8 +670,112 @@ struct AssetsWarehouseView: View {
     return columns
   }
 
-  private func inventoryFlagView(_ flag: String) -> some View {
-    let displayName = inventoryFlagDisplayName(flag)
+  private func stockTargetHeader(
+    _ title: LocalizedStringKey,
+    column: StockTargetSortColumn
+  ) -> some View {
+    SortableTableHeader(
+      title: title,
+      column: column,
+      sort: $stockTargetSort,
+      alignment: column == .item ? .leading : .trailing
+    )
+  }
+
+  private var sortedStockTargets: [StoredStockTarget] {
+    stockTargets.sorted { lhs, rhs in
+      let lhsStock = stockLine(typeID: lhs.typeID)
+      let rhsStock = stockLine(typeID: rhs.typeID)
+      let ordered: Bool?
+      switch stockTargetSort.column {
+      case .item:
+        ordered = compareStockTarget(lhs.typeName, rhs.typeName)
+      case .factual:
+        ordered = compareStockTarget(lhsStock.factualQuantity, rhsStock.factualQuantity)
+      case .target:
+        ordered = compareStockTarget(lhs.targetQuantity, rhs.targetQuantity)
+      case .allocatable:
+        ordered = compareStockTarget(
+          lhsStock.allocatableQuantity,
+          rhsStock.allocatableQuantity
+        )
+      case .missing:
+        ordered = compareStockTarget(lhsStock.missingToTarget, rhsStock.missingToTarget)
+      }
+      return ordered ?? (lhs.typeID < rhs.typeID)
+    }
+  }
+
+  private func compareStockTarget<Value: Comparable>(
+    _ lhs: Value,
+    _ rhs: Value
+  ) -> Bool? {
+    guard lhs != rhs else { return nil }
+    return stockTargetSort.direction.orders(lhs, before: rhs)
+  }
+
+  private func ownerContentHeader(
+    _ title: LocalizedStringKey,
+    column: OwnerContentSortColumn,
+    alignment: Alignment = .leading
+  ) -> some View {
+    SortableTableHeader(
+      title: title,
+      column: column,
+      sort: $ownerContentSort,
+      alignment: alignment
+    )
+  }
+
+  private func sortedOwnerRows(
+    _ rows: [AssetWarehouseOwnerContentLine],
+    owner: AssetWarehouseOwner,
+    targets: [Int64: Int64]
+  ) -> [AssetWarehouseOwnerContentLine] {
+    rows.sorted { lhs, rhs in
+      let ordered: Bool?
+      switch ownerContentSort.column {
+      case .item:
+        ordered = compareOwnerContent(typeName(lhs.typeID), typeName(rhs.typeID))
+      case .quantity:
+        ordered = compareOwnerContent(lhs.quantity, rhs.quantity)
+      case .storage:
+        ordered = compareOwnerContent(
+          inventoryFlagDisplayName(
+            lhs.locationFlag,
+            corporationDivisionNames: owner.corporationDivisionNames
+          ),
+          inventoryFlagDisplayName(
+            rhs.locationFlag,
+            corporationDivisionNames: owner.corporationDivisionNames
+          )
+        )
+      case .minimum:
+        ordered = compareOwnerContent(
+          targets[lhs.typeID, default: 0],
+          targets[rhs.typeID, default: 0]
+        )
+      }
+      return ordered ?? (lhs.id < rhs.id)
+    }
+  }
+
+  private func compareOwnerContent<Value: Comparable>(
+    _ lhs: Value,
+    _ rhs: Value
+  ) -> Bool? {
+    guard lhs != rhs else { return nil }
+    return ownerContentSort.direction.orders(lhs, before: rhs)
+  }
+
+  private func inventoryFlagView(
+    _ flag: String,
+    corporationDivisionNames: [Int: String]
+  ) -> some View {
+    let displayName = inventoryFlagDisplayName(
+      flag,
+      corporationDivisionNames: corporationDivisionNames
+    )
     return VStack(alignment: .leading, spacing: 1) {
       Text(displayName)
       if displayName != flag {
@@ -521,8 +786,22 @@ struct AssetsWarehouseView: View {
     }
   }
 
-  private func inventoryFlagDisplayName(_ flag: String) -> String {
-    switch flag {
+  private func inventoryFlagDisplayName(
+    _ flag: String,
+    corporationDivisionNames: [Int: String]
+  ) -> String {
+    if flag.hasPrefix("CorpSAG"),
+      let division = Int(flag.dropFirst("CorpSAG".count))
+    {
+      let fallback = AppLocalization.format(
+        "Corporation hangar %lld",
+        Int64(division)
+      )
+      return corporationDivisionNames[division].map {
+        "\(fallback) — \($0)"
+      } ?? fallback
+    }
+    return switch flag {
     case "Hangar": "Personal hangar".localizedUI
     case "AutoFit": "Inside a container".localizedUI
     case "Unlocked": "Unlocked container contents".localizedUI
@@ -531,6 +810,8 @@ struct AssetsWarehouseView: View {
     case "DroneBay": "Drone bay".localizedUI
     case "FleetHangar": "Fleet hangar".localizedUI
     case "Deliveries": "Deliveries".localizedUI
+    case "CorpDeliveries": "Corporation deliveries".localizedUI
+    case "OfficeFolder": "Corporation office".localizedUI
     default: flag
     }
   }
@@ -588,9 +869,9 @@ struct AssetsWarehouseView: View {
   private var viewDescription: String {
     switch mode {
     case .allItems:
-      "All synchronized personal assets at every known location. Click a location to show characters and contents."
+      "All synchronized personal assets and, when enabled, corporation hangars at every known location. Click a location to show owners and contents."
     case .productionWarehouse:
-      "Production materials from all synchronized characters at the exact facilities linked in Profile. Finished ships and everything fitted to or stored inside them are excluded."
+      "Production materials from synchronized characters and, when enabled, corporation hangars at the exact facilities assigned to manufacturing, reactions, invention, copying and research. Finished ships and everything fitted to or stored inside them are excluded."
     }
   }
 
@@ -599,10 +880,10 @@ struct AssetsWarehouseView: View {
     case .allItems:
       "No stored asset snapshots are available. Open Characters and synchronize the connected characters."
     case .productionWarehouse:
-      if runtime.productionBasis.structures.compactMap(\.structureID).isEmpty {
-        "No exact production facility is linked. Open Profile and select the station or player structure used for production."
+      if runtime.productionBasis.productionWarehouseScope.locationIDs.isEmpty {
+        "No exact assigned production facility is available. Open Profile and assign the station or player structure for each configured activity."
       } else {
-        "No personal production materials were found at the linked production facilities. Synchronize the connected characters to refresh this state."
+        "No usable production materials were found at the assigned production facilities. Synchronize the connected characters to refresh this state."
       }
     }
   }
@@ -612,7 +893,7 @@ struct AssetsWarehouseView: View {
     case .allItems:
       "This inventory is factual and includes every synchronized item, including finished ships. It is not used directly as planner stock."
     case .productionWarehouse:
-      "The planner can allocate these factual quantities across all synchronized characters. Configured minimum quantities remain protected."
+      "The planner can allocate these combined factual quantities across the assigned production facilities and displayed asset owners. Configured minimum quantities remain protected."
     }
   }
 
@@ -649,10 +930,10 @@ struct AssetsWarehouseView: View {
         return eveName
       }
       if !configured.name.isEmpty { return configured.name }
-      return "Location \(location.id)"
+      return "Unknown location".localizedUI
     }
     return locationNames[location.id]
-      ?? "\(locationKindLabel(location.kind)) \(location.id)"
+      ?? "Unknown location".localizedUI
   }
 
   private func locationKindLabel(_ kind: AssetLocationKind) -> String {
@@ -667,21 +948,21 @@ struct AssetsWarehouseView: View {
 
   private func locationSummary(_ location: AssetWarehouseLocation) -> String {
     if activeInventoryFilter == nil {
-      let characters =
+      let owners =
         location.owners.count == 1
-        ? "character".localizedUI : "characters".localizedUI
+        ? "owner".localizedUI : "owners".localizedUI
       return
-        "\(location.owners.count) \(characters) · \(location.totalUnits.formatted()) \("items".localizedUI)"
+        "\(location.owners.count) \(owners) · \(location.totalUnits.formatted()) \("items".localizedUI)"
     }
     let displayedOwners = visibleOwners(in: location)
     let displayedRows = displayedOwners.flatMap {
       visibleRows(locationID: location.id, ownerID: $0.ownerID)
     }
-    let characters =
+    let owners =
       displayedOwners.count == 1
-      ? "character".localizedUI : "characters".localizedUI
+      ? "owner".localizedUI : "owners".localizedUI
     return
-      "\(displayedOwners.count) \(characters) · \(displayedRows.reduce(0) { AssetWarehouse.saturatedAdd($0, $1.quantity) }.formatted()) \("items".localizedUI)"
+      "\(displayedOwners.count) \(owners) · \(displayedRows.reduce(0) { AssetWarehouse.saturatedAdd($0, $1.quantity) }.formatted()) \("items".localizedUI)"
   }
 
   private func ownerSummary(
@@ -756,7 +1037,12 @@ struct AssetsWarehouseView: View {
   }
 
   private func typeName(_ typeID: Int64) -> String {
-    typeNames[typeID] ?? "Type \(typeID)"
+    typeNames[typeID] ?? "Unknown item".localizedUI
+  }
+
+  private func ownerDisplayName(_ owner: AssetWarehouseOwner) -> String {
+    guard owner.ownerKind == .corporation else { return owner.ownerName }
+    return locationNames[owner.ownerID] ?? owner.ownerName
   }
 
   private func stockLine(typeID: Int64) -> WarehouseStockLine {
@@ -861,14 +1147,20 @@ struct AssetsWarehouseView: View {
         String(character.characterID),
         character.characterName,
         String(character.assetSnapshot?.count ?? 0),
+        String(character.corporationID ?? 0),
+        String(character.corporationAssetSnapshot?.count ?? 0),
         String(character.lastSyncAt?.timeIntervalSince1970 ?? 0),
       ].joined(separator: ":")
     }
     .joined(separator: "|")
-    let productionPart = runtime.productionBasis.structures.map {
-      "\($0.id.uuidString):\($0.structureID ?? 0)"
-    }.sorted().joined(separator: "|")
-    return "\(mode)|\(characterPart)|\(productionPart)"
+    let scope = runtime.productionBasis.productionWarehouseScope
+    let productionPart =
+      scope.locations.map {
+        "\($0.locationID):\($0.activities.map(\.rawValue).sorted().joined(separator: ","))"
+      }.sorted().joined(separator: "|")
+      + "|unresolved:"
+      + scope.unresolvedActivities.map(\.rawValue).sorted().joined(separator: ",")
+    return "\(mode)|corp:\(includeCorporationHangars)|\(characterPart)|\(productionPart)"
   }
 
   private var nameResolutionIdentity: String {
@@ -879,20 +1171,39 @@ struct AssetsWarehouseView: View {
       .map(String.init).joined(separator: ",")
     let typePart = factualQuantities.keys.sorted()
       .map(String.init).joined(separator: ",")
-    return snapshotPart + "|" + targetPart + "|" + typePart
+    let ownerPart = ownerStatuses.map {
+      "\($0.ownerKind.rawValue):\($0.ownerID)"
+    }.sorted().joined(separator: ",")
+    return snapshotPart + "|" + targetPart + "|" + typePart + "|" + ownerPart
   }
 
   private func prepareWarehouse() async {
     isPreparingWarehouse = true
     defer { isPreparingWarehouse = false }
-    let payloads = characters.compactMap { character in
+    var payloads = characters.compactMap { character in
       character.assetSnapshot.map {
         StoredAssetSnapshotPayload(
           ownerID: character.characterID,
           ownerName: character.characterName,
+          ownerKind: .character,
           encodedSnapshot: $0
         )
       }
+    }
+    if includeCorporationHangars {
+      payloads.append(
+        contentsOf: characters.compactMap { character in
+          guard let corporationID = character.corporationID,
+            let encodedSnapshot = character.corporationAssetSnapshot
+          else { return nil }
+          return StoredAssetSnapshotPayload(
+            ownerID: corporationID,
+            ownerName: character.corporationName
+              ?? "Unknown corporation".localizedUI,
+            ownerKind: .corporation,
+            encodedSnapshot: encodedSnapshot
+          )
+        })
     }
     let prepared = await runtime.prepareAssetWarehouse(
       identity: assetProjectionIdentity,
@@ -914,6 +1225,7 @@ struct AssetsWarehouseView: View {
     guard !Task.isCancelled else { return }
     warehouse = visible.warehouse
     inventoryCount = visible.inventoryCount
+    ownerStatuses = visible.ownerStatuses
     factualQuantities = visible.factualQuantities
     totalUnits = visible.totalUnits
     ownerRowsByKey = preparedRows
@@ -939,6 +1251,10 @@ struct AssetsWarehouseView: View {
             && $0.id < AssetLocationKind.minimumPlayerStructureID
         }
         .map(\.id)
+    ).union(
+      ownerStatuses.lazy
+        .filter { $0.ownerKind == .corporation }
+        .map(\.ownerID)
     )
     async let resolvedLocations = runtime.resolveAssetLocationNames(
       publicLocationIDs
@@ -1065,6 +1381,21 @@ private enum OwnerContentRowProjection {
   }
 }
 
+private enum StockTargetSortColumn: Hashable {
+  case item
+  case factual
+  case target
+  case allocatable
+  case missing
+}
+
+private enum OwnerContentSortColumn: Hashable {
+  case item
+  case quantity
+  case storage
+  case minimum
+}
+
 private struct StockTargetEditorRow: View {
   let target: StoredStockTarget
   let stock: WarehouseStockLine
@@ -1073,7 +1404,7 @@ private struct StockTargetEditorRow: View {
 
   var body: some View {
     GridRow {
-      Text(target.typeName)
+      EVEEntityText(value: target.typeName)
       Text(stock.factualQuantity.formatted())
         .font(.body.monospacedDigit())
       WarehouseMinimumEditor(
@@ -1185,9 +1516,6 @@ private struct WarehouseItemSearchField: View {
           )
           .foregroundStyle(DesignTokens.textSecondary)
         }
-        Spacer()
-        Text("Source: active SDE")
-          .foregroundStyle(DesignTokens.textSecondary)
       }
       .font(.caption)
     }
@@ -1214,16 +1542,10 @@ private struct WarehouseItemSearchField: View {
                 query = item.name
                 isShowingResults = false
               } label: {
-                HStack {
-                  Text(item.name)
-                  Spacer()
-                  Text(String(item.id))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(DesignTokens.textSecondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, DesignTokens.spacingSM)
-                .contentShape(Rectangle())
+                Text(item.name)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .padding(.vertical, DesignTokens.spacingSM)
+                  .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
               if item.id != results.last?.id {

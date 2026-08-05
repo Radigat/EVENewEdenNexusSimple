@@ -553,6 +553,85 @@ struct AssetWarehouseTests {
     )
   }
 
+  @Test
+  func sameCorporationFromMultipleDirectorsIsCountedOnlyOnce() {
+    let corporationID: Int64 = 98_000_001
+    let stationID: Int64 = 60_003_760
+    let older = corporationAssets(
+      corporationID: corporationID,
+      actingCharacterID: 11,
+      quantity: 100,
+      capturedAt: Date(timeIntervalSince1970: 1_000)
+    )
+    let newer = corporationAssets(
+      corporationID: corporationID,
+      actingCharacterID: 22,
+      quantity: 240,
+      capturedAt: Date(timeIntervalSince1970: 2_000)
+    )
+
+    let warehouse = AssetWarehouse(
+      inventories: [
+        AssetOwnerInventory(
+          ownerID: corporationID,
+          ownerName: "Example Industries",
+          ownerKind: .corporation,
+          assets: older
+        ),
+        AssetOwnerInventory(
+          ownerID: corporationID,
+          ownerName: "Example Industries",
+          ownerKind: .corporation,
+          assets: newer
+        ),
+      ]
+    )
+
+    #expect(warehouse.factualQuantities[34] == 240)
+    #expect(warehouse.locations.first?.id == stationID)
+    #expect(warehouse.locations.first?.owners.count == 1)
+    #expect(warehouse.locations.first?.owners.first?.ownerKind == .corporation)
+    #expect(
+      warehouse.locations.first?.owners.first?.corporationDivisionNames[1]
+        == "Minerals"
+    )
+  }
+
+  private func corporationAssets(
+    corporationID: Int64,
+    actingCharacterID: Int64,
+    quantity: Int64,
+    capturedAt: Date
+  ) -> Sourced<AssetSnapshot> {
+    let source = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate,
+      capturedAt: capturedAt
+    )
+    return Sourced(
+      state: .fresh,
+      value: AssetSnapshot(
+        characterID: actingCharacterID,
+        corporationID: corporationID,
+        corporationName: "Example Industries",
+        corporationDivisionNames: [1: "Minerals"],
+        capturedAt: capturedAt,
+        state: .fresh,
+        items: [
+          asset(
+            id: actingCharacterID,
+            typeID: 34,
+            quantity: quantity,
+            locationID: 60_003_760,
+            kind: .station,
+            locationFlag: "CorpSAG1"
+          )
+        ]
+      ),
+      source: source
+    )
+  }
+
   private func sourcedAssets(
     ownerID: Int64,
     items: [AssetItem]

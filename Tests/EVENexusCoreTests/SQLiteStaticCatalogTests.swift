@@ -34,6 +34,13 @@ struct SQLiteStaticCatalogTests {
     #expect(
       try await catalog.searchItemTypes(matching: "unpublished").isEmpty
     )
+    let contractMetadata = try await catalog.publicContractItemMetadata(
+      typeIDs: [1, 2, 99, 999]
+    )
+    #expect(contractMetadata[1]?.typeName == "Fixture Ship")
+    #expect(contractMetadata[1]?.groupName == "Fixture Group")
+    #expect(contractMetadata[1]?.categoryName == "Fixture")
+    #expect(contractMetadata[99] == nil)
     #expect(
       try await catalog.productionDefinition(productTypeID: 1)?
         .blueprintTypeID == 100

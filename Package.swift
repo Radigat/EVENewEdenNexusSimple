@@ -38,6 +38,7 @@ let package = Package(
       name: "EVENexusCoreTests",
       dependencies: [
         "EVENexusCore",
+        "CSQLite",
         .product(name: "EVEStaticDataKit", package: "EVEStaticDataKit"),
       ]
     ),

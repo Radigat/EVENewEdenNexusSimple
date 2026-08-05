@@ -28,6 +28,41 @@ public struct ESIResponse<Value: Sendable>: Sendable {
   public let lastModified: String?
   public let pages: Int?
   public let errorLimitRemain: Int?
+  public let errorLimitReset: Int?
+  public let rateLimitGroup: String?
+  public let rateLimit: String?
+  public let rateLimitRemaining: Int?
+  public let rateLimitUsed: Int?
+
+  public init(
+    value: Value,
+    source: SourceIdentity,
+    statusCode: Int,
+    expiresAt: Date? = nil,
+    etag: String? = nil,
+    lastModified: String? = nil,
+    pages: Int? = nil,
+    errorLimitRemain: Int? = nil,
+    errorLimitReset: Int? = nil,
+    rateLimitGroup: String? = nil,
+    rateLimit: String? = nil,
+    rateLimitRemaining: Int? = nil,
+    rateLimitUsed: Int? = nil
+  ) {
+    self.value = value
+    self.source = source
+    self.statusCode = statusCode
+    self.expiresAt = expiresAt
+    self.etag = etag
+    self.lastModified = lastModified
+    self.pages = pages
+    self.errorLimitRemain = errorLimitRemain
+    self.errorLimitReset = errorLimitReset
+    self.rateLimitGroup = rateLimitGroup
+    self.rateLimit = rateLimit
+    self.rateLimitRemaining = rateLimitRemaining
+    self.rateLimitUsed = rateLimitUsed
+  }
 }
 
 public struct ESIResponseCacheUsage: Equatable, Sendable {
@@ -113,6 +148,7 @@ public actor ESIClient {
   private let maximumPageCount: Int
   private let maximumCachedResponses: Int
   private let maximumCachedBytes: Int
+  private let userAgent: String
   private let now: @Sendable () -> Date
   private var validators: [String: Validator] = [:]
   private var cachedResponseBytes = 0
@@ -124,6 +160,7 @@ public actor ESIClient {
     maximumPageCount: Int = 1_000,
     maximumCachedResponses: Int = 512,
     maximumCachedBytes: Int = 64 * 1_024 * 1_024,
+    userAgent: String = CCPUserAgentConfiguration.genericValue,
     now: @escaping @Sendable () -> Date = { Date() }
   ) {
     self.transport = transport
@@ -131,6 +168,7 @@ public actor ESIClient {
     self.maximumPageCount = min(10_000, max(1, maximumPageCount))
     self.maximumCachedResponses = max(0, maximumCachedResponses)
     self.maximumCachedBytes = max(0, maximumCachedBytes)
+    self.userAgent = userAgent
     self.now = now
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
@@ -154,6 +192,15 @@ public actor ESIClient {
   public func removeAllCachedResponses() {
     validators.removeAll(keepingCapacity: false)
     cachedResponseBytes = 0
+  }
+
+  /// Releases public cached bodies for one endpoint family after a bulk
+  /// consumer has produced its durable or compact projection. Other public and
+  /// all character-partitioned validators remain available.
+  public func removeCachedPublicResponses(pathPrefix: String) {
+    guard pathPrefix.hasPrefix("/"), !pathPrefix.contains("://") else { return }
+    let prefix = "public|https://esi.evetech.net\(pathPrefix)"
+    removeCachedResponses { $0.hasPrefix(prefix) }
   }
 
   public func get<Value: Decodable & Sendable>(
@@ -209,7 +256,7 @@ public actor ESIClient {
     )
     request.setValue("tranquility", forHTTPHeaderField: "X-Tenant")
     request.setValue(
-      "EVE-Nexus-Simple/1.0 local-contact",
+      userAgent,
       forHTTPHeaderField: "User-Agent"
     )
     request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -250,7 +297,10 @@ public actor ESIClient {
         }
         let decoded: Value
         do {
-          decoded = try decoder.decode(Value.self, from: usableData)
+          let decodingData =
+            response.statusCode == 204 && usableData.isEmpty
+            ? Data("[]".utf8) : usableData
+          decoded = try decoder.decode(Value.self, from: decodingData)
         } catch {
           throw ESIError.decoding
         }
@@ -300,6 +350,23 @@ public actor ESIClient {
             response.value(
               forHTTPHeaderField: "X-ESI-Error-Limit-Remain"
             ) ?? ""
+          ),
+          errorLimitReset: Int(
+            response.value(
+              forHTTPHeaderField: "X-ESI-Error-Limit-Reset"
+            ) ?? ""
+          ),
+          rateLimitGroup: response.value(
+            forHTTPHeaderField: "X-Ratelimit-Group"
+          ),
+          rateLimit: response.value(forHTTPHeaderField: "X-Ratelimit-Limit"),
+          rateLimitRemaining: Int(
+            response.value(
+              forHTTPHeaderField: "X-Ratelimit-Remaining"
+            ) ?? ""
+          ),
+          rateLimitUsed: Int(
+            response.value(forHTTPHeaderField: "X-Ratelimit-Used") ?? ""
           )
         )
       } catch is CancellationError {
@@ -317,7 +384,7 @@ public actor ESIClient {
         {
           attempt += 1
           try await Task.sleep(
-            for: .seconds(min(retryAfter ?? 1, 10))
+            for: .seconds(min(max(retryAfter ?? 60, 1), 900))
           )
           continue
         }
@@ -409,7 +476,7 @@ public actor ESIClient {
     )
     request.setValue("tranquility", forHTTPHeaderField: "X-Tenant")
     request.setValue(
-      "EVE-Nexus-Simple/1.0 local-contact",
+      userAgent,
       forHTTPHeaderField: "User-Agent"
     )
     request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -453,6 +520,23 @@ public actor ESIClient {
           response.value(
             forHTTPHeaderField: "X-ESI-Error-Limit-Remain"
           ) ?? ""
+        ),
+        errorLimitReset: Int(
+          response.value(
+            forHTTPHeaderField: "X-ESI-Error-Limit-Reset"
+          ) ?? ""
+        ),
+        rateLimitGroup: response.value(
+          forHTTPHeaderField: "X-Ratelimit-Group"
+        ),
+        rateLimit: response.value(forHTTPHeaderField: "X-Ratelimit-Limit"),
+        rateLimitRemaining: Int(
+          response.value(
+            forHTTPHeaderField: "X-Ratelimit-Remaining"
+          ) ?? ""
+        ),
+        rateLimitUsed: Int(
+          response.value(forHTTPHeaderField: "X-Ratelimit-Used") ?? ""
         )
       )
     } catch is CancellationError {
@@ -504,7 +588,12 @@ public actor ESIClient {
       etag: first.etag,
       lastModified: first.lastModified,
       pages: pageCount,
-      errorLimitRemain: first.errorLimitRemain
+      errorLimitRemain: first.errorLimitRemain,
+      errorLimitReset: first.errorLimitReset,
+      rateLimitGroup: first.rateLimitGroup,
+      rateLimit: first.rateLimit,
+      rateLimitRemaining: first.rateLimitRemaining,
+      rateLimitUsed: first.rateLimitUsed
     )
   }
 
@@ -521,6 +610,11 @@ public actor ESIClient {
         retryAfter: Int(
           response.value(forHTTPHeaderField: "Retry-After") ?? ""
         )
+          ?? Int(
+            response.value(
+              forHTTPHeaderField: "X-ESI-Error-Limit-Reset"
+            ) ?? ""
+          )
       )
     case 500...599:
       throw ESIError.server(response.statusCode)

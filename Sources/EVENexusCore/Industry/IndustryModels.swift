@@ -1,5 +1,108 @@
 import Foundation
 
+public enum DashboardIndustryActivity: String, Codable, CaseIterable,
+  Identifiable, Sendable
+{
+  case manufacturing
+  case reaction
+  case copying
+  case invention
+  case materialResearch
+  case timeResearch
+
+  public var id: Self { self }
+
+  public init?(esiActivityID: Int) {
+    switch esiActivityID {
+    case 1: self = .manufacturing
+    case 3: self = .timeResearch
+    case 4: self = .materialResearch
+    case 5: self = .copying
+    case 8: self = .invention
+    // ESI character industry jobs report reactions as activity 9. Activity 11
+    // is retained as an accepted legacy/alternate reaction identifier so a
+    // previously cached snapshot never regresses to an unknown activity.
+    case 9, 11: self = .reaction
+    default: return nil
+    }
+  }
+
+  public var usesSharedScienceSlots: Bool {
+    switch self {
+    case .copying, .invention, .materialResearch, .timeResearch: true
+    case .manufacturing, .reaction: false
+    }
+  }
+}
+
+public enum IndustrySlotCapacityRules {
+  public static let massProductionSkillTypeID: Int64 = 3_387
+  public static let advancedMassProductionSkillTypeID: Int64 = 24_625
+  public static let laboratoryOperationSkillTypeID: Int64 = 3_406
+  public static let advancedLaboratoryOperationSkillTypeID: Int64 = 24_624
+  public static let massReactionsSkillTypeID: Int64 = 45_748
+  public static let advancedMassReactionsSkillTypeID: Int64 = 45_749
+
+  public static func capacity(
+    for activity: DashboardIndustryActivity,
+    skills: Sourced<[TrainedSkill]>
+  ) -> Int? {
+    guard let values = skills.value,
+      skills.state != .forbidden,
+      skills.state != .unavailable
+    else { return nil }
+    let levels = Dictionary(
+      values.map { ($0.skillID, max(0, min(5, $0.activeLevel))) },
+      uniquingKeysWith: max
+    )
+    switch activity {
+    case .manufacturing:
+      return 1
+        + (levels[massProductionSkillTypeID] ?? 0)
+        + (levels[advancedMassProductionSkillTypeID] ?? 0)
+    case .reaction:
+      return (levels[massReactionsSkillTypeID] ?? 0)
+        + (levels[advancedMassReactionsSkillTypeID] ?? 0)
+    case .copying, .invention, .materialResearch, .timeResearch:
+      return 1
+        + (levels[laboratoryOperationSkillTypeID] ?? 0)
+        + (levels[advancedLaboratoryOperationSkillTypeID] ?? 0)
+    }
+  }
+}
+
+extension ESIIndustryJobDTO {
+  public var dashboardActivity: DashboardIndustryActivity? {
+    DashboardIndustryActivity(esiActivityID: activityID)
+  }
+
+  public func isRunning(at date: Date) -> Bool {
+    let normalized = status.lowercased()
+    return normalized == "paused" || (normalized == "active" && endDate > date)
+  }
+
+  public var isReadyForDelivery: Bool {
+    status.caseInsensitiveCompare("ready") == .orderedSame
+  }
+
+  /// ESI snapshots are cached. A job whose last snapshot still says active is
+  /// nevertheless ready once its authoritative end date has passed. Paused
+  /// jobs remain paused because their progress may be suspended with a facility.
+  public func isReadyForDelivery(at date: Date) -> Bool {
+    isReadyForDelivery
+      || (status.caseInsensitiveCompare("active") == .orderedSame
+        && endDate <= date)
+  }
+
+  public var isDelivered: Bool {
+    status.caseInsensitiveCompare("delivered") == .orderedSame
+  }
+
+  public var isCancelledOrReverted: Bool {
+    ["cancelled", "reverted"].contains(status.lowercased())
+  }
+}
+
 public enum PlanAction: String, Codable, CaseIterable, Sendable {
   case produce
   case buy
@@ -32,6 +135,7 @@ public struct ProcurementLocation: Identifiable, Codable, Hashable, Sendable {
   public let locationID: Int64?
   public let kind: ProcurementLocationKind
   public let solarSystemID: Int64?
+  public let regionID: Int64?
   public let ownerCorporationID: Int64?
   public let ownerFactionID: Int64?
 
@@ -41,6 +145,7 @@ public struct ProcurementLocation: Identifiable, Codable, Hashable, Sendable {
     locationID: Int64? = nil,
     kind: ProcurementLocationKind,
     solarSystemID: Int64? = nil,
+    regionID: Int64? = nil,
     ownerCorporationID: Int64? = nil,
     ownerFactionID: Int64? = nil
   ) {
@@ -49,8 +154,19 @@ public struct ProcurementLocation: Identifiable, Codable, Hashable, Sendable {
     self.locationID = locationID
     self.kind = kind
     self.solarSystemID = solarSystemID
+    self.regionID = regionID
     self.ownerCorporationID = ownerCorporationID
     self.ownerFactionID = ownerFactionID
+  }
+
+  /// Compares the stable ESI location identity when it is available. The
+  /// fallback keeps legacy, unresolved locations deterministic without
+  /// treating two merely similar display names as the same place.
+  public func representsSameLocation(as other: ProcurementLocation) -> Bool {
+    if let locationID, let otherLocationID = other.locationID {
+      return locationID == otherLocationID
+    }
+    return kind == other.kind && id == other.id
   }
 
   public static let jita = ProcurementLocation(
@@ -59,6 +175,7 @@ public struct ProcurementLocation: Identifiable, Codable, Hashable, Sendable {
     locationID: 60_003_760,
     kind: .npcTradeHub,
     solarSystemID: 30_000_142,
+    regionID: 10_000_002,
     ownerCorporationID: 1_000_035,
     ownerFactionID: 500_001
   )
@@ -67,28 +184,40 @@ public struct ProcurementLocation: Identifiable, Codable, Hashable, Sendable {
     name: "Amarr VIII (Oris) - Emperor Family Academy",
     locationID: 60_008_494,
     kind: .npcTradeHub,
-    solarSystemID: 30_002_187
+    solarSystemID: 30_002_187,
+    regionID: 10_000_043,
+    ownerCorporationID: 1_000_086,
+    ownerFactionID: 500_003
   )
   public static let dodixie = ProcurementLocation(
     id: "npc:60011866",
     name: "Dodixie IX - Moon 20 - Federation Navy Assembly Plant",
     locationID: 60_011_866,
     kind: .npcTradeHub,
-    solarSystemID: 30_002_659
+    solarSystemID: 30_002_659,
+    regionID: 10_000_032,
+    ownerCorporationID: 1_000_120,
+    ownerFactionID: 500_004
   )
   public static let rens = ProcurementLocation(
     id: "npc:60004588",
     name: "Rens VI - Moon 8 - Brutor Tribe Treasury",
     locationID: 60_004_588,
     kind: .npcTradeHub,
-    solarSystemID: 30_002_510
+    solarSystemID: 30_002_510,
+    regionID: 10_000_030,
+    ownerCorporationID: 1_000_049,
+    ownerFactionID: 500_002
   )
   public static let hek = ProcurementLocation(
     id: "npc:60005686",
     name: "Hek VIII - Moon 12 - Boundless Creation Factory",
     locationID: 60_005_686,
     kind: .npcTradeHub,
-    solarSystemID: 30_002_053
+    solarSystemID: 30_002_053,
+    regionID: 10_000_042,
+    ownerCorporationID: 1_000_057,
+    ownerFactionID: 500_002
   )
 
   public static let standardTradeHubs: [ProcurementLocation] = [
@@ -107,13 +236,39 @@ public struct ProcurementLocation: Identifiable, Codable, Hashable, Sendable {
 public struct MaterialProcurementPreference: Codable, Equatable, Sendable {
   public var supplyMode: MaterialSupplyMode
   public var purchaseLocation: ProcurementLocation
+  /// When enabled, factual allocatable production-warehouse stock is consumed
+  /// before the selected build or buy fallback is applied to the shortfall.
+  public var usesAvailableStockFirst: Bool
 
   public init(
     supplyMode: MaterialSupplyMode = .buy,
-    purchaseLocation: ProcurementLocation = .jita
+    purchaseLocation: ProcurementLocation = .jita,
+    usesAvailableStockFirst: Bool = false
   ) {
     self.supplyMode = supplyMode
     self.purchaseLocation = purchaseLocation
+    self.usesAvailableStockFirst = usesAvailableStockFirst
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case supplyMode, purchaseLocation, usesAvailableStockFirst
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    supplyMode = try container.decode(
+      MaterialSupplyMode.self,
+      forKey: .supplyMode
+    )
+    purchaseLocation = try container.decode(
+      ProcurementLocation.self,
+      forKey: .purchaseLocation
+    )
+    usesAvailableStockFirst =
+      try container.decodeIfPresent(
+        Bool.self,
+        forKey: .usesAvailableStockFirst
+      ) ?? false
   }
 }
 
@@ -254,12 +409,16 @@ public struct PlanNode: Identifiable, Codable, Sendable {
   public let id: UUID
   public let typeID: Int64
   public let name: String
+  /// Quantity requested by the parent. This differs from `requiredQuantity`
+  /// when a recipe produces more than one unit per run or rounds up runs.
+  public let requestedQuantity: Int64?
   public let requiredQuantity: Int64
   public let action: PlanAction
   public let activity: BlueprintActivityDefinition.Kind?
   public let runs: Int?
   public let materialEfficiency: Int?
   public let timeEfficiency: Int?
+  public let blueprintTypeID: Int64?
   public let facilityName: String?
   public let manufacturingCategory: ManufacturingCategory?
   public let children: [UUID]
@@ -269,12 +428,14 @@ public struct PlanNode: Identifiable, Codable, Sendable {
     id: UUID,
     typeID: Int64,
     name: String,
+    requestedQuantity: Int64? = nil,
     requiredQuantity: Int64,
     action: PlanAction,
     activity: BlueprintActivityDefinition.Kind?,
     runs: Int?,
     materialEfficiency: Int?,
     timeEfficiency: Int?,
+    blueprintTypeID: Int64? = nil,
     facilityName: String? = nil,
     manufacturingCategory: ManufacturingCategory? = nil,
     children: [UUID],
@@ -283,12 +444,14 @@ public struct PlanNode: Identifiable, Codable, Sendable {
     self.id = id
     self.typeID = typeID
     self.name = name
+    self.requestedQuantity = requestedQuantity
     self.requiredQuantity = requiredQuantity
     self.action = action
     self.activity = activity
     self.runs = runs
     self.materialEfficiency = materialEfficiency
     self.timeEfficiency = timeEfficiency
+    self.blueprintTypeID = blueprintTypeID
     self.facilityName = facilityName
     self.manufacturingCategory = manufacturingCategory
     self.children = children
@@ -586,9 +749,13 @@ public struct IndustryCostBreakdown: Codable, Equatable, Sendable {
 
 public struct SaleScenarioResult: Codable, Sendable {
   public let scenario: PriceScenario
+  public let marketLocation: ProcurementLocation?
   public let grossRevenue: Double?
   public let salesTax: Double?
   public let brokerFee: Double?
+  public let outboundLogistics: LogisticsCostBreakdown?
+  public let outboundLogisticsCost: Double?
+  public let totalCost: Double?
   public let grossOrNetRevenue: Double?
   public let profit: Double?
   public let margin: Double?
@@ -597,9 +764,13 @@ public struct SaleScenarioResult: Codable, Sendable {
 
   public init(
     scenario: PriceScenario,
+    marketLocation: ProcurementLocation? = nil,
     grossRevenue: Double? = nil,
     salesTax: Double? = nil,
     brokerFee: Double? = nil,
+    outboundLogistics: LogisticsCostBreakdown? = nil,
+    outboundLogisticsCost: Double? = nil,
+    totalCost: Double? = nil,
     grossOrNetRevenue: Double?,
     profit: Double?,
     margin: Double?,
@@ -607,9 +778,13 @@ public struct SaleScenarioResult: Codable, Sendable {
     quotes: [PriceQuote]
   ) {
     self.scenario = scenario
+    self.marketLocation = marketLocation
     self.grossRevenue = grossRevenue
     self.salesTax = salesTax
     self.brokerFee = brokerFee
+    self.outboundLogistics = outboundLogistics
+    self.outboundLogisticsCost = outboundLogisticsCost
+    self.totalCost = totalCost
     self.grossOrNetRevenue = grossOrNetRevenue
     self.profit = profit
     self.margin = margin
@@ -648,6 +823,8 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public let costBreakdown: IndustryCostBreakdown?
   public let immediateSale: SaleScenarioResult
   public let listedSale: SaleScenarioResult
+  public let homeImmediateSale: SaleScenarioResult?
+  public let homeListedSale: SaleScenarioResult?
   public let totalJobSeconds: Int64
   public let makespanSeconds: Int64
   public let warnings: [DomainWarning]
@@ -666,6 +843,32 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
     }
     return total
   }
+
+  public var plannedOutputUnits: Int64? {
+    var total: Int64 = 0
+    for request in requests {
+      guard
+        let node = nodes.last(where: {
+          $0.topLevelRequestID == request.id && $0.action == .produce
+        }),
+        node.requiredQuantity > 0
+      else { return nil }
+      let addition = total.addingReportingOverflow(node.requiredQuantity)
+      guard !addition.overflow else { return nil }
+      total = addition.partialValue
+    }
+    return total > 0 ? total : nil
+  }
+
+  public var productionCostPerOutputUnit: Double? {
+    guard let totalCost = costBreakdown?.totalProductionCost,
+      totalCost.isFinite,
+      totalCost >= 0,
+      let plannedOutputUnits
+    else { return nil }
+    let value = totalCost / Double(plannedOutputUnits)
+    return value.isFinite && value >= 0 ? value : nil
+  }
 }
 
 public protocol IndustryCatalogQuerying: Sendable {
@@ -673,6 +876,7 @@ public protocol IndustryCatalogQuerying: Sendable {
   func typeName(id: Int64) async throws -> String?
   func productionDefinition(productTypeID: Int64) async throws
     -> BlueprintDefinition?
+  func manufacturingDefinitions() async throws -> [BlueprintDefinition]
   func reactionDefinitions() async throws -> [BlueprintDefinition]
   func industryClassification(productTypeID: Int64) async throws
     -> IndustryItemClassification?
@@ -680,6 +884,10 @@ public protocol IndustryCatalogQuerying: Sendable {
 }
 
 extension IndustryCatalogQuerying {
+  public func manufacturingDefinitions() async throws -> [BlueprintDefinition] {
+    []
+  }
+
   public func reactionDefinitions() async throws -> [BlueprintDefinition] {
     []
   }

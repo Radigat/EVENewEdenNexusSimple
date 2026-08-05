@@ -1,17 +1,25 @@
 import Foundation
 
+public enum AssetOwnerKind: String, Codable, Hashable, Sendable {
+  case character
+  case corporation
+}
+
 public struct AssetOwnerInventory: Codable, Sendable {
   public let ownerID: Int64
   public let ownerName: String
+  public let ownerKind: AssetOwnerKind
   public let assets: Sourced<AssetSnapshot>
 
   public init(
     ownerID: Int64,
     ownerName: String,
+    ownerKind: AssetOwnerKind = .character,
     assets: Sourced<AssetSnapshot>
   ) {
     self.ownerID = ownerID
     self.ownerName = ownerName
+    self.ownerKind = ownerKind
     self.assets = assets
   }
 }
@@ -187,6 +195,8 @@ public struct AssetWarehouseOwner: Identifiable, Codable, Sendable {
   public var id: Int64 { ownerID }
   public let ownerID: Int64
   public let ownerName: String
+  public let ownerKind: AssetOwnerKind
+  public let corporationDivisionNames: [Int: String]
   public let state: DataFreshness
   public let capturedAt: Date
   public let snapshotID: UUID
@@ -195,6 +205,8 @@ public struct AssetWarehouseOwner: Identifiable, Codable, Sendable {
   public init(
     ownerID: Int64,
     ownerName: String,
+    ownerKind: AssetOwnerKind = .character,
+    corporationDivisionNames: [Int: String] = [:],
     state: DataFreshness,
     capturedAt: Date,
     snapshotID: UUID,
@@ -202,6 +214,8 @@ public struct AssetWarehouseOwner: Identifiable, Codable, Sendable {
   ) {
     self.ownerID = ownerID
     self.ownerName = ownerName
+    self.ownerKind = ownerKind
+    self.corporationDivisionNames = corporationDivisionNames
     self.state = state
     self.capturedAt = capturedAt
     self.snapshotID = snapshotID
@@ -303,14 +317,27 @@ public struct AssetWarehouse: Codable, Sendable {
 
   public init(inventories: [AssetOwnerInventory]) {
     var grouped: [AssetRootLocation: [Int64: [AssetWarehouseItem]]] = [:]
-    var ownerDetails: [Int64: (name: String, state: DataFreshness, date: Date, id: UUID)] = [:]
+    var ownerDetails:
+      [Int64: (
+        name: String,
+        kind: AssetOwnerKind,
+        divisionNames: [Int: String],
+        state: DataFreshness,
+        date: Date,
+        id: UUID
+      )] = [:]
     var snapshotIDs: [UUID] = []
     var sourceStates: [DataFreshness] = []
     var unresolved = Set<Int64>()
     var resolvedLocationNames: [Int64: (name: String, capturedAt: Date)] = [:]
     var resolvedStructureTypeIDs: [Int64: (typeID: Int64, capturedAt: Date)] = [:]
 
-    for inventory in inventories.sorted(by: { $0.ownerID < $1.ownerID }) {
+    let selectedInventories = Dictionary(grouping: inventories) {
+      "\($0.ownerKind.rawValue):\($0.ownerID)"
+    }.compactMap { _, candidates in
+      candidates.max(by: Self.isLessPreferred)
+    }
+    for inventory in selectedInventories.sorted(by: { $0.ownerID < $1.ownerID }) {
       sourceStates.append(inventory.assets.state)
       guard let snapshot = inventory.assets.value else { continue }
       snapshotIDs.append(snapshot.id)
@@ -334,6 +361,8 @@ public struct AssetWarehouse: Codable, Sendable {
       }
       ownerDetails[inventory.ownerID] = (
         inventory.ownerName,
+        inventory.ownerKind,
+        snapshot.corporationDivisionNames ?? [:],
         inventory.assets.state,
         snapshot.capturedAt,
         snapshot.id
@@ -369,6 +398,8 @@ public struct AssetWarehouse: Codable, Sendable {
           return AssetWarehouseOwner(
             ownerID: ownerID,
             ownerName: detail.name,
+            ownerKind: detail.kind,
+            corporationDivisionNames: detail.divisionNames,
             state: detail.state,
             capturedAt: detail.date,
             snapshotID: detail.id,
@@ -433,6 +464,8 @@ public struct AssetWarehouse: Codable, Sendable {
         return AssetWarehouseOwner(
           ownerID: owner.ownerID,
           ownerName: owner.ownerName,
+          ownerKind: owner.ownerKind,
+          corporationDivisionNames: owner.corporationDivisionNames,
           state: owner.state,
           capturedAt: owner.capturedAt,
           snapshotID: owner.snapshotID,
@@ -527,6 +560,28 @@ public struct AssetWarehouse: Codable, Sendable {
     let (result, overflow) = lhs.addingReportingOverflow(rhs)
     if overflow { return rhs >= 0 ? Int64.max : Int64.min }
     return result
+  }
+
+  private static func isLessPreferred(
+    _ lhs: AssetOwnerInventory,
+    _ rhs: AssetOwnerInventory
+  ) -> Bool {
+    let lhsRank = sourceRank(lhs.assets)
+    let rhsRank = sourceRank(rhs.assets)
+    if lhsRank != rhsRank { return lhsRank < rhsRank }
+    return lhs.assets.source.capturedAt < rhs.assets.source.capturedAt
+  }
+
+  private static func sourceRank(
+    _ sourced: Sourced<AssetSnapshot>
+  ) -> Int {
+    guard sourced.value != nil else { return 0 }
+    return switch sourced.state {
+    case .fresh: 4
+    case .partial: 3
+    case .stale: 2
+    case .forbidden, .unavailable: 1
+    }
   }
 
   private static func locationSortOrder(_ kind: AssetLocationKind) -> Int {

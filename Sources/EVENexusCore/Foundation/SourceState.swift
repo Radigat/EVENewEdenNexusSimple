@@ -110,8 +110,42 @@ public enum EVEConstants {
   public static let accountingSkillTypeID: Int64 = 16_622
   public static let brokerRelationsSkillTypeID: Int64 = 3_446
   public static let esiCompatibilityDate = "2025-12-16"
+  public static let ssoClientID = "34c9c1fc6ae94f518e4edf4c5a98eb8c"
   public static let callbackPort: UInt16 = 52_722
   public static let callbackURL = URL(
     string: "http://localhost:\(callbackPort)/callback"
   )!
+}
+
+public enum CCPUserAgentConfiguration {
+  public static let applicationName = "EVE-Nexus-Simple"
+  public static let applicationVersion = "1.0"
+
+  public static var genericValue: String {
+    "\(applicationName)/\(applicationVersion)"
+  }
+
+  public static func value(ownerContact rawContact: String?) -> String {
+    guard let contact = normalizedOwnerContact(rawContact) else {
+      return genericValue
+    }
+    return "\(genericValue) (\(contact))"
+  }
+
+  public static func normalizedOwnerContact(
+    _ rawContact: String?
+  ) -> String? {
+    guard let rawContact else { return nil }
+    let contact = rawContact.trimmingCharacters(
+      in: .whitespacesAndNewlines
+    )
+    guard !contact.isEmpty,
+      contact.utf8.count <= 512,
+      contact.unicodeScalars.allSatisfy({
+        $0.value >= 32 && $0.value <= 126
+          && $0 != "(" && $0 != ")"
+      })
+    else { return nil }
+    return contact
+  }
 }

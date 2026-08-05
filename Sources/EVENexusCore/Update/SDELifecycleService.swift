@@ -57,7 +57,7 @@ public actor SDELifecycleService {
 
   public init(
     rootURL: URL,
-    ownerContact: String
+    ownerContact: String? = nil
   ) throws {
     let userAgent = try SDEUserAgentConfiguration(
       applicationName: "EVE-Nexus-Simple",

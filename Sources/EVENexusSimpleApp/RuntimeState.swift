@@ -24,6 +24,24 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var marketBrowserState: Sourced<MarketBrowserSnapshot>?
   @Published private(set) var isRefreshingMarketBrowser = false
   @Published private(set) var marketBrowserError: String?
+  @Published private(set) var mainHubMarketState: Sourced<MarketOrderSummarySnapshot>?
+  @Published private(set) var mainHubMarketAutomaticUpdatesEnabled = true
+  @Published private(set) var mainHubMarketNextAutomaticRunAt: Date?
+  @Published private(set) var isAutomaticallyRefreshingMainHubMarket = false
+  @Published private(set) var mineralPriceTickerState: Sourced<[MineralPriceTrend]>?
+  @Published private(set) var isRefreshingMineralPrices = false
+  @Published private(set) var dashboardWealthSnapshot: DashboardWealthSnapshot?
+  @Published private(set) var dashboardWealthError: String?
+  @Published private(set) var isRefreshingDashboardWealth = false
+  @Published private(set) var manufacturingOpportunityAnalysis: ManufacturingOpportunitySnapshot?
+  @Published private(set) var manufacturingOpportunityProgress =
+    ManufacturingOpportunityScanProgress()
+  @Published private(set) var isAnalyzingManufacturingOpportunities = false
+  @Published private(set) var manufacturingOpportunityError: String?
+  @Published private(set) var manufacturingOpportunitySnapshotError: String?
+  @Published private(set) var manufacturingOpportunityDemand:
+    ManufacturingOpportunityDemandSnapshot?
+  @Published private(set) var manufacturingOpportunityDemandError: String?
   @Published var isWorking = false
   @Published var statusMessage = "Ready"
   @Published var errorMessage: String?
@@ -49,6 +67,14 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var eveOnlineServiceStatus: EVEOnlineServiceStatusSnapshot?
   @Published private(set) var eveOnlineStatusCheckFailed = false
   @Published private(set) var characterConnectionPhase: CharacterConnectionPhase = .idle
+  @Published private(set) var publicContractProgress = PublicContractSyncProgress()
+  @Published private(set) var publicContractResults: [PublicContractSearchResult] = []
+  @Published private(set) var publicContractCategories: [PublicContractFacet] = []
+  @Published private(set) var publicContractGroups: [PublicContractFacet] = []
+  @Published private(set) var publicContractError: String?
+  @Published private(set) var isSynchronizingPublicContracts = false
+  @Published private(set) var publicContractAutomaticUpdatesEnabled = false
+  @Published private(set) var publicContractNextAutomaticRunAt: Date?
 
   private let esi: ESIClient
   private let eveOnlineStatusClient = EVEOnlineStatusClient()
@@ -57,16 +83,44 @@ final class RuntimeState: ObservableObject {
   private let tradingLocationSearch: TradingLocationSearchService
   private let universeNameService: UniverseNameService
   private let catalog: SQLiteStaticCatalog
+  private let publicContractIndexer: PublicContractIndexer?
   private let assetWarehouseProjectionCache =
     StoredAssetWarehouseProjectionCache()
+  private let manufacturingOpportunityDemandStore: ManufacturingOpportunityDemandStore
+  private let manufacturingOpportunitySnapshotStore: ManufacturingOpportunitySnapshotStore
   private let dataRoot: URL
+  private let ccpUserAgentOwnerContact: String?
   private var authServices: [String: EVESSOService] = [:]
   private var hasLoadedProfileReferenceData = false
   private var profileReferenceRefreshTask: Task<Void, Never>?
   private var lastEVEOnlineStatusCheckAt: Date?
+  private var moonMaterialRefreshIdentity: String?
+  private var publicContractSyncTask: Task<Void, Never>?
+  private var publicContractAutomationTask: Task<Void, Never>?
+  private var hasPreparedPublicContractAutomation = false
+  private var mainHubMarketAutomationTask: Task<Void, Never>?
+  private var preparedMainHubMarketIdentity: String?
 
-  init(dataRoot providedDataRoot: URL? = nil) {
-    let esi = ESIClient()
+  private static let moonMaterialMinimumRefreshInterval: TimeInterval = 5 * 60
+  private static let mainHubMarketAutomationEnabledKey =
+    "market.main-hub.automatic-updates-enabled"
+  private static let mainHubMarketAutomationConsentVersionKey =
+    "market.main-hub.automatic-updates-consent-version"
+  private static let mainHubMarketAutomationConsentVersion = 1
+
+  init(
+    dataRoot providedDataRoot: URL? = nil,
+    ccpUserAgentOwnerContact: String? = nil,
+    startBackgroundServices: Bool = true
+  ) {
+    self.ccpUserAgentOwnerContact =
+      CCPUserAgentConfiguration.normalizedOwnerContact(
+        ccpUserAgentOwnerContact
+      )
+    let userAgent = CCPUserAgentConfiguration.value(
+      ownerContact: self.ccpUserAgentOwnerContact
+    )
+    let esi = ESIClient(userAgent: userAgent)
     self.esi = esi
     self.solarSystemSearch = SolarSystemSearchService(esi: esi)
     self.playerStructureSearch = PlayerStructureSearchService(esi: esi)
@@ -74,15 +128,451 @@ final class RuntimeState: ObservableObject {
     self.universeNameService = UniverseNameService(esi: esi)
     let resolvedDataRoot = providedDataRoot ?? Self.fallbackDataRoot()
     dataRoot = resolvedDataRoot
-    catalog = SQLiteStaticCatalog(
+    manufacturingOpportunityDemandStore = ManufacturingOpportunityDemandStore(
+      fileURL:
+        resolvedDataRoot
+        .appendingPathComponent("market", isDirectory: true)
+        .appendingPathComponent("main-hub-demand.json")
+    )
+    manufacturingOpportunitySnapshotStore = ManufacturingOpportunitySnapshotStore(
+      fileURL:
+        resolvedDataRoot
+        .appendingPathComponent("market", isDirectory: true)
+        .appendingPathComponent("main-hub-opportunities.json")
+    )
+    let catalog = SQLiteStaticCatalog(
       rootURL:
         resolvedDataRoot
         .appendingPathComponent("sde", isDirectory: true)
         .appendingPathComponent("catalog-store", isDirectory: true)
     )
+    self.catalog = catalog
+    let contractStoreURL =
+      resolvedDataRoot
+      .appendingPathComponent("contracts", isDirectory: true)
+      .appendingPathComponent("public-contracts.sqlite")
+    if startBackgroundServices,
+      let store = try? PublicContractStore(url: contractStoreURL)
+    {
+      publicContractIndexer = PublicContractIndexer(
+        remote: ESIPublicContractRemote(
+          esi: esi,
+          universeNames: universeNameService
+        ),
+        catalog: catalog,
+        store: store
+      )
+    } else if startBackgroundServices {
+      publicContractIndexer = nil
+      publicContractProgress = PublicContractSyncProgress(
+        phase: .failed,
+        message: "esi.public-contracts.store-unavailable"
+      )
+      publicContractError =
+        "The local Public Contracts index could not be opened."
+    } else {
+      // If SwiftData could not be opened safely, keep the whole runtime inert.
+      // The recovery-only screen must not migrate secondary stores or start
+      // background ESI work while the owner is deciding how to recover data.
+      publicContractIndexer = nil
+    }
+    let defaults = AppDefaults.store
+    if startBackgroundServices,
+      defaults.integer(
+        forKey: Self.mainHubMarketAutomationConsentVersionKey
+      ) < Self.mainHubMarketAutomationConsentVersion
+    {
+      // Earlier builds silently enabled this catalog-wide scan. Pause it once
+      // so the expensive background work only resumes after an explicit choice.
+      defaults.set(
+        false,
+        forKey: Self.mainHubMarketAutomationEnabledKey
+      )
+      defaults.set(
+        Self.mainHubMarketAutomationConsentVersion,
+        forKey: Self.mainHubMarketAutomationConsentVersionKey
+      )
+    }
+    mainHubMarketAutomaticUpdatesEnabled =
+      startBackgroundServices
+      && defaults.bool(forKey: Self.mainHubMarketAutomationEnabledKey)
+    guard startBackgroundServices else { return }
     Task {
-      await refreshActiveBuild()
-      await refreshEVEOnlineServiceStatus()
+      async let activeBuild: Void = refreshActiveBuild()
+      async let serviceStatus: Void = refreshEVEOnlineServiceStatus()
+      async let demand: Void = loadManufacturingOpportunityDemand()
+      async let opportunities: Void = loadManufacturingOpportunityAnalysis()
+      async let contracts: Void = preparePublicContractAutomation()
+      _ = await (
+        activeBuild,
+        serviceStatus,
+        demand,
+        opportunities,
+        contracts
+      )
+    }
+  }
+
+  func loadManufacturingOpportunityDemand() async {
+    do {
+      manufacturingOpportunityDemand =
+        try await manufacturingOpportunityDemandStore.currentDemand()
+      manufacturingOpportunityDemandError = nil
+    } catch {
+      manufacturingOpportunityDemandError =
+        "The stored Main Hub demand observations could not be read. Existing data was not replaced."
+    }
+  }
+
+  func loadManufacturingOpportunityAnalysis() async {
+    guard manufacturingOpportunityAnalysis == nil else { return }
+    do {
+      let stored = try await manufacturingOpportunitySnapshotStore.load()
+      guard manufacturingOpportunityAnalysis == nil else { return }
+      manufacturingOpportunityAnalysis = stored
+      manufacturingOpportunitySnapshotError = nil
+    } catch {
+      manufacturingOpportunitySnapshotError =
+        "The last saved Main Hub item list could not be read. Existing data was not replaced."
+    }
+  }
+
+  func shouldAutomaticallyRefreshManufacturingOpportunities(
+    now: Date = .now
+  ) -> Bool {
+    ManufacturingOpportunityAutomaticRefreshPolicy.shouldRefresh(
+      lastObservedAt: manufacturingOpportunityDemand?.lastObservedAt,
+      now: now
+    )
+  }
+
+  func prepareMainHubMarketAutomation() {
+    guard isPlannerConfigurationReady,
+      let mainHub = productionBasis.mainTradingLocation?.location,
+      mainHub.kind == .npcTradeHub,
+      let regionID = mainHub.regionID,
+      let locationID = mainHub.locationID
+    else {
+      mainHubMarketAutomationTask?.cancel()
+      mainHubMarketAutomationTask = nil
+      mainHubMarketNextAutomaticRunAt = nil
+      preparedMainHubMarketIdentity = nil
+      return
+    }
+    let identity = "\(regionID):\(locationID)"
+    if preparedMainHubMarketIdentity != identity {
+      mainHubMarketAutomationTask?.cancel()
+      mainHubMarketAutomationTask = nil
+      mainHubMarketNextAutomaticRunAt = nil
+      mainHubMarketState = nil
+      manufacturingOpportunityProgress = ManufacturingOpportunityScanProgress()
+      manufacturingOpportunityError = nil
+      preparedMainHubMarketIdentity = identity
+    }
+    scheduleAutomaticMainHubMarketRefresh()
+  }
+
+  func setMainHubMarketAutomaticUpdatesEnabled(_ enabled: Bool) {
+    AppDefaults.store.set(
+      enabled,
+      forKey: Self.mainHubMarketAutomationEnabledKey
+    )
+    AppDefaults.store.set(
+      Self.mainHubMarketAutomationConsentVersion,
+      forKey: Self.mainHubMarketAutomationConsentVersionKey
+    )
+    mainHubMarketAutomaticUpdatesEnabled = enabled
+    if enabled {
+      prepareMainHubMarketAutomation()
+    } else {
+      mainHubMarketAutomationTask?.cancel()
+      mainHubMarketAutomationTask = nil
+      mainHubMarketNextAutomaticRunAt = nil
+      isAutomaticallyRefreshingMainHubMarket = false
+    }
+  }
+
+  private func scheduleAutomaticMainHubMarketRefresh(
+    retryAfter: TimeInterval? = nil
+  ) {
+    guard mainHubMarketAutomaticUpdatesEnabled,
+      preparedMainHubMarketIdentity != nil,
+      mainHubMarketAutomationTask == nil
+    else { return }
+    let now = Date()
+    let lastObservedAt = matchingMainHubLastObservedAt
+    let scheduledAt =
+      retryAfter.map { now.addingTimeInterval($0) }
+      ?? ManufacturingOpportunityAutomaticRefreshPolicy.nextAutomaticRunAt(
+        lastObservedAt: lastObservedAt,
+        now: now
+      )
+    mainHubMarketNextAutomaticRunAt = scheduledAt
+    mainHubMarketAutomationTask = Task { [weak self] in
+      do {
+        try await Task.sleep(
+          for: .seconds(max(0, scheduledAt.timeIntervalSinceNow))
+        )
+      } catch {
+        return
+      }
+      guard let self,
+        self.mainHubMarketAutomaticUpdatesEnabled
+      else { return }
+      if !self.shouldAutomaticallyRefreshManufacturingOpportunities() {
+        self.mainHubMarketAutomationTask = nil
+        self.mainHubMarketNextAutomaticRunAt = nil
+        self.scheduleAutomaticMainHubMarketRefresh()
+        return
+      }
+      if self.isAnalyzingManufacturingOpportunities {
+        self.mainHubMarketAutomationTask = nil
+        self.mainHubMarketNextAutomaticRunAt = nil
+        self.scheduleAutomaticMainHubMarketRefresh(retryAfter: 60)
+        return
+      }
+      self.mainHubMarketNextAutomaticRunAt = nil
+      self.isAutomaticallyRefreshingMainHubMarket = true
+      await self.analyzeManufacturingOpportunities(
+        settings:
+          self.manufacturingOpportunityAnalysis?.settings
+          ?? ManufacturingOpportunitySettings(),
+        isAutomatic: true
+      )
+      self.isAutomaticallyRefreshingMainHubMarket = false
+      self.mainHubMarketAutomationTask = nil
+      self.scheduleAutomaticMainHubMarketRefresh(
+        retryAfter: self.manufacturingOpportunityError == nil
+          ? nil : 30 * 60
+      )
+    }
+  }
+
+  private var matchingMainHubLastObservedAt: Date? {
+    guard let mainHub = productionBasis.mainTradingLocation?.location,
+      let regionID = mainHub.regionID,
+      let locationID = mainHub.locationID
+    else { return nil }
+    let marketObservedAt = mainHubMarketState?.value.flatMap { market in
+      market.regionID == regionID && market.locationID == locationID
+        ? market.capturedAt : nil
+    }
+    let demandObservedAt = manufacturingOpportunityDemand.flatMap { demand in
+      demand.regionID == regionID && demand.locationID == locationID
+        ? demand.lastObservedAt : nil
+    }
+    return [marketObservedAt, demandObservedAt].compactMap { $0 }.max()
+  }
+
+  func loadPublicContractBrowser() async {
+    guard let publicContractIndexer else { return }
+    do {
+      if !isSynchronizingPublicContracts {
+        publicContractProgress = try await publicContractIndexer.localProgress()
+      }
+      let facets = try await publicContractIndexer.facets()
+      publicContractCategories = facets.categories
+      publicContractGroups = facets.groups
+      let automation = try await publicContractIndexer.automationState(
+        regularRefreshInterval:
+          PublicContractAutomationPolicy.regularRefreshInterval
+      )
+      publicContractAutomaticUpdatesEnabled = automation.isEnabled
+      if automation.isEnabled,
+        publicContractAutomationTask == nil,
+        publicContractSyncTask == nil
+      {
+        await scheduleAutomaticPublicContractSynchronization(
+          state: automation
+        )
+      }
+      publicContractError = nil
+    } catch {
+      publicContractError =
+        "The local Public Contracts index could not be read. Existing data was not replaced."
+    }
+  }
+
+  func searchPublicContracts(_ filter: PublicContractSearchFilter) async {
+    guard let publicContractIndexer else { return }
+    do {
+      publicContractResults = try await publicContractIndexer.search(filter)
+      publicContractError = nil
+    } catch is CancellationError {
+      return
+    } catch {
+      publicContractError =
+        "Public Contracts could not be searched. Existing results were not replaced."
+    }
+  }
+
+  func refreshPublicContractFacets() async {
+    guard let publicContractIndexer else { return }
+    do {
+      let facets = try await publicContractIndexer.facets()
+      publicContractCategories = facets.categories
+      publicContractGroups = facets.groups
+    } catch {
+      publicContractError =
+        "The Public Contracts filters could not be refreshed."
+    }
+  }
+
+  func startPublicContractSynchronization() {
+    beginPublicContractSynchronization(manualStart: true)
+  }
+
+  func cancelPublicContractSynchronization() {
+    publicContractAutomaticUpdatesEnabled = false
+    publicContractNextAutomaticRunAt = nil
+    publicContractAutomationTask?.cancel()
+    publicContractAutomationTask = nil
+    publicContractSyncTask?.cancel()
+    guard let publicContractIndexer else { return }
+    Task {
+      try? await publicContractIndexer.setAutomaticUpdatesEnabled(false)
+      try? await publicContractIndexer.setAutomaticSafetyNotBefore(nil)
+    }
+  }
+
+  private func preparePublicContractAutomation() async {
+    guard !hasPreparedPublicContractAutomation,
+      let publicContractIndexer
+    else { return }
+    hasPreparedPublicContractAutomation = true
+    do {
+      publicContractProgress = try await publicContractIndexer.localProgress()
+      let automation = try await publicContractIndexer.automationState(
+        regularRefreshInterval:
+          PublicContractAutomationPolicy.regularRefreshInterval
+      )
+      publicContractAutomaticUpdatesEnabled = automation.isEnabled
+      if automation.isEnabled {
+        await scheduleAutomaticPublicContractSynchronization(
+          state: automation
+        )
+      }
+    } catch {
+      publicContractError =
+        "The automatic Public Contracts schedule could not be loaded. No automatic request was started."
+    }
+  }
+
+  private func beginPublicContractSynchronization(manualStart: Bool) {
+    guard publicContractSyncTask == nil,
+      let publicContractIndexer
+    else { return }
+    publicContractAutomationTask?.cancel()
+    publicContractAutomationTask = nil
+    publicContractNextAutomaticRunAt = nil
+    if manualStart {
+      publicContractAutomaticUpdatesEnabled = true
+    }
+    isSynchronizingPublicContracts = true
+    publicContractError = nil
+    publicContractSyncTask = Task { [weak self] in
+      guard let self else { return }
+      do {
+        if manualStart {
+          try await publicContractIndexer.setAutomaticUpdatesEnabled(true)
+        }
+        let automation = try await publicContractIndexer.automationState(
+          regularRefreshInterval:
+            PublicContractAutomationPolicy.regularRefreshInterval
+        )
+        self.publicContractAutomaticUpdatesEnabled = automation.isEnabled
+        if PublicContractAutomationPolicy.shouldDeferStart(
+          manualStart: manualStart,
+          safetyNotBefore: automation.safetyNotBefore,
+          now: Date()
+        ) {
+          self.isSynchronizingPublicContracts = false
+          self.publicContractSyncTask = nil
+          await self.scheduleAutomaticPublicContractSynchronization(
+            state: automation
+          )
+          return
+        }
+        let result = try await publicContractIndexer.synchronizeAll { progress in
+          self.publicContractProgress = progress
+        }
+        let safetyNotBefore = PublicContractAutomationPolicy.safetyNotBefore(
+          after: result,
+          now: Date()
+        )
+        try await publicContractIndexer.setAutomaticSafetyNotBefore(
+          safetyNotBefore
+        )
+        await self.refreshPublicContractFacets()
+      } catch {
+        if !Task.isCancelled {
+          self.publicContractError =
+            "Public Contracts synchronization stopped safely. The local partial index was preserved."
+          try? await publicContractIndexer.setAutomaticSafetyNotBefore(
+            Date().addingTimeInterval(30 * 60)
+          )
+        }
+      }
+      self.isSynchronizingPublicContracts = false
+      self.publicContractSyncTask = nil
+      guard self.publicContractAutomaticUpdatesEnabled else { return }
+      let nextState = try? await publicContractIndexer.automationState(
+        regularRefreshInterval:
+          PublicContractAutomationPolicy.regularRefreshInterval
+      )
+      await self.scheduleAutomaticPublicContractSynchronization(
+        state: nextState
+      )
+    }
+  }
+
+  private func scheduleAutomaticPublicContractSynchronization(
+    state suppliedState: PublicContractAutomationState? = nil
+  ) async {
+    guard publicContractSyncTask == nil,
+      publicContractAutomationTask == nil,
+      publicContractAutomaticUpdatesEnabled,
+      let publicContractIndexer
+    else { return }
+    let state: PublicContractAutomationState
+    do {
+      if let suppliedState {
+        state = suppliedState
+      } else {
+        state = try await publicContractIndexer.automationState(
+          regularRefreshInterval:
+            PublicContractAutomationPolicy.regularRefreshInterval
+        )
+      }
+    } catch {
+      publicContractError =
+        "The next automatic Public Contracts update could not be scheduled. Existing data remains available."
+      return
+    }
+    guard state.isEnabled else {
+      publicContractAutomaticUpdatesEnabled = false
+      publicContractNextAutomaticRunAt = nil
+      return
+    }
+    let earliest = Date().addingTimeInterval(
+      PublicContractAutomationPolicy.startupDelay
+    )
+    let scheduledAt = max(state.nextAutomaticRunAt ?? earliest, earliest)
+    publicContractNextAutomaticRunAt = scheduledAt
+    publicContractAutomationTask = Task { [weak self] in
+      do {
+        try await Task.sleep(
+          for: .seconds(max(0, scheduledAt.timeIntervalSinceNow))
+        )
+      } catch {
+        return
+      }
+      guard let self,
+        self.publicContractAutomaticUpdatesEnabled
+      else { return }
+      self.publicContractAutomationTask = nil
+      self.publicContractNextAutomaticRunAt = nil
+      self.beginPublicContractSynchronization(manualStart: false)
     }
   }
 
@@ -103,13 +593,19 @@ final class RuntimeState: ObservableObject {
     )
   }
 
-  func preparePlannerConfiguration(encodedBasis: Data?) async {
+  func preparePlannerConfiguration(
+    encodedBasis: Data?,
+    capabilities: [CharacterCapabilitySnapshot] = []
+  ) async {
     isPlannerConfigurationReady = false
     if let encodedBasis {
       do {
         productionBasis = try JSONDecoder().decode(
           ProductionBasis.self,
           from: encodedBasis
+        )
+        productionBasis.refreshResolvableMarketFees(
+          capabilities: capabilities
         )
       } catch {
         errorMessage =
@@ -118,6 +614,7 @@ final class RuntimeState: ObservableObject {
     }
     await refreshProfileReferenceData()
     isPlannerConfigurationReady = true
+    prepareMainHubMarketAutomation()
   }
 
   func calculate(
@@ -127,7 +624,9 @@ final class RuntimeState: ObservableObject {
     assetWarehouse: AssetWarehouse? = nil,
     stockTargets: [Int64: Int64] = [:],
     procurementPreferences: [Int64: MaterialProcurementPreference] = [:],
-    defaultPurchaseLocation: ProcurementLocation? = nil
+    defaultPurchaseLocation: ProcurementLocation? = nil,
+    authorizations: [AuthorizationSnapshot] = [],
+    clientID: String = ""
   ) async {
     await perform("Calculating production plan") {
       guard let active = try await catalog.activeSDEVersion() else {
@@ -139,17 +638,67 @@ final class RuntimeState: ObservableObject {
         input: input,
         catalog: planningCatalog
       )
-      let mainTradeHub = productionBasis.mainTradeHub
+      guard let configuredMainHub = productionBasis.mainTradingLocation,
+        configuredMainHub.location.kind == .npcTradeHub,
+        let mainRegionID = configuredMainHub.location.regionID,
+        let mainLocationID = configuredMainHub.location.locationID
+      else {
+        throw ESIError.notFound
+      }
       let mainPurchaseLocation =
-        defaultPurchaseLocation ?? mainTradeHub.procurementLocation
+        defaultPurchaseLocation ?? configuredMainHub.location
+      let configuredHomeHub = productionBasis.homeTradingLocation
       let marketService = JitaMarketService(esi: esi)
       async let market = marketService.orderSnapshot(
         typeIDs: typeIDs,
-        tradeHub: mainTradeHub
+        regionID: mainRegionID,
+        locationID: mainLocationID
       )
       async let adjusted = marketService.adjustedPrices()
       async let systems = marketService.industrySystems()
       let values = try await (market, adjusted, systems)
+      var homeMarket: MarketOrderSnapshot?
+      var homeMarketWarnings: [DomainWarning] = []
+      if let configuredHomeHub {
+        if configuredMainHub.location.representsSameLocation(
+          as: configuredHomeHub.location
+        ) {
+          homeMarket = values.0
+        } else {
+          do {
+            homeMarket = try await plannerMarketSnapshot(
+              typeIDs: typeIDs,
+              location: configuredHomeHub.location,
+              preferredTraderCharacterID:
+                configuredHomeHub.marketTaxes.traderCharacterID,
+              authorizations: authorizations,
+              clientID: clientID
+            )
+          } catch is CancellationError {
+            throw CancellationError()
+          } catch ESIError.cancelled {
+            throw CancellationError()
+          } catch {
+            homeMarketWarnings.append(
+              DomainWarning(
+                code: "planner.home-market-unavailable",
+                message:
+                  "The Home Hub market could not be loaded. Home Hub sale scenarios remain unavailable; the Main Hub plan was preserved.",
+                severity: .warning
+              )
+            )
+          }
+        }
+      } else {
+        homeMarketWarnings.append(
+          DomainWarning(
+            code: "planner.home-hub-not-configured",
+            message:
+              "No Home Hub is configured. Home Hub sale scenarios remain unavailable.",
+            severity: .warning
+          )
+        )
+      }
       var availableStock: [Int64: Int64]
       let assetSource: StockSource?
       var snapshotIDs: [UUID] = []
@@ -220,7 +769,8 @@ final class RuntimeState: ObservableObject {
         preference in
         MaterialProcurementPreference(
           supplyMode: preference.supplyMode,
-          purchaseLocation: mainPurchaseLocation
+          purchaseLocation: mainPurchaseLocation,
+          usesAvailableStockFirst: preference.usesAvailableStockFirst
         )
       }
       let context = IndustryPlanningContext(
@@ -229,6 +779,7 @@ final class RuntimeState: ObservableObject {
         productionBasis: productionBasis,
         catalog: planningCatalog,
         market: values.0,
+        homeMarket: homeMarket,
         adjustedPrices: values.1,
         systemIndices: values.2,
         availableStock: availableStock,
@@ -238,16 +789,311 @@ final class RuntimeState: ObservableObject {
         sdeBuild: active.buildNumber,
         snapshotIDs: snapshotIDs,
         inputWarnings: inputWarnings,
-        salesTaxRate: productionBasis.marketTaxes.effectiveSalesTaxRate,
-        brokerFeeRate: productionBasis.marketTaxes.effectiveBrokerFeeRate
+        homeMarketWarnings: homeMarketWarnings,
+        salesTaxRate: configuredMainHub.marketTaxes.effectiveSalesTaxRate,
+        brokerFeeRate: configuredMainHub.marketTaxes.effectiveBrokerFeeRate,
+        homeSalesTaxRate:
+          configuredHomeHub?.marketTaxes.effectiveSalesTaxRate,
+        homeBrokerFeeRate:
+          configuredHomeHub?.marketTaxes.effectiveBrokerFeeRate
       )
       plan = try await planner.plan(input: input, context: context)
     }
   }
 
+  private func plannerMarketSnapshot(
+    typeIDs: Set<Int64>,
+    location: ProcurementLocation,
+    preferredTraderCharacterID: Int64?,
+    authorizations: [AuthorizationSnapshot],
+    clientID: String
+  ) async throws -> MarketOrderSnapshot {
+    let marketService = TradeHubMarketService(esi: esi)
+    switch location.kind {
+    case .npcTradeHub:
+      guard let regionID = location.regionID,
+        let locationID = location.locationID
+      else { throw ESIError.notFound }
+      return try await marketService.orderSnapshot(
+        typeIDs: typeIDs,
+        regionID: regionID,
+        locationID: locationID
+      )
+    case .playerStructure:
+      guard let structureID = location.locationID,
+        let systemID = location.solarSystemID
+      else { throw ESIError.notFound }
+      let authorization = await moonMaterialStructureAuthorization(
+        authorizations: authorizations,
+        clientID: clientID
+      )
+      guard case .available(let leasesByCharacterID) = authorization else {
+        switch authorization {
+        case .missingScope:
+          throw ESIError.missingScope(
+            TradeHubMarketService.structureMarketScope
+          )
+        case .authorizationRequired, .unavailable, .available:
+          throw ESIError.authorizationRequired
+        }
+      }
+      let system = try await solarSystemSearch.details(systemID: systemID)
+      let leases = leasesByCharacterID.values.sorted {
+        if $0.characterID == preferredTraderCharacterID { return true }
+        if $1.characterID == preferredTraderCharacterID { return false }
+        return $0.characterID < $1.characterID
+      }
+      var lastError: Error = ESIError.authorizationRequired
+      for lease in leases {
+        do {
+          return try await marketService.structureOrderSnapshot(
+            typeIDs: typeIDs,
+            regionID: system.regionID,
+            systemID: systemID,
+            structureID: structureID,
+            lease: lease
+          )
+        } catch is CancellationError {
+          throw CancellationError()
+        } catch ESIError.cancelled {
+          throw CancellationError()
+        } catch {
+          lastError = error
+        }
+      }
+      throw lastError
+    case .legacy:
+      throw ESIError.notFound
+    }
+  }
+
+  func manufacturingProductionTree(
+    productName: String,
+    targetQuantity: Int64,
+    materialEfficiency: Int,
+    timeEfficiency: Int,
+    assetWarehouse: AssetWarehouse,
+    warehouseHasSnapshot: Bool,
+    stockTargets: [Int64: Int64] = [:],
+    existingReservations: [StockAllocation] = [],
+    procurementPreferences: [Int64: MaterialProcurementPreference] = [:],
+    blueprintInventories: [OwnedBlueprintInventory] = []
+  ) async throws -> ManufacturingProductionTreeSnapshot {
+    guard targetQuantity > 0,
+      (0...10).contains(materialEfficiency),
+      (0...20).contains(timeEfficiency)
+    else { throw ManufacturingOpportunityError.invalidSettings }
+    guard let active = try await catalog.activeSDEVersion() else {
+      throw StaticCatalogError.noActiveCatalog
+    }
+    guard let configuredMainHub = productionBasis.mainTradingLocation,
+      configuredMainHub.location.kind == .npcTradeHub,
+      let mainRegionID = configuredMainHub.location.regionID,
+      let mainLocationID = configuredMainHub.location.locationID
+    else { throw ESIError.notFound }
+
+    let request = ProductionRequestLine(
+      lineNumber: 1,
+      productName: productName,
+      wantedQuantity: Int(targetQuantity),
+      materialEfficiency: materialEfficiency,
+      timeEfficiency: timeEfficiency
+    )
+    let input = ProductionInputFormatter.format([request])
+    let planner = IndustryPlanner()
+    let planningCatalog = MemoizedIndustryCatalog(base: catalog)
+    let typeIDs = try await planner.requiredMarketTypeIDs(
+      input: input,
+      catalog: planningCatalog
+    )
+    let market = try await TradeHubMarketService(esi: esi).orderSnapshot(
+      typeIDs: typeIDs,
+      regionID: mainRegionID,
+      locationID: mainLocationID
+    )
+    let marketService = TradeHubMarketService(esi: esi)
+    async let adjustedValue = marketService.adjustedPrices()
+    async let systemsValue = marketService.industrySystems()
+    let (adjusted, systems) = try await (adjustedValue, systemsValue)
+
+    var allocatableStock: [Int64: Int64] = [:]
+    var snapshotIDs: [UUID] = []
+    var inputWarnings: [DomainWarning] = []
+    let warehouseSource: StockSource?
+    if warehouseHasSnapshot {
+      let availability = assetWarehouse.availability(
+        targetQuantities: stockTargets
+      )
+      allocatableStock = availability.allocatableQuantities
+      snapshotIDs = assetWarehouse.snapshotIDs
+      warehouseSource = StockSource(
+        kind: .warehouse,
+        reference: "production-activity-locations"
+      )
+      if assetWarehouse.sourceStates.contains(where: { $0 != .fresh }) {
+        inputWarnings.append(
+          DomainWarning(
+            code: "production-tree.warehouse-not-fresh",
+            message:
+              "At least one production-warehouse source is not fresh. Its retained quantities remain visible with provenance.",
+            severity: .warning
+          )
+        )
+      }
+    } else {
+      warehouseSource = nil
+      inputWarnings.append(
+        DomainWarning(
+          code: "production-tree.warehouse-unavailable",
+          message:
+            "Production-warehouse coverage is unavailable and is not treated as zero stock.",
+          severity: .warning
+        )
+      )
+    }
+    if warehouseSource != nil {
+      for allocation in existingReservations
+      where allocation.source.kind == .warehouse
+        || allocation.source.kind == .assetSnapshot
+      {
+        allocatableStock[allocation.typeID] = max(
+          0,
+          allocatableStock[allocation.typeID, default: 0]
+            - allocation.quantity
+        )
+      }
+    }
+
+    var calculatorBasis = productionBasis
+    calculatorBasis.logistics.isEnabled = true
+    calculatorBasis.logistics.homeTradeHub = configuredMainHub.location
+    calculatorBasis.logistics.marketLocationName = configuredMainHub.location.name
+    calculatorBasis.logistics.includeInboundMaterials = true
+    calculatorBasis.logistics.includeOutboundProducts = true
+    let configuredReaction =
+      calculatorBasis.configuredReactionProfile ?? reactionProfile
+    func context(
+      availableStock: [Int64: Int64],
+      preferences: [Int64: MaterialProcurementPreference],
+      warnings: [DomainWarning]
+    ) -> IndustryPlanningContext {
+      IndustryPlanningContext(
+        manufacturingProfile: manufacturingProfile,
+        reactionProfile: configuredReaction,
+        productionBasis: calculatorBasis,
+        catalog: planningCatalog,
+        market: market,
+        adjustedPrices: adjusted,
+        systemIndices: systems,
+        availableStock: availableStock,
+        procurementPreferences: preferences,
+        defaultPurchaseLocation: configuredMainHub.location,
+        assetSource: warehouseSource,
+        sdeBuild: active.buildNumber,
+        snapshotIDs: snapshotIDs,
+        inputWarnings: warnings,
+        salesTaxRate: configuredMainHub.marketTaxes.effectiveSalesTaxRate,
+        brokerFeeRate: configuredMainHub.marketTaxes.effectiveBrokerFeeRate
+      )
+    }
+
+    let referencePlan = try await planner.plan(
+      input: input,
+      context: context(
+        availableStock: [:],
+        preferences: [:],
+        warnings: inputWarnings
+      )
+    )
+    let recommendations = MakeOrBuyRecommendationApplication(
+      materials: referencePlan.materials,
+      existingPreferences: [:],
+      mainHub: configuredMainHub.location
+    )
+    var selectedPreferences = recommendations.preferences
+    for typeID in typeIDs {
+      var preference =
+        procurementPreferences[typeID]
+        ?? selectedPreferences[typeID]
+        ?? MaterialProcurementPreference(
+          supplyMode: .buy,
+          purchaseLocation: configuredMainHub.location
+        )
+      preference.purchaseLocation = configuredMainHub.location
+      preference.usesAvailableStockFirst = true
+      selectedPreferences[typeID] = preference
+    }
+    let selectedPlan = try await planner.plan(
+      input: input,
+      context: context(
+        availableStock: allocatableStock,
+        preferences: selectedPreferences,
+        warnings: inputWarnings
+      )
+    )
+
+    let blueprintTypeIDs = Set(
+      referencePlan.nodes.compactMap(\.blueprintTypeID)
+    )
+    let blueprintNames = try await catalog.typeNames(ids: blueprintTypeIDs)
+    var inventionDefinitions: [Int64: BlueprintDefinition] = [:]
+    for blueprintTypeID in blueprintTypeIDs {
+      if let definition = try await catalog.productionDefinition(
+        productTypeID: blueprintTypeID
+      ), definition.activity.kind == .invention {
+        inventionDefinitions[blueprintTypeID] = definition
+      }
+    }
+    var contractOffers: [Int64: [PublicContractSearchResult]] = [:]
+    var publicContractCoverageComplete = false
+    if let publicContractIndexer {
+      do {
+        let snapshot = try await publicContractIndexer.includedOfferSnapshot(
+          typeIDs: blueprintTypeIDs,
+          limitPerType: 100
+        )
+        contractOffers = snapshot.offers
+        publicContractCoverageComplete =
+          snapshot.progress.hasCompleteSearchCoverage
+      } catch {
+        if error is CancellationError {
+          throw error
+        }
+      }
+    }
+    return ManufacturingProductionTreeProjector.project(
+      targetQuantity: targetQuantity,
+      mainHub: configuredMainHub.location,
+      referencePlan: referencePlan,
+      selectedPlan: selectedPlan,
+      warehouse: assetWarehouse,
+      warehouseHasSnapshot: warehouseHasSnapshot,
+      protectedQuantities: stockTargets,
+      reservedQuantities: Dictionary(
+        grouping: existingReservations,
+        by: \.typeID
+      ).mapValues { values in
+        values.reduce(0) {
+          AssetWarehouse.saturatedAdd($0, max(0, $1.quantity))
+        }
+      },
+      preferences: selectedPreferences,
+      blueprintPortfolio: BlueprintPortfolio(
+        inventories: blueprintInventories
+      ),
+      blueprintNames: blueprintNames,
+      blueprintContractOffers: contractOffers,
+      publicContractCoverageComplete: publicContractCoverageComplete,
+      inventionDefinitions: inventionDefinitions,
+      productionScope: calculatorBasis.productionWarehouseScope
+    )
+  }
+
   func analyzeReactions(
     runs requestedRuns: Int,
-    tradeHub: MarketTradeHub
+    marketHub: MarketHubConfigurationSnapshot,
+    authorizations: [AuthorizationSnapshot] = [],
+    clientID: String = ""
   ) async {
     let maximumRuns =
       reactionAnalysis?.maximumSelectableRuns
@@ -274,16 +1120,65 @@ final class RuntimeState: ObservableObject {
       async let classificationsValue = catalog.industryClassifications(
         typeIDs: Set(definitions.map(\.productTypeID))
       )
-      async let marketValue = marketService.orderSnapshot(
-        typeIDs: typeIDs,
-        tradeHub: tradeHub
-      )
+      async let packagedVolumesValue = catalog.packagedVolumes(typeIDs: typeIDs)
+      let marketValue: MarketOrderSnapshot
+      if marketHub.location.kind == .playerStructure {
+        guard let structureID = marketHub.location.locationID,
+          let systemID = marketHub.location.solarSystemID
+        else { throw ESIError.notFound }
+        let authorization = await moonMaterialStructureAuthorization(
+          authorizations: authorizations,
+          clientID: clientID
+        )
+        guard case .available(let leases) = authorization else {
+          switch authorization {
+          case .missingScope:
+            throw ESIError.missingScope(
+              TradeHubMarketService.structureMarketScope
+            )
+          case .authorizationRequired, .unavailable:
+            throw ESIError.authorizationRequired
+          case .available:
+            throw ESIError.authorizationRequired
+          }
+        }
+        let system = try await solarSystemSearch.details(systemID: systemID)
+        let regionID = system.regionID
+        var loaded: MarketOrderSnapshot?
+        var lastError: Error = ESIError.authorizationRequired
+        for lease in leases.values.sorted(by: {
+          $0.characterID < $1.characterID
+        }) {
+          do {
+            loaded = try await marketService.structureOrderSnapshot(
+              typeIDs: typeIDs,
+              regionID: regionID,
+              systemID: systemID,
+              structureID: structureID,
+              lease: lease
+            )
+            break
+          } catch { lastError = error }
+        }
+        guard let loaded else { throw lastError }
+        marketValue = loaded
+      } else {
+        guard marketHub.location.kind == .npcTradeHub,
+          let regionID = marketHub.location.regionID,
+          let locationID = marketHub.location.locationID
+        else { throw ESIError.notFound }
+        marketValue = try await marketService.orderSnapshot(
+          typeIDs: typeIDs,
+          regionID: regionID,
+          locationID: locationID
+        )
+      }
       async let adjustedValue = marketService.adjustedPrices()
       async let systemsValue = marketService.industrySystems()
-      let (names, classifications, market, adjusted, systems) = try await (
+      let (names, classifications, packagedVolumes, adjusted, systems) = try await (
         namesValue,
         classificationsValue,
-        marketValue,
+        packagedVolumesValue,
         adjustedValue,
         systemsValue
       )
@@ -294,10 +1189,14 @@ final class RuntimeState: ObservableObject {
         typeNames: names,
         classifications: classifications,
         runs: runs,
-        tradeHub: tradeHub,
-        market: market,
+        marketLocation: marketHub.location,
+        market: marketValue,
         adjustedPrices: adjusted,
-        facility: facility
+        facility: facility,
+        logistics: reactionLogisticsCostContext(
+          origin: marketHub.location,
+          packagedVolumes: packagedVolumes
+        )
       )
     } catch is CancellationError {
       return
@@ -313,8 +1212,204 @@ final class RuntimeState: ObservableObject {
     }
   }
 
-  func refreshMoonMaterialAnalysis() async {
+  func analyzeManufacturingOpportunities(
+    settings: ManufacturingOpportunitySettings,
+    isAutomatic: Bool = false
+  ) async {
+    guard !isAnalyzingManufacturingOpportunities else { return }
+    if !isAutomatic {
+      mainHubMarketAutomationTask?.cancel()
+      mainHubMarketAutomationTask = nil
+      mainHubMarketNextAutomaticRunAt = nil
+    }
+    isAnalyzingManufacturingOpportunities = true
+    manufacturingOpportunityError = nil
+    manufacturingOpportunityProgress = ManufacturingOpportunityScanProgress()
+    defer {
+      isAnalyzingManufacturingOpportunities = false
+      if !isAutomatic {
+        scheduleAutomaticMainHubMarketRefresh(
+          retryAfter: manufacturingOpportunityError == nil
+            ? nil : 30 * 60
+        )
+      }
+    }
+    do {
+      guard try await catalog.activeSDEVersion() != nil else {
+        throw StaticCatalogError.noActiveCatalog
+      }
+      guard let configuredMainHub = productionBasis.mainTradingLocation,
+        configuredMainHub.location.kind == .npcTradeHub,
+        let regionID = configuredMainHub.location.regionID,
+        let locationID = configuredMainHub.location.locationID
+      else { throw ESIError.notFound }
+
+      let service = TradeHubMarketService(esi: esi)
+      async let definitionsValue = catalog.manufacturingDefinitions()
+      async let marketValue = service.locationOrderSnapshot(
+        regionID: regionID,
+        locationID: locationID
+      ) { [weak self] completed, total in
+        await MainActor.run {
+          self?.manufacturingOpportunityProgress =
+            ManufacturingOpportunityScanProgress(
+              completedPages: completed,
+              totalPages: total
+            )
+        }
+      }
+      async let adjustedValue = service.adjustedPrices()
+      async let systemsValue = service.industrySystems()
+      let (definitions, market, adjusted, systems) = try await (
+        definitionsValue, marketValue, adjustedValue, systemsValue
+      )
+      try Task.checkCancellation()
+      await esi.removeCachedPublicResponses(
+        pathPrefix: "/markets/\(regionID)/orders/"
+      )
+      let marketSummary = MarketOrderSummarySnapshot(snapshot: market)
+      let latestMainHubMarket = Sourced(
+        state: market.state,
+        value: marketSummary,
+        source: market.source
+      )
+      mainHubMarketState = latestMainHubMarket.retainingLastKnownValue(
+        from: mainHubMarketState
+      )
+      let demand: ManufacturingOpportunityDemandSnapshot?
+      do {
+        demand = try await manufacturingOpportunityDemandStore.observe(market)
+        manufacturingOpportunityDemand = demand
+        manufacturingOpportunityDemandError = nil
+      } catch {
+        demand = nil
+        manufacturingOpportunityDemandError =
+          "The Main Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced."
+      }
+      let productTypeIDs = Set(definitions.map(\.productTypeID))
+      let allTypeIDs = Set(
+        definitions.flatMap {
+          [$0.productTypeID] + $0.activity.materials.map(\.typeID)
+        }
+      )
+      async let namesValue = catalog.typeNames(ids: allTypeIDs)
+      async let classificationsValue = catalog.industryClassifications(
+        typeIDs: productTypeIDs
+      )
+      async let volumesValue = catalog.packagedVolumes(typeIDs: allTypeIDs)
+      let (names, classifications, volumes) = try await (
+        namesValue, classificationsValue, volumesValue
+      )
+      let facilities = manufacturingOpportunityFacilities(
+        systemIndices: systems
+      )
+      let productionWarehouseScope = productionBasis.productionWarehouseScope
+      let logisticsConfiguration = productionBasis.logistics
+      let mainHub = configuredMainHub.location
+      let salesTaxRate = configuredMainHub.marketTaxes.effectiveSalesTaxRate
+      let brokerFeeRate = configuredMainHub.marketTaxes.effectiveBrokerFeeRate
+      let analysisTask = Task.detached(
+        priority: isAutomatic ? .utility : .userInitiated
+      ) {
+        try ManufacturingOpportunityAnalyzer.analyze(
+          definitions: definitions,
+          typeNames: names,
+          classifications: classifications,
+          packagedVolumes: volumes,
+          settings: settings,
+          mainHub: mainHub,
+          productionWarehouseScope: productionWarehouseScope,
+          logisticsConfiguration: logisticsConfiguration,
+          market: market,
+          demand: demand,
+          adjustedPrices: adjusted,
+          facilities: facilities,
+          salesTaxRate: salesTaxRate,
+          brokerFeeRate: brokerFeeRate
+        )
+      }
+      let analysis = try await withTaskCancellationHandler {
+        try await analysisTask.value
+      } onCancel: {
+        analysisTask.cancel()
+      }
+      manufacturingOpportunityAnalysis = analysis
+      do {
+        try await manufacturingOpportunitySnapshotStore.save(analysis)
+        manufacturingOpportunitySnapshotError = nil
+      } catch {
+        manufacturingOpportunitySnapshotError =
+          "The current Main Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced."
+      }
+    } catch is CancellationError {
+      return
+    } catch ESIError.cancelled {
+      return
+    } catch StaticCatalogError.noActiveCatalog {
+      manufacturingOpportunityError =
+        "No active SDE catalog is installed. Install or activate static data first."
+    } catch ManufacturingOpportunityError.noManufacturingDefinitions {
+      manufacturingOpportunityError =
+        "The active SDE catalog contains no complete published manufacturing definitions."
+    } catch {
+      manufacturingOpportunityError =
+        "The Main Hub opportunity scan could not be completed. \(error.localizedDescription)"
+    }
+  }
+
+  private func manufacturingOpportunityFacilities(
+    systemIndices: [IndustrySystemIndex]
+  ) -> [ManufacturingCategory: ManufacturingOpportunityFacilityContext] {
+    var result: [ManufacturingCategory: ManufacturingOpportunityFacilityContext] = [:]
+    for category in ManufacturingCategory.allCases {
+      guard let selection = productionBasis.selection(for: category),
+        let structure = productionBasis.structure(id: selection.structureID),
+        let system = productionBasis.manufacturingSystem(for: structure)
+      else { continue }
+      guard
+        let index = system.costIndexOverride
+          ?? systemIndices.first(where: {
+            $0.solarSystemID == system.solarSystemID
+              && $0.activity == .manufacturing
+          })?.costIndex
+      else { continue }
+      result[category] = ManufacturingOpportunityFacilityContext(
+        name: "\(selection.structureName) · \(system.solarSystemName)",
+        materialMultiplier: selection.materialMultiplier,
+        timeMultiplier: selection.timeMultiplier,
+        jobCostMultiplier: structure.jobCostMultiplier,
+        facilityTaxRate: structure.facilityTaxRate,
+        systemCostIndex: index,
+        sccSurchargeRate: IndustryRuleSet.current.manufacturingSCCRate,
+        alphaSurchargeRate:
+          productionBasis.cloneState == .alpha
+          ? IndustryRuleSet.current.alphaSurchargeRate : 0,
+        needsReview: selection.needsReview || structure.needsReview
+      )
+    }
+    return result
+  }
+
+  func refreshMoonMaterialAnalysis(
+    authorizations: [AuthorizationSnapshot] = [],
+    clientID: String = ""
+  ) async {
     guard !isRefreshingMoonMaterialAnalysis else { return }
+    let hubs = productionBasis.marketHubSnapshots
+    let refreshIdentity = moonMaterialAnalysisRefreshIdentity(
+      hubs: hubs,
+      authorizations: authorizations,
+      clientID: clientID
+    )
+    if let analysis = moonMaterialAnalysis,
+      moonMaterialRefreshIdentity == refreshIdentity
+    {
+      let age = Date().timeIntervalSince(analysis.refreshedAt)
+      if age >= 0 && age < Self.moonMaterialMinimumRefreshInterval {
+        moonMaterialAnalysisError = nil
+        return
+      }
+    }
     isRefreshingMoonMaterialAnalysis = true
     moonMaterialAnalysisError = nil
     defer { isRefreshingMoonMaterialAnalysis = false }
@@ -323,36 +1418,96 @@ final class RuntimeState: ObservableObject {
       let materialCatalog = try await catalog.moonMaterials()
       let typeIDs = Set(materialCatalog.materials.map(\.id))
       let marketService = TradeHubMarketService(esi: esi)
-      let locationIDs = Dictionary(
-        uniqueKeysWithValues: MoonMaterialMarketLocation.allCases.map {
-          location in
-          let configuredStructureID =
-            location.isPlayerStructure
-            ? productionBasis.structures.first {
-              $0.solarSystemID == location.systemID && $0.structureID != nil
-            }?.structureID : nil
-          return (location, configuredStructureID ?? location.locationID)
+      let preferredTraderIDs = Dictionary(
+        uniqueKeysWithValues: productionBasis.tradingLocations.map {
+          (
+            $0.id,
+            $0.marketTaxes.traderCharacterID
+          )
         }
       )
+      let structureAuthorization =
+        await moonMaterialStructureAuthorization(
+          authorizations: authorizations,
+          clientID: clientID
+        )
+      try Task.checkCancellation()
       let attempts = await withTaskGroup(
         of: MoonMaterialMarketRefreshResult?.self,
         returning: [
-          MoonMaterialMarketLocation: Sourced<MarketOrderSnapshot>
+          UUID: Sourced<MarketOrderSnapshot>
         ].self
       ) { group in
-        for location in MoonMaterialMarketLocation.allCases {
+        for hub in hubs {
           group.addTask {
             do {
-              guard let locationID = locationIDs[location] else {
-                return nil
+              let snapshot: MarketOrderSnapshot
+              if hub.location.kind == .playerStructure {
+                guard let structureID = hub.location.locationID,
+                  let systemID = hub.location.solarSystemID
+                else {
+                  throw ESIError.notFound
+                }
+                switch structureAuthorization {
+                case .authorizationRequired:
+                  throw ESIError.authorizationRequired
+                case .missingScope:
+                  throw ESIError.missingScope(
+                    TradeHubMarketService.structureMarketScope
+                  )
+                case .unavailable:
+                  throw ESIError.http(401)
+                case .available(let leasesByCharacterID):
+                  let preferredCharacterID = preferredTraderIDs[hub.id] ?? nil
+                  let orderedLeases = leasesByCharacterID.values.sorted {
+                    if $0.characterID == preferredCharacterID { return true }
+                    if $1.characterID == preferredCharacterID { return false }
+                    return $0.characterID < $1.characterID
+                  }
+                  var lastError: Error = ESIError.authorizationRequired
+                  var loadedSnapshot: MarketOrderSnapshot?
+                  let system = try await self.solarSystemSearch.details(
+                    systemID: systemID
+                  )
+                  let regionID = system.regionID
+                  for lease in orderedLeases {
+                    do {
+                      loadedSnapshot =
+                        try await marketService
+                        .structureOrderSnapshot(
+                          typeIDs: typeIDs,
+                          regionID: regionID,
+                          systemID: systemID,
+                          structureID: structureID,
+                          lease: lease
+                        )
+                      break
+                    } catch is CancellationError {
+                      throw CancellationError()
+                    } catch ESIError.cancelled {
+                      throw CancellationError()
+                    } catch {
+                      lastError = error
+                    }
+                  }
+                  guard let loadedSnapshot else { throw lastError }
+                  snapshot = loadedSnapshot
+                }
+              } else {
+                guard hub.location.kind == .npcTradeHub,
+                  let regionID = hub.location.regionID,
+                  let locationID = hub.location.locationID
+                else {
+                  throw ESIError.notFound
+                }
+                snapshot = try await marketService.sellOrderSnapshot(
+                  typeIDs: typeIDs,
+                  regionID: regionID,
+                  locationID: locationID
+                )
               }
-              let snapshot = try await marketService.orderSnapshot(
-                typeIDs: typeIDs,
-                regionID: location.regionID,
-                locationID: locationID
-              )
               return MoonMaterialMarketRefreshResult(
-                location: location,
+                hubID: hub.id,
                 result: Sourced(
                   state: .fresh,
                   value: snapshot,
@@ -361,10 +1516,12 @@ final class RuntimeState: ObservableObject {
               )
             } catch is CancellationError {
               return nil
+            } catch ESIError.cancelled {
+              return nil
             } catch {
               let failure = Self.moonMaterialMarketFailure(error)
               return MoonMaterialMarketRefreshResult(
-                location: location,
+                hubID: hub.id,
                 result: Sourced(
                   state: failure.state,
                   value: nil,
@@ -378,10 +1535,10 @@ final class RuntimeState: ObservableObject {
             }
           }
         }
-        var values: [MoonMaterialMarketLocation: Sourced<MarketOrderSnapshot>] = [:]
+        var values: [UUID: Sourced<MarketOrderSnapshot>] = [:]
         for await attempt in group {
           guard let attempt else { continue }
-          values[attempt.location] = attempt.result
+          values[attempt.hubID] = attempt.result
         }
         return values
       }
@@ -390,19 +1547,33 @@ final class RuntimeState: ObservableObject {
       let canRetainPreviousMarkets =
         moonMaterialAnalysis?.materialCatalog.source.version
         == materialCatalog.source.version
-      var markets: [MoonMaterialMarketLocation: Sourced<MarketOrderSnapshot>] = [:]
-      for location in MoonMaterialMarketLocation.allCases {
-        guard let attempt = attempts[location] else { continue }
-        markets[location] = attempt.retainingLastKnownValue(
-          from: canRetainPreviousMarkets
-            ? moonMaterialAnalysis?.markets[location] : nil
+      var markets: [UUID: Sourced<MarketOrderSnapshot>] = [:]
+      for hub in hubs {
+        guard let attempt = attempts[hub.id] else { continue }
+        let previous =
+          canRetainPreviousMarkets
+          ? moonMaterialAnalysis?.configuredMarkets[hub.id] : nil
+        let retainablePrevious: Sourced<MarketOrderSnapshot>?
+        if hub.location.kind == .playerStructure {
+          retainablePrevious =
+            previous?.source.provider
+              == TradeHubMarketService.structureMarketProvider
+              && previous?.value?.locationID == hub.location.locationID
+            ? previous : nil
+        } else {
+          retainablePrevious = previous
+        }
+        markets[hub.id] = attempt.retainingLastKnownValue(
+          from: retainablePrevious
         )
       }
       moonMaterialAnalysis = MoonMaterialPurchaseAnalysisSnapshot(
         materialCatalog: materialCatalog,
-        markets: markets,
+        configuredHubs: hubs,
+        configuredMarkets: markets,
         refreshedAt: .now
       )
+      moonMaterialRefreshIdentity = refreshIdentity
     } catch is CancellationError {
       return
     } catch StaticCatalogError.noActiveCatalog {
@@ -414,11 +1585,80 @@ final class RuntimeState: ObservableObject {
     }
   }
 
+  private func moonMaterialAnalysisRefreshIdentity(
+    hubs: [MarketHubConfigurationSnapshot],
+    authorizations: [AuthorizationSnapshot],
+    clientID: String
+  ) -> String {
+    let marketIdentity = hubs.map { hub in
+      let roles = hub.roles.map(\.rawValue).sorted().joined(separator: ",")
+      let traderID = productionBasis.tradingLocations.first {
+        $0.id == hub.id
+      }?.marketTaxes.traderCharacterID
+      return [
+        hub.id.uuidString,
+        hub.location.id,
+        hub.location.locationID.map(String.init) ?? "",
+        hub.location.regionID.map(String.init) ?? "",
+        roles,
+        traderID.map(String.init) ?? "",
+      ].joined(separator: ":")
+    }.joined(separator: "|")
+    let authorizationIdentity = authorizations.map {
+      [
+        $0.id.uuidString,
+        String($0.characterID),
+        String($0.authorizedAt.timeIntervalSince1970),
+        $0.scopes.sorted().joined(separator: ","),
+      ].joined(separator: ":")
+    }.sorted().joined(separator: "|")
+    return [
+      String(activeSDEBuild ?? -1),
+      clientID.trimmingCharacters(in: .whitespacesAndNewlines),
+      marketIdentity,
+      authorizationIdentity,
+    ].joined(separator: "#")
+  }
+
+  private func moonMaterialStructureAuthorization(
+    authorizations: [AuthorizationSnapshot],
+    clientID: String
+  ) async -> MoonMaterialStructureAuthorization {
+    let normalizedClientID = clientID.trimmingCharacters(
+      in: .whitespacesAndNewlines
+    )
+    guard !normalizedClientID.isEmpty, !authorizations.isEmpty else {
+      return .authorizationRequired
+    }
+    let eligibleAuthorizations = authorizations.filter {
+      $0.scopes.contains(TradeHubMarketService.structureMarketScope)
+    }
+    guard !eligibleAuthorizations.isEmpty else { return .missingScope }
+
+    var leasesByCharacterID: [Int64: AccessTokenLease] = [:]
+    for authorization in eligibleAuthorizations.sorted(by: {
+      $0.characterID < $1.characterID
+    }) {
+      do {
+        let lease = try await authService(
+          clientID: normalizedClientID
+        ).accessTokenLease(characterID: authorization.characterID)
+        leasesByCharacterID[lease.characterID] = lease
+      } catch is CancellationError {
+        return .unavailable
+      } catch {
+        continue
+      }
+    }
+    return leasesByCharacterID.isEmpty
+      ? .unavailable : .available(leasesByCharacterID)
+  }
+
   func refreshMarketBrowser(
     typeID: Int64,
     itemName: String,
-    originSystemID: Int64?,
-    originSystemName: String?
+    authorizations: [AuthorizationSnapshot] = [],
+    clientID: String = ""
   ) async {
     guard !isRefreshingMarketBrowser else { return }
     isRefreshingMarketBrowser = true
@@ -426,21 +1666,23 @@ final class RuntimeState: ObservableObject {
     defer { isRefreshingMarketBrowser = false }
 
     do {
-      let latest = try await MarketBrowserService(
+      let publicSnapshot = try await MarketBrowserService(
         esi: esi,
-        universeNames: universeNameService
+        universeNames: universeNameService,
+        systemSecurity: solarSystemSearch
       ).snapshot(
         typeID: typeID,
-        itemName: itemName,
-        originSystemID: originSystemID,
-        originSystemName: originSystemName
+        itemName: itemName
+      )
+      let latest = await resolvingMarketBrowserStructureNames(
+        in: publicSnapshot,
+        authorizations: authorizations,
+        clientID: clientID
       )
       guard !Task.isCancelled else { return }
       let previous: Sourced<MarketBrowserSnapshot>? = marketBrowserState.flatMap {
         state in
-        guard state.value?.typeID == typeID,
-          state.value?.originSystemID == originSystemID
-        else { return nil }
+        guard state.value?.typeID == typeID else { return nil }
         return state
       }
       marketBrowserState = latest.retainingLastKnownValue(from: previous)
@@ -457,6 +1699,87 @@ final class RuntimeState: ObservableObject {
     }
   }
 
+  private func resolvingMarketBrowserStructureNames(
+    in sourced: Sourced<MarketBrowserSnapshot>,
+    authorizations: [AuthorizationSnapshot],
+    clientID: String
+  ) async -> Sourced<MarketBrowserSnapshot> {
+    guard let snapshot = sourced.value else { return sourced }
+    let structureIDs = Set(
+      snapshot.orders.lazy
+        .filter(\.isPlayerStructure)
+        .map(\.locationID)
+    )
+    guard !structureIDs.isEmpty else { return sourced }
+
+    let normalizedClientID = clientID.trimmingCharacters(
+      in: .whitespacesAndNewlines
+    )
+    let eligibleAuthorizations = authorizations.filter {
+      $0.scopes.contains(PlayerStructureSearchService.detailScope)
+    }.sorted { $0.characterID < $1.characterID }
+    guard !normalizedClientID.isEmpty, !eligibleAuthorizations.isEmpty else {
+      return marketBrowserStructureResult(
+        sourced: sourced,
+        snapshot: snapshot,
+        names: [:],
+        unresolvedCount: structureIDs.count,
+        diagnostic: "esi.market-browser.structure-authorization-required"
+      )
+    }
+
+    var unresolved = structureIDs
+    var names: [Int64: String] = [:]
+    for authorization in eligibleAuthorizations where !unresolved.isEmpty {
+      do {
+        let lease = try await authService(
+          clientID: normalizedClientID
+        ).accessTokenLease(characterID: authorization.characterID)
+        let resolved = await playerStructureSearch.resolveKnownStructures(
+          structureIDs: unresolved,
+          lease: lease
+        )
+        for option in resolved.value ?? [] {
+          names[option.id] = option.name
+          unresolved.remove(option.id)
+        }
+      } catch is CancellationError {
+        return sourced
+      } catch {
+        continue
+      }
+    }
+    return marketBrowserStructureResult(
+      sourced: sourced,
+      snapshot: snapshot,
+      names: names,
+      unresolvedCount: unresolved.count,
+      diagnostic: "esi.market-browser.structure-name-unavailable"
+    )
+  }
+
+  private func marketBrowserStructureResult(
+    sourced: Sourced<MarketBrowserSnapshot>,
+    snapshot: MarketBrowserSnapshot,
+    names: [Int64: String],
+    unresolvedCount: Int,
+    diagnostic: String
+  ) -> Sourced<MarketBrowserSnapshot> {
+    var diagnostics = sourced.diagnostics
+    if unresolvedCount > 0 {
+      diagnostics.append("\(diagnostic):\(unresolvedCount)")
+    }
+    diagnostics = Array(Set(diagnostics)).sorted()
+    return Sourced(
+      state:
+        sourced.state == .fresh && unresolvedCount > 0
+        ? .partial : sourced.state,
+      value: snapshot.resolvingStructureNames(names),
+      source: sourced.source,
+      diagnostics: diagnostics
+    )
+  }
+
   nonisolated private static func moonMaterialMarketFailure(
     _ error: Error
   ) -> (state: DataFreshness, diagnostic: String) {
@@ -464,10 +1787,21 @@ final class RuntimeState: ObservableObject {
       return (.unavailable, "esi.moon-market.unavailable")
     }
     switch esiError {
-    case .forbidden, .authorizationRequired, .missingScope:
-      return (.forbidden, "esi.moon-market.forbidden")
+    case .authorizationRequired:
+      return (
+        .forbidden,
+        "esi.moon-market.structure-authorization-required"
+      )
+    case .missingScope:
+      return (.forbidden, "esi.moon-market.structure-scope-missing")
+    case .forbidden:
+      return (.forbidden, "esi.moon-market.structure-access-forbidden")
+    case .notFound:
+      return (.unavailable, "esi.moon-market.structure-not-found")
     case .rateLimited:
       return (.unavailable, "esi.moon-market.rate-limited")
+    case .http(401):
+      return (.forbidden, "esi.moon-market.structure-token-unavailable")
     default:
       return (.unavailable, "esi.moon-market.unavailable")
     }
@@ -478,17 +1812,22 @@ final class RuntimeState: ObservableObject {
   ) -> ReactionFacilityCostContext? {
     guard let selection = productionBasis.reactionSelection,
       !selection.needsReview,
-      let profile = productionBasis.configuredReactionProfile
+      let profile = productionBasis.configuredReactionProfile,
+      let structure = productionBasis.structure(id: selection.structureID),
+      let system = productionBasis.systemConfiguration(
+        for: .reaction,
+        structure: structure
+      )
     else { return nil }
     let systemIndex =
-      productionBasis.reactionSystem.costIndexOverride
+      system.costIndexOverride
       ?? systemIndices.first {
         $0.solarSystemID == profile.solarSystemID
           && $0.activity == .reaction
       }?.costIndex
     guard let systemIndex else { return nil }
     return ReactionFacilityCostContext(
-      name: "\(profile.structureName) · \(productionBasis.reactionSystem.solarSystemName)",
+      name: "\(profile.structureName) · \(system.solarSystemName)",
       materialMultiplier: profile.effectiveMaterialMultiplier,
       timeMultiplier: profile.effectiveTimeMultiplier,
       jobCostMultiplier: profile.effectiveJobCostMultiplier,
@@ -499,6 +1838,25 @@ final class RuntimeState: ObservableObject {
         profile.cloneState == .alpha
         ? IndustryRuleSet.current.alphaSurchargeRate : 0,
       ruleVersion: profile.ruleVersion
+    )
+  }
+
+  private func reactionLogisticsCostContext(
+    origin: ProcurementLocation,
+    packagedVolumes: [Int64: Double]
+  ) -> ReactionLogisticsCostContext {
+    let selectedStructure = productionBasis.structure(
+      id: productionBasis.reactionStructureID
+    )
+    return ReactionLogisticsCostContext(
+      configuration: productionBasis.logistics,
+      origin: origin,
+      destinationName:
+        selectedStructure?.name
+        ?? productionBasis.configuredReactionProfile?.structureName
+        ?? productionBasis.logistics.productionLocationName,
+      destinationLocationID: selectedStructure?.structureID,
+      packagedVolumes: packagedVolumes
     )
   }
 
@@ -561,6 +1919,100 @@ final class RuntimeState: ObservableObject {
     (try? await catalog.typeNames(ids: typeIDs)) ?? [:]
   }
 
+  func refreshMineralPriceTicker() async {
+    guard !isRefreshingMineralPrices else { return }
+    isRefreshingMineralPrices = true
+    defer { isRefreshingMineralPrices = false }
+
+    let previous = mineralPriceTickerState
+    let regionID =
+      productionBasis.mainTradingLocation?.location.regionID
+      ?? EVEConstants.theForgeRegionID
+    var rows: [MineralPriceTrend] = []
+    var diagnostics: [String] = []
+    var source = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate
+    )
+
+    for mineral in MineralPriceTrendProjector.minerals {
+      guard !Task.isCancelled else { return }
+      do {
+        let response = try await esi.get(
+          [ESIMarketHistoryDTO].self,
+          endpoint: ESIEndpoint(
+            path: "/markets/\(regionID)/history/",
+            query: [
+              URLQueryItem(
+                name: "type_id",
+                value: String(mineral.typeID)
+              )
+            ]
+          )
+        )
+        source = response.source
+        if let row = MineralPriceTrendProjector.project(
+          typeID: mineral.typeID,
+          name: mineral.name,
+          history: response.value
+        ) {
+          rows.append(row)
+        } else {
+          diagnostics.append("market.history.empty:\(mineral.typeID)")
+        }
+      } catch {
+        diagnostics.append("market.history.failed:\(mineral.typeID)")
+      }
+    }
+
+    let state: DataFreshness =
+      rows.isEmpty
+      ? .unavailable
+      : diagnostics.isEmpty ? .fresh : .partial
+    let current = Sourced(
+      state: state,
+      value: rows.isEmpty ? nil : rows,
+      source: source,
+      diagnostics: Array(diagnostics.prefix(32))
+    )
+    mineralPriceTickerState = current.retainingLastKnownValue(from: previous)
+  }
+
+  func refreshDashboardWealth(
+    inputs: [DashboardWealthCharacterInput]
+  ) async {
+    guard !isRefreshingDashboardWealth, !inputs.isEmpty else { return }
+    isRefreshingDashboardWealth = true
+    dashboardWealthError = nil
+    defer { isRefreshingDashboardWealth = false }
+    do {
+      let prices = try await JitaMarketService(esi: esi)
+        .adjustedPriceSnapshot()
+      let typeIDs = Set(
+        inputs.flatMap { input in
+          let assetTypeIDs = input.assets.value?.items.map(\.typeID) ?? []
+          let corporationTypeIDs =
+            input.corporationAssets?.value?.items.map(\.typeID) ?? []
+          let contractTypeIDs =
+            input.privateContracts?.value?.itemContracts.flatMap {
+              $0.items.map(\.typeID)
+            } ?? []
+          return assetTypeIDs + corporationTypeIDs + contractTypeIDs
+        }
+      )
+      let typeNames =
+        (try? await catalog.typeNames(ids: typeIDs)) ?? [:]
+      dashboardWealthSnapshot = DashboardWealthProjector.project(
+        inputs: inputs,
+        prices: prices,
+        typeNames: typeNames
+      )
+    } catch {
+      dashboardWealthError =
+        "The current ESI reference prices could not be loaded."
+    }
+  }
+
   func resolveAssetTypeClassifications(_ typeIDs: Set<Int64>) async
     -> [Int64: IndustryItemClassification]
   {
@@ -580,9 +2032,7 @@ final class RuntimeState: ObservableObject {
   func prepareProductionWarehouse(
     from prepared: PreparedAssetWarehouse
   ) async -> PreparedAssetWarehouse {
-    let locationIDs = Set(
-      productionBasis.structures.compactMap(\.structureID)
-    )
+    let locationIDs = productionBasis.productionWarehouseScope.locationIDs
     guard !locationIDs.isEmpty else {
       return prepared.filtered(locationIDs: [], excludingTypeIDs: [])
     }
@@ -778,6 +2228,112 @@ final class RuntimeState: ObservableObject {
     try await tradingLocationSearch.searchNPCStations(query: query)
   }
 
+  func loadNPCStations(
+    in solarSystemID: Int64,
+    force: Bool = false
+  ) async throws -> Sourced<[TradingLocationSearchOption]> {
+    try await tradingLocationSearch.stations(
+      inSolarSystemID: solarSystemID,
+      force: force
+    )
+  }
+
+  func loadAccessibleStructures(
+    in solarSystemID: Int64,
+    systemName: String,
+    authorizations: [AuthorizationSnapshot],
+    clientID: String
+  ) async -> Sourced<[PlayerStructureOption]> {
+    let source = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate
+    )
+    guard solarSystemID > 0 else {
+      return Sourced(
+        state: .unavailable,
+        value: nil,
+        source: source,
+        diagnostics: ["esi.system-structures.invalid-system"]
+      )
+    }
+    guard !clientID.isEmpty else {
+      return Sourced(
+        state: .unavailable,
+        value: nil,
+        source: source,
+        diagnostics: ["esi.system-structures.client-id-missing"]
+      )
+    }
+    let capableAuthorizations = authorizations.filter {
+      $0.scopes.contains(PlayerStructureSearchService.searchScope)
+        && $0.scopes.contains(PlayerStructureSearchService.detailScope)
+    }
+    guard !capableAuthorizations.isEmpty else {
+      return Sourced(
+        state: .forbidden,
+        value: nil,
+        source: source,
+        diagnostics: ["esi.system-structures.scopes-missing"]
+      )
+    }
+
+    var optionsByID: [Int64: PlayerStructureOption] = [:]
+    var diagnostics: [String] = []
+    var successfulCharacters = 0
+    var latestSource = source
+    for authorization in capableAuthorizations {
+      do {
+        let auth = authService(clientID: clientID)
+        let lease = try await auth.accessTokenLease(
+          characterID: authorization.characterID
+        )
+        let snapshot = try await playerStructureSearch.search(
+          query: systemName,
+          solarSystemID: solarSystemID,
+          characterID: authorization.characterID,
+          lease: lease
+        )
+        successfulCharacters += 1
+        if snapshot.source.capturedAt > latestSource.capturedAt {
+          latestSource = snapshot.source
+        }
+        for option in snapshot.value ?? [] {
+          optionsByID[option.id] = option
+        }
+        diagnostics.append(contentsOf: snapshot.diagnostics)
+      } catch ESIError.missingScope {
+        diagnostics.append(
+          "esi.system-structures.character-scope-missing:\(authorization.characterID)"
+        )
+      } catch ESIError.forbidden {
+        diagnostics.append(
+          "esi.system-structures.character-forbidden:\(authorization.characterID)"
+        )
+      } catch {
+        diagnostics.append(
+          "esi.system-structures.character-unavailable:\(authorization.characterID)"
+        )
+      }
+    }
+    let values = optionsByID.values.sorted {
+      $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+    }
+    guard successfulCharacters > 0 else {
+      return Sourced(
+        state: .unavailable,
+        value: nil,
+        source: latestSource,
+        diagnostics: Array(diagnostics.prefix(32))
+      )
+    }
+    return Sourced(
+      state: diagnostics.isEmpty ? .fresh : .partial,
+      value: values,
+      source: latestSource,
+      diagnostics: Array(diagnostics.prefix(32))
+    )
+  }
+
   func resolveNPCTradingLocation(
     _ location: ProcurementLocation
   ) async throws -> ProcurementLocation {
@@ -936,21 +2492,20 @@ final class RuntimeState: ObservableObject {
     }
   }
 
-  func checkSDE(ownerContact: String) async {
+  func checkSDE() async {
     await perform("Checking current SDE metadata") {
-      let service = try makeSDELifecycle(ownerContact: ownerContact)
+      let service = try makeSDELifecycle()
       updatePreview = try await service.check()
       sdeLastCheckedAt = .now
     }
   }
 
   func installSDE(
-    ownerContact: String,
     schemaReviewConfirmed: Bool
   ) async {
     guard let updatePreview else { return }
-    await perform("Installing SDE build \(updatePreview.officialBuild)") {
-      let service = try makeSDELifecycle(ownerContact: ownerContact)
+    await perform("Installing static data update") {
+      let service = try makeSDELifecycle()
       let freshPreview = try await service.check()
       guard freshPreview == updatePreview else {
         throw SDELifecycleError.confirmationDoesNotMatchPreview
@@ -969,7 +2524,10 @@ final class RuntimeState: ObservableObject {
     }
   }
 
-  func connectCharacter(clientID: String) async throws
+  func connectCharacter(
+    clientID: String,
+    expectedCharacterID: Int64? = nil
+  ) async throws
     -> AuthorizationSnapshot
   {
     characterConnectionPhase = .waitingForBrowser
@@ -986,7 +2544,8 @@ final class RuntimeState: ObservableObject {
     characterConnectionPhase = .completingSSO
     let (authorization, lease) = try await service.completeAuthorization(
       callbackURL: callback,
-      pending: pending
+      pending: pending,
+      expectedCharacterID: expectedCharacterID
     )
     characterConnectionPhase = .synchronizingESI
     lastCharacterSync = await CharacterSyncService(esi: esi).synchronize(
@@ -1076,12 +2635,12 @@ final class RuntimeState: ObservableObject {
     }
   }
 
-  private func makeSDELifecycle(ownerContact: String) throws
+  private func makeSDELifecycle() throws
     -> SDELifecycleService
   {
     try SDELifecycleService(
       rootURL: dataRoot.appendingPathComponent("sde", isDirectory: true),
-      ownerContact: ownerContact
+      ownerContact: ccpUserAgentOwnerContact
     )
   }
 
@@ -1112,6 +2671,80 @@ final class RuntimeState: ObservableObject {
 }
 
 private struct MoonMaterialMarketRefreshResult: Sendable {
-  let location: MoonMaterialMarketLocation
+  let hubID: UUID
   let result: Sourced<MarketOrderSnapshot>
+}
+
+private enum MoonMaterialStructureAuthorization: Sendable {
+  case available([Int64: AccessTokenLease])
+  case missingScope
+  case authorizationRequired
+  case unavailable
+}
+
+private enum ManufacturingOpportunityDemandStoreError: Error {
+  case unsupportedVersion
+  case unreadable
+}
+
+private actor ManufacturingOpportunityDemandStore {
+  private let fileURL: URL
+  private var loadedLedger: ManufacturingOpportunityDemandLedger?
+
+  init(fileURL: URL) {
+    self.fileURL = fileURL
+  }
+
+  func currentDemand() throws -> ManufacturingOpportunityDemandSnapshot? {
+    let current = try ledger().demand
+    loadedLedger = nil
+    return current
+  }
+
+  func observe(
+    _ market: MarketOrderSnapshot
+  ) throws -> ManufacturingOpportunityDemandSnapshot {
+    var updated = try ledger()
+    let demand = updated.observe(market)
+    let encoded: Data
+    do {
+      encoded = try JSONEncoder().encode(updated)
+      try FileManager.default.createDirectory(
+        at: fileURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      try encoded.write(to: fileURL, options: .atomic)
+    } catch {
+      throw ManufacturingOpportunityDemandStoreError.unreadable
+    }
+    loadedLedger = nil
+    return demand
+  }
+
+  private func ledger() throws -> ManufacturingOpportunityDemandLedger {
+    if let loadedLedger { return loadedLedger }
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+      let empty = ManufacturingOpportunityDemandLedger()
+      loadedLedger = empty
+      return empty
+    }
+    do {
+      let data = try Data(contentsOf: fileURL)
+      let decoded = try JSONDecoder().decode(
+        ManufacturingOpportunityDemandLedger.self,
+        from: data
+      )
+      guard
+        decoded.version == ManufacturingOpportunityDemandLedger.schemaVersion
+      else {
+        throw ManufacturingOpportunityDemandStoreError.unsupportedVersion
+      }
+      loadedLedger = decoded
+      return decoded
+    } catch let error as ManufacturingOpportunityDemandStoreError {
+      throw error
+    } catch {
+      throw ManufacturingOpportunityDemandStoreError.unreadable
+    }
+  }
 }
