@@ -6,6 +6,18 @@ import Testing
 @Suite("ESI transport contract")
 struct ESIClientTests {
   @Test
+  func ownerContactBuildsDescriptiveUserAgentWithoutAcceptingUnsafeInput() {
+    #expect(
+      CCPUserAgentConfiguration.value(ownerContact: "owner@example.com")
+        == "EVE-Nexus-Simple/1.0 (owner@example.com)"
+    )
+    #expect(
+      CCPUserAgentConfiguration.value(ownerContact: "owner\n@example.com")
+        == CCPUserAgentConfiguration.genericValue
+    )
+  }
+
+  @Test
   func currentAssetSchemaUsesIsSingleton() throws {
     let fixture = Data(
       """
@@ -223,6 +235,28 @@ struct ESIClientTests {
       endpoint: ESIEndpoint(path: "/cache/1")
     )
     #expect(await transport.requestCount == 4)
+  }
+
+  @Test
+  func bulkPublicCachePurgeOnlyRemovesTheSelectedEndpointFamily() async throws {
+    let transport = ExpiringCacheTransport()
+    let client = ESIClient(
+      transport: transport,
+      now: { Date(timeIntervalSince1970: 1_000) }
+    )
+    let market = ESIEndpoint(path: "/markets/10000002/orders/")
+    let status = ESIEndpoint(path: "/status/")
+
+    _ = try await client.get(CharacterPartitionValue.self, endpoint: market)
+    _ = try await client.get(CharacterPartitionValue.self, endpoint: status)
+    await client.removeCachedPublicResponses(
+      pathPrefix: "/markets/10000002/orders/"
+    )
+    #expect(await client.cachedResponseUsage().entries == 1)
+
+    _ = try await client.get(CharacterPartitionValue.self, endpoint: market)
+    _ = try await client.get(CharacterPartitionValue.self, endpoint: status)
+    #expect(await transport.requestCount == 3)
   }
 
   @Test
@@ -453,6 +487,88 @@ struct ESIClientTests {
   }
 
   @Test
+  func tradingLocationSearchResolvesNPCStationOwnerContext() async throws {
+    let service = TradingLocationSearchService(
+      esi: ESIClient(transport: TradingLocationSearchTransport())
+    )
+
+    let result = try await service.searchNPCStations(query: "fixture")
+    let option = try #require(result.value?.first)
+
+    #expect(result.state == .fresh)
+    #expect(option.id == 60_000_001)
+    #expect(option.name == "Fixture Trade Station")
+    #expect(option.solarSystemID == 30_000_001)
+    #expect(option.ownerCorporationID == 1_000_004)
+    #expect(option.ownerFactionID == 500_002)
+    #expect(option.procurementLocation.kind == .npcTradeHub)
+  }
+
+  @Test
+  func selectedSystemLoadsOnlyItsPublishedNPCStations() async throws {
+    let service = TradingLocationSearchService(
+      esi: ESIClient(transport: TradingLocationSearchTransport())
+    )
+
+    let result = try await service.stations(
+      inSolarSystemID: 30_000_001
+    )
+
+    #expect(result.state == .fresh)
+    #expect(result.value?.map(\.id) == [60_000_001])
+    #expect(result.value?.first?.solarSystemID == 30_000_001)
+  }
+
+  @Test
+  func jitaResolutionRetainsKnownFactionWhenCorporationLookupFails()
+    async throws
+  {
+    let service = TradingLocationSearchService(
+      esi: ESIClient(transport: JitaFactionFallbackTransport())
+    )
+
+    let option = try await service.resolveNPCStation(
+      stationID: ProcurementLocation.jita.locationID!
+    )
+
+    #expect(
+      option.ownerCorporationID
+        == ProcurementLocation.jita.ownerCorporationID
+    )
+    #expect(option.ownerFactionID == ProcurementLocation.jita.ownerFactionID)
+  }
+
+  @Test
+  func tradingLocationStructureSearchIsNotRestrictedToProductionSystems()
+    async throws
+  {
+    let service = PlayerStructureSearchService(
+      esi: ESIClient(transport: StructureSearchTransport())
+    )
+    let lease = AccessTokenLease(
+      characterID: 99,
+      accessToken: "fixture",
+      expiresAt: .distantFuture,
+      scopes: [
+        PlayerStructureSearchService.searchScope,
+        PlayerStructureSearchService.detailScope,
+      ]
+    )
+
+    let result = try await service.search(
+      query: "hub",
+      characterID: 99,
+      lease: lease
+    )
+
+    #expect(
+      result.value?.map(\.id) == [
+        1_000_000_000_001, 1_000_000_000_002,
+      ]
+    )
+  }
+
+  @Test
   func discoversStructuresFromUsedCharacterLocations() async throws {
     let service = PlayerStructureSearchService(
       esi: ESIClient(transport: StructureDiscoveryTransport())
@@ -563,6 +679,985 @@ struct ESIClientTests {
 
     #expect(result.state == .forbidden)
     #expect(result.value == nil)
+  }
+
+  @Test
+  func corporationAssetsRequireTheNewSSOScopeBeforeTransport() async {
+    let transport = CorporationAssetTransport(isDirector: true)
+    let result = await CorporationAssetSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      corporationID: 98_000_001,
+      authorization: corporationAuthorization(scopes: []),
+      lease: corporationLease(scopes: [])
+    )
+
+    #expect(result.state == .forbidden)
+    #expect(result.value == nil)
+    #expect(await transport.requestedPaths.isEmpty)
+    #expect(
+      result.diagnostics.contains(
+        "esi.corporation-assets.scope-missing:\(CorporationAssetSyncService.assetScope)"
+      )
+    )
+  }
+
+  @Test
+  func corporationAssetsRequireDirectorWithoutInferringAnEmptyHangar() async {
+    let transport = CorporationAssetTransport(isDirector: false)
+    let scopes = CorporationAssetSyncService.requiredScopes
+    let result = await CorporationAssetSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      corporationID: 98_000_001,
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes)
+    )
+
+    #expect(result.state == .forbidden)
+    #expect(result.value == nil)
+    #expect(
+      result.diagnostics == [
+        "esi.corporation-assets.director-required"
+      ]
+    )
+    #expect(
+      await transport.requestedPaths == ["/characters/99/roles"]
+    )
+    #expect(
+      CharacterSyncStatusAssessment.isRoleNotApplicable(
+        domain: "corporation-assets",
+        diagnostics: result.diagnostics
+      )
+    )
+  }
+
+  @Test
+  func corporationAssetsFollowPaginationAndKeepDivisionNames() async {
+    let transport = CorporationAssetTransport(isDirector: true)
+    let scopes = CorporationAssetSyncService.requiredScopes
+    let result = await CorporationAssetSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      corporationID: 98_000_001,
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes)
+    )
+
+    #expect(result.state == .fresh)
+    #expect(result.value?.corporationID == 98_000_001)
+    #expect(result.value?.corporationName == "Example Industries")
+    #expect(result.value?.corporationDivisionNames?[1] == "Minerals")
+    #expect(
+      result.value?.items.map(\.locationFlag).sorted() == [
+        "CorpSAG1", "CorpSAG2",
+      ])
+    #expect(
+      await transport.requestedPaths.filter {
+        $0 == "/corporations/98000001/assets"
+      }.count == 2
+    )
+  }
+
+  @Test
+  func corporationDivisionDecoderToleratesIncompleteOptionalLabels() throws {
+    let divisions = try JSONDecoder().decode(
+      ESICorporationDivisionsDTO.self,
+      from: Data(
+        #"{"hangar":[{"division":1},{"name":"Minerals"},{"division":2,"name":"Components"}]}"#.utf8
+      )
+    )
+
+    #expect(divisions.hangar?.count == 3)
+    #expect(divisions.hangar?.first?.division == 1)
+    #expect(divisions.hangar?.first?.name == nil)
+    #expect(divisions.hangar?.last?.name == "Components")
+  }
+
+  @Test
+  func privateContractsRequireScopeBeforeTransport() async {
+    let transport = PrivateContractTransport()
+    let result = await PrivateContractSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      authorization: corporationAuthorization(scopes: []),
+      lease: corporationLease(scopes: []),
+      now: Date(timeIntervalSince1970: 1_775_260_800)
+    )
+
+    #expect(result.state == .forbidden)
+    #expect(result.value == nil)
+    #expect(await transport.requestedPaths.isEmpty)
+  }
+
+  @Test
+  func privateContractsKeepOnlyOwnActivePersonalValueAndCourierData() async {
+    let transport = PrivateContractTransport()
+    let scopes: Set<String> = [PrivateContractSyncService.requiredScope]
+    let result = await PrivateContractSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes),
+      now: Date(timeIntervalSince1970: 1_775_260_800)
+    )
+
+    #expect(result.state == .fresh)
+    #expect(result.diagnostics.isEmpty)
+    #expect(result.value?.itemContracts.map(\.contract.contractID) == [1])
+    #expect(result.value?.inTransitCouriers.map(\.contractID) == [3])
+    #expect(result.value?.itemContracts.first?.items.count == 2)
+    #expect(
+      await transport.requestedPaths == [
+        "/characters/99/contracts",
+        "/characters/99/contracts/1/items",
+      ]
+    )
+  }
+
+  @Test
+  func privateContractItemFailurePreservesPartialState() async {
+    let transport = PrivateContractTransport(failItems: true)
+    let scopes: Set<String> = [PrivateContractSyncService.requiredScope]
+    let result = await PrivateContractSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes),
+      now: Date(timeIntervalSince1970: 1_775_260_800)
+    )
+
+    #expect(result.state == .partial)
+    #expect(result.value?.itemContracts.isEmpty == true)
+    #expect(result.value?.failedItemContractIDs == [1])
+    #expect(result.value?.inTransitCouriers.map(\.contractID) == [3])
+  }
+
+  @Test
+  func corporationWalletRequiresScopeBeforeTransport() async {
+    let transport = CorporationWalletTransport(role: "Accountant")
+    let result = await CorporationWalletSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      corporationID: 98_000_001,
+      authorization: corporationAuthorization(scopes: []),
+      lease: corporationLease(scopes: [])
+    )
+
+    #expect(result.state == .forbidden)
+    #expect(result.value == nil)
+    #expect(await transport.requestedPaths.isEmpty)
+  }
+
+  @Test
+  func corporationWalletRequiresAccountantRole() async {
+    let transport = CorporationWalletTransport(role: "Member")
+    let scopes = CorporationWalletSyncService.requiredScopes
+    let result = await CorporationWalletSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      corporationID: 98_000_001,
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes)
+    )
+
+    #expect(result.state == .forbidden)
+    #expect(result.value == nil)
+    #expect(await transport.requestedPaths == ["/characters/99/roles"])
+    #expect(
+      CharacterSyncStatusAssessment.isRoleNotApplicable(
+        domain: "corporation-wallet",
+        diagnostics: result.diagnostics
+      )
+    )
+  }
+
+  @Test
+  func corporationWalletLoadsEveryDivisionForAccountant() async {
+    let transport = CorporationWalletTransport(role: "Junior_Accountant")
+    let scopes = CorporationWalletSyncService.requiredScopes
+    let result = await CorporationWalletSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      corporationID: 98_000_001,
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes)
+    )
+
+    #expect(result.state == .fresh)
+    #expect(result.diagnostics.isEmpty)
+    #expect(result.value?.corporationID == 98_000_001)
+    #expect(result.value?.divisions.map(\.balance) == [100, 200])
+    #expect(
+      await transport.requestedPaths == [
+        "/characters/99/roles",
+        "/corporations/98000001/wallets",
+      ]
+    )
+  }
+
+  private func corporationAuthorization(
+    scopes: Set<String>
+  ) -> AuthorizationSnapshot {
+    AuthorizationSnapshot(
+      characterID: 99,
+      characterName: "Director",
+      scopes: scopes
+    )
+  }
+
+  private func corporationLease(
+    scopes: Set<String>
+  ) -> AccessTokenLease {
+    AccessTokenLease(
+      characterID: 99,
+      accessToken: "fixture",
+      expiresAt: .distantFuture,
+      scopes: scopes
+    )
+  }
+}
+
+@Suite("Dashboard projection contracts")
+struct DashboardProjectionTests {
+  private let source = SourceIdentity(
+    provider: "fixture",
+    version: "1",
+    capturedAt: Date(timeIntervalSince1970: 1_000)
+  )
+
+  @Test
+  func industryActivitiesAndSlotPoolsRemainDistinct() {
+    let skills = Sourced(
+      state: DataFreshness.fresh,
+      value: [
+        TrainedSkill(
+          skillID: IndustrySlotCapacityRules.massProductionSkillTypeID,
+          trainedLevel: 5,
+          activeLevel: 5,
+          skillpoints: 1
+        ),
+        TrainedSkill(
+          skillID: IndustrySlotCapacityRules.advancedMassProductionSkillTypeID,
+          trainedLevel: 4,
+          activeLevel: 4,
+          skillpoints: 1
+        ),
+        TrainedSkill(
+          skillID: IndustrySlotCapacityRules.laboratoryOperationSkillTypeID,
+          trainedLevel: 5,
+          activeLevel: 5,
+          skillpoints: 1
+        ),
+        TrainedSkill(
+          skillID: IndustrySlotCapacityRules.advancedLaboratoryOperationSkillTypeID,
+          trainedLevel: 3,
+          activeLevel: 3,
+          skillpoints: 1
+        ),
+        TrainedSkill(
+          skillID: IndustrySlotCapacityRules.massReactionsSkillTypeID,
+          trainedLevel: 4,
+          activeLevel: 4,
+          skillpoints: 1
+        ),
+      ],
+      source: source
+    )
+
+    #expect(
+      IndustrySlotCapacityRules.capacity(
+        for: .manufacturing,
+        skills: skills
+      ) == 10
+    )
+    #expect(
+      IndustrySlotCapacityRules.capacity(for: .reaction, skills: skills) == 4
+    )
+    #expect(
+      IndustrySlotCapacityRules.capacity(for: .copying, skills: skills) == 9
+    )
+    #expect(
+      IndustrySlotCapacityRules.capacity(for: .invention, skills: skills) == 9
+    )
+    #expect(DashboardIndustryActivity(esiActivityID: 3) == .timeResearch)
+    #expect(DashboardIndustryActivity(esiActivityID: 4) == .materialResearch)
+    #expect(DashboardIndustryActivity(esiActivityID: 9) == .reaction)
+    #expect(DashboardIndustryActivity(esiActivityID: 11) == .reaction)
+    #expect(DashboardIndustryActivity(esiActivityID: 99) == nil)
+  }
+
+  @Test
+  func unavailableSkillsDoNotBecomeZeroCapacity() {
+    let unavailable = Sourced<[TrainedSkill]>(
+      state: .unavailable,
+      value: nil,
+      source: source
+    )
+    #expect(
+      IndustrySlotCapacityRules.capacity(
+        for: .manufacturing,
+        skills: unavailable
+      ) == nil
+    )
+  }
+
+  @Test
+  func jobStatusSeparatesRunningFromReadyForDelivery() {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let active = ESIIndustryJobDTO(
+      activityID: 8,
+      blueprintID: 1,
+      blueprintTypeID: 2,
+      endDate: now.addingTimeInterval(60),
+      facilityID: 3,
+      jobID: 4,
+      runs: 1,
+      status: "active"
+    )
+    let ready = ESIIndustryJobDTO(
+      activityID: 5,
+      blueprintID: 5,
+      blueprintTypeID: 6,
+      endDate: now.addingTimeInterval(-60),
+      facilityID: 7,
+      jobID: 8,
+      runs: 1,
+      status: "ready"
+    )
+
+    #expect(active.dashboardActivity == .invention)
+    #expect(active.isRunning(at: now))
+    #expect(!active.isReadyForDelivery)
+    #expect(!ready.isRunning(at: now))
+    #expect(ready.isReadyForDelivery)
+  }
+
+  @Test
+  func elapsedActiveJobIsProjectedAsReadyUntilTheNextESISync() {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let cachedActive = ESIIndustryJobDTO(
+      activityID: 1,
+      blueprintID: 1,
+      blueprintTypeID: 2,
+      endDate: now.addingTimeInterval(-1),
+      facilityID: 3,
+      jobID: 4,
+      runs: 1,
+      status: "active"
+    )
+
+    #expect(!cachedActive.isRunning(at: now))
+    #expect(cachedActive.isReadyForDelivery(at: now))
+    #expect(!cachedActive.isDelivered)
+  }
+
+  @Test
+  func pausedJobDoesNotBecomeReadyOnlyBecauseItsOldEndDateElapsed() {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let paused = ESIIndustryJobDTO(
+      activityID: 1,
+      blueprintID: 1,
+      blueprintTypeID: 2,
+      endDate: now.addingTimeInterval(-1),
+      facilityID: 3,
+      jobID: 4,
+      runs: 1,
+      status: "paused"
+    )
+
+    #expect(paused.isRunning(at: now))
+    #expect(!paused.isReadyForDelivery(at: now))
+  }
+
+  @Test
+  func industryJobDecodesCurrentESIFieldsAndLegacySnapshots() throws {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let current = try decoder.decode(
+      ESIIndustryJobDTO.self,
+      from: Data(
+        """
+        {
+          "activity_id": 1,
+          "blueprint_id": 11,
+          "blueprint_location_id": 12,
+          "blueprint_type_id": 13,
+          "duration": 3600,
+          "end_date": "2026-08-04T12:00:00Z",
+          "facility_id": 1000000000001,
+          "installer_id": 14,
+          "job_id": 15,
+          "output_location_id": 16,
+          "product_type_id": 17,
+          "runs": 2,
+          "start_date": "2026-08-04T11:00:00Z",
+          "station_id": 1000000000001,
+          "status": "active",
+          "successful_runs": 2
+        }
+        """.utf8
+      )
+    )
+    #expect(current.productTypeID == 17)
+    #expect(current.stationID == 1_000_000_000_001)
+    #expect(current.facilityName == nil)
+    #expect(current.startDate != nil)
+
+    let legacy = try decoder.decode(
+      ESIIndustryJobDTO.self,
+      from: Data(
+        """
+        {
+          "activity_id": 5,
+          "blueprint_id": 21,
+          "blueprint_type_id": 22,
+          "end_date": "2026-08-04T10:00:00Z",
+          "facility_id": 23,
+          "job_id": 24,
+          "runs": 1,
+          "status": "ready"
+        }
+        """.utf8
+      )
+    )
+    #expect(legacy.stationID == nil)
+    #expect(legacy.productTypeID == nil)
+    #expect(legacy.isReadyForDelivery)
+  }
+
+  @Test
+  func mineralTrendUsesLatestTwoValidMarketDays() throws {
+    let fixture = Data(
+      """
+      [
+        {"average": 5, "date": "2026-07-30", "highest": 6, "lowest": 4, "order_count": 2, "volume": 100},
+        {"average": 6, "date": "2026-08-01", "highest": 7, "lowest": 5, "order_count": 3, "volume": 200}
+      ]
+      """.utf8
+    )
+    let history = try JSONDecoder().decode(
+      [ESIMarketHistoryDTO].self,
+      from: fixture
+    )
+    let trend = MineralPriceTrendProjector.project(
+      typeID: 34,
+      name: "Tritanium",
+      history: history
+    )
+
+    #expect(trend?.averagePrice == 6)
+    #expect(trend?.changeFraction == 0.2)
+    #expect(trend?.marketDate == "2026-08-01")
+  }
+
+  @Test
+  func wealthProjectionKeepsUnpricedAssetsOutOfKnownComponents() {
+    let assets = AssetSnapshot(
+      characterID: 7,
+      state: .fresh,
+      items: [
+        AssetItem(
+          id: 1,
+          typeID: 34,
+          quantity: 10,
+          locationID: 60_000_001,
+          locationKind: .station,
+          locationFlag: "Hangar",
+          singleton: false
+        ),
+        AssetItem(
+          id: 2,
+          typeID: 999,
+          quantity: 5,
+          locationID: 60_000_001,
+          locationKind: .station,
+          locationFlag: "Hangar",
+          singleton: false
+        ),
+      ]
+    )
+    let input = DashboardWealthCharacterInput(
+      character: CharacterIdentity(id: 7, name: "Fixture"),
+      wallet: Sourced(state: .fresh, value: 100, source: source),
+      assets: Sourced(state: .fresh, value: assets, source: source)
+    )
+    let prices = ReferencePriceSnapshot(
+      capturedAt: source.capturedAt,
+      prices: [
+        34: AdjustedPrice(
+          typeID: 34,
+          adjustedPrice: 4,
+          averagePrice: 5
+        )
+      ],
+      source: source
+    )
+
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [input],
+      prices: prices,
+      typeNames: [999: "Unpriced Fixture"]
+    )
+
+    #expect(snapshot.knownTotalValue == 150)
+    #expect(!snapshot.isComplete)
+    #expect(snapshot.characters.first?.assetValue == 50)
+    #expect(snapshot.characters.first?.unvaluedAssetTypeCount == 1)
+    #expect(
+      snapshot.characters.first?.unvaluedAssetTypes.map(\.name)
+        == ["Unpriced Fixture"]
+    )
+  }
+
+  @Test
+  func wealthProjectionIncludesOrdersAndExcludesBlueprintCopies() throws {
+    let orders = try JSONDecoder().decode(
+      [ESICharacterOrderDTO].self,
+      from: Data(
+        """
+        [
+          {
+            "is_buy_order": false,
+            "location_id": 60000001,
+            "order_id": 10,
+            "price": 10,
+            "type_id": 34,
+            "volume_remain": 4
+          },
+          {
+            "escrow": 25,
+            "is_buy_order": true,
+            "location_id": 60000001,
+            "order_id": 11,
+            "price": 8,
+            "type_id": 35,
+            "volume_remain": 5
+          }
+        ]
+        """.utf8
+      )
+    )
+    let assets = AssetSnapshot(
+      characterID: 7,
+      state: .fresh,
+      items: [
+        AssetItem(
+          id: 1,
+          typeID: 34,
+          quantity: 10,
+          locationID: 60_000_001,
+          locationKind: .station,
+          locationFlag: "Hangar",
+          singleton: false
+        ),
+        AssetItem(
+          id: 2,
+          typeID: 999,
+          quantity: -2,
+          locationID: 60_000_001,
+          locationKind: .station,
+          locationFlag: "Hangar",
+          singleton: true
+        ),
+      ]
+    )
+    let input = DashboardWealthCharacterInput(
+      character: CharacterIdentity(id: 7, name: "Fixture"),
+      wallet: Sourced(state: .fresh, value: 100, source: source),
+      assets: Sourced(
+        state: .partial,
+        value: assets,
+        source: source,
+        diagnostics: ["esi.structure-resolution.inaccessible:1"]
+      ),
+      openOrders: Sourced(state: .fresh, value: orders, source: source),
+      privateContracts: Sourced(
+        state: .fresh,
+        value: PrivateContractSnapshot(
+          characterID: 7,
+          itemContracts: [],
+          inTransitCouriers: []
+        ),
+        source: source
+      )
+    )
+    let prices = ReferencePriceSnapshot(
+      capturedAt: source.capturedAt,
+      prices: [
+        34: AdjustedPrice(typeID: 34, adjustedPrice: 4, averagePrice: 5),
+        999: AdjustedPrice(
+          typeID: 999,
+          adjustedPrice: 1_000,
+          averagePrice: 2_000
+        ),
+      ],
+      source: source
+    )
+
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [input],
+      prices: prices
+    )
+
+    #expect(snapshot.knownTotalValue == 215)
+    #expect(snapshot.walletTotal == 100)
+    #expect(snapshot.assetTotal == 50)
+    #expect(snapshot.ordersTotal == 40)
+    #expect(snapshot.escrowTotal == 25)
+    #expect(snapshot.isComplete)
+    #expect(snapshot.freshness == .fresh)
+    #expect(snapshot.characters.first?.excludedBlueprintCopyCount == 1)
+  }
+
+  @Test
+  func wealthProjectionKeepsMissingBuyOrderEscrowUnavailable() throws {
+    let orders = try JSONDecoder().decode(
+      [ESICharacterOrderDTO].self,
+      from: Data(
+        """
+        [
+          {
+            "is_buy_order": true,
+            "location_id": 60000001,
+            "order_id": 11,
+            "price": 8,
+            "type_id": 35,
+            "volume_remain": 5
+          }
+        ]
+        """.utf8
+      )
+    )
+    let assets = AssetSnapshot(
+      characterID: 7,
+      state: .fresh,
+      items: []
+    )
+    let input = DashboardWealthCharacterInput(
+      character: CharacterIdentity(id: 7, name: "Fixture"),
+      wallet: Sourced(state: .fresh, value: 100, source: source),
+      assets: Sourced(state: .fresh, value: assets, source: source),
+      openOrders: Sourced(state: .fresh, value: orders, source: source)
+    )
+    let prices = ReferencePriceSnapshot(
+      capturedAt: source.capturedAt,
+      prices: [:],
+      source: source
+    )
+
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [input],
+      prices: prices
+    )
+
+    #expect(snapshot.knownTotalValue == 100)
+    #expect(snapshot.escrowTotal == nil)
+    #expect(!snapshot.isComplete)
+    #expect(snapshot.characters.first?.missingEscrowOrderCount == 1)
+  }
+
+  @Test
+  func wealthProjectionValuesContractItemsAndCourierCollateral() {
+    let itemContract = ESIPrivateContractDTO(
+      collateral: nil,
+      contractID: 1,
+      dateExpired: .distantFuture,
+      forCorporation: false,
+      issuerID: 7,
+      status: "outstanding",
+      type: "item_exchange"
+    )
+    let courier = ESIPrivateContractDTO(
+      collateral: 123,
+      contractID: 2,
+      dateExpired: .distantFuture,
+      forCorporation: false,
+      issuerID: 7,
+      status: "in_progress",
+      type: "courier"
+    )
+    let contracts = PrivateContractSnapshot(
+      characterID: 7,
+      itemContracts: [
+        PrivateContractItems(
+          contract: itemContract,
+          items: [
+            ESIPrivateContractItemDTO(
+              isIncluded: true,
+              quantity: 10,
+              rawQuantity: nil,
+              recordID: 1,
+              typeID: 34
+            ),
+            ESIPrivateContractItemDTO(
+              isIncluded: false,
+              quantity: 10,
+              rawQuantity: nil,
+              recordID: 2,
+              typeID: 35
+            ),
+            ESIPrivateContractItemDTO(
+              isIncluded: true,
+              quantity: 1,
+              rawQuantity: -2,
+              recordID: 3,
+              typeID: 999
+            ),
+            ESIPrivateContractItemDTO(
+              isIncluded: true,
+              quantity: 1,
+              rawQuantity: -1,
+              recordID: 4,
+              typeID: 35
+            ),
+          ]
+        )
+      ],
+      inTransitCouriers: [courier]
+    )
+    let input = DashboardWealthCharacterInput(
+      character: CharacterIdentity(id: 7, name: "Fixture"),
+      wallet: Sourced(state: .fresh, value: 0, source: source),
+      assets: Sourced(
+        state: .fresh,
+        value: AssetSnapshot(characterID: 7, state: .fresh, items: []),
+        source: source
+      ),
+      openOrders: Sourced(state: .fresh, value: [], source: source),
+      privateContracts: Sourced(
+        state: .fresh,
+        value: contracts,
+        source: source
+      )
+    )
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [input],
+      prices: ReferencePriceSnapshot(
+        capturedAt: source.capturedAt,
+        prices: [
+          34: AdjustedPrice(typeID: 34, adjustedPrice: 4, averagePrice: 5),
+          35: AdjustedPrice(typeID: 35, adjustedPrice: 6, averagePrice: 7),
+        ],
+        source: source
+      )
+    )
+
+    #expect(snapshot.contractsTotal == 57)
+    #expect(snapshot.courierTotal == 123)
+    #expect(snapshot.knownTotalValue == 180)
+    #expect(snapshot.contractsFreshness == .fresh)
+    #expect(snapshot.courierFreshness == .fresh)
+    #expect(snapshot.isComplete)
+    #expect(
+      snapshot.characters.first?.excludedContractBlueprintCopyCount == 1
+    )
+  }
+
+  @Test
+  func wealthProjectionCountsCorporationValueOnlyOncePerCorporation() {
+    let corporationAssets = AssetSnapshot(
+      characterID: 7,
+      corporationID: 98_000_001,
+      state: .fresh,
+      items: [
+        AssetItem(
+          id: 1,
+          typeID: 34,
+          quantity: 10,
+          locationID: 60_000_001,
+          locationKind: .station,
+          locationFlag: "CorpSAG1",
+          singleton: false
+        )
+      ]
+    )
+    let corporationWallet = CorporationWalletSnapshot(
+      actingCharacterID: 7,
+      corporationID: 98_000_001,
+      divisions: [
+        ESICorporationWalletDTO(balance: 100, division: 1),
+        ESICorporationWalletDTO(balance: 200, division: 2),
+      ]
+    )
+    let inputs = [Int64(7), Int64(8)].map { characterID in
+      DashboardWealthCharacterInput(
+        character: CharacterIdentity(
+          id: characterID,
+          name: "Fixture \(characterID)",
+          corporationID: 98_000_001
+        ),
+        wallet: Sourced(state: .fresh, value: 0, source: source),
+        assets: Sourced(
+          state: .fresh,
+          value: AssetSnapshot(
+            characterID: characterID,
+            state: .fresh,
+            items: []
+          ),
+          source: source
+        ),
+        openOrders: Sourced(state: .fresh, value: [], source: source),
+        privateContracts: Sourced(
+          state: .fresh,
+          value: PrivateContractSnapshot(
+            characterID: characterID,
+            itemContracts: [],
+            inTransitCouriers: []
+          ),
+          source: source
+        ),
+        corporationAssets: Sourced(
+          state: .fresh,
+          value: corporationAssets,
+          source: source
+        ),
+        corporationWallet: Sourced(
+          state: .fresh,
+          value: corporationWallet,
+          source: source
+        )
+      )
+    }
+    let snapshot = DashboardWealthProjector.project(
+      inputs: inputs,
+      prices: ReferencePriceSnapshot(
+        capturedAt: source.capturedAt,
+        prices: [
+          34: AdjustedPrice(typeID: 34, adjustedPrice: 4, averagePrice: 5)
+        ],
+        source: source
+      )
+    )
+
+    #expect(snapshot.corporationAssetTotal == 50)
+    #expect(snapshot.corporationWalletTotal == 300)
+    #expect(snapshot.knownTotalValue == 350)
+    #expect(snapshot.corporationAssetFreshness == .fresh)
+    #expect(snapshot.corporationWalletFreshness == .fresh)
+    #expect(snapshot.corporationAssetCoverage?.corporationCount == 1)
+    #expect(snapshot.corporationAssetCoverage?.includedCorporationCount == 1)
+    #expect(snapshot.corporationWalletCoverage?.corporationCount == 1)
+    #expect(snapshot.corporationWalletCoverage?.includedCorporationCount == 1)
+  }
+
+  @Test
+  func wealthProjectionExplainsMissingCorporationRolesByCorporation() {
+    let accessibleID: Int64 = 98_000_001
+    let inaccessibleID: Int64 = 98_000_002
+    let accessible = DashboardWealthCharacterInput(
+      character: CharacterIdentity(
+        id: 7,
+        name: "Director",
+        corporationID: accessibleID
+      ),
+      wallet: Sourced(state: .fresh, value: 0, source: source),
+      assets: Sourced(
+        state: .fresh,
+        value: AssetSnapshot(characterID: 7, state: .fresh, items: []),
+        source: source
+      ),
+      corporationAssets: Sourced(
+        state: .fresh,
+        value: AssetSnapshot(
+          characterID: 7,
+          corporationID: accessibleID,
+          state: .fresh,
+          items: []
+        ),
+        source: source
+      ),
+      corporationWallet: Sourced(
+        state: .fresh,
+        value: CorporationWalletSnapshot(
+          actingCharacterID: 7,
+          corporationID: accessibleID,
+          divisions: []
+        ),
+        source: source
+      )
+    )
+    let inaccessible = DashboardWealthCharacterInput(
+      character: CharacterIdentity(
+        id: 8,
+        name: "Member",
+        corporationID: inaccessibleID
+      ),
+      wallet: Sourced(state: .fresh, value: 0, source: source),
+      assets: Sourced(
+        state: .fresh,
+        value: AssetSnapshot(characterID: 8, state: .fresh, items: []),
+        source: source
+      ),
+      corporationAssets: Sourced<AssetSnapshot>(
+        state: .forbidden,
+        value: nil,
+        source: source,
+        diagnostics: ["esi.corporation-assets.director-required"]
+      ),
+      corporationWallet: Sourced<CorporationWalletSnapshot>(
+        state: .forbidden,
+        value: nil,
+        source: source,
+        diagnostics: ["esi.corporation-wallet.accountant-required"]
+      )
+    )
+
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [accessible, inaccessible],
+      prices: ReferencePriceSnapshot(
+        capturedAt: source.capturedAt,
+        prices: [:],
+        source: source
+      )
+    )
+
+    #expect(snapshot.corporationAssetTotal == 0)
+    #expect(snapshot.corporationAssetFreshness == .partial)
+    #expect(snapshot.corporationAssetCoverage?.corporationCount == 2)
+    #expect(snapshot.corporationAssetCoverage?.includedCorporationCount == 1)
+    #expect(snapshot.corporationAssetCoverage?.roleMissingCorporationCount == 1)
+    #expect(snapshot.corporationWalletTotal == 0)
+    #expect(snapshot.corporationWalletFreshness == .partial)
+    #expect(snapshot.corporationWalletCoverage?.corporationCount == 2)
+    #expect(snapshot.corporationWalletCoverage?.includedCorporationCount == 1)
+    #expect(snapshot.corporationWalletCoverage?.roleMissingCorporationCount == 1)
+  }
+
+  @Test
+  func legacyWealthCharacterHistoryDecodesNewCountersAsZero() throws {
+    let fixture = Data(
+      """
+      {
+        "characterID": 7,
+        "characterName": "Fixture",
+        "walletValue": 100,
+        "assetValue": 50,
+        "knownValue": 150,
+        "unvaluedAssetTypeCount": 0,
+        "isComplete": true,
+        "freshness": "fresh"
+      }
+      """.utf8
+    )
+
+    let decoded = try JSONDecoder().decode(
+      DashboardWealthCharacterValue.self,
+      from: fixture
+    )
+
+    #expect(decoded.ordersValue == nil)
+    #expect(decoded.excludedBlueprintCopyCount == 0)
+    #expect(decoded.unvaluedOrderCount == 0)
+    #expect(decoded.missingEscrowOrderCount == 0)
+    #expect(decoded.contractsValue == nil)
+    #expect(decoded.courierValue == nil)
+    #expect(decoded.unvaluedContractItemTypeCount == 0)
+    #expect(decoded.excludedContractBlueprintCopyCount == 0)
+    #expect(decoded.unavailableContractCount == 0)
+    #expect(decoded.invalidCourierCollateralCount == 0)
+    #expect(decoded.unvaluedAssetTypes.isEmpty)
+    #expect(decoded.unvaluedContractItemTypes.isEmpty)
   }
 }
 
@@ -1065,6 +2160,74 @@ private struct IndustryIndexTransport: ESIHTTPTransporting {
   }
 }
 
+private struct TradingLocationSearchTransport: ESIHTTPTransporting {
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    let body: String
+    switch path {
+    case "/search", "/search/":
+      body = #"{"station":[60000001]}"#
+    case "/universe/systems/30000001", "/universe/systems/30000001/":
+      body =
+        #"{"constellation_id":20000001,"name":"Fixture System","security_status":0.7,"stations":[60000001],"system_id":30000001}"#
+    case "/universe/constellations/20000001", "/universe/constellations/20000001/":
+      body =
+        #"{"constellation_id":20000001,"name":"Fixture Constellation","region_id":10000001}"#
+    case "/universe/regions/10000001", "/universe/regions/10000001/":
+      body = #"{"name":"Fixture Region","region_id":10000001}"#
+    case "/universe/stations/60000001", "/universe/stations/60000001/":
+      body =
+        #"{"name":"Fixture Trade Station","owner":1000004,"system_id":30000001}"#
+    case "/corporations/1000004", "/corporations/1000004/":
+      body = #"{"faction_id":500002}"#
+    default:
+      body = "{}"
+    }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+}
+
+private struct JitaFactionFallbackTransport: ESIHTTPTransporting {
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    let body: String
+    let status: Int
+    switch path {
+    case "/universe/stations/60003760", "/universe/stations/60003760/":
+      status = 200
+      body =
+        #"{"name":"Jita IV - Moon 4 - Caldari Navy Assembly Plant","owner":1000035,"system_id":30000142}"#
+    case "/corporations/1000035", "/corporations/1000035/":
+      status = 503
+      body = #"{"error":"fixture unavailable"}"#
+    default:
+      status = 404
+      body = "{}"
+    }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: status,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+}
+
 private struct StructureSearchTransport: ESIHTTPTransporting {
   func data(for request: URLRequest) async throws
     -> (Data, HTTPURLResponse)
@@ -1221,6 +2384,167 @@ private actor AssetStructureResolutionTransport: ESIHTTPTransporting {
       HTTPURLResponse(
         url: request.url!,
         statusCode: status,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+}
+
+private actor CorporationAssetTransport: ESIHTTPTransporting {
+  let isDirector: Bool
+  private(set) var requestedPaths: [String] = []
+
+  init(isDirector: Bool) {
+    self.isDirector = isDirector
+  }
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    requestedPaths.append(path)
+    let body: String
+    var headers: [String: String] = [:]
+    switch path {
+    case "/characters/99/roles":
+      body = isDirector ? #"{"roles":["Director"]}"# : #"{"roles":["Member"]}"#
+    case "/corporations/98000001/assets":
+      let page = URLComponents(
+        url: request.url!,
+        resolvingAgainstBaseURL: false
+      )?.queryItems?.first(where: { $0.name == "page" })?.value
+      headers["X-Pages"] = "2"
+      body =
+        page == "2"
+        ? """
+        [{
+          "item_id":12,
+          "location_flag":"CorpSAG2",
+          "location_id":60003760,
+          "location_type":"station",
+          "quantity":7,
+          "is_singleton":false,
+          "type_id":35
+        }]
+        """
+        : """
+        [{
+          "item_id":11,
+          "location_flag":"CorpSAG1",
+          "location_id":60003760,
+          "location_type":"station",
+          "quantity":5,
+          "is_singleton":false,
+          "type_id":34
+        }]
+        """
+    case "/corporations/98000001":
+      body = #"{"name":"Example Industries"}"#
+    case "/corporations/98000001/divisions":
+      body = #"{"hangar":[{"division":1,"name":"Minerals"}]}"#
+    default:
+      body = "{}"
+    }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: headers
+      )!
+    )
+  }
+}
+
+private actor PrivateContractTransport: ESIHTTPTransporting {
+  let failItems: Bool
+  private(set) var requestedPaths: [String] = []
+
+  init(failItems: Bool = false) {
+    self.failItems = failItems
+  }
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    requestedPaths.append(path)
+    let status: Int
+    let body: String
+    switch path {
+    case "/characters/99/contracts":
+      status = 200
+      body = """
+        [
+          {"contract_id":1,"date_expired":"2026-12-01T00:00:00Z","for_corporation":false,"issuer_id":99,"status":"outstanding","type":"item_exchange"},
+          {"contract_id":2,"date_expired":"2026-01-01T00:00:00Z","for_corporation":false,"issuer_id":99,"status":"outstanding","type":"auction"},
+          {"collateral":250,"contract_id":3,"date_expired":"2026-12-01T00:00:00Z","for_corporation":false,"issuer_id":99,"status":"in_progress","type":"courier"},
+          {"collateral":500,"contract_id":4,"date_expired":"2026-12-01T00:00:00Z","for_corporation":false,"issuer_id":100,"status":"in_progress","type":"courier"},
+          {"contract_id":5,"date_expired":"2026-12-01T00:00:00Z","for_corporation":true,"issuer_id":99,"status":"outstanding","type":"item_exchange"}
+        ]
+        """
+    case "/characters/99/contracts/1/items":
+      status = failItems ? 404 : 200
+      body =
+        failItems
+        ? "{}"
+        : """
+        [
+          {"is_included":true,"quantity":10,"record_id":1,"type_id":34},
+          {"is_included":false,"quantity":4,"record_id":2,"type_id":35}
+        ]
+        """
+    default:
+      status = 404
+      body = "{}"
+    }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: status,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+}
+
+private actor CorporationWalletTransport: ESIHTTPTransporting {
+  let role: String
+  private(set) var requestedPaths: [String] = []
+
+  init(role: String) {
+    self.role = role
+  }
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    requestedPaths.append(path)
+    let body: String
+    switch path {
+    case "/characters/99/roles":
+      body = "{\"roles\":[\"\(role)\"]}"
+    case "/corporations/98000001/wallets":
+      body =
+        """
+        [
+          {"balance":100,"division":1},
+          {"balance":200,"division":2}
+        ]
+        """
+    default:
+      body = "{}"
+    }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
         httpVersion: "HTTP/1.1",
         headerFields: [:]
       )!

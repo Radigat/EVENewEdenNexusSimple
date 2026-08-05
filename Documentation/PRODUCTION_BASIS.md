@@ -19,10 +19,11 @@ inspected on 2026-07-30:
 - informational manufacturing labels such as Small, Medium, Large, Capital,
   Modules, Structures or All;
 - optional cost-index overrides;
-- a connected-character trader plus ESI-derived sales tax and Jita IV-4
-  broker fee;
-- optional inbound and outbound logistics using SDE packaged volumes, Jita
-  replacement collateral and an owner-entered ISK/m³ rate;
+- persistent Trading Locations with one connected-character trader each and a
+  required standard NPC Main Hub for Planner prices and purchases;
+- ESI-derived sales tax and Jita IV-4 broker fee from the Jita trader;
+- optional procurement logistics using SDE packaged volumes, replacement
+  collateral and an owner-entered ISK/m³ rate;
 - manufacturing and reaction slots plus job split thresholds;
 - invention cost reduction and three explicit skill states;
 - production blacklist presets and item-name overrides;
@@ -161,21 +162,23 @@ Reactions remain separate and receive no ME or TE.
 
 ## Logistics and cost-breakdown contract
 
-Logistics follows the owner-provided Standard Rate reference captured on
-2026-07-30 under rule `standard-haulage-split-2026-07-30`. The screenshot does not
-contain the current ISK/m³ calculator value, so Profile requires an explicit
-owner-entered rate and never invents one.
+Logistics follows the owner-provided Standard Rate reference under rule
+`main-hub-to-production-2026-08-01`. The reference does not contain the
+current ISK/m³ calculator value, so Profile requires an explicit owner-entered
+rate and never invents one.
 
-The owner may enable either or both directions:
+The Production Basis freezes one standard NPC Main Hub. Every material purchase,
+including a bought intermediate or warehouse shortfall, uses that hub. Industry
+creates `Main Hub → production facility` routes for the actual shopping list and
+separately evaluates the same inbound route for both sides of each make-or-buy
+comparison: the finished component when buying, or the direct recipe inputs when
+building. A Main Hub equal to the production location creates no route.
+Finished-product transport is outside this calculation.
 
-- Jita purchases to the configured production location;
-- finished products from the production location to Jita.
-
-Each direction is a courier route. Cargo volume is CCP SDE
-`packagedVolume × quantity`. Inbound collateral is the complete Jita purchase
-quote. Outbound collateral is a new volume-depth Jita sell quote for the
-finished cargo. A missing volume, incomplete market depth or invalid rate
-blocks logistics and therefore all-cost profit; none becomes 0 ISK.
+Cargo volume is CCP SDE `packagedVolume × quantity`. Collateral uses the
+purchased quantity at the full-requirement replacement unit value. A missing
+volume, incomplete replacement depth or invalid rate blocks logistics and
+therefore all-cost profit; none becomes 0 ISK.
 
 ```text
 volumeCharge = cargoVolumeM3 × configuredISKPerM3
@@ -287,7 +290,7 @@ selected rig name but is not yet a seventh planner classification dimension.
 - Structure and rig values: active CCP SDE `typeDogma` records.
 - Logistics volumes: active CCP SDE `packagedVolume`, with the same type
   record's SDE `volume` as the explicit fallback.
-- Logistics collateral: the plan's timestamped Jita order snapshot.
+- Logistics collateral: the plan's timestamped Main Hub order snapshot.
 - Rule version: `2026.07-v1`.
 
 ESI does not publish the installed or online service-module fit of an

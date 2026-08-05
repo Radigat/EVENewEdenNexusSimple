@@ -23,6 +23,25 @@ struct SQLiteStaticCatalogTests {
         == [1: "Fixture Ship", 2: "Fixture Mineral"]
     )
     #expect(
+      try await catalog.searchItemTypes(matching: "min")
+        == [ItemTypeSearchResult(id: 2, name: "Fixture Mineral")]
+    )
+    #expect(
+      try await catalog.searchItemTypes(matching: "fixt", limit: 2)
+        .map(\.name) == ["Fixture Ship", "Fixture Mineral"]
+    )
+    #expect(try await catalog.searchItemTypes(matching: "fi").isEmpty)
+    #expect(
+      try await catalog.searchItemTypes(matching: "unpublished").isEmpty
+    )
+    let contractMetadata = try await catalog.publicContractItemMetadata(
+      typeIDs: [1, 2, 99, 999]
+    )
+    #expect(contractMetadata[1]?.typeName == "Fixture Ship")
+    #expect(contractMetadata[1]?.groupName == "Fixture Group")
+    #expect(contractMetadata[1]?.categoryName == "Fixture")
+    #expect(contractMetadata[99] == nil)
+    #expect(
       try await catalog.productionDefinition(productTypeID: 1)?
         .blueprintTypeID == 100
     )
@@ -92,6 +111,31 @@ struct SQLiteStaticCatalogTests {
       try await catalog.reactionRuleProfile()?.catalogBuildNumber == 3
     )
     try await catalog.cleanup(operationID: operationID)
+  }
+
+  @Test
+  func returnsEveryCompletePublishedReactionDefinition() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-reactions-sde-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    let snapshot = try fixture(
+      build: 4,
+      productName: "Fixture Ship",
+      includeReaction: true
+    )
+    _ = try await catalog.activate(snapshot)
+
+    let definitions = try await catalog.reactionDefinitions()
+
+    #expect(definitions.count == 1)
+    #expect(definitions.first?.blueprintTypeID == 101)
+    #expect(definitions.first?.productTypeID == 3)
+    #expect(definitions.first?.activity.kind == .reaction)
+    #expect(definitions.first?.activity.materials.first?.typeID == 4)
+    #expect(definitions.first?.source.version == "4")
   }
 
   @Test
@@ -174,9 +218,39 @@ struct SQLiteStaticCatalogTests {
     #expect(researchLab.compatibleStructureGroupIDs.contains(1_404))
   }
 
+  @Test
+  func returnsPublishedMoonMaterialsFromTheirSDEGroup() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-moon-materials-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    let snapshot = try fixture(
+      build: 5,
+      productName: "Fixture Ship",
+      includeMoonMaterials: true
+    )
+    _ = try await catalog.activate(snapshot)
+
+    let moonMaterials = try await catalog.moonMaterials()
+
+    #expect(
+      moonMaterials.materials
+        == [
+          MoonMaterial(id: 16_634, name: "Atmospheric Gases"),
+          MoonMaterial(id: 16_643, name: "Cadmium"),
+        ]
+    )
+    #expect(moonMaterials.source.provider == "CCP SDE")
+    #expect(moonMaterials.source.version == "5")
+  }
+
   private func fixture(
     build: Int,
-    productName: String
+    productName: String,
+    includeReaction: Bool = false,
+    includeMoonMaterials: Bool = false
   ) throws -> StaticDataCatalogSnapshot {
     let category = StaticItemCategorySnapshot(
       externalID: 10,
@@ -187,6 +261,12 @@ struct SQLiteStaticCatalogTests {
       externalID: 20,
       categoryExternalID: 10,
       name: "Fixture Group",
+      published: true
+    )
+    let moonMaterialGroup = StaticItemGroupSnapshot(
+      externalID: 427,
+      categoryExternalID: 10,
+      name: "Moon Materials",
       published: true
     )
     let skillCategory = StaticItemCategorySnapshot(
@@ -228,7 +308,7 @@ struct SQLiteStaticCatalogTests {
       name: "Structure Engineering Service Module",
       published: true
     )
-    let itemTypes = [
+    var itemTypes = [
       itemType(id: 1, name: productName),
       itemType(id: 2, name: "Fixture Mineral"),
       itemType(id: 99, name: "Unpublished Test Blueprint", published: false),
@@ -273,6 +353,45 @@ struct SQLiteStaticCatalogTests {
         name: "Standup Research Lab I"
       ),
     ]
+    if includeReaction {
+      itemTypes.append(itemType(id: 3, name: "Fixture Reaction Product"))
+      itemTypes.append(itemType(id: 4, name: "Fixture Reaction Input"))
+      itemTypes.append(itemType(id: 101, name: "Fixture Reaction Formula"))
+    }
+    if includeMoonMaterials {
+      itemTypes.append(
+        referenceItemType(
+          id: 16_634,
+          groupID: 427,
+          categoryID: 10,
+          name: "Atmospheric Gases"
+        )
+      )
+      itemTypes.append(
+        referenceItemType(
+          id: 16_643,
+          groupID: 427,
+          categoryID: 10,
+          name: "Cadmium"
+        )
+      )
+      itemTypes.append(
+        StaticItemTypeSnapshot(
+          externalID: 99_999,
+          groupExternalID: 427,
+          categoryExternalID: 10,
+          marketGroupExternalID: nil,
+          name: "Unpublished Moon Material",
+          description: nil,
+          volume: 1,
+          packagedVolume: 1,
+          basePrice: nil,
+          portionSize: 1,
+          published: false,
+          iconExternalID: nil
+        )
+      )
+    }
     let blueprint = StaticBlueprintSnapshot(
       blueprintTypeID: 100,
       maxProductionLimit: 10,
@@ -335,6 +454,36 @@ struct SQLiteStaticCatalogTests {
         )
       ]
     )
+    var blueprints = [unpublishedTestBlueprint, blueprint]
+    if includeReaction {
+      blueprints.append(
+        StaticBlueprintSnapshot(
+          blueprintTypeID: 101,
+          maxProductionLimit: nil,
+          activities: [
+            StaticBlueprintActivitySnapshot(
+              activity: .reaction,
+              timeSeconds: 180,
+              materials: [
+                StaticBlueprintMaterialSnapshot(
+                  itemTypeID: 4,
+                  quantity: 100,
+                  sortOrder: 0
+                )
+              ],
+              products: [
+                StaticBlueprintProductSnapshot(
+                  itemTypeID: 3,
+                  quantity: 200,
+                  probability: nil,
+                  sortOrder: 0
+                )
+              ]
+            )
+          ]
+        )
+      )
+    }
     let hash = String(repeating: String(build), count: 64)
     let reactionRules = ReactionRuleProfile(
       catalogBuildNumber: build,
@@ -361,9 +510,9 @@ struct SQLiteStaticCatalogTests {
       groups: [
         group, scienceGroup, engineeringComplexGroup, mediumRigGroup,
         engineeringServiceGroup,
-      ],
+      ] + (includeMoonMaterials ? [moonMaterialGroup] : []),
       itemTypes: itemTypes,
-      blueprints: [unpublishedTestBlueprint, blueprint],
+      blueprints: blueprints,
       reactionRuleProfile: reactionRules
     )
   }

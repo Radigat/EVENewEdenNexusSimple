@@ -77,4 +77,41 @@ struct ProductionInputParserTests {
     #expect(oversized.requests.isEmpty)
     #expect(oversized.errors.count == 1)
   }
+
+  @Test
+  func formatsSavedRequestsAsParseableHistoricalInput() {
+    let requests = [
+      ProductionRequestLine(
+        lineNumber: 1,
+        productName: "Capital Cargo Bay",
+        wantedQuantity: 25,
+        materialEfficiency: 10,
+        timeEfficiency: 20,
+        blueprintKind: .bpo,
+        blueprintCostISK: 5_000_000
+      ),
+      ProductionRequestLine(
+        lineNumber: 2,
+        productName: "Ark",
+        wantedQuantity: 1,
+        materialEfficiency: 9,
+        timeEfficiency: 18
+      ),
+    ]
+
+    let formatted = ProductionInputFormatter.format(requests)
+    let reparsed = ProductionInputParser.parse(formatted)
+
+    #expect(reparsed.errors.isEmpty)
+    #expect(reparsed.requests.count == 2)
+    #expect(reparsed.requests[0].productName == "Capital Cargo Bay")
+    #expect(reparsed.requests[0].wantedQuantity == 25)
+    #expect(reparsed.requests[0].materialEfficiency == 10)
+    #expect(reparsed.requests[0].timeEfficiency == 20)
+    #expect(reparsed.requests[0].blueprintKind == .bpo)
+    #expect(reparsed.requests[0].blueprintCostISK == 5_000_000)
+    #expect(reparsed.requests[1].productName == "Ark")
+    #expect(reparsed.requests[1].blueprintKind == nil)
+    #expect(reparsed.requests[1].blueprintCostISK == nil)
+  }
 }

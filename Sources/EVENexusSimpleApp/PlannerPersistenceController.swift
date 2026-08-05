@@ -121,47 +121,24 @@ enum PlannerPersistenceController {
     guard let data = try? JSONEncoder().encode(plan) else {
       throw PlannerPersistenceError.invalidPlanSnapshot
     }
-    let materialCosts = plan.requests.map {
-      requestMaterialCost(for: $0.id, in: plan)
-    }
-    let knownMaterialTotal = materialCosts.compactMap { $0 }.reduce(0, +)
     let nextNumber =
       (existingRows.map(\.sequenceNumber).max() ?? 0) + 1
-    let feeRate: Double?
-    if let salesTaxRate =
-      productionBasis.marketTaxes.effectiveSalesTaxRate,
-      let brokerFeeRate =
-        productionBasis.marketTaxes.effectiveBrokerFeeRate
-    {
-      feeRate = salesTaxRate + brokerFeeRate
-    } else {
-      feeRate = nil
-    }
 
     let rows = plan.requests.enumerated().map { index, request in
       let node = plan.nodes.last {
         $0.topLevelRequestID == request.id && $0.action == .produce
       }
-      let quote =
-        plan.listedSale.quotes.indices.contains(index)
-        ? plan.listedSale.quotes[index] : nil
-      let grossUnitPrice: Double? =
-        quote?.weightedUnitPrice.flatMap { netUnitPrice in
-          guard let feeRate, feeRate < 1 else { return nil }
-          return netUnitPrice / (1 - feeRate)
-        }
+      let projection = ProductionOverviewProjector.projection(
+        for: request.id,
+        in: plan
+      )
+      let grossUnitPrice = projection?.suggestedSalePricePerUnit
       let grossTotal = grossUnitPrice.map {
         $0 * Double(node?.requiredQuantity ?? Int64(request.wantedQuantity))
       }
       let marketTax = grossTotal.flatMap { gross in
-        quote?.total.map { gross - $0 }
+        projection?.salesTaxRate.map { gross * $0 }
       }
-      let indexCost = allocatedIndexCost(
-        plan: plan,
-        requestMaterialCost: materialCosts[index],
-        knownMaterialTotal: knownMaterialTotal,
-        requestCount: plan.requests.count
-      )
       let row = StoredProductionOverviewRow(
         sequenceNumber: nextNumber + index,
         recordedAt: completedAt,
@@ -176,8 +153,8 @@ enum PlannerPersistenceController {
           productionBasis: productionBasis
         ),
         units: node?.requiredQuantity ?? Int64(request.wantedQuantity),
-        materialCost: materialCosts[index],
-        indexCost: indexCost,
+        materialCost: projection?.materialCost,
+        indexCost: projection?.installationCost,
         blueprintCost: request.blueprintCostISK,
         marketTax: marketTax,
         salePricePerUnit: grossUnitPrice,
@@ -210,47 +187,19 @@ enum PlannerPersistenceController {
     )
   }
 
+  static func decodePlan(
+    _ row: StoredProductionOverviewRow
+  ) -> IndustryPlanSnapshot? {
+    try? JSONDecoder().decode(
+      IndustryPlanSnapshot.self,
+      from: row.sourceSnapshot
+    )
+  }
+
   private static func productionName(
     for plan: IndustryPlanSnapshot
   ) -> String {
     plan.requests.map(\.productName).joined(separator: ", ")
-  }
-
-  private static func requestMaterialCost(
-    for requestID: UUID,
-    in plan: IndustryPlanSnapshot
-  ) -> Double? {
-    let materialInputs = plan.nodes.filter {
-      $0.topLevelRequestID == requestID
-        && ($0.action == .buy || $0.action == .useStock)
-    }
-    var total = 0.0
-    for input in materialInputs {
-      guard
-        let material = plan.materials.first(where: {
-          $0.typeID == input.typeID
-        })
-      else { return nil }
-      let quote =
-        input.action == .useStock ? material.stockQuote : material.quote
-      guard let unitPrice = quote?.weightedUnitPrice else { return nil }
-      total += unitPrice * Double(input.requiredQuantity)
-    }
-    return total
-  }
-
-  private static func allocatedIndexCost(
-    plan: IndustryPlanSnapshot,
-    requestMaterialCost: Double?,
-    knownMaterialTotal: Double,
-    requestCount: Int
-  ) -> Double? {
-    guard let installationCost = plan.installationCost else { return nil }
-    if knownMaterialTotal > 0, let requestMaterialCost {
-      return installationCost * requestMaterialCost / knownMaterialTotal
-    }
-    guard requestCount > 0 else { return nil }
-    return installationCost / Double(requestCount)
   }
 
   private static func systemName(
@@ -258,7 +207,8 @@ enum PlannerPersistenceController {
     productionBasis: ProductionBasis
   ) -> String {
     if node?.activity == .reaction {
-      return productionBasis.reactionSystem.solarSystemName
+      return productionBasis.reactionSelection?.solarSystemName
+        ?? productionBasis.reactionSystem.solarSystemName
     }
     if let category = node?.manufacturingCategory,
       let name = productionBasis.selection(for: category)?.solarSystemName
