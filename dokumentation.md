@@ -212,6 +212,14 @@ Deterministische SwiftPM-Tests:
 swift test
 ```
 
+Der GitHub-Actions-Lauf **Swift package tests** bildet zusätzlich die
+Kompatibilitätsgrenze des öffentlichen Repositories auf `macos-15` mit der dort
+bereitgestellten Swift-6.1-Werkzeugkette ab. SwiftData-Schemametadaten werden
+deshalb als berechnete statische Werte erzeugt; große SwiftUI-Identitäts- und
+Triggerausdrücke sind in explizit typisierte Zwischenschritte zerlegt. Diese
+Darstellung ändert weder Schema-Versionen noch die erzeugten Identitätswerte,
+verhindert aber toolchainabhängige Sendable- und Type-Checker-Fehler.
+
 Unsigned Xcode-Testlauf:
 
 ```sh

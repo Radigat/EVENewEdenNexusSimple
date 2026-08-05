@@ -2733,15 +2733,16 @@ struct PlannerView: View {
   }
 
   private var assetProjectionIdentity: String {
-    let characterPart = storedCharacters.map { character in
-      [
+    let characterPart = storedCharacters.map { character -> String in
+      let components: [String] = [
         String(character.characterID),
         character.characterName,
         String(character.assetSnapshot?.count ?? 0),
         String(character.corporationID ?? 0),
         String(character.corporationAssetSnapshot?.count ?? 0),
         String(character.lastSyncAt?.timeIntervalSince1970 ?? 0),
-      ].joined(separator: ":")
+      ]
+      return components.joined(separator: ":")
     }
     .joined(separator: "|")
     let productionPart = runtime.productionBasis.structures.map {

@@ -1142,15 +1142,16 @@ struct AssetsWarehouseView: View {
   }
 
   private var assetProjectionIdentity: String {
-    let characterPart = characters.map { character in
-      [
+    let characterPart = characters.map { character -> String in
+      let components: [String] = [
         String(character.characterID),
         character.characterName,
         String(character.assetSnapshot?.count ?? 0),
         String(character.corporationID ?? 0),
         String(character.corporationAssetSnapshot?.count ?? 0),
         String(character.lastSyncAt?.timeIntervalSince1970 ?? 0),
-      ].joined(separator: ":")
+      ]
+      return components.joined(separator: ":")
     }
     .joined(separator: "|")
     let scope = runtime.productionBasis.productionWarehouseScope

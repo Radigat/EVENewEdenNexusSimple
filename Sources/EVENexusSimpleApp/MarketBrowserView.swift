@@ -2741,35 +2741,37 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private var candidateProjectionTrigger: ManufacturingOpportunityCandidateProjectionTrigger {
-    ManufacturingOpportunityCandidateProjectionTrigger(
+    let stockTargetIdentity: [String] = stockTargets.map { target in
+      "\(target.typeID):\(target.targetQuantity):\(target.updatedAt.timeIntervalSince1970)"
+    }.sorted()
+    let ownershipIdentity: [String] = characters.map { character -> String in
+      let components: [String] = [
+        String(character.characterID),
+        String(character.corporationID ?? 0),
+        String(character.blueprintSnapshot?.count ?? 0),
+        String(character.corporationAssetSnapshot?.count ?? 0),
+        String(character.lastSyncAt?.timeIntervalSince1970 ?? 0),
+      ]
+      return components.joined(separator: ":")
+    }.sorted()
+    let sortedFavoriteIDs: [Int64] = favoriteIDs.sorted()
+    let productFamilies: [String] =
+      selectedProductFamilies.map(\.rawValue).sorted()
+    let activeSort = activeCandidateSort
+
+    return ManufacturingOpportunityCandidateProjectionTrigger(
       snapshotID: runtime.manufacturingOpportunityAnalysis?.id,
       requestedWarehouseIdentity: warehouseIdentity,
       preparedWarehouseIdentity: preparedWarehouseIdentity,
       reservationRevision: preparedPlanReservationRevision,
-      stockTargetIdentity:
-        stockTargets
-        .map {
-          "\($0.typeID):\($0.targetQuantity):\($0.updatedAt.timeIntervalSince1970)"
-        }
-        .sorted(),
-      ownershipIdentity:
-        characters
-        .map {
-          [
-            String($0.characterID),
-            String($0.corporationID ?? 0),
-            String($0.blueprintSnapshot?.count ?? 0),
-            String($0.corporationAssetSnapshot?.count ?? 0),
-            String($0.lastSyncAt?.timeIntervalSince1970 ?? 0),
-          ].joined(separator: ":")
-        }
-        .sorted(),
+      stockTargetIdentity: stockTargetIdentity,
+      ownershipIdentity: ownershipIdentity,
       searchText: searchText,
       selectedCategory: selectedCategory,
       selectedGroup: selectedGroup,
       favoritesOnly: favoritesOnly,
-      favoriteIDs: favoriteIDs.sorted(),
-      productFamilies: selectedProductFamilies.map(\.rawValue).sorted(),
+      favoriteIDs: sortedFavoriteIDs,
+      productFamilies: productFamilies,
       valueFilter: valueFilter.rawValue,
       includesPersonal: includesPersonal,
       includesCorporation: includesCorporation,
@@ -2780,8 +2782,8 @@ struct ManufacturingOpportunitiesView: View {
       includesCorporationHangars: includeCorporationHangars,
       includesBlueprintCost: costIncludesBlueprint,
       blueprintCostText: blueprintCostPerRunText,
-      sortColumn: activeCandidateSort.column.rawValue,
-      sortDirection: activeCandidateSort.direction.rawValue
+      sortColumn: activeSort.column.rawValue,
+      sortDirection: activeSort.direction.rawValue
     )
   }
 
@@ -2802,15 +2804,16 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private var warehouseIdentity: String {
-    let charactersIdentity = characters.map { character in
-      [
+    let charactersIdentity = characters.map { character -> String in
+      let components: [String] = [
         String(character.characterID),
         character.characterName,
         String(character.assetSnapshot?.count ?? 0),
         String(character.corporationID ?? 0),
         String(character.corporationAssetSnapshot?.count ?? 0),
         String(character.lastSyncAt?.timeIntervalSince1970 ?? 0),
-      ].joined(separator: ":")
+      ]
+      return components.joined(separator: ":")
     }.joined(separator: "|")
     let scope = runtime.productionBasis.productionWarehouseScope
     let productionIdentity =

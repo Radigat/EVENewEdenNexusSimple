@@ -4,7 +4,9 @@ import SwiftData
 /// Immutable description of the first production SwiftData schema. Never
 /// change these models in place; later app models belong to a new schema.
 enum EVENexusSchemaV1: VersionedSchema {
-  static let versionIdentifier = Schema.Version(1, 0, 0)
+  static var versionIdentifier: Schema.Version {
+    Schema.Version(1, 0, 0)
+  }
   static let models: [any PersistentModel.Type] = [
     StoredProductionBasis.self,
     StoredManufacturingProfile.self,

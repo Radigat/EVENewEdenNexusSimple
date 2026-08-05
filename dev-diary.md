@@ -253,6 +253,36 @@ Nachweis.
 
 Offen: Das Projektpostfach muss dauerhaft erreichbar und überwacht bleiben.
 
+## 5. August 2026 – Swift-6.1-Kompatibilität der GitHub-CI
+
+Ziel: Den fehlgeschlagenen öffentlichen GitHub-Actions-Check auf derselben
+Swift-Werkzeugkette reproduzierbar kompilierbar machen, ohne Fachverhalten oder
+Persistenzschema zu ändern.
+
+Entwicklung:
+
+- die CI-Diagnosen des Laufs `30987413552` gegen den lokal grünen Stand
+  abgegrenzt: GitHub verwendete Swift 6.1.2, lokal lief Swift 6.3.3;
+- gespeicherte statische SwiftData-Schemametadaten in berechnete statische
+  Werte mit unveränderten V1-/V2-Kennungen und unveränderter Migrationsfolge
+  überführt;
+- vier für Swift 6.1 zu komplexe SwiftUI-Identitäts- und Triggerausdrücke in
+  explizit typisierte Teilwerte zerlegt, ohne Felder, Reihenfolge oder Trenner
+  zu verändern;
+- Architektur-, Betriebs- und Acceptance-Dokumentation um die öffentliche
+  CI-Kompatibilitätsgrenze ergänzt.
+
+Ergebnis: Der bekannte Fehler ist als Compiler-/SDK-Kompatibilitätsproblem
+behoben; die Änderung führt weder eine neue Migration noch neue UI- oder
+Domänenlogik ein.
+
+Prüfung: `git diff --check` und striktes `swift-format` bestanden. Die
+isolierten SwiftPM- und unsigned nativen Xcode-Läufe bauten die Anwendung und
+bestanden jeweils 260 Tests in 21 Suites.
+
+Offen: Der neue öffentliche GitHub-Actions-Lauf wird nach dem Push dieses
+dokumentierten Stands erneut ausgeführt.
+
 ## Vorlage für neue Einträge
 
 ```markdown

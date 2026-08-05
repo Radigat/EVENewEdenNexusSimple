@@ -28,7 +28,9 @@ enum AppSettingKey {
 }
 
 enum EVENexusSchemaV2: VersionedSchema {
-  static let versionIdentifier = Schema.Version(2, 0, 0)
+  static var versionIdentifier: Schema.Version {
+    Schema.Version(2, 0, 0)
+  }
   static let models: [any PersistentModel.Type] = [
     StoredProductionBasis.self,
     StoredManufacturingProfile.self,
@@ -50,9 +52,14 @@ enum EVENexusMigrationPlan: SchemaMigrationPlan {
     EVENexusSchemaV1.self,
     EVENexusSchemaV2.self,
   ]
-  static let stages: [MigrationStage] = [
-    .lightweight(fromVersion: EVENexusSchemaV1.self, toVersion: EVENexusSchemaV2.self)
-  ]
+  static var stages: [MigrationStage] {
+    [
+      .lightweight(
+        fromVersion: EVENexusSchemaV1.self,
+        toVersion: EVENexusSchemaV2.self
+      )
+    ]
+  }
 }
 
 @MainActor

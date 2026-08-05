@@ -50,6 +50,13 @@ setting rows into an older, more complete store before background work starts.
 App-owned `UserDefaults` keys likewise use the stable application domain and
 copy missing values from the former executable-name domain once.
 
+The version identifiers and migration-stage list are computed static metadata
+rather than stored static SwiftData values. This preserves the exact V1/V2
+schema and migration graph while remaining compilable on the Swift 6.1 SDK used
+by the `macos-15` GitHub Actions lane. Large SwiftUI refresh fingerprints are
+assembled from explicitly typed component arrays for the same compatibility
+reason; their ordering, separators and domain values remain unchanged.
+
 The normalized CCP User-Agent operator contact is the intentionally public
 project address `projekt-st@gmx.de`, not a user setting or authentication
 credential. It is compiled into the application and can be overridden by a

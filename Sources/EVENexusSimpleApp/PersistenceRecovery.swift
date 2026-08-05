@@ -5,7 +5,9 @@ import SwiftData
 /// character model changed while its version identifier was still 1.0.0.
 /// It is used only to read the protected recovery copy and is never activated.
 private enum EVENexusRecoveredCurrentSchemaV1: VersionedSchema {
-  static let versionIdentifier = Schema.Version(1, 0, 0)
+  static var versionIdentifier: Schema.Version {
+    Schema.Version(1, 0, 0)
+  }
   static let models = EVENexusSchemaV2.models
 }
 
