@@ -4412,3 +4412,36 @@ synchronisierten Dokumente-Ordner wiederholt Finder-Metadaten an den Frameworks 
 die strikte Signaturprüfung. Beide Pakete wurden deshalb aus `dist/` an den lokalen Zielort
 verschoben und dort erneut geprüft. Es wurde kein ZIP-/Cloud-Archiv angelegt; `dist/` enthält
 nur Build-Metadaten. Die installierte produktive App wurde nicht ersetzt.
+
+
+## 25.09.2026 – DEV-Startfehler und native Fensterzuordnung korrigiert
+
+Nutzerbefund: „DEV-Einstellungen sind nicht lesbar.“ Die eingebettete und bereits kopierte
+Einstellungsdatei waren intakt. macOS liefert bei `UserDefaults(suiteName:)` für die eigene
+Bundle-ID keinen zusätzlichen Einstellungsbereich. Die bisherigen Tests verwendeten eine
+abweichende Smoke-Domäne und deckten den normalen Erststart deshalb nicht vollständig ab.
+Der neue synthetische Test reproduzierte den identischen Fehler mit eigener Bundle-Domäne;
+`.standard` löst ihn ohne Datenersetzung.
+
+Die anschließende native Prüfung deckte zusätzlich eine fehlerhafte LaunchServices-Zuordnung
+beim `exec`-Wechsel vom Hilfsstarter auf: Der UI-Prozess lief, wurde aber mit PID -1 zugeordnet.
+DEV übernimmt die Daten jetzt über `DevelopmentAppBootstrap` vor dem Erzeugen der SwiftUI-App
+im tatsächlichen App-Executable. Der zusätzliche Starter entfällt. Standard- und DEV-Domänen,
+Schlüsselbundtrennung und Datenpfade bleiben erhalten. `AppDefaults` behandelt ebenfalls die
+eigene Bundle-ID ausdrücklich als Standarddomäne. Keine fachlichen Berechnungen verändert.
+
+Prüfung: SwiftPM 452 bestanden + 1 opt-in Skip, Kit 7 + 1, native Tests 416 + 1; Release- und
+Debug-Build erfolgreich. Erweiterter synthetischer Pakettest prüft zehn Grenzen einschließlich
+nativer Executable-Zuordnung, eigener Bundle-Domäne, gemischter Property-List-Typen, Wiederaufnahme
+eines unterbrochenen Einstellungsimports und Erhalt geänderter DEV-Einstellungen bei Neustart.
+Protokolle: `/private/tmp/eve-dev-own-domain-red.log`, `eve-dev-native-entry-export-checks.log`,
+`eve-dev-native-entry-tests.log`, `eve-dev-start-fix-kit-tests.log`, `eve-dev-native-entry-debug.log`,
+`eve-dev-native-entry-release.log`; natives Ergebnis `/private/tmp/eve-dev-native-entry.xcresult`.
+
+Die Programmdateien der DEV-App unter Downloads wurden aktualisiert und lokal neu signiert.
+Vorherige Programmdateien liegen lokal unter
+`/private/var/folders/ss/lwz_fgl94c36jczpz9p9vq8h0000gn/T/eve-dev-code-before-native-fix-yihxc7x_`.
+Eingebettete Daten und die bereits angelegte DEV-Arbeitskopie wurden nicht ersetzt. Die normale
+App wurde nicht aktualisiert oder beendet. Regulärer Start über Finder anschließend beobachtet:
+DEV-Hauptfenster „Dashboard“ erreichbar, kopierte Charakter- und Bestandsdaten sichtbar,
+keine Startfehlermeldung. Keine neue Anmeldung durchgeführt; Live-Zugriffe nicht abgenommen.

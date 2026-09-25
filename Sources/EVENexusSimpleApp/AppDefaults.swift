@@ -6,6 +6,7 @@ enum AppDefaults {
     let environmentSuite =
       ProcessInfo.processInfo.environment["EVE_NEXUS_USER_DEFAULTS_SUITE"]
     if let environmentSuite {
+      if environmentSuite == Bundle.main.bundleIdentifier { return .standard }
       return UserDefaults(suiteName: environmentSuite) ?? .standard
     }
     if Bundle.main.bundleIdentifier == AppDataPaths.applicationIdentifier {

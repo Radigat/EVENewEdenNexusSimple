@@ -86,8 +86,7 @@ def main():
             raise ValueError('Expected the canonical release app as input')
         info.update(CFBundleIdentifier='com.local.EVENexusSimple.DEV',
                     CFBundleName=output.stem, CFBundleDisplayName=output.stem,
-                    CFBundleExecutable='DEVLauncher',
-                    EVENexusOriginalExecutable=original_executable)
+                    CFBundleExecutable=original_executable)
         info_path.write_bytes(plistlib.dumps(info))
         seed = stage / 'Contents/Resources/DevSeed'
         seed.mkdir()
@@ -111,15 +110,9 @@ def main():
         manifest = dict(format=1, createdUTC=datetime.now(timezone.utc).isoformat(),
                         files=files, keychainExported=False, sqliteSnapshots=sqlite_count)
         (seed / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-        run('xcrun', 'swiftc', '-O', '-target', 'arm64-apple-macos14.0',
-            Path(__file__).with_name('DevAppLauncher.swift'),
-            '-o', stage / 'Contents/MacOS/DEVLauncher')
         run('xattr', '-cr', stage)
         for framework in sorted((stage / 'Contents/Frameworks').glob('*.framework')):
             run('codesign', '--force', '--sign', '-', '--timestamp=none', '--options', '0', framework)
-        # The original app executable is now nested code, separate from the launcher.
-        run('codesign', '--force', '--sign', '-', '--timestamp=none', '--options', '0',
-            stage / 'Contents/MacOS' / original_executable)
         run('codesign', '--force', '--sign', '-', '--timestamp=none', '--options', '0', stage)
         run('codesign', '--verify', '--deep', '--strict', stage)
         output.parent.mkdir(parents=True, exist_ok=True)

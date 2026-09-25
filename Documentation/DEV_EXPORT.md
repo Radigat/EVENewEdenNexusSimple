@@ -40,6 +40,19 @@ unveränderten lokalen SSO-Callbacks Anmeldungen in beiden Apps nacheinander dur
 - Produktive Daten wurden nur für den autorisierten Export gelesen; Funktionstests verwenden
   synthetische Daten. Live-Anmeldung und Nutzerabnahme sind nicht Teil dieses Nachweises.
 
+## Startkorrektur vom 25.09.2026
+
+Die erste Paketfassung scheiterte beim Öffnen der eigenen Einstellungsdomäne. Der Fehler wurde
+mit synthetischen Daten reproduziert und korrigiert. Zusätzlich wurde der Hilfsstarter entfernt,
+dessen Prozesswechsel die native Fensterzuordnung störte. Der tatsächliche App-Einstieg führt
+jetzt die Datenübernahme vor allen App-Einstellungen und der Oberfläche aus.
+
+Die aktualisierte DEV-App wurde über Finder geöffnet: Dashboard erreichbar und kopierte Daten
+sichtbar. Die vorhandene DEV-Arbeitskopie wurde dabei beibehalten. Zehn synthetische Export- und
+Startprüfungen bestehen, einschließlich eigener Bundle-Domäne, unterbrochenem Einstellungsimport
+und anschließend erhaltener Einstellungsänderungen. Erneute Prüfungen: SwiftPM 452 / 1 Skip,
+Kit 7 / 1, native Tests 416 / 1; Debug- und Release-Build erfolgreich.
+
 ## Erneute Prüfung und Erstellung
 
 `Scripts/check_dev_export.py --base-app <signierte Release.app>` erzeugt ausschließlich
@@ -50,7 +63,11 @@ synthetische Daten, verpackt eine temporäre DEV-App und prüft Erststart sowie 
 Datenkopie. Die Parameter gehören in einen gemeinsamen Aufruf. Die Einstellungen stammen aus
 dem Export der kanonischen UserDefaults-Domäne. Der Exporter überschreibt kein vorhandenes Ziel,
 verweigert symbolische Links und bricht bei erkannten Quelldatenänderungen während der Kopie ab.
-`Scripts/DevAppLauncher.swift` wird ausschließlich als Starter des exportierten Pakets gebaut;
+Die Datenübernahme läuft über `DevelopmentAppBootstrap` vor dem Erzeugen der SwiftUI-App.
+Das Paket startet direkt das im Info.plist deklarierte App-Executable; es gibt keinen
+zusätzlichen Hilfsprozess oder `exec`-Übergang. Die eigene UserDefaults-Domäne verwendet
+`.standard`, da macOS dieselbe Bundle-ID als zusätzliche Suite zurückweist. Bereits
+angelegte DEV-Daten bleiben bei der Wiederaufnahme eines Einstellungsimports erhalten.
 Xcode-Projekt, App-Target, fachliche Berechnungen und produktiver OAuth-Callback bleiben erhalten.
 
 Die fertigen Apps liegen im lokalen Downloads-Ordner. Der File Provider des synchronisierten

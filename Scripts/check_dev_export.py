@@ -34,7 +34,10 @@ def run(arguments, *, environment=env, expected=0):
 run([exe])
 data_root = source_root / 'com.local.EVENexusSimple'
 preferences = work / 'preferences.plist'
-preferences.write_bytes(plistlib.dumps({'app.devFixture': 'synthetic-only'}))
+preferences.write_bytes(plistlib.dumps({
+    'app.devFixture': 'synthetic-only', 'app.boolean': True, 'app.count': 3,
+    'app.data': b'synthetic', 'app.list': ['one', 'two'],
+    'app.dictionary': {'value': 42}}))
 wal = sqlite3.connect(data_root / 'fixture.sqlite')
 wal.execute('PRAGMA journal_mode=WAL')
 wal.execute('PRAGMA wal_autocheckpoint=0')
@@ -50,7 +53,9 @@ with sqlite3.connect((seed / 'data/fixture.sqlite').as_uri() + '?mode=ro', uri=T
 db.close()
 wal.close()
 
-launcher = app / 'Contents/MacOS/DEVLauncher'
+launcher = app / 'Contents/MacOS' / info['CFBundleExecutable']
+assert plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleExecutable'] == launcher.name
+assert not (app / 'Contents/MacOS/DEVLauncher').exists()
 dev_root = work / 'first-start'
 dev_env = dict(env, EVE_NEXUS_DEV_ACCEPTANCE_ROOT=str(dev_root),
                EVE_NEXUS_APPLICATION_SUPPORT_ROOT=str(work / 'production-sentinel'),
@@ -63,28 +68,47 @@ changed.write_text('preserve on restart')
 run([launcher], environment=dev_env)
 assert changed.read_text() == 'preserve on restart'
 
-# Observe the bundle identity and effective namespaces in the exec'd payload.
-probe = work / 'Probe.swift'
-probe.write_text('''import Foundation
-let env = ProcessInfo.processInfo.environment
-let domain = env["EVE_NEXUS_USER_DEFAULTS_SUITE"]!
-let values: [String: String] = [
-  "bundle": Bundle.main.bundleIdentifier ?? "missing",
-  "root": env["EVE_NEXUS_APPLICATION_SUPPORT_ROOT"] ?? "missing",
-  "suite": domain,
-  "preference": UserDefaults(suiteName: domain)?.string(forKey: "app.devFixture") ?? "missing"
-]
-print(String(data: try JSONEncoder().encode(values), encoding: .utf8)!)
-''')
-payload = app / 'Contents/MacOS' / info['CFBundleExecutable']
-run(['xcrun', 'swiftc', probe, '-o', payload])
-run(['codesign', '--force', '--sign', '-', '--timestamp=none', payload])
-run(['codesign', '--force', '--sign', '-', '--timestamp=none', app])
-observed = json.loads(run([launcher], environment=dev_env))
-assert observed['bundle'] == 'com.local.EVENexusSimple.DEV', observed
-assert observed['root'] == str(dev_root), observed
-assert observed['suite'].startswith('com.local.EVENexusSimple.DEV.smoke.'), observed
-assert observed['preference'] == 'synthetic-only', observed
+def preferences_in(domain):
+    return plistlib.loads(run(['/usr/bin/defaults', 'export', domain, '-']).encode())
+
+smoke_domain = 'com.local.EVENexusSimple.DEV.smoke.' + dev_root.name
+for key, value in plistlib.loads(preferences.read_bytes()).items():
+    assert preferences_in(smoke_domain)[key] == value
+
+# Exercise the real first-launch branch, whose domain equals its bundle ID.
+# Substitute only the bundle identifier so this test never writes real DEV preferences.
+own_id = 'com.local.EVENexusSimple.DEV.fixture.' + work.name
+own_root = Path.home() / 'Library/Application Support' / own_id
+assert not own_root.exists()
+own_app = work / 'OwnDomain-DEV.app'
+run(['ditto', '--norsrc', '--noextattr', app, own_app])
+own_info_path = own_app / 'Contents/Info.plist'
+own_info = plistlib.loads(own_info_path.read_bytes())
+own_info['CFBundleIdentifier'] = own_id
+own_info_path.write_bytes(plistlib.dumps(own_info))
+own_launcher = own_app / 'Contents/MacOS' / info['CFBundleExecutable']
+run(['codesign', '--force', '--sign', '-', '--timestamp=none', own_app])
+own_env = dict(env)
+own_env.pop('EVE_NEXUS_DEV_ACCEPTANCE_ROOT', None)
+run([own_launcher], environment=own_env)
+owned = preferences_in(own_id)
+for key, value in plistlib.loads(preferences.read_bytes()).items():
+    assert owned[key] == value
+assert (own_root / 'dev-preferences-imported').exists()
+# Recover the state left by an interrupted/failed preference import without reseeding data.
+(own_root / 'dev-preferences-imported').unlink()
+preserve = own_root / 'com.local.EVENexusSimple/preserve-after-interrupted-import.txt'
+preserve.write_text('existing DEV data')
+run([own_launcher], environment=own_env)
+assert preferences_in(own_id)['app.devFixture'] == 'synthetic-only'
+assert preserve.read_text() == 'existing DEV data'
+# Existing user edits to the DEV preferences must survive a normal restart.
+run(['/usr/bin/defaults', 'write', own_id, 'app.devFixture', '-string', 'changed-in-DEV'])
+run([own_launcher], environment=own_env)
+assert preferences_in(own_id)['app.devFixture'] == 'changed-in-DEV'
+# Only the uniquely named synthetic domain and directory are removed.
+run(['/usr/bin/defaults', 'delete', own_id])
+shutil.rmtree(own_root)
 
 # A partial existing destination is never replaced.
 partial = work / 'partial'
@@ -101,5 +125,7 @@ run([launcher], environment=dict(dev_env, EVE_NEXUS_DEV_ACCEPTANCE_ROOT=str(bad_
 assert not bad_root.exists()
 print(json.dumps(dict(workspace=str(work), checks=[
     'committed WAL captured', 'first startup succeeded', 'production namespace untouched',
-    'restart preserves changes', 'DEV bundle and preferences confirmed in payload',
+    'restart preserves changes', 'native declared executable and isolated preferences confirmed',
+    'own bundle domain imports mixed property-list settings',
+    'interrupted preference import resumes without reseeding', 'edited DEV preferences survive restart',
     'partial destination preserved', 'corrupt seed rejected']), indent=2))

@@ -1368,8 +1368,11 @@ sowie den eigenen Schlüsselbunddienst `com.local.EVENexusSimple.DEV.refresh-tok
 Anmeldeschlüssel sind nicht enthalten; Live-Abfragen erfordern eine erneute Anmeldung in DEV.
 Der bestehende lokale SSO-Callback bleibt erhalten; Anmeldungen deshalb nacheinander durchführen.
 Normale App, produktive Datenpfade und deren technische Identitäten bleiben unverändert.
-Der DEV-Starter und Exporter unter `Scripts/` gehören zur Verpackung, nicht zu einem zweiten
-App-Target. `dist/` bleibt vorsorglich von Git ausgeschlossen. Die DEV-App enthält private Daten und wird
+Die DEV-Datenübernahme läuft vor der Oberfläche im nativen App-Einstieg; ein zusätzlicher
+Hilfsstarter ist nicht erforderlich. Die eigene Einstellungsdomäne wird über die Standard-
+Einstellungen dieser DEV-App geöffnet. Ein unterbrochener Einstellungsimport wird beim
+nächsten Start fortgesetzt, ohne die vorhandene DEV-Datenbank neu anzulegen. Der Exporter
+unter `Scripts/` erzeugt das Paket desselben App-Targets. `dist/` bleibt vorsorglich von Git ausgeschlossen. Die DEV-App enthält private Daten und wird
 ausschließlich lokal außerhalb synchronisierter Ordner aufbewahrt.
 Prüfnachweise und Exportablauf: [DEV_EXPORT.md](Documentation/DEV_EXPORT.md).
 

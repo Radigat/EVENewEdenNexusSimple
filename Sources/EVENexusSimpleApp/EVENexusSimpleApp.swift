@@ -5,6 +5,26 @@ import SwiftData
 import SwiftUI
 
 @main
+@MainActor
+enum EVENexusApplicationEntry {
+  static func main() {
+    do {
+      try DevelopmentAppBootstrap.prepare()
+    } catch {
+      if ProcessInfo.processInfo.environment["EVE_NEXUS_PERSISTENCE_ACCEPTANCE_EXIT"] == "1" {
+        FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+      } else {
+        let alert = NSAlert()
+        alert.messageText = "EVE New Eden Nexus – DEV"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+      }
+      exit(1)
+    }
+    EVENexusSimpleApp.main()
+  }
+}
+
 struct EVENexusSimpleApp: App {
   @StateObject private var consolidation = ConsolidationController()
   @StateObject private var runtimeOwner: RuntimeStateOwner
@@ -78,8 +98,9 @@ struct EVENexusSimpleApp: App {
           ContentView(runtime: runtimeOwner.runtime)
             .environmentObject(consolidation)
             .task {
-              do { try consolidation.start(container: modelContainer) }
-              catch { consolidation.error = error.localizedDescription }
+              do { try consolidation.start(container: modelContainer) } catch {
+                consolidation.error = error.localizedDescription
+              }
             }
             .environmentObject(runtimeOwner.runtime)
             .environment(\.locale, appLanguage.locale)
