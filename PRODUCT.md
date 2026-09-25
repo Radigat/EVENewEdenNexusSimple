@@ -1355,6 +1355,23 @@ mit kurzen, wiederverwendbaren Prompts steht in
 
 ## Installation und Entwicklung
 
+Lokale Release-Exporte liegen unter `dist/` (Apple Silicon, macOS 14+, lokale Ad-hoc-Signatur).
+Die separat benannte `EVE New Eden Nexus - Assets, Industry, Markets-DEV.app` enthält eine
+geprüfte Kopie der lokalen Daten, Kataloge und Einstellungen zum Exportzeitpunkt. Beim ersten
+Start wird sie atomar nach `~/Library/Application Support/com.local.EVENexusSimple.DEV/`
+übernommen. Weitere Starts erhalten die dortigen Änderungen. Ein neuer Export überschreibt
+keinen bestehenden DEV-Bestand. Der aktive Quellprojektordner bleibt derselbe.
+
+DEV verwendet die eigene Bundle-ID und Einstellungsdomäne `com.local.EVENexusSimple.DEV`
+sowie den eigenen Schlüsselbunddienst `com.local.EVENexusSimple.DEV.refresh-token`.
+Anmeldeschlüssel sind nicht enthalten; Live-Abfragen erfordern eine erneute Anmeldung in DEV.
+Der bestehende lokale SSO-Callback bleibt erhalten; Anmeldungen deshalb nacheinander durchführen.
+Normale App, produktive Datenpfade und deren technische Identitäten bleiben unverändert.
+Der DEV-Starter und Exporter unter `Scripts/` gehören zur Verpackung, nicht zu einem zweiten
+App-Target. `dist/` ist wegen der privaten Datenkopie von Git ausgeschlossen.
+Prüfnachweise und Exportablauf: [DEV_EXPORT.md](Documentation/DEV_EXPORT.md).
+
+
 Voraussetzungen sind macOS 14 oder neuer, eine passende Xcode-Version mit
 Swift 6 für das vorhandene native Projekt. `project.yml` bleibt eine Generatorvorlage;
 Regeneration ist ein gesonderter Strukturabgleich, kein notwendiger Startschritt.

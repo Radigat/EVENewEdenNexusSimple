@@ -47,8 +47,16 @@ public struct KeychainRefreshTokenStore: RefreshTokenStoring, Sendable {
   private let service: String
   private let client: any KeychainSecItemOperating
 
-  public init(service: String = "com.local.EVENexusSimple.refresh-token") {
-    self.service = service
+  // DEV exports use their own keychain namespace; production identities stay unchanged.
+  static func serviceName(applicationIdentifier: String?) -> String {
+    if applicationIdentifier == "com.local.EVENexusSimple.DEV" {
+      return "com.local.EVENexusSimple.DEV.refresh-token"
+    }
+    return "com.local.EVENexusSimple.refresh-token"
+  }
+
+  public init(service: String? = nil) {
+    self.service = service ?? Self.serviceName(applicationIdentifier: Bundle.main.bundleIdentifier)
     self.client = SystemKeychainSecItemClient()
   }
 

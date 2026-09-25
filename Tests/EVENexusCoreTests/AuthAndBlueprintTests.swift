@@ -239,6 +239,27 @@ struct AuthAndBlueprintTests {
   }
 
   @Test
+  func developmentKeychainNeverAddressesProductionCredentials() throws {
+    let production = "com.local.EVENexusSimple.refresh-token"
+    for identifier in [nil, "com.local.EVENexusSimple", "unrelated.test.bundle"] {
+      #expect(
+        KeychainRefreshTokenStore.serviceName(applicationIdentifier: identifier) == production)
+    }
+    let development = KeychainRefreshTokenStore.serviceName(
+      applicationIdentifier: "com.local.EVENexusSimple.DEV")
+    #expect(development == "com.local.EVENexusSimple.DEV.refresh-token")
+    let client = ScriptedKeychainSecItemClient(
+      updateStatuses: [errSecSuccess], addStatuses: [],
+      deleteStatuses: [errSecSuccess, errSecSuccess])
+    let store = KeychainRefreshTokenStore(service: development, client: client)
+    try store.save("synthetic-token", characterID: 42)
+    #expect(try store.load(characterID: 42) == nil)
+    try store.delete(characterID: 42)
+    #expect(client.accessedServices.count == 5)
+    #expect(client.accessedServices.allSatisfy { $0 == development })
+  }
+
+  @Test
   func legacyKeychainDuplicateFromPriorAdHocBuildIsReplaced() throws {
     let client = ScriptedKeychainSecItemClient(
       updateStatuses: [errSecMissingEntitlement, errSecItemNotFound],
@@ -914,6 +935,7 @@ private final class ScriptedKeychainSecItemClient:
   private var deleteStatuses: [OSStatus]
   private var recordedAddCount = 0
   private var recordedDeletedAccounts: [String] = []
+  private var recordedServices: [String] = []
 
   init(
     updateStatuses: [OSStatus],
@@ -923,6 +945,12 @@ private final class ScriptedKeychainSecItemClient:
     self.updateStatuses = updateStatuses
     self.addStatuses = addStatuses
     self.deleteStatuses = deleteStatuses
+  }
+
+  var accessedServices: [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return recordedServices
   }
 
   var addCount: Int {
@@ -943,23 +971,29 @@ private final class ScriptedKeychainSecItemClient:
   ) -> OSStatus {
     lock.lock()
     defer { lock.unlock() }
+    recordedServices.append(query[kSecAttrService as String] as? String ?? "")
     return updateStatuses.removeFirst()
   }
 
   func add(attributes: [String: Any]) -> OSStatus {
     lock.lock()
     defer { lock.unlock() }
+    recordedServices.append(attributes[kSecAttrService as String] as? String ?? "")
     recordedAddCount += 1
     return addStatuses.removeFirst()
   }
 
   func copy(query: [String: Any]) -> (OSStatus, Data?) {
-    (errSecItemNotFound, nil)
+    lock.lock()
+    defer { lock.unlock() }
+    recordedServices.append(query[kSecAttrService as String] as? String ?? "")
+    return (errSecItemNotFound, nil)
   }
 
   func delete(query: [String: Any]) -> OSStatus {
     lock.lock()
     defer { lock.unlock() }
+    recordedServices.append(query[kSecAttrService as String] as? String ?? "")
     recordedDeletedAccounts.append(
       query[kSecAttrAccount as String] as? String ?? ""
     )

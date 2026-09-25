@@ -22,3 +22,6 @@ Secrets.xcconfig
 LocalData/
 *.sqlite-wal
 *.sqlite-shm
+
+# Local app exports may include private development data snapshots.
+/dist/

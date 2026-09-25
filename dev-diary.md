@@ -4378,3 +4378,30 @@ zur ausdrücklich entfernten Finanzansicht. Nur dessen großer Accounts-Bildschi
 temporären Testkopie wegen einer Compilergrenze ausgeklammert; keine Testdatei oder Archivquelle geändert.
 Die sieben Aussagen sind in LEGACY_TEST_DISPOSITIONS einzeln eingeordnet. Finale Reservierungsvorschauen
 bewahren außerdem die manuelle Herkunft eines ohne ESI gerechneten Plans und verlangen frische ESI-Daten.
+
+
+## 25.09.2026 – Lokale Release-App und separate DEV-Datenkopie
+
+Auf ausdrücklichen Folgeauftrag normale `.app` und `-DEV.app` unter `dist/` erstellt.
+DEV ist ein Export desselben aktiven Projekts, kein zweiter Quellprojektstand. Ein kleiner
+Paketstarter prüft die eingebettete Datenkopie und übernimmt sie beim ersten Start atomar
+in einen eigenen Datenordner. Eigene Bundle-ID, UserDefaults-Domäne und Schlüsselbunddienst
+halten DEV-Schreibzugriffe getrennt; produktive Identitäten bleiben unverändert.
+Der lokale Schlüsselbund wird nicht exportiert. DEV-Live-Abfragen erfordern erneute Anmeldung.
+
+Release- und nativer Debug-Build erfolgreich. SwiftPM: 452 bestanden + 1 optionaler Skip;
+EVEStaticDataKit: 7 + 1; native Tests: 416 + 1. Der neue Test prüft DEV-Schlüsselbundabfragen
+und unveränderte produktive Dienstnamen. Synthetischer Pakettest prüft committed WAL-Inhalte,
+Erststart, isolierte Daten/Einstellungen und tatsächliche Bundle-ID nach dem Start, Erhalt von
+DEV-Änderungen beim Wiederstart sowie Ablehnung beschädigter Seeds und unvollständiger Ziele.
+Bei dieser Prüfung wurden macOS-Pfadkanonisierung und das explizite Schließen der temporären
+SQLite-Sicherungen abgesichert. Prüfprotokolle: `/private/tmp/eve-dev-*.log`, natives Ergebnis
+`/private/tmp/eve-dev-native-tests.xcresult`.
+
+Finaler Datenexport: 29 Dateien einschließlich Einstellungen, 437.424.810 Bytes, fünf
+konsistente SQLite-Sicherungen einschließlich der lokalen Katalog- und Sicherungsdateien.
+Originaldaten und Einstellungen vor/nach Export identisch geprüft; Schlüsselbund nicht gelesen.
+Die finale private Datenkopie wurde nicht für Funktionstests gestartet. Starter und App wurden
+mit ausschließlich synthetischen Daten geprüft. Lokale Ad-hoc-Signatur; keine Notarisierung,
+keine Installation über die bestehende App, kein Live-Service-Test und keine Nutzerabnahme.
+Details und reproduzierbare Prüfung: [DEV_EXPORT.md](Documentation/DEV_EXPORT.md).
