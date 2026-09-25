@@ -4482,3 +4482,20 @@ Seed einschließlich Manifest (30 Dateien) und vorhandene DEV-Arbeitskopie
 Benutzerdaten in Tests oder Git übernommen. Normale App nicht ersetzt oder beendet.
 Keine Live-Service-Abnahme oder Nutzerabnahme behauptet. Keine weiteren offenen
 Probleme in dieser Layoutkorrektur; weitere Funktionsarbeit ist nicht Bestandteil.
+
+
+## 25.09.2026 – Geprüften Build auf normale App übertragen
+
+Auf ausdrücklichen Benutzerauftrag den bereits geprüften Release-Build des Quellstands
+`8beff4ce2bd2b439b0c621a69e4f504a07e44b05` auf die normale App unter Downloads übertragen.
+Keine Codeänderung und kein zusätzlicher Datenexport. Bisherige App regulär beendet und
+lokal unter `/private/tmp/eve-normal-build-before-layout-j520kqe9/` zur Rücknahme gesichert.
+Paket mit unveränderter produktiver Bundle-ID lokal signiert; strikte Signaturprüfung
+bestanden. Alle 38 vorhandenen Daten-/Einstellungsdateien waren unmittelbar vor/nach
+Austausch per SHA-256 identisch. DEV-App bei dieser Übertragung unverändert.
+
+Normale App anschließend regulär geöffnet: Dashboard vorhanden, Allgemeine Einstellungen
+zeigen die Reiter vollständig unterhalb der Titelleiste. Die erfolgreichen Debug-/Release-
+Builds und Tests der vorherigen Korrektur gelten für denselben unveränderten Build;
+keine erneuten Fachtests mit Benutzerdaten durchgeführt. `dist/BUILD_INFO.json` aktualisiert.
+Keine offenen Übertragungsprobleme, keine neue Funktionsplanung oder Live-Service-Abnahme.

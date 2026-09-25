@@ -85,7 +85,8 @@ des sichtbaren Inhaltsbereichs unter der nativen Titelleiste, konstante Eigenhö
 vollbreiter Hintergrund. Allgemein, ESI und Industrieeinstellungen wurden direkt in
 der laufenden DEV-App geprüft, einschließlich Seitenwechsel, Scrollen und Wechsel
 zwischen maximiertem Fenster und einem Bildschirmviertel. Keine Überdeckung mehr
-beobachtet. Die normale exportierte App bleibt auf ihrem bisherigen Quellstand.
+beobachtet. Auf anschließenden Benutzerauftrag wurde auch die normale exportierte App
+auf diesen geprüften Quellstand aktualisiert (siehe Übertragungsnachweis unten).
 
 SwiftPM: 454 bestanden / 1 optionaler Skip; EVEStaticDataKit: 7 / 1; native Tests:
 416 / 1. Debug- und Release-Build erfolgreich. Zwei zusätzliche synthetische UI-Tests
@@ -97,3 +98,22 @@ Nur Programmdateien und lokale Signatur wurden erneuert. Alle 30 Dateien im Seed
 (einschließlich Manifest) sowie alle 38 vorhandenen DEV-Arbeitsdateien waren vor und
 unmittelbar nach der Aktualisierung per SHA-256 identisch. Kein erneuter Datenexport,
 keine Migration, keine neue Anmeldung. Die App-Signatur ist strikt geprüft.
+
+## Übertragung auf die normale App vom 25.09.2026
+
+Die normale App unter `~/Downloads/EVE New Eden Nexus - Assets, Industry, Markets.app`
+verwendet jetzt ebenfalls den bereits geprüften Release-Build aus Quellstand
+`8beff4ce2bd2b439b0c621a69e4f504a07e44b05`. Es wurde kein neuer Code geändert.
+Das Paket wurde lokal signiert und strikt geprüft; Bundle-ID, Einstellungen,
+Schlüsselbundzugriff und produktiver Datenpfad bleiben erhalten. Es enthält keinen DEV-Seed.
+
+Die bisherige App wurde vor dem Austausch beendet und lokal zur Rücknahme gesichert:
+`/private/tmp/eve-normal-build-before-layout-j520kqe9/EVE New Eden Nexus - Assets, Industry, Markets.app`.
+Alle 38 vorhandenen Daten-/Einstellungsdateien waren direkt vor/nach Programmaustausch
+per SHA-256 identisch. Die DEV-App wurde bei dieser Übertragung nicht verändert.
+
+Regulärer Start der normalen App geprüft: Dashboard geöffnet, anschließend Allgemeine
+Einstellungen mit vollständig sichtbarer Reiterleiste unterhalb der nativen Titelleiste.
+Keine zusätzliche Fach- oder Live-Service-Abnahme. Die bereits dokumentierten erfolgreichen
+Builds und Tests gehören zum unverändert übertragenen Build; kein erneuter Testlauf nötig.
+Aktualisierte Paketmetadaten stehen in `dist/BUILD_INFO.json`.

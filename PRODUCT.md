@@ -1380,6 +1380,8 @@ Einstellungen dieser DEV-App geöffnet. Ein unterbrochener Einstellungsimport wi
 nächsten Start fortgesetzt, ohne die vorhandene DEV-Datenbank neu anzulegen. Der Exporter
 unter `Scripts/` erzeugt das Paket desselben App-Targets. `dist/` bleibt vorsorglich von Git ausgeschlossen. Die DEV-App enthält private Daten und wird
 ausschließlich lokal außerhalb synchronisierter Ordner aufbewahrt.
+Normale App und DEV-App enthalten beide die Korrektur der Einstellungsreiter unterhalb
+der nativen Titelleiste; ihre bestehenden getrennten Datenbestände bleiben erhalten.
 Prüfnachweise und Exportablauf: [DEV_EXPORT.md](Documentation/DEV_EXPORT.md).
 
 
