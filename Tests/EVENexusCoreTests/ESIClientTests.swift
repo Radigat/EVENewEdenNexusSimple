@@ -18,6 +18,30 @@ struct ESIClientTests {
   }
 
   @Test
+  func universeTypeVolumesUseAuthoritativePackagedValuesAndCacheThem()
+    async throws
+  {
+    let transport = UniverseTypeVolumeTransport()
+    let client = ESIClient(transport: transport)
+    let service = UniverseTypeVolumeService(
+      esi: client,
+      maximumConcurrentRequests: 2
+    )
+
+    let first = try await service.volumes(for: [22_544, 28_850])
+
+    #expect(first.state == .fresh)
+    #expect(first.value?[22_544] == 3_750)
+    #expect(first.value?[28_850] == 1_300_000)
+    #expect(await transport.requestCount == 2)
+    #expect(await transport.sawCompatibilityDate)
+
+    let second = try await service.volumes(for: [22_544, 28_850])
+    #expect(second.value == first.value)
+    #expect(await transport.requestCount == 2)
+  }
+
+  @Test
   func currentAssetSchemaUsesIsSingleton() throws {
     let fixture = Data(
       """
@@ -63,6 +87,158 @@ struct ESIClientTests {
 
     #expect(!order.isBuyOrder)
     #expect(order.volumeRemain == 100)
+  }
+
+  @Test
+  func contractAndWalletSchemasExposeFeeJoinFieldsWithoutBreakingLegacyData()
+    throws
+  {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let contract = try decoder.decode(
+      ESIPrivateContractDTO.self,
+      from: Data(
+        """
+        {
+          "availability":"public",
+          "contract_id":41,
+          "date_expired":"2026-08-20T00:00:00Z",
+          "date_issued":"2026-08-10T00:00:00Z",
+          "for_corporation":false,
+          "issuer_id":99,
+          "price":1000000,
+          "start_location_id":60000001,
+          "status":"finished_issuer",
+          "type":"item_exchange"
+        }
+        """.utf8
+      )
+    )
+    let journal = try decoder.decode(
+      ESIWalletJournalDTO.self,
+      from: Data(
+        """
+        {
+          "amount":-12000,
+          "context_id":41,
+          "context_id_type":"contract_id",
+          "date":"2026-08-10T00:01:00Z",
+          "description":"Fixture contract broker fee",
+          "id":501,
+          "ref_type":"contract_brokers_fee"
+        }
+        """.utf8
+      )
+    )
+    let legacy = try decoder.decode(
+      ESIPrivateContractDTO.self,
+      from: Data(
+        """
+        {
+          "contract_id":42,
+          "date_expired":"2026-08-20T00:00:00Z",
+          "for_corporation":false,
+          "issuer_id":99,
+          "status":"outstanding",
+          "type":"item_exchange"
+        }
+        """.utf8
+      )
+    )
+
+    #expect(contract.availability == "public")
+    #expect(contract.price == 1_000_000)
+    #expect(contract.startLocationID == 60_000_001)
+    #expect(journal.contextID == 41)
+    #expect(journal.contextIDType == "contract_id")
+    #expect(journal.description == "Fixture contract broker fee")
+    #expect(legacy.availability == nil)
+    #expect(legacy.price == nil)
+  }
+
+  @Test
+  func publicContractFeeEvidenceUsesOnlyMatchedNonRefundableExpenses() throws {
+    let source = SourceIdentity(
+      provider: "ESI fixture",
+      version: "2026-08-16",
+      capturedAt: Date(timeIntervalSince1970: 1_776_000_000),
+      snapshotID: UUID(uuidString: "00000000-0000-0000-0000-000000000041")!
+    )
+    let contract = ESIPrivateContractDTO(
+      availability: "public",
+      collateral: nil,
+      contractID: 41,
+      dateExpired: Date(timeIntervalSince1970: 1_776_100_000),
+      dateIssued: Date(timeIntervalSince1970: 1_775_900_000),
+      forCorporation: false,
+      issuerID: 99,
+      price: 1_000_000,
+      startLocationID: 60_000_001,
+      status: "finished_issuer",
+      type: "item_exchange"
+    )
+    let entries = [
+      journalEntry(id: 1, contractID: 41, type: "contract_brokers_fee", amount: -12_000),
+      journalEntry(id: 2, contractID: 41, type: "contract_sales_tax", amount: -8_000),
+      journalEntry(id: 3, contractID: 41, type: "contract_deposit", amount: -100_000),
+      journalEntry(id: 4, contractID: 41, type: "contract_deposit_refund", amount: 100_000),
+      journalEntry(id: 5, contractID: 999, type: "contract_sales_tax", amount: -500_000),
+    ]
+
+    let projection = PublicContractFeeEvidenceProjector.project(
+      characterID: 99,
+      contracts: [contract],
+      journal: entries,
+      source: source
+    )
+    let evidence = try #require(projection.snapshot.observations.first)
+
+    #expect(!projection.isPartial)
+    #expect(projection.diagnostics.isEmpty)
+    #expect(evidence.brokerFee == 12_000)
+    #expect(evidence.salesTax == 8_000)
+    #expect(evidence.deposit == 100_000)
+    #expect(evidence.depositRefund == 100_000)
+    #expect(evidence.totalNonRefundableFee == 20_000)
+    #expect(evidence.effectiveRate == 0.02)
+  }
+
+  @Test
+  func publicContractFeeEvidenceRejectsUnsupportedCompositeJournalEntries() {
+    let contract = ESIPrivateContractDTO(
+      availability: "public",
+      collateral: nil,
+      contractID: 41,
+      dateExpired: .distantFuture,
+      dateIssued: .now,
+      forCorporation: false,
+      issuerID: 99,
+      price: 1_000_000,
+      startLocationID: 60_000_001,
+      status: "finished",
+      type: "item_exchange"
+    )
+    let projection = PublicContractFeeEvidenceProjector.project(
+      characterID: 99,
+      contracts: [contract],
+      journal: [
+        journalEntry(
+          id: 1,
+          contractID: 41,
+          type: "contract_deposit_sales_tax",
+          amount: -20_000
+        )
+      ],
+      source: SourceIdentity(provider: "fixture", version: "1")
+    )
+
+    #expect(projection.snapshot.observations.isEmpty)
+    #expect(projection.isPartial)
+    #expect(
+      projection.diagnostics == [
+        "esi.public-contract-fees.unsupported-composite:1"
+      ]
+    )
   }
 
   @Test
@@ -210,6 +386,24 @@ struct ESIClientTests {
   }
 
   @Test
+  func revalidatedResponseRetainsCachedPageCountWhen304OmitsXPages()
+    async throws
+  {
+    let transport = RevalidatedPagingTransport()
+    let client = ESIClient(transport: transport)
+    let endpoint = ESIEndpoint(path: "/cache/revalidated-pages")
+
+    let initial = try await client.get([Int].self, endpoint: endpoint)
+    let revalidated = try await client.get([Int].self, endpoint: endpoint)
+
+    #expect(initial.pages == 2)
+    #expect(revalidated.statusCode == 304)
+    #expect(revalidated.pages == 2)
+    #expect(revalidated.value == [1])
+    #expect(await transport.requestCount == 2)
+  }
+
+  @Test
   func responseCacheEvictsLeastRecentlyUsedEntries() async throws {
     let transport = ExpiringCacheTransport()
     let client = ESIClient(
@@ -235,6 +429,224 @@ struct ESIClientTests {
       endpoint: ESIEndpoint(path: "/cache/1")
     )
     #expect(await transport.requestCount == 4)
+  }
+
+  @Test
+  func globalCoordinatorBoundsOverlappingTransportRequests() async throws {
+    let transport = ConcurrencyProbeTransport(delayMilliseconds: 5)
+    let client = ESIClient(
+      transport: transport,
+      maximumConcurrentRequests: 3,
+      maximumAutomaticConcurrentRequests: 2
+    )
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for id in 0..<120 {
+        group.addTask {
+          _ = try await client.get(
+            CharacterPartitionValue.self,
+            endpoint: ESIEndpoint(path: "/concurrency/\(id)")
+          )
+        }
+      }
+      try await group.waitForAll()
+    }
+
+    #expect(await transport.maximumActiveRequests == 3)
+    let usage = await client.requestCoordinatorUsage()
+    #expect(usage.active == 0)
+    #expect(usage.queued == 0)
+    #expect(usage.maximumConcurrent == 3)
+  }
+
+  @Test
+  func automaticRequestsUseTheirNarrowerGlobalLimit() async throws {
+    let transport = ConcurrencyProbeTransport(delayMilliseconds: 40)
+    let client = ESIClient(
+      transport: transport,
+      maximumConcurrentRequests: 5,
+      maximumAutomaticConcurrentRequests: 2
+    )
+
+    try await ESIRequestContext.withPriority(.automatic) {
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        for id in 0..<8 {
+          group.addTask {
+            _ = try await client.get(
+              CharacterPartitionValue.self,
+              endpoint: ESIEndpoint(path: "/automatic/\(id)")
+            )
+          }
+        }
+        try await group.waitForAll()
+      }
+    }
+
+    #expect(await transport.maximumActiveRequests == 2)
+  }
+
+  @Test
+  func interactiveRequestOvertakesQueuedAutomaticWork() async throws {
+    let transport = PrioritySchedulingTransport()
+    let client = ESIClient(
+      transport: transport,
+      maximumConcurrentRequests: 1,
+      maximumAutomaticConcurrentRequests: 1
+    )
+    let blocker = Task {
+      try await client.get(
+        CharacterPartitionValue.self,
+        endpoint: ESIEndpoint(path: "/blocker")
+      )
+    }
+    await transport.waitUntilStarted(count: 1)
+    let automatic = Task {
+      try await ESIRequestContext.withPriority(.automatic) {
+        try await client.get(
+          CharacterPartitionValue.self,
+          endpoint: ESIEndpoint(path: "/automatic")
+        )
+      }
+    }
+    await waitForQueuedRequests(1, client: client)
+    let interactive = Task {
+      try await ESIRequestContext.withPriority(.interactive) {
+        try await client.get(
+          CharacterPartitionValue.self,
+          endpoint: ESIEndpoint(path: "/interactive")
+        )
+      }
+    }
+    await waitForQueuedRequests(2, client: client)
+
+    await transport.releaseBlocker()
+    _ = try await blocker.value
+    _ = try await interactive.value
+    _ = try await automatic.value
+
+    #expect(
+      await transport.startedPaths
+        == ["/blocker", "/interactive", "/automatic"]
+    )
+  }
+
+  @Test
+  func cancellingQueuedRequestDoesNotConsumeAPermit() async throws {
+    let transport = PrioritySchedulingTransport()
+    let client = ESIClient(
+      transport: transport,
+      maximumConcurrentRequests: 1,
+      maximumAutomaticConcurrentRequests: 1
+    )
+    let blocker = Task {
+      try await client.get(
+        CharacterPartitionValue.self,
+        endpoint: ESIEndpoint(path: "/blocker")
+      )
+    }
+    await transport.waitUntilStarted(count: 1)
+    let queued = Task {
+      try await client.get(
+        CharacterPartitionValue.self,
+        endpoint: ESIEndpoint(path: "/cancelled")
+      )
+    }
+    await waitForQueuedRequests(1, client: client)
+
+    queued.cancel()
+    await #expect(throws: ESIError.cancelled) {
+      _ = try await queued.value
+    }
+    let usage = await client.requestCoordinatorUsage()
+    #expect(usage.active == 1)
+    #expect(usage.queued == 0)
+    await transport.releaseBlocker()
+    _ = try await blocker.value
+  }
+
+  @Test
+  func cacheTrimRetainsRecentBodiesWithinTheRequestedWorkingSet()
+    async throws
+  {
+    let transport = ExpiringCacheTransport()
+    let client = ESIClient(
+      transport: transport,
+      maximumCachedResponses: 8,
+      maximumCachedBytes: 1_024,
+      now: { Date(timeIntervalSince1970: 1_000) }
+    )
+    for id in 1...4 {
+      _ = try await client.get(
+        CharacterPartitionValue.self,
+        endpoint: ESIEndpoint(path: "/trim/\(id)")
+      )
+    }
+    _ = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: ESIEndpoint(path: "/trim/4")
+    )
+    let before = await client.cachedResponseUsage()
+    let after = await client.trimCachedResponses(
+      toMaximumBytes: before.bytes / 2
+    )
+    #expect(after.bytes <= before.bytes / 2)
+    #expect(after.entries < before.entries)
+
+    _ = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: ESIEndpoint(path: "/trim/4")
+    )
+    #expect(await transport.requestCount == 4)
+    _ = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: ESIEndpoint(path: "/trim/1")
+    )
+    #expect(await transport.requestCount == 5)
+  }
+
+  @Test
+  func coordinatorPreservesRateAndErrorLimitHeaders() async throws {
+    let client = ESIClient(transport: RateHeaderTransport())
+
+    let response = try await client.get(
+      CharacterPartitionValue.self,
+      endpoint: ESIEndpoint(path: "/rate-headers")
+    )
+
+    #expect(response.errorLimitRemain == 87)
+    #expect(response.errorLimitReset == 42)
+    #expect(response.rateLimitGroup == "market-order")
+    #expect(response.rateLimit == "150/15m")
+    #expect(response.rateLimitRemaining == 120)
+    #expect(response.rateLimitUsed == 2)
+  }
+
+  @Test
+  func idempotentRetryReleasesItsPermitDuringBackoff() async throws {
+    let transport = RetrySchedulingTransport()
+    let client = ESIClient(
+      transport: transport,
+      maximumConcurrentRequests: 1,
+      maximumAutomaticConcurrentRequests: 1
+    )
+    let retrying = Task {
+      try await client.get(
+        CharacterPartitionValue.self,
+        endpoint: ESIEndpoint(path: "/retry")
+      )
+    }
+    await transport.waitUntilStarted(count: 1)
+    let other = Task {
+      try await client.get(
+        CharacterPartitionValue.self,
+        endpoint: ESIEndpoint(path: "/other")
+      )
+    }
+
+    _ = try await other.value
+    _ = try await retrying.value
+
+    #expect(await transport.startedPaths == ["/retry", "/other", "/retry"])
   }
 
   @Test
@@ -340,6 +752,23 @@ struct ESIClientTests {
     )
 
     _ = try await service.search(query: "ita")
+    #expect(await transport.requestCount == 2)
+  }
+
+  @Test
+  func solarSystemSearchCanWarmIndexBeforeInteractiveRouteEntry()
+    async throws
+  {
+    let transport = SolarSystemSearchTransport()
+    let service = SolarSystemSearchService(
+      esi: ESIClient(transport: transport)
+    )
+
+    #expect(try await service.prepareSearchIndex() == 3)
+    #expect(await transport.requestMethods == ["GET", "POST"])
+
+    let results = try await service.search(query: "jit", limit: 1)
+    #expect(results.map(\.name) == ["Jita"])
     #expect(await transport.requestCount == 2)
   }
 
@@ -834,6 +1263,48 @@ struct ESIClientTests {
   }
 
   @Test
+  func publicContractFeeSyncRequiresBothScopesBeforeTransport() async {
+    let transport = PublicContractFeeTransport()
+    let scopes: Set<String> = [PublicContractFeeSyncService.contractsScope]
+    let result = await PublicContractFeeSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes)
+    )
+
+    #expect(result.state == .forbidden)
+    #expect(result.value == nil)
+    #expect(await transport.requestedPaths.isEmpty)
+  }
+
+  @Test
+  func publicContractFeeSyncJoinsCurrentContractAndWalletPages() async throws {
+    let transport = PublicContractFeeTransport()
+    let scopes = PublicContractFeeSyncService.requiredScopes
+    let result = await PublicContractFeeSyncService(
+      esi: ESIClient(transport: transport)
+    ).synchronize(
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes)
+    )
+    let evidence = try #require(result.value?.observations.first)
+
+    #expect(result.state == .fresh)
+    #expect(evidence.characterID == 99)
+    #expect(evidence.contractID == 41)
+    #expect(evidence.locationID == 60_000_001)
+    #expect(evidence.totalNonRefundableFee == 20_000)
+    #expect(evidence.effectiveRate == 0.02)
+    #expect(
+      Set(await transport.requestedPaths) == [
+        "/characters/99/contracts",
+        "/characters/99/wallet/journal",
+      ]
+    )
+  }
+
+  @Test
   func corporationWalletRequiresScopeBeforeTransport() async {
     let transport = CorporationWalletTransport(role: "Accountant")
     let result = await CorporationWalletSyncService(
@@ -1149,6 +1620,93 @@ struct DashboardProjectionTests {
     #expect(trend?.averagePrice == 6)
     #expect(trend?.changeFraction == 0.2)
     #expect(trend?.marketDate == "2026-08-01")
+  }
+
+  @Test
+  func wealthProjectionRetainsConsumedMaterialsWhileIndustryJobIsInProgress() {
+    let activeJob = ESIIndustryJobDTO(
+      activityID: 1,
+      blueprintID: 700,
+      blueprintTypeID: 701,
+      endDate: source.capturedAt.addingTimeInterval(3_600),
+      facilityID: 800,
+      jobID: 900,
+      productTypeID: 500,
+      runs: 2,
+      status: "active"
+    )
+    let deliveredJob = ESIIndustryJobDTO(
+      activityID: 1,
+      blueprintID: 700,
+      blueprintTypeID: 701,
+      endDate: source.capturedAt,
+      facilityID: 800,
+      jobID: 901,
+      productTypeID: 500,
+      runs: 20,
+      status: "delivered"
+    )
+    let blueprint = OwnedBlueprintInstance(
+      id: 700,
+      blueprintTypeID: 701,
+      locationID: 800,
+      quantity: -1,
+      runs: -1,
+      materialEfficiency: 10,
+      timeEfficiency: 20,
+      source: source
+    )
+    let input = DashboardWealthCharacterInput(
+      character: CharacterIdentity(id: 7, name: "Fixture"),
+      wallet: Sourced(state: .fresh, value: 100, source: source),
+      assets: Sourced(
+        state: .fresh,
+        value: AssetSnapshot(characterID: 7, state: .fresh, items: []),
+        source: source
+      ),
+      industryJobs: Sourced(
+        state: .fresh,
+        value: [activeJob, deliveredJob],
+        source: source
+      ),
+      blueprints: Sourced(state: .fresh, value: [blueprint], source: source)
+    )
+    let definition = BlueprintDefinition(
+      blueprintTypeID: 701,
+      productTypeID: 500,
+      maxProductionLimit: 100,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 3_600,
+        materials: [BlueprintMaterial(typeID: 34, quantity: 10)],
+        products: [BlueprintProduct(typeID: 500, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let prices = ReferencePriceSnapshot(
+      capturedAt: source.capturedAt,
+      prices: [
+        34: AdjustedPrice(typeID: 34, adjustedPrice: 4, averagePrice: 5)
+      ],
+      source: source
+    )
+    let industryValues = DashboardInProgressIndustryProjector.project(
+      inputs: [input],
+      prices: prices.prices,
+      definitionsByProductTypeID: [500: definition]
+    )
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [input],
+      prices: prices,
+      inProgressIndustryValues: industryValues
+    )
+
+    #expect(industryValues[7]?.jobCount == 1)
+    #expect(industryValues[7]?.value == 90)
+    #expect(industryValues[7]?.estimatedJobCount == 1)
+    #expect(snapshot.industryInProgressTotal == 90)
+    #expect(snapshot.knownTotalValue == 190)
+    #expect(snapshot.industryInProgressFreshness == .partial)
   }
 
   @Test
@@ -1809,10 +2367,185 @@ struct CharacterWalletTests {
       )
     )
   }
+
+}
+
+private func waitForQueuedRequests(
+  _ expected: Int,
+  client: ESIClient
+) async {
+  for _ in 0..<2_000 {
+    if await client.requestCoordinatorUsage().queued >= expected {
+      return
+    }
+    await Task.yield()
+  }
+  Issue.record("Timed out waiting for \(expected) queued ESI requests")
 }
 
 private struct CharacterPartitionValue: Decodable, Sendable {
   let value: Int
+}
+
+private actor ConcurrencyProbeTransport: ESIHTTPTransporting {
+  private let delayMilliseconds: Int
+  private var activeRequests = 0
+  private(set) var maximumActiveRequests = 0
+
+  init(delayMilliseconds: Int) {
+    self.delayMilliseconds = delayMilliseconds
+  }
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    activeRequests += 1
+    maximumActiveRequests = max(maximumActiveRequests, activeRequests)
+    defer { activeRequests = max(0, activeRequests - 1) }
+    try await Task.sleep(for: .milliseconds(delayMilliseconds))
+    return (
+      Data(#"{"value":1}"#.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+}
+
+private actor PrioritySchedulingTransport: ESIHTTPTransporting {
+  private(set) var startedPaths: [String] = []
+  private var blockerContinuation: CheckedContinuation<Void, Never>?
+  private var startWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    startedPaths.append(path)
+    resumeSatisfiedStartWaiters()
+    if path == "/blocker" {
+      await withCheckedContinuation { continuation in
+        blockerContinuation = continuation
+      }
+    }
+    return (
+      Data(#"{"value":1}"#.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+
+  func waitUntilStarted(count: Int) async {
+    guard startedPaths.count < count else { return }
+    await withCheckedContinuation { continuation in
+      startWaiters.append((count, continuation))
+    }
+  }
+
+  func releaseBlocker() {
+    blockerContinuation?.resume()
+    blockerContinuation = nil
+  }
+
+  private func resumeSatisfiedStartWaiters() {
+    var pending: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    for waiter in startWaiters {
+      if startedPaths.count >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    startWaiters = pending
+  }
+}
+
+private struct RateHeaderTransport: ESIHTTPTransporting {
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    (
+      Data(#"{"value":1}"#.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: [
+          "X-ESI-Error-Limit-Remain": "87",
+          "X-ESI-Error-Limit-Reset": "42",
+          "X-Ratelimit-Group": "market-order",
+          "X-Ratelimit-Limit": "150/15m",
+          "X-Ratelimit-Remaining": "120",
+          "X-Ratelimit-Used": "2",
+        ]
+      )!
+    )
+  }
+}
+
+private actor RetrySchedulingTransport: ESIHTTPTransporting {
+  private(set) var startedPaths: [String] = []
+  private var startWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    startedPaths.append(path)
+    resumeSatisfiedStartWaiters()
+    let status = path == "/retry" && startedPaths.count == 1 ? 503 : 200
+    return (
+      Data(#"{"value":1}"#.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: status,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+
+  func waitUntilStarted(count: Int) async {
+    guard startedPaths.count < count else { return }
+    await withCheckedContinuation { continuation in
+      startWaiters.append((count, continuation))
+    }
+  }
+
+  private func resumeSatisfiedStartWaiters() {
+    var pending: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    for waiter in startWaiters {
+      if startedPaths.count >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    startWaiters = pending
+  }
+}
+
+private func journalEntry(
+  id: Int64,
+  contractID: Int64,
+  type: String,
+  amount: Double
+) -> ESIWalletJournalDTO {
+  ESIWalletJournalDTO(
+    amount: amount,
+    contextID: contractID,
+    contextIDType: "contract_id",
+    date: Date(timeIntervalSince1970: 1_776_000_000 + Double(id)),
+    journalID: id,
+    refType: type
+  )
 }
 
 private actor WalletTransport: ESIHTTPTransporting {
@@ -1891,6 +2624,28 @@ private actor ExpiringCacheTransport: ESIHTTPTransporting {
   }
 }
 
+private actor RevalidatedPagingTransport: ESIHTTPTransporting {
+  private(set) var requestCount = 0
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    requestCount += 1
+    let isRevalidation = requestCount > 1
+    return (
+      isRevalidation ? Data() : Data("[1]".utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: isRevalidation ? 304 : 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: isRevalidation
+          ? ["ETag": #""paging-fixture""#]
+          : ["ETag": #""paging-fixture""#, "X-Pages": "2"]
+      )!
+    )
+  }
+}
+
 private struct SolarSystemDetailsTransport: ESIHTTPTransporting {
   func data(for request: URLRequest) async throws
     -> (Data, HTTPURLResponse)
@@ -1933,6 +2688,42 @@ private struct SolarSystemDetailsTransport: ESIHTTPTransporting {
         statusCode: 200,
         httpVersion: "HTTP/1.1",
         headerFields: [:]
+      )!
+    )
+  }
+}
+
+private actor UniverseTypeVolumeTransport: ESIHTTPTransporting {
+  private(set) var requestCount = 0
+  private(set) var sawCompatibilityDate = true
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    requestCount += 1
+    sawCompatibilityDate =
+      sawCompatibilityDate
+      && request.value(forHTTPHeaderField: "X-Compatibility-Date")
+        == EVEConstants.esiCompatibilityDate
+    let typeID = request.url?.pathComponents.last.flatMap(Int64.init)
+    let body: String
+    switch typeID {
+    case 22_544:
+      body =
+        #"{"type_id":22544,"packaged_volume":3750.0,"volume":150000.0}"#
+    case 28_850:
+      body =
+        #"{"type_id":28850,"packaged_volume":1300000.0,"volume":18500000.0}"#
+    default:
+      throw ESIError.notFound
+    }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: ["Expires": "Wed, 30 Jul 2030 08:00:00 GMT"]
       )!
     )
   }
@@ -2505,6 +3296,71 @@ private actor PrivateContractTransport: ESIHTTPTransporting {
       HTTPURLResponse(
         url: request.url!,
         statusCode: status,
+        httpVersion: "HTTP/1.1",
+        headerFields: [:]
+      )!
+    )
+  }
+}
+
+private actor PublicContractFeeTransport: ESIHTTPTransporting {
+  private(set) var requestedPaths: [String] = []
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    let path = request.url?.path ?? ""
+    requestedPaths.append(path)
+    let body: String
+    switch path {
+    case "/characters/99/contracts":
+      body = """
+        [
+          {
+            "availability":"public",
+            "contract_id":41,
+            "date_expired":"2026-08-20T00:00:00Z",
+            "date_issued":"2026-08-10T00:00:00Z",
+            "for_corporation":false,
+            "issuer_id":99,
+            "price":1000000,
+            "start_location_id":60000001,
+            "status":"finished_issuer",
+            "type":"item_exchange"
+          }
+        ]
+        """
+    case "/characters/99/wallet/journal":
+      body = """
+        [
+          {
+            "amount":-12000,
+            "context_id":41,
+            "context_id_type":"contract_id",
+            "date":"2026-08-10T00:01:00Z",
+            "description":"Fixture broker fee",
+            "id":501,
+            "ref_type":"contract_brokers_fee"
+          },
+          {
+            "amount":-8000,
+            "context_id":41,
+            "context_id_type":"contract_id",
+            "date":"2026-08-11T00:01:00Z",
+            "description":"Fixture sales tax",
+            "id":502,
+            "ref_type":"contract_sales_tax"
+          }
+        ]
+        """
+    default:
+      body = "{}"
+    }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
         httpVersion: "HTTP/1.1",
         headerFields: [:]
       )!

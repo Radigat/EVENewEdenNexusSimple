@@ -1,4 +1,14 @@
-# EVE Nexus Simple – Entwicklungstagebuch
+# EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
+
+## 25. September 2026 – Projektkonsolidierung
+
+Ein aktiver Projektstamm; Astra Medium als Standardmodell. Vollständiger lokaler
+Arbeitsstand einschließlich Fensterkorrektur übernommen. Zwei Entwicklungslinien
+und das Backup über Hashinventare verglichen, Altstände recoverbar erhalten.
+Produktname und Dokumentationskanon vereinheitlicht; Fachlogik und Datenidentitäten
+unverändert. Abweichende Legacy-Funktionen nicht heimlich integriert oder gelöscht.
+Konkrete Auswahl, Prüfungen und Grenzen: [Konsolidierungsbericht](Documentation/Consolidation/VALIDATION.md).
+Alle folgenden Einträge sind historische Nachweise mit ihren damaligen Namen.
 
 Dieses Tagebuch dokumentiert die Entwicklungsschritte in zeitlicher Reihenfolge.
 Es ist keine zweite Spezifikation: Das aktuell gültige Verhalten steht in
@@ -10,6 +20,816 @@ aufgeführten Schritte sind aus den datierten Architektur-, Handoff- und
 Acceptance-Nachweisen des aktuellen lokalen Arbeitsstands rekonstruiert. Da
 dieser Arbeitsstand noch nicht vollständig eingecheckt ist, beschreibt die
 Reihenfolge Themenblöcke und nicht zwingend einzelne Commits.
+
+## 29. August 2026 – Mineralien-Kaufanalyse
+
+Ziel: Neben der bestehenden Mond-Kaufanalyse einen gleichartigen, rein
+lesenden Preis- und Mengenvergleich für alle veröffentlichten Mitglieder der
+aktiven SDE-Gruppe `Mineral` bereitstellen. Main Hub, Home Hub, Coalition Hub
+und ausdrücklich gewählte Vergleichsmärkte sollen den niedrigsten Sell-Preis,
+die exakte 110-%-Grenze, die bis einschließlich dieser Grenze verfügbare Menge
+und die drei günstigsten frischen Märkte zeigen.
+
+Sicherung: Der umfangreich veränderte Arbeitsstand wurde vor dem ersten
+Quellcodeeingriff als
+`/private/tmp/EVE-NEXUS-SIMPLE-before-mineral-analysis-20260829-193854.tar.gz`
+archiviert. `gzip -t` bestand, zentrale Quell-, Projekt- und
+Dokumentationspfade waren im Archiv vorhanden. Die SHA-256-Prüfsumme lautet
+`10773fc80f4ae8909c7923f94d84475e266aa1ba9065436aef9b1cf720ed6701`.
+Vorhandene unabhängige Änderungen im Checkout blieben unangetastet.
+
+Entwicklung:
+
+- die mondspezifischen Katalog-, Preisband-, Ranking- und Snapshot-Verträge zu
+  gemeinsam verwendbaren `MaterialPurchaseAnalysis`-Typen verallgemeinert;
+  bestehende Moon-Namen bleiben als kompatible Typaliase erhalten;
+- den aktiven SQLite-SDE-Katalog um die veröffentlichte Gruppe `Mineral`
+  erweitert. Eine fehlende Gruppe bleibt ein ausdrücklicher Fehler; es gibt
+  keine fest codierte Ersatzliste und keine erfundenen Namen oder Werte;
+- den vorhandenen NPC-/Structure-Marktpfad in einen gemeinsamen Materiallader
+  überführt. Mond und Mineralien behalten getrennte Snapshots, Fehler,
+  Aktualisierungszustände und Cache-Identitäten; Main, Home, Coalition und
+  Vergleichsmärkte stammen weiter aus dem zentralen gespeicherten Rollenmodell;
+- eine gemeinsame SwiftUI-Analyseoberfläche für beide Katalogarten gebaut und
+  die Mineralienseite direkt neben der Mondseite in die Navigation gesetzt.
+  Gegenstands- und Ortsnamen verwenden die gemeinsamen kopierbaren
+  EVE-Komponenten. Preisbasierte Hubsortierung, Freshness-Ranking, Diagnosen und
+  der vollständige PNG-Export bleiben gemeinsam; Mineralexporte beginnen mit
+  `Mineralien-Kaufanalyse_`;
+- deutsche und englische Texte, Hauptdokumentation, Architektur und
+  Acceptance-Nachweis auf den gemeinsamen Vertrag aktualisiert. Die Anzeige
+  bleibt sitzungsgebunden; eine Datenbank- oder SwiftData-Migration war nicht
+  erforderlich.
+
+Prüfung: Die fokussierten Katalog-, Markt- und Runtime/App-Suiten bestehen. Der
+vollständige isolierte SwiftPM-Lauf baut Core und App und besteht mit 406
+Swift-Testing-Tests in 26 Suiten plus 11 App-XCTest-Fällen, insgesamt 417
+Tests. Der unsignierte native Xcode-Debug-Build aus einer temporären Kopie des
+aktuellen Arbeitsstands endet mit `BUILD SUCCEEDED`; die native Xcode-Testaktion
+besteht mit 384 Tests in 23 Suiten und `TEST SUCCEEDED`. Der ausdrücklich
+optionale Real-SDE-Test bleibt mangels vorbereitetem Paket in beiden Läufen
+wie vorgesehen übersprungen. Striktes Swift-Formatting, beide
+Lokalisierungskataloge, Dublettenprüfung und `git diff --check` bestehen.
+
+Sichtprüfung: Die befüllte deutsche Debug-App wurde bei 1280 × 768 im
+Dunkelmodus geöffnet. Sie zeigte 15 Mineralien aus dem aktiven SDE und vier
+frische konfigurierte Märkte: Jita als Main Hub, UALX als Home-Structure,
+C-J6MT als Coalition-Structure und Amarr als Vergleichsmarkt. Preis,
+110-%-Grenze, aufsummierte Menge, Rang und ausdrückliche
+„keine Sell Orders“-Zustände waren sichtbar; die vier Hubspalten passten in
+das Standardfenster. Sortier- und Copy-Steuerungen waren im Accessibility-Baum
+vorhanden. Die Prüfung deckte dort zugleich auf, dass eine Markt-Zelle zunächst
+nur Mineral und Hub benannte. Ihr gemeinsames Accessibility-Label enthält nach
+der Korrektur zusätzlich Preis, Grenze, Menge, Rang und Frische-/Fehlerzustand;
+dieser letzte reine Accessibility-Schritt wurde erneut gebaut und automatisiert
+getestet.
+
+Offen: Mindestfenster, horizontaler Tabellenlauf, Hellmodus, tatsächliche
+Tastatur-/VoiceOver-Bedienung, Kopierfeedback und ein gespeicherter,
+vollständiger ungeclippter Mineral-PNG-Export bleiben Sicht-/Owner-Abnahme.
+Ebenso offen ist der unabhängige Vergleich mindestens eines Minerals je
+eingerichtetem Hub mit dem aktuellen EVE-Orderbuch; der erfolgreiche Live-Abruf
+in der App und die automatisierten Fixtures sind dafür kein Ersatz.
+
+## 16. August 2026 – Planner-Start, Vertragsreferenzen und Dropdown-Flächen
+
+Ziel: Einen einzelnen Klick auf **Berechnen** sofort sichtbar bestätigen,
+unbemerkte Mehrfachstarts verhindern, während einer laufenden
+Public-Contracts-Aktualisierung bereits belegte Vertragsangebote wieder
+nutzbar machen und aufklappbare Flächen vollständig anklickbar machen.
+
+Diagnose: Der Planner setzte `isWorking` erst in der abschließenden
+Kalkulation. Davor liefen bereits Eingabevorbereitung, Marktgrundlagen und bis
+zu zwei Produktionsbaum-/BPO-/BPC-Auflösungen. Der Button blieb in dieser Zeit
+aktiv; ein weiterer Klick stornierte die laufende Task und begann wieder von
+vorn. Die Abschlussberechnung bereitete außerdem denselben Eingabegraphen noch
+einmal vor. Bei Vertragsszenarien machte bereits ein einziger noch ausstehender
+Vertragsdetailabruf den gesamten universumsweiten Index unvollständig und
+verwarf dadurch auch vorhandene, positive, passende Einzelangebote. Die
+adaptiven Verkaufskarten übernahmen die Höhe der größten Karte einer Gridzeile,
+aber nur ihre kurze Kopfzeile war anklickbar. Drei verbliebene native
+`DisclosureGroup`-Kontrollen verwendeten ebenfalls nicht die gemeinsame
+vollbreite Steuerung.
+
+Entwicklung:
+
+- den vollständigen Quell-, Projekt-, Paket- und Git-Arbeitsstand vor der
+  Änderung unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-source-backup-2026-08-16_18-24-15_CEST`
+  gesichert. HEAD und SHA-256 des vollständigen Git-Status stimmen mit dem
+  Checkout überein; beide enthalten 4.759 Dateien außerhalb der bewusst
+  ausgelassenen, neu erzeugbaren `.build`-/DerivedData-Verzeichnisse;
+- den lokalen Planner-Phasenstatus vor jede teure Arbeit gesetzt. Vorbereitung,
+  BPO-/BPC-Auflösung, Effizienzanwendung, Kalkulation und Speicherung werden
+  getrennt angezeigt. Weitere Starts sind bis zum Ende blockiert; Abbrechen
+  bleibt ausdrücklich verfügbar;
+- die komplette Planner-Vorbereitung als interaktive Sitzung gekennzeichnet,
+  damit automatische Main-Hub- und Public-Contracts-Aktualisierungen nicht mit
+  der Berechnung konkurrieren. Die abschließende Kalkulation verwendet den
+  bereits passend vorbereiteten Eingabegraphen erneut;
+- vorhandene passende öffentliche Item-Exchange-Einzelangebote bei
+  unvollständigem Index als ausdrücklich vorläufige Referenz zugelassen. Diese
+  Referenz behauptet kein universumsweites Minimum. Ohne beobachtetes Angebot
+  bleibt der Vertragserlös unverfügbar; 0 ISK wird weiterhin nicht erfunden;
+- die Vorläufigkeit in kompakter und aufgeklappter Verkaufskarte sichtbar
+  gemacht. Marktsteuer und Brokergebühr bleiben beim Vertragshandel 0; eine
+  unbekannte persönliche Vertragsgebühr bleibt weiterhin ein eigener
+  ausstehender Wert;
+- die gemeinsame Offenlegungssteuerung bis an die volle angebotene Breite und
+  bei geschlossenen Verkaufskarten an die gesamte adaptive Kartenhöhe
+  ausgedehnt. Die verbliebenen nativen Offenlegungen in Market-Chancen und
+  Warehouse wurden migriert; sichtbare EVE-Namens-Kopieraktionen bleiben
+  getrennt;
+- deutsche und englische Texte, `dokumentation.md` sowie die Acceptance-Matrix
+  an das aktuelle Verhalten angepasst.
+
+Prüfung: 35 fokussierte Industry-Tests einschließlich des neuen
+Teilindex-Vertragsfalls, 11 Runtime-Status-Tests und 6
+Planner-Query-Effizienztests bestehen. Der vollständige isolierte SwiftPM-Lauf
+baut Core und App und besteht mit 402 Swift-Testing-Tests in 26 Suiten plus 11
+App-XCTest-Fällen, insgesamt 413 Tests; ein opt-in Test mit einem extern
+vorbereiteten realen SDE-Paket bleibt erwartungsgemäß übersprungen. Das
+verschachtelte EVEStaticDataKit besteht mit 8 Tests, davon derselbe opt-in
+Real-SDE-Test übersprungen. Der unsignierte native Xcode-Debug-Build ist
+erfolgreich. Striktes Swift-Formatting, beide Lokalisierungskataloge,
+Dublettenprüfung, vollständige Entfernung nativer `DisclosureGroup`-Aufrufe im
+App-Target und `git diff --check` bestehen.
+
+Offen: Der betroffene große Plan muss im laufenden aktuellen Build einmal mit
+einem einzelnen Klick, Abbruch, Tastatur und VoiceOver geprüft werden. Während
+einer echten laufenden Public-Contracts-Aktualisierung ist ein angezeigtes
+vorläufiges Angebot mit dem Ingame-Vertrag und nach Abschluss erneut zu
+vergleichen. Layout, wahrgenommene Dauer, CPU/RSS und Owner-Abnahme sind durch
+die automatischen Prüfungen nicht belegt.
+
+## 16. August 2026 – Main-Hub-Übergabe ersetzt oder erweitert den Planner
+
+Ziel: Eine neue Main-Hub-Chance auch dann berechenbar machen, wenn der Planner
+einen alten, möglicherweise ungültigen Entwurf, ein berechnetes Ergebnis oder
+alte BPO-/BPC-Auswahlen wiederhergestellt hat.
+
+Diagnose: Die Übergabe hängte ihre gültige neue Eingabezeile bisher immer an
+den vorhandenen Planner-Text an. Eine unvollständige alte Zeile blieb dadurch
+ein Eingabefehler für den gesamten Entwurf und deaktivierte **Berechnen**. Für
+ein vorhandenes Ergebnis existierte außerdem keine ausdrückliche
+Ersetzen-Entscheidung.
+
+Entwicklung:
+
+- den gemischten Checkout vor der Änderung unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-before-planner-handoff-replacement-2026-08-16-145145.tar.gz`
+  gesichert, gzip-geprüft und mit SHA-256
+  `67654ec8dc9f14d613b8fd5621770d341b048cad3d468dc8804b3a9287f00b48`
+  bestätigt;
+- bei vorhandenem Entwurf oder Ergebnis eine sichtbare Vorschau mit drei
+  ausdrücklichen Aktionen ergänzt: **Aktuelle Berechnung ersetzen**, **Zum
+  aktuellen Entwurf hinzufügen** und **Aktuelle Berechnung behalten**;
+- beim Ersetzen alte sitzungsgebundene Produktionsbaum-, BPO-/BPC-Quellen-,
+  ME-/TE- und Make-or-Buy-Auswahlen entfernt. Der neue Entwurf enthält genau die
+  übergebene Zeile und ist wieder parsebar;
+- den bisher aktiven Plan bei dieser Ersatzberechnung vorläufig aus dem
+  Reservierungseingang ausgeschlossen. Er wird in der lokalen Speicherung erst
+  nach einer erfolgreichen neuen Berechnung deaktiviert; ein fehlgeschlagener
+  Versuch löscht weder seine gespeicherte Historie noch Ingame-Daten;
+- den allgemeinen Planner-Produktpicker unverändert gelassen: Er fügt weiterhin
+  bewusst eine weitere Zeile an und ersetzt keinen Entwurf;
+- deutsche und englische Texte sowie Handoff- und Abnahmedokumentation
+  aktualisiert.
+
+Prüfung: Der fokussierte App-Test belegt die Ersetzen-Entscheidung aus einem
+ungültigen wiederhergestellten Entwurf, die danach gültige einzelne neue Zeile,
+die konfliktfreie Direktübernahme in einen leeren Planner und das weiterhin
+verfügbare Anhängen. Der vollständige isolierte SwiftPM-Lauf baut Core und App
+und besteht mit 399 Swift-Testing-Tests in 26 Suiten plus elf
+App-XCTest-Fällen, insgesamt 410 Tests. Striktes Swift-Formatting und beide
+Lokalisierungskataloge bestehen. Ein neuer nativer Xcode-Nachweis wurde nicht
+als bestanden ausgeführt.
+
+Offen: Die Auswahlkarte und anschließend **Berechnen** müssen mit dem
+betroffenen befüllten Planner in der laufenden App visuell, per Tastatur und
+VoiceOver sowie ausdrücklich durch den Owner abgenommen werden.
+
+## 16. August 2026 – Planner-Absturz bei wiederholtem Blueprint-Typ
+
+Ziel: Den reproduzierten Planner-Absturz nach einer Berechnung mit leerer
+erster Eingabezeile beseitigen, ohne rekursive Blueprint-Bedarfe oder konkrete
+BPC-Jobs zusammenzuziehen.
+
+Diagnose: Der Xcode-Stack und die Konsole endeten übereinstimmend mit
+`Swift/NativeDictionary.swift:792: Fatal error: Duplicate values for key:
+'46178'` in `BlueprintSupplyPlanner.plans`. Der Produktionsbaum darf dieselbe
+bereits typweit aggregierte Blueprint-Bewertung an mehreren rekursiven Knoten
+tragen. Die Versorgungsschicht konstruierte daraus fälschlich ein Wörterbuch,
+das eindeutige Blueprint-Type-IDs voraussetzte. Meldungen zu
+`DetachedSignatures`, WAL-Checkpoint, fehlendem SF Symbol, TCP und ViewBridge
+waren nicht die Absturzursache.
+
+Entwicklung:
+
+- den gemischten Checkout vor der Änderung unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-before-duplicate-blueprint-crash-fix-2026-08-16-143446.tar.gz`
+  gesichert, gzip-geprüft und mit SHA-256
+  `339a140febf5c6559bfbab9339bd77873b7f08e83c8dbeb8188aaed03bf2f6a1`
+  bestätigt;
+- Blueprint-Bewertungen im Supply Planner nach Blueprint-Type-ID gruppiert.
+  Wiederholte Projektionen verwenden dadurch einen gemeinsamen typweiten
+  Quellnachweis, während benötigte Runs weiterhin über alle produzierten
+  Knoten summiert und konkrete BPCs weiterhin als getrennte Jobs reserviert
+  werden;
+- auch eine versehentlich doppelte bevorzugte Quellenreferenz wird stabil nur
+  einmal eingeordnet und kann keinen gleichartigen Dictionary-Absturz mehr
+  auslösen;
+- den vorhandenen BPC-Jobtest um eine absichtlich doppelte Bewertung erweitert
+  und einen eigenen Parserfall für eine leere erste Eingabezeile ergänzt.
+
+Prüfung: Beide fokussierten Regressionen bestehen. Der vollständige isolierte
+SwiftPM-Lauf baut Core und App und besteht mit 399 Swift-Testing-Tests in 26
+Suiten plus zehn App-XCTest-Fällen, insgesamt 409 Tests. Striktes Formatting
+der geänderten Swift-Dateien besteht. Der erste fokussierte Versuch erreichte
+wegen `sandbox_apply: Operation not permitted` nicht die Kompilierung; der
+identische erlaubte Lauf mit isolierten Cache-/Buildpfaden bestand. Ein nativer
+Xcode-Lauf wurde für diesen kleinen Core-Fix nicht erneut als Erfolg belegt.
+
+Offen: Die konkrete befüllte Planner-Eingabe mit leerer erster Zeile und dem
+betroffenen Produktionsbaum muss nach einem App-Neustart noch vom Owner
+ausgeführt werden. Visuelle, Tastatur- und VoiceOver-Abnahme bleiben getrennt.
+
+## 16. August 2026 – Stabile Chancenzeilen, T1-Standard und direkter Planner-Handoff
+
+Ziel: Beim Ändern von Runs, ME oder TE die bearbeitete Main-Hub-Chancenzeile an
+ihrer Position halten, Tech-I-Module mit der gewünschten Forschungsannahme
+anzeigen und den wirkungslosen **Bauen**-Klick wieder direkt an den Planner
+übergeben.
+
+Entwicklung:
+
+- den vollständigen gemischten Checkout vor der Änderung unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-before-main-hub-edit-fixes-2026-08-16-140127.tar.gz`
+  gesichert, gzip-geprüft und mit SHA-256
+  `394e122dff413a310b05d4a033e2777d920c7e34ee029db71b0d1f747f98cfc8`
+  bestätigt;
+- die nach jeder lokalen Runs-/ME-/TE-Projektion ausgeführte automatische
+  Neusortierung entfernt. Die bereits dargestellte typisierte Sortierung bleibt
+  während der Eingabe eingefroren; erst ein bewusster Spaltenkopfklick sortiert
+  erneut anhand der dann sichtbaren Werte;
+- einen zentral getesteten Chancenstandard ergänzt: Tech-I-Module verwenden
+  ME 10/TE 20, ein im gespeicherten öffentlichen LP-Katalog belegter
+  Blueprinttyp hat als Loyalty-Store-BPC mit ME 0/TE 0 Vorrang, Tech-II bleibt
+  bei der Planungsannahme ME 3/TE 2. Andere Produkte behalten ihren belegten
+  Ausgangswert;
+- den veralteten Build-Button-Vertrag entfernt, der auf einen zuvor aus der
+  kompakten Chancenansicht entfernten Produktionsbaum wartete. **Bauen** erzeugt
+  nun mit einem Klick die normale Planner-Eingabe aus sichtbarer Ausgabemenge,
+  Runs, ME und TE und wechselt zum Planner. Da in der kompakten Tabelle keine
+  konkrete Blueprintquelle gewählt wird, wird kein fiktiver Supply-Plan
+  erzeugt; die Quellenwahl bleibt beim Planner;
+- deutsche und englische Hilfetexte sowie aktuelles Verhalten, Handoff-Vertrag
+  und Abnahmematrix berichtigt.
+
+Prüfung: Der erste vollständige Lauf wurde verworfen, weil sich
+`MarketBrowserTests.swift` während des Compilierens im gemeinsam genutzten
+Arbeitsstand änderte. Der anschließende stabile isolierte SwiftPM-Lauf baute
+Core und App und bestand mit 398 Swift-Testing-Tests in 26 Suiten plus zehn
+App-XCTest-Fällen, insgesamt 408 Tests. Darin bestehen der neue T1-/LP-Fall und
+der direkte Planner-Handoff. Striktes Swift-Formatting, beide
+Lokalisierungskataloge und `git diff --check` bestehen. Drei unsigned
+Xcode-Debug-Versuche blieben bereits vor der normalen Build-Ausgabe ohne
+Diagnose stehen und wurden beendet; sie gelten weder als bestanden noch als
+Compilerfehler.
+
+Offen: Sichtprüfung in der befüllten App mit einer sortierten Liste, mehreren
+Runs-/ME-/TE-Änderungen, Occult XL, einem Tech-I-Modul und einem
+Loyalty-Store-BPC; außerdem nativer Xcode-Nachweis, Tastatur, VoiceOver und
+ausdrückliche Owner-Abnahme.
+
+## 16. August 2026 – Konkrete Blueprintversorgung v2
+
+Ziel: Die BPO/BPC-Behandlung in Planner und Market-Chancen gegen die aktuellen
+CCP-Regeln korrigieren, ohne den umfangreichen gemischten Arbeitsstand oder
+unvollständige ESI-/Contract-Evidenz zu verlieren.
+
+Entwicklung:
+
+- vor den Änderungen den vollständigen Checkout als geprüftes Archiv
+  `/private/tmp/EVE-NEXUS-SIMPLE-before-bpo-bpc-implementation-2026-08-16-124032.tar.gz`
+  außerhalb des Checkouts gesichert; SHA-256
+  `62e822ffc5d7a3a1db43cf64380a3299577d1227e34cca3573338a939b10b881`;
+- `BlueprintDemandID`, konkrete Quellenreferenzen, Run-Zuordnungen,
+  Fertigungs-/Science-Jobs, Transfers, Reservierungen und
+  `BlueprintSupplyPlan` eingeführt; Regelversion auf
+  `2026.08-blueprint-supply-v2` angehoben;
+- jede eigene oder vertragliche BPC als einzelne Instanz und einzelnen
+  Fertigungsjob erhalten. Gleiche und gemischte Qualitäten dürfen gemeinsam
+  den Bedarf decken, behalten aber getrennte Materialrundung und Rest-Runs;
+- persönliche BPC-Runs aktiver Pläne nach Plan- und Item-ID reserviert. Drafts,
+  Handoff und aktive Snapshots speichern konkrete Quellen, Jobs, Transfers und
+  Reservierungen; alte Snapshots bleiben optional decodierbar;
+- BPO-Verträge und tatsächliche Main-Hub-BPO-Sell-Orders getrennt. Ihr Preis
+  bleibt Kapitalbedarf, während nur die gewählte Chargenumlage kostenwirksam
+  ist; normale Marktorders werden nie als BPC interpretiert;
+- Quellen außerhalb der Produktionsanlage erzeugen einen expliziten Transfer;
+  unbekannte Transferendpunkte blockieren;
+- Market-Chancen rechnen nach konkreter Quellenwahl den vollständigen Baum neu
+  und übergeben denselben Supply-Plan an den Planner;
+- die pauschale Tech-II-ME-4-Grenze entfernt. Faktische Provenienzwerte bleiben
+  erhalten; manuelle Annahmen verwenden ME 0...10/TE 0...20;
+- SDE-Katalogadapter v4 um Science-Skills und Decryptor-Dogmawerte ergänzt.
+  Der gemeinsame Science-Kern bildet Kopien × Runs je Kopie, BPO-Forschung,
+  drei Erfindungs-Skills, Ergebniswahl, Verbrauch je Versuch, Decryptorwerte,
+  Erwartungskosten und den kleinsten 95%-Binomialplan ab. Ein Process Decryptor
+  erreicht aus ME 2 den gültigen Wert ME 5; Tech-III-Reverse-Engineering wird
+  abgewiesen;
+- Copying, Forschung und Erfindung im Planner weiterhin sichtbar, aber bis zur
+  vollständigen Anlagen-/Kosten- und Persistenzoberfläche gesperrt. Die
+  ausdrücklich manuelle externe BPC bleibt der Übergang, damit keine
+  unvollständige Science-Rechnung als faktisch erscheint;
+- Besitzer- und Ortsnamen im Blueprintbereich auf die gemeinsame kopierbare
+  EVE-Namenskomponente vereinheitlicht.
+
+Prüfung: Die fokussierten Blueprint-, Planner-, Market- und SQLite-SDE-Suiten
+bestehen mit 109 Tests; der zusätzliche gezielte Transferfall besteht. Der
+vollständige isolierte SwiftPM-Lauf baut Core und App und besteht mit 397
+Swift-Testing-Tests in 26 Suiten plus zehn App-XCTest-Fällen, insgesamt 407
+Tests. Das verschachtelte EVEStaticDataKit entdeckt acht Tests und besteht mit
+den sieben deterministischen Fällen; der ausdrücklich optionale Real-SDE-Test
+wird ohne bereitgestellten Paketpfad erwartungsgemäß übersprungen. Der unsigned
+native Xcode-Debug-Build endet mit `BUILD SUCCEEDED`. Striktes Swift-Formatting,
+beide Lokalisierungskataloge und die Diff-Whitespace-Prüfung bestehen.
+
+Offen: Ein befüllter Livevergleich mit EVE für zwei gleiche und gemischte BPCs,
+Contract-BPC, Markt-/Contract-BPO, Copying und T2-Erfindung; Science-UI-
+Aktivierung, Corporation-Reservierung, visuelle/Tastatur-/VoiceOver- und
+Owner-Abnahme.
+
+## 16. August 2026 – ME/TE und gruppierte eigene Baupläne im Planner
+
+Ziel: Die BPO/BPC-Bedienung des etablierten Planners einklappbar und nach
+fachlichen Gruppen steuerbar machen, konkrete eigene Bauplanqualitäten am
+Produktionsort verwenden und die widersprüchlichen Prospect-Werte zwischen
+Main-Hub-Chancen und Planner nachvollziehbar korrigieren.
+
+Entwicklung:
+
+- den vollständigen gemischten Checkout vor dieser Änderung unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-Backup-2026-08-16_11-40-27_CEST.tar.gz`
+  gesichert; das gzip-geprüfte Archiv enthält 12.544 Einträge, ist
+  347.147.255 Byte groß und hat SHA-256
+  `fbbb2f53a501e82ea605c31cfdf052798aa4c2c0f2e448bedfc71685af0e98c7`;
+- die gesamte BPO/BPC-Fläche sowie ihre Reaktions-, Komponenten- und übrigen
+  SDE-Kategoriegruppen einklappbar gemacht. Eine Gruppenquelle wird nur auf
+  kompatible Bauschritte angewendet und weist unveränderte Schritte sichtbar
+  aus; jede Zeile bleibt einzeln einstellbar;
+- eigene BPOs und BPCs am exakten Produktionsort nach BPO/BPC, ME und TE
+  gruppiert. Eine BPC-Qualität muss die benötigten Runs allein beziehungsweise
+  gemeinsam mit weiteren BPCs gleicher Qualität abdecken; verschiedene
+  Qualitäten werden nicht zu einem erfundenen gemeinsamen Wert vermischt.
+  Besitzer, Quellenstatus, Anzahl und Runs bleiben sichtbar. Die gewählte
+  Qualität übernimmt ME/TE schreibgeschützt in Vorprüfung und Endrechnung;
+- für manuelle, Copy-, Invention- und sonstige Quellen ME/TE je Zeile ergänzt,
+  das SDE-Techlevel durch den Produktionsgraphen geführt und Tech-II-ME auf 0
+  bis 4 begrenzt. Reaktionen bleiben als nicht erforschbare Formeln ohne ME/TE;
+- Main-Hub-Chancen um sortierbare Runs-, ME- und TE-Spalten ergänzt. Tech II
+  startet als editierbare Planungsannahme mit 3/2. Ein neuer Scan speichert die
+  SDE-Grundmengen und Anlagenmultiplikatoren für exakte EVE-Rundung; ältere
+  Scans warnen bei einer ME-Änderung ausdrücklich vor der Näherung;
+- **Bauen** übergibt Produkt, Runs, tatsächliche Ausgabemenge, ME und TE an den
+  Planner. Der Hinweis erklärt, dass ein direkter gespeicherter Chancen-Scan
+  und ein rekursiver Planner nur mit gleicher Charge, Quelle, Blueprintkosten,
+  Markttiefe und Route unmittelbar vergleichbar sind;
+- den falschen Nulltransport korrigiert: Ein mit Jita übereinstimmender
+  Handelskontext darf den ausdrücklich abweichenden Produktionsort UALX-3
+  nicht mehr als Main-Hub-Produktion behandeln. Beim anschließenden
+  Regressionstest wurde zusätzlich eine Gleitkomma-Aufrundung beseitigt, die
+  bei unveränderter TE aus exakt fünf Sekunden sechs machen konnte;
+- deutsche und englische UI-Texte sowie Architektur-, Handoff-, aktuelle
+  Funktions- und Abnahmedokumentation fortgeschrieben.
+
+Diagnose der gelieferten Prospect-Bilder: Der gespeicherte Chancenwert nutzte
+einen Run mit ME/TE 0/0 und ergab +3.949.795 ISK. Der aktive Planner nutzte zehn
+Runs mit 3/2 und ergab -18.014.120 ISK einschließlich rekursiver
+Zwischenprodukt-/Quellenbehandlung und Transport. Zusätzlich entfernte der
+oben korrigierte Ortsvergleich im Chancenwert fälschlich den Transport. Die
+beiden alten Screenshots waren daher weder dieselbe Charge noch dieselbe
+Rechenbasis; die Übergabe hält diese Annahmen nun zusammen und benennt die
+verbleibende Vergleichsgrenze.
+
+Prüfung: Der vollständige isolierte SwiftPM-Lauf bestand 391
+Swift-Testing-Tests in 26 Suites sowie zehn App-XCTest-Fälle, insgesamt 401
+Tests. Der native unsignierte Xcode-Debug-Build endete mit `BUILD SUCCEEDED`;
+die native Xcode-Testaktion bestand 370 Tests in 23 Suites mit
+`TEST SUCCEEDED`. Der ausdrücklich opt-in-abhängige Real-SDE-Test wurde
+planmäßig übersprungen. Striktes Swift-Format, beide Lokalisierungsdateien,
+schlüsselweise Dublettenprüfung und `git diff --check` bestanden.
+
+Offen: Es wurde keine Live-ESI- oder aktuelle Marktanfrage ausgeführt und die
+befüllte App nicht gestartet. Der visuelle Vergleich nach einem neuen
+Main-Hub-Scan, konkrete Besitzer-/BPC-Runs gegen EVE, Tastatur/VoiceOver,
+laufende Planner-Latenz und RSS, Signierung/Notarisierung sowie ausdrückliche
+Owner-Abnahme stehen noch aus.
+
+## 16. August 2026 – Market-Chancen an Planner übergeben und BPO/BPC dort bündeln
+
+Ziel: Market Opportunities wieder auf Kandidatensuche und Rangfolge begrenzen,
+den früheren Lager-/Main-Hub-/Einkaufslisten-/Kosten-Arbeitsbereich entfernen
+und jede konkrete Bauentscheidung einschließlich BPO/BPC-Behandlung im
+etablierten Planner ausführen.
+
+Entwicklung:
+
+- den vollständigen gemischten Checkout einschließlich `.git`, nicht
+  eingecheckter und unbeobachteter Dateien vor der Änderung unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-Backup-2026-08-16_10-49-56_CEST.tar.gz`
+  gesichert; das geprüfte Archiv enthält 12.514 Einträge, ist 346.532.805 Byte
+  groß und hat SHA-256
+  `9dafeec070a1949ddbef93b3c01028aaeb91a57583e9c0e2c04d5f77e52c7cda`;
+- den unteren Market-Opportunities-Arbeitsbereich mit Lager, Main-Hub-Tiefe,
+  Einkaufsliste, Kostendetails und inline Produktionsbaum aus dem sichtbaren
+  Ablauf entfernt; die sortierbare Kandidatenliste nutzt den frei gewordenen
+  Platz;
+- **Bauen** übergibt Produkt, tatsächliche Ausgabemenge sowie ME/TE an den
+  etablierten Planner und hängt dafür eine normale, erneut parsebare
+  Planner-Eingabezeile an;
+- im Planner eine eigene BPO/BPC-Fläche ergänzt. Sie übernimmt exakte
+  Produktionsorte, Besitzer, Runs, Frische-/Teilevidenz, andere Standorte,
+  eigene BPOs/BPCs, Copy/Invention/LP-Quellen und eindeutig zurechenbare
+  Main-Hub-BPC-Verträge aus dem bisherigen Produktionsbaumvertrag;
+- BPC-Vertragspreise werden vollständig zugerechnet, während eigene oder
+  gekaufte BPOs weiterhin eine ausdrückliche Umlage verlangen. Eine manuelle
+  BPO/BPC-Angabe der obersten Planner-Zeile bleibt maßgeblich; automatische
+  Kosten einer schließlich gekauften statt gebauten Zwischenstufe werden nicht
+  belastet. Fehlende oder unvollständige Blueprintkosten bleiben unverfügbar
+  und werden nicht als null erfunden;
+- deutsche und englische Oberflächentexte, Handoff-Vertrag, aktuelle
+  Dokumentation und Abnahmematrix an den neuen alleinigen Planner-Ablauf
+  angepasst.
+
+Ergebnis: Market Opportunities analysiert und sortiert Chancen; die konkrete
+Produktion wird ohne paralleles Untermenü im Planner fortgesetzt. Der Planner
+zeigt und bewertet dort die für jeden tatsächlich gebauten Knoten belegbare
+BPO/BPC-Quelle.
+
+Prüfung: Die fokussierte Industry-Planner-Suite bestand 31 Tests. Die
+vollständige isolierte SwiftPM-Aktion bestand 389 Swift-Testing-Tests in 26
+Suites sowie zehn XCTest-Fälle, 399 Tests insgesamt. Der native, unsignierte
+Xcode-Debug-Build endete mit `BUILD SUCCEEDED`; die native Xcode-Testaktion
+bestand 368 Tests in 23 Suites mit `TEST SUCCEEDED`, während der ausdrücklich
+opt-in-abhängige Real-SDE-Test planmäßig übersprungen wurde. Striktes
+Swift-Format, beide Lokalisierungsdateien, schlüsselweise Dublettenprüfung und
+`git diff --check` bestanden.
+
+Offen: Keine Live-ESI- oder aktuelle Marktanfrage wurde ausgeführt. Visuelle
+Prüfung im befüllten deutschen und englischen App-Fenster, Tastatur/VoiceOver,
+laufende Planner-Latenz und RSS, Signierung/Notarisierung sowie ausdrückliche
+Owner-Abnahme stehen noch aus.
+
+## 16. August 2026 – Vertragsgebühr aus persönlicher ESI-Historie nachweisen
+
+Ziel: Die öffentliche Vertragsgebühr ohne erfundene historische Formel aus
+eigenen abgeschlossenen Verträgen ableiten und für den Planner kontrolliert
+nutzbar machen.
+
+Entwicklung:
+
+- den vollständigen gemischten Checkout einschließlich `.git`, nicht
+  eingecheckter und unbeobachteter Dateien vor der Änderung unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-backup-2026-08-16T09-42-59.tar.gz` gesichert;
+  das Archiv wurde erfolgreich gelesen, Größe 330 MB, SHA-256
+  `7fc8b72dbfcbf0e8f28541813caaa98ae603a6df0a46abf1b742b0bb9d026e9c`;
+- persönliche öffentliche Item-Exchange-Verträge und Wallet-Journal mit den
+  beiden erforderlichen ESI-Scopes synchronisiert und strikt über
+  `contract_id`, Händler und exakten Ort verbunden;
+- nur Brokergebühr und Vertragsverkaufssteuer als nicht erstattbare Kosten
+  zusammengeführt; Kaution und Rückzahlung bleiben getrennt, untrennbare
+  Sammelbuchungen ausdrücklich unvollständig;
+- den neuesten vollständigen Nachweis samt Quelle im Marktprofil gespeichert,
+  ohne ihn automatisch zu aktivieren. Erst die sichtbare Bestätigung übernimmt
+  den beobachteten Satz; Händler- oder Ortswechsel löscht den gebundenen
+  Nachweis;
+- manuelle Eingabe als Fallback beibehalten und fehlende, verbotene,
+  unvollständige oder nicht passende ESI-Daten weiterhin nicht als null
+  behandelt; deutsche und englische Oberflächentexte sowie die aktuelle
+  Dokumentation ergänzt.
+
+Ergebnis: Der Planner kann eine nachweislich beobachtete persönliche
+Vertragsgebühr verwenden, ohne sie als aktuelle ESI-Preisvorschau auszugeben.
+Ohne ausdrückliche Bestätigung bleibt die vorhandene Planung unverändert.
+
+Prüfung: Die fünf fokussierten Swift-Testing-Tests für Scope-Prüfung,
+Journalzuordnung, Kautionsausschluss, untrennbare Buchungen, Persistenz und
+Bestätigung bestanden. Die vollständige isolierte SwiftPM-Aktion baute Core und
+App und bestand 387 Swift-Testing-Tests in 26 Suites sowie neun XCTest-Fälle.
+Der native, unsignierte Xcode-Test bestand 366 Tests in 23 Suites mit
+`TEST SUCCEEDED`. Striktes Swift-Format, beide Lokalisierungsdateien und
+`git diff --check` bestanden. Es wurden keine persönlichen Live-ESI-Daten
+abgerufen.
+
+Offen: Ein Live-Abgleich mit einem echten abgeschlossenen Vertrag, visuelle
+Prüfung, Tastatur/VoiceOver und ausdrückliche Owner-Abnahme stehen noch aus.
+
+## 16. August 2026 – Ark-Sprungrouten, Refining-Erklärung und Planner-Offenlegungen korrigiert
+
+Ziel: Die unerwartet nicht verfügbaren Koalitions-Hub-Szenarien eines gebauten
+Jump Freighters erklären und korrigieren, die tatsächlich enthaltene
+Main-Hub-Eingangslogistik sichtbar einordnen und die langen Refining- und
+Historienbereiche kompakt bedienbar machen.
+
+Diagnose und Entwicklung:
+
+- vor der Änderung die betroffenen Planner-, Refining-, UI-, Test- und
+  Dokumentationsdateien außerhalb des Checkouts unter
+  `/Users/svenstolze/Documents/EVE NEXUS SIMPLE Backups/2026-08-16-Planner-Routen-Refining-vor-Korrektur.tar.gz`
+  gesichert;
+- den aktiven lokalen Ark-Plan ausschließlich lesend geprüft. Seine
+  Main-Hub-zu-Home-Hub-Fracht war nicht verschwunden: 54 Frachtzeilen mit
+  225.308,41 m³ werden nach der Erzsubstitution in einem Vertrag für
+  203.000.000 ISK befördert und sind in den bekannten Gesamtkosten von
+  6.084.445.401,38 ISK enthalten;
+- als Ursache der Koalitions-Hub-Sperre das gespeicherte vollständige
+  Sprungprofil `UALX-3 → B9E-H6 → MN-Q26 → C-J6MT` gefunden. Die bisherige
+  Auswertung setzte Start und Ziel zusätzlich davor beziehungsweise dahinter
+  und erzeugte dadurch zwei künstliche Nullsprünge. Festprofile akzeptieren
+  nun wahlweise nur Zwischenpunkte oder eine vollständige Route; passende
+  Endpunkte werden vor der Paarbildung genau einmal normalisiert;
+- für einen produzierten Jump Freighter die Eigenschaft `Jump Freighters`
+  zusätzlich zu `Jump Drive Calibration` und `Jump Fuel Conservation` in den
+  hull-spezifischen Selbstsprung übernommen. Andere Capitals verwenden
+  weiterhin nur die für sie zutreffenden allgemeinen Sprungfertigkeiten;
+- die angezeigten 76,33769 % für die aktuell gespeicherte Tatara-Konfiguration
+  reproduziert: 50 % Standup Reprocessing Facility I, 5,5 % Tatara-Bonus,
+  Skillfaktoren 1,15 × 1,10 × 1,10, geplantes RX-804 mit 1,04 und kein
+  passendes Reprocessing-Rig. Mit 53 % Rig-Basis und dem
+  Nullsicherheitsmultiplikator 1,12 aus dem aktuellen SDE-Wert des
+  `Standup L-Set Reprocessing Monitor II` ergeben dieselben Eingaben
+  90,628106 %. Die Anlage nennt nun die tatsächlich verwendete Yield-Quelle
+  und warnt gezielt, wenn das passende Rig nicht hinterlegt ist; ein nicht
+  bestätigtes Rig wird weiterhin niemals stillschweigend angenommen;
+- sowohl die Refining-Auswahl für komprimierte Erze als auch „Letzte fünf
+  Produktionen“ in dauerhaft gespeicherte, standardmäßig geschlossene
+  Offenlegungsbereiche umgewandelt. Zusammenfassungen bleiben im
+  geschlossenen Zustand sichtbar.
+
+Prüfung:
+
+- 67 fokussierte Jump-/Production-Basis-Tests bestehen, darunter vollständige
+  Festprofile mit Endpunkten, Jump-Freighter-Skillübergabe sowie
+  Service-gegen-Rig-Yield;
+- der vollständige isolierte SwiftPM-Lauf baut Core und App und besteht 381
+  Swift-Testing-Tests in 26 Suites sowie 9 XCTest-Fälle. Der ausdrücklich
+  zuschaltbare Test mit einem echten öffentlichen SDE-Paket bleibt ohne
+  gesetzten Paketpfad übersprungen;
+- der frische unsignierte native Xcode-Debug-Build endet mit
+  `BUILD SUCCEEDED`; strikte Swift-Formatierung der betroffenen Dateien, beide
+  Lokalisierungskataloge, doppelte Lokalisierungsschlüssel und
+  `git diff --check` bestehen;
+- das Sicherungsarchiv ist lesbar, enthält 19 Einträge, ist 499 KiB groß und
+  hat SHA-256
+  `da20fb33e2b87492ae3c8fd6cc2a2f0356d283a8811dcd7f98e985f694c3c3b6`.
+
+Offen bleiben eine neue Berechnung im laufenden befüllten Programm, der echte
+DOTLAN-/Markt-/ESI-Vergleich, die Bestätigung des tatsächlich montierten
+Tatara-Rigs in EVE, Tastatur/VoiceOver, visuelle Prüfung und ausdrückliche
+Owner-Abnahme.
+
+## 16. August 2026 – Planner-Finanzübersicht und Verkaufsszenarien wieder aufklappbar
+
+Ziel: Die nach der Verdichtung nur noch passiv dargestellten Verkaufsszenarien
+wieder prüfbar machen und gemeinsame Produktionskosten in derselben kompakten,
+aber aufklappbaren Form darstellen.
+
+Entwicklung:
+
+- vor dem Umbau die betroffenen Planner-, Lokalisierungs-, Test- und
+  Dokumentationsdateien außerhalb des Checkouts unter
+  `/Users/svenstolze/Documents/EVE NEXUS SIMPLE Backups/2026-08-15-Planner-Finanzansicht-vor-Umbau.tar.gz`
+  gesichert;
+- die bereits erhaltenen neun Offenlegungszustände wieder mit den kompakten
+  Verkaufskarten verbunden. Die gesamte Kartenüberschrift ist jetzt eine
+  Schaltfläche und öffnet Verkaufsort, Ausgangsroute, Szenariokosten, Erlös,
+  Gebühren, Gewinn, Marge, ROI, Rechengleichungen und Quote-Eingaben;
+- eine adaptive Finanzübersicht mit eigenen Karten für Materialbeschaffung,
+  Lagerverbrauch, BPC/BPO, Installation, Eingangslogistik,
+  Produktionszwischensumme und Kosten inklusive Lieferung ergänzt;
+- BPC-/BPO-Zuordnungen und Logistikfracht bleiben in den jeweiligen
+  Detailkarten vollständig prüfbar. Lagerverbrauch und Refining-Gebühr sind als
+  bereits enthalten gekennzeichnet und werden nicht doppelt addiert;
+- deutsche und englische Bedien- und Erklärungstexte sowie den UI-Handoff und
+  Acceptance-Vertrag aktualisiert.
+
+Prüfung:
+
+- die neue App-Regression bestätigt neun getrennte Hub-/Verkaufsarten und
+  unabhängig gespeicherte Offenlegungszustände der sieben Finanzkarten;
+- der vollständige isolierte SwiftPM-Lauf baut Core, App und App-Tests und
+  besteht 379 Swift-Testing-Tests in 26 Suites sowie 9 XCTest-Fälle, insgesamt
+  388 Tests. Der ausdrücklich zuschaltbare Test mit einem echten öffentlichen
+  SDE-Paket bleibt ohne gesetzten Paketpfad übersprungen;
+- der frische unsignierte native Xcode-Debug-Build endet mit
+  `BUILD SUCCEEDED`; strikte Swift-Formatierung, beide Lokalisierungskataloge,
+  die Prüfung auf doppelte Lokalisierungsschlüssel und `git diff --check`
+  bestehen;
+- das vorab erstellte Sicherungsarchiv ist lesbar, enthält elf Einträge, ist
+  325.918 Byte groß und hat SHA-256
+  `309655a796f64b128811e2cd1cb35a2c9237452be230229f27430a852df79662`.
+
+Offen bleiben die Sichtprüfung mit einem befüllten Plan bei schmalem und
+breitem Fenster, Tastatur- und VoiceOver-Bedienung, Live-ESI-/Marktvergleich
+und die ausdrückliche Owner-Abnahme.
+
+## 15. August 2026 – Upwell-Reprocessing gegen Quelle und aktuelles SDE abgeglichen
+
+Ziel: Die Refining-Kalkulation mit der verlinkten EVE-University-Darstellung
+der CCP-Regeln abgleichen und die tatsächlich verwendeten aktuellen Werte
+gegen das installierte öffentliche SDE verifizieren.
+
+Entwicklung:
+
+- vor der materiellen Änderung die betroffenen Dateien außerhalb des Checkouts
+  unter
+  `/Users/svenstolze/Documents/EVE NEXUS SIMPLE Backups/2026-08-15-Refining-vor-CCP-Abgleich.tar.gz`
+  gesichert; das lesbare Archiv hat 212.884 Byte und SHA-256
+  `2aa95864687e35ae662427d879c3bb0fc7b57501f3d40d62fd86c06abc43d785`;
+- die Upwell-Formel aus der EVE-University-Seite ausgewertet, ihre dort selbst
+  ausgewiesene veraltete Skillbeschreibung nicht als aktuelle Autorität
+  übernommen und Struktur-, Service-, Rig- und Sicherheitswerte gegen den
+  installierten öffentlichen CCP-SDE-Build 3466501 geprüft;
+- den SDE-Strukturvertrag um den Reprocessing-Bonus aus Dogma-Attribut 2722
+  ergänzt. Athanor verwendet damit 2 %, Tatara 5,5 %; ältere Profile bleiben
+  kompatibel und erhalten für bekannte Strukturtypen den dokumentierten
+  Fallback, ohne unbekannte Strukturen zu erfinden;
+- die Anlagenbasis auf die SDE-Einheiten präzisiert: Das bessere Ergebnis aus
+  50-%-Service und passendem Rig-Gesamtwert wird gewählt, der
+  Sicherheitsraummultiplikator gilt nur mit diesem kompatiblen Rig und der
+  Strukturbonus wird danach multiplikativ angewendet. Anschließend folgen
+  Reprocessing, Reprocessing Efficiency, erzspezifisches Processing und das
+  im Profil gewählte theoretische Implantat;
+- SDE-Import und Anlagenanzeige um Eis-Ausbeute sowie die allgemeinen L-Set-
+  und XL-Set-Reprocessing-Monitore erweitert. Diese Monitore liefern ihren
+  SDE-Wert für Asteroiderz, Monderz und Eis; unpassende Größen bleiben
+  wirkungslos;
+- die Chargenwahl korrigiert: Der Planner sucht die kleinste ganze
+  Chargenzahl, deren gemeinsam abgerundete Gesamtausgabe den Bedarf deckt,
+  statt jede Charge vor der Hochrechnung einzeln abzurunden. Die Gebühr bleibt
+  auf dem Adjusted-Price-Schätzwert aller tatsächlich erzeugten Mineralien;
+- Regelversion, Bedienbeschreibung, Production-Basis-Vertrag, Handoff und
+  Acceptance-Nachweis aktualisiert.
+
+Ergebnis: Eine Tatara mit Reprocessing-Service und ohne Rig startet für
+Asteroiderz, Monderz und Eis bei 52,75 % Anlagenbasis statt 50 %. Ein passender
+T2-Rig in Lowsec verwendet `0,53 × 1,06 × 1,055`; Skills und ein ausgewähltes
+RX-Implantat werden erst danach multipliziert. Der normale Planner verwendet
+dieselbe korrigierte Anlagenbasis, Batchmenge, Gebühr und endgültige
+Compressed-Ore-Fracht für Kosten, Einkaufsliste und Vertragsaufteilung.
+
+Prüfung: 47 Production-Basis-Tests, der fokussierte vollständige
+Compressed-Ore-Plannertest und elf SQLite-Katalogtests bestanden. Der
+Opt-in-Test importierte den installierten öffentlichen SDE-Build 3466501 in
+eine isolierte temporäre Datenbank und bestand ebenfalls. Der vollständige
+isolierte SwiftPM-Lauf baute Core und App und bestand 379 Swift-Testing-Tests
+in 26 Suites sowie acht XCTest-Fälle, insgesamt 387 Tests. Der native
+unsignierte Xcode-Debug-Build endete mit `BUILD SUCCEEDED`; striktes
+Swift-Format bestand.
+
+Offen: Es wurden keine privaten ESI-Daten oder produktiven App-Daten verändert.
+Der Vergleich mit der konkreten in EVE gefitteten Tatara, realen Skills,
+ausgewähltem Klonimplantat, angezeigter Gebühr, Main-Hub-Markttiefe und dem
+resultierenden Kuriervertrag sowie visuelle Prüfung, Tastatur, VoiceOver und
+ausdrückliche Owner-Abnahme bleiben getrennt offen.
+
+## 15. August 2026 – Planner-Logistik geprüft und Ergebnis verdichtet
+
+Ziel: Die nach dem Umbau gemeldete Main-Hub→Home-Hub-Logistik fachlich prüfen
+und die wiederholten vollständigen Verkaufskarten auf die entscheidenden
+Vergleichswerte reduzieren.
+
+Entwicklung:
+
+- den aktuellen aktiven Planner-Snapshot nur lesend kontrolliert: Die
+  Compressed-Ore-Fracht enthält 217.079,39 m³, wird in genau einen Vertrag
+  geteilt und kostet nach dem gespeicherten Tarif 196.000.000 ISK; dieser Wert
+  ist bereits in der Produktionskostensumme und in den Verkaufsszenarien
+  enthalten;
+- die Produktionskosten pro Einheit, die aufklappbare Lieferung
+  **Main Hub → Home Hub** mit Frachtpositionen und die Produktionskosten
+  einschließlich Lieferung einmalig in die gemeinsame Kostenkarte verschoben;
+- alle vorhandenen Strategien für Main Hub, Home Hub und Koalitions-Hub als
+  kompakte Vorschaukarten mit absolutem Gewinn und ROI dargestellt; gemeinsame
+  Kosten werden dort nicht mehr wiederholt, unbekannte oder vorläufige Werte
+  bleiben ausdrücklich erkennbar;
+- beim Öffnen der Logistikeinstellungen wird nun die gespeicherte Production
+  Basis mit derselben ID wie die aktive Runtime-Basis gewählt. Eine andere,
+  lediglich zuletzt aktualisierte Basis kann nicht mehr versehentlich ihre
+  Logistikwerte liefern;
+- deutsche und englische UI-Texte sowie aktuelle Bedien- und
+  Acceptance-Dokumentation angepasst.
+
+Sicherung: Die zentrale Planner-Ansicht sowie die betroffenen Test-,
+Lokalisierungs- und Dokumentationsdateien wurden vorher unter
+`/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-planner-logistics-summary` mit
+SHA-256-Nachweisen gesichert.
+
+Prüfung: Der fokussierte Lauf aller 29 Industry-Planner-Tests bestand. Darin
+sind die vollständige Hin-/Rückwegkostenrechnung und die Regression enthalten,
+die drei direkte Mineralverträge bei wirtschaftlicher Erzsubstitution durch
+genau einen Compressed-Ore-Vertrag ersetzt. Core und App einschließlich der
+neuen Planner-Ansicht wurden dabei erfolgreich gebaut. Der vollständige
+isolierte Lauf bestand zusätzlich acht XCTest- und 377 Swift-Testing-Tests in
+26 Suites; ein ausdrücklich opt-in-gebundener Real-SDE-Test blieb planmäßig
+übersprungen. Der frische unsignierte native Xcode-Debug-Build endete mit
+`BUILD SUCCEEDED`. Strikte Swift-Formatprüfung, beide
+Lokalisierungskataloge, Whitespace-Prüfung und der modulübergreifende
+Dokumentations-Linkcheck bestanden ebenfalls.
+
+Offen: Visuelle Prüfung mit dem befüllten Owner-Plan, Fenstergrößen, Tastatur,
+VoiceOver sowie ausdrückliche Owner-Abnahme bleiben getrennte Schritte.
+
+## 15. August 2026 – Planer 2 entfernt und Logistik in Einstellungen verschoben
+
+Ziel: Den nicht bewährten experimentellen Planer vollständig zurücknehmen und
+die Logistikpflege aus der Hauptnavigation in den bestehenden horizontalen
+Bereich **Daten & Einstellungen** verschieben.
+
+Entwicklung:
+
+- die experimentelle View, ihren Navigationsfall, die nur dafür vorhandenen
+  Intent-/Szenariotypen, den Runtime-Einstieg, Tests, Projektverweise und
+  Lokalisierungen entfernt;
+- die etablierte Planner-Ansicht und sämtliche gemeinsame Industrie-,
+  Refining-, Kurier- und Sprunglogik unverändert beibehalten;
+- **Logistik** als eigenen horizontalen Reiter zwischen
+  **Industrieeinstellungen** und **Markteinstellungen** ergänzt und denselben
+  Speichern-/Verwerfen-Schutz wie die übrigen Einstellungen beibehalten;
+- aktuelle Architektur-, Handoff-, Bedien- und Acceptance-Dokumentation auf
+  den neuen Navigationsstand gebracht; ältere Prüfnachweise des Experiments als
+  historisch und superseded markiert.
+
+Sicherung: Die entfernte experimentelle Datei und alle direkt betroffenen
+Integrationsdateien wurden vor der Änderung unter
+`/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-remove-planner2-move-logistics`
+mit SHA-256-Nachweisen gesichert.
+
+Prüfung: Elf fokussierte Runtime-/Navigationstests, 18 fokussierte
+Sprunglogistiktests und sieben fokussierte Industrieregeltests bestanden. Der
+vollständige SwiftPM-Lauf bestand acht XCTest- sowie 377 Swift-Testing-Tests in
+26 Suites. Der native unsignierte Debug-Xcode-Build der App einschließlich der
+in eine eigene Datei getrennten rekursiven Kalkulation war erfolgreich. Siehe
+den aktuellen Nachweis in
+[`Documentation/ACCEPTANCE.md`](Documentation/ACCEPTANCE.md).
+
+Offen: Die visuelle Prüfung des horizontalen Logistikreiters in der laufenden,
+befüllten App, Tastatur und VoiceOver sowie die ausdrückliche Owner-Abnahme
+bleiben getrennte Freigabeschritte.
+
+## 15. August 2026 – Refining-Implantate, korrekte Erzfracht und geführter Planner
+
+Ziel: Die Refining-Ausbeute vollständig pro Charakter modellieren, die nach
+einer Erzsubstitution tatsächlich benötigte Vertragsanzahl verwenden und einen
+weniger überfordernden Planner-Versuch bereitstellen, ohne den etablierten Weg
+zu ersetzen.
+
+Entwicklung:
+
+- pro Refining-Anlage und Charakter die ausdrückliche Auswahl **kein
+  Implantat**, RX-801, RX-802 oder RX-804 ergänzt; automatische
+  Charakterauswahl und Refining-Snapshot berücksichtigen den jeweiligen
+  Ertragsbonus;
+- Implantatauswahl direkt neben dem vorgesehenen Refiner als theoretische
+  Planannahme gekennzeichnet; sie wird bewusst nicht aus dem aktuell aktiven
+  EVE-Klon synchronisiert und kann vor dem späteren Klonwechsel gesetzt werden;
+- alte Anlagenprofile ohne Implantatfeld kompatibel als **kein Implantat**
+  beibehalten;
+- die Main-Hub-Fracht nach der wirtschaftlichen Erzentscheidung neu
+  zusammengesetzt: gedeckte direkte Mineralien werden zuerst entfernt,
+  anschließend werden komprimiertes Erz und verbleibende Einkäufe gemeinsam
+  zum Home Hub auf Verträge verteilt;
+- das **Geführte Produktionslabor** in die drei Schritte Produkt,
+  Einstellungen und Ergebnis gegliedert; erweiterte Filter und Ergebnisdetails
+  standardmäßig eingeklappt und zunächst acht Kandidaten mit einer
+  ausdrücklichen Vollansicht gezeigt;
+- sichtbare Implantat-, Produkt-, Charakter- und Ortsnamen weiterhin über die
+  gemeinsame EVE-Kopierinteraktion dargestellt; der etablierte Planner bleibt
+  unverändert verfügbar.
+
+Ergebnis: Die Refining-Entscheidung enthält Anlage, Skills und das gewählte
+Implantat. Die Vertragsanzahl entsteht aus der endgültigen Fracht statt aus
+vorher getrennten Mineral- und Refining-Teilstrecken. Der experimentelle Weg
+führt durch die Entscheidung, bleibt aber sitzungsgebunden und schreibt keinen
+zweiten Planbestand.
+
+Prüfung: Der fokussierte Logistiktest belegt den Wechsel von drei direkten
+Mineralverträgen zu genau einem Vertrag mit komprimiertem Erz sowie den
+Rückfall auf drei Verträge bei einer unwirtschaftlichen Erzoption. Die
+vollständige isolierte SwiftPM-Prüfung bestand 379 Swift-Testing-Tests in 26
+Suites und acht XCTest-Fälle, insgesamt 387 Tests. Der frische unsignierte
+native Xcode-Debug-Build endete mit `BUILD SUCCEEDED`.
+
+Sicherung: Der vorherige vollständige Stand liegt unter
+`/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-planner-speed.tar.gz`; der
+unmittelbare gemischte Arbeitsstand wurde zusätzlich als geprüfter Patch und
+separates Archiv der unversionierten Dateien unter `/private/tmp` gesichert.
+
+Offen: Vergleich der Implantat- und Tatara-Ausbeute mit dem laufenden EVE-
+Client, reale Main-Hub-Markttiefe und Kurierpreise, visuelle Prüfung sowie
+Keyboard-, VoiceOver-, Performance- und Owner-Abnahme beider Planner-Wege.
 
 ## 5. August 2026 – Deutlicher Laufzeithinweis beim Contract-Erstimport
 
@@ -287,10 +1107,3181 @@ isolierten SwiftPM- und unsigned nativen Xcode-Läufe bauten die Anwendung und
 bestanden auf dem korrigierten Stand jeweils 261 Tests in 21 Suites. Der erste
 Ersatzlauf `30989387141` auf GitHub baute unter Swift 6.1.2 vollständig und
 startete alle damals 260 Tests; nur die zwei anschließend behobenen
-Zeitstempel-Decodierungen schlugen fehl.
+Zeitstempel-Decodierungen schlugen fehl. Der abschließende öffentliche Lauf
+`30989905311`, Job `92253308844`, baute den korrigierten Stand und bestand alle
+261 Tests.
 
-Offen: Der neue öffentliche GitHub-Actions-Lauf wird nach dem Push dieses
-dokumentierten Stands erneut ausgeführt.
+Offen: Live-EVE-/ESI-Abgleich, visuelle und barrierearme Owner-Abnahme sowie
+Signierung und Notarisierung bleiben von diesem CI-Nachweis getrennt.
+
+## 5. August 2026 – Geführte Produktauswahl im Planer
+
+Ziel: Produzierbare Items ohne manuelle Namens- und Mengenrechnung über eine
+große Drei-Zeichen-Suche auswählen, Runs sowie ME/TE eingeben und als neue
+Zeile am Ende der vorhandenen Planereingabe ergänzen.
+
+Entwicklung:
+
+- neuen aktiven-SDE-Suchvertrag für veröffentlichte, vollständig aufgelöste
+  Manufacturing-Produkte samt Output je Run ergänzt;
+- 680 × 480 Punkte großes Ergebnisfeld mit Start ab drei Zeichen,
+  getrenntem Namenskopieren und Auswahlknopf umgesetzt;
+- Runs, ME `0...10` und TE `0...20` als geführte Eingabe ergänzt und die
+  Run-Zahl über den SDE-Output in den bestehenden `Product Want ME TE`-Vertrag
+  überführt, ohne vorhandene Eingabezeilen zu ersetzen;
+- deutsche und englische UI-Texte, Produktionsbasisvertrag, Handoff und
+  Acceptance-Matrix aktualisiert.
+
+Ergebnis: Ein ausgewähltes Manufacturing-Produkt kann mit exakter Run-Anzahl
+als neue letzte Planerzeile ergänzt werden. Mehrfach-Outputs bleiben korrekt,
+weil `Want = Runs × Output je Run` gilt. Die Auswahl ist bewusst SDE- und nicht
+loginabhängig; ein unbekannter oder unvollständiger Blueprint wird nicht als
+produzierbar angeboten.
+
+Prüfung: Zehn fokussierte Production-Input-Tests und sechs fokussierte
+SQLite-Katalogtests bestanden isoliert. Die vollständige isolierte
+SwiftPM-Suite und der unsigned native Xcode-Testlauf bauten die App und
+bestanden jeweils alle 264 Tests in 21 Suites. Lokalisierungs-, Link-, Format-
+und Diff-Prüfungen bestanden ebenfalls und sind im Acceptance-Eintrag getrennt
+festgehalten.
+
+Offen: Visuelle Prüfung mit bevölkertem aktiven Katalog, schmalem Fenster,
+deutscher und englischer Sprache sowie Tastatur und VoiceOver; keine
+Live-ESI-Prüfung wird für diese statische Blueprintsuche beansprucht.
+
+## 8. August 2026 – Crash- und Hintergrundlast-Diagnose
+
+Ziel: Den gemeldeten Absturz sowie hohe CPU- und Speicherlast anhand realer
+macOS-Diagnoseberichte abgrenzen und bestätigte wiederholte Hintergrundarbeit
+reduzieren, ohne fehlende EVE-Daten als leer oder null umzudeuten.
+
+Entwicklung:
+
+- den einzigen vorhandenen App-Crashbericht vom 3. August ausgewertet: Der
+  Prozess endete nach etwa 31 Sekunden mit `EXC_BREAKPOINT`/`SIGTRAP` in einem
+  AppKit-/SwiftUI-Constraint-Update, während eine Accessibility-Aktion einen
+  segmentierten Schalter auslöste; der vollständige sprachabhängige Detailbaum
+  wird deshalb bei der Sprachwahl nicht mehr synchron über `.id(...)` ersetzt;
+- drei macOS-CPU-Ressourcenberichte vom 3. und 4. August abgegrenzt. Sie weisen
+  über 99 bis 177 Sekunden durchschnittlich 51 %, 91 % und 51 % CPU aus; die
+  anwendungseigenen Samples zeigen wiederholtes Base64-/JSON-Decoding von
+  Industry Jobs und Character Capabilities in mehreren Dashboard-Gettern;
+- eine unveränderliche `DashboardIndustrySnapshot`-Projektion ergänzt. Sie
+  dekodiert Jobs und Skills einmal je geänderter gespeicherter Eingabe außerhalb
+  des Main-Actors, aggregiert Kapazität und Quellenvollständigkeit und wird bei
+  fremden Runtime-Fortschrittsupdates wiederverwendet;
+- automatische Contract- und Main-Hub-Tasks auf Utility-Priorität begrenzt,
+  während ein manueller Contract-Start nutzerinitiiert bleibt;
+- den globalen Runtime-Besitz von der Beobachtung getrennt: App-Szene und
+  Navigationscontainer halten den Runtime-Zugriff, werden aber nicht mehr bei
+  jeder fachlich unabhängigen `@Published`-Änderung neu ausgewertet;
+- schnell aufeinanderfolgende Contract- und Main-Hub-Fortschrittsmeldungen mit
+  einem deterministischen 500-ms-Publikationsfenster gebündelt. Start,
+  Phasenwechsel und terminale Zustände umgehen die Bündelung; Netzwerk- und
+  Importarbeit selbst bleiben unverändert;
+- den etwa 27,7-MB-großen Main-Hub-Nachfrage-Ledger um eine kleine abgeleitete
+  Startzusammenfassung ergänzt. Der Ledger bleibt autoritativ; eine fehlende
+  oder unlesbare Zusammenfassung fällt sicher auf ihn zurück;
+- den zeitnahen Jetsam-Bericht getrennt bewertet: Die App belegte dort etwa
+  322 MiB resident und maximal etwa 414 MiB, wurde aber nicht als größter oder
+  beendeter Prozess ausgewiesen; der größte Prozess war der Debugger
+  `lldb-rpc-server`. Ein Speichermangel-Absturz der App ist damit nicht belegt.
+
+Ergebnis: Der durch Systemberichte belegte Dashboard-Hotspot ist aus dem
+normalen SwiftUI-Neuberechnungspfad entfernt, automatische Langläufer konkurrieren
+mit geringerer Priorität um CPU-Zeit, Fortschrittsereignisse lösen höchstens
+zwei UI-Aktualisierungen pro Sekunde aus, und spätere Starts können die kompakte
+Nachfragezusammenfassung lesen. Der bekannte Accessibility-Layoutpfad ist
+entschärft, aber noch nicht als live behoben abgenommen.
+
+Prüfung: Der fokussierte isolierte SwiftPM-Lauf baute Core und App und bestand
+5 Industry-Regeltests in einer Suite. Der neue Test belegt Jobprojektion,
+partielle Quellenvollständigkeit und bekannte statt erfundener Kapazität. Die
+vollständige isolierte SwiftPM-Suite und der unsigned native Xcode-Testlauf
+bauten anschließend die App und bestanden nach der Interaktionslatenz-Ergänzung
+jeweils 267 Tests in 22 Suites. Zwei deterministische Tests belegen das
+500-ms-Fenster, sofortige Grenzzustände, Reset und einen rückwärts springenden
+Testzeitgeber. `swift-format` wurde auf die geänderten Swift-Dateien angewendet;
+`git diff --check` bestand. Ein zusätzlicher Testlauf mit macOS-`time -l`
+bestand zwar alle Tests, dessen Wrapper endete aber wegen eines in der Sandbox
+gesperrten `sysctl` mit Status 1 und lieferte deshalb keinen verwertbaren
+Speichernachweis. Es wurden keine Live-ESI-Anfragen, kein Commit und kein Push
+ausgeführt.
+
+Offen: Wiederholter Sprachwechsel per Maus, Tastatur und VoiceOver;
+mehrstündige laufende App mit
+automatischem Public-Contract-Import und Main-Hub-Scan samt CPU-, RSS- und
+Speicherdruckmessung. Der historische Bericht allein beweist weder einen
+Speicherleck-Fix noch Owner-Abnahme.
+
+## 8. August 2026 – Public-Contracts-CPU-Pfad
+
+Ziel: Den gemeldeten Absturz bei 100 % CPU im Bereich **Public Contracts**
+anhand des realen lokalen Datenvolumens eingrenzen und wiederholte SQLite- sowie
+SwiftUI-Arbeit entfernen, ohne den fortsetzbaren Teilindex zu verändern.
+
+Entwicklung:
+
+- die lokale Produktionsdatenbank ausschließlich lesend geprüft: 114 Regionen,
+  47.828 Contracts, 353.313 Contract-Items und 1.346 noch ausstehende
+  Detail-Contracts; `PRAGMA quick_check` meldete `ok`;
+- den Query-Plan der Namenssuche und Facets untersucht. Die bisherige
+  `%Suchtext%`-Abfrage scannte alle Contract-Items; Kategorie und Gruppe bauten
+  zusätzlich temporäre `GROUP BY`-, `COUNT(DISTINCT ...)`- und Sortierstrukturen
+  über den vollständigen Itembestand auf;
+- einen kleinen abgeleiteten `contract_item_types`-Index ergänzt. Eine Kopie der
+  realen Daten enthielt 10.838 unterschiedliche Typen statt 353.313 Itemzeilen;
+  die neue Namenssuche scannt diese Typmenge und verwendet anschließend den
+  bestehenden indexierten Typ-Join. Bestehende Daten werden einmalig und
+  transaktional aus einer konsistent gewählten Zeile pro Typ migriert. Auf der
+  temporären Kopie dauerte Aufbau plus `quick_check` rund 0,71 Sekunden;
+- die automatische vollständige Facet- und Ergebnisaktualisierung nach jeweils
+  250 importierten Items entfernt. Facets werden je Runtime einmal sowie nach
+  Importende aktualisiert; vorhandene Teilzustände und Ergebnisse bleiben
+  währenddessen sichtbar;
+- Contract-Fortschritt auf ein Zwei-Sekunden-Fenster begrenzt, wobei
+  Phasenwechsel, Abbruch, Teilstatus, Ratenlimit, Fehler und Abschluss weiterhin
+  sofort veröffentlicht werden;
+- Such- und Facet-Tasks prüfen Cancellation vor und nach dem Actor-/SQLite-Pfad.
+  Eine Runtime-Generation verhindert, dass eine ältere Suche nach einer neueren
+  Eingabe Ergebnisse oder Fehler überschreibt.
+
+Ergebnis: Der im realen Datenbestand bestätigte wiederholte Vollscan-Pfad ist
+aus dem laufenden Import und aus der Namenssuche entfernt. Der ESI-Importer,
+seine Seiten-/Ratenbegrenzungen, die lokale SQLite-WAL-Datenbank und alle
+partiellen, fortsetzbaren oder fehlgeschlagenen Zustände bleiben erhalten.
+
+Prüfung: 19 fokussierte Public-Contracts-Tests bestanden einschließlich
+Legacy-Migration, Ark/Arkonor-Trennung, sicherem Stopp, Ratenlimit,
+Teilfortsetzung und vollständiger Seitennutzung. Die vollständigen isolierten
+SwiftPM- und unsigned nativen Xcode-Läufe bauten die App und bestanden jeweils
+267 Tests in 22 Suites. Striktes Swift-Formatting und `git diff --check`
+bestanden. Die reale Datenbank wurde nicht migriert oder beschrieben; Query- und
+Migrationstests liefen auf einer temporären Kopie.
+
+Offen: Die optimierte App muss mit der realen Datenbank gestartet werden, damit
+die einmalige Typindex-Migration und ein längerer fortgesetzter Import unter
+Activity Monitor oder Instruments als Owner-/Live-Nachweis gemessen werden.
+Ohne neuen `.ips`- oder CPU-Ressourcenbericht ist der gemeldete Absturzpfad
+diagnostisch plausibel und gezielt entschärft, aber noch nicht live reproduziert
+oder als behoben abgenommen.
+
+## 8. August 2026 – Planner-Laufzeit und Interaktionslatenz
+
+Ziel: Den Planner deutlich flüssiger machen und seine CPU-Laufzeit reduzieren,
+ohne Mengen-, ME/TE-, Markt-, Lager-, Gebühren-, Logistik-, Installations-,
+Make-or-Buy- oder Rundungslogik inhaltlich zu verändern.
+
+Entwicklung:
+
+- den Marktquote-Pfad profiliert. Derselbe unveränderte Orderbestand wurde für
+  Kauf, Lagerwert, vollständigen Ersatzwert, Make-or-Buy, Logistik sowie Main-
+  und Home-Verkauf wiederholt gefiltert und sortiert;
+- `PreparedMarketOrderBook` ergänzt. Es validiert und sortiert Kauf- und
+  Verkaufsorders jedes Typs einmal je Standort-Snapshot und ruft danach
+  weiterhin die gemeinsame `MarketPriceEngine`-Quoteformel auf;
+- die lineare Suche durch sämtliche ESI-Systemindizes je Job und
+  Make-or-Buy-Analyse durch einen einmaligen, die erste Fundstelle bewahrenden
+  Index nach System und Aktivität ersetzt;
+- Top-Level-Produktknoten einmal je Request indiziert, statt sie für Main- und
+  Home-Verkauf wiederholt rückwärts im vollständigen Planknotenbestand zu
+  suchen;
+- einen abweichenden Home-Hub parallel zu Main-Hub, Adjusted Prices und
+  Industry Systems gestartet. Ein identischer Main/Home-Ort verwendet weiter
+  exakt denselben Snapshot und nun auch dieselbe vorbereitete Orderbuchsicht;
+- Planner-Neuberechnungen auf Latest-Wins umgestellt: Eine neue Quellenwahl
+  bricht den vorherigen UI-Task ab, ältere Generationen dürfen keinen Plan mehr
+  veröffentlichen, und der globale Working-Zustand bleibt bei überlappenden
+  Operationen korrekt aktiv;
+- Dekodierung gespeicherter Planreservierungen und Berechtigungen sowie die
+  JSON-Kodierung des fertigen Snapshots aus dem Main-Actor verlagert;
+- Fortschrittsveröffentlichungen des parallelen Main-Hub-Hintergrundscans wie
+  den Contract-Fortschritt auf ein Zwei-Sekunden-Fenster begrenzt. Abschluss
+  und Grenzzustände bleiben unmittelbar sichtbar.
+
+Ergebnis: Fachliche Eingaben und Ergebnisse bleiben unverändert, während
+wiederholte Order-Sortierungen, lineare Systemindex-Suchen, veraltete parallele
+Planner-Läufe und große JSON-Arbeit auf dem UI-Thread entfallen. Ein separater
+Home-Markt verlängert die Main-Marktphase nicht mehr seriell.
+
+Prüfung: Eine deterministische Fixture mit 180 Typen und 57.600 Orders verglich
+Materialkauf, Immediate Sale und Listed Sale einschließlich Steuern und
+Brokergebühr exakt zwischen direkter und vorbereiteter Quote. Vier Quote-Pässe
+benötigten im isolierten Debug-Test rund 65 ms mit wiederholter Vorbereitung;
+die einmalige Vorbereitung benötigte rund 19 ms und die vier vorbereiteten
+Pässe rund 12 ms. Die fokussierten Planner-, Performance- und Markt-Fixtures
+bestanden. Der vollständige isolierte SwiftPM-Lauf und der unsigned native
+Xcode-Testlauf bauten die App und bestanden jeweils 269 Tests in 22 Suites.
+Der erste Xcode-Versuch scheiterte ausschließlich am gesperrten SwiftPM-
+Diagnosecache der Sandbox; die Wiederholung außerhalb dieser Beschränkung
+bestand und erzeugte ein vollständiges `xcresult`-Bundle.
+
+Offen: Ein synthetischer Debug-Test belegt weder Release-Laufzeit noch
+Live-ESI- oder Owner-Akzeptanz. Die laufende App muss mit einem tiefen realen
+Plan wiederholt berechnet und bei gleichzeitigem Contract-/Main-Hub-
+Hintergrundbetrieb mit Instruments beziehungsweise Activity Monitor auf
+Latenz, CPU und RSS geprüft werden.
+
+## 8. August 2026 – Public-Contracts-Start entkoppelt
+
+Ziel: Die einmalige Migration des großen lokalen Contract-Typindex darf beim
+App-Start nicht mehr den Main Actor blockieren oder die Oberfläche einfrieren.
+
+Entwicklung:
+
+- einen asynchronen Store-Einstieg ergänzt, der Öffnen, Schema-Prüfung und den
+  unveränderten transaktionalen Backfill in einem Utility-Task ausführt;
+- `RuntimeState` startet ohne synchronen SQLite-Zugriff und veröffentlicht die
+  Zustände deaktiviert, vorbereitend, bereit oder fehlgeschlagen;
+- Public Contracts zeigt Vorbereitung und Fehler sichtbar an, sperrt nur die
+  noch nicht nutzbaren Filter und bietet einen zugänglichen Wiederholungsbutton;
+- `Optimierung.md` als schlanke, verbindliche Reihenfolge für die sechs
+  ermittelten Optimierungspunkte mit kurzen Folge-Prompts angelegt.
+
+Ergebnis: Der datenabhängige Backfill konkurriert nicht mehr mit SwiftUI auf
+dem Main Actor. Migration, vorhandene Contract-/Itemdaten, unbekannte
+`for_corporation`-Werte und explizite Fehler-/Teilzustände bleiben erhalten.
+
+Prüfung: Der fokussierte isolierte SwiftPM-Lauf baute die App und bestand alle
+19 `PublicContractTests`. Der Legacy-Migrationstest verwendet nun denselben
+asynchronen Öffnungspfad wie die App und bestätigt Contract, Item und den
+unbekannten Corporation-Zustand. Anschließend bestanden am 8. August 2026 die
+vollständige isolierte SwiftPM-Suite und der unsigned native Xcode-Testlauf
+jeweils 269 Tests in 22 Suites. Strict Swift-Format-Lint, beide
+Lokalisierungskataloge, Suite-Link-Prüfung und `git diff --check` bestanden
+ebenfalls.
+
+Offen: Erste Migration der realen Produktionsdatenbank sowie laufende CPU-/RSS-,
+VoiceOver- und Owner-Abnahme. Automatische Tests belegen noch nicht, dass der
+gemeldete Langzeitlauf im befüllten App-Prozess visuell und unter Last abgenommen
+ist.
+
+## 8. August 2026 – CPU-/RSS-Messung im befüllten Prozess
+
+Ziel: Die verbleibende Dauerlast nach den Contract- und Planner-Optimierungen
+im real befüllten App-Prozess lokalisieren und CPU von Speicherindikatoren
+trennen.
+
+Messung:
+
+- laufende Debug-App zunächst mit ihrem normalen Produktionsdatenbestand
+  beobachtet. Public Contracts war in allen 114 Regionen frisch; der Typindex
+  enthielt 10.934 Typen, keine unterschiedliche Item-Type-ID fehlte und SQLite
+  meldete `quick_check = ok`. Der bereits erfolgte erste Backfill lag zeitlich
+  vor der Messung und seine Lastspitze kann deshalb nicht nachträglich belegt
+  werden;
+- nach dem Zurücksetzen der durch eine Accessibility-Baumabfrage verursachten
+  Zusatzarbeit denselben Prozess jeweils 30 Sekunden auf Dashboard und Planer
+  gemessen. Das Dashboard verbrauchte aus der Prozesszeit berechnet rund
+  31,8 % CPU im Mittel, erreichte auf der macOS-Mehrkernskala 121 % und lag bei
+  277 bis 457 MiB RSS. Der Planer blieb im Vergleich bei 0 % CPU und stabil
+  344 MiB RSS;
+- der bereinigte Stack-Sample zeigte wiederholte SwiftUI-/AttributeGraph-Arbeit
+  in `DashboardMineralTicker.body` und `tickerContent`. Der Ticker verwendet
+  dauerhaft eine 30-Hz-`TimelineView` und erzeugt für die Endlosschleife bei
+  jedem Aufbau eine verdoppelte, enumerierte Zeilenfolge;
+- der Sample meldete rund 296 MiB physischen Footprint und einen bisherigen
+  Prozesspeak von rund 829 MiB. Die abweichenden RSS-Schnappschüsse und der
+  kurze Zeitraum reichen nicht als Nachweis eines Speicherlecks;
+- zusätzlich eine unsigned Release-App gegen eine Copy-on-write-Kopie des
+  Application-Support-Verzeichnisses gebaut. Der isolierte Prozess blieb bei
+  0 % CPU und 70 MiB RSS, stellte aber keine vergleichbare sichtbare
+  Dashboard-Arbeitslast her. Dieser Wert gilt deshalb nur als kalter
+  Hintergrundwert und nicht als Release-Vergleich des Tickers.
+
+Ergebnis: Die reproduzierbare Dauerlast hing in dieser Messung an der sichtbaren
+Dashboard-Animation, nicht an einer laufenden Contract-Synchronisation oder
+Planerberechnung. Der befüllte Planer war im Ruhezustand CPU-idle. Es wurde in
+diesem Schritt bewusst keine Ticker-Implementierung verändert.
+
+Prüfung: Prozesszeit und RSS wurden sekundengenau über `top` verglichen; ein
+15-Sekunden-Stack-Sample lokalisierte den Hotspot bis auf
+`ContentView.swift:1631` und `ContentView.swift:1651`. Die Bedienung über die
+Accessibility-Schnittstelle wurde als Messstörung erkannt, zurückgesetzt und
+die A/B-Reihe danach ohne weitere Baumabfragen wiederholt. Die Produktionsdaten
+wurden nur gelesen; die temporäre Release-Instanz wurde beendet und ihre
+Copy-on-write-Datenkopie entfernt. Die normale App blieb im CPU-idlen Planer
+geöffnet.
+
+Offen: Sichtbaren Release-Dashboard-A/B-Vergleich durchführen, den Ticker ohne
+inhaltliche Änderung CPU-sparend umsetzen und anschließend dieselbe Reihe sowie
+einen mehrstündigen Lauf unter Contract-/Main-Hub-Arbeit und Speicherdruck
+wiederholen. Ein Crash wurde in dieser kurzen Messung nicht reproduziert.
+
+## 8. August 2026 – Dashboard-Ticker in den Compositor verlagert
+
+Ziel: Die gemessene CPU-Dauerlast des sichtbaren Mineralpreistickers beseitigen,
+ohne Preise, Reihenfolge, Farben, 32-Sekunden-Umlauf, Accessibility oder
+Reduced-Motion-Verhalten zu ändern.
+
+Entwicklung:
+
+- einen ersten Umbau auf eine gewöhnliche lineare SwiftUI-Offsetanimation im
+  sichtbaren befüllten Release-Dashboard gemessen. Trotz stabiler Zeilenstruktur
+  verbrauchte sie dauerhaft rund 38 % CPU, weil SwiftUI und AppKit weiterhin pro
+  Frame Layoutzyklen ausführten; diese Variante wurde verworfen;
+- die doppelte Mineralzeilenfolge stattdessen einmal in einer `NSHostingView`
+  aufgebaut und nur deren Layer mit einer linearen `CABasicAnimation` bewegt;
+- die Layeranimation bei inaktiver App entfernt. Die vorhandene statische,
+  horizontal scrollbare Ansicht für **Bewegung reduzieren** bleibt getrennt;
+- keine Markt-, Preis-, Aktualisierungs- oder Persistenzlogik verändert.
+
+Ergebnis: Im sichtbaren isolierten Release-Dashboard sank die Prozessarbeit auf
+0,07 CPU-Sekunden in rund 34 Sekunden, entsprechend etwa 0,2 % im Mittel. 33
+von 35 Stichproben meldeten 0 %, die einzige materielle Spitze 5,7 %. In einem
+frischen Abschlusslauf ohne vorherige Accessibility-Abfrage blieb RSS stabil
+bei 193 bis 194 MiB und die Prozesszeit stieg ebenfalls nur um 0,07 Sekunden.
+Der Release-Planer-Kontrolllauf benötigte 0,01 CPU-Sekunden in rund 24 Sekunden
+bei stabilen 174 MiB RSS.
+
+Prüfung: Zwei sichtbare Dashboard-Frames im Abstand von 1,8 Sekunden zeigten
+die weiterlaufende Verschiebung bei identischen Mineralen, Werten und
+Reihenfolge. Strict Swift-Format-Lint und `git diff --check` bestanden. Der
+unsigned universelle Release-Build war erfolgreich; die vollständige
+SwiftPM-Suite baute die App und bestand 269 Tests in 22 Suites. Mess-App und
+Produktions-App verwendeten getrennte Daten- und Einstellungswurzeln; die
+temporäre Messinstanz und alle dafür erzeugten Daten-, Build- und Sample-Dateien
+wurden anschließend entfernt.
+
+Offen: Mehrstündiger Lauf unter realer Contract-/Main-Hub-Arbeit und
+Speicherdruck sowie Owner-Abnahme von Bewegung, Reduced Motion und VoiceOver.
+Die kurzen stabilen RSS-Reihen beweisen allein noch nicht, dass kein
+Langzeit-Speicherleck existiert. Punkt 2 des Optimierungsplans bleibt der nächste
+größere Schritt.
+
+## 8. August 2026 – Planer-Invalidierung vom Gesamtlaufzeitzustand getrennt
+
+Ziel: Public-Contract-, Markt-, Dashboard- und sonstige Hintergrundmeldungen
+dürfen den großen Planer-View-Baum nicht unnötig neu auswerten; Rechenbefehle,
+Fachzustände und gespeicherte Fakten bleiben unverändert.
+
+Entwicklung:
+
+- einen schmalen beobachtbaren `RuntimeFeatureState` als
+  Planer-Invalidierungskanal ergänzt. `RuntimeState` bleibt alleiniger
+  Koordinator und fachliche Quelle;
+- nur Änderungen an Produktionsbasis, Plan, globalem Rechenstatus/-fehler,
+  Lagerfreigabe und Planer-Konfigurationsbereitschaft invalidieren diesen
+  Kanal;
+- `PlannerView` und die eingebettete Manufacturing-Produktsuche erhalten den
+  Runtime-Koordinator explizit, beobachten ihn aber nicht mehr vollständig;
+- einen eigenen SwiftPM-App-Testtarget ergänzt, damit die tatsächliche
+  Runtime-/SwiftUI-Grenze ohne Live-ESI-Daten geprüft werden kann.
+
+Ergebnis: Allgemeine Status-, SDE-Installations- und Public-Contract-
+Publikationen ändern die Planer-Revision nicht. Ein echter `NSHostingView`-
+Test zeigt außerdem, dass dessen beobachtender View-Körper dabei unverändert
+bleibt und erst eine planerspezifische Veröffentlichung neu ausgewertet wird.
+Die fachliche Planerlogik wurde nicht verändert.
+
+Prüfung: Drei fokussierte Runtime-/Hosting-Tests bestanden. Die vollständige
+isolierte SwiftPM-Suite bestand 272 Tests in 23 Suites. Strict Swift-Format-Lint
+und `git diff --check` bestanden; der nicht signierte universelle native
+Release-Build war erfolgreich. Der bereits zuvor gemessene befüllte
+Release-Planer war im Ruhezustand mit 0,01 CPU-Sekunden in rund 24 Sekunden und
+stabilen 174 MiB RSS CPU-idle.
+
+Offen: Ein längerer sichtbarer Planer-Lauf während einer echten Contract- oder
+Main-Hub-Hintergrundsynchronisation, ein Instruments-Vergleich der SwiftUI-
+Updates, Speicherdruck und Owner-Abnahme. Die strukturelle Trennung und die
+kurze Ruhemessung beweisen keinen mehrstündigen Speicherverlauf.
+
+## 8. August 2026 – Planner-Persistenz und Historie begrenzt
+
+Ziel: Punkt 3 des Optimierungsplans umsetzen, ohne aktive Reservierungen,
+historische Werte, Summen, Provenienz oder gespeicherte Quelldaten zu ändern.
+
+Entwicklung:
+
+- die vollständigen `StoredProductionRecord`- und
+  `StoredProductionOverviewRow`-Queries aus dem Planner entfernt. Der Planner
+  hält nur noch fünf aktuelle Produktionszeilen; Legacy-Fallback und ein
+  angeforderter Historieneintrag werden mit begrenzten Direktabfragen gelesen;
+- die nächste Produktionsnummer über eine auf einen Datensatz begrenzte
+  Maximalwertabfrage ermittelt, statt dafür alle Historienzeilen zu laden;
+- die Produktionsübersicht auf stabil geordnete Seiten mit höchstens 100
+  Zeilen umgestellt. Die sichtbare Seite bleibt vollständig editier- und über
+  alle Spalten sortierbar;
+- vollständige Anzahl-, Unit- und Gewinnsummen in einen eigenen SwiftData-
+  Model-Actor verlagert. Unbekannte Teilwerte halten die jeweilige Summe weiter
+  unverfügbar;
+- Plan-Snapshots und Request-Projektionen je unveränderlichem Plan einmal
+  dekodiert und zwischen seinen Produktionszeilen geteilt. Beim Seitenwechsel
+  werden nicht mehr benötigte Cacheeinträge verworfen;
+- deutsche und englische Paging-, Lade- und Fehlertexte ergänzt.
+
+Migrationsvorschau: Das SwiftData-Schema bleibt unverändert bei Version 2; es
+werden keine Zeilen, Snapshotbytes oder Provenienzfelder migriert, geleert oder
+gelöscht. Die Produktionsdatenbank wurde ausschließlich lesend geprüft:
+`quick_check = ok`, 87 gespeicherte Pläne (1 aktiv, 86 inaktiv), 10
+Produktionszeilen und keine Legacy-Produktionsrecords. Die bestehenden
+Plan-Snapshots belegen 38.871.606 Byte, die unveränderten Historien-Snapshots
+3.569.858 Byte. Der kanonische V2-Backupmarker und eine vollständige
+V2-Sicherheitskopie sind vorhanden; wegen der fehlenden Schemaänderung wurde
+keine neue Migration ausgelöst.
+
+Ergebnis: Der normale Planner hält nicht länger die vollständige
+Produktionshistorie im beobachteten UI-Kontext. Eine geöffnete
+Produktionsübersicht begrenzt ihre editierbaren Modelle auf eine Seite, während
+die fachlich vollständigen Summen separat berechnet werden. Bestehende Daten
+bleiben unverändert und lesbar.
+
+Prüfung: Sechs deterministische App-Tests mit bis zu 205 Historienzeilen
+bestätigen das Fünf-Zeilen-Limit, 100er-Seiten, stabile Reihenfolge, direkte
+Fallback-/ID-Abfragen, die unveränderte aktive Warehouse-Reservierung, die
+nächste Produktionsnummer, identische vollständige Gewinnsummen und genau eine
+Snapshot-Dekodierung für zwei Zeilen desselben Plans. Der fokussierte Lauf
+bestand. Strict Swift-Format-Lint, beide Lokalisierungsdateien und
+`git diff --check` bestanden. Die vollständige isolierte SwiftPM-Suite bestand
+278 Tests in 24 Suites. Der native unsigned Xcode-Lauf baute die App und
+bestand 269 Core-Tests in 22 Suites; die sechs neuen App-Persistenztests sind
+im SwiftPM-Lauf enthalten, weil das aktuelle native Projekt nur den
+Core-Testtarget führt. Der unsigned universelle Release-Build war erfolgreich;
+`lipo` bestätigte `arm64` und `x86_64`. Xcodes wiederholte Hinweise auf ein
+gesperrtes angeschlossenes Mobilgerät betrafen nur die Geräteerkennung und
+nicht den erfolgreichen macOS-Test oder Build.
+
+Offen: Sichtbare Owner-Abnahme der Seitennavigation und Bearbeitung mit einer
+Historie über 100 Zeilen sowie ein längerer CPU-/RSS-Lauf. Die bestehende
+Produktionsdatenbank enthält derzeit nur zehn Historienzeilen und kann das
+Paging deshalb nicht live auslösen.
+
+## 8. August 2026 – Kompakter Demand-Ledger und Planner-Vorrang
+
+Ziel: Punkt 4 des Optimierungsplans umsetzen: Den großen exakten Main-Hub-
+Nachfrage-Ledger schneller und speicherschonender verarbeiten und schwere
+automatische Scans während interaktiver Planner-Berechnungen aussetzen, ohne
+Order-ID-, Hub-, Seiten- oder UTC-Tagessemantik zu ändern.
+
+Entwicklung:
+
+- das Ledger-Schema V2 ergänzt. Die vorherige Vergleichsbaseline wird nicht
+  mehr als ausführliches Objekt je Order, sondern als kompakte Zeile aus
+  Order-ID, Typ-ID, Standort-ID, Seite und Restmenge kodiert;
+- den V1-Decoder beibehalten. Eine vorhandene Datei wird weder beim App-Start
+  noch durch eine separate Migration verändert, sondern erst nach einem
+  vollständigen neuen Snapshot atomar im V2-Format geschrieben;
+- Vergleich und Aufbau der nächsten Baseline zu einem Durchlauf verbunden.
+  Alle 2.048 Orders wird die Task-Abbruchanforderung geprüft; erst nach einem
+  vollständigen Durchlauf werden Nachfrage und Baseline gemeinsam ersetzt;
+- eine gemeinsame Planner-Koordination für automatische Main-Hub- und Public-
+  Contracts-Arbeit ergänzt. Ein Planner-Lauf entfernt geplante Timer, bricht
+  bereits laufende automatische Tasks kooperativ ab und stellt die Zeitpläne
+  erst nach dem letzten überlappenden Planner-Lauf wieder her;
+- manuelle Scans ausdrücklich aus dieser automatischen Unterbrechungsregel
+  ausgenommen. Contract-Teilindex und letzte vollständige Main-Hub-Analyse
+  bleiben bei einem Abbruch erhalten.
+
+Read-only-Messung: Die unveränderte lokale V1-Produktionsdatei enthält 327.835
+Baseline-Orders und belegt 27.749.835 Byte. Eine Projektion genau derselben
+Daten in die neue kompakte JSON-Form ergab 10.793.617 Byte, also rund 61 %
+weniger. Die Produktionsdatei blieb dabei unverändert und wird erst durch einen
+späteren erfolgreichen App-Scan migriert.
+
+Ergebnis: Die fachliche Nachfragesemantik bleibt gleich, der synchrone
+Orderdurchlauf erzeugt keinen getrennten vollständigen aktuellen Zwischenindex
+mehr, und interaktive Planner-Arbeit konkurriert nicht länger mit implizit
+gestarteten Main-Hub- oder Contract-Scans. Abbruch veröffentlicht keine
+teilweise Demand-Baseline; automatische Arbeit bleibt anschließend
+wiederaufnehmbar.
+
+Prüfung: 21 fokussierte Markt-/Ledger-Tests bestätigen V1-zu-V2-Migration,
+identische überlebende Order-ID-Abnahme, UTC-Tagesreset, unverfügbare erste
+Messung und unveränderten Ledger nach Abbruch. Fünf App-Koordinierungstests
+bestätigen die Unterbrechung beider Automatikarten sowie die Wiederaufnahme erst
+nach dem letzten parallelen Planner-Lauf. Die vollständige isolierte SwiftPM-
+Suite baute Core und App und bestand 282 Tests in 24 Suites. Der unsigned native
+Xcode-Lauf baute die App und bestand die dort eingebundenen 271 Core-Tests in 22
+Suites; die zwei App-Koordinierungstests laufen im SwiftPM-App-Testtarget. Der
+unsigned universelle Release-Build war erfolgreich, und `lipo` bestätigte
+`arm64` sowie `x86_64`. Strict Swift-Format-Lint und `git diff --check`
+bestanden. Es wurden keine Live-ESI-Anfragen, kein Commit und kein Push
+ausgeführt.
+
+Offen: Ein realer langer App-Lauf mit gleichzeitig aktiviertem Main-Hub- und
+Contract-Automatismus sowie wiederholten tiefen Planner-Berechnungen muss CPU,
+RSS, Abbruchfortschritt und Wiederaufnahme noch per Instruments beziehungsweise
+Activity Monitor bestätigen. Automatische Tests sind keine Live-ESI- oder
+Owner-Abnahme.
+
+## 8. August 2026 – Globale ESI-Grenze und Cache-Speicherdruck
+
+Ziel: Punkt 5 des Optimierungsplans umsetzen: Gleichzeitige ESI-Arbeit so
+begrenzen und priorisieren, dass automatische Hintergrundimporte die
+interaktive Arbeit nicht fluten, und große abgeleitete Antwort-Caches nach
+Nutzung oder bei macOS-Speicherdruck freigeben. Paging, Rate-/Error-Limit,
+Header, Retry und explizite Teilzustände sollten fachlich unverändert bleiben.
+
+Entwicklung:
+
+- einen gemeinsamen, abbruchfesten ESI-Anfragekoordinator in den vom App-
+  Prozess geteilten `ESIClient` aufgenommen. Insgesamt dürfen sechs
+  Transportanfragen laufen, automatische Arbeit höchstens zwei; innerhalb
+  einer Priorität bleibt die Warteschlange stabil, interaktive Arbeit erhält
+  vor noch nicht gestarteter Automatik Vorrang;
+- die Zulassung auf einzelne Transportversuche gelegt. Cache-Treffer benötigen
+  keinen Slot, und ein idempotenter GET-Retry hält während seiner Wartezeit
+  keinen Slot. POST bleibt ohne generischen Retry;
+- automatische Manufacturing-Opportunity-, Public-Contract- und Main-Hub-
+  Arbeit als automatisch, manuell gestartete beziehungsweise Planner-Arbeit
+  als interaktiv gekennzeichnet. Die bestehende Punkt-4-Koordination bleibt
+  erhalten;
+- den ESI-Antwortcache um gezieltes LRU-Trimming ergänzt. Nach Planner-Arbeit
+  bleiben höchstens 32 MiB, bei macOS-Warnspeicherdruck 16 MiB und bei
+  kritischem Druck keine abgeleiteten Antwortkörper. Regional- und Item-Seiten
+  des Contract-Imports werden nach ihrer fachlichen Übernahme freigegeben;
+- die große dekodierte Manufacturing-Opportunity-Kopie nach Speicherung oder
+  Speicherdruck freigegeben. Der persistierte letzte gültige Snapshot bleibt
+  unverändert und wird beim nächsten Zugriff erneut dekodiert;
+- Architektur-, Handoff-, Akzeptanz- und Bedienungsdokumentation sowie den
+  Optimierungsplan aktualisiert. Die aktuellen offiziellen ESI-Hinweise zu
+  Cache-Nutzung, Bucket-/Error-Limit-Headern und `Retry-After` wurden geprüft.
+
+Ergebnis: Unabhängige ESI-Konsumenten können die CPU- und Transportarbeit des
+gemeinsam genutzten App-Clients nicht mehr unbegrenzt vervielfachen.
+Interaktive Berechnungen werden vor wartender Automatik bedient, während
+laufende Anfragen, Antwortsemantik, Paging, gespeicherte letzte gültige Daten
+und sichtbare Teil-/Fehlerzustände erhalten bleiben. Abbruch und Retry geben
+ihre Zulassung sauber frei.
+
+Prüfung: 110 fokussierte ESI-, Public-Contract-, Market- und Runtime-Tests
+bestanden. Die vollständige isolierte SwiftPM-Suite baute Core und App und
+bestand 289 Tests in 24 Suites. Der unsigned native Xcode-Lauf baute die App
+und bestand 278 Core-Tests in 22 Suites. Der unsigned universelle Release-Build
+war erfolgreich; `lipo` bestätigte `arm64` und `x86_64`. Strict Swift-Format-
+Lint und `git diff --check` bestanden. Ein synthetischer Lauf mit 120
+gleichzeitigen eindeutigen ESI-Anfragen bestätigte die Grenze und lief in 0,203
+Sekunden; `/usr/bin/time -l` meldete für den Testprozess maximal 69.042.176 Byte
+RSS (rund 65,8 MiB) und keine Swaps. Es wurden keine Live-ESI-Anfragen, keine
+Produktionsdatenänderung, kein Commit und kein Push ausgeführt.
+
+Offen: Der synthetische Testprozess ersetzt keinen mehrstündigen Lauf der
+befüllten signierten App. Noch zu messen sind RSS-Abfall unter echtem
+macOS-Speicherdruck, UI-Reaktionszeit und Durchsatz bei gleichzeitigem
+Contract-/Main-Hub-Automatismus und tiefen Planner-Läufen sowie Verhalten unter
+realen aktuellen ESI-Bucket- und Fehlergrenzen. Automatische Nachweise sind
+keine Live-ESI- oder Owner-Abnahme.
+
+## 8. August 2026 – Geführtes Produktionslabor als getrennter Weg
+
+Ziel: Den zuvor geprüften alternativen Weg der Produktions- und Gewinnplanung
+als klar abgegrenztes Experiment einbauen, ohne den etablierten Planner oder
+seine gespeicherten Daten zu ersetzen. Die spätere Entscheidung sollte alter
+Weg, neuer Weg, beide Wege oder das Verwerfen des Experiments ausdrücklich
+offenlassen.
+
+Entwicklung:
+
+- die Seitenleiste in etablierte und experimentelle Abläufe gegliedert und das
+  **Geführte Produktionslabor** ausschließlich dem experimentellen Abschnitt
+  zugeordnet; der bisherige Planner bleibt mit eigener Route erhalten;
+- Produktauswahl aus dem gespeicherten Main-Hub-Chancen-Snapshot oder über die
+  aktive lokale SDE-Manufacturing-Suche ergänzt. Produktname, Typ-ID,
+  Zielmenge, ME/TE und Auswahlherkunft werden als sitzungsgebundene Absicht an
+  die bestehende Planereingabe übergeben;
+- dieselbe Industry-Planner-, Warehouse-, Reservierungs-, Blueprint-,
+  Anlagen-, Gebühren- und Logistiklogik wiederverwendet. Der neue Weg lädt nur
+  für sich die getrennten Main-/Home-Märkte und lässt Main/Home ×
+  Sofortverkauf/Verkaufsorder bewusst auswählen, statt automatisch einen
+  angeblich besten Weg festzulegen;
+- mehrere Make-or-Buy-Änderungen lokal gesammelt und erst nach einer expliziten
+  gemeinsamen Neuberechnung angewendet. Damit startet nicht jeder einzelne
+  Auswahlklick den vollständigen Produktionsgraphen und die Marktberechnung;
+- Einkaufsliste mit Multibuy-Kopie, Blueprint-Bereitschaft und explizite
+  Warnungen für fehlende Daten dargestellt. Alle sichtbaren EVE-Produkt-,
+  Material-, Blueprint- und Ortsnamen verwenden die gemeinsame kopierbare
+  Namenskomponente;
+- den neuen Ablauf ausdrücklich ohne `RuntimeState.plan`, `StoredPlan`,
+  Planner-Entwurf, Produktionsübersichtszeile oder Schemaänderung umgesetzt.
+  Interaktive Berechnungen nutzen die vorhandene Hintergrundarbeits-Pause und
+  das anschließende ESI-Cache-Trimming.
+
+Ergebnis: Beide Wege sind gleichzeitig vorhanden und technisch getrennt. Das
+Produktionslabor führt von der Auswahl über lokale Eingaben und gebündelte
+Bezugsentscheidungen bis zum Vergleich eines bewusst gewählten Verkaufswegs,
+ohne bestehende Planner-Daten zu verändern. Es gibt noch keine Entscheidung,
+welcher Weg dauerhaft Produktstandard wird.
+
+Prüfung: Drei neue Core-Tests bestätigen die verlustfreie Eingabe- und
+Provenienzübergabe, ungültige Grenzwerte und die eindeutige Auswahl der vier
+Verkaufswege. Ein App-Test bestätigt die getrennte experimentelle Menügruppe
+und die weiter vorhandene Planner-Route. Der vollständige isolierte SwiftPM-
+Lauf baute Core und App und bestand 293 Tests in 24 Suites. Beide
+Lokalisierungskataloge bestanden `plutil -lint`, enthalten keine doppelten
+Schlüssel, und `git diff --check` bestand. Der unsigned native Xcode-Lauf baute
+die App einschließlich des neuen expliziten Source-Eintrags und bestand 281
+Core-Tests in 22 Suites; der Navigationstest liegt im SwiftPM-App-Testtarget.
+Xcodes Hinweis auf ein gesperrtes angeschlossenes Mobilgerät betraf nur die
+Geräteerkennung und nicht den erfolgreichen macOS-Test. Es wurden keine
+Produktionsdaten geschrieben, keine Live-ESI-Abnahme durchgeführt und kein
+Commit oder Push erstellt.
+
+Offen: Ein befüllter laufender App-Vergleich muss Layout, Produktsuche,
+Main-/Home-Hub-Ergebnisse, tatsächliche Latenz, CPU/RSS, Abbruch,
+Tastaturbedienung und VoiceOver prüfen. Erst danach folgt die Owner-
+Produktentscheidung, ob alter Weg, neuer Weg oder beide bleiben beziehungsweise
+welcher Weg verworfen wird.
+
+## 9. August 2026 – Main-Hub-Chancen: Tagesbedarf, Rundlauf und Runs
+
+Ziel: Die Main-Hub-Chancenanalyse so korrigieren, dass Nachfrage und Gewinn
+nicht mehr als voneinander getrennte Einzelwerte missverstanden werden. Der
+vollständige wirtschaftliche Weg sollte Kauf am Main Hub, Transport zum Home
+Hub, Produktion, Rücktransport und gelisteten Verkauf abbilden. Zusätzlich
+sollte die Anzahl der Blueprint-Durchläufe direkt planbar sein.
+
+Entwicklung:
+
+- den Nachfrage-Ledger auf V3 erweitert. Vergleichsabdeckung wird nun pro
+  Typ-ID geführt; nur fortbestehende identische Order-ID-/Typ-/Seiten-/Orts-
+  Paare liefern eine beobachtete Untergrenze. Kleine Intervalle werden über UTC-
+  Mitternacht in einem rollierenden 24-Stunden-Fenster gehalten und erst ab 30
+  Minuten auf eine Tagesrate normiert. Nicht vergleichbare Typen bleiben
+  unverfügbar statt fälschlich Bedarf null zu erhalten;
+- das tägliche Gewinnpotenzial als `Gewinn je produzierte Einheit ×
+  beobachteter Tagesbedarf` ergänzt und als Standardsortierung verwendet. Der
+  Vergleich 1.000 Einheiten/Tag × 1 Mio. ISK und 1 Einheit/Tag × 1 Mrd. ISK
+  ergibt in beiden Fällen 1 Mrd. ISK/Tag;
+- die Chancenrechnung auf einen verpflichtenden vollständigen Rundlauf
+  umgestellt. Unterschiedliche exakte Main-/Home-Identitäten benötigen
+  aktivierte, vollständige Logistik. Eingekauft und inbound transportiert wird
+  nur der nach Warehouse, Schutzbestand und Reservierungen verbleibende
+  Materialbedarf; der vollständige Output wird zurück zum Main Hub
+  transportiert. Fehlende Logistik macht Gewinn und ROI unverfügbar, identische
+  Standort-IDs ergeben dagegen belegbar null Transportkosten;
+- die Szenarioeingabe von einer mehrdeutigen Zielmenge auf Blueprint-Runs
+  umgestellt. Runs skalieren SDE-Ausgabe, Materialrundung, Installation,
+  Produktionszeit, beide Transporte und Verkaufserlös. Der aufgeklappte
+  Produktionsbaum rechnet Runs × Output je Run in den bestehenden exakten
+  Zielmengenvertrag um;
+- Tagesbedarf, tägliches Gewinnpotenzial und geschätzte Verkaufsdauer in der
+  sortierbaren Tabelle beziehungsweise Kostendetailansicht ergänzt. Beide
+  Transportwege werden mit getrennt kopierbaren Ortsnamen gezeigt;
+  Produktkopie, Chancenauswahl und Baumöffnung sind getrennte Aktionen.
+
+Ergebnis: Die Main-Hub-Rangfolge kann hohe Stückzahl mit kleiner Marge und
+niedrige Stückzahl mit großer Marge auf derselben täglichen ISK-Basis
+vergleichen. Unbeobachtete Nachfrage, unvollständige Preise, Gebühren,
+Warehouse- oder Logistikdaten bleiben ausdrücklich unverfügbar.
+
+Prüfung: 27 fokussierte Markt-/Chancen-Tests bestanden, einschließlich
+Nachfragenormierung, Mindestintervall, UTC-Mitternacht, Abbruch, V1→V3-
+Migration, expliziter Runs, exakter Standort-IDs und Rundlauf. Der vollständige
+SwiftPM-Lauf bestand 299 Tests in 24 Suites; der unsigned native Xcode-Lauf
+bestand 287 Core-Tests ohne Fehler oder Überspringungen. Swift-Format,
+Lokalisierungs-Plists, doppelte Schlüssel, Dokumentationslinks und
+`git diff --check` wurden geprüft. Es wurden keine Live-ESI-Daten abgerufen,
+keine Produktionsdatei migriert und kein Commit oder Push erstellt.
+
+Offen: Für eine fachliche Owner-Abnahme sind zwei reale exakte Main-Hub-
+Snapshots mit mindestens 30 Minuten Abstand, ein Vergleich der Tagesrate mit
+sichtbarer Orderbewegung sowie Szenarien mit 1, 10 und 100 Runs gegen EVE,
+SDE-Ausgabe, Produktionsjobs und Transportanbieter erforderlich. Vollständig
+gefüllte, verschwundene, abgelaufene oder stornierte Orders bleiben absichtlich
+nicht geraten; die Rate ist deshalb eine konservative Untergrenze.
+
+## 9. August 2026 – Kombinierte Main-Hub-Produktfilter
+
+Ziel: Die bereits vorhandene Mehrfachauswahl für Schiffe, Module, Rigs,
+Komponenten und weitere Produktarten um belastbare Filter für Tech I, Tech II,
+Tech III und Faction zu ergänzen. Beide Dimensionen sollten gleichzeitig
+anklickbar und kombinierbar sein.
+
+Entwicklung:
+
+- das wiederverwendbare SDE-Typmodell um die bereits im offiziellen
+  `types.jsonl` vorhandenen optionalen Felder `metaGroupID` und `techLevel`
+  erweitert und beide im zielseitigen SQLite-Katalog gespeichert;
+- die Industry-Klassifikation und gespeicherte Main-Hub-Chancen-Zeile um diese
+  Rohmetadaten ergänzt. Die fachliche Einteilung umfasst Tech I, Tech II, Tech
+  III, Faction, Storyline und Sonstige / nicht klassifiziert;
+- die deaktivierten Platzhalter im erweiterten Filter durch zugängliche
+  Mehrfachauswahl-Schalter ersetzt. Innerhalb einer Filtergruppe gilt ODER,
+  zwischen Produktionsklasse und Produktart UND. **Alles auswählen**, **Alle
+  abwählen** und **Filter löschen** wirken auf beide Gruppen;
+- alte SQLite-Kataloge über eine Spalteninventur kompatibel gehalten. Fehlen
+  die neuen Felder, bleiben Einträge nicht klassifiziert und die UI verlangt
+  einen SDE-Update-/Neuanalyse-Schritt, statt Tech-Level aus Produktnamen zu
+  raten.
+
+Ergebnis: Kombinationen wie **Faction + Schiffe**, **Tech II + Module** oder
+**Tech I + Tech II + Komponenten + Rigs** werden lokal über den unveränderlichen
+Chancen-Snapshot gefiltert und lösen keine ESI-Anfrage oder Neuberechnung der
+Gewinnlogik aus.
+
+Prüfung: 33 fokussierte Market-/SQLite-Tests in zwei Suites, 6 Tests der
+vendorten EVEStaticDataKit-Kopie, 299 vollständige SwiftPM-Tests in 24 Suites
+und 287 unsigned native Xcode-Tests in 22 Suites bestanden. Swift-Format,
+beide Lokalisierungs-Plists, doppelte Schlüssel, Dokumentationslinks und Diff-
+Whitespace wurden geprüft. Die lokale aktive SDE-Paketdatei wurde nur
+read-only auf die vorhandenen Felder untersucht; ein Live-SDE-Import und die
+visuelle/VoiceOver-Owner-Abnahme wurden nicht durchgeführt. Es wurde nichts
+committed oder gepusht.
+
+Offen: Der bereits aktivierte lokale SQLite-Katalog wurde noch mit dem älteren
+Adapter erzeugt und enthält die beiden Spalten nicht. Nach Aktivierung eines
+neu importierten SDE-Katalogs und einer erneuten Main-Hub-Analyse müssen die
+Kombinationen mit repräsentativen EVE-Typen visuell geprüft werden.
+
+## 9. August 2026 – Sicherer Neuimport desselben SDE-Builds
+
+Ziel: Einen bereits aktuellen offiziellen SDE-Build nach einer Erweiterung des
+lokalen Katalogadapters erneut importieren können, ohne die Update-Regel zu
+lockern oder den aktiven Legacy-Katalog vorzeitig zu ersetzen.
+
+Entwicklung:
+
+- in **Data & Settings → SDE** eine getrennte Aktion für den Neuimport des
+  aktuellen Katalogs ergänzt. Sie erscheint ausschließlich, wenn aktiver und
+  offizieller Build übereinstimmen, und besitzt einen eigenen
+  Bestätigungsdialog mit Sicherungs-, Staging- und Aktivierungshinweis;
+- normalen Update und Same-Build-Neuimport im Lifecycle als unterschiedliche
+  bestätigte Befehle modelliert. Beide binden die Freigabe an eine unmittelbar
+  erneut geladene, unveränderte Vorschau und dieselbe Schema-Prüfgrenze;
+- den zielseitigen SQLite-Katalogadapter auf Dateiformat V2 gehoben. V2 nutzt
+  für denselben Build und Hash einen eigenen Dateinamen, sodass die alte Datei
+  weder überschrieben noch als vermeintlich fertiger Import wiederverwendet
+  wird. Legacy-Zeiger bleiben streng validiert und lesbar; ein Rollback nach
+  Build bevorzugt regulär den aktuellen Adapter. Während einer Installation
+  hält der Katalog zusätzlich den exakt gesicherten vorherigen Zeiger, damit
+  die Fehlerbehandlung auch bei identischer Buildnummer auf die Legacy-Datei
+  zurücksetzen kann;
+- deutsche und englische Bedienhinweise sowie Lifecycle-, Handoff- und
+  Betriebsdokumentation ergänzt.
+
+Ergebnis: Derselbe offizielle JSONL-Build kann jetzt bewusst durch die bereits
+vorhandene Download-, isolierte Validierungs-, Sicherheitskopie- und atomare
+Aktivierungskette laufen. Erst danach kann eine neue Main-Hub-Analyse die
+ergänzten `metaGroupID`-/`techLevel`-Spalten faktisch verwenden.
+
+Prüfung: Elf fokussierte Tests in zwei Suites bestanden. Der neue
+Migrationsfixture startet mit einem gültigen Legacy-Zeiger, erstellt eine
+Sicherheitssicherung, importiert denselben Build als Adapter V2 neu, behält die
+Legacy-Datei, aktiviert erst danach V2 und setzt über denselben Build wieder
+gezielt auf den gesicherten Legacy-Zeiger zurück. Die App und beide betroffenen
+Targets kompilierten dabei. Der vollständige SwiftPM-Lauf bestand 300 Tests in
+24 Suites; der unsigned native Xcode-Lauf bestand 288 Core-Tests in 22 Suites.
+Swift-Format und beide Lokalisierungs-Plists sind fehlerfrei. Ein echter
+SDE-Import wurde nicht ausgeführt und bleibt getrennt nachzuweisen.
+
+Offen: Den Neuimport im laufenden, befüllten Programm ausführen, verfügbare
+Platte und Laufzeit beobachten, anschließend die Main-Hub-Analyse neu starten
+und Faction-/Tech-Kombinationen mit repräsentativen EVE-Typen visuell sowie mit
+VoiceOver prüfen. Bis dahin ist die Funktion implementiert und automatisch,
+nicht aber live oder durch den Owner abgenommen.
+
+## 9. August 2026 – Sichtbarer Neustart-Hinweis nach SDE-Aktivierung
+
+Ziel: Den aktuell notwendigen Betriebsablauf nach einem SDE-Update oder
+Same-Build-Neuimport unmissverständlich in der App anzeigen.
+
+Entwicklung:
+
+- im SDE-Panel einen dauerhaft sichtbaren, lokalisierten Warnhinweis ergänzt;
+- denselben Hinweis in die Bestätigungsdialoge für Update und Neuimport
+  aufgenommen;
+- ausdrücklich festgehalten, dass die App vollständig beendet und neu geöffnet
+  und danach die Main-Hub-Analyse erneut ausgeführt werden muss;
+- Betriebs-, Handoff- und Acceptance-Dokumentation aktualisiert.
+
+Ergebnis: Der notwendige Neustart wird vor der Aktivierung und dauerhaft im
+SDE-Bereich sichtbar. Es wurde keine automatische Laufzeitumschaltung und keine
+automatische Main-Hub-Analyse behauptet oder eingebaut.
+
+Prüfung: Der fokussierte SDE-Lauf baute Core und App und bestand vier Tests.
+Striktes Swift-Format, beide Lokalisierungs-Plists, doppelte
+Lokalisierungsschlüssel, Suite-Links und Diff-Whitespace wurden geprüft. Die
+visuelle und VoiceOver-Abnahme im laufenden Programm bleibt Owner-Evidence.
+
+## 9. August 2026 – Build-Spalten, Blueprintkosten und LP-BPC-Filter
+
+Ziel: Den verschobenen Spaltenkopf beim Öffnen von Build korrigieren und
+Blueprintquellen in der Produktions- und Gewinnrechnung ehrlich abbilden,
+ohne Filterwechsel mit erneuten Netzwerkabrufen zu koppeln.
+
+Entwicklung:
+
+- laufende Main-Hub-Chancen-Oberfläche auf dem entsperrten Mac geprüft und den
+  angehefteten äußeren Opportunity-Kopf über dem abweichenden Build-Raster als
+  sichtbare Ursache bestätigt;
+- das äußere Pinning entfernt, sodass Opportunity- und Produktionsbaumkopf mit
+  ihrem jeweiligen Spaltenschema scrollen;
+- Public-Contract-DTO, SQLite-Schema und transaktionale Migration um offizielle
+  BPC-Kennung, Runs, ME und TE erweitert;
+- eine strikte Zurechnung für positive, aktive, exakte Main-Hub-Verträge mit
+  genau einer angebotenen Blueprintposition, keiner angeforderten Position und
+  vollständigen Blueprintdaten ergänzt;
+- BPC-Vertragskosten automatisch in den ausgewählten Produktionsplan
+  übernommen; BPO-Kauf, eigene BPC/BPO, Kopieren, Erfinden und LP-BPC verlangen
+  eine ausdrückliche Planumlage beziehungsweise vollständige Erwerbskosten;
+- vollständige Blueprintkosten zur Voraussetzung für Gesamtproduktionskosten
+  und Gewinn des Build-Baums gemacht;
+- einen manuell aktualisierbaren, lokal atomar gespeicherten LP-Shop-Snapshot
+  ergänzt. Der NPC-Corporation-Abruf läuft sequenziell mit automatischer
+  ESI-Priorität; anschließende kombinierte LP-/Faction-/Tech-/Produktfilter sind
+  reine lokale Set-Operationen;
+- Vertragskarten zeigen BPC/BPO, Runs, ME, TE und die sichere
+  Zurechenbarkeit; neue deutsche und englische UI-Texte ergänzt.
+
+Ergebnis: Filterwechsel lösen weiterhin keinen Markt-, SDE-, Contract- oder
+LP-Abruf aus. Ein fehlender oder nicht sicher zurechenbarer Blueprintpreis kann
+keinen künstlich hohen Gewinn mehr erzeugen. Alte Vertragszeilen bleiben nach
+der Schemaerweiterung erhalten und werden erst nach ihrem normalen Detailabruf
+mit Runs/ME/TE kalkulierbar.
+
+Prüfung: Die fokussierten Public-Contract-Tests einschließlich App-Build
+bestanden zunächst mit 19 Tests. Der anschließende vollständige isolierte
+SwiftPM-Lauf bestand 305 Tests in 25 Suites einschließlich Runs/ME/TE-Decoding,
+Bundle-Ausschluss, strikter Blueprintkosten und LP-Snapshot. Striktes
+Swift-Format, beide Lokalisierungsdateien, doppelte Lokalisierungsschlüssel und
+Diff-Whitespace bestanden. Der native unsigned Xcode-Debug-Build war
+erfolgreich. Im daraus gestarteten deutschen Build wurden der lokale
+LP-BPC-Filter samt manuellem Katalogabruf sowie der geöffnete Produktionsbaum
+geprüft: Sein eigener Kopf `Schritt / Gegenstand` bis `Blueprint / Formel`
+steht direkt über den Baumzeilen; der abweichende Opportunity-Kopf liegt nicht
+mehr darüber. Eine Live-LP-Aktualisierung, VoiceOver-Abnahme und ein
+Langzeit-CPU-/RSS-Lauf wurden dabei nicht behauptet.
+
+Offen: ESI liefert bei LP-Angeboten keine BPC-Runs, ME oder TE. Bis eine
+separat belegte Zuordnung existiert, bleibt der vollständige LP-ISK-Gegenwert
+eine explizite Nutzereingabe. Die automatische Kombination mehrerer kleiner
+BPC-Verträge zur Deckung einer Run-Menge ist noch nicht implementiert.
+
+## 9. August 2026 – Vollständige Chancenwahl, ISK-Limit und Blueprint-Nachpflege
+
+Ziel: Main-Hub- und experimentelle Produktauswahl auf realistisch finanzierbare
+Materialeinkäufe begrenzen, die vollständige Gewinnrangfolge erreichbar machen
+und Runs/ME/TE bestehender Blueprintverträge nachpflegen.
+
+Entwicklung:
+
+- ein gemeinsames persistiertes Limit für neues Wallet-Geld ergänzt; es zählt
+  ausschließlich die Materialfehlmenge nach Warehouse, Schutzbestand und
+  aktiven Reservierungen, während Lagerbestand seinen Wiederbeschaffungswert
+  behält;
+- Main-Hub-Chancen filtern dieses Limit aus bereits vorbereiteten
+  Beschaffungswerten, ohne Kosten, Logistik und Sortierung erneut zu
+  projizieren;
+- das Geführte Produktionslabor von der festen Top-10-Grenze auf die
+  vollständige Gewinnrangfolge in einer virtualisierten Scrollliste umgestellt
+  und für seine große Auswahl einen allokationsgleichen Cash-only-Pfad ergänzt;
+- Public-Contract-DTO, Store und UI übernehmen die offiziellen BPC/BPO-, Runs-,
+  ME- und TE-Felder. Eine einmalige transaktionale Migration stellt vorhandene
+  fertige Blueprintverträge erneut in die begrenzte Detailwarteschlange, behält
+  ihre Itemzeilen aber bis zum atomaren Ersatz durch den Importer;
+- deutsche und englische Filter-, Status- und Kostenhinweise sowie Architektur,
+  Handoffs und Acceptance-Evidence aktualisiert.
+
+Ergebnis: Ein 100-Millionen-ISK-Test reduzierte die lokale Main-Hub-Auswahl von
+3.969 auf 3.458 Chancen; dieselben 3.458 Möglichkeiten waren im experimentellen
+Bereich vollständig scrollbar. Das Testlimit wurde anschließend gelöscht.
+Runs/ME/TE werden bei neuen Vertragsdetails direkt gespeichert; 27.356 ältere
+Blueprintverträge wurden ohne Datenverlust zur Nachpflege vorgemerkt.
+Nach dem lokalen Cached-Filter-Umbau fiel die gemessene Computer-Use-Aktionszeit
+für dasselbe Limit von ungefähr 30 auf 6,9 Sekunden; dieser Wert enthält die
+Automations- und Accessibility-Wartezeit und ist kein reines Core-Benchmark.
+
+Prüfung: Der vollständige Live-LP-Abruf erreichte 283 von 283 NPC-Corporations
+ohne Fehler und speicherte 2.964 angebotene Itemtypen. Der gestartete aktuelle
+Build behielt nach der fortgesetzten Regionensynchronisierung 366.109
+Contract-Itemzeilen; eine begrenzte Live-Fortsetzung füllte bereits für 978
+Verträge beziehungsweise 6.875 Itemzeilen offizielle Blueprintdetails. Die
+fokussierten 29 Market-Tests bestanden einschließlich Cash-only-Äquivalenz. Der
+vollständige isolierte SwiftPM-Lauf bestand 308 Tests in 25 Suites; der native
+unsigned Xcode-Debug-Build war erfolgreich.
+
+Offen: Die große bestehende Blueprint-Detailwarteschlange ist nicht als
+vollständig abgearbeitet behauptet. Reale Langzeit-CPU/RSS-, VoiceOver- und
+In-game-Vergleiche repräsentativer LP-/BPC-Angebote bleiben Owner-Evidence.
+
+## 9. August 2026 – CPU-Rückfall der öffentlichen Verträge korrigiert
+
+Ziel: Den nach der Blueprint-Nachpflege erneut auftretenden CPU-Rückfall im
+öffentlichen Vertragsindex beseitigen, ohne bestehende Vertragsdaten, echte
+Fehlerzustände oder bereits geladene Runs/ME/TE zu verlieren.
+
+Entwicklung:
+
+- aktuelle Crashdiagnosen, den seit der letzten Stabilisierung geänderten
+  Store-/Indexer-Pfad und die befüllte Produktionsdatenbank read-only geprüft;
+- als neue Lastquelle die v1-Migration bestätigt, die sämtliche erkannten
+  älteren Blueprintverträge in die normale ESI-Detailwarteschlange gestellt
+  hatte;
+- den unbeschränkten Bestandsabruf entfernt und eine einmalige transaktionale
+  Reparatur ergänzt: Nur unberührte v1-Einträge mit vorhandenem Blueprintitem,
+  ohne Itemfehler und weiterhin ohne Runs/ME/TE werden wieder `ready`;
+- bereits erfolgreich aktualisierte Verträge sowie echte `pending`-Fehlerfälle
+  bleiben unverändert; unbekannte alte Blueprintdetails bleiben ehrlich
+  unbekannt;
+- fokussierte Migrationsregression und Dokumentations-/Handoff-/Acceptance-
+  Nachweise ergänzt.
+
+Ergebnis: Die 93-MiB-Produktionsdatenbank enthielt read-only 49.204 Verträge,
+368.542 Itemzeilen und 15.133 wartende Verträge. 15.132 davon entsprachen exakt
+den unberührten v1-Nachpflegekandidaten; nur ein wartender Vertrag trug einen
+echten Fehler. Der korrigierte Store startet für bestehende Blueprintzeilen
+keinen Massenabruf mehr und repariert diese Kandidaten beim nächsten Öffnen,
+ohne die Datenbank während dieser Diagnose vorab zu verändern. Nach dem
+3. August lag kein neuer App-`.ips`-Bericht vor; belegt ist daher der neue
+Dauerlastpfad, nicht ein neuer Crash-Stack.
+
+Prüfung: Striktes Swift-Format für Store und Public-Contract-Tests bestand. Der
+isolierte fokussierte Lauf baute App und Tests und bestand 23 Public-Contract-
+Tests einschließlich der Unterscheidung zwischen unberührtem v1-Kandidaten und
+echtem wartendem Fehlerfall. Der vollständige isolierte SwiftPM-Lauf bestand
+310 Tests in 25 Suites; die unsigned native Xcode-Aktion bestand 296 Core-Tests
+in 22 Suites. Die exakte Reparatur auf einer temporären SQLite-Sicherung behielt
+368.542 Itemzeilen, ließ nur den einen echten Fehlerfall `pending` und bestand
+`PRAGMA quick_check`. Suite-Links und Diff-Whitespace bestanden ebenfalls.
+
+Offen: Der korrigierte Build muss gegen die befüllte Datenbank neu gestartet
+und bis zum Idle-Zustand mit realer CPU/RSS-Messung beobachtet werden. Ein neuer
+`.ips`-Bericht wäre weiterhin getrennt von einem CPU-bedingten UI-Stall oder
+erzwungenen Beenden auszuwerten. Alte Zeilen ohne Runs/ME/TE bleiben bis zu
+einem regulären neuen Detailimport unkalkulierbar.
+
+## 9. August 2026 – Kombinierte Filter im Geführten Produktionslabor
+
+Ziel: Die bereits im Main-Hub-Chancenbereich vorhandenen Produktfilter auch im
+getrennten experimentellen Planungsweg verfügbar machen, ohne Berechnungsregeln
+oder den etablierten Planner zu verändern.
+
+Entwicklung:
+
+- das Geführte Produktionslabor um exakte Kategorie-/Gruppenfilter,
+  Produktfamilien, Tech I/II/III, Faction, Storyline,
+  sonstige/nicht klassifizierte Produktion und Loyalty-Store-BPC erweitert;
+- dieselbe lokale Filterkomposition auf den gespeicherten Main-Hub-Chancen und
+  auf den Ergebnissen der aktiven SDE-Fertigungssuche angewendet;
+- SDE-Suchergebnisse um faktische Blueprint-, Kategorie-, Gruppen-, Meta- und
+  Tech-Metadaten ergänzt; fehlende Klassifikation bleibt ausdrücklich
+  unbekannt/sonstig und wird nicht aus dem Namen geraten;
+- Filterwechsel vom Netzwerk getrennt. Nur die vorhandene ausdrückliche
+  LP-Katalogaktualisierung ruft ESI auf;
+- deutsche und englische Zustände sowie Architektur, Handoff und
+  Acceptance-Evidence aktualisiert.
+
+Ergebnis: Der experimentelle Planer kann seine vollständige Gewinnrangfolge
+jetzt mit denselben kombinierbaren fachlichen Kriterien wie die
+Main-Hub-Chancen eingrenzen. Auswahl, ISK-Limit, Runs sowie die vorhandenen
+Produktions- und Gewinnberechnungen bleiben unverändert und sitzungsgebunden.
+
+Prüfung: 37 fokussierte Market-/SQLite-Tests und der vollständige SwiftPM-Lauf
+mit 310 Tests in 25 Suites bestanden. Der unsigned native Xcode-Debug-Build war
+erfolgreich. Im gestarteten deutschen Build zeigte die ungefilterte Auswahl
+3.970 Möglichkeiten, **Schiffe + Faction** 113 und zusätzlich
+**Loyalty Store BPC** 87; die Filter wechselten lokal und wurden danach
+zurückgesetzt.
+
+Offen: Repräsentative Faction-/LP-BPC-Ergebnisse müssen noch mit EVE verglichen
+werden. Langzeit-CPU/RSS, Tastaturbedienung, VoiceOver und Owner-Abnahme bleiben
+separate Nachweise.
+
+## 9. August 2026 – Gemeinsame Chancenfilter und Tagesbedarfshistorie
+
+Ziel: Die drei voneinander getrennten Bedienflächen im Main-Hub-Chancenbereich
+zusammenführen und belastbare Tagesbedarfswerte über mehrere Tage erhalten,
+ohne Produktions-, Kosten- oder Gewinnlogik inhaltlich zu verändern.
+
+Entwicklung:
+
+- die Reiter Einfaches Profil, Kostenschema und Erweiterte Filter durch eine
+  gemeinsame, standardmäßig geöffnete und als Ganzes einklappbare Fläche mit
+  acht adaptiven Karten ersetzt;
+- Besitz, Baupläne, Produkt- und Produktionsfilter, Katalog-/Ergebnisfilter,
+  Runs/ME/TE, Blueprintumlage und Materialeinkaufsgrenze an ihre bestehenden
+  Zustände und Projektionen gebunden;
+- das exakte Main-Hub-Nachfrage-Ledger auf Schema v4 erweitert und pro UTC-Tag
+  den letzten gültigen Stand für höchstens 30 Tage erhalten;
+- Vortag, Durchschnitt bekannter Tage, Anzahl belegter Tage und ungefähre
+  Veränderung als eingefrorene Zeilenwerte ergänzt; fehlende Tage und Typen
+  bleiben unbekannt statt null;
+- die vollständigen Tageswörterbücher auf das kompakte Nachfrage-Ledger
+  begrenzt, damit der große Chancen-Snapshot sie nicht dupliziert;
+- deutsche und englische Darstellung sowie Architektur, Handoffs und
+  Acceptance-Evidence aktualisiert.
+
+Ergebnis: Alle Einstellungen des Main-Hub-Chancenbereichs sind im unveränderten
+Menüweg gemeinsam erreichbar. Neue gültige Aktualisierungen bauen eine
+faktische Tageshistorie auf; die bestehende aktuelle Tagesbedarfs- und
+Gewinnrangfolge bleibt unverändert und nutzt weiterhin die rollierende
+konservative Untergrenze.
+
+Prüfung: Der fokussierte Market-Lauf bestand 32 Tests und der vollständige
+SwiftPM-Lauf 312 Tests in 25 Suites. Der unsigned native Xcode-Debug-Build war
+erfolgreich. Der finale deutsche Build lud den bestehenden Snapshot mit
+3.970/3.970 Chancen, zeigte alle acht Kartengruppen gemeinsam, ließ die Fläche
+ohne Ergebnisverlust ein- und wieder ausklappen und wies die noch leere
+v4-Historie korrekt als `0 UTC-Tage` aus. Die dabei gefundene
+Abwärtskompatibilitätslücke für alte Chancenzeilen wurde behoben, durch einen
+eigenen Fixture-Test abgesichert und anschließend live bestätigt. Striktes
+Format, beide Lokalisierungen, doppelte Schlüssel, Dokumentationslinks und
+Diff-Whitespace bestanden.
+
+Offen: Alte Ledger enthalten keine rekonstruierbaren früheren Tagesstände; ein
+realer Vortagsvergleich erscheint erst nach gültigen Beobachtungen an
+aufeinanderfolgenden UTC-Tagen. Mehrtägiger Live-Abgleich, Langzeit-CPU/RSS,
+Tastatur, VoiceOver und Owner-Abnahme bleiben offen.
+
+## 9. August 2026 – Programmweiter Code- und Performance-Audit
+
+Ziel: Core, UI, Persistenz, ESI, SDE, Assets, Markt, Planner und Tests erneut
+auf sichere Verschlankung und messbare Laufzeitverbesserungen prüfen, ohne
+Funktionsumfang, Datenzustände oder CCP-/ESI-Sicherheitsregeln zu verändern.
+
+Entwicklung:
+
+- vor jeder Änderung ein vollständiges Archiv einschließlich `.git`,
+  uncommittierter und unversionierter Dateien außerhalb des Projekts angelegt;
+  das 212.613.263-Byte-Archiv enthält 11.001 Einträge und besitzt SHA-256
+  `085bb5dc98b7811ae245b40ebc53e76abd482931f14475ca8dacda90be8d2908`;
+- 111 Swift-/SQL-Dateien mit rund 82.000 Swift-Zeilen über Zielzugehörigkeit,
+  Sichtbarkeit, modulweiten Referenzgraph, Compiler, Tests sowie bekannte
+  Main-Actor-, Datenbank-, ESI- und Markt-Hotpaths geprüft;
+- ausschließlich private oder modulinterne Deklarationen entfernt, die im
+  vollständigen Ziel samt Tests nur an ihrer eigenen Deklaration vorkamen:
+  darunter der abgeschaltete und nie instanziierte `LegacyProfilesView`, zwei
+  ersetzte UI-Helfertypen sowie verwaiste Asset-, Profil-, Markt-, Planner- und
+  Runtime-Helfer; implizit von `Codable` verwendete `CodingKeys` blieben
+  ausdrücklich erhalten;
+- die lokale Public-Contracts-SQLite-Verbindung wiederverwendet vorbereitete
+  Schreibstatements und setzt Bindings nach jeder Ausführung zurück;
+  Abfragespaltennamen werden einmal je Statement statt für jede Ergebniszeile
+  erneut dekodiert;
+- den einzigen `try!`-Pfad des Markt-Nachfrage-Ledgers durch einen
+  `rethrows`-Vertrag ersetzt, sodass der nicht abbrechbare Aufruf ohne
+  erzwungenen Fehlerausstieg bleibt und der Hintergrundpfad weiterhin
+  kooperativ abbrechbar ist;
+- aktuelle Laufzeitbeschreibung und Optimierungsplan ergänzt. Die 201
+  Kommentarzeilen in den Swift-Quellen wurden nicht pauschal entfernt, weil sie
+  gemessen kein Mengen- oder Laufzeitproblem darstellen und überwiegend
+  Sicherheits-, Migrations- und Zustandsinvarianten erklären.
+
+Ergebnis: Der identische isolierte Import von 10.000 synthetischen Verträgen
+sank von 0,139462833 auf 0,059020959 Sekunden, also um rund 57,7 Prozent. Die
+Optimierung betrifft die lokale Übernahme und Suche; ESI-Parallelität,
+Abstände, Pagination, Cache, Retry, Fehlerbudget, WAL, Transaktionen und
+unbekannte/partielle Zustände bleiben unverändert. Die erneute Referenzprüfung
+findet keine weitere nur einmal vorkommende private Deklaration; die einzige
+Ausnahme ist das für `Codable` notwendige `CodingKeys`.
+
+Prüfung: Der unveränderte Ausgangsstand bestand 312 Tests in 25 Suites. Nach
+der Änderung bestanden der vollständige isolierte SwiftPM-Lauf mit 313 Tests
+in 25 Suites, das getrennte EVEStaticDataKit mit 6 Tests und die unsigned native
+Xcode-Aktion mit 299 Core-Tests in 22 Suites (`** TEST SUCCEEDED **`). Der
+10.000-Verträge-Test prüft neben der Zeit alle gespeicherten Zeilen. Striktes
+Swift-Format der geänderten Swift-Dateien, `git diff --check` sowie statische
+Suchen nach `try!`, `fatalError`, synchronem Main-Queue-Warten und blockierenden
+Waits bestanden.
+
+Offen: Die Messung ist synthetisch und isoliert. Ein vollständiger Live-ESI-
+Erstimport, ein mehrstündiger Lauf mit befüllter Produktionsdatenbank und
+Vorher-/Nachher-CPU/RSS, laufende UI-Reaktionszeit, Tastatur, VoiceOver sowie
+Owner-Abnahme wurden nicht durchgeführt. SDE-Retention und jede Löschung alter
+lokaler Kataloge bleiben Punkt 6 und benötigen weiterhin eine separate
+Vorschau und Bestätigung.
+
+## 9. August 2026 – Main-Hub-Schnellfilter und Erklärhilfen
+
+Ziel: Die Main-Hub-Chancenoberfläche auf die für den Vergleich nötige
+Run-Eingabe reduzieren, Chancen nach dem durchschnittlichen Tagesbedarf
+schnell eingrenzen und Herkunft sowie Lesbarkeit aller zentralen Kennzahlen
+erklären.
+
+Entwicklung:
+
+- ME und TE aus Szenariokarte und Chancentabelle entfernt; jeder manuelle oder
+  automatische neue Chancenlauf normalisiert alte Einstellungen auf eine
+  neutrale 0/0-Basis ohne Forschungsbonus, während konkrete Produktion und
+  gespeicherte Altmodelle ihre ME-/TE-Verträge behalten;
+- einen persistenten lokalen Mindestfilter für den bekannten mehrtägigen
+  durchschnittlichen Tagesbedarf ergänzt; `0` ist aus, positive Schwellen
+  schließen unbekannte Werte ausdrücklich aus;
+- Klartext-Hoverhilfen für Besitz, Baupläne, Produkte, Produktionsklasse,
+  Katalog, Ergebnis, Szenario und Kosten/Budget sowie genaue Formelhilfen für
+  Tagesbedarf, Kosten, Erlös, Verkaufssteuer, Brokergebühr, Gewinn, tägliches
+  Gewinnpotenzial, ROI, ISK/h und ISK/m³ ergänzt;
+- Ganzzahlen und ISK-Werte im Chancenbereich an die gewählte App-Sprache
+  gebunden und gruppiert; deutsche Anzeigen und Eingaben verwenden damit
+  automatisch Punkte als Tausendertrennzeichen;
+- deutsche und englische Lokalisierung, Domänentests und die laufende
+  Dokumentation erweitert.
+
+Ergebnis: Die Main-Hub-Chancen zeigen keine missverständliche ME-/TE-Gruppe
+mehr. Runs bleiben die einzige Szenariogröße; der Tagesbedarfsdurchschnitt ist
+sofort lokal filterbar, Beträge sind gruppiert lesbar und die Herkunft jeder
+zentralen Wirtschaftskennzahl ist per Hover zugänglich.
+
+Prüfung: Der isolierte fokussierte Market-Lauf bestand 34 Tests in einer Suite;
+der vollständige isolierte SwiftPM-Lauf bestand 316 Tests in 25 Suites. Die
+native, unsignierte macOS-Xcode-Testaktion bestand weitere 301 Tests in 22
+Suites mit `** TEST SUCCEEDED **`. Striktes Swift-Format, beide
+Lokalisierungsdateien, die Prüfung auf doppelte Lokalisierungsschlüssel sowie
+der abschließende Diff-Whitespace-Check bestanden ebenfalls.
+
+Offen: Live-ESI-Kompatibilität wurde durch diese lokale UI-/Projektionsänderung
+nicht erneut geprüft. Laufende App, Hover-Verzögerung, Tastatur, VoiceOver und
+Owner-Abnahme bleiben getrennte Nachweise.
+
+## 10. August 2026 – Main-Hub-Zielstückzahl statt Ein-Run-Szenario
+
+Ziel: Chancen und den zugehörigen Produktionsbaum nicht auf einen einzelnen
+Run beschränken, sondern eine frei erhöhte Stückzahl des fertigen Produkts
+kosten- und gewinnwirksam planen.
+
+Entwicklung:
+
+- die persistente Main-Hub-Szenarioeingabe von Runs auf eine positive,
+  sprachabhängig gruppierte Zielstückzahl bis zur bestehenden Planner-Grenze
+  von einer Milliarde Stück umgestellt;
+- pro Produkt die nötigen vollständigen Blueprint-Runs mit Aufrundung aus der
+  SDE-Ausgabemenge je Run abgeleitet und Ziel, Runs sowie tatsächliche Ausgabe
+  getrennt gehalten;
+- den aufgeklappten Produktionsbaum ebenfalls auf eine direkte Zielstückzahl
+  umgestellt; er zeigt vor der Neuberechnung abgeleitete Runs und tatsächliche
+  Ausgabemenge;
+- Legacy-Snapshots bleiben dekodierbar, aber jeder neue manuelle oder
+  automatische Main-Hub-Lauf verwirft den alten Run-Override und verwendet die
+  Zielstückzahl mit der neutralen ME-/TE-Basis;
+- deutsche und englische Erläuterungen, Domänentests, Architektur-, Handoff-
+  und Anwenderdokumentation aktualisiert.
+
+Ergebnis: Eine Zielstückzahl von beispielsweise `3` bei einer SDE-Ausgabe von
+`2` je Run plant `2` Runs und `4` tatsächlich produzierte Stück. Materialien,
+Installation, Dauer, beide Logistikwege, Erlös und Gesamtgewinn beziehen sich
+auf diese vollständige Charge.
+
+Prüfung: Der fokussierte isolierte Market-Lauf bestand 34 Tests in einer Suite.
+Der vollständige isolierte SwiftPM-Lauf bestand 331 Swift-Testing-Tests in 25
+Suites sowie zwei XCTest-Fälle. Die native, unsignierte macOS-Xcode-Testaktion
+bestand 313 Tests in 22 Suites mit `** TEST SUCCEEDED **`. Striktes
+Swift-Format, beide Lokalisierungsdateien, die Prüfung auf doppelte
+Lokalisierungsschlüssel sowie der Diff-Whitespace-Check bestanden ebenfalls.
+
+Offen: Eine laufende visuelle Prüfung der gruppierten Mengeneingabe, der
+Stepper, der Batch-Überschussanzeige, Tastatur und VoiceOver sowie die
+Owner-Abnahme wurden noch nicht durchgeführt. Live-ESI-Daten waren für diese
+lokale Szenarioänderung nicht erforderlich und wurden nicht abgerufen.
+
+## 9. August 2026 – Öffentliche Verträge außerhalb der Liste steuerbar
+
+Ziel: Die minutenlang als blockierend erlebte Navigation in den Bereich
+**Öffentliche Verträge** vermeiden, den mehrtägigen Erstimport ohne Öffnen der
+Liste starten können und Fortschritt sowie sicheres Pausieren bei einem
+Bereichswechsel erreichbar halten.
+
+Entwicklung:
+
+- eine dauerhaft sichtbare Contract-Steuerkarte in der Navigationsseitenleiste
+  ergänzt; sie trennt Vorbereitung, Fehler mit Wiederholung, unvollständigen
+  Erstimport, laufenden Hintergrundimport, sicheres Anhalten, geplante
+  Fortsetzung und aktuellen Stand;
+- Start/Fortsetzung und Pause aus dem Lebenszyklus der Vertragsansicht gelöst;
+  die gemeinsame Runtime hält den resumierbaren Task, sodass ein Bereichswechsel
+  ihn nicht beendet;
+- auch ausdrücklich manuell gestartete mehrtägige Contract-Läufe nach dem Start
+  auf Utility-Task- und begrenzte ESI-Hintergrundpriorität gelegt; Paging,
+  zwei Detailworker, Request-Abstände, Cache, Retry, Fehlerbudget und sichere
+  Teilzustände bleiben unverändert;
+- einen sichtbaren Zustand für kooperatives Anhalten ergänzt und den roten
+  Erstimporthinweis um freie Navigation sowie die Steuerung in der Seitenleiste
+  erweitert;
+- deutsche und englische Texte, Acceptance- und Handoff-Verträge aktualisiert.
+
+Ergebnis: Der Contract-Import kann jetzt aus der Seitenleiste gestartet oder
+fortgesetzt werden, ohne die Ergebnisliste zu öffnen. Während er läuft, bleiben
+Fortschritt und Pause außerhalb des Detailbereichs erreichbar; der Import nutzt
+die niedrig priorisierte Hintergrundspur und bleibt nach Navigation erhalten.
+
+Prüfung: Der produktive 93-MiB-Contract-Store wurde ausschließlich lesend
+geprüft: `quick_check = ok`, 114 Regionen, 49.193 Verträge, 358.045 Items,
+11.241 Typen und 667 ausstehende Detailverträge. Die beiden Facet-Abfragen
+benötigten zusammen rund 2,16 Sekunden und erklären damit keine minutenlange
+Main-Thread-Sperre. Striktes Swift-Format und beide Lokalisierungskataloge
+bestanden. Ein erster fokussierter SwiftPM-Lauf wurde durch eine zeitgleiche,
+fremde Änderung an `MarketBrowserTests.swift` abgebrochen; nach stabilem Stand
+bestanden 24 Public-Contracts-Tests, sieben Runtime-/UI-Zustandstests und der
+vollständige SwiftPM-Lauf mit 316 Tests in 25 Suites.
+
+Offen: Ein mehrstündiger Lauf der gebauten App mit aktivem Import, gemessener
+Menüreaktionszeit, CPU/RSS, Tastatur, VoiceOver, Hell/Dunkel und ausdrücklicher
+Owner-Abnahme bleibt erforderlich. Die vorhandene Produktionsdatenbank wurde
+nicht verändert und es wurde kein Live-ESI-Import gestartet.
+
+## 9. August 2026 – Lokale Vertragsaktualisierung blockiert die Oberfläche
+
+Ziel: Den nach der ersten UI-Entkopplung erneut beobachteten vollständigen
+Bedienverlust während eines laufenden Public-Contracts-Imports anhand der
+Laufzeitdaten eingrenzen und die lokale Schreiblast sowie Stopp-Latenz senken.
+
+Entwicklung:
+
+- das bereitgestellte Xcode-Bild ausgewertet: etwa 103 Prozent CPU,
+  268,8 MiB Speicher, 33,6 MiB/s Datenträger und 0 KB/s Netzwerk; der zufällige
+  Stopp in `CFStringAppendFormat` mit `SIGTERM` ist ohne neuen `.ips`-Bericht
+  kein belegter Crash-Stack und wurde nicht als Quellursache interpretiert;
+- den produktiven Store erneut ausschließlich lesend geprüft: alle 114 Regionen
+  waren frisch, 49.196 Contracts und 362.688 Items lagen vor, nur sechs
+  Detailverträge waren noch ausstehend; der blockierende Lauf hatte somit
+  fachlich weitergearbeitet und vor allem lokale Arbeit erzeugt;
+- Contract-Upserts um einen nullsicheren Vergleich aller fachlichen Felder
+  ergänzt, sodass ein identischer Vertrag nicht allein wegen eines neuen
+  Beobachtungszeitpunkts erneut in SQLite und das WAL geschrieben wird;
+- einen Revalidierungspfad ergänzt: Nur wenn jede Regionsseite mit
+  `304 Not Modified` bestätigt wurde, werden ausschließlich Regionsfrische und
+  nächste Abrufzeit aktualisiert. Der ESI-Transport bewahrt dabei die gecachte
+  Seitenzahl, wenn eine 304-Antwort `X-Pages` auslässt;
+- die transaktionalen Mengenloops prüfen vor Beginn und alle 128 Zeilen auf
+  Abbruch; die offene Region wird bei Stopp zurückgerollt. Der Runtime-Task
+  verwendet nun Background- statt Utility-Priorität. Paging, Abstände,
+  Parallelitätsgrenzen, Retry, Fehlerbudget und unbekannte/partielle Zustände
+  bleiben erhalten;
+- laufende Dokumentation, Architektur, Acceptance und Handoffs aktualisiert.
+
+Ergebnis: Unveränderte regionsweite Aktualisierungen erzeugen nicht mehr für jede
+bereits bekannte Vertragszeile einen SQLite-Update. Eine echte 304-Bestätigung
+schreibt überhaupt keine Contract- oder Itemzeile. Echte Änderungen und
+Löschungen bleiben transaktional, lassen sich aber deutlich früher sicher
+stoppen; die Arbeit konkurriert mit geringerer Systempriorität um CPU und I/O.
+
+Prüfung: Die aktuelle offizielle ESI-Dokumentation bestätigt, dass eine 304 bei
+passendem ETag unveränderte Daten bedeutet, `X-Pages` die Seitenzahl trägt und
+`Last-Modified` bei einer paginierten Repräsentation konsistent sein soll. 66
+fokussierte ESI-/Transporttests in drei Suites und 26 Public-Contracts-Tests
+bestanden. Darunter belegen neue Fixtures den erhaltenen Seitenzähler nach 304,
+die reine Regionsrevalidierung und das ausbleibende Update eines identischen
+Contract-Datensatzes. Der isolierte 10.000-Contracts-Test benötigte rund
+0,08 Sekunden. Der vollständige isolierte SwiftPM-Lauf baute Core und App und
+bestand 319 Tests in 25 Suites. Striktes Swift-Format und Diff-Whitespace
+bestanden.
+
+Offen: Die geänderte App wurde noch nicht mit dem gefüllten Produktionsstore
+gestartet. Reale Menüreaktionszeit, CPU/RSS, Datenträgerlast, Stopp-Latenz,
+Tastatur, VoiceOver und ausdrückliche Owner-Abnahme bleiben getrennte
+Laufzeitnachweise. Die vorhandene Produktionsdatenbank wurde nicht verändert.
+
+## 9. August 2026 – Vertragssuche wartet auf das fertig getippte Wort
+
+Ziel: Verhindern, dass die lokale Suche der öffentlichen Verträge bei normaler
+Worteingabe nach fast jedem Buchstaben eine vollständige SQLite-Abfrage startet.
+
+Entwicklung:
+
+- den vorhandenen SwiftUI-Suchpfad geprüft: Die Suchidentität brach ältere
+  Tasks korrekt ab, die Wartezeit von nur 250 Millisekunden lief zwischen
+  normalen Tastendrücken jedoch häufig bereits ab;
+- die Tipp-Pause auf 700 Millisekunden erhöht. Jede Änderung an Suchtext,
+  Kategorie, Gruppe oder Vertragsseite erzeugt weiterhin eine neue Identität
+  und bricht den wartenden vorherigen Task ab;
+- die Eingabetaste als ausdrücklichen Sofortstart ergänzt. Der Auftrag friert
+  Suchtext, Kategorie, Gruppe und Vertragsseite ein, statt diese Werte erst
+  später erneut aus der View zu lesen;
+- einen lokalisierten Bedienhinweis, eine deterministische Policy-Regression
+  sowie Hauptdokumentation, Acceptance und Handoff ergänzt.
+
+Ergebnis: Beim normalen Schreiben eines Worts läuft erst 700 Millisekunden nach
+dem letzten Tastendruck eine Suche. Return sucht ohne Wartezeit. Bereits
+laufende ältere Abfragen behalten den vorhandenen Generationenschutz und dürfen
+neuere Ergebnisse nicht überschreiben.
+
+Prüfung: Der fokussierte App-Lauf baute die App und bestand acht Runtime-/UI-
+Zustandstests. Der vollständige isolierte SwiftPM-Lauf baute Core und App und
+bestand 320 Tests in 25 Suites. Striktes Swift-Format, beide
+Lokalisierungskataloge und Diff-Whitespace bestanden.
+
+Offen: Reales Tippgefühl, Return-Fokus, VoiceOver und Owner-Abnahme wurden in
+der laufenden App noch nicht geprüft. Es wurden keine Produktionsdaten und
+keine ESI-Regeln verändert.
+
+## 10. August 2026 – Rekursive Nachkalkulation vergessener Produktion
+
+Ziel: Eine nicht oder nur teilweise getrackte EVE-Produktion nachträglich aus
+fertigen Gegenständen und Mengen vollständig kalkulierbar machen.
+
+Entwicklung:
+
+- einen Parser für einfache `Gegenstand Menge`-Zeilen und vollständige
+  tabulatorgetrennte EVE-Gegenstandszeilen ergänzt; deutsche EVE-Zahlen werden
+  erkannt, Gruppe, angezeigtes Volumen und ungefährer ISK-Wert bleiben
+  nicht-authoritative Referenz;
+- einen eigenen etablierten Navigationsbereich **Rekursive Kalkulation**
+  ergänzt, ohne Planner-Entwurf, aktiven Plan oder Produktionsübersicht zu
+  verändern;
+- alle herstellbaren Zwischenprodukte für diese Rekonstruktion ausdrücklich
+  auf Produktion gesetzt, während faktischer Warehouse-Bestand, Schutzmengen
+  und aktive Reservierungen weiterhin zuerst berücksichtigt werden;
+- nach der ersten Graphauflösung pro normalem Blueprint-Bauschritt die manuelle
+  Auswahl **BPC verwendet** oder **BPO verwendet** sowie vorhandene belegte
+  Besitz-, Kopier-, Erfindungs-, Contract- und LP-Quellen angeboten. Verbrauchte
+  BPC-/Aktivitätskosten und BPO-Umlagen werden ausdrücklich eingegeben;
+  Reaktionen erhalten keine erfundene BPO/BPC-Auswahl;
+- die Routen Main Hub → Home Hub und Main Hub → Home Hub → Main Hub über die
+  vorhandenen Planner-Logistikregeln getrennt ausgewiesen; fehlende Blueprint-,
+  Markt-, Volumen-, Tarif- oder Installationswerte bleiben unverfügbar;
+- deutsche/englische Lokalisierung, Architektur, Handoff, Acceptance und
+  Hauptdokumentation aktualisiert.
+
+Ergebnis: Mehrere importierte Endprodukte werden als ein gemeinsames rekursives
+Szenario berechnet. Gemeinsame Zwischenprodukte, Warehouse-Zuordnung,
+Blueprintkosten und Logistik werden deshalb nicht als voneinander unabhängige
+Einzelkalkulationen doppelt geschätzt. Der eingefügte ungefähre EVE-Wert wird
+nicht als Kostenersatz verwendet.
+
+Prüfung: Der fokussierte Importlauf baute Core und App und bestand 15 Tests.
+Der vollständige isolierte SwiftPM-Lauf baute Core und App und bestand 325 Tests
+in 25 Suites. Der native unsigned Xcode-Lauf bestand 309 Core-Tests in 22
+Suites. Striktes Swift-Format, beide Lokalisierungskataloge, doppelte
+Lokalisierungsschlüssel und Diff-Whitespace wurden geprüft.
+
+Offen: Kein Live-ESI-Abruf, keine Produktionsdatenänderung und keine visuelle
+Abnahme wurden durchgeführt. Vergleich mit tatsächlich vergessenen EVE-Jobs,
+Home-Structure-Zugriff, große Mehrproduktlisten, CPU/RSS, Tastatur, VoiceOver,
+helle/dunkle Darstellung und Owner-Abnahme bleiben getrennte Laufzeitnachweise.
+
+### Nachtrag: Gruppenregeln für Blueprintquelle sowie ME/TE
+
+Nach dem ersten Betriebshinweis wurde die Einzelkonfiguration reduziert:
+
+- jeder produzierte Knoten behält nun SDE-Kategorie und SDE-Gruppe;
+- oberhalb der einzelnen Blueprintzeilen lassen sich BPO/BPC sowie ME/TE für
+  eine vollständige EVE-Gruppe setzen;
+- ME/TE werden als produktbezogene `IndustryProductionEfficiency` in die
+  erneute rekursive Planung gegeben und bleiben pro Blueprint überschreibbar;
+- Reaktionen werden korrekt als Formeln ohne ME/TE behandelt. Die sichtbare,
+  standardmäßig aktive Annahme „alle Reaktionsformeln vorhanden“ erzeugt eine
+  ausdrückliche 0-ISK-Formelkostenallokation, lässt sich abschalten und ist
+  keine aus Assets abgeleitete Besitzbehauptung;
+- deutsche und englische Bedienungstexte sowie Architektur-, Handoff- und
+  Acceptance-Dokumentation wurden entsprechend aktualisiert.
+
+Prüfung: 16 fokussierte Production-Input-Tests und 21 fokussierte
+Industry-Planner-Tests bestanden. Der vollständige isolierte SwiftPM-Lauf baute
+Core und App und bestand 328 Tests in 25 Suites. Der native unsignierte
+Xcode-Lauf baute die App und bestand 312 Core-Tests in 22 Suites. Striktes
+Swift-Format, beide Lokalisierungsdateien, doppelte Lokalisierungsschlüssel,
+Suite-Links und Diff-Whitespace wurden geprüft. Visuelle Bedienung, VoiceOver
+und Owner-Abnahme bleiben offen.
+
+### Nachtrag: Kontrollierte Übernahme ins Produktionsbuch
+
+Ziel: Aus derselben rekursiven Nachkalkulation die fehlenden Zeilen des
+Produktionsbuchs ergänzen, ohne aktuelle Marktwerte als historische Ist-Werte
+auszugeben oder gemeinsame Kosten mehrfach anzusetzen.
+
+Entwicklung:
+
+- nach der Kalkulation eine zeilenweise Vorschau je importiertem Endprodukt mit
+  Units, Runs, Produktionssystem, Material, Installation, Logistik,
+  Blueprintkosten, Verkaufssteuer, Brokergebühr, Produktionskosten und
+  Verkaufspreis ergänzt;
+- die Route in einen unveränderlichen Produktionsbuch-Snapshot eingefroren:
+  Main → Home verwendet Home-Hub-Listed-Preis und dortige Gebühren, Main → Home
+  → Main verwendet Main-Hub-Listed-Preis und addiert die Rücklogistik der
+  Endprodukte;
+- gemeinsame Installations-, Blueprint- und Logistikkosten proportional zu den
+  bekannten Materialwerten, ersatzweise gleichmäßig, genau einmal über die
+  Endproduktzeilen verteilt; fehlende Werte bleiben unverfügbar;
+- einen ausdrücklichen Bestätigungsdialog und eine Sitzungssperre gegen
+  versehentliches erneutes Speichern desselben Kalkulationslaufs ergänzt;
+- die SwiftData-Zeilen als eine Charge gespeichert; ein Speicherfehler löst ein
+  Rollback der gesamten Charge aus;
+- Bedienung und Snapshot-Herkunft ausdrücklich als Rekonstruktion mit aktuellem
+  Markt- und Gebührenstand gekennzeichnet, nicht als historische Ist-Kosten;
+- Core-, UI-, Persistenz-, Handoff-, Acceptance- und Hauptdokumentation sowie
+  deutsche und englische Lokalisierung aktualisiert.
+
+Ergebnis: Die rekursive Kalkulation kann jetzt nach Vorschau und Bestätigung
+pro eingegebenem fertigem Gegenstand einen Produktionsbucheintrag erzeugen.
+Der aktive Planner bleibt unangetastet; die vollständige Kalkulations- und
+Preisprovenienz wird mit jeder Zeile eingefroren.
+
+Prüfung: Acht fokussierte Production-Overview-Tests und acht fokussierte
+Planner-Persistenztests bestanden. Der vollständige isolierte SwiftPM-Lauf
+baute Core und App und bestand 331 Tests in 25 Suites. Der native unsignierte
+Xcode-Lauf baute die App und bestand 313 Core-Tests in 22 Suites.
+Swift-Format, beide Lokalisierungskataloge, doppelte Schlüssel und
+Diff-Whitespace wurden geprüft.
+
+Offen: Es wurden weder Live-ESI/Marktdaten neu verifiziert noch echte
+Produktionsbuchzeilen geschrieben. Visuelle Prüfung der Vorschau und des
+Bestätigungsdialogs, VoiceOver, große reale Mehrproduktlisten, Vergleich mit
+tatsächlich vergessenen EVE-Jobs und Owner-Abnahme bleiben offen.
+
+## 10. August 2026 – Kleine EVE-Itembilder vor aufgelösten Namen
+
+Ziel: Aufgelöste Items in den verschiedenen Arbeitsbereichen schneller visuell
+erkennbar machen, ohne Kopierverhalten oder unbekannte Datenzustände zu
+verfälschen.
+
+Entwicklung:
+
+- mit `EVEItemIcon` und `EVEItemText` eine gemeinsame SwiftUI-Darstellung aus
+  offizieller Type-ID-basierter Bildquelle und dem vorhandenen kopierbaren
+  `EVEEntityText` ergänzt;
+- kompakte Größen für Tabellen und Ticker, eine normale Zeilengröße sowie eine
+  etwas größere Detailgröße festgelegt; Lade- und Fehlerfälle zeigen lokale
+  neutrale Platzhalter, während der Itemname sichtbar bleibt;
+- aufgelöste Items in Dashboard, Assets/Warehouse, Blueprints, Industry Jobs,
+  Planner, Guided Production, Market Browser und Main-Hub-Chancen, Public
+  Contracts, Reaktionen, Moon-Analyse, Net Worth und Produktionshistorie auf
+  die gemeinsame Darstellung umgestellt; SDE-Sucher, Service-Module und Rigs
+  zeigen das gleiche Type-Icon in ihren Auswahlzeilen;
+- historische und importierte Namen ohne faktisch verfügbare Type-ID bewusst
+  ohne geratenes Bild belassen; Persistenz-, SDE-, ESI- und Kalkulationslogik
+  nicht verändert;
+- den Darstellungsvertrag unter
+  [`Documentation/ITEM_PRESENTATION.md`](Documentation/ITEM_PRESENTATION.md)
+  sowie die aktuelle Hauptdokumentation ergänzt.
+
+Ergebnis: In den zentralen Itemlisten und Detailansichten steht nun ein kleines,
+noch erkennbares EVE-Type-Icon vor dem Namen. Der Name bleibt über die bestehende
+gemeinsame Komponente kopierbar. Bildfehler löschen oder ersetzen keine
+Fachdaten und eine fehlende Type-ID wird nicht aus dem Namen erraten.
+
+Prüfung: Der fokussierte SwiftPM-Lauf baute `EVEStaticDataKit`, Core, die
+vollständige App und die App-Tests; beide neuen URL-Vertragstests bestanden.
+Anschließend bestand der vollständige SwiftPM-Lauf 325 Tests in 25 Suites. Der
+erste fokussierte Lauf innerhalb der eingeschränkten Sandbox erreichte wegen
+`sandbox_apply: Operation not permitted` noch keinen Manifest-Build; die
+freigegebene Wiederholung mit isoliertem Scratch- und Modulcache war
+erfolgreich. Die verwendete Type-Icon-Route und die 64-Pixel-Größe wurden mit
+der aktuellen offiziellen EVE-Image-Server-Dokumentation abgeglichen.
+
+Eine isoliert gebaute App-Vorschau wurde im dunklen Erscheinungsbild mit den
+vorhandenen Dashboard- und Main-Hub-Daten geprüft. Die unterschiedlichen
+Itembilder wurden kompakt und erkennbar vor den Namen geladen; Kopier-Buttons,
+Zeilenhöhen und Tabellenspalten blieben visuell intakt. Die Vorschau löste
+keine manuelle Datenaktualisierung aus.
+
+Offen: Langzeit-CDN-/Cache-Verhalten, Offline- und Fehlerfall, große scrollende
+Listen, PNG-Export der Moon-Tabelle, das helle Erscheinungsbild, Tastatur,
+VoiceOver und ausdrückliche Owner-Abnahme bleiben getrennte Nachweise.
+
+## 10. August 2026 – Lesbare und angeheftete Main-Hub-Kalkulationsspalten
+
+Ziel: Die optisch zusammenlaufenden Kennzahlen am rechten Rand der
+Main-Hub-Kalkulation trennen und die Spaltenüberschriften beim vertikalen
+Scrollen dauerhaft sichtbar halten.
+
+Entwicklung:
+
+- zwischen **ISK/h**, **ISK/m³** und **Gruppe** denselben zusätzlichen Abstand
+  in Kopf und Datenzeilen ergänzt, sodass Spaltenausrichtung und Sortierziele
+  erhalten bleiben;
+- den sortierbaren Opportunity-Kopf als native angeheftete Section-Kopfzeile
+  aktiviert und mit einem deckenden Hintergrund sowie einer unteren Trennlinie
+  versehen;
+- den abweichenden lokalen Spaltenkopf des aufgeklappten Build-Baums
+  unverändert erhalten; Kalkulation, Sortierwerte, Persistenz und ESI-Verhalten
+  wurden nicht geändert;
+- die aktuelle Hauptdokumentation an das neue Scrollverhalten angepasst.
+
+Ergebnis: Die drei zuvor schwer unterscheidbaren Spalten sind visuell getrennt.
+Beim vertikalen Scrollen bleiben alle anklickbaren Kalkulationsüberschriften
+sichtbar und behalten ihre auf-/absteigende Sortierung.
+
+Prüfung: `swift format lint --strict` für die geänderte View und
+`git diff --check` bestanden. Der isolierte SwiftPM-Lauf baute Core und die
+vollständige App; zunächst bestanden zwei fokussierte App-Tests, anschließend
+die vollständige Suite mit 325 Tests in 25 Suites.
+
+Offen: Die visuelle Prüfung in der laufenden App, helle/dunkle Darstellung,
+Tastatur, VoiceOver und ausdrückliche Owner-Abnahme bleiben getrennte
+Laufzeitnachweise.
+
+## 10. August 2026 – Falsche Produktbilder im Produktionsbuch korrigiert
+
+Ziel: Die im Planner-Produktionsbuch sichtbaren Icons müssen zum gespeicherten
+Fertigprodukt gehören und dürfen nicht von einem Material- oder
+Zwischenzustandsknoten derselben Planung stammen.
+
+Entwicklung:
+
+- die Type-ID-Auflösung der historischen Zeile auf den letzten produzierenden
+  Top-Level-Knoten der zugehörigen Anfrage eingeschränkt;
+- die zuvor verwendete erste beliebige Knotenübereinstimmung entfernt, weil sie
+  auch Kauf-, Lager- oder Materialknoten auswählen konnte;
+- einen Regressionstest mit einem früheren Materialknoten und einem späteren
+  produzierten Endprodukt ergänzt;
+- Hauptdokumentation und Item-Darstellungsvertrag an die korrigierte fachliche
+  Zuordnung angepasst.
+
+Ergebnis: Das Produktionsbuch verwendet für das Bild dieselbe fachliche
+Endproduktwahl wie Projektion und Aufzeichnung. Fehlt ein produzierender
+Top-Level-Knoten, bleibt das Bild weiterhin bewusst aus, statt eine Type-ID zu
+raten.
+
+Prüfung: Der fokussierte Regressionstest bestand. Der vollständige isolierte
+SwiftPM-Lauf baute Core und App und bestand 329 Tests in 25 Suites; der native
+unsigned macOS-Xcode-Build war erfolgreich. Striktes Swift-Format und
+Diff-Whitespace bestanden. Der erste Sandbox-Buildversuch scheiterte nur an
+geschützten SwiftPM-/Xcode-Caches; die freigegebenen Wiederholungen mit
+isolierten Caches waren erfolgreich.
+
+Eine separat gebaute App-Vorschau wurde im dunklen Erscheinungsbild mit den
+fünf vorhandenen historischen Zeilen Avalanche, Orca, salvation, Nomad und bane
+geprüft. Alle fünf zeigten nun unterschiedliche, zum jeweiligen produzierten
+Endprodukt gehörende Schiffsbilder; Namen, Zeilenhöhe und Tabellenspalten
+blieben intakt. Es wurde keine manuelle Aktualisierung ausgelöst.
+
+Offen: Weitere ältere Produktionsstände, das helle Erscheinungsbild, Tastatur,
+VoiceOver und ausdrückliche Owner-Abnahme bleiben getrennte Nachweise.
+
+## 11. August 2026 – Kompakte Main-Hub-Filter mit Klickerklärungen
+
+Ziel: Den oberen Main-Hub-Chancenbereich platzsparend in einer Kartenreihe
+ordnen, unklare Bauplanfilter erklären und den langen Text unter der
+Gegenstandssuche einklappbar machen.
+
+Entwicklung:
+
+- die bisher adaptiv auf mehrere Zeilen umbrechenden Filterkarten durch sieben
+  feste Karten in einer horizontal scrollbaren Reihe ersetzt;
+- die separate Szenariokarte entfernt und ihre fachlich wirksame Zielmenge als
+  kompaktes, erklärbares Feld direkt in den Kalkulatorkopf verschoben, damit
+  keine unsichtbare Einstellung die Ergebnisse beeinflusst;
+- **Besitz** in **Bauplanbesitz** und **Baupläne** in **Bauplantyp und -quelle**
+  präzisiert; Corporation-Hangars dem Besitz und LP-BPCs der Quelle zugeordnet,
+  Favoriten in den Ergebnisfilter verschoben;
+- jede Kartenüberschrift samt Informationssymbol als vollständige Schaltfläche
+  mit ausführlichem, markierbarem Popover umgesetzt. Persönlich, Corporation,
+  Nicht im Besitz, Unbekannt, BPO/BPC-Grenzen, LP-Katalog, UND-/ODER-Verknüpfung,
+  lokale Filterwirkung und Kostenfolgen werden ausdrücklich beschrieben;
+- relevante gelbe Ausrufezeichen für fehlende Produktionsklassenmetadaten sowie
+  ungültige Blueprint- oder Materialbudgetbeträge ebenfalls anklickbar gemacht;
+- Datengrundlage und längere Erklärung unter der Gegenstandssuche in eine
+  persistent ein-/ausklappbare Gruppe verschoben. Fachliche Fehler und
+  Warnungen bleiben außerhalb immer sichtbar;
+- Main-Hub- und einzelner Produktionsortname innerhalb der Datengrundlage auf
+  die gemeinsame kopierbare EVE-Namensdarstellung umgestellt sowie deutsche und
+  englische Lokalisierung und Hauptdokumentation aktualisiert.
+
+Ergebnis: Die Filter benötigen nur noch eine Kartenzeile. Ihre Wirkung ist per
+Klick statt nur per Hover nachvollziehbar, während die Kalkulationszielmenge am
+inhaltlich passenden Ort bleibt und der lange Sucherklärungstext dauerhaft
+weggeklappt werden kann.
+
+Prüfung: Striktes Swift-Format, beide Lokalisierungs-Plists, doppelte
+Lokalisierungsschlüssel und Diff-Whitespace bestanden. Der isolierte
+SwiftPM-Lauf baute Core und die vollständige App; zwei fokussierte App-Tests
+und anschließend alle 331 Swift-Testing-Tests in 25 Suites bestanden.
+
+Offen: Horizontales Scrollgefühl, Popoverpositionen, schmale und breite
+Fenstergrößen, helle/dunkle Darstellung, Tastatur, VoiceOver und ausdrückliche
+Owner-Abnahme bleiben getrennte Laufzeitnachweise.
+
+## 11. August 2026 – Leere Main-Hub-Ansicht nach Tabellenaufbau korrigiert
+
+Ziel: Verhindern, dass der Main-Hub-Chancenbereich nach dem kurzen
+Vorbereitungszustand vollständig leer gezeichnet wird, obwohl Daten und
+Accessibility-Hierarchie weiterhin vorhanden sind.
+
+Ursache und Entwicklung:
+
+- der Fehler wurde mit dem produktiv gefüllten Snapshot reproduziert: Nach dem
+  Aufbau von 2.443 sichtbaren Kandidaten blieb der vollständige Accessibility-
+  Baum erhalten, während AppKit nur leere Split-View-Flächen zeichnete;
+- die gleichzeitig sichtbaren `tcp_input`-Reset-Zeilen waren nicht ursächlich.
+  Das Systemprotokoll zeigte danach erfolgreiche HTTP-200-Anfragen, aber auch
+  AppKit-Faults für negative Breiten und Höhen;
+- die tatsächliche Überlastung entstand, weil der aufgeklappte Filter- und
+  Erklärbereich zusammen mit festen Mindesthöhen des nativen vertikalen
+  Split Views mehr Höhe verlangte, als das Fenster bereitstellte. Der
+  Kalkulator erhielt dadurch während des dynamischen Wechsels eine ungültige
+  Restgeometrie;
+- Filter, Status und Datengrundlage liegen jetzt in einem eigenen vertikalen
+  Scrollbereich mit einer endlichen, aus der Fensterhöhe abgeleiteten
+  Obergrenze. Der Kalkulator behält deshalb stets eine gültige Restfläche;
+- Kalkulator und Workbench sowie die beiden unteren Workbench-Spalten werden
+  ohne native Split Views anhand endlicher Viewport-Werte deterministisch
+  geteilt. Unvereinbare Mindesthöhen und Mindestbreiten entfallen;
+- den zweiachsigen Tabellen-`ScrollView` mit angeheftetem Lazy-Section-Kopf
+  durch getrennte Achsen ersetzt: außen horizontal, innen vertikal. Der Kopf
+  liegt außerhalb des vertikalen Zeilenscrollers und bleibt trotzdem
+  horizontal spaltensynchron;
+- vorgeschlagene nicht endliche oder negative Viewport-Längen werden auf null
+  begrenzt, bevor AppKit sie erhält;
+- die kleine horizontale Filterkartenzeile verwendet nun einen normal
+  vermessenen, vertikal fest auf seinen Inhalt begrenzten `HStack` statt einer
+  trägen, vertikal flexiblen Zeile.
+
+Ergebnis: Der Main-Hub-Chancenbereich bleibt nach dem Aufbau des gefüllten
+Snapshots sichtbar. Der Tabellenkopf bleibt beim vertikalen Scrollen sichtbar,
+ohne die frühere Kombination aus zweiachsigem Scrollen, angehefteter Section
+und unvereinbaren Split-View-Mindestgrößen. Fachwerte, Filterzustände,
+Sortierung, gespeicherte Snapshots und ESI-Verhalten wurden nicht verändert.
+
+Prüfung: Der isolierte SwiftPM-Lauf baute Core und die vollständige App. Sechs
+fokussierte App-XCTest-Fälle einschließlich negativer, nicht endlicher, sehr
+kleiner und gültiger Seiten-, Tabellen-, Workspace- und Workbench-Geometrien
+sowie anschließend alle 331 Swift-Testing-Tests in 25 Suites bestanden. Das
+isolierte native Xcode-Bundle baute erfolgreich. Mit dem vollständigen lokalen
+Snapshot wurden 2.443 von 3.971 Kandidaten sichtbar gezeichnet; drei weitere
+Wechsel Dashboard → Main-Hub-Chancen blieben sichtbar. Der Tabellenkopf war
+am Anfang und nach `AXScrollToBottom` weiterhin vorhanden. Striktes
+Swift-Format und `git diff --check` bestanden. Das System protokolliert während
+des Navigationswechsels weiterhin kurz AppKit-Hinweise auf negative Geometrie,
+der zuvor daran anschließende leere Renderzustand trat in diesen Läufen jedoch
+nicht mehr auf; diese verbliebene Framework-Diagnostik wird deshalb nicht als
+vollständig beseitigt dargestellt.
+
+Offen: Die ausdrückliche Owner-Abnahme bleibt nach der automatisierten und
+lokalen Laufzeitprüfung getrennt.
+
+## 11. August 2026 – Einzelne Runs und adaptive Main-Hub-Fläche
+
+Ziel: Die globale Zielmenge durch eine zeilenbezogene Run-Eingabe ersetzen,
+unnötige Bauplanfilter vorläufig entfernen und den Kalkulator beim Einklappen
+der oberen Bereiche automatisch vergrößern.
+
+Entwicklung:
+
+- die globale Zielmengeneingabe aus dem Main-Hub-Kalkulator entfernt und die
+  vorhandene Spalte **Runs** je Gegenstand editierbar gemacht;
+- eine getrennte Run-Projektion ergänzt, die nur den geänderten Kandidaten aus
+  dem gespeicherten Szenario neu berechnet. Sie skaliert Ausgabe, Material,
+  Dauer, Installation, Erlös und Gebühren, berechnet anschließend Beschaffung,
+  Logistik und Kosten dieser Zeile neu und kennzeichnet die Wiederverwendung
+  der erfassten gewichteten Stückpreise ausdrücklich;
+- Run-Overrides bewusst nicht in den Trigger der vollständigen
+  Kandidatenvorbereitung aufgenommen und bei einem neuen Chancen-Snapshot
+  verworfen;
+- Bauplanbesitz, Bauplantyp/-quelle und LP-BPC-Quelle aus sichtbaren Filtern und
+  Main-Hub-Kandidatenprojektion entfernt, ohne die zugrunde liegenden Daten oder
+  andere Programmabläufe zu löschen;
+- Favoriten in eine eigene Karte direkt unter den Produktionsklassen verschoben
+  und die übrigen Filterkarten in ein breitenadaptives Raster ohne horizontalen
+  Kartenscroller gesetzt;
+- die Höhe des oberen Filter-/Datengrundlagenbereichs an beide
+  Aufklappzustände gebunden, sodass der Kalkulator den frei werdenden Platz
+  unmittelbar übernimmt;
+- deutsche und englische Texte, Domänen- und Layouttests sowie die laufende
+  Dokumentation aktualisiert.
+
+Ergebnis: Eine Run-Änderung betrifft nur das gewählte Item; andere vorbereitete
+Chancen werden nicht erneut berechnet. Die Filter nutzen die Fensterbreite,
+Favoriten sind fachlich getrennt, und eingeklappte obere Bereiche geben ihre
+Höhe an den Kalkulator zurück.
+
+Prüfung: Der isolierte fokussierte Market-Lauf bestand 36 Tests; sieben
+fokussierte App-Layout-/Darstellungstests bestanden ebenfalls. Der vollständige
+isolierte SwiftPM-Lauf bestand 333 Swift-Testing-Tests in 25 Suites sowie sieben
+XCTest-Fälle. Der native, unsignierte Xcode-Build war erfolgreich. Striktes
+Swift-Format, beide Lokalisierungs-Plists, doppelte Lokalisierungsschlüssel und
+`git diff --check` bestanden.
+
+Das isolierte Xcode-Bundle wurde mit dem vorhandenen vollständigen Snapshot
+visuell geprüft: Bauplanbesitz und Bauplantyp/-quelle waren nicht mehr
+vorhanden; Favoriten stand direkt unter Produktionsklasse; die Karten brachen
+breitenadaptiv ohne eigenen horizontalen Kartenscroller um. Nach dem Einklappen
+von Filter und Datengrundlage dockte der Kalkulator unmittelbar oben an. Beim
+ersten Kandidaten änderte die Eingabe von einem auf zwei Runs nur diese Zeile:
+Menge `200 → 400`, Dauer `38 Min. → 1 Std., 15 Min.`, Kosten `228.950 →
+457.901 ISK` und Erlös `2.448.000 → 4.896.000 ISK`; die Kandidatenzahl blieb
+`2.446 / 3.971`, die folgenden Run-Felder und Zeilenwerte unverändert. Das
+Informationssymbol zur Preis-Snapshot-Grenze war sichtbar und zugänglich.
+
+Offen: Aktuelle Markttiefe wird absichtlich erst durch **Aktualisieren**
+geladen. Live-ESI-Prüfung und ausdrückliche Owner-Abnahme bleiben getrennt.
+
+## 11. August 2026 – Eine Runs-Quelle und standortgenaue Blaupausen
+
+Ziel: Die zweite Zielmenge im Produktionsbaum beseitigen und eigene
+BPCs/BPOs beziehungsweise öffentliche BPC-Verträge für genau die im
+Kalkulator gewählten Runs auswerten.
+
+Entwicklung:
+
+- die editierbaren Runs der Kalkulatorzeile zur einzigen Mengenquelle für den
+  zugehörigen Produktionsbaum gemacht; der Baum übernimmt die vollständige
+  Ausgabe automatisch und wird bei einer Run-Änderung nur für dieses Item
+  verzögert neu geladen;
+- das tägliche Gewinnpotenzial auf die verkaufbare Menge der gewählten Charge
+  begrenzt: ausreichender Tagesbedarf ergibt höchstens den Chargengewinn,
+  geringerer Bedarf reduziert ihn proportional;
+- die Blueprint-Bestände weiterhin aus den persönlichen, auch vom
+  Blaupausenbereich verwendeten Snapshots gelesen, aber auswählbare BPCs/BPOs
+  auf frische Quellen und den eindeutig passenden Produktionsort begrenzt;
+- mehrere eigene BPCs am richtigen Ort als gemeinsame Run-Abdeckung
+  zugelassen und Charaktere, Kopien, verfügbare Runs und Standort in Auswahl
+  und Hilfe sichtbar gemacht;
+- einen begrenzten deterministischen Vertragsselektor ergänzt, der nur exakt
+  zuordenbare Main-Hub-Einzel-BPC-Verträge verwendet, mehrere Verträge bis zur
+  benötigten Run-Zahl kombinieren kann und deren vollständige Preise in die
+  strikte Planrechnung übernimmt; Bündel und unvollständige Details bleiben
+  ausgeschlossen;
+- ungültig gewordene Blueprint-Auswahlen nach einer Mengenänderung auf die
+  aktuelle belegte Empfehlung zurückgeführt sowie Lokalisierung, Verträge,
+  Tests und laufende Dokumentation aktualisiert.
+
+Ergebnis: Kalkulator und Produktionsbaum verwenden dieselben Runs. Eigene
+Blaupausen an anderen oder nicht eindeutig zugeordneten Orten erscheinen nicht
+als verfügbar; mehrere passende BPCs oder mehrere eindeutige BPC-Verträge
+können die angeforderte Run-Zahl gemeinsam decken. Unbekannte BPC-/BPO-Kosten
+bleiben ausdrücklich unverfügbar, sofern sie nicht aus eindeutigen Verträgen
+oder einer manuellen Umlage stammen.
+
+Prüfung: Der fokussierte isolierte Market-Lauf bestand 36 Tests und der
+fokussierte Industry-Lauf 22 Tests. Der vollständige isolierte SwiftPM-Lauf
+bestand 334 Swift-Testing-Tests in 25 Suites sowie sieben XCTest-Fälle.
+Striktes Swift-Format, beide Lokalisierungs-Plists, doppelte
+Lokalisierungsschlüssel und `git diff --check` bestanden. Der native,
+unsignierte macOS-Xcode-Build endete mit `** BUILD SUCCEEDED **`.
+
+Offen: Live-ESI-Vertragsangebote, eine visuelle Prüfung mit realen
+Charakter-BPCs/BPOs, VoiceOver und ausdrückliche Owner-Abnahme bleiben
+getrennte Nachweise. Eine einzelne konkrete BPC-Instanz wird noch nicht als
+persistente Reservierung verbucht; die Auswahl gilt für die geöffnete Sitzung.
+
+## 11. August 2026 – Persistente Chancenfilter und erklärbarer BPO-Standort
+
+Ziel: Die zuletzt verwendeten Main-Hub-Chancenfilter nach einem Neustart
+beibehalten und einen vorhandenen, aber nicht auswählbaren BPO/BPC-Bestand
+verständlich auflösen.
+
+Entwicklung:
+
+- Suchtext, Produkt- und Produktionsklassen, Favoritenmodus, Kategorie, Gruppe,
+  Ergebnisfilter und Filter-Aufklappzustand in der bestehenden lokalen
+  App-Defaults-Domäne gespeichert; Tagesbedarf und Materialbudget waren dort
+  bereits persistent;
+- leere Mehrfachauswahlen als echten gespeicherten Zustand von einer noch nicht
+  vorhandenen Einstellung unterschieden und veraltete exakte Kategorie- oder
+  Gruppenauswahlen erst nach Laden eines neuen Snapshots gezielt verworfen;
+- konkrete beibehaltene Blueprintinstanzen aus frischen, teilweisen oder
+  veralteten Quellen wieder auswählbar gemacht, ohne einen nicht-frischen
+  Gesamtbestand als vollständig auszugeben;
+- den Standort einer Blueprintinstanz über ihren Asset-Wurzelstandort
+  aufgelöst, damit BPOs/BPCs in Containern am exakten Produktionsort nicht mehr
+  fälschlich herausfallen;
+- BPOs und BPCs an anderen Standorten getrennt gezählt und den generischen
+  Status **ungeklärt** in diesem Fall durch **Eigenes BPO/BPC an einem anderen
+  Standort** samt Verschiebe- und Aktualisierungshinweis ersetzt;
+- deutsche und englische Texte, fokussierte Regressionstests und die laufende
+  Dokumentation ergänzt.
+
+Ergebnis: Die Main-Hub-Filter stellen den letzten lokalen Zustand wieder her.
+Eine faktisch gespeicherte Blaupause am exakten Standort bleibt auch als
+gekennzeichneter letzter Bestand auswählbar; ein BPO an einem anderen Standort
+wird nicht fälschlich verwendbar, erklärt aber jetzt unmittelbar den nötigen
+nächsten Schritt. Die schreibgeschützte Prüfung des aktuellen lokalen Bestands
+bestätigte frische Blueprintquellen und für den naheliegenden Industrial-Fall
+einen vom konfigurierten Fertigungsstandort abweichenden BPO-Standort.
+
+Prüfung: Der fokussierte isolierte Industry-Lauf bestand 23 Tests einschließlich
+der neuen Regression für ein veraltetes BPO in einem Container am exakten
+Produktionsstandort. Der vollständige isolierte SwiftPM-Lauf bestand 335
+Swift-Testing-Tests in 25 Suites sowie sieben XCTest-Fälle. Der native,
+unsignierte macOS-Xcode-Build endete mit `** BUILD SUCCEEDED **`; beide
+Lokalisierungsdateien und `git diff --check` bestanden. Striktes Swift-Format
+wurde für die drei geänderten Swift-Dateien geprüft.
+
+Offen: Die visuelle Prüfung der wiederhergestellten Filter und der neuen
+Standortmeldung, VoiceOver, ein erneuter Live-ESI-Abgleich sowie die ausdrückliche
+Owner-Abnahme bleiben manuelle Nachweise. Eine Blaupause muss nach einem
+tatsächlichen Standortwechsel weiterhin über Blaupausen und Besitz aktualisiert
+werden.
+
+## 2026-08-13 – Drei-Hub-Verkaufsstrategien und Direkthandel im Planner
+
+Ziel: Die Produktionskosten sollten wieder klar von Lagerverbrauch und
+Verkaufswegen getrennt werden. Main-, Home- und Koalitions-Hub sollten jeweils
+fachlich passende Marktgebühren und Logistikketten erhalten; Home und Coalition
+zusätzlich einen gebührenfreien Direkthandel.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen Checkout einschließlich der vorhandenen
+  gemischten Nutzeränderungen als
+  `/private/tmp/EVE_NEXUS_SIMPLE-backup-2026-08-13-planner-before.tar.gz`
+  gesichert und das Archivverzeichnis lesend geprüft;
+- `IndustryPlanningContext` und `IndustryPlanSnapshot` um einen getrennten
+  Coalition-Marktsnapshot sowie Home-/Coalition-Direkthandel erweitert;
+- Main-, Home- und Coalition-Marktwerte parallel und ortsgebunden geladen;
+  fehlender oder verbotener Zugriff auf einen sekundären Hub lässt nur dessen
+  Strategien unverfügbar;
+- den bestehenden Preisvertrag um `directTrade` ergänzt: niedrigster aktueller
+  Sell-Order-Preis des exakten Hubs als Referenz, ohne Markttiefenverbrauch,
+  EVE-Markt-Verkaufssteuer oder Markt-Brokergebühr;
+- Sofortverkauf weiterhin aus vollständig gedeckter Buy-Order-Tiefe mit
+  Verkaufssteuer und 0 Brokergebühr berechnet; eingestellten Verkauf weiterhin
+  aus dem niedrigsten Sell-Order-Preis mit Verkaufssteuer und Brokergebühr;
+  für die ESI-Region `10001004` wird dabei CCPs zusätzlicher Exordium-Aufschlag
+  von 5 % auf nicht sofort ausgeführte Orders eingerechnet und durch einen
+  eigenen deterministischen Gebühren-Test abgesichert;
+- Produktionskosten unverändert aus vollständigem Main-Hub-Materialersatzwert,
+  BPC/BPO, Installation und eingehender Materiallogistik gebildet. Main-Verkauf
+  ergänzt die Fertigproduktlogistik zurück zum Main Hub, Coalition-Marktverkauf
+  die Route zur Coalition-Struktur; Home-Verkauf und beide Direkthandel-Fälle
+  ergänzen keine Fertigproduktlogistik;
+- Planner-Layout so geordnet, dass Lagerverbrauch direkt unter Kosten steht.
+  Verkaufssteuer und Brokergebühr erscheinen genau einmal in der jeweiligen
+  Strategiekarte; das doppelte Sammelfeld wurde entfernt;
+- deutsche und englische Texte sowie `dokumentation.md`,
+  `Documentation/PRODUCTION_BASIS.md`, `Documentation/HANDOFFS.md` und
+  `Documentation/ACCEPTANCE.md` aktualisiert.
+
+Ergebnis: Der etablierte Planner zeigt Sofortverkauf und eingestellten Verkauf
+am Main Hub sowie Sofortverkauf, eingestellten Verkauf und Direkthandel am Home
+und Coalition Hub mit der jeweils zutreffenden Kosten-, Logistik- und
+Gebührenzusammensetzung. Unbekannte Markt-, Tarif-, Volumen- oder
+Zugriffsinformationen bleiben unbekannt; vertragsspezifische Kosten werden nicht
+erfunden.
+
+Prüfung: Das App- und App-Testziel kompilierten im isolierten SwiftPM-Build.
+Fokussiert bestanden 23 Industry-, 16 Market-Pricing- und 8
+Production-Overview-Tests. Der abschließende vollständige isolierte
+SwiftPM-Lauf bestand 337 Swift-Testing-Tests in 25 Suites sowie 7 XCTest-Fälle,
+einschließlich des neuen Exordium-Gebührentests. Striktes Swift-Format,
+beide Lokalisierungskataloge, Duplikatprüfung und `git diff --check` bestanden.
+Ein erster Build im gemeinsam genutzten `.build` wurde wegen einer während des
+Linkens veränderten vorhandenen Objektdatei verworfen; der danach vollständig
+isolierte Scratch-Build lief sauber. Zwei native, unsignierte Xcode-Versuche
+blieben bereits in der lokalen Paketauflösung bei 0 Prozent CPU stehen und
+legten kein DerivedData an, auch mit deaktivierter Paketaktualisierung; sie
+wurden kontrolliert beendet und nicht als Build-Nachweis gewertet.
+
+Offen: Live ESI/Player-Structure-Zugriff, Abgleich realer Händlergebühren und
+Hauling-Tarife, Vertragspreis-/Vertragskostenentscheidung, visuelles Layout,
+Tastatur, VoiceOver und ausdrückliche Owner-Abnahme.
+
+## 2026-08-13 – Vertragsreferenz, Routenstatus und Capital-Grenzen
+
+Ziel: Der Direkthandel sollte reale öffentliche Verträge statt Marktorders als
+Vergleich verwenden und seine feste Vertragsgebühr berücksichtigen. Jede
+Verkaufsstrategie sollte beide Transportrichtungen sichtbar bewerten; zu große
+oder im Highsec unzulässige Produkte durften dabei nicht als kostenlos gelten.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen Checkout einschließlich der vorhandenen
+  gemischten Nutzeränderungen in
+  `/private/tmp/EVE_NEXUS_SIMPLE-backup-2026-08-13-direct-trade-before.tar.gz`
+  gesichert und das Archivverzeichnis lesend geprüft;
+- einen vollständigkeitsgebundenen `PublicContractReferenceSnapshot` ergänzt,
+  der nur exakte, öffentliche Item-Exchange-Angebote mit einem angebotenen Typ,
+  ohne angeforderte Position und mit positivem Preis zulässt und nach Stückpreis
+  statt Gesamtpreis auswählt;
+- Direkthandel vom Markt-Orderbuch getrennt, die feste
+  Vertragserstellungsgebühr von 10.000 ISK je Produktvertrag aufgenommen und
+  Verkaufssteuer sowie Brokergebühr weiterhin mit 0 ISK ausgewiesen;
+- `LogisticsRouteAssessment` mit `calculated`, `notRequired`,
+  `manualTransferRequired`, `prohibited` und `unavailable` eingeführt. Jede
+  Strategiekarte zeigt Main Hub → Produktion sowie Produktion → Verkaufsort;
+  eigenständige Logistikkarten und Logistik in der sichtbaren Kosten-
+  Zwischensumme wurden entfernt;
+- übergroße Einzelstücke als manuell zu planenden Transport modelliert; bis zur
+  manuellen Klärung bleiben Szenariogesamtkosten, Gewinn, Marge und ROI
+  unverfügbar;
+- die dokumentierte Highsec-Beschränkung für Capital-Schiffe auf den
+  Produktionsrückweg zum Main Hub angewendet. Main-Marktverkauf bleibt für die
+  betroffenen Capital-Gruppen gesperrt, Home-/Coalition-Verkauf bleibt an
+  konfigurierten erreichbaren Orten möglich; Freighter und Jump Freighter sind
+  ausdrücklich ausgenommen;
+- deutsche/englische Oberfläche sowie `dokumentation.md`,
+  `Documentation/PRODUCTION_BASIS.md`, `Documentation/HANDOFFS.md` und
+  `Documentation/ACCEPTANCE.md` auf den aktuellen Vertrag gebracht.
+
+Ergebnis: Produktionskosten zeigen Materialwiederbeschaffung, BPC/BPO und
+Installation ohne Logistik. Jede Verkaufsstrategie addiert ihre tatsächlich
+erforderlichen Routen genau einmal. Der Direkthandel nutzt einen belastbaren
+öffentlichen Vertragsvergleich und seine Vertragsgebühr, ohne Marktgebühren zu
+erfinden. Unvollständige Vertragsabdeckung, manuelle Transporte und verbotene
+Capital-Routen bleiben explizit unverfügbar.
+
+Prüfung: Der isolierte App-Ziel-Build bestand. Neue deterministische Tests
+decken niedrigsten Vertragsstückpreis, Ausschluss von Bündeln und
+Tauschforderungen, unvollständige/trunkierte Vertragsabdeckung, beide
+Logistikrichtungen, übergroße Einzelstücke, Capital-Highsec-Sperre sowie
+Freighter-/Jump-Freighter-Ausnahmen ab. Der fokussierte isolierte Lauf bestand
+69 Tests in drei Suites. Der vollständige isolierte SwiftPM-Lauf baute Core,
+App und App-Tests und bestand 341 Swift-Testing-Tests in 25 Suites sowie 7
+XCTest-Fälle. Striktes Swift-Format, beide Lokalisierungskataloge,
+Duplikatprüfung und `git diff --check` bestanden. Native Xcode-Evidenz wurde
+nicht erneut beansprucht, nachdem die unmittelbar vorherigen Versuche in
+diesem Checkout bereits vor der DerivedData-Erzeugung in der lokalen
+Paketauflösung stehen geblieben waren.
+
+Offen: Live-Abgleich der Vertragserstellungsgebühr und repräsentativer
+öffentlicher Verträge im Spiel, tatsächliche Capital-/Hauling-Routen,
+Player-Structure-Zugriff, visuelles Layout, Tastatur, VoiceOver und ausdrückliche
+Owner-Abnahme. Dieser Stand wurde durch den nachfolgenden Eintrag zur
+universumsweiten Referenz und zur Trennung von Vertragshandel und Direkthandel
+fachlich abgelöst.
+
+## 2026-08-13 – Universumsweite Vertragsreferenz und getrennter Vertragshandel
+
+Ziel: Der im gemeldeten Ark-Plan sichtbare Bruttoerlös sollte seine Quelle
+eindeutig als Markt oder öffentliche Verträge ausweisen. Direkthandel sollte
+den niedrigsten vergleichbaren öffentlichen Vertragspreis im gesamten
+importierten Universum verwenden, aber keine Vertrags- oder Marktgebühren
+abziehen. Ein tatsächlich veröffentlichter Vertrag sollte als eigene
+Verkaufsstrategie mit Vertragskosten berechnet werden. Historische
+Coalition-Pläne ohne auswertbare Rückroute durften fehlende Gesamtkosten nicht
+als 0 ISK behandeln.
+
+Entwicklung:
+
+- vor der Korrektur den vollständigen gemischten Checkout in
+  `/private/tmp/EVE_NEXUS_SIMPLE-backup-2026-08-13-contract-pricing-before.tar.gz`
+  gesichert und das Archiv lesend geprüft;
+- die Public-Contracts-Projektion um einen vollständigkeitsgebundenen
+  universumsweiten Mindeststückpreis ergänzt. Ein optionaler Satz erlaubter
+  Regions-IDs ist bereits Teil des Datenvertrags, die spätere Auswahl in den
+  Einstellungen bleibt jedoch bewusst offen;
+- Home und Coalition jeweils um einen eigenständigen Vertragshandel ergänzt.
+  Vertragshandel verwendet die öffentliche Vertragsreferenz, 0 ISK
+  Markt-Verkaufssteuer und 0 ISK Markt-Brokergebühr sowie einen je Hub manuell
+  bestätigten kombinierten Satz nicht erstattbarer öffentlicher
+  Vertragsgebühren. Ein unbekannter Satz hält Nettoerlös und Gewinn
+  unverfügbar; eine erstattbare Kaution wird nicht als Kosten behandelt;
+- Direkthandel als gebührenfreien Vergleich korrigiert: keine Verkaufssteuer,
+  keine Brokergebühr und keine Vertragsgebühr. Damit wurde die zuvor
+  angenommene feste 10.000-ISK-Vertragsgebühr entfernt;
+- Bruttozeilen und Berechnungsdetails nach Datenquelle getrennt: Markt,
+  öffentlicher Vertragsumsatz oder öffentlicher Vertragsvergleich;
+- den historischen Fallback für fehlende ausgehende Routen präzisiert. Ein
+  alter Plan zeigt weiterhin keine erfundenen Gesamtkosten oder Gewinne und
+  fordert nun ausdrücklich zu einer Neuberechnung für Route 2 auf;
+- Persistenz rückwärtskompatibel um optionale Vertragshandels-Szenarien und
+  Vertragssätze erweitert; deutsche und englische Texte sowie die fachlichen
+  Verträge und Akzeptanznachweise aktualisiert.
+
+Ergebnis: Marktstrategien beziehen ihren Bruttoerlös weiterhin aus dem
+jeweiligen Hub-Markt. Vertragshandel und Direkthandel beziehen ihre Referenz aus
+dem niedrigsten vergleichbaren vollständigen öffentlichen Item-Exchange-Angebot
+des importierten Universums. Nur Vertragshandel zieht den manuell bestätigten
+nicht erstattbaren Vertragskostensatz ab. Der gemeldete historische
+Coalition-Fall bleibt bis zur Neuberechnung ehrlich unverfügbar, statt eine
+fehlende Rückroute als kostenlos zu werten.
+
+Prüfung: Fokussiert bestanden 54 Public-Contract- und Industry-Tests in zwei
+Suites. Der vollständige isolierte SwiftPM-Lauf baute Core, App und App-Tests
+und bestand 343 Swift-Testing-Tests in 25 Suites sowie 7 XCTest-Fälle. Der
+native unsignierte Xcode-App-Build bestand. Striktes Swift-Format, beide
+Lokalisierungskataloge, die Prüfung auf doppelte Schlüssel und
+`git diff --check` bestanden.
+
+Offen: Vergleich repräsentativer öffentlicher Verträge und der aktuellen
+öffentlichen Vertragsgebühren im Spiel, UI-Auswahl der erlaubten Regionen,
+Live ESI/Player-Structure-Zugriff, Neuberechnung und Sichtprüfung des gemeldeten
+Ark-Plans, Tastatur, VoiceOver und ausdrückliche Owner-Abnahme.
+
+## 2026-08-13 – Vorläufige Rentabilität bei manuellem Transport
+
+Ziel: Bei einem über dem Kuriervertragslimit liegenden Produkt wie der Ark
+sollten bekannte Produktions- und Routenkosten nicht länger vollständig
+verschwinden. Gewinn, Marge und ROI sollten trotz noch unbekanntem manuellem
+Transport als klar gekennzeichnete Vorabrechnung sichtbar sein. Der
+Vertragshandel sollte den universumsweit niedrigsten öffentlichen
+Vertragspreis weiterhin verwenden und auch bei einer noch nicht belegten
+persönlichen Vertragsgebühr eine ehrliche Vorabrechnung liefern.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen gemischten Checkout in
+  `/private/tmp/EVE_NEXUS_SIMPLE-backup-2026-08-13-manual-route-contract-profit-before.tar.gz`
+  gesichert und das Archivverzeichnis lesend geprüft;
+- `manualTransferRequired` von einer verbotenen oder anderweitig nicht
+  verfügbaren Route getrennt. Produktionskosten und alle berechenbaren
+  Teilrouten werden nun als bekannte Szenariokosten summiert; nur der manuelle
+  Transport bleibt als zusätzlicher unbekannter Kostenbestandteil offen;
+- Gewinn, Marge und ROI für diesen Fall als vorläufige Obergrenzen vor
+  Transport berechnet und in Karte, Hilfetext und Berechnungsdetails eindeutig
+  so bezeichnet. Verbotene oder anderweitig nicht verfügbare Routen bleiben
+  weiterhin vollständig sperrend;
+- den universumsweiten Public-Contracts-Mindeststückpreis unverändert als
+  Erlösbasis für Vertragshandel und Direkthandel beibehalten. Markt-
+  Brokergebühr und Markt-Verkaufssteuer bleiben dort 0 ISK;
+- beim Vertragshandel einen fehlenden persönlichen öffentlichen
+  Vertragsgebührensatz nicht als 0 ISK behauptet. Stattdessen erscheinen
+  Erlös, Gewinn, Marge und ROI bis zur Profilhinterlegung ausdrücklich **vor
+  öffentlicher Vertragsgebühr**. ESI stellt weder beim beobachteten Vertrag noch
+  für einen hypothetisch neu erstellten Vertrag ein persönliches Gebührenangebot
+  bereit;
+- deutsche und englische Darstellung sowie `dokumentation.md`,
+  `Documentation/PRODUCTION_BASIS.md`, `Documentation/HANDOFFS.md` und
+  `Documentation/ACCEPTANCE.md` auf den neuen Vorbehaltsvertrag aktualisiert.
+
+Ergebnis: Ein manueller Transport löscht die wirtschaftliche Vergleichbarkeit
+nicht mehr. Die App zeigt die bekannte Kostenbasis als „plus Transportkosten“
+und kennzeichnet die daraus berechneten Kennzahlen als Obergrenzen. Beim
+Vertragshandel stammt der Bruttoerlös weiterhin aus dem niedrigsten passenden
+öffentlichen Vertrag des vollständig importierten Universums; ein bestätigter
+Vertragsgebührensatz führt zur endgültigen Netto-Rechnung, ein fehlender Satz
+zu einer sichtbar vorläufigen Rechnung statt zu einem erfundenen Gebührenwert.
+
+Prüfung: Der fokussierte isolierte Industry-Lauf bestand 25 Tests. Der
+vollständige isolierte SwiftPM-Lauf baute Core, App und App-Tests und bestand
+343 Swift-Testing-Tests in 25 Suites sowie 7 XCTest-Fälle. Striktes
+Swift-Format, beide Lokalisierungskataloge, Duplikatprüfung,
+Dokumentations-Linkprüfung und `git diff --check` bestanden. Der abschließende
+native unsignierte Xcode-App-Build bestand ebenfalls.
+
+Offen: Sichtprüfung des gemeldeten Ark-Plans, Eingabe und Vergleich der aktuell
+von EVE angezeigten persönlichen öffentlichen Vertragsgebühr, ein realer
+manueller Transportpreis, Live ESI/Public-Contracts-Vollständigkeit, Tastatur,
+VoiceOver und ausdrückliche Owner-Abnahme.
+
+## 2026-08-13 – Drei Verkaufswege je Hub und Ark-Produktbild
+
+Ziel: Der Planner sollte den getrennten Spieler-Direkthandel vollständig
+entfernen und an Main Hub, Home Hub und Koalitions-Hub ausschließlich
+Sofortverkauf, eingestellten Marktverkauf und öffentlichen Vertragshandel
+zeigen. Jeder Vertragshandel sollte den universumsweit niedrigsten passenden
+öffentlichen Vertragspreis und die Vertragsgebühr berücksichtigen. In der
+BPC/BPO-Kostenkarte sollte die Ark außerdem als Schiff statt mit einem
+unpassenden Typsymbol erscheinen.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen gemischten Checkout in
+  `/private/tmp/EVE_NEXUS_SIMPLE-backup-2026-08-13-three-sale-strategies-before.tar.gz`
+  gesichert und das Archiv lesend geprüft;
+- `directTrade` aus dem Preisvertrag, den neuen Plansnapshots, Berechnungen,
+  Karten und Tests entfernt. Alte serialisierte Direkthandelsfelder bleiben als
+  unbekannte JSON-Schlüssel lesbar und blockieren das Dekodieren nicht;
+- Vertragshandel am Main Hub ergänzt. Ein einziger vollständiger,
+  universumsweiter Public-Contracts-Snapshot versorgt Main, Home und Coalition
+  mit dem niedrigsten vergleichbaren Stückpreis für exakt einen angebotenen
+  Produkttyp ohne angeforderte Positionen oder Bündel;
+- den pro Hub hinterlegten, in EVE bestätigten kombinierten nicht erstattbaren
+  Vertragsgebührensatz nun auch am Main Hub weitergereicht und vom
+  Vertragserlös abgezogen. Markt-Verkaufssteuer und Markt-Brokergebühr bleiben
+  dort 0 ISK. Fehlt der persönliche Satz, bleibt die Rechnung ausdrücklich
+  vor dieser Gebühr vorläufig;
+- die offiziellen CCP-Unterlagen erneut geprüft: Der Support beschreibt den
+  öffentlichen Item-Exchange-Ablauf, veröffentlicht aber keine persönliche
+  Vertragsgebührenformel. Die dokumentierten Market-Order-Sätze werden deshalb
+  nicht als Vertragsgebühr umgedeutet; ESI liefert keine Gebührenvorschau für
+  einen hypothetisch neu erstellten Vertrag;
+- die BPC/BPO-Kostenzeile auf die offizielle Renderdarstellung des produzierten
+  Typs mit offiziellem Icon-Fallback umgestellt. Für die Ark wird damit Typ
+  `28850` gerendert. Der Produktname verwendet einen separaten gemeinsamen
+  Kopierknopf; nur der Chevron öffnet die Details;
+- deutsche und englische Texte sowie `dokumentation.md`,
+  `Documentation/PRODUCTION_BASIS.md`, `Documentation/HANDOFFS.md` und
+  `Documentation/ACCEPTANCE.md` auf den neuen Dreiervertrag aktualisiert.
+
+Ergebnis: Jeder der drei Hubs besitzt genau die drei gewünschten
+Verkaufsstrategien. Der Vertragspreis stammt aus dem vollständigen importierten
+Universum, seine bestätigte Vertragsgebühr fließt als eigener Abzug ein, und
+keine Marktorder kann stillschweigend als Vertragsreferenz dienen. Die Ark-
+Kostenzeile verwendet die Schiffsdarstellung und bleibt kopier- sowie
+aufklappbar, ohne beide Klickziele zu vermischen.
+
+Prüfung: Der vollständige isolierte SwiftPM-Lauf baute Core, App und App-Tests
+und bestand 343 Swift-Testing-Tests in 25 Suites sowie 8 XCTest-Fälle. Der
+frische native unsignierte Xcode-App-Build endete mit `BUILD SUCCEEDED`.
+Striktes Swift-Format für die betroffenen Dateien, beide
+Lokalisierungskataloge, doppelte Lokalisierungsschlüssel, lokale
+Dokumentationslinks und `git diff --check` wurden erfolgreich geprüft.
+
+Offen: Sichtprüfung des Ark-Bilds und der neun Karten, Tastatur und VoiceOver,
+Live-Vergleich des universumsweiten Vertragspreises, Eingabe der aktuell in EVE
+angezeigten persönlichen Vertragsgebühr, spätere Regionsauswahl und
+ausdrückliche Owner-Abnahme.
+
+## 2026-08-13 – Verpacktes Transportvolumen statt Schiffsvolumen
+
+Ziel: Die vom Planner für fertige Schiffe berechneten Kurierverträge sollten
+das Volumen des verpackten Gegenstands verwenden. Der gemeldete Zehn-Hulk-Plan
+hatte aus dem entpackten Volumen fünf Verträge und dadurch stark überhöhte
+Transportkosten gebildet.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen gemischten Checkout unter
+  `/private/tmp/EVE_NEXUS_SIMPLE-backup-2026-08-13-packaged-volume-before.tar.gz`
+  gesichert und das Archiv lesend geprüft;
+- den aktiven SDE-Build `3458726`, seine ursprüngliche `types.jsonl` und den
+  SQLite-Katalog lesend geprüft. Alle 26.992 veröffentlichten Katalogtypen
+  hatten `packaged_volume = NULL`; Hulk und Ark enthielten im aktuellen
+  clientbasierten SDE nur die entpackten Werte 150.000 beziehungsweise
+  18.500.000 m³. `COALESCE(packaged_volume, volume)` war damit die konkrete
+  Ursache der falschen Verträge;
+- aktuelle öffentliche ESI-Typdetails mit Kompatibilitätsheader geprüft: Hulk
+  Typ `22544` liefert `packaged_volume = 3.750`, Ark Typ `28850` liefert
+  `packaged_volume = 1.300.000` m³;
+- den SDE-Katalog so geändert, dass ausschließlich ein tatsächlich vorhandenes
+  `packaged_volume` zurückgegeben wird. Das entpackte `volume` ist kein
+  Transportfallback mehr;
+- `UniverseTypeVolumeService` ergänzt. Er lädt nur die bereits vom
+  Produktionsgraph ermittelten Typen über das öffentliche ESI, begrenzt die
+  Parallelität, nutzt den bestehenden ESI-Cache und liefert einen
+  quellengebundenen vollständigen, partiellen oder unverfügbaren Snapshot;
+- `PackagedVolumeSnapshotCatalog` komponiert diesen unveränderlichen Snapshot
+  mit den statischen Blueprint-, Typ- und Klassifikationsdaten. Planner,
+  experimentelle geführte Planung, Reaktionen und Main-Hub-Chancen verwenden
+  dieselbe verpackte Volumenquelle. Fehlende ESI-Typen bleiben unverfügbar;
+- deutsche und englische Warntexte sowie Architektur-, Produktionsbasis-,
+  Übergabe- und Akzeptanzdokumentation auf die getrennten SDE-/ESI-Quellen
+  aktualisiert.
+
+Ergebnis: Zehn Hulks werden mit dem aktuellen CCP-Wert als 37.500 m³ in genau
+einen 350.000-m³-Kuriervertrag eingeordnet. Der angenommene Wert 25.000 m³ ist
+aktuell nicht der von CCP gelieferte Wert; die fachliche Korrektur von fünf auf
+einen Vertrag bleibt bestehen. Eine Ark ist auch verpackt 1.300.000 m³ groß und
+bleibt deshalb als einzelner Gegenstand oberhalb des Standardlimits sichtbar.
+
+Prüfung: Drei gezielte Swift-Tests bestanden: öffentliche ESI-Werte und Cache,
+fehlender SDE-Rückfall sowie zehn Hulks mit 37.500 m³ in einem Vertrag. Der
+vollständige isolierte SwiftPM-Lauf bestand anschließend 346 Swift-Testing-Tests
+in 25 Suites sowie 8 XCTest-Fälle. Auch der frische unsignierte native
+Xcode-Debug-Build war erfolgreich. Striktes Swift-Format, die beiden
+Lokalisierungskataloge, doppelte Schlüssel, lokale Dokumentationslinks und
+`git diff --check` wurden abschließend geprüft.
+
+Offen: Reale Neuberechnung des gemeldeten Zehn-Hulk-Plans im laufenden Programm,
+Vergleich der daraus entstehenden Kosten mit dem Transportanbieter, visuelle
+Warnungs-/Routendarstellung, Tastatur, VoiceOver und Owner-Abnahme.
+
+## 2026-08-14 – Korrekte EVE-Bilder für rekursive Produktionspläne
+
+Ziel: Sichtbare EVE-Gegenstände sollten programmweit das Bild ihrer exakten
+Type-ID zeigen. Im gemeldeten Rhea-Plan stand neben dem Produktnamen das blaue
+Symbol eines anderen Gegenstands.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen gemischten Checkout unter
+  `/private/tmp/EVE_NEXUS_SIMPLE-backup-2026-08-14-item-images-before.tar.gz`
+  gesichert und das Archiv lesend geprüft;
+- den aktiven SDE-Katalog und den gespeicherten Rhea-Plan ausschließlich lesend
+  untersucht. Die Produktionsanfrage beginnt mit Self-Harmonizing Power Core
+  Typ `2872`; der produzierte, nicht von einem anderen Planknoten referenzierte
+  Wurzelknoten ist Rhea Typ `28844`. Das gezeigte blaue Bild gehörte damit exakt
+  zum fälschlich ausgewählten ersten Rohstoffknoten;
+- `IndustryPlanSnapshot.topLevelProductNode(for:)` als gemeinsamen fachlichen
+  Resolver ergänzt. Er wählt je Anfrage den produzierten Wurzelknoten statt des
+  ersten beliebigen Knotens eines rekursiv kind-zuerst gespeicherten Plans;
+- BPC/BPO-Kostenzeile, historische Planner-Darstellung,
+  Produktionsübersichtsprojektion und -entwürfe sowie das Produktionsbuch auf
+  denselben Resolver umgestellt. Ein Regressionstest beweist die Auswahl des
+  Endprodukts, obwohl ein Rohstoff der erste gespeicherte Knoten ist;
+- alle Bild-Aufrufstellen in Core, App und Tests geprüft. Blueprint-, Material-
+  und Strukturzeilen verwenden weiterhin die Type-ID ihrer eigenen sichtbaren
+  Entität. Die letzte separat aufgebaute Typbild-URL der Strukturdarstellung
+  verwendet nun ebenfalls `EVETypeImageURL`; direkte EVE-Typbild-URLs liegen im
+  App-Quelltext nur noch an dieser gemeinsamen Grenze;
+- Itemvertrag, Architektur, Skill-Übergabe, Hauptdokumentation und
+  Akzeptanzmatrix auf die gemeinsame Produktwurzel und die getrennte
+  Bild-/Namensidentität aktualisiert.
+
+Ergebnis: Eine rekursive Planung kann keinen Rohstoff oder ein Zwischenprodukt
+mehr als Bild für das beschriftete Endprodukt verwenden. Der gemeldete Rhea-Fall
+liefert Typ `28844` an die offizielle Schiffsdarstellung; fehlende oder
+unaufgelöste Type-IDs bleiben weiterhin explizit und werden nicht geraten.
+
+Prüfung: Der gezielte Produktwurzeltest bestand. Der vollständige isolierte
+SwiftPM-Lauf baute Core, App und App-Tests und bestand 347 Swift-Testing-Tests in
+25 Suites sowie 8 XCTest-Fälle. Der frische unsignierte native Xcode-Debug-Build
+war erfolgreich. Striktes Swift-Format, beide Lokalisierungskataloge, doppelte
+Schlüssel, lokale Dokumentationslinks und `git diff --check` wurden erfolgreich
+geprüft.
+
+Offen: Den Rhea-Plan im neu gebauten laufenden Programm erneut öffnen und das
+Schiffsbild visuell bestätigen. Stichproben in allen Modulen, langsamer oder
+fehlgeschlagener Bildabruf, Tastatur, VoiceOver und ausdrückliche Owner-Abnahme
+bleiben getrennte Sichtprüfungen.
+
+## 2026-08-14 – Capital-Mindestpreis und Gewinn ohne Highsec-Brokergebühr
+
+Ziel: In der Produktionsübersicht sollten Capitals mit ausdrücklich
+verbotenem Highsec-Main-Hub-Verkauf trotz nicht anwendbarer Brokergebühr ihren
+Kosten-plus-10-Prozent-Mindestpreis sowie Steuer und Gewinn aus einem manuell
+eingetragenen Verkaufspreis berechnen. Eine wirklich unbekannte, aber
+anwendbare Brokergebühr durfte dabei nicht still zu null werden.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen gemischten Checkout ohne Build- und
+  Git-Verwaltungsdaten unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-before-production-overview-fix-2026-08-14-205016.tar.gz`
+  gesichert; SHA-256
+  `e96749a39c96e3fdbbf2ca25caaba6871b7df20e9641a85f0962d47befbfdf8d`;
+- `SaleScenarioResult` um die getrennt eingefrorenen Verkaufssteuer- und
+  Brokergebührensätze sowie die Broker-Anwendbarkeit ergänzt. Auch ein wegen
+  der Capital-Highsec-Regel nicht ausführbares Szenario behält damit den
+  belegten Steuersatz, ohne einen Brokerbetrag zu erfinden;
+- `ProductionOverviewProjector` auf die expliziten Satzfelder umgestellt und
+  für historische Capital-Snapshots einen ausschließlich snapshotinternen
+  Home-/Coalition-Fallback ergänzt. Aktuelle Profildaten werden nicht in die
+  Historie eingemischt;
+- Mindestpreis, prognostizierten Gewinn, Marge und realen Gewinn so getrennt,
+  dass eine ausdrücklich nicht anwendbare Brokergebühr als `—` sichtbar
+  bleibt, rechnerisch aber keinen Abzug bildet. Ein lediglich unbekannter Satz
+  für einen möglichen Listenverkauf blockiert die Nettowerte weiterhin;
+- die deutsche und englische Produktionsübersicht um den Capital-Hinweis
+  ergänzt sowie Architektur-, Übergabe-, Akzeptanz- und Anwenderdokumentation
+  aktualisiert.
+
+Ergebnis: Bei einem Highsec-gesperrten Capital verwendet `Min. +10 %` die
+vollständigen Produktionskosten plus zehn Prozent und rechnet den bekannten
+Verkaufssteuersatz brutto hoch. Nach Eingabe eines Verkaufspreises erscheinen
+Steuer, prognostizierter Gewinn und Marge; der reale Gewinn berücksichtigt die
+verkaufte Menge. Ohne Verkaufspreis bleibt ein Steuerbetrag weiterhin
+unberechenbar. Die Broker-Spalte bleibt als nicht anwendbar `—`.
+
+Prüfung: Der isolierte fokussierte SwiftPM-Lauf baute Core, App und Tests und
+bestand zehn Tests in den Suites Produktionsübersicht und Industry Planner.
+Abgedeckt sind der neue Capital-Fall, der weiterhin blockierende wirklich
+unbekannte Brokergebührensatz und das Lesen eines historischen Snapshots ohne
+die neuen Satzfelder. Der anschließende vollständige isolierte SwiftPM-Lauf
+bestand 347 Swift-Testing-Tests in 25 Suites sowie 8 XCTest-Fälle. Der frische
+native unsignierte Xcode-Debug-Build war erfolgreich. Striktes Swift-Format,
+beide Lokalisierungskataloge, doppelte Lokalisierungsschlüssel, lokale
+Dokumentationslinks und `git diff --check` bestanden ebenfalls.
+
+Offen: Sichtprüfung der gemeldeten Bane-/Rorqual-Zeilen im laufenden Programm,
+Tastatur, VoiceOver und ausdrückliche Owner-Abnahme bleiben eigenständige
+Nachweise. Eine Zeile ohne eingetragenen Verkaufspreis kann weiterhin keinen
+Steuerbetrag oder Verkaufsgewinn anzeigen.
+
+## 2026-08-15 – Planner-Eingabefehler direkt an der Eingabe
+
+Ziel: Kontinuierlich erkannte Eingabefehler sollten im Planner unmittelbar bei
+der betroffenen Eingabe auffallen und nicht erst unterhalb der letzten
+Produktionen erscheinen.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen gemischten Checkout ohne Build- und
+  Git-Verwaltungsdaten unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-before-planner-input-error-placement-2026-08-15-072734.tar.gz`
+  gesichert; SHA-256
+  `2dcdcd562d0e139cc8e17db4ffdfeb477e0e27535bbec68e85e0a138e155f700`;
+- die vorhandene nummerierte Fehlerausgabe unverändert in die Fläche
+  **Produzieren** direkt unter die Zeile mit **Berechnen** verschoben;
+- die Fehlerfläche mit einer stabilen Accessibility-Kennung versehen und
+  Anwenderdokumentation sowie Akzeptanzmatrix an die tatsächliche Platzierung
+  angepasst.
+
+Ergebnis: Ungültige oder unvollständige Zeilen werden weiterhin während des
+Tippens erkannt. Der zugehörige Hinweis steht nun vor Lageroptionen und letzten
+Produktionen direkt bei der Eingabe; **Berechnen** bleibt bei Fehlern wie bisher
+deaktiviert. Parser und Kalkulationslogik wurden nicht verändert.
+
+Prüfung: Der gezielte Parser-Test für BPC/BPO ohne vollständigen Kostenbetrag
+bestand; dabei wurde der geänderte App-Target vollständig kompiliert. Der
+anschließende vollständige isolierte SwiftPM-Lauf bestand 347
+Swift-Testing-Tests in 25 Suites sowie 8 XCTest-Fälle. Der frische native
+unsignierte Xcode-Debug-Build war erfolgreich. Striktes Swift-Format,
+Skill-Suite-Links, beide Lokalisierungskataloge, doppelte
+Lokalisierungsschlüssel und `git diff --check` wurden abschließend geprüft.
+
+Offen: Sichtprüfung im laufenden bevölkerten Programm sowie Tastatur,
+VoiceOver und ausdrückliche Owner-Abnahme.
+
+## 2026-08-15 – Dashboard-Startsync und täglicher Vermögensverlauf
+
+Ziel: Das Dashboard sollte beim Programmstart seine privaten Finanz- und
+Bestandsquellen tatsächlich aktualisieren, den Wallet-Stand nachvollziehbar
+auffrischen und statt eines schwer lesbaren Index-Graphen einen belastbaren
+täglichen Verlauf zeigen. Bereits in laufender Produktion verbrauchte
+Materialien sollten im Vermögen sichtbar bleiben.
+
+Entwicklung:
+
+- vor der Änderung den gemischten Checkout außerhalb des Arbeitsverzeichnisses
+  unter `/private/tmp/EVE-NEXUS-SIMPLE-backup-2026-08-15-dashboard.tar.gz`
+  gesichert; Gzip-Integrität und Inhaltsverzeichnis wurden geprüft, SHA-256
+  `cb67d3e7b5550932d094470d2692a41db622443affba487baaf598a7b0cfca9c`;
+- beim ersten Dashboard-Aufruf pro App-Prozess einen vollständigen Sync aller
+  verbundenen Charaktere reserviert. Wallet, Assets, Industry Jobs, Orders,
+  private Contracts sowie berechtigte Corporation-Wallets/-Assets werden mit
+  ihren Quellzuständen gespeichert; die Wallet-Karte kann denselben Ablauf
+  manuell wiederholen und zeigt vollständige oder partielle Ergebnisse;
+- Vermögenshistorie weiterhin auf höchstens einen ersetzbaren Punkt pro lokalem
+  Kalendertag begrenzt, aber Diagramme auf echte Datumsabstände und eine
+  adaptive Werteskala umgestellt. Gesamtwert, Wallet, Assets und **In
+  Produktion** sind getrennt betrachtbar; auf Net Worth lassen sich die
+  Komponenten einzeln ein- und ausblenden;
+- aktive, pausierte und abholbereite Manufacturing-/Reaction-Jobs aus den
+  gespeicherten Jobquellen mit ihren SDE-Materialanforderungen bewertet.
+  Bekannte Blueprint-ME wird berücksichtigt, ausgelieferte, abgebrochene und
+  zurückgesetzte Jobs werden ausgeschlossen. Unbekannte Facility-/Rig-Abzüge,
+  fehlende SDE-Definitionen oder Preise bleiben ausdrücklich geschätzt oder
+  unvollständig;
+- deutsche und englische Oberfläche, Anwenderdokumentation, Skill-Handoffs und
+  Akzeptanzmatrix aktualisiert.
+
+Ergebnis: Der erste Dashboard-Aufruf stößt genau einmal einen sichtbaren
+privaten Charakter-Sync an und erzeugt nach erfolgreicher öffentlicher
+Preisaktualisierung den Tagespunkt. Fehlgeschlagene Einzelquellen behalten den
+letzten bekannten Stand statt null. Die Verlaufsgrafik zeigt reale Tage und
+hebt auch kleinere Veränderungen hervor; gebundene Produktionsmaterialien
+verschwinden nicht mehr vollständig aus dem bekannten Vermögen.
+
+Prüfung: Der fokussierte isolierte SwiftPM-Lauf bestand 15
+Dashboard-Projektionstests einschließlich der neuen Produktionsmaterial-
+Bewertung. Zehn Runtime-Feature-Tests bestanden einschließlich der
+Einmalreservierung des Startsyncs, ungleicher Tagesabstände und adaptiver
+Skalierung. Der anschließende vollständige isolierte SwiftPM-Lauf baute Core,
+App und Tests und bestand 350 Swift-Testing-Tests in 25 Suites sowie 8
+XCTest-Fälle. Striktes Swift-Format für die geänderten Swift-Dateien, beide
+Lokalisierungskataloge, doppelte Lokalisierungsschlüssel und
+`git diff --check` bestanden. Der native unsignierte Xcode-Build erreichte die
+Dashboard-Dateien, ist im gemischten Arbeitsstand aber nicht abgeschlossen:
+die parallel neu angelegte `OreRefining.swift` ist noch nicht im
+Xcode-Projekt registriert, sodass dort fachfremde `CompressedOreOption`- und
+`CompressedOreRefiningPlan`-Typen fehlen.
+
+Offen: Ein echter Start mit privaten ESI-Daten wurde nicht ausgelöst. Vergleich
+mit Wallet, Assets und laufenden Jobs im EVE-Client, mehrere reale Tagespunkte,
+enge Fensterbreite, Tastatur, VoiceOver, CPU/RSS und ausdrückliche
+Owner-Abnahme bleiben eigenständige Live- und Sichtnachweise.
+
+## 2026-08-15 – Compressed-Ore-Refining für Planner-Logistik
+
+Ziel: Ungedeckte Mineralien sollten nicht mehr grundsätzlich unkomprimiert vom
+Main Hub zum Produktionsort transportiert werden. Der Planner sollte
+komprimierte Erze einschließlich Markttiefe, skillabhängiger Ausbeute,
+Refining-Anlage, Gebühr und vollständiger Logistik prüfen und nur bei einem
+echten vollständigen Kostenvorteil auswählen.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen gemischten Checkout einschließlich
+  `.git` außerhalb des Arbeitsverzeichnisses unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-compressed-ore-refining-full.tar.gz`
+  gesichert; das lesbare 38-MB-Archiv hat SHA-256
+  `1259082bae3a5f4f0273758096dc47cd7c798c8dd891bbe74d9e08b6e066b5f1`;
+- die persistierte Production Basis um die optionale
+  Compressed-Ore-Refining-Regel, mehrere bereits vorhandene
+  Strukturkonfigurationen als Refining-Ziele, eine bestätigte optionale
+  Refining-Gebühr und eine optionale feste Charakterzuordnung je Anlage
+  erweitert. Ohne feste Zuordnung wird pro Erz der ertragsstärkste verbundene
+  Charakter anhand von Reprocessing, Reprocessing Efficiency und
+  erzspezifischem Processing bestimmt;
+- EVEStaticDataKit und den SQLite-Katalogadapter 3 um das offizielle
+  `typeMaterials`-Dataset, Refining-Ausgaben, Dogma-Skillzuordnung und
+  Asteroiden-/Monderz-Rig-Ausbeuten erweitert. Vorhandene ältere Kataloge
+  bleiben lesbar; fehlende Tabellen führen zur ausdrücklichen direkten
+  Mineralroute und benötigen vor Nutzung einen sicheren gleichen Build-
+  Neuimport oder ein SDE-Update;
+- die Planner-Domäne so erweitert, dass sie direkte Mineralbeschaffung und
+  -logistik gegen vollständigen Erzeinkauf, Transport zur gewählten Anlage,
+  skillabhängige gerundete Ausgabe, Adjusted-Price-basierte Refining-Gebühr und
+  die tatsächliche Kuriervertragsaufteilung vergleicht. Nur positive
+  Gesamtersparnis bleibt ausgewählt; unvollständige Skills, SDE-Daten, Preise,
+  Gebühren, Volumina oder Raten werden nicht als null behandelt;
+- Ergebnis-Snapshot, Kostenkarte, Refining-Aufschlüsselung und
+  EVE-Multibuy-Liste um gewähltes Erz, Restmineralien, Anlage, kopierbares
+  System, kopierbaren Charakter, Ausbeute, Gebühr, beide vollständigen Wege und
+  Ersparnis erweitert. Refining-Implantate bleiben ausdrücklich unberücksichtigt;
+- deutsche und englische Lokalisierung, Xcode-Projektmitgliedschaft,
+  `dokumentation.md` und
+  [Production-Basis-Vertrag](Documentation/PRODUCTION_BASIS.md) aktualisiert.
+
+Ergebnis: Der normale Planner kann mehrere Refining-Anlagen in verschiedenen
+Systemen bewerten und je Erz automatisch den besten belegten Charakter wählen.
+Eine teurere oder unvollständige Erzroute verändert weder Mineralcargo noch
+Einkaufsliste; eine günstigere vollständige Route ersetzt nur die gedeckten
+Mineralien und bleibt als eigener Kosten- und Logistiknachweis sichtbar.
+
+Prüfung: Der vollständige isolierte SwiftPM-Lauf baute Core, App und Tests und
+bestand 353 Swift-Testing-Tests in 25 Suites sowie 8 XCTest-Fälle. Darin
+enthalten sind neue Nachweise für SDE-`typeMaterials`, Skillformel und
+Abrundung, Auswahl des besseren Charakters, günstige Erzroute, Rückfall bei
+teurem Erz sowie angepasste Multibuy-Zeilen. Der native unsignierte
+Xcode-Debug-Build mit isoliertem DerivedData endete mit `BUILD SUCCEEDED` und
+kompilierte `OreRefining.swift` im Core-Target. Striktes Swift-Format, beide
+Lokalisierungskataloge, doppelte Lokalisierungsschlüssel und
+`git diff --check` bestanden.
+
+Offen: Ein sicherer SDE-Neuimport des lokal aktiven echten Builds, Live-ESI-
+Markttiefe, reale Charakter-Skills, die konkrete Darfnor-Tatara einschließlich
+in EVE bestätigter Gebühr/Rigs, ein realer Planner-Vergleich, visuelle Prüfung
+bei verschiedenen Fensterbreiten, VoiceOver, CPU/RSS und ausdrückliche
+Owner-Abnahme wurden nicht durchgeführt. Refining-Implantate benötigen einen
+eigenen verifizierten Datenvertrag, bevor sie eingerechnet werden dürfen.
+
+## 2026-08-15 – SDE-Zeiger, Dashboard-Raster und ESI-Teilstatus
+
+Ziel: Der in der laufenden App als nicht installiert gemeldete SDE-Katalog mit
+dem Rohfehler `invalidPointer`, die unausgewogene Industriekapazität im
+Dashboard und die gelben Asset-Hinweise der ESI-Charaktere sollten gemeinsam,
+aber mit getrennten Ursachen geprüft und behoben werden.
+
+Entwicklung:
+
+- vor den Änderungen den vollständigen gemischten Checkout außerhalb des
+  Arbeitsverzeichnisses unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-sde-dashboard-esi-fix.tar.gz`
+  gesichert; das lesbare 39-MB-Archiv hat SHA-256
+  `b117af2707c7c310cb0dcb20273a6ddeb592680d85b57ceac80a7b88e5d04573`;
+- den echten aktiven Katalogzeiger und die zugehörige SQLite-Datei nur lesend
+  geprüft. Der aktive, vollständig vorhandene Build 3458726 verwendete den
+  früheren kanonischen Adapter-v2-Dateinamen; die auf Adapter 3 angehobene
+  Prüfung akzeptierte dagegen nur noch die aktuelle v3-Datei oder den
+  unversionierten Legacy-Namen. Dadurch wurde ein gültiger Katalog fälschlich
+  als `invalidPointer` und anschließend als nicht installiert behandelt;
+- die Zeigerprüfung so erweitert, dass kanonische versionierte Katalogdateien
+  ab Version 1 bis zur aktuellen Adapterversion lesbar bleiben. Neue Dateien
+  werden weiter ausschließlich mit Adapter 3 erzeugt; fremde Pfade,
+  nichtkanonische und zukünftige Versionen bleiben gesperrt. Ein Regressionstest
+  belegt die Lesbarkeit des v2-Zeigers, und die App übersetzt einen tatsächlich
+  ungültigen Zeiger nun in einen verständlichen, datenbewahrenden Hinweis;
+- die sechs Industriekapazitätskarten von einem frei adaptiven Raster auf
+  stabile Alternativen 3×2, 2×3 und 1×6 umgestellt. Dadurch bleibt das
+  Dashboard bei breiten Fenstern ausgeglichen und bei engen Fenstern lesbar;
+- Callback-Anzeige, PKCE-Anfrage, Loopback-Server und Rückrufvalidierung geprüft:
+  alle verwenden exakt `http://localhost:52722/callback`. Die gespeicherten
+  Snapshots zeigten erfolgreiche ESI-Aktualisierungen; die gelben Hinweise
+  stammten stattdessen aus nicht erreichbaren beziehungsweise nicht auflösbaren
+  Player-Structure-Orten in den Asset-Daten. Die ESI-Seite bezeichnet diesen
+  Zustand jetzt ausdrücklich als teilweise verfügbare Assets, nennt die Zahl
+  der Orte und bestätigt, dass die Assets erhalten bleiben;
+- deutsche und englische Lokalisierung sowie `dokumentation.md` aktualisiert.
+
+Ergebnis: Der vorhandene Adapter-v2-Katalog wird wieder als installierter Build
+3458726 erkannt und blockiert die sichere Update- oder Neuimportvorschau nicht
+mehr. Das Dashboard zeigt bei der geprüften breiten Fenstergröße drei mal zwei
+Kapazitätskarten. Der ESI-Hinweis unterscheidet unaufgelöste Strukturorte von
+einem Berechtigungs- oder Callbackfehler.
+
+Prüfung: Ein fokussierter isolierter SwiftPM-Lauf bestand 33 Tests aus den
+`SQLiteStaticCatalogTests` und `AuthAndBlueprintTests`, einschließlich des
+neuen v2-Zeigerfalls und der bestehenden exakten Callbacktests. Striktes
+Swift-Format für die geänderten Swift-Dateien, beide Lokalisierungskataloge und
+`git diff --check` bestanden. Der native unsignierte Xcode-Debug-Build mit
+isoliertem DerivedData endete mit `BUILD SUCCEEDED`. Ein App-Start mit leerem
+isoliertem Datenroot bestätigte visuell das 3×2-Dashboard-Raster. Ein zweiter
+App-Start mit einer Kopie ausschließlich des echten SDE-Verzeichnisses erkannte
+Build 3458726 und erreichte über **Nach SDE-Update suchen** die offizielle
+Metadatenvorschau; sie meldete einen neueren offiziellen Build und die
+erforderliche Schemafreigabe. Es wurde weder importiert noch aktiviert und die
+Produktionsdaten wurden nicht verändert. Nach der Dokumentationsänderung baute
+der vollständige isolierte SwiftPM-Lauf Core, App und Tests und bestand 354
+Swift-Testing-Tests in 25 Suites sowie 8 XCTest-Fälle.
+
+Offen: Ein SDE-Update oder Neuimport im produktiven Datenroot, Schemafreigabe,
+vollständiger App-Neustart und Owner-Abnahme bleiben bewusst offen. Ebenso
+offen sind ein neuer Live-SSO-Browserdurchlauf, der externe Abgleich der im
+EVE-Developer-Portal registrierten Redirect-URL, ein Live-ESI-Vergleich der
+unzugänglichen Strukturen, VoiceOver sowie CPU/RSS. Der erfolgreiche vorhandene
+ESI-Sync belegt keinen neuen Login, und die isolierte Live-Metadatenprüfung
+belegt keine SDE-Aktivierung.
+
+## 2026-08-15 – Fehlende `typeDogma.dogmaEffects` im SDE-Update
+
+Ziel: Der vom Owner bestätigte Import des neueren offiziellen SDE-Builds
+3466501 scheiterte in der Mappingphase mit
+`invalidField(dataset: typeDogma, line: 1, field: "dogmaEffects")`, während
+der aktive Build 3458726 weiterhin verfügbar blieb.
+
+Entwicklung:
+
+- vor der Änderung den vollständigen gemischten Checkout einschließlich der
+  bestehenden Arbeitsstände unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-typedogma-optional-effects-fix.tar.gz`
+  gesichert; das lesbare 298-MB-Archiv hat SHA-256
+  `efa09d494fb701f2a22588ab73aea657264f0c99f95619d2f6c457865b925307`;
+- die fehlgeschlagene SDE-Operation und das beibehaltene öffentliche Paket nur
+  lesend untersucht. Build 3466501, Inhaltshash
+  `5b53a5c03a9e3116ff6f1ed6a3f97ecacc471155ec7a58dde33926927c064950`
+  und die vollständigen acht benötigten Datasets waren vorhanden. In
+  `typeDogma` fehlt `dogmaEffects` bei 10.713 von 26.828 Typen; Zeile 1 für
+  Typ 18 enthält Attribute, aber erwartungsgemäß keine Effekte. Die erste
+  Mapper-Erweiterung für `typeMaterials` bezog diesen reprocessbaren Typ nun
+  erstmals ein und behandelte das ausgelassene optionale Feld fälschlich als
+  ungültig;
+- `JSONLinesSDECatalogMapper` so korrigiert, dass ausschließlich ein
+  ausgelassenes `dogmaEffects` als leere Effektmenge gilt. Ein vorhandener
+  falscher Typ, ungültige Effekt-IDs und Dubletten werden weiterhin abgewiesen;
+  Reaktionsskill und Reaction-Rigs müssen ihre fachlich erforderlichen Effekte
+  weiterhin in der nachfolgenden Profilvalidierung belegen;
+- einen deterministischen Regressionstest für das ausgelassene Feld sowie je
+  einen ausdrücklich opt-in geschalteten Real-SDE-Mapper- und SQLite-
+  Aktivierungstest ergänzt. Ohne Pfadvariable bleiben reale öffentliche
+  Pakete aus dem normalen Testsatz ausgeschlossen;
+- `dokumentation.md` und die Acceptance-Matrix um die aktuelle Feldsemantik,
+  Teststufen, temporäre Aktivierung und offene Owner-Abnahme ergänzt.
+
+Ergebnis: Das vollständig vorbereitete offizielle Build-3466501-Paket passiert
+nun die gesamte Mappingphase. Es kann in eine isolierte SQLite-Datenbank
+gestreamt, erneut geöffnet und atomar aktiviert werden. Der produktive aktive
+Katalog wurde durch Diagnose und Nachweise nicht verändert und blieb auf Build
+3458726.
+
+Prüfung: Der fokussierte deterministische Regressionstest bestand. Der
+opt-in Real-SDE-Mapper verarbeitete das vollständige öffentliche Paket in
+22,539 Sekunden. Der weitergehende opt-in Test schrieb denselben Build in einen
+neuen temporären SQLite-Katalog, öffnete ihn erneut und aktivierte ihn dort in
+48,084 Sekunden. Das eigenständige EVEStaticDataKit bestand sieben
+deterministische Tests; sein Real-SDE-Test wurde ohne Opt-in erwartungsgemäß
+übersprungen. Der vollständige App-Lauf bestand 354 deterministische
+Swift-Testing-Tests in 25 Suites und 8 XCTest-Fälle; der getrennte Real-SDE-
+Test wurde im Standardsatz erwartungsgemäß übersprungen. Der native unsignierte
+Xcode-Debug-Build endete mit `BUILD SUCCEEDED`. Striktes Swift-Format und
+`git diff --check` bestanden. Der erste native Buildversuch scheiterte nur an
+der Dateisandbox für globale Swift-/Clang-Caches; der identische erlaubte Lauf
+war erfolgreich.
+
+Offen: Der Owner muss den neu gebauten App-Stand starten und das produktive
+Update erneut bestätigen. Erst ein dort erfolgreich sichtbarer Abschluss,
+vollständiges Beenden und Neuöffnen sowie die anschließende Main-Hub-Analyse
+belegen die produktive Aktivierung. Sichtprüfung der neuen Refining-Daten,
+Tastatur, VoiceOver, längerfristige CPU/RSS-Messung und ausdrückliche
+Owner-Abnahme bleiben getrennt offen.
+
+## 2026-08-15 – Hauptfenster startet maximiert
+
+Ziel: Die App soll nach jedem neuen Start mit einem maximierten Hauptfenster
+erscheinen, ohne in den nativen macOS-Vollbildmodus zu wechseln.
+
+Entwicklung:
+
+- einen kleinen AppKit-Starthelfer in die gemeinsame Wurzel beider
+  Persistenzzustände eingebunden;
+- den sichtbaren Arbeitsbereich des aktuellen Bildschirms als einmaligen
+  Fensterrahmen verwendet, sodass Menüleiste und Dock frei bleiben;
+- die Anwendung nach der ersten Maximierung bewusst nicht mehr in manuelle
+  Größenänderungen eingreifen lassen;
+- das aktuelle Verhalten und den getrennten Abnahmestand in
+  `dokumentation.md` und der Acceptance-Matrix festgehalten.
+
+Ergebnis: Jedes neu erzeugte App-Hauptfenster wird einmal auf den sichtbaren
+Arbeitsbereich seines Bildschirms erweitert. Die bisherige SwiftUI-Startgröße
+1180 × 760 bleibt als Rückfall erhalten, die Mindestinhaltsgröße 640 × 480 und
+freie spätere Größenänderungen bleiben unverändert.
+
+Prüfung: Striktes Swift-Format bestand. Ein fokussierter AppKit-Test setzte ein
+Testfenster exakt auf den vorgegebenen sichtbaren Bildschirmrahmen und belegte,
+dass ein anschließendes manuelles Skalieren durch einen zweiten Aufruf nicht
+überschrieben wird. Der anschließende vollständige SwiftPM-Lauf bestand 356
+Swift-Testing-Tests in 25 Suites und 8 XCTest-Fälle. Der erste Versuch wurde
+ausschließlich durch Apples lokale
+SwiftPM-Dateisandbox blockiert; derselbe Lauf mit isolierten Build- und
+Modulcache-Pfaden war erfolgreich.
+
+Offen: Visuelle Prüfung nach vollständigem Beenden und Neustart, Verhalten an
+einem zweiten Bildschirm, Tastatur, VoiceOver und ausdrückliche Owner-Abnahme
+bleiben getrennte Laufzeitnachweise.
+
+## 2026-08-15 – Frachtpositionen und ESI-Volumen für Compressed Ore
+
+Ziel: Die Planner-Logistik sollte je Kuriervertrag offenlegen, welche
+Main-Hub-Einkäufe tatsächlich zum Produktions-/Home Hub transportiert werden.
+Außerdem sollte der vorhandene Vergleich zwischen direkten Mineralien und
+komprimiertem Erz das bereits geladene öffentliche ESI-Transportvolumen auch
+im eigentlichen Ore-Vergleich zuverlässig verwenden.
+
+Entwicklung:
+
+- vor der Änderung den gemischten Checkout außerhalb des Arbeitsverzeichnisses
+  unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-logistics-breakdown-ore-fix.tar.gz`
+  gesichert; das lesbare 40-MB-Archiv hat SHA-256
+  `53645fdc0c8ed4ebcf947aaffe7fd5a9086b6cdfd875a27d1c8f88e489556534`;
+- die unveränderliche Logistikdomäne um Frachtpositionen je erzeugtem Vertrag
+  erweitert. Die ganzzahlige Vertragsaufteilung führt Typ, aufgelösten Namen,
+  Menge, Volumen und anteilige Sicherheitsleistung mit und speichert diese
+  Daten im Plan-Snapshot. Ältere Snapshots ohne Positionen bleiben lesbar und
+  werden nicht nachträglich geschätzt;
+- den `PackagedVolumeSnapshotCatalog` korrigiert: Das bereits von öffentlichem
+  ESI geladene `packaged_volume` wird nun auch in jede komprimierte Erzoption
+  übernommen. Das SDE bleibt ausschließlich für Chargengröße,
+  Mineralausgaben und erzspezifischen Processing-Skill zuständig;
+- die aufgeklappte Planner-Logistikkarte um die konkreten Positionen erweitert.
+  Aufgelöste Gegenstandsnamen verwenden `EVEEntityText` und sind getrennt vom
+  Disclosure direkt kopierbar; ein fehlender Name bleibt ausdrücklich
+  unverfügbar;
+- deutsche/englische Lokalisierung, Production-Basis-Vertrag, Skill-Handoff,
+  Acceptance-Matrix und `dokumentation.md` aktualisiert.
+
+Ergebnis: Nach einer neuen Berechnung lässt sich jeder Inbound-Vertrag direkt
+mit der Einkaufsliste abgleichen. Bei einer wirtschaftlich besseren
+Compressed-Ore-Route zeigt dieselbe Aufschlüsselung das gekaufte Erz und die
+verbleibenden direkten Materialien. Ore ersetzt Mineralien weiterhin nur dann,
+wenn Einkauf, Refining-Gebühr und vollständig gerundete Logistik zusammen
+günstiger sind.
+
+Prüfung: Die fokussierten Regressionen belegen eine gesplittete 383-Einheiten-
+Fracht einschließlich exakter Vertragsmengen/-volumina, das Dekodieren eines
+historischen Vertrags ohne Inhaltsfeld sowie die Auswahl des besten Refining-
+Charakters und der günstigeren Ore-Route mit einem ausschließlich durch den
+ESI-Snapshot gelieferten Erzvolumen; teures Erz lässt die direkte Mineralroute
+unverändert. Der vollständige isolierte SwiftPM-Lauf baute Core und App und
+bestand 357 Swift-Testing-Tests in 25 Suites sowie 8 XCTest-Fälle. Beide
+Lokalisierungskataloge, doppelte Schlüssel und `git diff --check` bestanden.
+Der native unsignierte Xcode-Debug-Build endete mit `BUILD SUCCEEDED`.
+
+Offen: Es wurden keine aktuellen Main-Hub-Orders, privaten Charakter-Skills,
+Tatara-Einstellungen oder Providerpreise live abgefragt. Ein realer
+Tritanium-/Pyerite-lastiger Plan, der Abgleich mit EVE und dem Courier-
+Kalkulator sowie Sichtprüfung, Tastatur, VoiceOver, CPU/RSS und ausdrückliche
+Owner-Abnahme bleiben getrennt offen.
+
+## 2026-08-15 – Logistikroute und Refining-Bereitschaft nachvollziehbar
+
+Ziel: Die in den Verkaufsstrategien sichtbare Main-Hub-Route sollte dieselben
+tatsächlichen Verträge und Frachtpositionen wie die Einkaufsliste ausweisen.
+Zugleich sollte eine nicht ausgeführte Compressed-Ore-Optimierung ihren
+konkreten Sperrgrund zeigen und nicht wie eine ausgebliebene Aktualisierung
+wirken.
+
+Entwicklung:
+
+- den gemischten Checkout vor der Änderung außerhalb des Arbeitsverzeichnisses
+  unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-logistics-route-audit.tar.gz`
+  gesichert; das geprüfte Archiv hat SHA-256
+  `579a0f801d7d00fada18e58f66663093b3ca6abc433ca10578403113c32e73f8`;
+- die Refining-Bereitschaft als vollständige Ursachenliste modelliert:
+  fehlender Service, fehlende Erzausbeute und unbestätigte Gebühr bleiben
+  getrennte Zustände. Ein bestätigtes 0 % ist weiterhin von einem leeren,
+  unbekannten Feld verschieden;
+- in den Industrieeinstellungen jede relevante Refining-Anlage mit ihrem
+  konkreten Bereitschaftsstatus ergänzt. Ein bereits berechneter Planner-
+  Snapshot weist zusätzlich Sperrgrund und Berechnungszeit aus und fordert
+  nach einer Einstellungsänderung zur neuen Berechnung auf;
+- jede Verkaufsstrategie um die tatsächlichen Kurierabschnitte und deren
+  aufklappbare, kopierbare Frachtpositionen ergänzt. Die Zusammenfassung zählt
+  ausschließlich diese Abschnitte; der missverständliche Hinweis einer
+  einzelnen Zwischenroute wird nicht mehr als abweichende Gesamtanzahl
+  angezeigt;
+- Produktionshistorie und Dokumentation stellen klar, dass gespeicherte
+  Logistik- und Refiningwerte von aktuellen Einstellungen nicht nachträglich
+  verändert werden.
+
+Ergebnis: Der auf den Screenshots vorhandene Reprocessing-Service und die
+50-%-Erzausbeute reichen bei leerer Refining-Gebühr bewusst nicht für den
+Ore-Vergleich. Die Oberfläche benennt nun genau die fehlende Gebührenbestätigung.
+Nach Eingabe der tatsächlichen Gebühr und einer neuen Berechnung zeigen die
+Strategiekarten sämtliche Main-Hub-Lieferverträge und ihre Items. Historische
+434-Mio.-ISK-Zeilen dürfen dabei von einer aktuellen 402-Mio.-ISK-Rechnung
+abweichen und bleiben unverändert.
+
+Prüfung: Die neuen fokussierten Regressionen für vollständige Refining-
+Bereitschaft sowie konsistente Routenhinweise bestanden. Der vollständige
+isolierte SwiftPM-Lauf baute Core und App und bestand 358 Swift-Testing-Tests
+in 25 Suites sowie 8 XCTest-Fälle. Striktes Swift-Format und beide
+Lokalisierungskataloge bestanden; der unsignierte native Xcode-Debug-Build
+endete erfolgreich. Keine Live-ESI- oder Marktanfrage wurde ausgeführt.
+
+Offen: Die tatsächliche Refining-Gebühr der Tatara muss der Owner aus EVE
+übernehmen und danach den Plan neu berechnen. Die visuelle Laufzeitprüfung des
+neuen Status- und Vertragsbereichs, der Abgleich mit aktuellen Main-Hub-Orders,
+Providerpreis, Tastatur, VoiceOver, CPU/RSS und ausdrückliche Owner-Abnahme
+bleiben offen.
+
+## 2026-08-15 – Jump-Freighter-Transport zum Coalition Hub
+
+Ziel: Die Route vom Home Hub zum Coalition Hub sollte nicht länger mit dem
+allgemeinen Kurierpreis berechnet werden. Stattdessen sollte ein auswählbarer
+Jump Freighter mit aktuellem Pilotenkönnen, einer realen Sprungroute und dem
+vorgegebenen Durchschnittspreis aller vier Isotope bewertet werden.
+
+Entwicklung:
+
+- den gemischten Checkout vor der Änderung außerhalb des Arbeitsverzeichnisses
+  unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-jump-freighter-logistics.tar.gz`
+  gesichert; das geprüfte Archiv hat SHA-256
+  `b0343bbb394cdbbe1ceea1efe4a3599f8f4fc42dbd2ca7eb19fbd78be32c5156`;
+- eine eigene unveränderliche Jump-Freighter-Domäne für Schiff, Isotop,
+  Pilotenwahl, Skills, DOTLAN-Route, Flugladung, vier Preisnachweise und
+  Gesamtkosten ergänzt. Ältere Profile und Plan-Snapshots bleiben durch
+  optionale Felder und sichere Standardwerte lesbar;
+- die Laufzeitkoordination löst Home- und Coalition-Hub-Systeme über ESI auf,
+  verwendet nur frische geeignete Charakter-Skills, lädt den passenden
+  DOTLAN-Plan und die vier Main-Hub-Isotopenorderbücher. Planner erhält nur
+  unveränderliche Quellensnapshots und startet selbst keine Netzwerkanfrage;
+- Produkte werden in ganzen Einheiten auf die sichtbare nutzbare Kapazität je
+  Einwegflug verteilt. Die DOTLAN-Menge pro Flug wird mit der Fluganzahl und
+  dem arithmetischen Mittel aus Helium, Oxygen, Nitrogen und Hydrogen Isotopes
+  bewertet. Fehlende Daten bleiben unverfügbar; übergroße Einzelitems verlangen
+  weiterhin einen manuellen Transport;
+- die Industrieeinstellungen um Aktivierung, Schiff, automatische oder feste
+  Pilotenwahl und nutzbare Kapazität ergänzt. Die Coalition-Strategie zeigt die
+  vollständige Route, Skills, Kraftstoff, vier Preise, Mittelwert, Flüge und
+  konkrete Frachtpositionen; sämtliche EVE-Namen verwenden die gemeinsame
+  Kopierinteraktion;
+- Production-Basis, Architektur, Handoff, Acceptance-Matrix und aktuelle
+  Anwenderdokumentation an den neuen Quellennachweis angepasst.
+
+Ergebnis: Nach Aktivierung ersetzt die Jump-Freighter-Gesamtsumme den normalen
+Kurierpreis ausschließlich auf Route 2 zum Coalition Hub. Der bisherige
+Kurierweg bleibt bei deaktivierter Option unverändert. Die Standardkapazität
+von 350.000 m³ ist ausdrücklich nur eine änderbare Fit-Annahme; Rückflugtreibstoff
+ist nicht enthalten.
+
+Prüfung: Acht fokussierte Core-Tests decken URL-Aufbau, aktuellen DOTLAN-HTML-
+Parser, die Ablehnung widersprüchlicher Isotop-, Summen- und Volumennachweise,
+automatische Pilotenwahl, ganzzahlige Flugaufteilung, Vier-Isotopen-Mittelwert,
+fehlenden Preis und historische Dekodierung ab. Die vorhandene
+Drei-Hub-Regression belegt zusätzlich, dass der neue Betrag alle Coalition-
+Strategien erreicht. Der öffentliche DOTLAN-Plan für Ark 5/5/5 von UALX-3 nach
+C-J6MT wurde am 15. August 2026 live gelesen: drei Sprünge, 20,314 Lichtjahre
+und 44.690 Helium Isotopes pro Flug. Der vollständige isolierte SwiftPM-Lauf
+baute Core und App und bestand 366 Swift-Testing-Tests in 26 Suites sowie 8
+XCTest-Fälle. Striktes Swift-Format, beide Lokalisierungskataloge, doppelte
+Lokalisierungsschlüssel, die Xcode-Projektdatei und `git diff --check`
+bestanden; der unsignierte native Xcode-Debug-Build endete mit
+`BUILD SUCCEEDED`.
+
+Offen: Es wurden keine privaten Skills und keine aktuellen Main-Hub-Preise des
+Owners live abgefragt. Auswahl des tatsächlich verwendeten Schiffs/Piloten,
+nutzbare Fit-Kapazität, Abgleich der Route und Kraftstoffmenge, Rückflugpolicy,
+visuelle Prüfung, Tastatur, VoiceOver, CPU/RSS und ausdrückliche Owner-Abnahme
+bleiben getrennt offen.
+
+## 2026-08-15 – Gebaute Capitals springen selbst zum Coalition Hub
+
+Ziel: Ein im Plan fertiggestelltes sprungfähiges Capital durfte nicht als
+Fracht des konfigurierten Jump Freighters behandelt werden. Jede gebaute Hülle
+sollte ihre eigene Strecke und ihren eigenen Treibstoffbedarf erhalten.
+
+Entwicklung:
+
+- den gemischten Checkout vor der Änderung außerhalb des Arbeitsverzeichnisses
+  unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-capital-self-jump.tar.gz`
+  gesichert; SHA-256
+  `f847d0181f7fb372196132447c3b5a8ecc75bc91e3b67a5ac39117773467b67b`;
+- eine explizite Selbstsprung-Policy für Carrier-, Dreadnought-, Force-
+  Auxiliary-, Supercarrier-, Titan-, Capital-Industrial- und
+  Jump-Freighter-Gruppen ergänzt. Ein gewöhnlicher Freighter bleibt außerhalb
+  dieser Policy;
+- Capital-Produkte vor der Frachtaufteilung aus dem Cargo entfernt. Runtime
+  lädt je Produkttyp eine eigene DOTLAN-Route mit dem exakten Typnamen und
+  JDC/JFC; Planner multipliziert die Isotopenmenge dieser Route mit der Zahl der
+  fertiggestellten Hüllen;
+- die bisherigen Jump-Freighter-Flüge für alle übrigen Produkte unverändert
+  beibehalten und beide Kostenbestandteile mit demselben aktuellen
+  Vier-Isotopen-Mittelwert zusammengeführt. Fehlende Selbstsprungdaten bleiben
+  blockierend und fallen weder auf Fracht, Kurierkosten noch 0 ISK zurück;
+- Strategieansicht und Industrieeinstellungen um getrennte Capital-Hüllen,
+  Pilot, Sprungabschnitte, Isotop, Menge je Hülle, Gesamtmenge und Kosten
+  ergänzt. Gerenderte EVE-Namen verwenden die gemeinsame Kopierinteraktion;
+- Fachvertrag, Architektur, Handoff und Anwenderdokumentation an die neue
+  Grenze zwischen Fracht und selbstspringender Hülle angepasst.
+
+Ergebnis: Ein gebauter Jump Freighter, eine Rorqual oder ein anderes durch die
+Policy als selbst sprungfähig ausgewiesenes Capital belegt keine
+Frachterkapazität. Bei zwei gebauten Hüllen wird derselbe verifizierte
+Einweg-Sprungplan zweimal berechnet. Ist die Sprunglogistik deaktiviert oder
+fehlt eine Route, bleibt die Coalition-Rentabilität unverfügbar. Die konkrete
+Hull-Command-Berechtigung des ausgewählten Charakters ist noch kein
+automatischer Nachweis und bleibt als Owner-Abgleich offen.
+
+Prüfung: 13 fokussierte Sprunglogistiktests und alle 29 Industry-Planner-Tests
+bestanden. Sie decken insbesondere die Rorqual-URL mit Skillziffern `550`, den
+beibehaltenen DOTLAN-HTML-Nachweis, Capital-Piloten ohne Jump-Freighters-Skill,
+Hüllenmultiplikation, Gruppengrenze, historische Dekodierung und die
+Planner-Regression ab, in der die Rorqual trotz eines vorhandenen
+Jump-Freighter-Routensnapshots ausschließlich als Selbstsprung berechnet wird.
+Der öffentliche DOTLAN-Plan für Rorqual JDC 5/JFC 5 von UALX-3 nach C-J6MT
+wurde am 15. August 2026 live gelesen: drei Sprünge, 20,314 Lichtjahre und
+40.627 Oxygen Isotopes je Hülle.
+
+Der vollständige isolierte SwiftPM-Lauf baute Core und App und bestand 371
+Swift-Testing-Tests in 26 Suites sowie 8 XCTest-Fälle. Striktes Swift-Format
+der geänderten Swift-Dateien, beide Lokalisierungskataloge, die
+Xcode-Projektdatei und `git diff --check` bestanden. Der unsignierte native
+Xcode-Debug-Build endete mit `BUILD SUCCEEDED`.
+
+Offen: Private Skilldaten, tatsächliche Hull-Command-Berechtigung, aktuelle
+Main-Hub-Preise, visueller Abgleich, Tastatur, VoiceOver, CPU/RSS und
+ausdrückliche Owner-Abnahme bleiben getrennt offen.
+
+## 2026-08-15 – Feste Sprungroutenprofile je Capital-Klasse
+
+Ziel: Die Route vom Home Hub zum Coalition Hub sollte wahlweise als konkrete,
+vom Owner festgelegte Folge direkter Sprünge berechnet werden. Jump Freighter,
+Carrier, Dreadnought, Force Auxiliary, Supercarrier, Titan und Capital
+Industrial sollten dieselbe Route bewusst teilen oder jeweils ein eigenes
+Profil erhalten können.
+
+Entwicklung:
+
+- den gemischten Checkout vor der Änderung außerhalb des Arbeitsverzeichnisses
+  unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-fixed-capital-routes.tar.gz`
+  gesichert; SHA-256
+  `dccea5f8788339435687e1a140a4d349f1ab7777043e3b52d0911d27d4dff73b`;
+- persistierbare Sprungroutenprofile mit geordneten ESI-Sonnensystemen und
+  optionalen Cyno-Struktur- oder Einsatzortnamen ergänzt. Die sieben
+  Schiffsklassen besitzen getrennte Zuordnungen; mehrere dürfen ausdrücklich
+  dieselbe Profil-ID verwenden. Alte Profile dekodieren ohne erfundene
+  Zuordnung als automatische DOTLAN-Route;
+- bei einem festen Profil jeden Abschnitt zwischen Home Hub, Zwischenpunkten
+  und Coalition Hub einzeln für das tatsächliche Schiff und den gewählten
+  Piloten geladen. Nur genau ein passender direkter DOTLAN-Sprung wird
+  akzeptiert; Lichtjahre und Isotope werden über die geprüften Abschnitte
+  addiert;
+- unvollständige, gelöschte, nicht direkte oder außerhalb der Reichweite
+  liegende Profile als blockierend behandelt. Es gibt keinen stillen Rückfall
+  auf automatische DOTLAN-Routenwahl, Fracht, Kurierkosten oder 0 ISK;
+- die Industrieeinstellungen um Profilpflege, Zwischenpunkte und Zuordnung je
+  Klasse ergänzt. Die Strategiedetails zeigen automatische oder feste Quelle,
+  Profil, kopierbare Systeme und Cyno-Orte sowie jeden gespeicherten
+  DOTLAN-Abschnitt;
+- Produktionsvertrag, Architektur, Handoff, Acceptance-Matrix und
+  Anwenderdokumentation an die feste Routenquelle angepasst.
+
+Ergebnis: Der Owner kann wenige gemeinsame Routenprofile pflegen und trotzdem
+für jede Klasse einzeln bestimmen, ob sie ein Profil oder automatische
+Routenwahl verwendet. Ein gemeinsam genutztes Profil wird nicht pauschal als
+passend angenommen, sondern für jede konkrete Hülle und den Piloten erneut
+geprüft. Cyno-Namen dokumentieren den Einsatzort, beeinflussen aber weder
+Reichweite noch Treibstoff.
+
+Prüfung: 18 fokussierte Sprunglogistiktests bestanden. Sie decken insbesondere
+geteilte und getrennte Klassenzuordnungen, Löschbereinigung, historische
+Dekodierung, geordnete direkte Teilstrecken, gespeicherte Profil-/Cyno- und
+Quellnachweise, Ablehnung unterbrochener Routen und Capital-Treibstoff ab. Der
+vollständige isolierte SwiftPM-Lauf baute Core und App und bestand 376
+Swift-Testing-Tests in 26 Suites sowie 8 XCTest-Fälle. Striktes Swift-Format,
+beide Lokalisierungskataloge, die Xcode-Projektdatei und `git diff --check`
+bestanden; der unsignierte native Xcode-Debug-Build endete mit
+`BUILD SUCCEEDED`.
+
+Offen: Es wurde noch kein tatsächlich gewünschtes festes Routenprofil des
+Owners eingegeben oder live mit jeder Hüllenklasse abgeflogen. Cyno-Zugang,
+Hull-Command-Berechtigung, aktuelle Isotopenpreise, Rückflugpolicy, visuelle
+Prüfung, Tastatur, VoiceOver, CPU/RSS und ausdrückliche Owner-Abnahme bleiben
+getrennt offen.
+
+## 2026-08-15 – Planner-Eingabe und SDE-Baum wiederverwenden
+
+Ziel: Wiederholte Planner-Berechnungen mit derselben Produktliste sollten nicht
+mehrfach dieselbe Eingabe parsen, Produkttypen auflösen und den gleichen
+rekursiven SDE-Baum für Marktbedarf und Capital-Erkennung durchlaufen.
+
+Entwicklung:
+
+- den gemischten Checkout vor der Änderung außerhalb des Arbeitsverzeichnisses
+  unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-15-pre-planner-speed.tar.gz`
+  gesichert; SHA-256
+  `7a6c85b98a95ef2cef7045ac8d9e945317f7cdc2f1e923d73d179d7001a98b84`;
+- `IndustryPlannerInputPreparation` ergänzt. Ein Durchlauf löst wiederholte
+  Produktnamen einmal auf, besucht gemeinsam verwendete Produktionszweige
+  einmal und liefert Markt-Typen, angeforderte Produkte und selbstspringende
+  Capitals gemeinsam;
+- die eigentliche Kalkulation an dieselbe vorbereitete Request-/Typ-Zuordnung
+  angebunden. Der geführte Produktionsweg verwendet sie für Referenz- und
+  Auswahlplan ebenfalls erneut;
+- in `RuntimeState` einen bewusst auf genau einen Eintrag begrenzten Cache
+  ergänzt. Sein Schlüssel enthält SDE-Build, SDE-Inhaltshash, exakten
+  Eingabetext sowie Compressed-Ore- und Sprungtreibstoffoption. Änderungen
+  ersetzen den Eintrag; Markt, Assets, Gebühren, Routen und Ergebnis-Snapshots
+  bleiben aktuelle Berechnungseingaben;
+- einen deterministischen Query-Count-Test ergänzt, der zwei gleiche
+  Produktzeilen vorbereitet und berechnet, ohne die zugrunde liegende
+  Typauflösung, Definition, Benennung oder Klassifikation zu wiederholen.
+
+Ergebnis: Die erste Berechnung bereitet weiterhin den vollständigen benötigten
+Graphen vor. Folgeberechnungen desselben Entwurfs, etwa nach einer Lager- oder
+Make-or-Buy-Änderung, überspringen diese unveränderte SDE-Vorarbeit. Fachliche
+Mengen, Preise, Logistik und explizite unbekannte Zustände bleiben unverändert.
+
+Prüfung: Die fokussierte Performance-Suite bestand fünf Tests. Der neue Test
+belegt je genau einen zugrunde liegenden Aufruf für Produktname, Definition,
+Typname und Klassifikation trotz zweier gleicher Eingabezeilen und
+anschließender Planung. Alle 29 Industry-Planner-Tests bestanden. Der
+synthetische Marktbenchmark blieb fachlich identisch und lag bei rund 70 ms für
+vier unvorbereitete Quote-Pässe gegenüber rund 19 ms Vorbereitung plus rund
+13 ms für vier vorbereitete Pässe. Der vollständige isolierte SwiftPM-Lauf
+bestand 377 Swift-Testing-Tests in 26 Suites sowie acht XCTest-Fälle. Der
+native, unsignierte Xcode-Debug-Build wurde nach mehreren Minuten ohne weiteren
+Buildfortschritt abgebrochen; macOS hielt die ausgelagerten Projektdateien bei
+der Bereitstellung fest. Das ist keine erfolgreiche native Build-Evidenz und
+auch kein gemeldeter Swift-Compilerfehler. Striktes Swift-Format, beide
+Lokalisierungskataloge, die Xcode-Projektdatei und der auf diese Änderung
+begrenzte `git diff --check` bestanden.
+
+Offen: Die tatsächliche Verbesserung eines tiefen Plans mit der gefüllten
+Produktionsdatenbank ist noch nicht in der laufenden App gemessen. CPU, RSS,
+erste gegenüber wiederholter Laufzeit sowie visuelle, Tastatur-, VoiceOver- und
+Owner-Abnahme bleiben getrennt offen.
+
+## 2026-08-15 – Logistik als eigener Arbeitsbereich und flüssigere Routeneingabe
+
+Ziel: Die Kurier-, Jump-Freighter- und festen Capital-Routen sollten nicht mehr
+in den Industrieeinstellungen verborgen sein. Die als hakelig und langsam
+empfundene Routeneingabe sollte auf ihre konkrete Ursache geprüft und
+entsprechend entlastet werden.
+
+Entwicklung:
+
+- den gemischten Checkout vor der Änderung außerhalb des Arbeitsverzeichnisses
+  unter `/private/tmp/EVE-NEXUS-SIMPLE-backup-20260815-0100.tar.gz` gesichert;
+  SHA-256
+  `38fe706ffa5e3560a522535dd70cc17c4f159376a2c7fe08eb8a75629e6f1d55`;
+- `Logistik` als eigenen etablierten Eintrag der Hauptnavigation ergänzt und
+  die beiden Logistikbereiche aus **Industry Settings** entfernt. Compressed
+  Ore Refining bleibt als Produktions-/Refining-Einstellung in Industrie;
+- die Logistikseite auf einen kompakten lokalen Entwurf umgestellt. Änderungen
+  an Tarif, Frachtraum, Pilot, Profilnamen, Wegpunkten und Cyno-Orten publizieren
+  dadurch nicht mehr bei jedem Tastendruck die vollständige `ProductionBasis`
+  und bauen nicht die große Industrieeinstellungsansicht neu auf. Erst ein
+  erfolgreicher Persistenzvorgang übernimmt den Entwurf; Abbrechen und ein
+  fehlgeschlagenes Speichern erhalten den letzten gespeicherten Stand;
+- die zweite Verzögerungsquelle beseitigt: Der bisherige erste Suchbegriff
+  musste den vollständigen öffentlichen ESI-Sonnensystemindex samt
+  Namensauflösung erst aufbauen. **Logistik** startet diesen geteilten Index nun
+  beim Öffnen im Hintergrund. Die interaktive Darstellung ist auf 50 Treffer
+  begrenzt, der vollständige Cache bleibt erhalten, und vorhandene Treffer
+  verschwinden während einer Folgesuche nicht mehr;
+- unbekannte Hubnamen bleiben als `Nicht konfiguriert` sichtbar und werden
+  nicht als erfundener kopierbarer EVE-Ortsname ausgegeben;
+- Anwenderdokumentation, Architekturvertrag, Production-Basis-Vertrag,
+  Acceptance-Matrix und deutsche/englische Lokalisierung aktualisiert.
+
+Ergebnis: Logistik ist unabhängig von Industrie auffindbar und pflegbar. Die
+Routenbearbeitung verursacht deutlich weniger SwiftUI-/Observable-Arbeit, und
+der unvermeidliche erste öffentliche ESI-Indexaufbau beginnt vor der ersten
+Eingabe. Fehler beim Indexaufbau löschen keine vorhandene Route und erzeugen
+keinen erfundenen leeren oder kostenlosen Transportzustand.
+
+Prüfung: Der fokussierte Core-Test belegt, dass das Vorwärmen genau den
+öffentlichen GET-/POST-Indexaufbau ausführt und die anschließende begrenzte
+Suche keine weitere Anfrage erzeugt. Der fokussierte App-Test belegt den neuen
+etablierten Navigationspunkt. Der vollständige isolierte SwiftPM-Lauf baute
+Core und App und bestand 379 Swift-Testing-Tests in 26 Suites sowie acht
+XCTest-Fälle. Striktes Swift-Format, beide Lokalisierungskataloge und
+`git diff --check` bestanden. Der native unsignierte Xcode-Debug-Build mit
+isoliertem DerivedData endete mit `BUILD SUCCEEDED`. Es wurden keine privaten
+ESI-Daten oder Live-DOTLAN-Routen abgerufen.
+
+Offen: Die wahrgenommene Geschwindigkeit muss mit den tatsächlich gepflegten
+Routen in der laufenden, befüllten App verglichen werden. Visuelles Layout,
+Tastatur, VoiceOver, CPU/RSS, aktuelle ESI-Netzlaufzeit und ausdrückliche
+Owner-Abnahme bleiben getrennt offen.
+
+## 2026-08-15 – Planer 2: schlanker Gewinnvergleich und gemeinsame Rechenbeschleunigung
+
+Ziel: Einen klar getrennten, experimentellen Planungsweg mit sehr wenigen
+sichtbaren Eingaben, sofort vergleichbarem Gewinn/ROI und einer direkt
+nutzbaren Einkaufsliste bereitstellen. Gleichzeitig sollten die langen
+Produktions- und Make-or-Buy-Berechnungen aller Planner ohne Änderung der
+etablierten Markt-, Gebühren-, Rundungs- oder Produktionsregeln weniger
+doppelte Arbeit ausführen.
+
+Entwicklung:
+
+- den bereits gemischten Checkout vor der Änderung vollständig außerhalb des
+  Arbeitsverzeichnisses unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-backup-2026-08-15_20-27-14_CEST.zip`
+  gesichert; der ZIP-Test bestand, Größe `337198059` Byte, SHA-256
+  `146e87bda11286cc76626a94f771ddde425a9f9b75acf580d5103f2876eb2db1`;
+- das bisherige geführte Experiment als **Planer 2 (Experiment)** klar vom
+  etablierten Planner benannt. Item und Menge sind die sichtbaren
+  Haupteingaben; ME/TE bleiben in **Erweiterte Produktionswerte** erreichbar;
+- die erste Ergebnisstufe auf Gewinn und ROI für alle verfügbaren Main- und
+  Home-Hub-Verkaufswege reduziert. Ein Klick öffnet erst dann Erlös, Kosten,
+  Steuern, Gebühren, Logistik, Jobs und Dauer. Vorläufige oder unvollständige
+  Ergebnisse sind bereits auf der eingeklappten Karte bezeichnet;
+- EVE-Ortsnamen im geöffneten Detail bewusst als getrennte
+  `EVEEntityText`-Kopierziele umgesetzt, damit Kopieren nicht gleichzeitig die
+  Ergebnis-Karte schließt;
+- die Einkaufsliste unmittelbar unter den Gewinnkarten sichtbar gemacht. Sie
+  benennt Main Hub und Produktionsziel, zeigt zu kaufende Typen und Einheiten
+  und verwendet für Anzeige und Multibuy-Export dieselbe endgültige,
+  gegebenenfalls durch Compressed Ore ersetzte Einkaufsliste;
+- die etablierten Katalogverträge um gebündelte Abfragen für Namen,
+  Industrieklassifikationen und verpackte Volumen ergänzt. Vorbereitung und
+  Logistik laden unterschiedliche Typen dadurch gesammelt und der vorhandene
+  Memoisierungskatalog speichert auch gebündelte Treffer und Fehlwerte;
+- Referenz- und Auswahlrechnung innerhalb desselben unveränderlichen
+  Planungsdurchlaufs entdoppelt: Eine Make-or-Buy-Analyse wird nur bei exakt
+  gleicher benötigter Menge, SDE-Version, Regelversion und Markt-Snapshot-ID
+  wiederverwendet. Ein geänderter Markt-Snapshot berechnet neu;
+- nur Planer 2 darf Gewinn und ROI vor noch ungeklärten Bauplankosten als
+  ausdrücklich **vorläufig** anzeigen. Der etablierte Planner und rekursive
+  Produktionswege behalten ihre bisherige strikte Kostenvollständigkeit;
+- die bestehende Marktakquise sowie Preis-, Gebühren-, Rundungs-,
+  Produktions- und Einkaufsregeln nicht umgebaut; Anwenderdokumentation,
+  Architektur, Handoffs und Acceptance-Matrix aktualisiert.
+
+Ergebnis: Planer 2 ist eine sitzungsgebundene, deutlich ruhigere
+Vergleichsansicht und verändert weder den aktiven Plan noch die
+Produktionsübersicht. Die gemeinsame Planungsengine vermeidet wiederholte
+Metadaten-, Volumen- und identische Make-or-Buy-Arbeit, sodass auch der
+etablierte Planner von der Rechenentlastung profitiert. Fehlende Bauplan-,
+Routen-, Gebühren- oder Marktdaten bleiben ausdrücklich sichtbar und werden
+nicht als null angenommen.
+
+Prüfung: Die fokussierte Query-Efficiency-Suite bestand sechs Tests. Der neue
+Regressionstest belegt Wiederverwendung bei identischem Snapshot und eine neue
+Quote-ID nach geändertem Snapshot. Der synthetische Quote-Test blieb fachlich
+gleich und maß in diesem Lauf rund 71 ms für die unvorbereitete Vergleichslast
+gegenüber rund 19 ms Vorbereitung plus rund 13 ms für die vorbereitete Last;
+dies ist kein Messwert einer befüllten App. Die vollständige isolierte
+SwiftPM-Aktion baute Core und App und bestand 380 Swift-Testing-Tests in 26
+Suites sowie acht XCTest-Fälle. Die native, unsignierte Xcode-Testaktion baute
+die App und bestand 359 Tests in 23 Suites mit `TEST SUCCEEDED`. Striktes
+Swift-Format, beide Lokalisierungskataloge, die Prüfung auf doppelte
+Lokalisierungsschlüssel und `git diff --check` bestanden.
+
+Offen: Die tatsächliche Laufzeit eines tiefen Plans mit der befüllten
+Produktionsdatenbank wurde nicht gemessen. Vergleich von erster und
+wiederholter Berechnung, CPU/RSS, visuelles Layout, Größenänderung, Tastatur,
+VoiceOver, Live-Marktwerte und ausdrückliche Owner-Abnahme bleiben getrennt
+offen.
+
+## 2026-08-16 – Aufgelöste Refining-Ausgaben und kostenneutraler Lagerüberschuss
+
+Ziel: Der Planner zeigte bei `Compressed Bountiful Loparite` die bekannte
+Scandium-Type-ID 16639 als „Nicht aufgelöster Mineraltyp“. Zugleich sollte
+eindeutig belegt und sichtbar werden, dass nicht benötigte Raffinerieausgaben
+ins Lager gehen, aber keine Kostengutschrift für das hergestellte Produkt
+erzeugen.
+
+Entwicklung:
+
+- den vollständigen gemischten Checkout einschließlich `.git` und lokaler
+  Buildablage vor der Änderung unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-16-152103-pre-refining-surplus-fix-full.tar`
+  gesichert; das lesbare 1,0-GB-Archiv hat SHA-256
+  `5bfd174975285067efb114123a3992026e7a38f756eb876270559f3e5e01b594`;
+- für jede konkrete Raffinerieausgabe den SDE-Namen, Gesamtmenge, im aktuellen
+  Plan verwendete Menge und geplanten Lagerüberschuss im unveränderlichen
+  Snapshot ergänzt. Alte Ausgaben ohne diese optionalen Felder bleiben lesbar;
+- den bisherigen Namensabruf von den aktuell benötigten Mineralpositionen auf
+  alle Ausgaben der geprüften Erzoptionen erweitert. Damit werden auch reine
+  Nebenprodukte wie Scandium aufgelöst und über die gemeinsame kopierbare
+  EVE-Typdarstellung ausgegeben. Ein tatsächlich nicht auflösbarer SDE-Typ
+  bleibt mit Type-ID, Menge und ausdrücklicher Warnung erhalten;
+- die Planner-Oberfläche um die getrennten Angaben **In diesem Plan verwendet**
+  und **Geplanter Lagerüberschuss** sowie den Kostenhinweis ergänzt. Der
+  geplante Zugang verändert keinen faktischen ESI-/Asset-Snapshot;
+- die bestehende Kostenregel unverändert explizit abgesichert: Nur verwendete
+  Ausgaben reduzieren direkte Mineralbedarfe. Nebenprodukt und
+  Chargenüberschuss erhalten keine Wertgutschrift; vollständiger Erzeinkauf,
+  Transport und Refining-Gebühr bleiben im Produkt;
+- `dokumentation.md`, Architektur-, Production-Basis-, Handoff- und
+  Acceptance-Vertrag sowie deutsche und englische Lokalisierung aktualisiert.
+
+Ergebnis: Eine neu berechnete Loparite-Raffineriezeile zeigt Scandium statt der
+rohen Type-ID. Jede Ausgabe trennt Gesamtmenge, Planverbrauch und den in das
+Lager einzuplanenden Rest, ohne diesen Rest gegen die Produktkosten zu rechnen.
+
+Prüfung: Der lokale aktive SDE-Katalog Build `3466501` wurde ausschließlich
+lesend geprüft. Er löst Type-ID 16639 als **Scandium** auf und enthält für
+`Compressed Bountiful Loparite` Hydrocarbons, Scandium, Platinum und Promethium.
+Der fokussierte Refining-Test und anschließend alle 34 Industry-Planner-Tests
+bestanden. Der vollständige isolierte SwiftPM-Lauf baute Core und App und
+bestand 400 Swift-Testing-Tests in 26 Suites sowie 11 App-XCTest-Fälle, 411
+Tests insgesamt. Striktes Swift-Format, beide Lokalisierungskataloge und die
+begrenzte Diff-Whitespace-Prüfung bestanden. Die ersten beiden nicht isolierten
+beziehungsweise verschachtelt gesandboxten Versuche endeten vor der
+Kompilierung am globalen Modulcache beziehungsweise `sandbox_apply`; der
+identische erlaubte isolierte Lauf bestand.
+
+Offen: Die betroffene gespeicherte alte Berechnung wird nicht still mit neuen
+Regeln umgeschrieben. Sie muss in der laufenden App neu berechnet und danach mit
+dem EVE-Reprocessing-Fenster verglichen werden. Visuelles Layout bei enger und
+weiter Breite, Tastatur, VoiceOver, native Xcode-/Signierungsprüfung und
+ausdrückliche Owner-Abnahme bleiben getrennt offen.
+
+## 2026-08-16 – Reaktionen im Main-Hub-Chancen-Katalog
+
+Ziel: Vollständige veröffentlichte Reaktionsprodukte wie `Hypnagogic Neurolink
+Enhancer` fehlten im Main-Hub-Chancenbereich, obwohl Dashboard und
+Reaktionsanalyse sie kannten. Der sichtbare Filter **Reaktionen** klassifizierte
+nur bereits vorhandene Manufacturing-Zeilen nach Namen und aktivierte keine
+SDE-Reaktionsdefinitionen.
+
+Entwicklung:
+
+- vor der Änderung den aktuellen Quell- und Git-Arbeitsstand einschließlich
+  unversionierter Dateien unter
+  `/private/tmp/EVE-NEXUS-SIMPLE-2026-08-16-162159-pre-market-reaction-opportunities-worktree.tar`
+  gesichert; nur die reproduzierbaren beiden `.build`-Caches und die seit der
+  geprüften Vollsicherung von 15:21 unveränderte `.git/objects`-Ablage wurden
+  ausgelassen. SHA-256:
+  `2318b6afd0b194e6b07e0a77667a41a897e91c368338867e4dfcbb21ea0a6d14`;
+- den Chancen-Scan um vollständige `reactionDefinitions()` ergänzt und den
+  ausgewählten Reaktionsanlagen-Kontext samt Reaktions-Systemkostenindex in die
+  unveränderliche Analyse übergeben;
+- die vorhandene Reaktionslogik für Materialmultiplikator, Run-Rundung, Dauer
+  und EIV-Installation als gemeinsame Produktionskostenprojektion
+  wiederverwendet. Reaktionen erhalten keine Manufacturing-ME-/TE-Regeln und
+  keine Blueprint-Umlage;
+- die Zeilenaktivität optional und rückwärtskompatibel gespeichert. Alte
+  Chancen-Snapshots ohne Aktivität bleiben als Manufacturing lesbar;
+- den Produktfilter **Reaktionen** an die tatsächliche SDE-Aktivität gebunden.
+  Reaktionszeilen zeigen ME/TE als nicht anwendbar, lassen Runs weiter ändern
+  und projizieren diese Änderung mit Reaktionsrundung;
+- vollständige Produkte ohne aktive Main-Hub-Verkaufsorder nicht mehr aus dem
+  Katalog entfernt. Erlös und abhängige Gewinnwerte bleiben mit blockierender
+  Ursache unverfügbar;
+- UI-Texte, deutsche und englische Lokalisierung, Dokumentation,
+  Architektur-, Handoff-, Production-Basis- und Acceptance-Vertrag
+  aktualisiert.
+
+Ergebnis: Nach einem neuen Main-Hub-Update sind die 119 im aktiven SDE
+veröffentlichten Reaktionsformeln grundsätzlich Teil des Chancen-Snapshots.
+Hypnagogic, Meta-Operant und andere Molecular-Forged Materials werden über ihre
+Reaktionsaktivität gefiltert. Ihre Markt-Chancen-Zeile berechnet den möglichen
+Verkaufserfolg getrennt vom Make-or-Buy-Wert der Reaktionsanalyse.
+
+Prüfung: Die fokussierte Market-Browser-Suite bestand 40 Tests; der separate
+Reaktionsvertrag bestand 7 Tests. Der vollständige isolierte SwiftPM-Lauf baute
+Core und App und bestand 401 Swift-Testing-Tests in 26 Suites sowie 11
+App-XCTest-Fälle, insgesamt 412 Tests. Das verschachtelte EVEStaticDataKit
+bestand sieben deterministische Tests; der ausdrücklich optionale Real-SDE-Test
+wurde ohne Paketpfad übersprungen. Striktes Swift-Format, beide
+Lokalisierungskataloge und die begrenzte Diff-Whitespace-Prüfung bestanden. Der
+erste nicht isolierte Versuch scheiterte vor der Kompilierung am gesperrten
+globalen Modulcache, der zweite am verschachtelten SwiftPM-Sandbox; die in
+beschreibbare lokale Pfade gelegten identischen Läufe bestanden. Der aktuelle
+unsigned Xcode-Versuch scheiterte zunächst vor der Kompilierung an gesperrten
+Caches; der freigegebene identische Lauf blieb nach dem Aufruf ohne normalen
+Buildfortschritt und wurde beendet. Er ist weder Erfolg noch Compilerfehler.
+
+Offen: Ein neuer Main-Hub-Live-Scan wurde nicht gestartet. Nach **Update** müssen
+Hypnagogic und Meta-Operant in der laufenden App gesucht und Materialien,
+Installation, Dauer, Gewinn sowie Reaktionsfilter gegen Reaktionsanalyse und
+EVE verglichen werden. Visuelles Layout, Sortierung, Tastatur, VoiceOver,
+native Xcode-/Signierungsprüfung und Owner-Abnahme bleiben getrennt offen.
+
+## 2026-09-24 – Gesicherter lokaler Neustart nach Neuinstallation
+
+Ziel: Nach ausdrücklich freigegebenem Neustart den vorhandenen Projektstand
+weiterverwenden und die App mit einem neuen EVE-Datenspeicher betreiben.
+
+Durchgeführt:
+
+- Originalprojekt ausschließlich als Quellbasis verwendet; keine Swift-, Paket-
+  oder Xcode-Projektdateien verändert und das Vollbackup unverändert belassen.
+- Die drei gefundenen Store-Kandidaten an Kopien geprüft: SQLite intakt, jedoch
+  fremdes leeres Modell `APIRequestModel`. Keine EVE-Altdaten wiederhergestellt.
+- Einen frischen Schema-v2-Store isoliert erzeugt und geöffnet. Den bisherigen
+  App-Datenordner vor Aktivierung unter
+  `~/Library/Application Support/com.local.EVENexusSimple.vor-Neustart-20260924-223323`
+  unverändert gesichert; Dateihashes nach dem Wechsel bestätigt. Die globale
+  `default.store` blieb unangetastet.
+- Die getestete native App unter `~/Applications/EVE Nexus Simple.app` lokal
+  ad-hoc signiert installiert; tiefe strikte Signaturprüfung bestanden.
+- Offizielles CCP-SDE 3542233 über die vorhandene Download-, Validierungs-,
+  Staging- und Aktivierungsstrecke installiert. Katalogadapter v4 enthält
+  53.060 Typen, 5.082 Blueprints und 19.138 Aktivitäten. Die 21 unaufgelösten
+  Typreferenzen bleiben als Quelldatenbefund erhalten. Es gab keinen alten
+  SDE-Katalog, für den eine separate SDE-Rollbacksicherung anzulegen war.
+- Dashboard ohne Wiederherstellungsfehler geöffnet; die SDE-Seite zeigt den
+  installierten Build und bestätigt nach Updateprüfung die Aktualität.
+  Persönliche Charaktere sind noch nicht angemeldet. Die ESI-Seite ist für
+  die Anmeldung geöffnet; automatische Vertrags- und Main-Hub-Scans pausieren.
+
+Prüfung: Xcode 27.0 / Swift 6.4, macOS arm64. Isolierter SwiftPM-Lauf:
+416 bestandene Tests und ein zunächst übersprungener Real-SDE-Test.
+Nativer Xcode-Debuglauf: 383 bestandene Tests und ein zunächst übersprungener
+Real-SDE-Test. Separates StaticDataKit: sieben bestanden, ein Real-SDE-Test
+zunächst übersprungen. Anschließend wurden beide unterschiedlichen Real-SDE-
+Tests mit dem tatsächlich heruntergeladenen Paket gesondert ausgeführt
+und bestanden (je ein Test; SQLite-Aktivierung und Paket-Mapping). Frischer Store startet mit Exit 0,
+der fremde Altstore reproduziert an einer Kopie den Migrationsfehler 134504.
+
+Offen: Persönliche EVE-SSO-Anmeldung, Charakter-Synchronisation und anschließende
+Anlagen-/Markt-/Logistik-Konfiguration sowie fachliche Owner-Abnahme. Der
+Neustart ist keine Wiederherstellung früherer lokaler Pläne. Der bekannte
+Legacy-Import ohne Modellzuordnungsprüfung wurde nicht im Quellcode verändert.
 
 ## Vorlage für neue Einträge
 
@@ -312,3 +4303,49 @@ Ebenen ausdrücklich offen lassen.
 
 Offen: Restarbeit, Risiken, Migration, Live-Abgleich und Owner-Abnahme.
 ```
+
+## 24. September 2026 – Abgeschnittene Kopfmenüs korrigiert
+
+Fehler: Mit vorbereiteter Vertragsdatenbank verschoben sich der oberste
+Navigationseintrag und die Einstellungsreiter unter die Titelleiste. Der
+Navigationsbereich maß im 1077 Punkte hohen Fenster 1305,5 Punkte und begann
+bei y = -88. Die mehrzeilige, vertikal fest dimensionierte Statusmeldung
+wurde für die Mindestgrößenberechnung mit zu geringer Breite gemessen.
+
+Änderung: `PublicContractSidebarStatus` begrenzt seine Messbreite auf die
+bestehende minimale Seitenleistenbreite von 180 Punkten. Die Darstellung bei
+normaler Breite bleibt erhalten. Fenstermaximierung und native Titelleiste
+bleiben unverändert. Die Komponente ist für den Layout-Regressionstest
+modulintern zugänglich.
+
+Prüfung: `sidebarStatusMinimumMeasurementDoesNotInflateWindowHeight` scheitert
+mit dem bisherigen Layout (752 Punkte minimale Fußleistenhöhe gegenüber rund
+102 Punkten bei Seitenleistenbreite) und besteht mit der Korrektur. Alle
+13 Tests von `RuntimeFeatureStateTests`, der isolierte native Xcode-Build und
+striktes `swift-format` für beide geänderten Swift-Dateien bestehen.
+Visuell durch Codex geprüft: Kopfmenüs und oberster Navigationseintrag im
+maximierten Fenster sowie im kleinen Fenster (901 × 539 Punkte) erreichbar;
+bei kleiner Höhe scrollt die Seitenleiste. Der korrigierte Navigationsbereich
+misst bei maximiertem Fenster 1077 Punkte und beginnt bei y = 0.
+
+Die lokal signierte App wurde unter
+`/Users/svenstolze/Applications/EVE Nexus Simple.app` aktualisiert und mit den
+vorhandenen drei Charakteren gestartet. Die Einstellungsreiter sind in der
+installierten Version sichtbar. Die vorherige App liegt gesichert im
+Arbeitsordner der Wiederherstellungsaufgabe unter
+`work/layout-fix/previous-app/EVE Nexus Simple.app`. Während des Austauschs
+blieben die Datenbankdateien nach SHA-256-Vergleich unverändert. Quellbackup,
+App-Daten und Schlüsselbund wurden nicht zurückgesetzt.
+
+Offen: Abnahme durch den Nutzer und ein breiterer Layout-Check aller Module.
+Im kleinen Einstellungsfenster ist weiterhin die vorhandene Darstellung der
+Schriftgrößen-Auswahl zu eng; dies betrifft nicht die korrigierte Kopfmenü-
+Verschiebung.
+
+## Konsolidierungsnachweis 25.09.2026
+
+SwiftPM 417 bestanden / 1 Skip, Kit 7 / 1, Xcode Build erfolgreich und native Tests
+385 / 1. Nur opt-in Real-SDE-Skips; keine Fachlogikänderung durch die Konsolidierung.
+Originalarbeitsbäume samt Git und Index recoverbar archiviert. Technische und
+historische Namensausnahmen sowie die nicht integrierten Nexus-Komponenten sind
+im Konsolidierungsbericht offen ausgewiesen. Kein neues Feature geplant.

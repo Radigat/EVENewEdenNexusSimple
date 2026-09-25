@@ -1,0 +1,41 @@
+{
+  "errors": [],
+  "warnings": [],
+  "missing_original_files": [],
+  "changed_original_files": [
+    "AGENTS.md",
+    "Documentation/ACCEPTANCE.md",
+    "Documentation/ADR-001-local-native-modular.md",
+    "Documentation/ARCHITECTURE.md",
+    "Documentation/PRODUCTION_BASIS.md",
+    "EVENexusSimple.xcodeproj/project.pbxproj",
+    "EVENexusSimple.xcodeproj/xcshareddata/xcschemes/EVENexusSimple.xcscheme",
+    "Optimierung.md",
+    "Package.swift",
+    "README.md",
+    "Sources/EVENexusSimpleApp/ContentView.swift",
+    "dev-diary.md",
+    "dokumentation.md",
+    "project.yml"
+  ],
+  "source_logic_changes": [
+    "Sources/EVENexusSimpleApp/ContentView.swift"
+  ],
+  "archive_hashes_verified": true,
+  "missing_xcode_references": [],
+  "xcode_target_source_counts": {
+    "EVENexusSimple": 23,
+    "CSQLite": 1,
+    "EVENexusCore": 50,
+    "EVENexusCoreTests": 21
+  },
+  "unlisted_core_sources": [],
+  "unlisted_app_sources": [],
+  "unlisted_native_core_tests": [],
+  "active_xcode_projects": [
+    "EVENexusSimple.xcodeproj"
+  ],
+  "broken_markdown_links": [],
+  "broken_symlinks": [],
+  "active_absolute_legacy_paths": []
+}

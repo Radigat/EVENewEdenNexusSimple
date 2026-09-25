@@ -7,7 +7,7 @@ let package = Package(
   platforms: [.macOS(.v14)],
   products: [
     .library(name: "EVENexusCore", targets: ["EVENexusCore"]),
-    .executable(name: "EVE Nexus Simple", targets: ["EVENexusSimpleApp"]),
+    .executable(name: "EVE New Eden Nexus - Assets, Industry, Markets", targets: ["EVENexusSimpleApp"]),
     .executable(
       name: "EVENexusLiveAcceptance",
       targets: ["EVENexusLiveAcceptance"]
@@ -41,6 +41,10 @@ let package = Package(
         "CSQLite",
         .product(name: "EVEStaticDataKit", package: "EVEStaticDataKit"),
       ]
+    ),
+    .testTarget(
+      name: "EVENexusSimpleAppTests",
+      dependencies: ["EVENexusCore", "EVENexusSimpleApp"]
     ),
   ]
 )

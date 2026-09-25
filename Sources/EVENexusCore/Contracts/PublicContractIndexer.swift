@@ -12,10 +12,12 @@ public protocol PublicContractRemoteFetching: Sendable {
     contractID: Int64,
     page: Int
   ) async throws -> ESIResponse<[ESIPublicContractItemDTO]>
+  func releaseCachedContractResponses(regionID: Int64?) async
   func releaseCachedItemResponses(contractID: Int64?) async
 }
 
 extension PublicContractRemoteFetching {
+  public func releaseCachedContractResponses(regionID: Int64?) async {}
   public func releaseCachedItemResponses(contractID: Int64?) async {}
 }
 
@@ -85,6 +87,16 @@ public struct ESIPublicContractRemote: PublicContractRemoteFetching, Sendable {
       contractID.map {
         "/contracts/public/items/\($0)/"
       } ?? "/contracts/public/items/"
+    await esi.removeCachedPublicResponses(
+      pathPrefix: pathPrefix
+    )
+  }
+
+  public func releaseCachedContractResponses(regionID: Int64?) async {
+    let pathPrefix =
+      regionID.map {
+        "/contracts/public/\($0)/"
+      } ?? "/contracts/public/"
     await esi.removeCachedPublicResponses(
       pathPrefix: pathPrefix
     )
@@ -162,6 +174,7 @@ public actor PublicContractIndexer {
   public func search(
     _ filter: PublicContractSearchFilter
   ) async throws -> [PublicContractSearchResult] {
+    try Task.checkCancellation()
     let results = try await store.search(filter, now: now())
     try Task.checkCancellation()
     return results
@@ -169,6 +182,7 @@ public actor PublicContractIndexer {
 
   public func includedOfferSnapshot(
     typeIDs: Set<Int64>,
+    startLocationID: Int64? = nil,
     limitPerType: Int = 100
   ) async throws -> (
     offers: [Int64: [PublicContractSearchResult]],
@@ -177,6 +191,7 @@ public actor PublicContractIndexer {
     let snapshot = try await store.includedOfferSnapshot(
       typeIDs: typeIDs,
       now: now(),
+      startLocationID: startLocationID,
       limitPerType: limitPerType
     )
     try Task.checkCancellation()
@@ -186,7 +201,10 @@ public actor PublicContractIndexer {
   public func facets() async throws -> (
     categories: [PublicContractFacet], groups: [PublicContractFacet]
   ) {
-    try await store.facets()
+    try Task.checkCancellation()
+    let result = try await store.facets()
+    try Task.checkCancellation()
+    return result
   }
 
   public func synchronizeAll(
@@ -225,18 +243,29 @@ public actor PublicContractIndexer {
         do {
           let batch = try await regionContracts(regionID: region.id)
           let fetchedAt = now()
-          try await store.recordRegionSuccess(
-            regionID: region.id,
-            contracts: batch.contracts,
-            fetchedAt: fetchedAt,
-            nextAllowedAt: max(
-              batch.expiresAt ?? fetchedAt.addingTimeInterval(30 * 60),
-              fetchedAt.addingTimeInterval(60)
-            )
+          let nextAllowedAt = max(
+            batch.expiresAt ?? fetchedAt.addingTimeInterval(30 * 60),
+            fetchedAt.addingTimeInterval(60)
           )
+          if batch.isNotModified {
+            try await store.recordRegionRevalidated(
+              regionID: region.id,
+              fetchedAt: fetchedAt,
+              nextAllowedAt: nextAllowedAt
+            )
+          } else {
+            try await store.recordRegionSuccess(
+              regionID: region.id,
+              contracts: batch.contracts,
+              fetchedAt: fetchedAt,
+              nextAllowedAt: nextAllowedAt
+            )
+          }
         } catch is CancellationError {
+          await remote.releaseCachedContractResponses(regionID: region.id)
           throw CancellationError()
         } catch ESIError.cancelled {
+          await remote.releaseCachedContractResponses(regionID: region.id)
           throw CancellationError()
         } catch let error as ESIError {
           let retryAt = now().addingTimeInterval(Self.regionRetryDelay(error))
@@ -256,6 +285,7 @@ public actor PublicContractIndexer {
                 nextRequestAt: retryAt
               )
               await progress(state)
+              await remote.releaseCachedContractResponses(regionID: region.id)
               return state
             }
           }
@@ -267,6 +297,7 @@ public actor PublicContractIndexer {
               nextRequestAt: retryAt
             )
             await progress(state)
+            await remote.releaseCachedContractResponses(regionID: region.id)
             return state
           }
         } catch {
@@ -277,6 +308,7 @@ public actor PublicContractIndexer {
             diagnostic: "esi.public-contracts.region-unavailable"
           )
         }
+        await remote.releaseCachedContractResponses(regionID: region.id)
         try await sleep(regionRequestSpacing)
       }
 
@@ -343,11 +375,12 @@ public actor PublicContractIndexer {
   }
 
   private func regionContracts(regionID: Int64) async throws -> (
-    contracts: [ESIPublicContractDTO], expiresAt: Date?
+    contracts: [ESIPublicContractDTO], expiresAt: Date?, isNotModified: Bool
   ) {
     var first = try await remote.contracts(regionID: regionID, page: 1)
     try await respectBudget(first)
     var pageCount = max(1, first.pages ?? 1)
+    var allPagesNotModified = first.statusCode == 304
     let requiredWindow = Double(pageCount) * regionRequestSpacing + 5
     if let expiresAt = first.expiresAt,
       expiresAt.timeIntervalSince(now()) < requiredWindow
@@ -356,6 +389,7 @@ public actor PublicContractIndexer {
       first = try await remote.contracts(regionID: regionID, page: 1)
       try await respectBudget(first)
       pageCount = max(1, first.pages ?? 1)
+      allPagesNotModified = first.statusCode == 304
     }
     guard pageCount <= 1_000 else { throw ESIError.invalidPagination }
     var contracts = first.value
@@ -372,13 +406,15 @@ public actor PublicContractIndexer {
           response.lastModified == nil || first.lastModified == nil
             || response.lastModified == first.lastModified
         else { throw ESIError.invalidPagination }
+        allPagesNotModified =
+          allPagesNotModified && response.statusCode == 304
         contracts.append(contentsOf: response.value)
       }
     }
     guard Set(contracts.map(\.contractID)).count == contracts.count else {
       throw ESIError.invalidPagination
     }
-    return (contracts, first.expiresAt)
+    return (contracts, first.expiresAt, allPagesNotModified)
   }
 
   private func indexPendingItems(

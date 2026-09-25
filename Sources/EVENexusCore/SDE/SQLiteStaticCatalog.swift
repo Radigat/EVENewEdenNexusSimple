@@ -19,13 +19,49 @@ public struct ItemTypeSearchResult: Identifiable, Equatable, Sendable {
   }
 }
 
+public struct ManufacturingProductSearchResult: Identifiable, Equatable,
+  Sendable
+{
+  public let id: Int64
+  public let name: String
+  public let outputPerRun: Int64
+  public let blueprintTypeID: Int64?
+  public let categoryName: String?
+  public let groupName: String?
+  public let metaGroupID: Int64?
+  public let techLevel: Int?
+
+  public init(
+    id: Int64,
+    name: String,
+    outputPerRun: Int64,
+    blueprintTypeID: Int64? = nil,
+    categoryName: String? = nil,
+    groupName: String? = nil,
+    metaGroupID: Int64? = nil,
+    techLevel: Int? = nil
+  ) {
+    self.id = id
+    self.name = name
+    self.outputPerRun = outputPerRun
+    self.blueprintTypeID = blueprintTypeID
+    self.categoryName = categoryName
+    self.groupName = groupName
+    self.metaGroupID = metaGroupID
+    self.techLevel = techLevel
+  }
+}
+
 public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
-  MoonMaterialCatalogQuerying,
+  MaterialPurchaseCatalogQuerying, MoonMaterialCatalogQuerying,
+  MineralMaterialCatalogQuerying,
   StaticDataCatalogStoring, StaticDataCatalogStaging,
   StaticDataCatalogStreamingStaging, StaticDataCatalogStreamingStoring,
   ActiveSDEVersionReading, StaticDataCatalogRollingBack,
   SDEPromotionSafetyBackingUp
 {
+  private static let catalogAdapterVersion = 4
+
   private struct ActivePointer: Codable, Sendable {
     let buildNumber: Int
     let contentSHA256: String
@@ -39,6 +75,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     (
       fileName: String, database: SQLiteDatabase
     )?
+  private var rollbackPointerCache: ActivePointer?
 
   public init(
     rootURL: URL,
@@ -52,8 +89,10 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     -> StaticDataActivationResult
   {
     try ensureDirectories()
-    let fileName =
-      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12)).sqlite"
+    let fileName = Self.currentCatalogFileName(
+      buildNumber: snapshot.buildNumber,
+      contentSHA256: snapshot.contentSHA256
+    )
     let destination = catalogsURL.appendingPathComponent(fileName)
     let reused = fileManager.fileExists(atPath: destination.path)
     if !reused {
@@ -149,8 +188,10 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   ) async throws -> StaticDataActivationResult {
     try ensureDirectories()
     let metadata = try await mapper.packageMetadata(at: packageURL)
-    let fileName =
-      "sde-\(metadata.buildNumber)-\(metadata.contentSHA256.prefix(12)).sqlite"
+    let fileName = Self.currentCatalogFileName(
+      buildNumber: metadata.buildNumber,
+      contentSHA256: metadata.contentSHA256
+    )
     let destination = catalogsURL.appendingPathComponent(fileName)
     if fileManager.fileExists(atPath: destination.path) {
       let counts = try readCounts(at: destination)
@@ -248,6 +289,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       "\(operationID.uuidString)-\(pointer.fileName)"
     )
     try fileManager.copyItem(at: source, to: destination)
+    rollbackPointerCache = pointer
     return true
   }
 
@@ -255,6 +297,23 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     -> StaticDataActivationResult
   {
     try ensureDirectories()
+    if let rollbackPointerCache,
+      rollbackPointerCache.buildNumber == buildNumber
+    {
+      let rollbackURL = catalogsURL.appendingPathComponent(
+        rollbackPointerCache.fileName
+      )
+      guard fileManager.fileExists(atPath: rollbackURL.path) else {
+        throw StaticCatalogError.missingBuild(buildNumber)
+      }
+      let result = try activationResult(
+        buildNumber: buildNumber,
+        url: rollbackURL
+      )
+      try writePointer(rollbackPointerCache)
+      self.rollbackPointerCache = nil
+      return result
+    }
     let candidates = try fileManager.contentsOfDirectory(
       at: catalogsURL,
       includingPropertiesForKeys: nil
@@ -263,12 +322,25 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         && $0.pathExtension == "sqlite"
     }
     guard
-      let url = candidates.sorted(
-        by: { $0.lastPathComponent < $1.lastPathComponent }
-      ).last
+      let url = candidates.sorted(by: Self.catalogRollbackOrder).last
     else {
       throw StaticCatalogError.missingBuild(buildNumber)
     }
+    let result = try activationResult(buildNumber: buildNumber, url: url)
+    try writePointer(
+      ActivePointer(
+        buildNumber: buildNumber,
+        contentSHA256: result.contentSHA256,
+        fileName: url.lastPathComponent
+      )
+    )
+    return result
+  }
+
+  private func activationResult(
+    buildNumber: Int,
+    url: URL
+  ) throws -> StaticDataActivationResult {
     let database = try SQLiteDatabase(url: url)
     let metadata = try database.singleRow(
       "SELECT content_hash, categories, groups_count, item_types, blueprints, activities, materials, products, unresolved FROM metadata LIMIT 1"
@@ -284,13 +356,6 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       let products = Int(metadata[7] ?? ""),
       let unresolved = Int(metadata[8] ?? "")
     else { throw StaticCatalogError.invalidPointer }
-    try writePointer(
-      ActivePointer(
-        buildNumber: buildNumber,
-        contentSHA256: hash,
-        fileName: url.lastPathComponent
-      )
-    )
     return StaticDataActivationResult(
       buildNumber: buildNumber,
       contentSHA256: hash,
@@ -356,7 +421,99 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     }
   }
 
-  public func moonMaterials() async throws -> MoonMaterialCatalogSnapshot {
+  public func searchManufacturingProducts(
+    matching query: String,
+    limit: Int = 50
+  ) async throws -> [ManufacturingProductSearchResult] {
+    let accepted = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard accepted.count >= 3 else { return [] }
+    let boundedLimit = min(max(1, limit), 100)
+    let escaped =
+      accepted
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "%", with: "\\%")
+      .replacingOccurrences(of: "_", with: "\\_")
+    let containsPattern = "%\(escaped)%"
+    let prefixPattern = "\(escaped)%"
+    let database = try activeDatabase()
+    let rows = try database.rows(
+      """
+      SELECT DISTINCT product_type.id, product_type.name,
+             product_category.name, product_group.name,
+             product_type.meta_group_id, product_type.tech_level
+      FROM blueprint_products p
+      JOIN blueprint_activities a
+        ON a.blueprint_type_id = p.blueprint_type_id
+       AND a.activity = p.activity
+      JOIN blueprints b
+        ON b.blueprint_type_id = a.blueprint_type_id
+      JOIN item_types blueprint_type
+        ON blueprint_type.id = b.blueprint_type_id
+      JOIN item_types product_type
+        ON product_type.id = p.item_type_id
+      JOIN groups_table product_group
+        ON product_group.id = product_type.group_id
+      JOIN categories product_category
+        ON product_category.id = product_type.category_id
+      WHERE a.activity = 'manufacturing'
+        AND p.resolved = 1
+        AND p.quantity > 0
+        AND blueprint_type.published = 1
+        AND product_type.published = 1
+        AND product_type.name LIKE \(sql(containsPattern)) ESCAPE '\\'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM blueprint_materials unresolved_material
+          WHERE unresolved_material.blueprint_type_id = b.blueprint_type_id
+            AND unresolved_material.activity = a.activity
+            AND unresolved_material.resolved = 0
+        )
+      ORDER BY
+        CASE
+          WHEN product_type.name = \(sql(accepted)) COLLATE NOCASE THEN 0
+          WHEN product_type.name LIKE \(sql(prefixPattern)) ESCAPE '\\' THEN 1
+          ELSE 2
+        END,
+        length(product_type.name),
+        product_type.name COLLATE NOCASE
+      LIMIT \(boundedLimit)
+      """
+    )
+    var results: [ManufacturingProductSearchResult] = []
+    results.reserveCapacity(rows.count)
+    for row in rows {
+      try Task.checkCancellation()
+      guard row.count == 6,
+        let id = Int64(row[0] ?? ""),
+        let name = row[1],
+        let definition = try await productionDefinition(
+          productTypeID: id,
+          requiredActivity: .manufacturing
+        ),
+        let outputPerRun = definition.activity.products.first(where: {
+          $0.typeID == id
+        })?.quantity,
+        outputPerRun > 0
+      else { continue }
+      results.append(
+        ManufacturingProductSearchResult(
+          id: id,
+          name: name,
+          outputPerRun: outputPerRun,
+          blueprintTypeID: definition.blueprintTypeID,
+          categoryName: row[2],
+          groupName: row[3],
+          metaGroupID: row[4].flatMap(Int64.init),
+          techLevel: row[5].flatMap(Int.init)
+        )
+      )
+    }
+    return results
+  }
+
+  public func materialPurchaseCatalog(
+    for kind: MaterialPurchaseCatalogKind
+  ) async throws -> MaterialPurchaseCatalogSnapshot {
     guard let pointer = try loadPointer() else {
       throw StaticCatalogError.noActiveCatalog
     }
@@ -366,28 +523,36 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       SELECT t.id, t.name
       FROM item_types t
       JOIN groups_table g ON g.id = t.group_id
-      WHERE g.name = 'Moon Materials'
+      WHERE g.name = '\(kind.rawValue)'
         AND t.published = 1
       ORDER BY t.name COLLATE NOCASE
       """
     )
-    let materials: [MoonMaterial] = rows.compactMap { row in
+    let materials: [MaterialPurchaseItem] = rows.compactMap { row in
       guard row.count == 2,
         let typeID = Int64(row[0] ?? ""),
         let name = row[1]
       else { return nil }
-      return MoonMaterial(id: typeID, name: name)
+      return MaterialPurchaseItem(id: typeID, name: name)
     }
     guard !materials.isEmpty else {
-      throw StaticCatalogError.database("missing-moon-materials")
+      throw StaticCatalogError.database(kind.missingCatalogDiagnostic)
     }
-    return MoonMaterialCatalogSnapshot(
+    return MaterialPurchaseCatalogSnapshot(
       materials: materials,
       source: SourceIdentity(
         provider: "CCP SDE",
         version: String(pointer.buildNumber)
       )
     )
+  }
+
+  public func moonMaterials() async throws -> MoonMaterialCatalogSnapshot {
+    try await materialPurchaseCatalog(for: .moonMaterials)
+  }
+
+  public func minerals() async throws -> MaterialPurchaseCatalogSnapshot {
+    try await materialPurchaseCatalog(for: .minerals)
   }
 
   public func reactionRuleProfile() async throws -> ReactionRuleProfile? {
@@ -491,6 +656,11 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     let orderedIDs = typeIDs.filter { $0 > 0 }.sorted()
     guard !orderedIDs.isEmpty else { return [:] }
     let database = try activeDatabase()
+    let hasProductionClassMetadata = try Self.itemTypesHasProductionClassMetadata(
+      database
+    )
+    let productionClassColumns =
+      hasProductionClassMetadata ? "t.meta_group_id, t.tech_level" : "NULL, NULL"
     var result: [Int64: IndustryItemClassification] = [:]
     result.reserveCapacity(orderedIDs.count)
     for start in stride(from: 0, to: orderedIDs.count, by: 500) {
@@ -501,7 +671,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         .joined(separator: ",")
       let rows = try database.rows(
         """
-        SELECT t.id, c.name, g.name
+        SELECT t.id, c.name, g.name, \(productionClassColumns)
         FROM item_types t
         JOIN groups_table g ON g.id = t.group_id
         JOIN categories c ON c.id = t.category_id
@@ -509,7 +679,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         """
       )
       for row in rows {
-        guard row.count == 3,
+        guard row.count == 5,
           let typeID = Int64(row[0] ?? ""),
           let categoryName = row[1],
           let groupName = row[2]
@@ -520,7 +690,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
           manufacturingCategory: Self.manufacturingCategory(
             categoryName: categoryName,
             groupName: groupName
-          )
+          ),
+          metaGroupID: row[3].flatMap(Int64.init),
+          techLevel: row[4].flatMap(Int.init)
         )
       }
     }
@@ -531,7 +703,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     let database = try activeDatabase()
     let row = try database.singleRow(
       """
-      SELECT COALESCE(packaged_volume, volume)
+      SELECT packaged_volume
       FROM item_types
       WHERE id = \(typeID) AND published = 1
       LIMIT 1
@@ -556,7 +728,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       let ids = accepted[start..<min(start + 500, accepted.count)]
         .map(String.init).joined(separator: ",")
       for row in try database.rows(
-        "SELECT id, COALESCE(packaged_volume, volume) FROM item_types WHERE published = 1 AND id IN (\(ids))"
+        "SELECT id, packaged_volume FROM item_types WHERE published = 1 AND id IN (\(ids))"
       ) {
         guard row.count == 2, let id = Int64(row[0] ?? ""),
           let volume = Double(row[1] ?? ""), volume.isFinite, volume >= 0
@@ -565,6 +737,88 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       }
     }
     return result
+  }
+
+  public func compressedOreOptions(
+    producing materialTypeIDs: Set<Int64>
+  ) async throws -> [CompressedOreOption] {
+    let accepted = materialTypeIDs.filter { $0 > 0 }.sorted()
+    guard !accepted.isEmpty else { return [] }
+    let database = try activeDatabase()
+    let ids = accepted.map(String.init).joined(separator: ",")
+    let rows = try database.rows(
+      """
+      SELECT source.id, source.name, source.portion_size,
+             source.packaged_volume, tm.reprocessing_skill_type_id,
+             tm.material_type_id, tm.quantity
+      FROM type_materials tm
+      JOIN item_types source ON source.id = tm.source_type_id
+      WHERE source.published = 1
+        AND source.name LIKE 'Compressed %'
+        AND EXISTS (
+          SELECT 1 FROM type_materials relevant
+          WHERE relevant.source_type_id = tm.source_type_id
+            AND relevant.material_type_id IN (\(ids))
+        )
+      ORDER BY source.id, tm.sort_order, tm.material_type_id
+      """
+    )
+    let active = try await activeSDEVersion()
+    let sourceIdentity = SourceIdentity(
+      provider: "CCP SDE typeMaterials",
+      version: String(active?.buildNumber ?? 0)
+    )
+    struct Pending {
+      let name: String
+      let portionSize: Int64
+      let packagedVolume: Double?
+      let skillTypeID: Int64?
+      var outputs: [ReprocessingMaterialOutput]
+    }
+    var pending: [Int64: Pending] = [:]
+    for row in rows {
+      guard row.count == 7,
+        let typeID = Int64(row[0] ?? ""),
+        let name = row[1],
+        let portionSize = Int64(row[2] ?? ""), portionSize > 0,
+        let materialTypeID = Int64(row[5] ?? ""),
+        let quantity = Int64(row[6] ?? ""), quantity > 0
+      else { continue }
+      let output = ReprocessingMaterialOutput(
+        typeID: materialTypeID,
+        quantity: quantity
+      )
+      if var existing = pending[typeID] {
+        existing.outputs.append(output)
+        pending[typeID] = existing
+      } else {
+        let volume = row[3].flatMap(Double.init)
+        pending[typeID] = Pending(
+          name: name,
+          portionSize: portionSize,
+          packagedVolume:
+            volume?.isFinite == true && (volume ?? -1) >= 0 ? volume : nil,
+          skillTypeID: row[4].flatMap(Int64.init),
+          outputs: [output]
+        )
+      }
+    }
+    return pending.map { typeID, value in
+      CompressedOreOption(
+        typeID: typeID,
+        name: value.name,
+        portionSize: value.portionSize,
+        packagedVolume: value.packagedVolume,
+        reprocessingSkillTypeID: value.skillTypeID,
+        kind: Self.reprocessableMaterialKind(
+          skillTypeID: value.skillTypeID
+        ),
+        outputs: value.outputs,
+        source: sourceIdentity
+      )
+    }.sorted {
+      $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+    }
   }
 
   public func scienceSkills() async throws -> [ScienceSkillDefinition] {
@@ -632,6 +886,10 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
           OR name LIKE '% Blueprint Copy %'
           OR name LIKE '% ME Research %'
           OR name LIKE '% TE Research %'
+          OR name LIKE '% Asteroid Ore Grading Processor %'
+          OR name LIKE '% Ice Grading Processor %'
+          OR name LIKE '% Moon Ore Grading Processor %'
+          OR name LIKE '% Reprocessing Monitor %'
         )
         AND name NOT LIKE '% Thukker %'
       ORDER BY name COLLATE NOCASE
@@ -686,7 +944,8 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
           Self.percentReduction(attributes[2_602]),
         jobCostMultiplier: attributes[2_601] ?? 1,
         source: source,
-        groupID: structureGroupIDs[typeID]
+        groupID: structureGroupIDs[typeID],
+        reprocessingEfficiencyBonusPercent: attributes[2_722]
       )
     }.sorted {
       $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -703,10 +962,25 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         let nullSecurityMultiplier = attributes[2_357]
       else { return nil }
       let isReaction = name.localizedCaseInsensitiveContains("Reactor")
+      let isAsteroidReprocessing =
+        name.localizedCaseInsensitiveContains(
+          "Asteroid Ore Grading Processor"
+        )
+      let isMoonReprocessing =
+        name.localizedCaseInsensitiveContains("Moon Ore Grading Processor")
+      let isIceReprocessing =
+        name.localizedCaseInsensitiveContains("Ice Grading Processor")
+      let isGeneralReprocessing =
+        name.localizedCaseInsensitiveContains("Reprocessing Monitor")
       let scienceActivities = Self.scienceActivities(forRigName: name)
       let isScience = !scienceActivities.isEmpty
-      let materialAttribute = isReaction ? 2_714 : (isScience ? 0 : 2_594)
-      let timeAttribute = isReaction ? 2_713 : 2_593
+      let isReprocessing =
+        isAsteroidReprocessing || isMoonReprocessing
+        || isIceReprocessing || isGeneralReprocessing
+      let materialAttribute =
+        isReaction ? 2_714 : (isScience || isReprocessing ? 0 : 2_594)
+      let timeAttribute =
+        isReaction ? 2_713 : (isReprocessing ? 0 : 2_593)
       let rawMaterial = attributes[Int64(materialAttribute)] ?? 0
       let rawTime = attributes[Int64(timeAttribute)] ?? 0
       let rawJobCost = isScience ? (attributes[2_595] ?? 0) : 0
@@ -724,7 +998,16 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         nullSecurityMultiplier: nullSecurityMultiplier,
         source: source,
         scienceActivities: scienceActivities,
-        jobCostBonusPercent: abs(rawJobCost)
+        jobCostBonusPercent: abs(rawJobCost),
+        normalOreYieldMultiplier:
+          isAsteroidReprocessing || isGeneralReprocessing
+          ? attributes[717] : nil,
+        moonOreYieldMultiplier:
+          isMoonReprocessing || isGeneralReprocessing
+          ? attributes[717] : nil,
+        iceYieldMultiplier:
+          isIceReprocessing || isGeneralReprocessing
+          ? attributes[717] : nil
       )
     }.sorted {
       $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -779,9 +1062,14 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     -> IndustryItemClassification?
   {
     let database = try activeDatabase()
+    let hasProductionClassMetadata = try Self.itemTypesHasProductionClassMetadata(
+      database
+    )
+    let productionClassColumns =
+      hasProductionClassMetadata ? "t.meta_group_id, t.tech_level" : "NULL, NULL"
     let rows = try database.rows(
       """
-      SELECT c.name, g.name
+      SELECT c.name, g.name, \(productionClassColumns)
       FROM item_types t
       JOIN groups_table g ON g.id = t.group_id
       JOIN categories c ON c.id = t.category_id
@@ -789,7 +1077,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       LIMIT 1
       """
     )
-    guard let row = rows.first, row.count == 2,
+    guard let row = rows.first, row.count == 4,
       let categoryName = row[0], let groupName = row[1]
     else { return nil }
     return IndustryItemClassification(
@@ -798,8 +1086,21 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       manufacturingCategory: Self.manufacturingCategory(
         categoryName: categoryName,
         groupName: groupName
-      )
+      ),
+      metaGroupID: row[2].flatMap(Int64.init),
+      techLevel: row[3].flatMap(Int.init)
     )
+  }
+
+  private static func itemTypesHasProductionClassMetadata(
+    _ database: SQLiteDatabase
+  ) throws -> Bool {
+    let columns = Set(
+      try database.rows("PRAGMA table_info(item_types)").compactMap { row in
+        row.count > 1 ? row[1] : nil
+      }
+    )
+    return columns.contains("meta_group_id") && columns.contains("tech_level")
   }
 
   private static func manufacturingCategory(
@@ -825,6 +1126,21 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     ]
     if mediumTerms.contains(where: group.contains) { return .medium }
     return .small
+  }
+
+  private static func reprocessableMaterialKind(
+    skillTypeID: Int64?
+  ) -> ReprocessableMaterialKind {
+    switch skillTypeID {
+    case .some(46_152...46_156):
+      return .moonOre
+    case .some(18_025):
+      return .ice
+    case .some:
+      return .asteroidOre
+    case .none:
+      return .unknown
+    }
   }
 
   private static func namedTypes(
@@ -1054,6 +1370,167 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       productTypeID: productTypeID,
       requiredActivity: nil
     )
+  }
+
+  public func blueprintScienceActivities(blueprintTypeID: Int64) async throws
+    -> [BlueprintScienceActivityDefinition]
+  {
+    let database = try activeDatabase()
+    let activityRows = try database.rows(
+      """
+      SELECT activity, time_seconds
+      FROM blueprint_activities
+      WHERE blueprint_type_id = \(blueprintTypeID)
+        AND activity IN ('copying', 'invention', 'research_material', 'research_time')
+      ORDER BY CASE activity
+        WHEN 'copying' THEN 0
+        WHEN 'research_material' THEN 1
+        WHEN 'research_time' THEN 2
+        ELSE 3 END
+      """
+    )
+    let hasSkillsTable = try !database.rows(
+      """
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'blueprint_skills'
+      LIMIT 1
+      """
+    ).isEmpty
+    let active = try await activeSDEVersion()
+    let source = SourceIdentity(
+      provider: "CCP SDE",
+      version: String(active?.buildNumber ?? 0)
+    )
+    var result: [BlueprintScienceActivityDefinition] = []
+    for row in activityRows {
+      guard row.count == 2,
+        let rawActivity = row[0],
+        let duration = Int64(row[1] ?? ""),
+        let kind = scienceActivityKind(rawActivity)
+      else { continue }
+      let materials = try database.rows(
+        """
+        SELECT item_type_id, quantity
+        FROM blueprint_materials
+        WHERE blueprint_type_id = \(blueprintTypeID)
+          AND activity = \(sql(rawActivity)) AND resolved = 1
+        ORDER BY sort_order
+        """
+      ).compactMap { values -> BlueprintMaterial? in
+        guard values.count == 2,
+          let typeID = Int64(values[0] ?? ""),
+          let quantity = Int64(values[1] ?? "")
+        else { return nil }
+        return BlueprintMaterial(typeID: typeID, quantity: quantity)
+      }
+      let products = try database.rows(
+        """
+        SELECT item_type_id, quantity, probability
+        FROM blueprint_products
+        WHERE blueprint_type_id = \(blueprintTypeID)
+          AND activity = \(sql(rawActivity)) AND resolved = 1
+        ORDER BY sort_order
+        """
+      ).compactMap { values -> BlueprintProduct? in
+        guard values.count == 3,
+          let typeID = Int64(values[0] ?? ""),
+          let quantity = Int64(values[1] ?? "")
+        else { return nil }
+        return BlueprintProduct(
+          typeID: typeID,
+          quantity: quantity,
+          probability: values[2].flatMap(Double.init)
+        )
+      }
+      let skills: [BlueprintSkillRequirement]
+      if hasSkillsTable {
+        skills = try database.rows(
+          """
+          SELECT item_type_id, level
+          FROM blueprint_skills
+          WHERE blueprint_type_id = \(blueprintTypeID)
+            AND activity = \(sql(rawActivity)) AND resolved = 1
+          ORDER BY sort_order
+          """
+        ).compactMap { values in
+          guard values.count == 2,
+            let typeID = Int64(values[0] ?? ""),
+            let level = Int(values[1] ?? "")
+          else { return nil }
+          return BlueprintSkillRequirement(typeID: typeID, level: level)
+        }
+      } else {
+        skills = []
+      }
+      result.append(
+        BlueprintScienceActivityDefinition(
+          kind: kind,
+          durationSeconds: duration,
+          materials: materials,
+          products: products,
+          requiredSkills: skills,
+          source: source
+        )
+      )
+    }
+    return result
+  }
+
+  public func decryptorDefinitions() async throws
+    -> [BlueprintDecryptorDefinition]
+  {
+    let database = try activeDatabase()
+    let hasTable = try !database.rows(
+      """
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'decryptors'
+      LIMIT 1
+      """
+    ).isEmpty
+    guard hasTable else { return [] }
+    let active = try await activeSDEVersion()
+    let source = SourceIdentity(
+      provider: "CCP SDE",
+      version: String(active?.buildNumber ?? 0)
+    )
+    return try database.rows(
+      """
+      SELECT d.item_type_id, d.probability_multiplier, d.run_modifier,
+             d.material_efficiency_modifier, d.time_efficiency_modifier
+      FROM decryptors d
+      JOIN item_types t ON t.id = d.item_type_id
+      WHERE t.published = 1
+      ORDER BY t.name COLLATE NOCASE, d.item_type_id
+      """
+    ).compactMap { values in
+      guard values.count == 5,
+        let typeID = Int64(values[0] ?? ""),
+        let probability = Double(values[1] ?? ""),
+        let runs = Int(values[2] ?? ""),
+        let me = Int(values[3] ?? ""),
+        let te = Int(values[4] ?? "")
+      else { return nil }
+      return BlueprintDecryptorDefinition(
+        typeID: typeID,
+        probabilityMultiplier: probability,
+        runModifier: runs,
+        materialEfficiencyModifier: me,
+        timeEfficiencyModifier: te,
+        source: source
+      )
+    }
+  }
+
+  private func scienceActivityKind(
+    _ rawValue: String
+  ) -> BlueprintActivityDefinition.Kind? {
+    switch rawValue {
+    case "copying": .copying
+    case "invention": .invention
+    case "research_material": .materialResearch
+    case "research_time": .timeResearch
+    default: nil
+    }
   }
 
   private func productionDefinition(
@@ -1291,15 +1768,75 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   }
 
   private func validate(_ pointer: ActivePointer) throws {
-    let expectedFileName =
-      "sde-\(pointer.buildNumber)-\(pointer.contentSHA256.prefix(12)).sqlite"
     guard pointer.buildNumber > 0,
       Self.isValidContentSHA256(pointer.contentSHA256),
-      pointer.fileName == expectedFileName,
+      Self.isAcceptedCatalogFileName(
+        pointer.fileName,
+        buildNumber: pointer.buildNumber,
+        contentSHA256: pointer.contentSHA256
+      ),
       pointer.fileName == URL(fileURLWithPath: pointer.fileName).lastPathComponent
     else {
       throw StaticCatalogError.invalidPointer
     }
+  }
+
+  private static func legacyCatalogFileName(
+    buildNumber: Int,
+    contentSHA256: String
+  ) -> String {
+    "sde-\(buildNumber)-\(contentSHA256.prefix(12)).sqlite"
+  }
+
+  private static func currentCatalogFileName(
+    buildNumber: Int,
+    contentSHA256: String
+  ) -> String {
+    "sde-\(buildNumber)-\(contentSHA256.prefix(12))-catalog-v\(catalogAdapterVersion).sqlite"
+  }
+
+  private static func isAcceptedCatalogFileName(
+    _ fileName: String,
+    buildNumber: Int,
+    contentSHA256: String
+  ) -> Bool {
+    if fileName
+      == legacyCatalogFileName(
+        buildNumber: buildNumber,
+        contentSHA256: contentSHA256
+      )
+    {
+      return true
+    }
+    let prefix = "sde-\(buildNumber)-\(contentSHA256.prefix(12))-catalog-v"
+    let suffix = ".sqlite"
+    guard fileName.hasPrefix(prefix), fileName.hasSuffix(suffix) else {
+      return false
+    }
+    let versionStart = fileName.index(
+      fileName.startIndex,
+      offsetBy: prefix.count
+    )
+    let versionEnd = fileName.index(
+      fileName.endIndex,
+      offsetBy: -suffix.count
+    )
+    let versionText = fileName[versionStart..<versionEnd]
+    guard versionStart < versionEnd,
+      let version = Int(versionText),
+      versionText == String(version)
+    else { return false }
+    return (1...catalogAdapterVersion).contains(version)
+  }
+
+  private static func catalogRollbackOrder(_ lhs: URL, _ rhs: URL) -> Bool {
+    let currentSuffix = "-catalog-v\(catalogAdapterVersion).sqlite"
+    let lhsIsCurrent = lhs.lastPathComponent.hasSuffix(currentSuffix)
+    let rhsIsCurrent = rhs.lastPathComponent.hasSuffix(currentSuffix)
+    if lhsIsCurrent != rhsIsCurrent {
+      return !lhsIsCurrent
+    }
+    return lhs.lastPathComponent < rhs.lastPathComponent
   }
 
   private static func isValidContentSHA256(_ value: String) -> Bool {
@@ -1388,6 +1925,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       CREATE TABLE item_types (
         id INTEGER PRIMARY KEY, group_id INTEGER NOT NULL,
         category_id INTEGER NOT NULL, market_group_id INTEGER,
+        meta_group_id INTEGER, tech_level INTEGER,
         name TEXT NOT NULL, description TEXT, volume REAL,
         packaged_volume REAL, base_price REAL, portion_size INTEGER NOT NULL,
         published INTEGER NOT NULL, icon_id INTEGER
@@ -1410,10 +1948,32 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         item_type_id INTEGER NOT NULL, resolved INTEGER NOT NULL,
         quantity INTEGER NOT NULL, probability REAL, sort_order INTEGER NOT NULL
       );
+      CREATE TABLE blueprint_skills (
+        blueprint_type_id INTEGER NOT NULL, activity TEXT NOT NULL,
+        item_type_id INTEGER NOT NULL, resolved INTEGER NOT NULL,
+        level INTEGER NOT NULL, sort_order INTEGER NOT NULL
+      );
+      CREATE TABLE decryptors (
+        item_type_id INTEGER PRIMARY KEY,
+        probability_multiplier REAL NOT NULL,
+        run_modifier INTEGER NOT NULL,
+        material_efficiency_modifier INTEGER NOT NULL,
+        time_efficiency_modifier INTEGER NOT NULL
+      );
+      CREATE TABLE type_materials (
+        source_type_id INTEGER NOT NULL,
+        material_type_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        sort_order INTEGER NOT NULL,
+        reprocessing_skill_type_id INTEGER,
+        PRIMARY KEY (source_type_id, material_type_id)
+      );
       CREATE INDEX idx_item_type_name ON item_types(name COLLATE NOCASE);
       CREATE INDEX idx_product_type ON blueprint_products(item_type_id);
       CREATE INDEX idx_material_blueprint
         ON blueprint_materials(blueprint_type_id, activity);
+      CREATE INDEX idx_type_material_output
+        ON type_materials(material_type_id, source_type_id);
       """
     )
     try db.execute("BEGIN IMMEDIATE")
@@ -1455,6 +2015,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
           INSERT INTO item_types VALUES (
             \(type.externalID), \(type.groupExternalID),
             \(type.categoryExternalID), \(sql(type.marketGroupExternalID)),
+            \(sql(type.metaGroupExternalID)), \(sql(type.techLevel)),
             \(sql(type.name)), \(sql(type.description)),
             \(sql(type.volume)), \(sql(type.packagedVolume)),
             \(sql(type.basePrice)), \(type.portionSize),
@@ -1462,6 +2023,19 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
           )
           """
         )
+      }
+      for record in snapshot.typeMaterials {
+        for (sortOrder, material) in record.materials.enumerated() {
+          try db.execute(
+            """
+            INSERT INTO type_materials VALUES (
+              \(record.sourceTypeID), \(material.materialTypeID),
+              \(material.quantity), \(sortOrder),
+              \(sql(record.reprocessingSkillTypeID))
+            )
+            """
+          )
+        }
       }
       for blueprint in snapshot.blueprints {
         try db.execute(
@@ -1498,7 +2072,32 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
               """
             )
           }
+          for skill in activity.skills {
+            try db.execute(
+              """
+              INSERT INTO blueprint_skills VALUES (
+                \(blueprint.blueprintTypeID),
+                \(sql(activity.activity.rawValue)),
+                \(skill.itemTypeID),
+                \(skill.typeIsResolved ? 1 : 0),
+                \(skill.level), \(skill.sortOrder)
+              )
+              """
+            )
+          }
         }
+      }
+      for decryptor in snapshot.decryptors {
+        try db.execute(
+          """
+          INSERT INTO decryptors VALUES (
+            \(decryptor.itemTypeID), \(decryptor.probabilityMultiplier),
+            \(decryptor.runModifier),
+            \(decryptor.materialEfficiencyModifier),
+            \(decryptor.timeEfficiencyModifier)
+          )
+          """
+        )
       }
       try db.execute("COMMIT")
     } catch {
@@ -1643,6 +2242,7 @@ private actor SQLiteBatchWriter {
             INSERT INTO item_types VALUES (
               \(type.externalID), \(type.groupExternalID),
               \(type.categoryExternalID), \(sql(type.marketGroupExternalID)),
+              \(sql(type.metaGroupExternalID)), \(sql(type.techLevel)),
               \(sql(type.name)), \(sql(type.description)),
               \(sql(type.volume)), \(sql(type.packagedVolume)),
               \(sql(type.basePrice)), \(type.portionSize),
@@ -1650,6 +2250,20 @@ private actor SQLiteBatchWriter {
             )
             """
           )
+        }
+      case .typeMaterials(let records):
+        for record in records {
+          for (sortOrder, material) in record.materials.enumerated() {
+            try database.execute(
+              """
+              INSERT INTO type_materials VALUES (
+                \(record.sourceTypeID), \(material.materialTypeID),
+                \(material.quantity), \(sortOrder),
+                \(sql(record.reprocessingSkillTypeID))
+              )
+              """
+            )
+          }
         }
       case .blueprints(let records):
         for blueprint in records {
@@ -1687,7 +2301,33 @@ private actor SQLiteBatchWriter {
                 """
               )
             }
+            for skill in activity.skills {
+              try database.execute(
+                """
+                INSERT INTO blueprint_skills VALUES (
+                  \(blueprint.blueprintTypeID),
+                  \(sql(activity.activity.rawValue)),
+                  \(skill.itemTypeID),
+                  \(skill.typeIsResolved ? 1 : 0),
+                  \(skill.level), \(skill.sortOrder)
+                )
+                """
+              )
+            }
           }
+        }
+      case .decryptors(let records):
+        for decryptor in records {
+          try database.execute(
+            """
+            INSERT INTO decryptors VALUES (
+              \(decryptor.itemTypeID), \(decryptor.probabilityMultiplier),
+              \(decryptor.runModifier),
+              \(decryptor.materialEfficiencyModifier),
+              \(decryptor.timeEfficiencyModifier)
+            )
+            """
+          )
         }
       case .reactionRuleProfile(let profile):
         let data = try JSONEncoder().encode(profile)
@@ -1759,6 +2399,7 @@ private actor SQLiteBatchWriter {
     CREATE TABLE item_types (
       id INTEGER PRIMARY KEY, group_id INTEGER NOT NULL,
       category_id INTEGER NOT NULL, market_group_id INTEGER,
+      meta_group_id INTEGER, tech_level INTEGER,
       name TEXT NOT NULL, description TEXT, volume REAL,
       packaged_volume REAL, base_price REAL, portion_size INTEGER NOT NULL,
       published INTEGER NOT NULL, icon_id INTEGER
@@ -1781,10 +2422,32 @@ private actor SQLiteBatchWriter {
       item_type_id INTEGER NOT NULL, resolved INTEGER NOT NULL,
       quantity INTEGER NOT NULL, probability REAL, sort_order INTEGER NOT NULL
     );
+    CREATE TABLE blueprint_skills (
+      blueprint_type_id INTEGER NOT NULL, activity TEXT NOT NULL,
+      item_type_id INTEGER NOT NULL, resolved INTEGER NOT NULL,
+      level INTEGER NOT NULL, sort_order INTEGER NOT NULL
+    );
+    CREATE TABLE decryptors (
+      item_type_id INTEGER PRIMARY KEY,
+      probability_multiplier REAL NOT NULL,
+      run_modifier INTEGER NOT NULL,
+      material_efficiency_modifier INTEGER NOT NULL,
+      time_efficiency_modifier INTEGER NOT NULL
+    );
+    CREATE TABLE type_materials (
+      source_type_id INTEGER NOT NULL,
+      material_type_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL,
+      sort_order INTEGER NOT NULL,
+      reprocessing_skill_type_id INTEGER,
+      PRIMARY KEY (source_type_id, material_type_id)
+    );
     CREATE INDEX idx_item_type_name ON item_types(name COLLATE NOCASE);
     CREATE INDEX idx_product_type ON blueprint_products(item_type_id);
     CREATE INDEX idx_material_blueprint
       ON blueprint_materials(blueprint_type_id, activity);
+    CREATE INDEX idx_type_material_output
+      ON type_materials(material_type_id, source_type_id);
     """
 }
 

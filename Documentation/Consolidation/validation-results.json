@@ -1,0 +1,84 @@
+{
+  "date": "2026-09-25",
+  "active_project": "/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets",
+  "environment": {
+    "xcode": "27.0 (27A266a)",
+    "swift": "6.4",
+    "platform": "macOS arm64"
+  },
+  "swiftpm": {
+    "exit_code": 0,
+    "passed": 417,
+    "skipped": 1,
+    "failed": 0,
+    "detail": "385 Core Swift Testing + 21 App Swift Testing + 11 XCTest; one Core real-SDE test skipped"
+  },
+  "static_data_kit": {
+    "exit_code": 0,
+    "passed": 7,
+    "skipped": 1,
+    "failed": 0
+  },
+  "xcode_build": {
+    "exit_code": 0,
+    "result": "BUILD SUCCEEDED",
+    "configuration": "Debug",
+    "code_signing_allowed": "NO"
+  },
+  "xcode_tests": {
+    "exit_code": 0,
+    "passed": 385,
+    "skipped": 1,
+    "failed": 0,
+    "result": "TEST SUCCEEDED"
+  },
+  "static_checks": {
+    "errors": [],
+    "warnings": [],
+    "missing_original_files": [],
+    "changed_original_files": [
+      "AGENTS.md",
+      "Documentation/ACCEPTANCE.md",
+      "Documentation/ADR-001-local-native-modular.md",
+      "Documentation/ARCHITECTURE.md",
+      "Documentation/PRODUCTION_BASIS.md",
+      "EVENexusSimple.xcodeproj/project.pbxproj",
+      "EVENexusSimple.xcodeproj/xcshareddata/xcschemes/EVENexusSimple.xcscheme",
+      "Optimierung.md",
+      "Package.swift",
+      "README.md",
+      "Sources/EVENexusSimpleApp/ContentView.swift",
+      "dev-diary.md",
+      "dokumentation.md",
+      "project.yml"
+    ],
+    "source_logic_changes": [
+      "Sources/EVENexusSimpleApp/ContentView.swift"
+    ],
+    "archive_hashes_verified": true,
+    "missing_xcode_references": [],
+    "xcode_target_source_counts": {
+      "EVENexusSimple": 23,
+      "CSQLite": 1,
+      "EVENexusCore": 50,
+      "EVENexusCoreTests": 21
+    },
+    "unlisted_core_sources": [],
+    "unlisted_app_sources": [],
+    "unlisted_native_core_tests": [],
+    "active_xcode_projects": [
+      "EVENexusSimple.xcodeproj"
+    ],
+    "broken_markdown_links": [],
+    "broken_symlinks": [],
+    "active_absolute_legacy_paths": []
+  },
+  "log_sha256": {
+    "kit-test.log": "847e2ea85d998d71c072f7dc78754922ca5ee8d02d0e24de240a8eab8f234256",
+    "swift-test.log": "87262012f6f4fa9d70502688e790e30bcb117a28fd23d13b6c62bb3ef724dbaf",
+    "xcode-build.log": "20fbbebe524124d7eaba19d957aef1afa2206e79b5f21456ddf4bc81b9348de0",
+    "xcode-list.json": "03db50e3bc1d6bcec4bf541cce7168921c9741b1311ca5b2709244c9b7924f5d",
+    "xcode-list.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "xcode-test.log": "9c6d3bb4af53b067fca89409a62d0854faf806d8feae38f90aef6ace0f8bab99"
+  }
+}

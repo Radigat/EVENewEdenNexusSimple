@@ -1,0 +1,16 @@
+{
+  "simple-current": {
+    "previous_path": "/Users/svenstolze/Documents/EVE NEXUS SIMPLE",
+    "archive_path": "/Users/svenstolze/Documents/_archive/EVE-Nexus-Konsolidierung-2026-09-25/EVE NEXUS SIMPLE",
+    "source_hashes_verified": true,
+    "git_status_preserved": true,
+    "head": "e3bc7a900e89cc8f39f10f9795c9f1a7537056da"
+  },
+  "nexus-legacy": {
+    "previous_path": "/Users/svenstolze/Documents/Codex/EVE Nexus",
+    "archive_path": "/Users/svenstolze/Documents/_archive/EVE-Nexus-Konsolidierung-2026-09-25/EVE Nexus",
+    "source_hashes_verified": true,
+    "git_status_preserved": true,
+    "head": "058d4942d01782ad22a223ba6cd499d984ebe978"
+  }
+}

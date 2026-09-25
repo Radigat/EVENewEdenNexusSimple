@@ -72,26 +72,35 @@ public struct ESIPublicContractItemDTO: Codable, Equatable, Sendable {
   public let isBlueprintCopy: Bool?
   public let isIncluded: Bool
   public let itemID: Int64?
+  public let materialEfficiency: Int?
   public let quantity: Int64
   public let rawQuantity: Int64?
   public let recordID: Int64
+  public let runs: Int?
+  public let timeEfficiency: Int?
   public let typeID: Int64
 
   public init(
     isBlueprintCopy: Bool? = nil,
     isIncluded: Bool,
     itemID: Int64? = nil,
+    materialEfficiency: Int? = nil,
     quantity: Int64,
     rawQuantity: Int64? = nil,
     recordID: Int64,
+    runs: Int? = nil,
+    timeEfficiency: Int? = nil,
     typeID: Int64
   ) {
     self.isBlueprintCopy = isBlueprintCopy
     self.isIncluded = isIncluded
     self.itemID = itemID
+    self.materialEfficiency = materialEfficiency
     self.quantity = quantity
     self.rawQuantity = rawQuantity
     self.recordID = recordID
+    self.runs = runs
+    self.timeEfficiency = timeEfficiency
     self.typeID = typeID
   }
 
@@ -100,8 +109,11 @@ public struct ESIPublicContractItemDTO: Codable, Equatable, Sendable {
     case isBlueprintCopy = "is_blueprint_copy"
     case isIncluded = "is_included"
     case itemID = "item_id"
+    case materialEfficiency = "material_efficiency"
     case rawQuantity = "raw_quantity"
     case recordID = "record_id"
+    case runs
+    case timeEfficiency = "time_efficiency"
     case typeID = "type_id"
   }
 }
@@ -208,6 +220,262 @@ public struct PublicContractSearchResult: Identifiable, Equatable, Sendable {
   public let isIncluded: Bool
   public let quantity: Int64
   public let isBlueprintCopy: Bool?
+  public let materialEfficiency: Int?
+  public let timeEfficiency: Int?
+  public let runs: Int?
+  public let offeredLineCount: Int
+  public let requestedLineCount: Int
+
+  public init(
+    contractID: Int64,
+    recordID: Int64,
+    regionID: Int64,
+    regionName: String,
+    contractType: String,
+    forCorporation: Bool? = nil,
+    title: String? = nil,
+    price: Double? = nil,
+    buyout: Double? = nil,
+    reward: Double? = nil,
+    collateral: Double? = nil,
+    dateIssued: Date,
+    dateExpired: Date,
+    startLocationID: Int64? = nil,
+    startLocationName: String? = nil,
+    endLocationID: Int64? = nil,
+    endLocationName: String? = nil,
+    typeID: Int64,
+    typeName: String? = nil,
+    groupID: Int64? = nil,
+    groupName: String? = nil,
+    categoryID: Int64? = nil,
+    categoryName: String? = nil,
+    isIncluded: Bool,
+    quantity: Int64,
+    isBlueprintCopy: Bool? = nil,
+    materialEfficiency: Int? = nil,
+    timeEfficiency: Int? = nil,
+    runs: Int? = nil,
+    offeredLineCount: Int,
+    requestedLineCount: Int
+  ) {
+    self.contractID = contractID
+    self.recordID = recordID
+    self.regionID = regionID
+    self.regionName = regionName
+    self.contractType = contractType
+    self.forCorporation = forCorporation
+    self.title = title
+    self.price = price
+    self.buyout = buyout
+    self.reward = reward
+    self.collateral = collateral
+    self.dateIssued = dateIssued
+    self.dateExpired = dateExpired
+    self.startLocationID = startLocationID
+    self.startLocationName = startLocationName
+    self.endLocationID = endLocationID
+    self.endLocationName = endLocationName
+    self.typeID = typeID
+    self.typeName = typeName
+    self.groupID = groupID
+    self.groupName = groupName
+    self.categoryID = categoryID
+    self.categoryName = categoryName
+    self.isIncluded = isIncluded
+    self.quantity = quantity
+    self.isBlueprintCopy = isBlueprintCopy
+    self.materialEfficiency = materialEfficiency
+    self.timeEfficiency = timeEfficiency
+    self.runs = runs
+    self.offeredLineCount = offeredLineCount
+    self.requestedLineCount = requestedLineCount
+  }
+
+  public var effectiveContractPrice: Double? {
+    let value = price ?? buyout
+    guard let value, value.isFinite, value > 0 else { return nil }
+    return value
+  }
+
+  public var isAttributableBlueprintOffer: Bool {
+    guard contractType == "item_exchange",
+      isIncluded,
+      quantity == 1,
+      offeredLineCount == 1,
+      requestedLineCount == 0,
+      effectiveContractPrice != nil
+    else { return false }
+    if runs == -1 { return true }
+    return isBlueprintCopy == true
+      && (runs ?? 0) > 0
+      && materialEfficiency != nil
+      && timeEfficiency != nil
+  }
+
+  public var isComparableSingleTypeItemExchangeOffer: Bool {
+    contractType == "item_exchange"
+      && isIncluded
+      && quantity > 0
+      && offeredLineCount == 1
+      && requestedLineCount == 0
+      && effectiveContractPrice != nil
+  }
+}
+
+public enum PublicContractReferenceRule {
+  public static let ruleVersion = "public-item-exchange-reference-2026-08-13"
+}
+
+public struct PublicContractReferencePrice: Codable, Equatable, Sendable {
+  public let typeID: Int64
+  public let contractID: Int64
+  public let contractQuantity: Int64
+  public let totalContractPrice: Double
+  public let unitPrice: Double
+  public let startLocationID: Int64?
+  public let startLocationName: String?
+  public let dateIssued: Date
+  public let dateExpired: Date
+
+  public init?(_ offer: PublicContractSearchResult) {
+    guard offer.isComparableSingleTypeItemExchangeOffer,
+      let totalContractPrice = offer.effectiveContractPrice
+    else { return nil }
+    let unitPrice = totalContractPrice / Double(offer.quantity)
+    guard unitPrice.isFinite, unitPrice > 0 else { return nil }
+    typeID = offer.typeID
+    contractID = offer.contractID
+    contractQuantity = offer.quantity
+    self.totalContractPrice = totalContractPrice
+    self.unitPrice = unitPrice
+    startLocationID = offer.startLocationID
+    startLocationName = offer.startLocationName
+    dateIssued = offer.dateIssued
+    dateExpired = offer.dateExpired
+  }
+}
+
+public struct PublicContractReferenceSnapshot: Identifiable, Codable, Sendable {
+  public let id: UUID
+  public let capturedAt: Date
+  public let locationID: Int64
+  public let locationName: String
+  public let prices: [Int64: PublicContractReferencePrice]
+  public let hasCompleteSearchCoverage: Bool
+  public let source: SourceIdentity
+
+  /// `nil` means every imported EVE region. A non-empty set is reserved for
+  /// the user-configurable comparison scope without changing quote semantics.
+  public let allowedRegionIDs: Set<Int64>?
+
+  public init(
+    id: UUID = UUID(),
+    capturedAt: Date,
+    locationID: Int64,
+    locationName: String,
+    prices: [Int64: PublicContractReferencePrice],
+    hasCompleteSearchCoverage: Bool,
+    source: SourceIdentity,
+    allowedRegionIDs: Set<Int64>? = nil
+  ) {
+    self.id = id
+    self.capturedAt = capturedAt
+    self.locationID = locationID
+    self.locationName = locationName
+    self.prices = prices
+    self.hasCompleteSearchCoverage = hasCompleteSearchCoverage
+    self.source = source
+    self.allowedRegionIDs = allowedRegionIDs
+  }
+
+  public static func project(
+    locationID: Int64,
+    locationName: String,
+    offers: [Int64: [PublicContractSearchResult]],
+    progress: PublicContractSyncProgress,
+    limitPerType: Int,
+    capturedAt: Date = .now
+  ) -> PublicContractReferenceSnapshot {
+    var prices: [Int64: PublicContractReferencePrice] = [:]
+    for (typeID, candidates) in offers {
+      prices[typeID] = candidates.compactMap(PublicContractReferencePrice.init)
+        .filter { $0.startLocationID == locationID }
+        .min {
+          if $0.unitPrice != $1.unitPrice {
+            return $0.unitPrice < $1.unitPrice
+          }
+          if $0.dateExpired != $1.dateExpired {
+            return $0.dateExpired < $1.dateExpired
+          }
+          return $0.contractID < $1.contractID
+        }
+    }
+    let boundedLimit = min(500, max(1, limitPerType))
+    let truncated = offers.values.contains { $0.count >= boundedLimit }
+    let source = SourceIdentity(
+      provider: "ESI Public Contracts",
+      version: PublicContractReferenceRule.ruleVersion,
+      capturedAt: progress.lastCompletedAt ?? capturedAt
+    )
+    return PublicContractReferenceSnapshot(
+      id: source.snapshotID,
+      capturedAt: source.capturedAt,
+      locationID: locationID,
+      locationName: locationName,
+      prices: prices,
+      hasCompleteSearchCoverage:
+        progress.hasCompleteSearchCoverage && !truncated,
+      source: source
+    )
+  }
+
+  public static func projectUniverseWide(
+    offers: [Int64: [PublicContractSearchResult]],
+    progress: PublicContractSyncProgress,
+    limitPerType: Int,
+    allowedRegionIDs: Set<Int64>? = nil,
+    capturedAt: Date = .now
+  ) -> PublicContractReferenceSnapshot {
+    let acceptedRegionIDs = allowedRegionIDs.flatMap { $0.isEmpty ? nil : $0 }
+    var prices: [Int64: PublicContractReferencePrice] = [:]
+    for (typeID, candidates) in offers {
+      prices[typeID] =
+        candidates
+        .filter { offer in
+          acceptedRegionIDs?.contains(offer.regionID) ?? true
+        }
+        .compactMap(PublicContractReferencePrice.init)
+        .min {
+          if $0.unitPrice != $1.unitPrice {
+            return $0.unitPrice < $1.unitPrice
+          }
+          if $0.dateExpired != $1.dateExpired {
+            return $0.dateExpired < $1.dateExpired
+          }
+          return $0.contractID < $1.contractID
+        }
+    }
+    let source = SourceIdentity(
+      provider: "ESI Public Contracts",
+      version: PublicContractReferenceRule.ruleVersion,
+      capturedAt: progress.lastCompletedAt ?? capturedAt
+    )
+    let boundedLimit = min(500, max(1, limitPerType))
+    let truncated = offers.values.contains { $0.count >= boundedLimit }
+    return PublicContractReferenceSnapshot(
+      id: source.snapshotID,
+      capturedAt: source.capturedAt,
+      locationID: 0,
+      locationName: acceptedRegionIDs == nil
+        ? "Entire universe" : "Selected regions",
+      prices: prices,
+      hasCompleteSearchCoverage:
+        progress.hasCompleteSearchCoverage && !truncated,
+      source: source,
+      allowedRegionIDs: acceptedRegionIDs
+    )
+  }
 }
 
 public enum PublicContractSyncPhase: String, Equatable, Sendable {

@@ -253,37 +253,53 @@ public struct ESICharacterOrderDTO: Codable, Identifiable, Sendable {
 
 public struct ESIPrivateContractDTO: Codable, Identifiable, Sendable {
   public var id: Int64 { contractID }
+  public let availability: String?
   public let collateral: Double?
   public let contractID: Int64
   public let dateExpired: Date
+  public let dateIssued: Date?
   public let forCorporation: Bool
   public let issuerID: Int64
+  public let price: Double?
+  public let startLocationID: Int64?
   public let status: String
   public let type: String
 
   enum CodingKeys: String, CodingKey {
+    case availability
     case collateral
     case contractID = "contract_id"
     case dateExpired = "date_expired"
+    case dateIssued = "date_issued"
     case forCorporation = "for_corporation"
     case issuerID = "issuer_id"
+    case price
+    case startLocationID = "start_location_id"
     case status, type
   }
 
   public init(
+    availability: String? = nil,
     collateral: Double?,
     contractID: Int64,
     dateExpired: Date,
+    dateIssued: Date? = nil,
     forCorporation: Bool,
     issuerID: Int64,
+    price: Double? = nil,
+    startLocationID: Int64? = nil,
     status: String,
     type: String
   ) {
+    self.availability = availability
     self.collateral = collateral
     self.contractID = contractID
     self.dateExpired = dateExpired
+    self.dateIssued = dateIssued
     self.forCorporation = forCorporation
     self.issuerID = issuerID
+    self.price = price
+    self.startLocationID = startLocationID
     self.status = status
     self.type = type
   }
@@ -334,14 +350,288 @@ public struct ESIWalletJournalDTO: Codable, Identifiable, Sendable {
   public var id: Int64 { journalID }
   public let amount: Double?
   public let balance: Double?
+  public let contextID: Int64?
+  public let contextIDType: String?
   public let date: Date
+  public let description: String?
   public let journalID: Int64
+  public let reason: String?
   public let refType: String
+  public let tax: Double?
+  public let taxReceiverID: Int64?
 
   enum CodingKeys: String, CodingKey {
-    case amount, balance, date
+    case amount, balance
+    case contextID = "context_id"
+    case contextIDType = "context_id_type"
+    case date, description
     case journalID = "id"
+    case reason
     case refType = "ref_type"
+    case tax
+    case taxReceiverID = "tax_receiver_id"
+  }
+
+  public init(
+    amount: Double? = nil,
+    balance: Double? = nil,
+    contextID: Int64? = nil,
+    contextIDType: String? = nil,
+    date: Date,
+    description: String? = nil,
+    journalID: Int64,
+    reason: String? = nil,
+    refType: String,
+    tax: Double? = nil,
+    taxReceiverID: Int64? = nil
+  ) {
+    self.amount = amount
+    self.balance = balance
+    self.contextID = contextID
+    self.contextIDType = contextIDType
+    self.date = date
+    self.description = description
+    self.journalID = journalID
+    self.reason = reason
+    self.refType = refType
+    self.tax = tax
+    self.taxReceiverID = taxReceiverID
+  }
+}
+
+/// A complete, observed fee outcome for one successful personal public Item
+/// Exchange contract. It is evidence for a specific price and location, not a
+/// CCP quote for a hypothetical future contract.
+public struct PublicContractFeeEvidence: Codable, Equatable, Sendable {
+  public let characterID: Int64
+  public let contractID: Int64
+  public let locationID: Int64
+  public let contractPrice: Double
+  public let brokerFee: Double
+  public let salesTax: Double
+  public let deposit: Double?
+  public let depositRefund: Double?
+  public let observedAt: Date
+  public let source: SourceIdentity
+
+  public init(
+    characterID: Int64,
+    contractID: Int64,
+    locationID: Int64,
+    contractPrice: Double,
+    brokerFee: Double,
+    salesTax: Double,
+    deposit: Double? = nil,
+    depositRefund: Double? = nil,
+    observedAt: Date,
+    source: SourceIdentity
+  ) {
+    self.characterID = characterID
+    self.contractID = contractID
+    self.locationID = locationID
+    self.contractPrice = contractPrice
+    self.brokerFee = brokerFee
+    self.salesTax = salesTax
+    self.deposit = deposit
+    self.depositRefund = depositRefund
+    self.observedAt = observedAt
+    self.source = source
+  }
+
+  public var totalNonRefundableFee: Double? {
+    let total = brokerFee + salesTax
+    return total.isFinite && total >= 0 ? total : nil
+  }
+
+  public var effectiveRate: Double? {
+    guard contractPrice.isFinite, contractPrice > 0,
+      let totalNonRefundableFee
+    else { return nil }
+    let rate = totalNonRefundableFee / contractPrice
+    return rate.isFinite && rate >= 0 && rate < 1 ? rate : nil
+  }
+}
+
+public struct PublicContractFeeEvidenceSnapshot: Codable, Sendable {
+  public let characterID: Int64
+  public let observations: [PublicContractFeeEvidence]
+
+  public init(
+    characterID: Int64,
+    observations: [PublicContractFeeEvidence]
+  ) {
+    self.characterID = characterID
+    self.observations = observations
+  }
+
+  public func latestCompleteObservation(
+    at locationID: Int64
+  ) -> PublicContractFeeEvidence? {
+    observations.first {
+      $0.locationID == locationID && $0.effectiveRate != nil
+    }
+  }
+}
+
+public struct PublicContractFeeProjection: Sendable {
+  public let snapshot: PublicContractFeeEvidenceSnapshot
+  public let diagnostics: [String]
+  public let isPartial: Bool
+
+  public init(
+    snapshot: PublicContractFeeEvidenceSnapshot,
+    diagnostics: [String] = [],
+    isPartial: Bool = false
+  ) {
+    self.snapshot = snapshot
+    self.diagnostics = diagnostics
+    self.isPartial = isPartial
+  }
+}
+
+public enum PublicContractFeeEvidenceProjector {
+  private static let completedStatuses: Set<String> = [
+    "finished", "finished_contractor", "finished_issuer",
+  ]
+
+  public static func project(
+    characterID: Int64,
+    contracts: [ESIPrivateContractDTO],
+    journal: [ESIWalletJournalDTO],
+    source: SourceIdentity
+  ) -> PublicContractFeeProjection {
+    let entriesByContractID = Dictionary(
+      grouping: journal.filter {
+        $0.contextIDType == "contract_id" && $0.contextID != nil
+      },
+      by: { $0.contextID ?? 0 }
+    )
+    var observations: [PublicContractFeeEvidence] = []
+    var incompleteCount = 0
+    var unsupportedCompositeCount = 0
+
+    for contract in contracts
+    where
+      contract.issuerID == characterID
+      && !contract.forCorporation
+      && contract.availability == "public"
+      && contract.type == "item_exchange"
+      && completedStatuses.contains(contract.status)
+    {
+      guard let price = contract.price, price.isFinite, price > 0,
+        let locationID = contract.startLocationID,
+        locationID > 0
+      else {
+        incompleteCount += 1
+        continue
+      }
+      let entries = entriesByContractID[contract.contractID] ?? []
+      if entries.contains(where: { $0.refType == "contract_deposit_sales_tax" }) {
+        unsupportedCompositeCount += 1
+        continue
+      }
+      guard
+        let brokerFee = expense(
+          in: entries,
+          refType: "contract_brokers_fee"
+        ),
+        let salesTax = expense(
+          in: entries,
+          refType: "contract_sales_tax"
+        )
+      else {
+        incompleteCount += 1
+        continue
+      }
+      let observedAt =
+        entries
+        .filter {
+          $0.refType == "contract_brokers_fee"
+            || $0.refType == "contract_sales_tax"
+        }
+        .map(\.date)
+        .max()
+        ?? contract.dateIssued
+        ?? source.capturedAt
+      let evidence = PublicContractFeeEvidence(
+        characterID: characterID,
+        contractID: contract.contractID,
+        locationID: locationID,
+        contractPrice: price,
+        brokerFee: brokerFee,
+        salesTax: salesTax,
+        deposit: expense(in: entries, refType: "contract_deposit"),
+        depositRefund: income(
+          in: entries,
+          refType: "contract_deposit_refund"
+        ),
+        observedAt: observedAt,
+        source: source
+      )
+      guard evidence.effectiveRate != nil else {
+        incompleteCount += 1
+        continue
+      }
+      observations.append(evidence)
+    }
+
+    observations.sort {
+      if $0.observedAt != $1.observedAt {
+        return $0.observedAt > $1.observedAt
+      }
+      return $0.contractID > $1.contractID
+    }
+    var diagnostics: [String] = []
+    if incompleteCount > 0 {
+      diagnostics.append(
+        "esi.public-contract-fees.incomplete:\(incompleteCount)"
+      )
+    }
+    if unsupportedCompositeCount > 0 {
+      diagnostics.append(
+        "esi.public-contract-fees.unsupported-composite:\(unsupportedCompositeCount)"
+      )
+    }
+    return PublicContractFeeProjection(
+      snapshot: PublicContractFeeEvidenceSnapshot(
+        characterID: characterID,
+        observations: observations
+      ),
+      diagnostics: diagnostics,
+      isPartial: incompleteCount > 0 || unsupportedCompositeCount > 0
+    )
+  }
+
+  private static func expense(
+    in entries: [ESIWalletJournalDTO],
+    refType: String
+  ) -> Double? {
+    let matching = entries.filter { $0.refType == refType }
+    guard !matching.isEmpty else { return nil }
+    var total = 0.0
+    for entry in matching {
+      guard let amount = entry.amount, amount.isFinite, amount < 0 else {
+        return nil
+      }
+      total -= amount
+    }
+    return total.isFinite && total >= 0 ? total : nil
+  }
+
+  private static func income(
+    in entries: [ESIWalletJournalDTO],
+    refType: String
+  ) -> Double? {
+    let matching = entries.filter { $0.refType == refType }
+    guard !matching.isEmpty else { return nil }
+    var total = 0.0
+    for entry in matching {
+      guard let amount = entry.amount, amount.isFinite, amount > 0 else {
+        return nil
+      }
+      total += amount
+    }
+    return total.isFinite && total >= 0 ? total : nil
   }
 }
 

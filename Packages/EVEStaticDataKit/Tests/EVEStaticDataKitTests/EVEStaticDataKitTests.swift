@@ -1,123 +1,186 @@
 import Foundation
 import Testing
+
 @testable import EVEStaticDataKit
 
 @Test
 func exposesPortableIdentity() {
-    #expect(EVEStaticDataKit.version == "0.1.0")
-    #expect(
-        EVEStaticDataKit.stagingFormatIdentifier
-            == "com.evestaticdatakit.sde-staging"
-    )
-    #expect(EVEStaticDataKit.stagingPackageExtension == "evesde")
+  #expect(EVEStaticDataKit.version == "0.1.0")
+  #expect(
+    EVEStaticDataKit.stagingFormatIdentifier
+      == "com.evestaticdatakit.sde-staging"
+  )
+  #expect(EVEStaticDataKit.stagingPackageExtension == "evesde")
+}
+
+@Test
+func preservesTypeProductionClassificationMetadata() {
+  let item = StaticItemTypeSnapshot(
+    externalID: 1,
+    groupExternalID: 2,
+    categoryExternalID: 3,
+    marketGroupExternalID: 4,
+    name: "Fixture",
+    description: nil,
+    volume: 1,
+    packagedVolume: 1,
+    basePrice: nil,
+    portionSize: 1,
+    published: true,
+    iconExternalID: nil,
+    metaGroupExternalID: 14,
+    techLevel: 3
+  )
+
+  #expect(item.metaGroupExternalID == 14)
+  #expect(item.techLevel == 3)
 }
 
 @Test
 func constructsStrictBuildSpecificArchiveURL() throws {
-    let url = try CCPSDEArchiveDownloader.officialURL(buildNumber: 123)
-    #expect(
-        url.absoluteString
-            == "https://developers.eveonline.com/static-data/tranquility/eve-online-static-data-123-jsonl.zip"
-    )
-    #expect(throws: SDEInstallationError.invalidOfficialURL) {
-        _ = try CCPSDEArchiveDownloader.officialURL(buildNumber: 0)
-    }
+  let url = try CCPSDEArchiveDownloader.officialURL(buildNumber: 123)
+  #expect(
+    url.absoluteString
+      == "https://developers.eveonline.com/static-data/tranquility/eve-online-static-data-123-jsonl.zip"
+  )
+  #expect(throws: SDEInstallationError.invalidOfficialURL) {
+    _ = try CCPSDEArchiveDownloader.officialURL(buildNumber: 0)
+  }
 }
 
 @Test
 func createsRedactedUserAgentAndDiagnostics() throws {
-    let configuration = try SDEUserAgentConfiguration(
-        applicationName: "Example",
-        applicationVersion: "1.2.3",
-        contact: "owner@example.test"
-    )
-    #expect(
-        configuration.headerValue
-            == "Example/1.2.3 (SDE integration; contact: owner@example.test)"
-    )
+  let configuration = try SDEUserAgentConfiguration(
+    applicationName: "Example",
+    applicationVersion: "1.2.3",
+    contact: "owner@example.test"
+  )
+  #expect(
+    configuration.headerValue
+      == "Example/1.2.3 (SDE integration; contact: owner@example.test)"
+  )
 
-    let event = DiagnosticEvent(
-        level: .info,
-        category: .staticData,
-        name: "test",
-        code: "EVE-SDE-TEST",
-        operation: .sdeMetadataCheck,
-        correlationID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
-        metadata: [
-            "build": .publicValue("123"),
-            "contact": .privateValue("owner@example.test")
-        ]
-    )
-    #expect(event.redactedDescription.contains("build=123"))
-    #expect(event.redactedDescription.contains("contact=<redacted>"))
-    #expect(!event.redactedDescription.contains("owner@example.test"))
+  let event = DiagnosticEvent(
+    level: .info,
+    category: .staticData,
+    name: "test",
+    code: "EVE-SDE-TEST",
+    operation: .sdeMetadataCheck,
+    correlationID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+    metadata: [
+      "build": .publicValue("123"),
+      "contact": .privateValue("owner@example.test"),
+    ]
+  )
+  #expect(event.redactedDescription.contains("build=123"))
+  #expect(event.redactedDescription.contains("contact=<redacted>"))
+  #expect(!event.redactedDescription.contains("owner@example.test"))
 }
 
 @Test
 func previewsSevenDatasetJSONLPackage() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-        UUID().uuidString,
-        isDirectory: true
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-    defer {
-        try? FileManager.default.removeItem(at: root)
-    }
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+    UUID().uuidString,
+    isDirectory: true
+  )
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+  defer {
+    try? FileManager.default.removeItem(at: root)
+  }
 
-    for (index, dataset) in SDEDatasetKind.allCases.enumerated() {
-        let line = #"{"_key":\#(index + 1)}"# + "\n"
-        try Data(line.utf8).write(to: root.appendingPathComponent(dataset.fileName))
-    }
+  for (index, dataset) in SDEDatasetKind.allCases.enumerated() {
+    let line = #"{"_key":\#(index + 1)}"# + "\n"
+    try Data(line.utf8).write(to: root.appendingPathComponent(dataset.fileName))
+  }
 
-    let service = JSONLinesSDEImportService()
-    let preview = try await service.preview(
-        sourceDirectoryURL: root,
-        buildNumber: 123
-    )
+  let service = JSONLinesSDEImportService()
+  let preview = try await service.preview(
+    sourceDirectoryURL: root,
+    buildNumber: 123
+  )
 
-    #expect(preview.snapshot.buildNumber == 123)
-    #expect(preview.snapshot.datasets.count == SDEDatasetKind.allCases.count)
-    #expect(preview.snapshot.contentSHA256.count == 64)
+  #expect(preview.snapshot.buildNumber == 123)
+  #expect(preview.snapshot.datasets.count == SDEDatasetKind.allCases.count)
+  #expect(preview.snapshot.contentSHA256.count == 64)
 }
 
 private struct MetadataTransportStub: SDEHTTPTransport {
-    let response: SDEHTTPResponse
+  let response: SDEHTTPResponse
 
-    func execute(_ request: SDEHTTPRequest) async throws -> SDEHTTPResponse {
-        response
-    }
+  func execute(_ request: SDEHTTPRequest) async throws -> SDEHTTPResponse {
+    response
+  }
 }
 
 @Test
 func parsesOfficialLatestBuildShape() async throws {
-    let body = Data(
-        #"{"_key":"sde","buildNumber":3444265,"releaseDate":"2026-07-23T11:06:22Z"}"#
-            .utf8
+  let body = Data(
+    #"{"_key":"sde","buildNumber":3444265,"releaseDate":"2026-07-23T11:06:22Z"}"#
+      .utf8
+  )
+  let response = SDEHTTPResponse(
+    statusCode: 200,
+    headers: [
+      "content-type": "application/jsonlines+json",
+      "etag": #""fixture""#,
+    ],
+    body: body,
+    finalURL: URL(string: CCPSDEMetadataClient.latestBuildURLString)
+  )
+  let configuration = try CCPSDEMetadataClientConfiguration(
+    userAgent: SDEUserAgentConfiguration(
+      applicationName: "Tests",
+      applicationVersion: "1"
     )
-    let response = SDEHTTPResponse(
-        statusCode: 200,
-        headers: [
-            "content-type": "application/jsonlines+json",
-            "etag": #""fixture""#
-        ],
-        body: body,
-        finalURL: URL(string: CCPSDEMetadataClient.latestBuildURLString)
-    )
-    let configuration = try CCPSDEMetadataClientConfiguration(
-        userAgent: SDEUserAgentConfiguration(
-            applicationName: "Tests",
-            applicationVersion: "1"
-        )
-    )
-    let client = CCPSDEMetadataClient(
-        transport: MetadataTransportStub(response: response),
-        configuration: configuration
-    )
+  )
+  let client = CCPSDEMetadataClient(
+    transport: MetadataTransportStub(response: response),
+    configuration: configuration
+  )
 
-    let result = try await client.latestRelease(cache: nil)
-    guard case .modified(let release, _) = result else {
-        Issue.record("Expected a modified response")
-        return
-    }
-    #expect(release.buildNumber == 3_444_265)
+  let result = try await client.latestRelease(cache: nil)
+  guard case .modified(let release, _) = result else {
+    Issue.record("Expected a modified response")
+    return
+  }
+  #expect(release.buildNumber == 3_444_265)
+}
+
+@Test
+func treatsOmittedTypeDogmaEffectsAsAnEmptyEffectList() async throws {
+  let effects = try await JSONLinesSDECatalogMapper().mapDogmaEffectIDs(
+    nil,
+    dataset: .typeDogma,
+    line: 1
+  )
+
+  #expect(effects.isEmpty)
+}
+
+@Test(
+  .enabled(
+    if: ProcessInfo.processInfo.environment[
+      "EVE_STATIC_DATA_KIT_REAL_PACKAGE"
+    ] != nil,
+    "Set EVE_STATIC_DATA_KIT_REAL_PACKAGE to a prepared public SDE package."
+  )
+)
+func mapsOptInCurrentRealSDEPackage() async throws {
+  guard
+    let packagePath = ProcessInfo.processInfo.environment[
+      "EVE_STATIC_DATA_KIT_REAL_PACKAGE"
+    ]
+  else {
+    Issue.record("The opt-in real SDE package path is missing.")
+    return
+  }
+
+  let result = try await JSONLinesSDECatalogMapper().streamStagingPackage(
+    at: URL(fileURLWithPath: packagePath, isDirectory: true),
+    batchSize: 500
+  ) { _ in }
+
+  #expect(result.metadata.buildNumber > 0)
+  #expect(result.counts.itemTypes > 0)
+  #expect(result.counts.blueprints > 0)
 }

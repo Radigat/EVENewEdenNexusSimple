@@ -610,6 +610,126 @@ public struct CharacterSyncService: Sendable {
   }
 }
 
+public struct PublicContractFeeSyncService: Sendable {
+  public static let contractsScope =
+    "esi-contracts.read_character_contracts.v1"
+  public static let walletScope =
+    "esi-wallet.read_character_wallet.v1"
+  public static let requiredScopes: Set<String> = [contractsScope, walletScope]
+
+  private let esi: ESIClient
+
+  public init(esi: ESIClient) {
+    self.esi = esi
+  }
+
+  public func synchronize(
+    authorization: AuthorizationSnapshot,
+    lease: AccessTokenLease
+  ) async -> Sourced<PublicContractFeeEvidenceSnapshot> {
+    let fallbackSource = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate
+    )
+    guard authorization.characterID == lease.characterID else {
+      return unavailable(
+        state: .forbidden,
+        source: fallbackSource,
+        diagnostic: "esi.public-contract-fees.authorization-character-mismatch"
+      )
+    }
+    for scope in Self.requiredScopes where !lease.scopes.contains(scope) {
+      return unavailable(
+        state: .forbidden,
+        source: fallbackSource,
+        diagnostic: "esi.public-contract-fees.scope-missing:\(scope)"
+      )
+    }
+
+    async let contractsResult = capture {
+      try await esi.getAllPages(
+        [ESIPrivateContractDTO].self,
+        endpoint: ESIEndpoint(
+          path: "/characters/\(authorization.characterID)/contracts/",
+          requiresAuthorization: true,
+          requiredScope: Self.contractsScope
+        ),
+        lease: lease
+      )
+    }
+    async let journalResult = capture {
+      try await esi.getAllPages(
+        [ESIWalletJournalDTO].self,
+        endpoint: ESIEndpoint(
+          path: "/characters/\(authorization.characterID)/wallet/journal/",
+          requiresAuthorization: true,
+          requiredScope: Self.walletScope
+        ),
+        lease: lease
+      )
+    }
+    let (contracts, journal) = await (contractsResult, journalResult)
+    guard let contractResponse = contracts.value else {
+      return unavailable(
+        state: sourceState(for: contracts.error),
+        source: fallbackSource,
+        diagnostic:
+          "esi.public-contract-fees.contracts:\(String(describing: contracts.error))"
+      )
+    }
+    guard let journalResponse = journal.value else {
+      return unavailable(
+        state: sourceState(for: journal.error),
+        source: fallbackSource,
+        diagnostic:
+          "esi.public-contract-fees.journal:\(String(describing: journal.error))"
+      )
+    }
+    let source = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate,
+      capturedAt: max(
+        contractResponse.source.capturedAt,
+        journalResponse.source.capturedAt
+      )
+    )
+    let projection = PublicContractFeeEvidenceProjector.project(
+      characterID: authorization.characterID,
+      contracts: contractResponse.value,
+      journal: journalResponse.value,
+      source: source
+    )
+    return Sourced(
+      state: projection.isPartial ? .partial : .fresh,
+      value: projection.snapshot,
+      source: source,
+      diagnostics: projection.diagnostics
+    )
+  }
+
+  private func unavailable(
+    state: DataFreshness,
+    source: SourceIdentity,
+    diagnostic: String
+  ) -> Sourced<PublicContractFeeEvidenceSnapshot> {
+    Sourced(
+      state: state,
+      value: nil,
+      source: source,
+      diagnostics: [diagnostic]
+    )
+  }
+
+  private func sourceState(for error: ESIError?) -> DataFreshness {
+    switch error {
+    case .forbidden, .missingScope:
+      .forbidden
+    default:
+      .unavailable
+    }
+  }
+}
+
 public struct PrivateContractSyncService: Sendable {
   public static let requiredScope =
     "esi-contracts.read_character_contracts.v1"

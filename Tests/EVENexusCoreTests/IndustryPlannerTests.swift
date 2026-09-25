@@ -6,6 +6,26 @@ import Testing
 @Suite("Industry planner")
 struct IndustryPlannerTests {
   @Test
+  func separateBPCJobsRoundMaterialsPerInstance() {
+    let oneRunJob = IndustryPlanner.manufacturingMaterialQuantity(
+      baseQuantity: 5,
+      runs: 1,
+      materialEfficiency: 10,
+      facilityMultiplier: 0.99
+    )
+    let separateJobs = oneRunJob * 2
+    let incorrectlyMergedJob = IndustryPlanner.manufacturingMaterialQuantity(
+      baseQuantity: 5,
+      runs: 2,
+      materialEfficiency: 10,
+      facilityMultiplier: 0.99
+    )
+
+    #expect(separateJobs == 10)
+    #expect(incorrectlyMergedJob == 9)
+  }
+
+  @Test
   func buildsIntermediateAndBuysRawMaterials() async throws {
     let source = SourceIdentity(provider: "fixture", version: "1")
     let component = BlueprintDefinition(
@@ -277,6 +297,71 @@ struct IndustryPlannerTests {
   }
 
   @Test
+  func appliesProductSpecificEfficienciesToRecursiveManufacturingSteps()
+    async throws
+  {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .produce,
+        purchaseLocation: .jita
+      ),
+      productionEfficiencies: [
+        81: IndustryProductionEfficiency(
+          materialEfficiency: 5,
+          timeEfficiency: 10
+        ),
+        82: IndustryProductionEfficiency(
+          materialEfficiency: 7,
+          timeEfficiency: 14
+        ),
+      ]
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: context
+    )
+
+    let root = try #require(
+      plan.nodes.first { $0.typeID == 81 && $0.action == .produce }
+    )
+    let intermediate = try #require(
+      plan.nodes.first { $0.typeID == 82 && $0.action == .produce }
+    )
+    #expect(root.materialEfficiency == 5)
+    #expect(root.timeEfficiency == 10)
+    #expect(intermediate.materialEfficiency == 7)
+    #expect(intermediate.timeEfficiency == 14)
+    #expect(plan.jobs.first { $0.typeID == 82 }?.materialEfficiency == 7)
+    #expect(plan.jobs.first { $0.typeID == 82 }?.timeEfficiency == 14)
+  }
+
+  @Test
+  func rejectsInvalidProductSpecificEfficiency() async throws {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .produce,
+        purchaseLocation: .jita
+      ),
+      productionEfficiencies: [
+        82: IndustryProductionEfficiency(
+          materialEfficiency: 11,
+          timeEfficiency: 20
+        )
+      ]
+    )
+
+    await #expect(
+      throws: IndustryPlannerError.invalidProductionEfficiency(typeID: 82)
+    ) {
+      try await IndustryPlanner().plan(
+        input: "Choice Product 1 0 0",
+        context: context
+      )
+    }
+  }
+
+  @Test
   func productionTreeProjectsFullPartialAndMissingWarehouseCoverage()
     async throws
   {
@@ -351,7 +436,33 @@ struct IndustryPlannerTests {
                   blueprintTypeID: 802,
                   locationID: locationID,
                   quantity: -2,
-                  runs: 5,
+                  runs: 1,
+                  materialEfficiency: 10,
+                  timeEfficiency: 20,
+                  source: SourceIdentity(
+                    provider: "ESI",
+                    version: "fixture"
+                  )
+                ),
+                OwnedBlueprintInstance(
+                  id: 8_004,
+                  blueprintTypeID: 802,
+                  locationID: locationID,
+                  quantity: -2,
+                  runs: 1,
+                  materialEfficiency: 10,
+                  timeEfficiency: 20,
+                  source: SourceIdentity(
+                    provider: "ESI",
+                    version: "fixture"
+                  )
+                ),
+                OwnedBlueprintInstance(
+                  id: 8_005,
+                  blueprintTypeID: 802,
+                  locationID: locationID + 2,
+                  quantity: -2,
+                  runs: 10,
                   materialEfficiency: 10,
                   timeEfficiency: 20,
                   source: SourceIdentity(
@@ -386,7 +497,14 @@ struct IndustryPlannerTests {
         locations: [
           ProductionWarehouseLocation(
             locationID: locationID,
-            structureName: "Production",
+            structureName: "Unconfigured structure",
+            solarSystemID: 30_000_001,
+            solarSystemName: "Test",
+            activities: [.manufacturing]
+          ),
+          ProductionWarehouseLocation(
+            locationID: locationID + 2,
+            structureName: "Other Production",
             solarSystemID: 30_000_001,
             solarSystemName: "Test",
             activities: [.manufacturing]
@@ -410,7 +528,7 @@ struct IndustryPlannerTests {
     #expect(raw.totalRequiredQuantity == 8)
     #expect(raw.usableWarehouseQuantity == 4)
     #expect(raw.stockCoverage == .partial)
-    #expect(root.blueprint?.recommendation == .unresolved)
+    #expect(root.blueprint?.recommendation == .manualExternalBPC)
     #expect(
       tree.warnings.contains {
         $0.code == "production-tree.public-contract-coverage-incomplete"
@@ -421,12 +539,288 @@ struct IndustryPlannerTests {
     #expect(intermediate.protectedWarehouseQuantity == 1)
     #expect(intermediate.usableWarehouseQuantity == 1)
     #expect(intermediate.stockCoverage == .partial)
+    #expect(intermediate.sourceCategory == "Material")
+    #expect(intermediate.sourceGroup == "Construction Components")
+    #expect(intermediate.sourceTechLevel == 2)
     #expect(intermediate.blueprint?.recommendation == .useOwnedBPC)
-    #expect(intermediate.blueprint?.exactLocationBPCCount == 1)
+    #expect(intermediate.blueprint?.exactLocationBPCCount == 2)
+    #expect(intermediate.blueprint?.exactLocationBPCRuns == 2)
+    #expect(intermediate.blueprint?.exactLocationBPCRequiredCount == 2)
+    let bpcQuality = try #require(
+      intermediate.blueprint?.exactLocationEfficiencyOptions.first {
+        $0.kind == .copy
+      }
+    )
+    #expect(bpcQuality.materialEfficiency == 10)
+    #expect(bpcQuality.timeEfficiency == 20)
+    #expect(bpcQuality.availableRuns == 2)
+    #expect(bpcQuality.instanceCount == 2)
+    #expect(bpcQuality.ownerNames == ["Builder"])
+    let repeatedAssessment = try #require(intermediate.blueprint)
+    let supplyPlans = BlueprintSupplyPlanner.plans(
+      referencePlan: plan,
+      assessments: tree.nodes.compactMap(\.blueprint) + [repeatedAssessment],
+      actions: [802: .useOwnedBPC],
+      manualCosts: [:],
+      preferredEfficiencies: [:],
+      planID: UUID(),
+      existingReservations: []
+    )
+    let concreteBPCSupply = try #require(supplyPlans[802])
+    #expect(concreteBPCSupply.manufacturingJobs.count == 2)
+    #expect(concreteBPCSupply.manufacturingJobs.map(\.runs) == [1, 1])
+    #expect(concreteBPCSupply.reservations.count == 2)
+    #expect(intermediate.blueprint?.otherLocationCount == 2)
+    #expect(intermediate.blueprint?.otherLocationBPCCount == 1)
+    #expect(intermediate.blueprint?.otherLocationBPOCount == 1)
     #expect(intermediate.blueprint?.researchLocationBPOCount == 1)
     #expect(
-      intermediate.blueprint?.availableActions.contains(.buyContract) == false
+      intermediate.blueprint?.availableActions.contains(.buyContractBPC) == false
     )
+    let transferPlan = try #require(
+      BlueprintSupplyPlanner.plans(
+        referencePlan: plan,
+        assessments: tree.nodes.compactMap(\.blueprint),
+        actions: [802: .useOwnedBPO],
+        manualCosts: [802: 0],
+        preferredEfficiencies: [:],
+        planID: UUID(),
+        existingReservations: [],
+        preferredSources: [802: [.ownedBPO(itemID: 8_003)]]
+      )[802]
+    )
+    let transfer = try #require(transferPlan.transfers.first)
+    #expect(transfer.originLocationID == locationID + 1)
+    #expect(transfer.destinationLocationID == locationID)
+    #expect(transfer.isResolved)
+  }
+
+  @Test
+  func marketOriginalIsSeparateFromContractsAndNeverBecomesMarketCopy()
+    async throws
+  {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .produce,
+        purchaseLocation: .jita
+      )
+    )
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: context
+    )
+    let marketSource = SourceIdentity(
+      provider: "ESI market",
+      version: "fixture"
+    )
+    let order = MarketOrder(
+      id: 44_002,
+      typeID: 802,
+      locationID: EVEConstants.jitaIV4StationID,
+      systemID: EVEConstants.jitaSystemID,
+      side: .sell,
+      price: 12_500_000,
+      volumeRemaining: 1,
+      minimumVolume: 1,
+      issued: .now
+    )
+    let tree = ManufacturingProductionTreeProjector.project(
+      targetQuantity: 1,
+      mainHub: .jita,
+      referencePlan: plan,
+      selectedPlan: plan,
+      warehouse: AssetWarehouse(inventories: []),
+      warehouseHasSnapshot: false,
+      protectedQuantities: [:],
+      reservedQuantities: [:],
+      preferences: [:],
+      blueprintPortfolio: BlueprintPortfolio(inventories: []),
+      blueprintNames: [801: "Product Blueprint", 802: "Component Blueprint"],
+      blueprintContractOffers: [:],
+      blueprintMarketOrders: [802: [order]],
+      blueprintMarketSource: marketSource,
+      blueprintMarketState: .fresh,
+      publicContractCoverageComplete: true,
+      inventionDefinitions: [:],
+      productionScope: ProductionWarehouseScope(locations: [])
+    )
+    let assessment = try #require(
+      tree.nodes.first { $0.blueprint?.blueprintTypeID == 802 }?.blueprint
+    )
+
+    #expect(assessment.availableActions.contains(.buyMarketBPO))
+    #expect(!assessment.availableActions.contains(.buyContractBPO))
+    #expect(!assessment.availableActions.contains(.buyContractBPC))
+    #expect(assessment.marketBPOOptions.map(\.orderID) == [44_002])
+
+    let supply = try #require(
+      BlueprintSupplyPlanner.plans(
+        referencePlan: plan,
+        assessments: tree.nodes.compactMap(\.blueprint),
+        actions: [802: .buyMarketBPO],
+        manualCosts: [802: 250_000],
+        preferredEfficiencies: [:],
+        planID: UUID(),
+        existingReservations: []
+      )[802]
+    )
+    let job = try #require(supply.manufacturingJobs.first)
+    #expect(job.allocation.source == .marketBPO(orderID: 44_002))
+    #expect(job.allocation.provenance == .marketOriginal)
+    #expect(job.allocation.availableRuns == nil)
+    #expect(supply.capitalPurchaseCost == 12_500_000)
+    #expect(supply.batchAllocationCost == 250_000)
+    #expect(supply.reservations.isEmpty)
+  }
+
+  @Test
+  func productionTreeOffersRetainedBPOInsideContainerAtExactLocation()
+    async throws
+  {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .produce,
+        purchaseLocation: .jita
+      )
+    )
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: context
+    )
+    let locationID: Int64 = 1_000_000_000_101
+    let containerID: Int64 = 9_001
+    let blueprintItemID: Int64 = 9_002
+    let warehouse = AssetWarehouse(
+      inventories: [
+        AssetOwnerInventory(
+          ownerID: 7,
+          ownerName: "Builder",
+          assets: Sourced(
+            state: .fresh,
+            value: AssetSnapshot(
+              characterID: 7,
+              state: .fresh,
+              items: [
+                AssetItem(
+                  id: containerID,
+                  typeID: 1_000,
+                  quantity: 1,
+                  locationID: locationID,
+                  locationKind: .structure,
+                  locationFlag: "Hangar",
+                  singleton: true
+                ),
+                AssetItem(
+                  id: blueprintItemID,
+                  typeID: 802,
+                  quantity: -1,
+                  locationID: containerID,
+                  locationKind: .item,
+                  locationFlag: "Unlocked",
+                  singleton: true
+                ),
+              ],
+              resolvedLocationNames: [locationID: "Production"]
+            ),
+            source: SourceIdentity(provider: "ESI", version: "fixture")
+          )
+        )
+      ]
+    )
+    let tree = ManufacturingProductionTreeProjector.project(
+      targetQuantity: 1,
+      mainHub: .jita,
+      referencePlan: plan,
+      selectedPlan: plan,
+      warehouse: warehouse,
+      warehouseHasSnapshot: true,
+      protectedQuantities: [:],
+      reservedQuantities: [:],
+      preferences: [:],
+      blueprintPortfolio: BlueprintPortfolio(
+        inventories: [
+          OwnedBlueprintInventory(
+            ownerID: 7,
+            ownerName: "Builder",
+            blueprints: Sourced(
+              state: .stale,
+              value: [
+                OwnedBlueprintInstance(
+                  id: blueprintItemID,
+                  blueprintTypeID: 802,
+                  locationID: containerID,
+                  quantity: -1,
+                  runs: -1,
+                  materialEfficiency: 10,
+                  timeEfficiency: 20,
+                  source: SourceIdentity(
+                    provider: "ESI",
+                    version: "retained-fixture"
+                  )
+                )
+              ],
+              source: SourceIdentity(
+                provider: "ESI",
+                version: "retained-fixture"
+              ),
+              diagnostics: ["latest-refresh-state:unavailable"]
+            )
+          )
+        ]
+      ),
+      blueprintNames: [801: "Product Blueprint", 802: "Component Blueprint"],
+      blueprintContractOffers: [:],
+      publicContractCoverageComplete: false,
+      inventionDefinitions: [:],
+      productionScope: ProductionWarehouseScope(
+        locations: [
+          ProductionWarehouseLocation(
+            locationID: locationID,
+            structureName: "Unconfigured structure",
+            solarSystemID: 30_000_001,
+            solarSystemName: "Test",
+            activities: [.manufacturing]
+          )
+        ]
+      )
+    )
+    let intermediate = try #require(
+      tree.nodes.first { $0.typeID == 82 && $0.action == .produce }
+    )
+    let assessment = try #require(intermediate.blueprint)
+
+    #expect(assessment.recommendation == .useOwnedBPO)
+    #expect(assessment.availableActions.contains(.useOwnedBPO))
+    #expect(assessment.exactLocationBPOCount == 1)
+    #expect(assessment.exactLocationBPOSourceStates == [.stale])
+    #expect(assessment.inventoryIsComplete == false)
+  }
+
+  @Test
+  func bpcContractSelectionCombinesAttributableContractsForRequiredRuns() throws {
+    let offers = [
+      bpcContract(contractID: 1, runs: 20, price: 100),
+      bpcContract(contractID: 2, runs: 20, price: 100),
+      bpcContract(contractID: 3, runs: 50, price: 260),
+      bpcContract(
+        contractID: 4,
+        runs: 100,
+        price: 1,
+        offeredLineCount: 2
+      ),
+    ]
+
+    let selection = try #require(
+      ProductionTreeBPCContractSelector.select(
+        requiredRuns: 40,
+        from: offers
+      )
+    )
+
+    #expect(selection.contractCount == 2)
+    #expect(selection.coveredRuns == 40)
+    #expect(selection.totalPrice == 200)
+    #expect(selection.offers.map(\.contractID) == [1, 2])
   }
 
   @Test
@@ -515,6 +909,155 @@ struct IndustryPlannerTests {
     #expect(
       costs.totalProductionCost
         == plan.materialCost! + plan.installationCost!
+    )
+  }
+
+  @Test
+  func strictProductionTreeCostsRequireEveryProducedBlueprintAllocation()
+    async throws
+  {
+    let preference = MaterialProcurementPreference(
+      supplyMode: .produce,
+      purchaseLocation: .jita
+    )
+    let unresolved = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: intermediateChoiceContext(
+        preference: preference,
+        requiresCompleteBlueprintCosts: true
+      )
+    )
+    #expect(unresolved.costBreakdown?.totalProductionCost == nil)
+    #expect(
+      unresolved.warnings.contains {
+        $0.code == "industry.blueprint-cost-unresolved"
+      }
+    )
+
+    let allocations: [Int64: IndustryBlueprintCostAllocation] = [
+      801: IndustryBlueprintCostAllocation(
+        blueprintTypeID: 801,
+        productName: "Choice Product",
+        kind: .bpc,
+        amount: 10,
+        source: "fixture contract"
+      ),
+      802: IndustryBlueprintCostAllocation(
+        blueprintTypeID: 802,
+        productName: "Choice Intermediate",
+        kind: .bpo,
+        amount: 2,
+        source: "fixture allocation"
+      ),
+    ]
+    let complete = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: intermediateChoiceContext(
+        preference: preference,
+        blueprintCostAllocations: allocations,
+        requiresCompleteBlueprintCosts: true
+      )
+    )
+    #expect(complete.costBreakdown?.blueprintCosts?.total == 12)
+    #expect(complete.costBreakdown?.totalProductionCost != nil)
+
+    let ownedFormula = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: intermediateChoiceContext(
+        preference: preference,
+        intermediateActivity: .reaction,
+        blueprintCostAllocations: [
+          801: IndustryBlueprintCostAllocation(
+            blueprintTypeID: 801,
+            productName: "Choice Product",
+            kind: .bpo,
+            amount: 0,
+            source: "fixture owned BPO"
+          ),
+          802: IndustryBlueprintCostAllocation(
+            blueprintTypeID: 802,
+            productName: "Choice Intermediate",
+            kind: .formula,
+            amount: 0,
+            source: "fixture owned reaction formula"
+          ),
+        ],
+        requiresCompleteBlueprintCosts: true
+      )
+    )
+    #expect(ownedFormula.costBreakdown?.blueprintCosts?.total == 0)
+    #expect(
+      ownedFormula.costBreakdown?.blueprintCosts?.entries.contains {
+        $0.kind == .formula
+      } == true
+    )
+    #expect(ownedFormula.costBreakdown?.totalProductionCost != nil)
+  }
+
+  @Test
+  func blueprintCostProjectorPreservesBPCAndBPOTreatment() throws {
+    let allocations = ProductionTreeBlueprintCostProjector.allocations(
+      for: [
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 900,
+          productName: "Contract Product",
+          action: .buyContractBPC,
+          attributableBPCContractPrice: 7_000_000,
+          attributableBPCContractCount: 2,
+          attributableBPCContractRuns: 14
+        ),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 901,
+          productName: "Owned Product",
+          action: .useOwnedBPO,
+          manualAmount: 250_000
+        ),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 902,
+          productName: "Missing BPC Cost",
+          action: .useOwnedBPC
+        ),
+      ]
+    )
+
+    let contract = try #require(allocations[900])
+    #expect(contract.kind == .bpc)
+    #expect(contract.amount == 7_000_000)
+    #expect(contract.source.contains("2 exact Main Hub"))
+    let owned = try #require(allocations[901])
+    #expect(owned.kind == .bpo)
+    #expect(owned.amount == 250_000)
+    #expect(allocations[902] == nil)
+  }
+
+  @Test
+  func strictBlueprintCostsAcceptManualTopLevelInput() async throws {
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0 BPC 42",
+      context: intermediateChoiceContext(
+        preference: MaterialProcurementPreference(
+          supplyMode: .buy,
+          purchaseLocation: .jita
+        ),
+        blueprintCostAllocations: [
+          802: IndustryBlueprintCostAllocation(
+            blueprintTypeID: 802,
+            productName: "Unused Intermediate",
+            kind: .bpo,
+            amount: 1_000,
+            source: "unused fixture allocation"
+          )
+        ],
+        requiresCompleteBlueprintCosts: true
+      )
+    )
+
+    #expect(plan.costBreakdown?.blueprintCosts?.total == 42)
+    #expect(plan.costBreakdown?.totalProductionCost != nil)
+    #expect(
+      !plan.warnings.contains {
+        $0.code == "industry.blueprint-cost-unresolved"
+      }
     )
   }
 
@@ -832,7 +1375,7 @@ struct IndustryPlannerTests {
     #expect(costs.recomputedTotalProductionCost == 8_001_025)
     #expect(costs.hasConsistentTotal)
     #expect(plan.plannedOutputUnits == 1)
-    #expect(plan.productionCostPerOutputUnit == 8_001_025)
+    #expect(plan.productionCostPerOutputUnit == 7_001_025)
     #expect(plan.immediateSale.grossRevenue == 250_000_000)
     #expect(plan.immediateSale.salesTax == 12_500_000)
     #expect(plan.immediateSale.brokerFee == 0)
@@ -846,14 +1389,16 @@ struct IndustryPlannerTests {
       input: "Finished Product 8 0 0 BPC 7000000",
       context: context
     )
-    let multiUnitTotal = try #require(
-      multiUnitPlan.costBreakdown?.totalProductionCost
+    let multiUnitProductionSubtotal = try #require(
+      multiUnitPlan.costBreakdown?.productionCostBeforeLogistics
     )
     let multiUnitCost = try #require(
       multiUnitPlan.productionCostPerOutputUnit
     )
     #expect(multiUnitPlan.plannedOutputUnits == 8)
-    #expect(abs(multiUnitCost - multiUnitTotal / 8) < 0.000_001)
+    #expect(
+      abs(multiUnitCost - multiUnitProductionSubtotal / 8) < 0.000_001
+    )
   }
 
   @Test
@@ -875,12 +1420,36 @@ struct IndustryPlannerTests {
       ),
       source: source
     )
-    let mainConfiguration = TradingLocationConfiguration(location: .jita)
-    let homeConfiguration = TradingLocationConfiguration(location: .amarr)
+    let mainConfiguration = TradingLocationConfiguration(
+      location: .jita,
+      publicContractFeeRate: 0.03
+    )
+    let homeConfiguration = TradingLocationConfiguration(
+      location: .amarr,
+      publicContractFeeRate: 0.01
+    )
+    let coalitionLocation = ProcurementLocation(
+      id: "structure:1040000000001",
+      name: "Coalition Keepstar",
+      locationID: 1_040_000_000_001,
+      kind: .playerStructure,
+      solarSystemID: 30_000_002,
+      regionID: 10_000_001,
+      ownerCorporationID: 98_000_001
+    )
+    let coalitionConfiguration = TradingLocationConfiguration(
+      location: coalitionLocation,
+      publicContractFeeRate: 0.02
+    )
     let basis = ProductionBasis(
-      tradingLocations: [mainConfiguration, homeConfiguration],
+      tradingLocations: [
+        mainConfiguration,
+        homeConfiguration,
+        coalitionConfiguration,
+      ],
       mainTradingLocationID: mainConfiguration.id,
       homeTradingLocationID: homeConfiguration.id,
+      coalitionTradingLocationID: coalitionConfiguration.id,
       logistics: LogisticsConfiguration(
         isEnabled: true,
         includeInboundMaterials: true,
@@ -931,6 +1500,32 @@ struct IndustryPlannerTests {
       ],
       source: source
     )
+    let coalitionMarket = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: coalitionLocation.regionID ?? 0,
+      locationID: coalitionLocation.locationID ?? 0,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [
+        61: [
+          makeOrder(
+            typeID: 61,
+            side: .buy,
+            price: 70,
+            locationID: coalitionLocation.locationID ?? 0,
+            systemID: coalitionLocation.solarSystemID ?? 0
+          ),
+          makeOrder(
+            typeID: 61,
+            side: .sell,
+            price: 130,
+            locationID: coalitionLocation.locationID ?? 0,
+            systemID: coalitionLocation.solarSystemID ?? 0
+          ),
+        ]
+      ],
+      source: source
+    )
     let context = IndustryPlanningContext(
       manufacturingProfile: ManufacturingProfile(),
       productionBasis: basis,
@@ -941,6 +1536,22 @@ struct IndustryPlannerTests {
       ),
       market: mainMarket,
       homeMarket: homeMarket,
+      coalitionMarket: coalitionMarket,
+      mainContractReferences: publicContractReference(
+        typeID: 61,
+        unitPrice: 10_000,
+        location: .jita
+      ),
+      homeContractReferences: publicContractReference(
+        typeID: 61,
+        unitPrice: 20_000,
+        location: .amarr
+      ),
+      coalitionContractReferences: publicContractReference(
+        typeID: 61,
+        unitPrice: 30_000,
+        location: coalitionLocation
+      ),
       adjustedPrices: [
         62: AdjustedPrice(typeID: 62, adjustedPrice: 1, averagePrice: 1)
       ],
@@ -956,7 +1567,9 @@ struct IndustryPlannerTests {
       salesTaxRate: 0.05,
       brokerFeeRate: 0.01,
       homeSalesTaxRate: 0.02,
-      homeBrokerFeeRate: 0.03
+      homeBrokerFeeRate: 0.03,
+      coalitionSalesTaxRate: 0.04,
+      coalitionBrokerFeeRate: 0.02
     )
 
     let plan = try await IndustryPlanner().plan(
@@ -975,6 +1588,11 @@ struct IndustryPlannerTests {
     )
     let homeImmediateSale = try #require(plan.homeImmediateSale)
     let homeListedSale = try #require(plan.homeListedSale)
+    let homeContractSale = try #require(plan.homeContractSale)
+    let mainContractSale = try #require(plan.mainContractSale)
+    let coalitionImmediateSale = try #require(plan.coalitionImmediateSale)
+    let coalitionListedSale = try #require(plan.coalitionListedSale)
+    let coalitionContractSale = try #require(plan.coalitionContractSale)
 
     #expect(inboundLogistics.legs.count == 1)
     #expect(outboundLogistics.legs.count == 1)
@@ -989,6 +1607,22 @@ struct IndustryPlannerTests {
     #expect(plan.listedSale.outboundLogisticsCost == 1_000_000)
     #expect(homeImmediateSale.outboundLogisticsCost == 0)
     #expect(homeListedSale.outboundLogisticsCost == 0)
+    #expect(homeContractSale.outboundLogisticsCost == 0)
+    #expect(coalitionImmediateSale.outboundLogisticsCost == 1_000_000)
+    #expect(coalitionListedSale.outboundLogisticsCost == 1_000_000)
+    #expect(coalitionContractSale.outboundLogisticsCost == 1_000_000)
+    #expect(
+      plan.immediateSale.inboundLogisticsAssessment?.status == .calculated
+    )
+    #expect(
+      plan.immediateSale.outboundLogisticsAssessment?.status == .calculated
+    )
+    #expect(
+      homeContractSale.outboundLogisticsAssessment?.status == .notRequired
+    )
+    #expect(
+      coalitionContractSale.outboundLogisticsAssessment?.status == .calculated
+    )
     #expect(
       plan.immediateSale.totalCost
         == (plan.costBreakdown?.totalProductionCost ?? 0) + 1_000_000
@@ -1000,6 +1634,232 @@ struct IndustryPlannerTests {
     #expect(homeListedSale.grossRevenue == 120)
     #expect(homeListedSale.salesTax == 2.4)
     #expect(abs((homeListedSale.brokerFee ?? 0) - 3.6) < 0.000_001)
+    #expect(mainContractSale.grossRevenue == 10_000)
+    #expect(mainContractSale.salesTax == 0)
+    #expect(mainContractSale.brokerFee == 0)
+    #expect(mainContractSale.contractFee == 300)
+    #expect(mainContractSale.grossOrNetRevenue == 9_700)
+    #expect(homeContractSale.grossRevenue == 20_000)
+    #expect(homeContractSale.salesTax == 0)
+    #expect(homeContractSale.brokerFee == 0)
+    #expect(homeContractSale.contractFee == 200)
+    #expect(homeContractSale.grossOrNetRevenue == 19_800)
+    #expect(homeContractSale.totalCost == plan.costBreakdown?.totalProductionCost)
+    #expect(coalitionImmediateSale.grossRevenue == 70)
+    #expect(abs((coalitionImmediateSale.salesTax ?? 0) - 2.8) < 0.000_001)
+    #expect(coalitionImmediateSale.brokerFee == 0)
+    #expect(coalitionListedSale.grossRevenue == 130)
+    #expect(abs((coalitionListedSale.salesTax ?? 0) - 5.2) < 0.000_001)
+    #expect(abs((coalitionListedSale.brokerFee ?? 0) - 2.6) < 0.000_001)
+    #expect(coalitionContractSale.grossRevenue == 30_000)
+    #expect(coalitionContractSale.salesTax == 0)
+    #expect(coalitionContractSale.brokerFee == 0)
+    #expect(coalitionContractSale.contractFee == 600)
+    #expect(coalitionContractSale.grossOrNetRevenue == 29_400)
+    #expect(
+      coalitionContractSale.totalCost
+        == (plan.costBreakdown?.totalProductionCost ?? 0) + 1_000_000
+    )
+
+    var jumpBasis = basis
+    jumpBasis.logistics.jumpFreighter = JumpFreighterLogisticsConfiguration(
+      isEnabled: true,
+      hull: .ark,
+      usableCargoCapacityM3: 350_000
+    )
+    var jumpOrders = mainMarket.ordersByType
+    for (index, isotope) in JumpFuelIsotope.allCases.enumerated() {
+      jumpOrders[isotope.typeID] = [
+        makeOrder(
+          typeID: isotope.typeID,
+          side: .sell,
+          price: Double(index + 1)
+        )
+      ]
+    }
+    let jumpMarket = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: mainMarket.regionID,
+      locationID: mainMarket.locationID,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: jumpOrders,
+      source: source
+    )
+    let pilot = JumpFreighterPilot(
+      characterID: 42,
+      characterName: "Xanira",
+      jumpDriveCalibrationLevel: 5,
+      jumpFuelConservationLevel: 5,
+      jumpFreightersLevel: 5,
+      skillSource: source
+    )
+    let routeURL = try #require(
+      URL(string: "https://evemaps.dotlan.net/jump/Ark,555/Amarr:C-J6MT")
+    )
+    let route = JumpRouteSnapshot(
+      request: JumpRouteRequest(
+        originSystemName: "Amarr",
+        destinationSystemName: "C-J6MT",
+        hull: .ark,
+        pilot: pilot
+      ),
+      legs: [
+        JumpRouteLeg(
+          originSystemName: "Amarr",
+          destinationSystemName: "C-J6MT",
+          distanceLightYears: 20.314,
+          isotopeQuantity: 44_690
+        )
+      ],
+      totalDistanceLightYears: 20.314,
+      isotope: .helium,
+      isotopeQuantityPerFlight: 44_690,
+      isotopeVolumePerFlightM3: 1_341,
+      sourceURL: routeURL,
+      source: SourceIdentity(provider: "DOTLAN", version: "fixture")
+    )
+    let jumpContext = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: jumpBasis,
+      catalog: FixtureCatalog(
+        names: [61: "Round Trip Product", 62: "Round Trip Raw"],
+        definitions: [61: product],
+        packagedVolumes: [61: 10, 62: 5]
+      ),
+      market: jumpMarket,
+      homeMarket: homeMarket,
+      coalitionMarket: coalitionMarket,
+      adjustedPrices: [
+        62: AdjustedPrice(typeID: 62, adjustedPrice: 1, averagePrice: 1)
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        )
+      ],
+      defaultPurchaseLocation: .jita,
+      sdeBuild: 1,
+      salesTaxRate: 0.05,
+      brokerFeeRate: 0.01,
+      homeSalesTaxRate: 0.02,
+      homeBrokerFeeRate: 0.03,
+      coalitionSalesTaxRate: 0.04,
+      coalitionBrokerFeeRate: 0.02,
+      jumpFreighterRoute: Sourced(
+        state: .fresh,
+        value: route,
+        source: route.source
+      )
+    )
+    let jumpPlan = try await IndustryPlanner().plan(
+      input: "Round Trip Product 1 0 0",
+      context: jumpContext
+    )
+    let jumpAssessment = try #require(
+      jumpPlan.coalitionImmediateSale?.outboundLogisticsAssessment
+    )
+    #expect(jumpAssessment.status == .calculated)
+    #expect(jumpAssessment.jumpFreighter?.flights.count == 1)
+    #expect(jumpAssessment.jumpFreighter?.averageIsotopeUnitPrice == 2.5)
+    #expect(jumpAssessment.cost == 111_725)
+    #expect(jumpPlan.coalitionImmediateSale?.outboundLogisticsCost == 111_725)
+
+    let capitalProduct = CapitalSelfJumpProduct(
+      typeID: 61,
+      name: "Rorqual",
+      groupName: "Capital Industrial Ship"
+    )
+    let capitalRequest = CapitalJumpRouteRequest(
+      originSystemName: "Amarr",
+      destinationSystemName: "C-J6MT",
+      capitalTypeID: capitalProduct.typeID,
+      capitalName: capitalProduct.name,
+      pilot: pilot
+    )
+    let capitalRoute = CapitalJumpRouteSnapshot(
+      request: capitalRequest,
+      legs: [
+        JumpRouteLeg(
+          originSystemName: "Amarr",
+          destinationSystemName: "C-J6MT",
+          distanceLightYears: 20.314,
+          isotopeQuantity: 100
+        )
+      ],
+      totalDistanceLightYears: 20.314,
+      isotope: .oxygen,
+      isotopeQuantityPerHull: 100,
+      isotopeVolumePerHullM3: 3,
+      sourceURL: try #require(
+        URL(string: "https://evemaps.dotlan.net/jump/Rorqual,550/Amarr:C-J6MT")
+      ),
+      source: SourceIdentity(provider: "DOTLAN", version: "fixture")
+    )
+    let capitalContext = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: jumpBasis,
+      catalog: FixtureCatalog(
+        names: [61: "Rorqual", 62: "Round Trip Raw"],
+        definitions: [61: product],
+        classifications: [
+          61: IndustryItemClassification(
+            categoryName: "Ship",
+            groupName: "Capital Industrial Ship",
+            manufacturingCategory: .capital
+          )
+        ],
+        packagedVolumes: [61: 1_300_000, 62: 5]
+      ),
+      market: jumpMarket,
+      homeMarket: homeMarket,
+      coalitionMarket: coalitionMarket,
+      adjustedPrices: [
+        62: AdjustedPrice(typeID: 62, adjustedPrice: 1, averagePrice: 1)
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        )
+      ],
+      defaultPurchaseLocation: .jita,
+      sdeBuild: 1,
+      salesTaxRate: 0.05,
+      brokerFeeRate: 0.01,
+      homeSalesTaxRate: 0.02,
+      homeBrokerFeeRate: 0.03,
+      coalitionSalesTaxRate: 0.04,
+      coalitionBrokerFeeRate: 0.02,
+      // This retained cargo route must not be used for the produced capital.
+      jumpFreighterRoute: Sourced(
+        state: .fresh,
+        value: route,
+        source: route.source
+      ),
+      capitalJumpRoutes: [
+        capitalProduct.typeID: Sourced(
+          state: .fresh,
+          value: capitalRoute,
+          source: capitalRoute.source
+        )
+      ]
+    )
+    let capitalPlan = try await IndustryPlanner().plan(
+      input: "Rorqual 1 0 0",
+      context: capitalContext
+    )
+    let capitalAssessment = try #require(
+      capitalPlan.coalitionImmediateSale?.outboundLogisticsAssessment
+    )
+    #expect(capitalAssessment.status == .calculated)
+    #expect(capitalAssessment.jumpFreighter == nil)
+    #expect(capitalAssessment.selfJumpingCapitals?.jumps.count == 1)
+    #expect(capitalAssessment.selfJumpingCapitals?.jumps.first?.quantity == 1)
+    #expect(capitalAssessment.cost == 250)
   }
 
   @Test
@@ -1087,6 +1947,254 @@ struct IndustryPlannerTests {
     #expect(
       !plan.warnings.contains { $0.code == "logistics.missing-volume-rate" }
     )
+  }
+
+  @Test
+  func restrictedCapitalCannotReturnToMainButRemainsSellableAtHome()
+    async throws
+  {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let product = BlueprintDefinition(
+      blueprintTypeID: 701,
+      productTypeID: 71,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 1,
+        materials: [BlueprintMaterial(typeID: 72, quantity: 1)],
+        products: [BlueprintProduct(typeID: 71, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let mainConfiguration = TradingLocationConfiguration(location: .jita)
+    let homeLocation = ProcurementLocation(
+      id: "structure:1040000000071",
+      name: "Nullsec Home Keepstar",
+      locationID: 1_040_000_000_071,
+      kind: .playerStructure,
+      solarSystemID: 30_000_071,
+      regionID: 10_000_071
+    )
+    let homeConfiguration = TradingLocationConfiguration(
+      location: homeLocation
+    )
+    let basis = ProductionBasis(
+      tradingLocations: [mainConfiguration, homeConfiguration],
+      mainTradingLocationID: mainConfiguration.id,
+      homeTradingLocationID: homeConfiguration.id,
+      logistics: LogisticsConfiguration(
+        isEnabled: true,
+        productionLocationName: homeLocation.name,
+        homeTradeHub: .jita,
+        iskPerCubicMeter: 1
+      )
+    )
+    let mainMarket = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: EVEConstants.theForgeRegionID,
+      locationID: EVEConstants.jitaIV4StationID,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [
+        71: [makeOrder(typeID: 71, side: .buy, price: 1_000_000)],
+        72: [makeOrder(typeID: 72, side: .sell, price: 1)],
+      ],
+      source: source
+    )
+    let homeMarket = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: homeLocation.regionID ?? 0,
+      locationID: homeLocation.locationID ?? 0,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [
+        71: [
+          makeOrder(
+            typeID: 71,
+            side: .buy,
+            price: 2_000_000,
+            locationID: homeLocation.locationID ?? 0,
+            systemID: homeLocation.solarSystemID ?? 0
+          ),
+          makeOrder(
+            typeID: 71,
+            side: .sell,
+            price: 2_100_000,
+            locationID: homeLocation.locationID ?? 0,
+            systemID: homeLocation.solarSystemID ?? 0
+          ),
+        ]
+      ],
+      source: source
+    )
+    let context = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: FixtureCatalog(
+        names: [71: "Fixture Dreadnought", 72: "Capital Material"],
+        definitions: [71: product],
+        classifications: [
+          71: IndustryItemClassification(
+            categoryName: "Ship",
+            groupName: "Dreadnought",
+            manufacturingCategory: .capital
+          )
+        ],
+        packagedVolumes: [71: 100_000, 72: 1]
+      ),
+      market: mainMarket,
+      homeMarket: homeMarket,
+      homeContractReferences: publicContractReference(
+        typeID: 71,
+        unitPrice: 2_200_000,
+        location: homeLocation
+      ),
+      adjustedPrices: [
+        72: AdjustedPrice(typeID: 72, adjustedPrice: 1, averagePrice: 1)
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        )
+      ],
+      sdeBuild: 1,
+      salesTaxRate: 0.05,
+      brokerFeeRate: 0.01,
+      homeSalesTaxRate: 0.05,
+      homeBrokerFeeRate: 0.01
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Fixture Dreadnought 1 0 0",
+      context: context
+    )
+    let homeImmediate = try #require(plan.homeImmediateSale)
+    let homeContract = try #require(plan.homeContractSale)
+
+    #expect(plan.immediateSale.grossRevenue == nil)
+    #expect(plan.listedSale.grossRevenue == nil)
+    #expect(plan.listedSale.salesTaxRate == 0.05)
+    #expect(plan.listedSale.brokerFeeRate == nil)
+    #expect(plan.listedSale.brokerFeeIsApplicable == false)
+    #expect(
+      plan.immediateSale.outboundLogisticsAssessment?.status == .prohibited
+    )
+    #expect(plan.immediateSale.totalCost == nil)
+    #expect(plan.immediateSale.profit == nil)
+    #expect(homeImmediate.grossRevenue == 2_000_000)
+    #expect(homeImmediate.outboundLogisticsAssessment?.status == .notRequired)
+    #expect(homeContract.grossRevenue == 2_200_000)
+    #expect(homeContract.salesTax == 0)
+    #expect(homeContract.brokerFee == 0)
+    #expect(homeContract.contractFee == nil)
+    #expect(homeContract.grossOrNetRevenue == 2_200_000)
+    #expect(homeContract.profit != nil)
+    #expect(homeContract.hasPendingPublicContractFee)
+    let overviewProjection = try #require(
+      ProductionOverviewProjector.projection(
+        for: plan.requests[0].id,
+        in: plan
+      )
+    )
+    #expect(overviewProjection.salesTaxRate == 0.05)
+    #expect(overviewProjection.brokerFeeRate == nil)
+    #expect(!overviewProjection.brokerFeeIsApplicable)
+    var legacyObject = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(plan)
+      ) as? [String: Any]
+    )
+    for scenarioKey in [
+      "immediateSale",
+      "listedSale",
+      "homeImmediateSale",
+      "homeListedSale",
+    ] {
+      guard var scenario = legacyObject[scenarioKey] as? [String: Any] else {
+        continue
+      }
+      scenario.removeValue(forKey: "salesTaxRate")
+      scenario.removeValue(forKey: "brokerFeeRate")
+      scenario.removeValue(forKey: "brokerFeeIsApplicable")
+      legacyObject[scenarioKey] = scenario
+    }
+    let legacyPlan = try JSONDecoder().decode(
+      IndustryPlanSnapshot.self,
+      from: JSONSerialization.data(withJSONObject: legacyObject)
+    )
+    let legacyProjection = try #require(
+      ProductionOverviewProjector.projection(
+        for: legacyPlan.requests[0].id,
+        in: legacyPlan
+      )
+    )
+    #expect(legacyProjection.salesTaxRate == 0.05)
+    #expect(legacyProjection.brokerFeeRate == nil)
+    #expect(!legacyProjection.brokerFeeIsApplicable)
+    #expect(
+      plan.warnings.contains { $0.code == "logistics.capital-highsec-prohibited" }
+    )
+  }
+
+  @Test
+  func freightersRemainHighSecurityTransferExceptions() {
+    let restricted = PlanNode(
+      id: UUID(),
+      typeID: 1,
+      name: "Fixture Dreadnought",
+      requestedQuantity: 1,
+      requiredQuantity: 1,
+      action: .produce,
+      activity: .manufacturing,
+      runs: 1,
+      materialEfficiency: 0,
+      timeEfficiency: 0,
+      manufacturingCategory: .capital,
+      sourceCategory: "Ship",
+      sourceGroup: "Dreadnought",
+      children: [],
+      topLevelRequestID: UUID()
+    )
+    let freighter = PlanNode(
+      id: UUID(),
+      typeID: 2,
+      name: "Fixture Freighter",
+      requestedQuantity: 1,
+      requiredQuantity: 1,
+      action: .produce,
+      activity: .manufacturing,
+      runs: 1,
+      materialEfficiency: 0,
+      timeEfficiency: 0,
+      manufacturingCategory: .capital,
+      sourceCategory: "Ship",
+      sourceGroup: "Freighter",
+      children: [],
+      topLevelRequestID: UUID()
+    )
+    let jumpFreighter = PlanNode(
+      id: UUID(),
+      typeID: 3,
+      name: "Fixture Jump Freighter",
+      requestedQuantity: 1,
+      requiredQuantity: 1,
+      action: .produce,
+      activity: .manufacturing,
+      runs: 1,
+      materialEfficiency: 0,
+      timeEfficiency: 0,
+      manufacturingCategory: .capital,
+      sourceCategory: "Ship",
+      sourceGroup: "Jump Freighter",
+      children: [],
+      topLevelRequestID: UUID()
+    )
+
+    #expect(HighSecurityCapitalTransferPolicy.isRestrictedCapital(restricted))
+    #expect(!HighSecurityCapitalTransferPolicy.isRestrictedCapital(freighter))
+    #expect(!HighSecurityCapitalTransferPolicy.isRestrictedCapital(jumpFreighter))
   }
 
   @Test
@@ -1516,6 +2624,33 @@ struct IndustryPlannerTests {
   }
 
   @Test
+  func tenRepackagedHulksUseOne37500CubicMeterContract() throws {
+    let result = LogisticsCostCalculator.calculateLegs(
+      kind: .outboundProducts,
+      origin: "Production",
+      destination: "Main Hub",
+      cargo: [
+        LogisticsCargoItem(
+          typeID: 22_544,
+          quantity: 10,
+          collateral: 100_000_000,
+          packagedVolumePerUnit: 3_750
+        )
+      ],
+      iskPerCubicMeter: 100,
+      maximumContractVolumeM3: 350_000
+    )
+
+    #expect(result.legs.count == 1)
+    let leg = try #require(result.legs.first)
+    #expect(leg.contractCount == 1)
+    #expect(leg.cargoVolumeM3 == 37_500)
+    #expect(leg.volumeCharge == 3_750_000)
+    #expect(leg.roundedCharge == 4_000_000)
+    #expect(result.warnings.isEmpty)
+  }
+
+  @Test
   func automaticallySplitsOversizedCargoIntoMultipleContracts() async throws {
     let source = SourceIdentity(provider: "fixture", version: "1")
     let product = BlueprintDefinition(
@@ -1587,13 +2722,63 @@ struct IndustryPlannerTests {
     #expect(logistics.legs.map(\.contractNumber) == [1, 2])
     #expect(logistics.legs.allSatisfy { $0.contractCount == 2 })
     #expect(logistics.legs.map(\.roundedCharge) == [4_000_000, 1_000_000])
-    #expect(logistics.total == 5_000_000)
     #expect(
-      plan.warnings.contains {
-        $0.code == "logistics.contracts-split"
-          && $0.severity == .information
+      logistics.legs.flatMap(\.cargoItems).map(\.name)
+        == ["Bulky Material", "Bulky Material"]
+    )
+    #expect(
+      logistics.legs.flatMap(\.cargoItems).reduce(0) { $0 + $1.quantity }
+        == 383
+    )
+    #expect(
+      zip(logistics.legs, logistics.legs.flatMap(\.cargoItems)).allSatisfy {
+        pair in
+        abs(pair.0.cargoVolumeM3 - pair.1.volumeM3) < 0.000_001
       }
     )
+    #expect(logistics.total == 5_000_000)
+    #expect(
+      !plan.warnings.contains { $0.code == "logistics.contracts-split" }
+    )
+    #expect(plan.immediateSale.inboundLogisticsAssessment?.reason == nil)
+  }
+
+  @Test
+  func decodesHistoricalLogisticsLegWithoutCargoLines() throws {
+    let leg = LogisticsCostLeg(
+      kind: .inboundMaterials,
+      origin: "Jita IV - Moon 4",
+      destination: "Darfnor",
+      cargoVolumeM3: 1_000,
+      collateral: 10_000,
+      volumeCharge: 2_000,
+      collateralCharge: 50,
+      chargedBy: .volume,
+      unroundedCharge: 2_000,
+      roundedCharge: 1_000_000,
+      cargo: [
+        LogisticsCargoLine(
+          typeID: 34,
+          name: "Tritanium",
+          quantity: 10_000,
+          volumeM3: 1_000,
+          collateral: 10_000
+        )
+      ]
+    )
+    let encoded = try JSONEncoder().encode(leg)
+    var object = try #require(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    object.removeValue(forKey: "cargo")
+
+    let historical = try JSONDecoder().decode(
+      LogisticsCostLeg.self,
+      from: JSONSerialization.data(withJSONObject: object)
+    )
+
+    #expect(historical.cargo == nil)
+    #expect(historical.cargoItems.isEmpty)
   }
 
   @Test
@@ -1616,7 +2801,7 @@ struct IndustryPlannerTests {
     let catalog = FixtureCatalog(
       names: [61: "Oversized Product", 62: "Oversized Material"],
       definitions: [61: product],
-      packagedVolumes: [62: 350_001]
+      packagedVolumes: [61: 350_001, 62: 350_001]
     )
     let context = IndustryPlanningContext(
       manufacturingProfile: ManufacturingProfile(),
@@ -1654,7 +2839,9 @@ struct IndustryPlannerTests {
           costIndex: 0
         )
       ],
-      sdeBuild: 1
+      sdeBuild: 1,
+      salesTaxRate: 0,
+      brokerFeeRate: 0
     )
 
     let plan = try await IndustryPlanner().plan(
@@ -1664,11 +2851,30 @@ struct IndustryPlannerTests {
 
     #expect(plan.costBreakdown?.logistics == nil)
     #expect(plan.costBreakdown?.totalProductionCost == nil)
-    #expect(plan.productionCostPerOutputUnit == nil)
+    #expect(
+      plan.productionCostPerOutputUnit
+        == plan.costBreakdown?.productionCostBeforeLogistics
+    )
+    #expect(
+      plan.immediateSale.inboundLogisticsAssessment?.status
+        == .manualTransferRequired
+    )
+    #expect(
+      plan.immediateSale.outboundLogisticsAssessment?.status
+        == .manualTransferRequired
+    )
+    #expect(
+      plan.immediateSale.totalCost
+        == plan.costBreakdown?.productionCostBeforeLogistics
+    )
+    #expect(plan.immediateSale.profit != nil)
+    #expect(plan.immediateSale.margin != nil)
+    #expect(plan.immediateSale.roi != nil)
+    #expect(plan.immediateSale.hasPendingManualTransportCost)
     #expect(
       plan.warnings.contains {
         $0.code == "logistics.single-item-volume-exceeded"
-          && $0.severity == .blocking
+          && $0.severity == .warning
       }
     )
   }
@@ -1696,7 +2902,10 @@ struct IndustryPlannerTests {
     preference: MaterialProcurementPreference,
     availableStock: Int64 = 0,
     intermediateActivity: BlueprintActivityDefinition.Kind = .manufacturing,
-    directRawQuantity: Int64 = 0
+    directRawQuantity: Int64 = 0,
+    blueprintCostAllocations: [Int64: IndustryBlueprintCostAllocation] = [:],
+    requiresCompleteBlueprintCosts: Bool = false,
+    productionEfficiencies: [Int64: IndustryProductionEfficiency] = [:]
   ) -> IndustryPlanningContext {
     let source = SourceIdentity(provider: "fixture", version: "1")
     let intermediate = BlueprintDefinition(
@@ -1771,7 +2980,20 @@ struct IndustryPlannerTests {
           82: "Choice Intermediate",
           83: "Choice Raw",
         ],
-        definitions: [81: product, 82: intermediate]
+        definitions: [81: product, 82: intermediate],
+        classifications: [
+          81: IndustryItemClassification(
+            categoryName: "Ship",
+            groupName: "Cruiser",
+            manufacturingCategory: .small
+          ),
+          82: IndustryItemClassification(
+            categoryName: "Material",
+            groupName: "Construction Components",
+            manufacturingCategory: .module,
+            techLevel: 2
+          ),
+        ]
       ),
       market: MarketOrderSnapshot(
         id: UUID(),
@@ -1807,7 +3029,10 @@ struct IndustryPlannerTests {
       ],
       availableStock: availableStock > 0 ? [82: availableStock] : [:],
       procurementPreferences: [82: preference],
-      sdeBuild: 1
+      sdeBuild: 1,
+      blueprintCostAllocations: blueprintCostAllocations,
+      requiresCompleteBlueprintCosts: requiresCompleteBlueprintCosts,
+      productionEfficiencies: productionEfficiencies
     )
   }
 
@@ -1830,6 +3055,444 @@ struct IndustryPlannerTests {
       issued: .now
     )
   }
+
+  @Test
+  func compressedOreUsesTheBestCharacterAndCheaperCompleteRoute()
+    async throws
+  {
+    let source = SourceIdentity(provider: "fixture", version: "refining")
+    let oreSkillTypeID: Int64 = 12_104
+    let mineralTypeID: Int64 = 34
+    let surplusMineralTypeID: Int64 = 16_001
+    let oreTypeID: Int64 = 28_417
+    let product = BlueprintDefinition(
+      blueprintTypeID: 9_001,
+      productTypeID: 9_000,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [
+          BlueprintMaterial(typeID: mineralTypeID, quantity: 1_000)
+        ],
+        products: [
+          BlueprintProduct(typeID: 9_000, quantity: 1, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    let compressedOre = CompressedOreOption(
+      typeID: oreTypeID,
+      name: "Compressed Veldspar",
+      portionSize: 1,
+      packagedVolume: nil,
+      reprocessingSkillTypeID: oreSkillTypeID,
+      kind: .asteroidOre,
+      outputs: [
+        ReprocessingMaterialOutput(typeID: mineralTypeID, quantity: 100),
+        ReprocessingMaterialOutput(
+          typeID: surplusMineralTypeID,
+          quantity: 25
+        ),
+      ],
+      source: source
+    )
+    let catalog = FixtureCatalog(
+      names: [
+        9_000: "Refining Test Product",
+        mineralTypeID: "Tritanium",
+        surplusMineralTypeID: "Fixture Surplus Mineral",
+        oreTypeID: "Compressed Veldspar",
+      ],
+      definitions: [9_000: product],
+      packagedVolumes: [mineralTypeID: 1_000, oreTypeID: 0.15],
+      compressedOre: [compressedOre]
+    )
+    let volumeCatalog = PackagedVolumeSnapshotCatalog(
+      base: catalog,
+      packagedVolumes: [mineralTypeID: 1_000, oreTypeID: 0.15]
+    )
+    var service = IndustryServiceModuleConfiguration()
+    service.name = "Standup Reprocessing Facility I"
+    service.activities = [.reprocessing]
+    service.normalOreYieldMultiplier = 0.5
+    service.source = .staticData
+    var facility = ConfiguredIndustryStructure(
+      name: "Darfnor Refining Tatara",
+      kind: .tatara,
+      solarSystemID: 30_045_364,
+      solarSystemName: "Darfnor",
+      securityBand: .lowSecurity,
+      reprocessingTaxRate: 0.01,
+      serviceModules: [service]
+    )
+    facility.setReprocessingImplant(.rx804, for: 2)
+    let basis = ProductionBasis(
+      logistics: LogisticsConfiguration(
+        isEnabled: true,
+        includeInboundMaterials: true,
+        productionLocationName: "Darfnor",
+        marketLocationName: "Jita IV - Moon 4",
+        iskPerCubicMeter: 2_000
+      ),
+      compressedOreRefining: CompressedOreRefiningConfiguration(
+        isEnabled: true
+      ),
+      structures: [facility]
+    )
+    func capability(
+      id: Int64,
+      name: String,
+      level: Int
+    ) -> CharacterCapabilitySnapshot {
+      CharacterCapabilitySnapshot(
+        character: CharacterIdentity(id: id, name: name),
+        cloneState: .omega,
+        skills: Sourced(
+          state: .fresh,
+          value: [
+            TrainedSkill(
+              skillID: ReprocessingYieldCalculator.reprocessingSkillTypeID,
+              trainedLevel: level,
+              activeLevel: level,
+              skillpoints: 0
+            ),
+            TrainedSkill(
+              skillID:
+                ReprocessingYieldCalculator.reprocessingEfficiencySkillTypeID,
+              trainedLevel: level,
+              activeLevel: level,
+              skillpoints: 0
+            ),
+            TrainedSkill(
+              skillID: oreSkillTypeID,
+              trainedLevel: level,
+              activeLevel: level,
+              skillpoints: 0
+            ),
+          ],
+          source: source
+        ),
+        standings: Sourced(
+          state: .unavailable,
+          value: nil,
+          source: source
+        )
+      )
+    }
+    func market(orePrice: Double) -> MarketOrderSnapshot {
+      MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          mineralTypeID: [
+            makeOrder(typeID: mineralTypeID, side: .sell, price: 10)
+          ],
+          oreTypeID: [
+            makeOrder(typeID: oreTypeID, side: .sell, price: orePrice)
+          ],
+        ],
+        source: source
+      )
+    }
+    let capabilities = [
+      capability(id: 1, name: "Lower Refiner", level: 3),
+      capability(id: 2, name: "Best Refiner", level: 5),
+    ]
+    let context = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: volumeCatalog,
+      market: market(orePrice: 100),
+      adjustedPrices: [
+        mineralTypeID: AdjustedPrice(
+          typeID: mineralTypeID,
+          adjustedPrice: 5,
+          averagePrice: 5
+        ),
+        surplusMineralTypeID: AdjustedPrice(
+          typeID: surplusMineralTypeID,
+          adjustedPrice: 1,
+          averagePrice: 1
+        ),
+      ],
+      systemIndices: [],
+      sdeBuild: 1,
+      characterCapabilities: capabilities
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Refining Test Product 1 0 0",
+      context: context
+    )
+
+    let refining = try #require(plan.compressedOreRefining)
+    let purchase = try #require(refining.purchases.first)
+    #expect(purchase.oreTypeID == oreTypeID)
+    #expect(purchase.character.characterID == 2)
+    #expect(purchase.character.oreProcessingLevel == 5)
+    #expect(purchase.character.implant == .rx804)
+    #expect(
+      abs(purchase.facility.baseYieldMultiplier - (0.5 * 1.055))
+        < 0.000_001
+    )
+    #expect(
+      abs(
+        purchase.yieldMultiplier
+          - (0.5 * 1.055 * 1.15 * 1.10 * 1.10 * 1.04)
+      ) < 0.000_001
+    )
+    #expect(refining.savings > 0)
+    #expect(refining.selectedLandedCost < refining.directLandedCost)
+    #expect(plan.costBreakdown?.refiningCost == refining.refiningFee)
+    let demandedOutput = try #require(
+      purchase.outputs.first { $0.typeID == mineralTypeID }
+    )
+    #expect(demandedOutput.name == "Tritanium")
+    #expect(demandedOutput.usedInPlan == 1_000)
+    #expect(
+      demandedOutput.surplusToWarehouse
+        == demandedOutput.quantity - 1_000
+    )
+    let warehouseOutput = try #require(
+      purchase.outputs.first { $0.typeID == surplusMineralTypeID }
+    )
+    #expect(warehouseOutput.name == "Fixture Surplus Mineral")
+    #expect(warehouseOutput.usedInPlan == 0)
+    #expect(warehouseOutput.surplusToWarehouse == warehouseOutput.quantity)
+    let optimizedLogistics = try #require(plan.costBreakdown?.logistics)
+    #expect(optimizedLogistics.legs.count == 1)
+    #expect(optimizedLogistics.legs.first?.contractCount == 1)
+    #expect(optimizedLogistics.legs.first?.destination == "Darfnor")
+    #expect(
+      optimizedLogistics.legs.first?.cargo?.map(\.typeID) == [oreTypeID]
+    )
+    #expect(
+      abs(
+        refining.selectedLandedCost
+          - (refining.orePurchaseCost + refining.refiningFee
+            + optimizedLogistics.total)
+      ) < 0.000_001
+    )
+    let shoppingList = EVEShoppingList.make(
+      from: plan.materials,
+      refiningPlan: refining
+    )
+    #expect(shoppingList.items.contains { $0.typeID == oreTypeID })
+    #expect(!shoppingList.items.contains { $0.typeID == mineralTypeID })
+
+    let expensiveContext = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: volumeCatalog,
+      market: market(orePrice: 1_000_000_000),
+      adjustedPrices: [
+        mineralTypeID: AdjustedPrice(
+          typeID: mineralTypeID,
+          adjustedPrice: 5,
+          averagePrice: 5
+        )
+      ],
+      systemIndices: [],
+      sdeBuild: 1,
+      characterCapabilities: capabilities
+    )
+    let directPlan = try await IndustryPlanner().plan(
+      input: "Refining Test Product 1 0 0",
+      context: expensiveContext
+    )
+    #expect(directPlan.compressedOreRefining == nil)
+    let directLogistics = try #require(directPlan.costBreakdown?.logistics)
+    #expect(directLogistics.legs.count == 3)
+    #expect(directLogistics.legs.allSatisfy { $0.contractCount == 3 })
+    #expect(
+      directPlan.warnings.contains {
+        $0.code == "refining.no-cheaper-compressed-ore"
+      }
+    )
+    #expect(
+      EVEShoppingList.make(from: directPlan.materials).items.contains {
+        $0.typeID == mineralTypeID
+      }
+    )
+  }
+
+  @Test
+  func reprocessingYieldUsesSkillsAndFloorsEachBatchTotal() {
+    let yield = ReprocessingYieldCalculator.yieldMultiplier(
+      baseYieldMultiplier: 0.5,
+      reprocessingLevel: 5,
+      reprocessingEfficiencyLevel: 5,
+      oreProcessingLevel: 5,
+      implantYieldBonusPercent: 4
+    )
+    #expect(
+      abs((yield ?? 0) - (0.5 * 1.15 * 1.10 * 1.10 * 1.04))
+        < 0.000_001
+    )
+    #expect(
+      ReprocessingYieldCalculator.outputQuantity(
+        baseQuantity: 100,
+        batches: 3,
+        yieldMultiplier: 0.726
+      ) == 217
+    )
+  }
+
+  @Test
+  func historicalReprocessingOutputDecodesWithoutAllocationDetails() throws {
+    let historical = try JSONDecoder().decode(
+      ReprocessingMaterialOutput.self,
+      from: Data(#"{"typeID":16001,"quantity":42}"#.utf8)
+    )
+
+    #expect(historical.typeID == 16_001)
+    #expect(historical.quantity == 42)
+    #expect(historical.name == nil)
+    #expect(historical.usedInPlan == nil)
+    #expect(historical.surplusToWarehouse == nil)
+  }
+
+  @Test
+  func incompleteContractIndexUsesOnlyObservedOffersAsProvisionalEvidence()
+    throws
+  {
+    let complete = publicContractReference(
+      typeID: 61,
+      unitPrice: 2_500,
+      location: .jita
+    )
+    let incomplete = PublicContractReferenceSnapshot(
+      id: complete.id,
+      capturedAt: complete.capturedAt,
+      locationID: complete.locationID,
+      locationName: complete.locationName,
+      prices: complete.prices,
+      hasCompleteSearchCoverage: false,
+      source: complete.source,
+      allowedRegionIDs: complete.allowedRegionIDs
+    )
+
+    let quote = IndustryPlanner().publicContractQuote(
+      typeID: 61,
+      quantity: 3,
+      snapshot: incomplete,
+      scenario: .contractSale
+    )
+    #expect(quote.total == 7_500)
+    #expect(quote.filledQuantity == 3)
+    #expect(
+      quote.warnings.contains {
+        $0.code == "contracts.reference-provisional"
+      }
+    )
+    let result = SaleScenarioResult(
+      scenario: .contractSale,
+      grossOrNetRevenue: quote.total,
+      profit: nil,
+      margin: nil,
+      roi: nil,
+      quotes: [quote]
+    )
+    #expect(result.hasProvisionalPublicContractReference)
+
+    let noObservedOffer = PublicContractReferenceSnapshot(
+      capturedAt: incomplete.capturedAt,
+      locationID: incomplete.locationID,
+      locationName: incomplete.locationName,
+      prices: [:],
+      hasCompleteSearchCoverage: false,
+      source: incomplete.source
+    )
+    let unavailable = IndustryPlanner().publicContractQuote(
+      typeID: 61,
+      quantity: 3,
+      snapshot: noObservedOffer,
+      scenario: .contractSale
+    )
+    #expect(unavailable.total == nil)
+    #expect(unavailable.filledQuantity == 0)
+    #expect(
+      unavailable.warnings.contains {
+        $0.code == "contracts.reference-partial"
+      }
+    )
+  }
+
+  private func publicContractReference(
+    typeID: Int64,
+    unitPrice: Double,
+    location: ProcurementLocation
+  ) -> PublicContractReferenceSnapshot {
+    let capturedAt = Date(timeIntervalSince1970: 25_000)
+    let locationID = location.locationID ?? 0
+    let offer = PublicContractSearchResult(
+      contractID: typeID * 100,
+      recordID: typeID * 1_000,
+      regionID: location.regionID ?? 0,
+      regionName: "Fixture Region",
+      contractType: "item_exchange",
+      price: unitPrice,
+      dateIssued: capturedAt,
+      dateExpired: capturedAt.addingTimeInterval(86_400),
+      startLocationID: locationID,
+      startLocationName: location.name,
+      typeID: typeID,
+      typeName: "Fixture Product",
+      isIncluded: true,
+      quantity: 1,
+      offeredLineCount: 1,
+      requestedLineCount: 0
+    )
+    return PublicContractReferenceSnapshot.project(
+      locationID: locationID,
+      locationName: location.name,
+      offers: [typeID: [offer]],
+      progress: PublicContractSyncProgress(
+        phase: .completed,
+        regionCount: 1,
+        completedRegions: 1,
+        freshRegions: 1,
+        remainingInitialRegions: 0,
+        lastCompletedAt: capturedAt
+      ),
+      limitPerType: 500,
+      capturedAt: capturedAt
+    )
+  }
+
+  private func bpcContract(
+    contractID: Int64,
+    runs: Int,
+    price: Double,
+    offeredLineCount: Int = 1
+  ) -> PublicContractSearchResult {
+    PublicContractSearchResult(
+      contractID: contractID,
+      recordID: contractID * 10,
+      regionID: EVEConstants.theForgeRegionID,
+      regionName: "The Forge",
+      contractType: "item_exchange",
+      price: price,
+      dateIssued: .now,
+      dateExpired: .now.addingTimeInterval(86_400),
+      startLocationID: EVEConstants.jitaIV4StationID,
+      startLocationName: "Jita IV - Moon 4",
+      typeID: 802,
+      typeName: "Choice Intermediate Blueprint",
+      isIncluded: true,
+      quantity: 1,
+      isBlueprintCopy: true,
+      materialEfficiency: 10,
+      timeEfficiency: 20,
+      runs: runs,
+      offeredLineCount: offeredLineCount,
+      requestedLineCount: 0
+    )
+  }
 }
 
 private struct FixtureCatalog: IndustryCatalogQuerying {
@@ -1837,17 +3500,20 @@ private struct FixtureCatalog: IndustryCatalogQuerying {
   let definitions: [Int64: BlueprintDefinition]
   let classifications: [Int64: IndustryItemClassification]
   let packagedVolumes: [Int64: Double]
+  let compressedOre: [CompressedOreOption]
 
   init(
     names: [Int64: String],
     definitions: [Int64: BlueprintDefinition],
     classifications: [Int64: IndustryItemClassification] = [:],
-    packagedVolumes: [Int64: Double] = [:]
+    packagedVolumes: [Int64: Double] = [:],
+    compressedOre: [CompressedOreOption] = []
   ) {
     self.names = names
     self.definitions = definitions
     self.classifications = classifications
     self.packagedVolumes = packagedVolumes
+    self.compressedOre = compressedOre
   }
 
   func typeID(named name: String) async throws -> Int64? {
@@ -1874,5 +3540,13 @@ private struct FixtureCatalog: IndustryCatalogQuerying {
 
   func packagedVolume(typeID: Int64) async throws -> Double? {
     packagedVolumes[typeID]
+  }
+
+  func compressedOreOptions(
+    producing materialTypeIDs: Set<Int64>
+  ) async throws -> [CompressedOreOption] {
+    compressedOre.filter { option in
+      option.outputs.contains { materialTypeIDs.contains($0.typeID) }
+    }
   }
 }

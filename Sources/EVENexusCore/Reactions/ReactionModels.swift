@@ -325,6 +325,53 @@ public enum ReactionAnalysisError: Error, Equatable {
 }
 
 public enum ReactionProfitabilityAnalyzer {
+  /// Reuses the authoritative reaction quantity, rounding, duration and
+  /// installation-cost rules for a production-profitability projection. The
+  /// caller supplies logistics separately, so this result deliberately uses a
+  /// zero-logistics context and exposes only the reaction job itself.
+  public static func productionCostRow(
+    definition: BlueprintDefinition,
+    typeNames: [Int64: String],
+    classifications: [Int64: IndustryItemClassification],
+    runs: Int,
+    market: MarketOrderSnapshot,
+    adjustedPrices: [Int64: AdjustedPrice],
+    facility: ReactionFacilityCostContext?
+  ) throws -> ReactionAnalysisRow? {
+    guard runs > 0 else { throw ReactionAnalysisError.invalidRuns }
+    guard definition.activity.kind == .reaction,
+      !definition.activity.materials.isEmpty,
+      !definition.activity.products.isEmpty
+    else { return nil }
+    if let facility, !isValid(facility) {
+      throw ReactionAnalysisError.invalidFacilityContext
+    }
+    let neutralLocation = ProcurementLocation.legacy(
+      name: "Reaction production cost projection"
+    )
+    return analyze(
+      definition: definition,
+      typeNames: typeNames,
+      classifications: classifications,
+      runs: runs,
+      market: market,
+      adjustedPrices: adjustedPrices,
+      facility: facility,
+      logistics: ReactionLogisticsCostContext(
+        configuration: LogisticsConfiguration(
+          isEnabled: false,
+          productionLocationName: neutralLocation.name,
+          homeTradeHub: neutralLocation
+        ),
+        origin: neutralLocation,
+        destinationName: neutralLocation.name,
+        destinationLocationID: neutralLocation.locationID,
+        packagedVolumes: [:]
+      ),
+      basis: facility == nil ? .materialOnlyBaseline : .configuredFacility
+    )
+  }
+
   public static func analyze(
     definitions: [BlueprintDefinition],
     typeNames: [Int64: String],

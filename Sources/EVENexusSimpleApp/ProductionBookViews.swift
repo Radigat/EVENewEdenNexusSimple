@@ -5,6 +5,7 @@ import SwiftUI
 struct RecentProductionsView: View {
   @Environment(\.modelContext) private var modelContext
   let rows: [StoredProductionOverviewRow]
+  @Binding var isExpanded: Bool
   let onOpenHistoricalPlan: (StoredProductionOverviewRow) -> Void
   @State private var deletionCandidate: StoredProductionOverviewRow?
   @State private var isConfirmingDeletion = false
@@ -12,56 +13,83 @@ struct RecentProductionsView: View {
 
   var body: some View {
     Panel(title: "Last five productions") {
-      GeometryReader { geometry in
-        ProductionOverviewGrid(
-          rows: rows,
-          isEditable: true,
-          availableWidth: geometry.size.width,
-          onSave: save,
-          onRequestDelete: requestDeletion,
-          onOpenHistoricalPlan: onOpenHistoricalPlan
+      FullWidthDisclosure(isExpanded: $isExpanded) {
+        Text(
+          AppLocalization.format(
+            "%lld saved recent productions",
+            Int64(rows.count)
+          )
         )
-        .frame(maxHeight: .infinity, alignment: .top)
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+          GeometryReader { geometry in
+            ProductionOverviewGrid(
+              rows: rows,
+              isEditable: true,
+              availableWidth: geometry.size.width,
+              onSave: save,
+              onRequestDelete: requestDeletion,
+              onOpenHistoricalPlan: onOpenHistoricalPlan
+            )
+            .frame(maxHeight: .infinity, alignment: .top)
+          }
+          .frame(
+            height: ProductionOverviewGrid.requiredHeight(for: rows.count)
+          )
+
+          if let persistenceError {
+            Label(persistenceError, systemImage: "externaldrive.badge.xmark")
+              .font(.caption)
+              .foregroundStyle(DesignTokens.negative)
+          }
+
+          if !rows.isEmpty {
+            Text(
+              "Double-click a production to open its saved historical values in the Planner."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            Text(
+              "Historical rows keep the logistics and Refining result saved with that production; current settings do not rewrite them."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            Text(
+              "Gerundete Beträge zeigen beim Darüberfahren mit der Maus den genauen ISK-Wert."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            Text(
+              "Sale price and sold units can be changed here or in Production Overview. Use the checkbox for not sold or fully sold; enter a quantity for a partial sale."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            Text(
+              "Production costs include material, installation, BPO/BPC and logistics. Sales tax and broker fee reduce sale revenue separately."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            Text(
+              "For capitals that cannot be sold at the Highsec Main Hub, the broker fee remains not applicable. A known sales-tax rate still applies to an entered sale price, so minimum price and profit remain calculable."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text(
+              "Calculate a plan and choose Record production in the Planner."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+        .padding(.top, DesignTokens.spacingSM)
       }
-      .frame(height: ProductionOverviewGrid.requiredHeight(for: rows.count))
-
-      if let persistenceError {
-        Label(persistenceError, systemImage: "externaldrive.badge.xmark")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.negative)
-      }
-
-      if !rows.isEmpty {
-        Text(
-          "Double-click a production to open its saved historical values in the Planner."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-
-        Text(
-          "Gerundete Beträge zeigen beim Darüberfahren mit der Maus den genauen ISK-Wert."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-
-        Text(
-          "Sale price and sold units can be changed here or in Production Overview. Use the checkbox for not sold or fully sold; enter a quantity for a partial sale."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-
-        Text(
-          "Production costs include material, installation, BPO/BPC and logistics. Sales tax and broker fee reduce sale revenue separately."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        Text(
-          "Calculate a plan and choose Record production in the Planner."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-      }
+      .accessibilityIdentifier("planner.recent-productions.disclosure")
     }
     .confirmationDialog(
       "Produktionseintrag löschen?",
@@ -122,11 +150,18 @@ struct RecentProductionsView: View {
 struct ProductionBookView: View {
   @Environment(\.modelContext) private var modelContext
   let onOpenHistoricalPlan: (StoredProductionOverviewRow) -> Void
-  @Query(sort: \StoredProductionOverviewRow.sequenceNumber)
-  private var rows: [StoredProductionOverviewRow]
+  @State private var rows: [StoredProductionOverviewRow] = []
+  @State private var summary: ProductionOverviewSummary?
+  @State private var pageIndex = 0
+  @State private var totalRowCount = 0
+  @State private var isLoadingPage = false
+  @State private var isLoadingSummary = false
+  @State private var summaryRevision = 0
   @State private var saveError: String?
   @State private var deletionCandidate: StoredProductionOverviewRow?
   @State private var isConfirmingDeletion = false
+
+  private let pageSize = 100
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
@@ -151,23 +186,64 @@ struct ProductionBookView: View {
       ) {
         summaryPanel(
           title: "Productions",
-          value: rows.count.formatted()
+          value: summary?.rowCount.formatted() ?? "…"
         )
         summaryPanel(
           title: "Units",
-          value: rows.reduce(0) { $0 + $1.units }.formatted()
+          value: summary?.units.formatted() ?? "…"
         )
         summaryPanel(
           title: "Prog. Gewinn",
-          value: compactISK(completeProjectedProfit, includesCurrency: true),
-          exactValue: completeProjectedProfit
+          value: compactISK(
+            summary?.projectedProfit,
+            includesCurrency: true
+          ),
+          exactValue: summary?.projectedProfit
         )
         summaryPanel(
           title: "Realer Gewinn",
-          value: compactISK(completeRealProfit, includesCurrency: true),
-          exactValue: completeRealProfit
+          value: compactISK(summary?.realProfit, includesCurrency: true),
+          exactValue: summary?.realProfit
         )
       }
+
+      HStack(spacing: DesignTokens.spacingSM) {
+        Button {
+          pageIndex = max(0, pageIndex - 1)
+          loadPage()
+        } label: {
+          Label("Previous page", systemImage: "chevron.left")
+        }
+        .disabled(pageIndex == 0 || isLoadingPage)
+
+        Text(pageDescription)
+          .font(.callout.monospacedDigit())
+          .foregroundStyle(DesignTokens.textSecondary)
+          .frame(maxWidth: .infinity, alignment: .center)
+
+        Button {
+          pageIndex += 1
+          loadPage()
+        } label: {
+          Label("Next page", systemImage: "chevron.right")
+        }
+        .disabled(!hasNextPage || isLoadingPage)
+      }
+
+      if isLoadingSummary {
+        Label(
+          "Calculating complete history totals…",
+          systemImage: "sum"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+
+      Text(
+        "Only the current page is loaded and sorted in the table. The complete totals above always include the full production history."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
 
       if let saveError {
         Label(saveError, systemImage: "externaldrive.badge.xmark")
@@ -193,7 +269,19 @@ struct ProductionBookView: View {
       .foregroundStyle(DesignTokens.textSecondary)
 
       Text(
+        "Historical rows keep the logistics and Refining result saved with that production; current settings do not rewrite them."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      Text(
         "Production costs include material, installation, BPO/BPC and logistics. Sales tax and broker fee reduce sale revenue separately."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      Text(
+        "For capitals that cannot be sold at the Highsec Main Hub, the broker fee remains not applicable. A known sales-tax rate still applies to an entered sale price, so minimum price and profit remain calculable."
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -237,18 +325,12 @@ struct ProductionBookView: View {
     } message: {
       Text(deletionConfirmationMessage)
     }
-  }
-
-  private var completeProjectedProfit: Double? {
-    let values = rows.map { calculation(for: $0).projectedProfit }
-    guard values.allSatisfy({ $0 != nil }) else { return nil }
-    return values.compactMap { $0 }.reduce(0, +)
-  }
-
-  private var completeRealProfit: Double? {
-    let values = rows.map { calculation(for: $0).realProfit }
-    guard values.allSatisfy({ $0 != nil }) else { return nil }
-    return values.compactMap { $0 }.reduce(0, +)
+    .task {
+      loadPage()
+    }
+    .task(id: summaryRevision) {
+      await loadSummary(for: summaryRevision)
+    }
   }
 
   private func summaryPanel(
@@ -269,6 +351,7 @@ struct ProductionBookView: View {
     do {
       try modelContext.save()
       saveError = nil
+      summaryRevision += 1
     } catch {
       modelContext.rollback()
       saveError =
@@ -297,11 +380,230 @@ struct ProductionBookView: View {
         in: modelContext
       )
       saveError = nil
+      loadPage()
+      summaryRevision += 1
     } catch {
       saveError =
         "Der Produktionseintrag konnte nicht gelöscht werden: \(error.localizedDescription)"
     }
     self.deletionCandidate = nil
+  }
+
+  private var pageDescription: String {
+    guard totalRowCount > 0 else {
+      return AppLocalization.text("No production history")
+    }
+    let first = pageIndex * pageSize + 1
+    let last = min(totalRowCount, first + max(0, rows.count - 1))
+    return AppLocalization.format(
+      "Page %lld · entries %lld–%lld of %lld",
+      Int64(pageIndex + 1),
+      Int64(first),
+      Int64(last),
+      Int64(totalRowCount)
+    )
+  }
+
+  private var hasNextPage: Bool {
+    (pageIndex + 1) * pageSize < totalRowCount
+  }
+
+  private func loadPage() {
+    isLoadingPage = true
+    defer { isLoadingPage = false }
+    do {
+      let page = try ProductionOverviewHistoryPager.load(
+        requestedPageIndex: pageIndex,
+        pageSize: pageSize,
+        in: modelContext
+      )
+      totalRowCount = page.totalRowCount
+      pageIndex = page.pageIndex
+      rows = page.rows
+      saveError = nil
+    } catch {
+      rows = []
+      saveError = AppLocalization.format(
+        "The production history page could not be loaded: %@",
+        error.localizedDescription
+      )
+    }
+  }
+
+  private func loadSummary(for requestedRevision: Int) async {
+    isLoadingSummary = true
+    do {
+      let reader = ProductionOverviewSummaryReader(
+        modelContainer: modelContext.container
+      )
+      let loadedSummary = try await reader.load()
+      guard !Task.isCancelled, summaryRevision == requestedRevision else {
+        return
+      }
+      summary = loadedSummary
+    } catch {
+      guard !Task.isCancelled, summaryRevision == requestedRevision else {
+        return
+      }
+      summary = nil
+      saveError = AppLocalization.format(
+        "The production history totals could not be loaded: %@",
+        error.localizedDescription
+      )
+    }
+    if summaryRevision == requestedRevision {
+      isLoadingSummary = false
+    }
+  }
+}
+
+struct ProductionOverviewSummary: Sendable {
+  let rowCount: Int
+  let units: Int64
+  let projectedProfit: Double?
+  let realProfit: Double?
+}
+
+struct ProductionOverviewPage {
+  let rows: [StoredProductionOverviewRow]
+  let totalRowCount: Int
+  let pageIndex: Int
+}
+
+@MainActor
+enum ProductionOverviewHistoryPager {
+  static func load(
+    requestedPageIndex: Int,
+    pageSize: Int,
+    in modelContext: ModelContext
+  ) throws -> ProductionOverviewPage {
+    let acceptedPageSize = max(1, pageSize)
+    let count = try modelContext.fetchCount(
+      FetchDescriptor<StoredProductionOverviewRow>()
+    )
+    let lastPage = max(0, (count - 1) / acceptedPageSize)
+    let acceptedPageIndex = min(max(0, requestedPageIndex), lastPage)
+    var descriptor = FetchDescriptor<StoredProductionOverviewRow>(
+      sortBy: [SortDescriptor(\.sequenceNumber), SortDescriptor(\.id)]
+    )
+    descriptor.fetchOffset = acceptedPageIndex * acceptedPageSize
+    descriptor.fetchLimit = acceptedPageSize
+    return ProductionOverviewPage(
+      rows: try modelContext.fetch(descriptor),
+      totalRowCount: count,
+      pageIndex: acceptedPageIndex
+    )
+  }
+}
+
+@ModelActor
+actor ProductionOverviewSummaryReader {
+  func load() throws -> ProductionOverviewSummary {
+    let rows = try modelContext.fetch(
+      FetchDescriptor<StoredProductionOverviewRow>()
+    )
+    let cache = ProductionOverviewProjectionCache()
+    var units: Int64 = 0
+    var projectedProfit: Double = 0
+    var realProfit: Double = 0
+    var hasCompleteProjectedProfit = true
+    var hasCompleteRealProfit = true
+
+    for row in rows {
+      units += row.units
+      let projection = cache.projection(for: row)
+      let metrics = calculation(for: row, projection: projection)
+      if let value = metrics.projectedProfit {
+        projectedProfit += value
+      } else {
+        hasCompleteProjectedProfit = false
+      }
+      if let value = metrics.realProfit {
+        realProfit += value
+      } else {
+        hasCompleteRealProfit = false
+      }
+    }
+
+    return ProductionOverviewSummary(
+      rowCount: rows.count,
+      units: units,
+      projectedProfit:
+        hasCompleteProjectedProfit ? projectedProfit : nil,
+      realProfit: hasCompleteRealProfit ? realProfit : nil
+    )
+  }
+}
+
+private struct ProductionOverviewRowContext {
+  let row: StoredProductionOverviewRow
+  let productTypeID: Int64?
+  let projection: ProductionOverviewRequestProjection?
+  let metrics: ProductionOverviewCalculation
+}
+
+final class ProductionOverviewProjectionCache {
+  private struct Entry {
+    let sourceSnapshot: Data
+    let plan: IndustryPlanSnapshot?
+    var projections: [UUID: ProductionOverviewRequestProjection]
+    var missingRequestIDs: Set<UUID>
+  }
+
+  private var entries: [UUID: Entry] = [:]
+  private(set) var decodedSnapshotCount = 0
+
+  func retainSnapshots(for rows: [StoredProductionOverviewRow]) {
+    let planIDs = Set(rows.map(\.planID))
+    entries = entries.filter { planIDs.contains($0.key) }
+  }
+
+  func projection(
+    for row: StoredProductionOverviewRow
+  ) -> ProductionOverviewRequestProjection? {
+    var entry: Entry
+    if let cached = entries[row.planID],
+      cached.sourceSnapshot == row.sourceSnapshot
+    {
+      entry = cached
+    } else {
+      decodedSnapshotCount += 1
+      entry = Entry(
+        sourceSnapshot: row.sourceSnapshot,
+        plan: try? JSONDecoder().decode(
+          IndustryPlanSnapshot.self,
+          from: row.sourceSnapshot
+        ),
+        projections: [:],
+        missingRequestIDs: []
+      )
+    }
+
+    if let projection = entry.projections[row.requestID] {
+      entries[row.planID] = entry
+      return projection
+    }
+    guard !entry.missingRequestIDs.contains(row.requestID),
+      let plan = entry.plan,
+      let projection = ProductionOverviewProjector.projection(
+        for: row.requestID,
+        in: plan
+      )
+    else {
+      entry.missingRequestIDs.insert(row.requestID)
+      entries[row.planID] = entry
+      return nil
+    }
+    entry.projections[row.requestID] = projection
+    entries[row.planID] = entry
+    return projection
+  }
+
+  func productTypeID(for row: StoredProductionOverviewRow) -> Int64? {
+    _ = projection(for: row)
+    return entries[row.planID]?.plan?.topLevelProductNode(
+      for: row.requestID
+    )?.typeID
   }
 }
 
@@ -317,6 +619,7 @@ private struct ProductionOverviewGrid: View {
     column: ProductionOverviewSortColumn.sequence,
     direction: .ascending
   )
+  @State private var projectionCache = ProductionOverviewProjectionCache()
 
   private let headers: [(short: String, full: String)] = [
     ("Nr", "Nummer"),
@@ -378,24 +681,24 @@ private struct ProductionOverviewGrid: View {
             column: sortColumns[index],
             sort: $sort
           )
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(DesignTokens.canvas)
-            .lineLimit(3)
-            .minimumScaleFactor(0.65)
-            .frame(
-              width: widths[index],
-              alignment: .leading
-            )
-            .frame(height: 44)
-            .padding(.horizontal, cellHorizontalPadding)
-            .background(DesignTokens.accent)
-            .overlay(alignment: .trailing) {
-              Rectangle()
-                .fill(DesignTokens.canvas.opacity(0.35))
-                .frame(width: 1)
-            }
-            .help(headers[index].full)
-            .accessibilityLabel(headers[index].full)
+          .font(.caption2.weight(.semibold))
+          .foregroundStyle(DesignTokens.canvas)
+          .lineLimit(3)
+          .minimumScaleFactor(0.65)
+          .frame(
+            width: widths[index],
+            alignment: .leading
+          )
+          .frame(height: 44)
+          .padding(.horizontal, cellHorizontalPadding)
+          .background(DesignTokens.accent)
+          .overlay(alignment: .trailing) {
+            Rectangle()
+              .fill(DesignTokens.canvas.opacity(0.35))
+              .frame(width: 1)
+          }
+          .help(headers[index].full)
+          .accessibilityLabel(headers[index].full)
         }
       }
 
@@ -412,9 +715,13 @@ private struct ProductionOverviewGrid: View {
         }
       }
 
-      ForEach(Array(sortedRows.enumerated()), id: \.element.id) { offset, row in
-        let projection = productionProjection(for: row)
-        let metrics = calculation(for: row, projection: projection)
+      ForEach(
+        Array(sortedContexts.enumerated()),
+        id: \.element.row.id
+      ) { offset, context in
+        let row = context.row
+        let projection = context.projection
+        let metrics = context.metrics
         GridRow {
           textCell(row.sequenceNumber.formatted(), column: 0, row: offset)
           textCell(
@@ -424,7 +731,12 @@ private struct ProductionOverviewGrid: View {
             column: 1,
             row: offset
           )
-          entityCell(row.productName, column: 2, row: offset)
+          itemCell(
+            row.productName,
+            typeID: context.productTypeID,
+            column: 2,
+            row: offset
+          )
           numberCell(row.runs, column: 3, row: offset)
           numberCell(
             Int64(row.materialEfficiency),
@@ -501,11 +813,13 @@ private struct ProductionOverviewGrid: View {
     }
   }
 
-  private var sortedRows: [StoredProductionOverviewRow] {
+  private var sortedContexts: [ProductionOverviewRowContext] {
+    projectionCache.retainSnapshots(for: rows)
     let contexts = rows.map { row in
-      let projection = productionProjection(for: row)
-      return (
+      let projection = projectionCache.projection(for: row)
+      return ProductionOverviewRowContext(
         row: row,
+        productTypeID: projectionCache.productTypeID(for: row),
         projection: projection,
         metrics: calculation(for: row, projection: projection)
       )
@@ -570,7 +884,7 @@ private struct ProductionOverviewGrid: View {
         ordered = compareOptional(lhsMetrics.realProfit, rhsMetrics.realProfit)
       }
       return ordered ?? (lhs.id.uuidString < rhs.id.uuidString)
-    }.map(\.row)
+    }
   }
 
   private func compare<Value: Comparable>(_ lhs: Value, _ rhs: Value) -> Bool? {
@@ -583,7 +897,7 @@ private struct ProductionOverviewGrid: View {
     _ rhs: Value?
   ) -> Bool? {
     switch (lhs, rhs) {
-    case let (lhs?, rhs?): return compare(lhs, rhs)
+    case (let lhs?, let rhs?): return compare(lhs, rhs)
     case (nil, nil): return nil
     case (nil, _): return sort.direction == .descending
     case (_, nil): return sort.direction == .ascending
@@ -623,6 +937,34 @@ private struct ProductionOverviewGrid: View {
       .padding(.horizontal, cellHorizontalPadding)
       .background(rowBackground(row))
       .overlay(cellBorder)
+  }
+
+  @ViewBuilder
+  private func itemCell(
+    _ value: String,
+    typeID: Int64?,
+    column: Int,
+    row: Int
+  ) -> some View {
+    Group {
+      if let typeID {
+        EVEItemText(
+          value: value,
+          typeID: typeID,
+          lineLimit: 1,
+          iconSize: 18
+        )
+      } else {
+        EVEEntityText(value: value, lineLimit: 1)
+      }
+    }
+    .minimumScaleFactor(0.6)
+    .help(value)
+    .frame(width: widths[column], alignment: .leading)
+    .frame(minHeight: 28)
+    .padding(.horizontal, cellHorizontalPadding)
+    .background(rowBackground(row))
+    .overlay(cellBorder)
   }
 
   private func numberCell(
@@ -758,7 +1100,11 @@ private struct ProductionOverviewGrid: View {
           get: { row.salePricePerUnit },
           set: {
             row.salePricePerUnit = sanitizedMoney($0)
-            row.marketTax = calculation(for: row).salesTax
+            row.marketTax =
+              calculation(
+                for: row,
+                projection: projectionCache.projection(for: row)
+              ).salesTax
             onSave()
           }
         ),
@@ -927,34 +1273,19 @@ private enum ProductionOverviewSortColumn: Int, CaseIterable, Hashable {
   case realProfit
 }
 
-private func productionProjection(
-  for row: StoredProductionOverviewRow
-) -> ProductionOverviewRequestProjection? {
-  guard
-    let plan = try? JSONDecoder().decode(
-      IndustryPlanSnapshot.self,
-      from: row.sourceSnapshot
-    )
-  else { return nil }
-  return ProductionOverviewProjector.projection(
-    for: row.requestID,
-    in: plan
-  )
-}
-
 private func calculation(
   for row: StoredProductionOverviewRow,
-  projection: ProductionOverviewRequestProjection? = nil
+  projection: ProductionOverviewRequestProjection?
 ) -> ProductionOverviewCalculation {
-  let acceptedProjection = projection ?? productionProjection(for: row)
   return ProductionOverviewCalculation(
     units: row.units,
     materialCost: row.materialCost,
     installationCost: row.indexCost,
     blueprintCost: row.blueprintCost,
-    logisticsCost: acceptedProjection?.logisticsCost,
-    salesTaxRate: acceptedProjection?.salesTaxRate,
-    brokerFeeRate: acceptedProjection?.brokerFeeRate,
+    logisticsCost: projection?.logisticsCost,
+    salesTaxRate: projection?.salesTaxRate,
+    brokerFeeRate: projection?.brokerFeeRate,
+    brokerFeeIsApplicable: projection?.brokerFeeIsApplicable ?? true,
     salePricePerUnit: row.salePricePerUnit,
     soldUnits: row.soldUnits
   )

@@ -203,8 +203,9 @@ struct BlueprintsView: View {
   private func blueprintRow(_ entry: BlueprintPortfolioEntry) -> some View {
     VStack(alignment: .leading, spacing: 5) {
       HStack {
-        EVEEntityText(
+        EVEItemText(
           value: typeName(entry.instance.blueprintTypeID),
+          typeID: entry.instance.blueprintTypeID,
           lineLimit: 1
         )
         Spacer()
@@ -212,7 +213,8 @@ struct BlueprintsView: View {
         freshnessBadge(entry.sourceState)
       }
       HStack(spacing: DesignTokens.spacingMD) {
-        Label(entry.ownerName, systemImage: "person.fill")
+        Image(systemName: "person.fill")
+        EVEEntityText(value: entry.ownerName, font: .caption)
         Image(systemName: "mappin.and.ellipse")
         EVEEntityText(value: locationName(entry.instance.locationID))
       }
@@ -266,13 +268,17 @@ struct BlueprintsView: View {
     Panel(title: "Blueprint") {
       HStack(alignment: .top) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-          EVEEntityText(
+          EVEItemText(
             value: typeName(entry.instance.blueprintTypeID),
+            typeID: entry.instance.blueprintTypeID,
             font: .title2.bold()
           )
           HStack(spacing: DesignTokens.spacingXS) {
-            Text(verbatim: entry.ownerName)
-              .foregroundStyle(DesignTokens.textSecondary)
+            EVEEntityText(
+              value: entry.ownerName,
+              font: .body
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
             Text(verbatim: "·")
               .foregroundStyle(DesignTokens.textSecondary)
             EVEEntityText(value: locationName(entry.instance.locationID))

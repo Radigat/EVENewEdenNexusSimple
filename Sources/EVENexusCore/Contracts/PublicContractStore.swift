@@ -9,6 +9,24 @@ public enum PublicContractStoreError: Error, Equatable, Sendable {
 public actor PublicContractStore {
   private let database: PublicContractSQLiteDatabase
 
+  /// Opens and migrates the local index away from the caller's executor.
+  ///
+  /// A production database can contain hundreds of thousands of contract
+  /// items. Schema creation and transactional backfills must therefore never
+  /// run on the main actor during application startup.
+  public nonisolated static func open(url: URL) async throws
+    -> PublicContractStore
+  {
+    let task = Task.detached(priority: .utility) {
+      try PublicContractStore(url: url)
+    }
+    return try await withTaskCancellationHandler {
+      try await task.value
+    } onCancel: {
+      task.cancel()
+    }
+  }
+
   public init(url: URL, fileManager: FileManager = .default) throws {
     try fileManager.createDirectory(
       at: url.deletingLastPathComponent(),
@@ -20,7 +38,12 @@ public actor PublicContractStore {
     try database.execute("PRAGMA foreign_keys=ON")
     try database.execute(Self.schema)
     try Self.migrateOptionalForCorporation(in: database)
+    try Self.migrateBlueprintItemDetails(in: database)
+    try Self.rollbackUnboundedBlueprintItemDetailBackfillIfNeeded(
+      in: database
+    )
     try Self.backfillContractLocations(in: database)
+    try Self.backfillContractItemTypes(in: database)
   }
 
   public func close() {
@@ -153,13 +176,24 @@ public actor PublicContractStore {
     fetchedAt: Date,
     nextAllowedAt: Date?
   ) throws {
+    try Task.checkCancellation()
     try database.transaction {
-      let currentIDs = Set(contracts.map(\.contractID))
+      var currentIDs = Set<Int64>()
+      currentIDs.reserveCapacity(contracts.count)
+      for (index, contract) in contracts.enumerated() {
+        if index.isMultiple(of: 128) {
+          try Task.checkCancellation()
+        }
+        currentIDs.insert(contract.contractID)
+      }
       let existingRows = try database.query(
         "SELECT contract_id FROM contracts WHERE region_id = ?",
         [.integer(regionID)]
       )
-      for row in existingRows {
+      for (index, row) in existingRows.enumerated() {
+        if index.isMultiple(of: 128) {
+          try Task.checkCancellation()
+        }
         guard let contractID = row.int64("contract_id") else { continue }
         if !currentIDs.contains(contractID) {
           try database.run(
@@ -168,7 +202,10 @@ public actor PublicContractStore {
           )
         }
       }
-      for contract in contracts {
+      for (index, contract) in contracts.enumerated() {
+        if index.isMultiple(of: 128) {
+          try Task.checkCancellation()
+        }
         try upsert(contract: contract, regionID: regionID, observedAt: fetchedAt)
         try registerLocation(contract.startLocationID)
         try registerLocation(contract.endLocationID)
@@ -188,6 +225,32 @@ public actor PublicContractStore {
         ]
       )
     }
+  }
+
+  /// Advances freshness after ESI has conditionally confirmed that every
+  /// page still matches the already activated representation. Contract and
+  /// item rows are deliberately left untouched, avoiding a full SQLite
+  /// rewrite for a `304 Not Modified` response.
+  public func recordRegionRevalidated(
+    regionID: Int64,
+    fetchedAt: Date,
+    nextAllowedAt: Date?
+  ) throws {
+    try Task.checkCancellation()
+    try database.run(
+      """
+      UPDATE regions
+      SET last_attempt_at=?, last_success_at=?, next_allowed_at=?,
+          status='fresh', error_message=NULL
+      WHERE region_id=?
+      """,
+      [
+        .real(fetchedAt.timeIntervalSince1970),
+        .real(fetchedAt.timeIntervalSince1970),
+        nextAllowedAt.map { .real($0.timeIntervalSince1970) } ?? .null,
+        .integer(regionID),
+      ]
+    )
   }
 
   public func locationIDsNeedingResolution(
@@ -313,6 +376,28 @@ public actor PublicContractStore {
     fetchedAt: Date
   ) throws {
     try database.transaction {
+      for typeID in Set(items.map(\.typeID)).sorted() {
+        guard let type = metadata[typeID] else { continue }
+        try database.run(
+          """
+          INSERT INTO contract_item_types(
+            type_id, type_name, group_id, group_name,
+            category_id, category_name
+          ) VALUES(?, ?, ?, ?, ?, ?)
+          ON CONFLICT(type_id) DO UPDATE SET
+            type_name=excluded.type_name,
+            group_id=excluded.group_id,
+            group_name=excluded.group_name,
+            category_id=excluded.category_id,
+            category_name=excluded.category_name
+          """,
+          [
+            .integer(type.typeID), .text(type.typeName),
+            .integer(type.groupID), .text(type.groupName),
+            .integer(type.categoryID), .text(type.categoryName),
+          ]
+        )
+      }
       try database.run(
         "DELETE FROM contract_items WHERE contract_id=?",
         [.integer(contractID)]
@@ -324,8 +409,9 @@ public actor PublicContractStore {
           INSERT INTO contract_items(
             contract_id, record_id, type_id, type_name, group_id, group_name,
             category_id, category_name, is_included, quantity, item_id,
-            raw_quantity, is_blueprint_copy
-          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            raw_quantity, is_blueprint_copy, material_efficiency,
+            time_efficiency, runs
+          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """,
           [
             .integer(contractID), .integer(item.recordID),
@@ -340,6 +426,9 @@ public actor PublicContractStore {
             item.isBlueprintCopy.map {
               .integer($0 ? 1 : 0)
             } ?? .null,
+            item.materialEfficiency.map { .integer(Int64($0)) } ?? .null,
+            item.timeEfficiency.map { .integer(Int64($0)) } ?? .null,
+            item.runs.map { .integer(Int64($0)) } ?? .null,
           ]
         )
       }
@@ -377,23 +466,39 @@ public actor PublicContractStore {
     now: Date = .now
   ) throws -> [PublicContractSearchResult] {
     let query = filter.itemQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard query.count >= 3 || filter.groupID != nil || filter.categoryID != nil
+    let searchesByName = query.count >= 3
+    guard searchesByName || filter.groupID != nil || filter.categoryID != nil
     else { return [] }
+
+    let itemSource =
+      searchesByName
+      ? """
+      contract_item_types t
+      CROSS JOIN contract_items i INDEXED BY idx_contract_item_type
+        ON i.type_id=t.type_id
+      """
+      : "contract_items i"
+    let typeNameColumn = searchesByName ? "t.type_name" : "i.type_name"
+    let groupIDColumn = searchesByName ? "t.group_id" : "i.group_id"
+    let groupNameColumn = searchesByName ? "t.group_name" : "i.group_name"
+    let categoryIDColumn = searchesByName ? "t.category_id" : "i.category_id"
+    let categoryNameColumn =
+      searchesByName ? "t.category_name" : "i.category_name"
 
     var conditions = ["c.date_expired > ?"]
     var values: [PublicContractSQLiteValue] = [
       .real(now.timeIntervalSince1970)
     ]
-    if query.count >= 3 {
-      conditions.append("i.type_name LIKE ? ESCAPE '\\' COLLATE NOCASE")
+    if searchesByName {
+      conditions.append("t.type_name LIKE ? ESCAPE '\\' COLLATE NOCASE")
       values.append(.text("%\(Self.likePattern(query))%"))
     }
     if let groupID = filter.groupID {
-      conditions.append("i.group_id = ?")
+      conditions.append("\(groupIDColumn) = ?")
       values.append(.integer(groupID))
     }
     if let categoryID = filter.categoryID {
-      conditions.append("i.category_id = ?")
+      conditions.append("\(categoryIDColumn) = ?")
       values.append(.integer(categoryID))
     }
     switch filter.direction {
@@ -414,16 +519,26 @@ public actor PublicContractStore {
              c.collateral, c.date_issued, c.date_expired,
              c.start_location_id, sl.name AS start_location_name,
              c.end_location_id, el.name AS end_location_name,
-             i.type_id, i.type_name,
-             i.group_id, i.group_name, i.category_id, i.category_name,
-             i.is_included, i.quantity, i.is_blueprint_copy
-      FROM contract_items i
+             i.type_id, \(typeNameColumn) AS type_name,
+             \(groupIDColumn) AS group_id,
+             \(groupNameColumn) AS group_name,
+             \(categoryIDColumn) AS category_id,
+             \(categoryNameColumn) AS category_name,
+             i.is_included, i.quantity, i.is_blueprint_copy,
+             i.material_efficiency, i.time_efficiency, i.runs,
+             (SELECT COUNT(*) FROM contract_items offered
+                WHERE offered.contract_id=c.contract_id
+                  AND offered.is_included=1) AS offered_line_count,
+             (SELECT COUNT(*) FROM contract_items requested
+                WHERE requested.contract_id=c.contract_id
+                  AND requested.is_included=0) AS requested_line_count
+      FROM \(itemSource)
       JOIN contracts c ON c.contract_id=i.contract_id
       JOIN regions r ON r.region_id=c.region_id
       LEFT JOIN contract_locations sl ON sl.location_id=c.start_location_id
       LEFT JOIN contract_locations el ON el.location_id=c.end_location_id
       WHERE \(conditions.joined(separator: " AND "))
-      ORDER BY CASE WHEN i.type_name = ? COLLATE NOCASE THEN 0 ELSE 1 END,
+      ORDER BY CASE WHEN \(typeNameColumn) = ? COLLATE NOCASE THEN 0 ELSE 1 END,
                c.date_expired, c.contract_id, i.record_id
       LIMIT ?
       """,
@@ -438,6 +553,7 @@ public actor PublicContractStore {
   public func includedOffers(
     typeIDs: Set<Int64>,
     now: Date = .now,
+    startLocationID: Int64? = nil,
     limitPerType: Int = 100
   ) throws -> [Int64: [PublicContractSearchResult]] {
     let accepted = typeIDs.filter { $0 > 0 }.sorted()
@@ -455,6 +571,12 @@ public actor PublicContractStore {
         .real(now.timeIntervalSince1970)
       ]
       values.append(contentsOf: chunk.map(PublicContractSQLiteValue.integer))
+      values.append(
+        startLocationID.map(PublicContractSQLiteValue.integer) ?? .null
+      )
+      values.append(
+        startLocationID.map(PublicContractSQLiteValue.integer) ?? .null
+      )
       values.append(.integer(Int64(boundedLimit)))
       let rows = try database.query(
         """
@@ -467,7 +589,14 @@ public actor PublicContractStore {
                  c.end_location_id, el.name AS end_location_name,
                  i.type_id, i.type_name, i.group_id, i.group_name,
                  i.category_id, i.category_name, i.is_included, i.quantity,
-                 i.is_blueprint_copy,
+                 i.is_blueprint_copy, i.material_efficiency,
+                 i.time_efficiency, i.runs,
+                 (SELECT COUNT(*) FROM contract_items offered
+                    WHERE offered.contract_id=c.contract_id
+                      AND offered.is_included=1) AS offered_line_count,
+                 (SELECT COUNT(*) FROM contract_items requested
+                    WHERE requested.contract_id=c.contract_id
+                      AND requested.is_included=0) AS requested_line_count,
                  ROW_NUMBER() OVER (
                    PARTITION BY i.type_id
                    ORDER BY c.date_expired, c.contract_id, i.record_id
@@ -482,6 +611,7 @@ public actor PublicContractStore {
           WHERE c.date_expired > ?
             AND i.is_included = 1
             AND i.type_id IN (\(placeholders))
+            AND (? IS NULL OR c.start_location_id = ?)
         )
         SELECT * FROM ranked
         WHERE result_rank <= ?
@@ -500,6 +630,7 @@ public actor PublicContractStore {
   public func includedOfferSnapshot(
     typeIDs: Set<Int64>,
     now: Date = .now,
+    startLocationID: Int64? = nil,
     limitPerType: Int = 100
   ) throws -> (
     offers: [Int64: [PublicContractSearchResult]],
@@ -508,6 +639,7 @@ public actor PublicContractStore {
     let offers = try includedOffers(
       typeIDs: typeIDs,
       now: now,
+      startLocationID: startLocationID,
       limitPerType: limitPerType
     )
     return (offers, try progress())
@@ -636,6 +768,22 @@ public actor PublicContractStore {
         start_location_id=excluded.start_location_id,
         end_location_id=excluded.end_location_id,
         observed_at=excluded.observed_at
+      WHERE contracts.region_id IS NOT excluded.region_id
+        OR contracts.issuer_id IS NOT excluded.issuer_id
+        OR contracts.issuer_corporation_id IS NOT excluded.issuer_corporation_id
+        OR contracts.for_corporation IS NOT excluded.for_corporation
+        OR contracts.contract_type IS NOT excluded.contract_type
+        OR contracts.title IS NOT excluded.title
+        OR contracts.price IS NOT excluded.price
+        OR contracts.buyout IS NOT excluded.buyout
+        OR contracts.reward IS NOT excluded.reward
+        OR contracts.collateral IS NOT excluded.collateral
+        OR contracts.volume IS NOT excluded.volume
+        OR contracts.date_issued IS NOT excluded.date_issued
+        OR contracts.date_expired IS NOT excluded.date_expired
+        OR contracts.days_to_complete IS NOT excluded.days_to_complete
+        OR contracts.start_location_id IS NOT excluded.start_location_id
+        OR contracts.end_location_id IS NOT excluded.end_location_id
       """,
       [
         .integer(contract.contractID), .integer(regionID),
@@ -724,7 +872,12 @@ public actor PublicContractStore {
       categoryName: row.string("category_name"),
       isIncluded: included == 1,
       quantity: quantity,
-      isBlueprintCopy: row.int("is_blueprint_copy").map { $0 == 1 }
+      isBlueprintCopy: row.int("is_blueprint_copy").map { $0 == 1 },
+      materialEfficiency: row.int("material_efficiency"),
+      timeEfficiency: row.int("time_efficiency"),
+      runs: row.int("runs"),
+      offeredLineCount: row.int("offered_line_count") ?? 0,
+      requestedLineCount: row.int("requested_line_count") ?? 0
     )
   }
 
@@ -780,6 +933,40 @@ public actor PublicContractStore {
           statement
         )
       }
+    }
+  }
+
+  private static func backfillContractItemTypes(
+    in database: PublicContractSQLiteDatabase
+  ) throws {
+    let existing =
+      try database.query(
+        "SELECT COUNT(*) AS count FROM contract_item_types"
+      ).first?.int("count") ?? 0
+    guard existing == 0 else { return }
+    let hasLegacyItems =
+      try database.query(
+        "SELECT 1 AS present FROM contract_items LIMIT 1"
+      ).first != nil
+    guard hasLegacyItems else { return }
+    try database.transaction {
+      try database.run(
+        """
+        INSERT OR IGNORE INTO contract_item_types(
+          type_id, type_name, group_id, group_name,
+          category_id, category_name
+        )
+        SELECT item.type_id, item.type_name, item.group_id, item.group_name,
+               item.category_id, item.category_name
+        FROM contract_items item
+        JOIN (
+          SELECT type_id, MIN(rowid) AS selected_rowid
+          FROM contract_items
+          WHERE type_name IS NOT NULL
+          GROUP BY type_id
+        ) selected ON selected.selected_rowid=item.rowid
+        """
+      )
     }
   }
 
@@ -847,6 +1034,87 @@ public actor PublicContractStore {
     }
   }
 
+  private static func migrateBlueprintItemDetails(
+    in database: PublicContractSQLiteDatabase
+  ) throws {
+    let columns = Set(
+      try database.query("PRAGMA table_info(contract_items)")
+        .compactMap { $0.string("name") }
+    )
+    let additions = [
+      ("material_efficiency", "INTEGER"),
+      ("time_efficiency", "INTEGER"),
+      ("runs", "INTEGER"),
+    ]
+    for (name, type) in additions where !columns.contains(name) {
+      try database.execute(
+        "ALTER TABLE contract_items ADD COLUMN \(name) \(type)"
+      )
+    }
+  }
+
+  /// Reverts the v1 migration that put every legacy Blueprint contract into
+  /// the normal ESI detail queue at once. On a populated index that created
+  /// tens of thousands of requests and sustained background database work.
+  ///
+  /// Only untouched v1 candidates are restored: they still have their prior
+  /// searchable rows, have no item error and have not received Runs/ME/TE.
+  /// Contracts already refreshed by ESI remain ready with their new details;
+  /// genuine failed work retains its explicit pending/error state.
+  private static func rollbackUnboundedBlueprintItemDetailBackfillIfNeeded(
+    in database: PublicContractSQLiteDatabase
+  ) throws {
+    let marker = try database.query(
+      "SELECT value FROM contract_settings WHERE key=?",
+      [.text("blueprint_item_details_backfill_v1")]
+    ).first?.string("value")
+    guard marker == "complete" else { return }
+    let repairMarker = try database.query(
+      "SELECT value FROM contract_settings WHERE key=?",
+      [.text("blueprint_item_details_backfill_v1_rollback")]
+    ).first?.string("value")
+    guard repairMarker != "complete" else { return }
+    try database.transaction {
+      try database.execute(
+        """
+        UPDATE contracts
+        SET item_status='ready'
+        WHERE item_status='pending'
+          AND item_error IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM contract_items item
+            WHERE item.contract_id=contracts.contract_id
+              AND (
+                item.category_name='Blueprint'
+                OR item.is_blueprint_copy IS NOT NULL
+              )
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM contract_items item
+            WHERE item.contract_id=contracts.contract_id
+              AND (
+                item.material_efficiency IS NOT NULL
+                OR item.time_efficiency IS NOT NULL
+                OR item.runs IS NOT NULL
+              )
+          )
+        """
+      )
+      try database.run(
+        """
+        INSERT INTO contract_settings(key, value) VALUES(?, ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """,
+        [
+          .text("blueprint_item_details_backfill_v1_rollback"),
+          .text("complete"),
+        ]
+      )
+    }
+  }
+
   private static let playerStructureIDFloor: Int64 = 1_000_000_000_000
 
   private static let schema = """
@@ -897,7 +1165,18 @@ public actor PublicContractStore {
         item_id INTEGER,
         raw_quantity INTEGER,
         is_blueprint_copy INTEGER,
+        material_efficiency INTEGER,
+        time_efficiency INTEGER,
+        runs INTEGER,
         PRIMARY KEY(contract_id, record_id)
+      );
+      CREATE TABLE IF NOT EXISTS contract_item_types(
+        type_id INTEGER PRIMARY KEY,
+        type_name TEXT NOT NULL,
+        group_id INTEGER,
+        group_name TEXT,
+        category_id INTEGER,
+        category_name TEXT
       );
       CREATE TABLE IF NOT EXISTS contract_locations(
         location_id INTEGER PRIMARY KEY,
@@ -917,6 +1196,8 @@ public actor PublicContractStore {
         ON contract_items(group_id, category_id, is_included);
       CREATE INDEX IF NOT EXISTS idx_contract_item_type
         ON contract_items(type_id, is_included, contract_id);
+      CREATE INDEX IF NOT EXISTS idx_contract_item_type_name
+        ON contract_item_types(type_name COLLATE NOCASE);
     """
 
   private static let contractIndexes = """
@@ -967,6 +1248,7 @@ private struct PublicContractSQLiteRow {
 
 private final class PublicContractSQLiteDatabase: @unchecked Sendable {
   private var handle: OpaquePointer?
+  private var reusableRunStatements: [String: OpaquePointer] = [:]
 
   init(url: URL) throws {
     let status = sqlite3_open_v2(
@@ -987,6 +1269,10 @@ private final class PublicContractSQLiteDatabase: @unchecked Sendable {
 
   func close() {
     guard let handle else { return }
+    for statement in reusableRunStatements.values {
+      sqlite3_finalize(statement)
+    }
+    reusableRunStatements.removeAll(keepingCapacity: false)
     sqlite3_close_v2(handle)
     self.handle = nil
   }
@@ -1015,8 +1301,11 @@ private final class PublicContractSQLiteDatabase: @unchecked Sendable {
   }
 
   func run(_ sql: String, _ values: [PublicContractSQLiteValue] = []) throws {
-    let statement = try prepare(sql)
-    defer { sqlite3_finalize(statement) }
+    let statement = try reusableRunStatement(for: sql)
+    defer {
+      sqlite3_reset(statement)
+      sqlite3_clear_bindings(statement)
+    }
     try bind(values, to: statement)
     guard sqlite3_step(statement) == SQLITE_DONE else {
       throw databaseError("step")
@@ -1031,14 +1320,18 @@ private final class PublicContractSQLiteDatabase: @unchecked Sendable {
     defer { sqlite3_finalize(statement) }
     try bind(values, to: statement)
     var rows: [PublicContractSQLiteRow] = []
+    let columns = (0..<sqlite3_column_count(statement)).compactMap { index in
+      sqlite3_column_name(statement, index).map {
+        (index, String(cString: $0))
+      }
+    }
     while true {
       let status = sqlite3_step(statement)
       if status == SQLITE_DONE { return rows }
       guard status == SQLITE_ROW else { throw databaseError("query") }
       var row: [String: PublicContractSQLiteValue] = [:]
-      for index in 0..<sqlite3_column_count(statement) {
-        guard let rawName = sqlite3_column_name(statement, index) else { continue }
-        let name = String(cString: rawName)
+      row.reserveCapacity(columns.count)
+      for (index, name) in columns {
         switch sqlite3_column_type(statement, index) {
         case SQLITE_INTEGER:
           row[name] = .integer(sqlite3_column_int64(statement, index))
@@ -1054,6 +1347,17 @@ private final class PublicContractSQLiteDatabase: @unchecked Sendable {
       }
       rows.append(PublicContractSQLiteRow(values: row))
     }
+  }
+
+  private func reusableRunStatement(for sql: String) throws -> OpaquePointer? {
+    if let statement = reusableRunStatements[sql] {
+      return statement
+    }
+    let statement = try prepare(sql)
+    if let statement {
+      reusableRunStatements[sql] = statement
+    }
+    return statement
   }
 
   private func prepare(_ sql: String) throws -> OpaquePointer? {

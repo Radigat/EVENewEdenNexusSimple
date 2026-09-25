@@ -287,13 +287,6 @@ public struct AssetSnapshot: Identifiable, Codable, Sendable {
     return resolver.rootLocation(for: item)
   }
 
-  func itemsWithRootLocations() -> [(item: AssetItem, location: AssetRootLocation?)] {
-    var resolver = AssetRootLocationResolver(items: items)
-    return items.map { item in
-      (item, resolver.rootLocation(for: item))
-    }
-  }
-
   func itemsWithWarehouseContexts() -> [(
     item: AssetItem,
     location: AssetRootLocation?,

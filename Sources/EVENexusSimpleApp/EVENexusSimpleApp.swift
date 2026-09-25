@@ -6,7 +6,7 @@ import SwiftUI
 
 @main
 struct EVENexusSimpleApp: App {
-  @StateObject private var runtime: RuntimeState
+  @StateObject private var runtimeOwner: RuntimeStateOwner
   @AppStorage(AppLanguage.storageKey, store: AppDefaults.store)
   private var storedLanguage = AppLanguage.defaultLanguage.rawValue
   @AppStorage(AppTextSize.storageKey, store: AppDefaults.store)
@@ -34,11 +34,13 @@ struct EVENexusSimpleApp: App {
     let startsBackgroundServices =
       openedModelContainer != nil
       && environment["EVE_NEXUS_DISABLE_BACKGROUND_SERVICES"] != "1"
-    _runtime = StateObject(
-      wrappedValue: RuntimeState(
-        dataRoot: paths?.dataRoot,
-        ccpUserAgentOwnerContact: ownerContact,
-        startBackgroundServices: startsBackgroundServices
+    _runtimeOwner = StateObject(
+      wrappedValue: RuntimeStateOwner(
+        runtime: RuntimeState(
+          dataRoot: paths?.dataRoot,
+          ccpUserAgentOwnerContact: ownerContact,
+          startBackgroundServices: startsBackgroundServices
+        )
       )
     )
     if environment["EVE_NEXUS_PERSISTENCE_ACCEPTANCE_EXIT"] == "1" {
@@ -70,27 +72,88 @@ struct EVENexusSimpleApp: App {
 
   var body: some Scene {
     WindowGroup {
-      if let modelContainer {
-        ContentView()
-          .environmentObject(runtime)
-          .environment(\.locale, appLanguage.locale)
-          .environment(\.dynamicTypeSize, appTextSize.dynamicTypeSize)
-          .preferredColorScheme(appAppearance.preferredColorScheme)
-          .defaultAppStorage(AppDefaults.store)
-          .modelContainer(modelContainer)
-      } else {
-        PersistenceUnavailableView(folderURL: persistenceFolderURL)
-          .environment(\.locale, appLanguage.locale)
-          .environment(\.dynamicTypeSize, appTextSize.dynamicTypeSize)
-          .preferredColorScheme(appAppearance.preferredColorScheme)
-          .defaultAppStorage(AppDefaults.store)
+      Group {
+        if let modelContainer {
+          ContentView(runtime: runtimeOwner.runtime)
+            .environmentObject(runtimeOwner.runtime)
+            .environment(\.locale, appLanguage.locale)
+            .environment(\.dynamicTypeSize, appTextSize.dynamicTypeSize)
+            .preferredColorScheme(appAppearance.preferredColorScheme)
+            .defaultAppStorage(AppDefaults.store)
+            .modelContainer(modelContainer)
+        } else {
+          PersistenceUnavailableView(folderURL: persistenceFolderURL)
+            .environment(\.locale, appLanguage.locale)
+            .environment(\.dynamicTypeSize, appTextSize.dynamicTypeSize)
+            .preferredColorScheme(appAppearance.preferredColorScheme)
+            .defaultAppStorage(AppDefaults.store)
+        }
       }
+      .background(InitialWindowMaximizer())
     }
     .windowStyle(.titleBar)
     .defaultSize(width: 1_180, height: 760)
     .commands {
       TextSizeCommands()
     }
+  }
+}
+
+/// Expands each newly created app window once, while leaving later user-driven
+/// resizing untouched.
+struct InitialWindowMaximizer: NSViewRepresentable {
+  func makeNSView(context: Context) -> InitialWindowMaximizerView {
+    InitialWindowMaximizerView()
+  }
+
+  func updateNSView(
+    _ nsView: InitialWindowMaximizerView,
+    context: Context
+  ) {}
+}
+
+@MainActor
+final class InitialWindowMaximizerView: NSView {
+  private var maximization = InitialWindowMaximization()
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    guard window != nil else { return }
+
+    DispatchQueue.main.async { [weak self] in
+      guard let self, let window = self.window else { return }
+      self.maximization.apply(to: window)
+    }
+  }
+}
+
+@MainActor
+struct InitialWindowMaximization {
+  private(set) var hasApplied = false
+
+  mutating func apply(to window: NSWindow) {
+    guard let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame else {
+      return
+    }
+    apply(to: window, visibleFrame: visibleFrame)
+  }
+
+  mutating func apply(to window: NSWindow, visibleFrame: NSRect) {
+    guard !hasApplied else { return }
+    hasApplied = true
+    window.setFrame(visibleFrame, display: true)
+  }
+}
+
+/// Owns the runtime without subscribing the complete app scene to every
+/// domain publication. Only views that explicitly request RuntimeState are
+/// invalidated when background state changes.
+@MainActor
+private final class RuntimeStateOwner: ObservableObject {
+  let runtime: RuntimeState
+
+  init(runtime: RuntimeState) {
+    self.runtime = runtime
   }
 }
 

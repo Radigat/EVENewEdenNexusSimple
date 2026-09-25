@@ -25,6 +25,9 @@ private struct IndustryJobTableRow: Identifiable {
   var id: String { owned.id }
   var characterName: String { owned.characterName }
   var runs: Int { owned.job.runs }
+  var primaryItemTypeID: Int64 {
+    owned.job.productTypeID ?? owned.job.blueprintTypeID
+  }
 }
 
 private enum IndustryJobStatusFilter: String, CaseIterable, Identifiable {
@@ -230,14 +233,20 @@ struct IndustryJobsView: View {
 
           TableColumn("Blueprint / product", value: \.primaryItemName) { row in
             VStack(alignment: .leading, spacing: 2) {
-              EVEEntityText(value: row.primaryItemName, lineLimit: 1)
+              EVEItemText(
+                value: row.primaryItemName,
+                typeID: row.primaryItemTypeID,
+                lineLimit: 1
+              )
               if let productTypeID = row.owned.job.productTypeID,
                 productTypeID != row.owned.job.blueprintTypeID
               {
-                EVEEntityText(
+                EVEItemText(
                   value: row.blueprintName,
+                  typeID: row.owned.job.blueprintTypeID,
                   font: .caption,
-                  lineLimit: 1
+                  lineLimit: 1,
+                  iconSize: 18
                 )
               }
             }

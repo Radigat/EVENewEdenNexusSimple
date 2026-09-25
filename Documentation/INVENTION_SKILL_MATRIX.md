@@ -37,7 +37,10 @@ The conclusion ranks characters by average known level across the highlighted
 invention-related skills, then by number of trained relevant skills. It is a
 breadth indicator, not an exact invention chance.
 
-An exact chance requires a concrete invention activity with its base
+An exact chance uses the concrete SDE invention activity, its selected output
 probability, the blueprint's encryption and two science skills, their character
-levels, and an optional decryptor. Until that activity contract is implemented,
-the UI states this limitation beside the conclusion.
+levels, and an optional decryptor. `BlueprintSciencePlanner` now implements
+that contract and keeps expected attempts separate from the smallest whole
+attempt count that reaches a 95% binomial success target. The broad readiness
+matrix remains only an orientation; the Planner source stays disabled until the
+Science facility/cost and persistence UI is complete.

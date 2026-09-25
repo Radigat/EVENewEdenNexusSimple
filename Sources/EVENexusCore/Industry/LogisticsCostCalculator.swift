@@ -5,17 +5,20 @@ public struct LogisticsCargoItem: Sendable {
   public let quantity: Int64
   public let collateral: Double?
   public let packagedVolumePerUnit: Double?
+  public let name: String?
 
   public init(
     typeID: Int64,
     quantity: Int64,
     collateral: Double?,
-    packagedVolumePerUnit: Double?
+    packagedVolumePerUnit: Double?,
+    name: String? = nil
   ) {
     self.typeID = typeID
     self.quantity = quantity
     self.collateral = collateral
     self.packagedVolumePerUnit = packagedVolumePerUnit
+    self.name = name
   }
 }
 
@@ -58,13 +61,22 @@ public enum LogisticsCostCalculator {
 
     struct AcceptedCargoItem {
       let typeID: Int64
+      let name: String?
       let quantity: Int64
       let unitVolume: Double
       let unitCollateral: Double
     }
+    struct CargoDraft {
+      let typeID: Int64
+      var name: String?
+      var quantity: Int64
+      var volume: Double
+      var collateral: Double
+    }
     struct ContractDraft {
       var volume: Double
       var collateral: Double
+      var cargo: [Int64: CargoDraft]
     }
 
     var acceptedCargo: [AcceptedCargoItem] = []
@@ -118,7 +130,7 @@ public enum LogisticsCostCalculator {
             code: "logistics.single-item-volume-exceeded",
             message:
               "Type \(item.typeID) has a packaged volume of \(unitVolume.formatted()) m³ and cannot fit into the configured \(maximumContractVolumeM3.formatted()) m³ contract limit.",
-            severity: .blocking
+            severity: .warning
           )
         )
         continue
@@ -126,6 +138,7 @@ public enum LogisticsCostCalculator {
       acceptedCargo.append(
         AcceptedCargoItem(
           typeID: item.typeID,
+          name: item.name,
           quantity: item.quantity,
           unitVolume: unitVolume,
           unitCollateral: itemCollateral / Double(item.quantity)
@@ -176,9 +189,21 @@ public enum LogisticsCostCalculator {
       var remaining = item.quantity
       if item.unitVolume == 0 {
         if contracts.isEmpty {
-          contracts.append(ContractDraft(volume: 0, collateral: 0))
+          contracts.append(ContractDraft(volume: 0, collateral: 0, cargo: [:]))
         }
-        contracts[0].collateral += item.unitCollateral * Double(remaining)
+        let allocatedCollateral = item.unitCollateral * Double(remaining)
+        contracts[0].collateral += allocatedCollateral
+        var line = contracts[0].cargo[item.typeID] ?? CargoDraft(
+          typeID: item.typeID,
+          name: item.name,
+          quantity: 0,
+          volume: 0,
+          collateral: 0
+        )
+        line.name = line.name ?? item.name
+        line.quantity += remaining
+        line.collateral += allocatedCollateral
+        contracts[0].cargo[item.typeID] = line
         continue
       }
       while remaining > 0 {
@@ -212,7 +237,7 @@ public enum LogisticsCostCalculator {
               ]
             )
           }
-          contracts.append(ContractDraft(volume: 0, collateral: 0))
+          contracts.append(ContractDraft(volume: 0, collateral: 0, cargo: [:]))
           selectedIndex = contracts.index(before: contracts.endIndex)
           acceptedQuantity = min(
             remaining,
@@ -234,6 +259,18 @@ public enum LogisticsCostCalculator {
           item.unitVolume * Double(acceptedQuantity)
         contracts[selectedIndex].collateral +=
           item.unitCollateral * Double(acceptedQuantity)
+        var line = contracts[selectedIndex].cargo[item.typeID] ?? CargoDraft(
+          typeID: item.typeID,
+          name: item.name,
+          quantity: 0,
+          volume: 0,
+          collateral: 0
+        )
+        line.name = line.name ?? item.name
+        line.quantity += acceptedQuantity
+        line.volume += item.unitVolume * Double(acceptedQuantity)
+        line.collateral += item.unitCollateral * Double(acceptedQuantity)
+        contracts[selectedIndex].cargo[item.typeID] = line
         remaining -= acceptedQuantity
       }
     }
@@ -287,7 +324,21 @@ public enum LogisticsCostCalculator {
           collateralCharge: collateralCharge,
           chargedBy: chargedBy,
           unroundedCharge: unroundedCharge,
-          roundedCharge: roundedCharge
+          roundedCharge: roundedCharge,
+          cargo: contract.cargo.values.sorted { lhs, rhs in
+            if lhs.name != rhs.name {
+              return (lhs.name ?? "") < (rhs.name ?? "")
+            }
+            return lhs.typeID < rhs.typeID
+          }.map {
+            LogisticsCargoLine(
+              typeID: $0.typeID,
+              name: $0.name,
+              quantity: $0.quantity,
+              volumeM3: $0.volume,
+              collateral: $0.collateral
+            )
+          }
         )
       )
     }

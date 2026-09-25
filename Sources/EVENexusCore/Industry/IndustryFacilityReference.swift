@@ -29,6 +29,9 @@ public struct IndustryStructureDefinition: Identifiable, Codable, Equatable,
   public let manufacturingMaterialBonusPercent: Double
   public let manufacturingTimeBonusPercent: Double
   public let jobCostMultiplier: Double
+  /// Percentage bonus applied multiplicatively to Upwell ore, moon-ore and
+  /// ice reprocessing yield. Missing values remain explicit for older SDEs.
+  public let reprocessingEfficiencyBonusPercent: Double?
   public let source: SourceIdentity
 
   public var id: Int64 { typeID }
@@ -42,7 +45,8 @@ public struct IndustryStructureDefinition: Identifiable, Codable, Equatable,
     manufacturingTimeBonusPercent: Double,
     jobCostMultiplier: Double,
     source: SourceIdentity,
-    groupID: Int64? = nil
+    groupID: Int64? = nil,
+    reprocessingEfficiencyBonusPercent: Double? = nil
   ) {
     self.typeID = typeID
     self.name = name
@@ -53,6 +57,8 @@ public struct IndustryStructureDefinition: Identifiable, Codable, Equatable,
       manufacturingMaterialBonusPercent
     self.manufacturingTimeBonusPercent = manufacturingTimeBonusPercent
     self.jobCostMultiplier = jobCostMultiplier
+    self.reprocessingEfficiencyBonusPercent =
+      reprocessingEfficiencyBonusPercent
     self.source = source
   }
 }
@@ -179,6 +185,9 @@ public struct IndustryRigDefinition: Identifiable, Codable, Equatable,
   public let jobCostBonusPercent: Double
   public let lowSecurityMultiplier: Double
   public let nullSecurityMultiplier: Double
+  public let normalOreYieldMultiplier: Double?
+  public let moonOreYieldMultiplier: Double?
+  public let iceYieldMultiplier: Double?
   public let source: SourceIdentity
 
   public var id: Int64 { typeID }
@@ -195,7 +204,10 @@ public struct IndustryRigDefinition: Identifiable, Codable, Equatable,
     nullSecurityMultiplier: Double,
     source: SourceIdentity,
     scienceActivities: [IndustryActivitySystem] = [],
-    jobCostBonusPercent: Double = 0
+    jobCostBonusPercent: Double = 0,
+    normalOreYieldMultiplier: Double? = nil,
+    moonOreYieldMultiplier: Double? = nil,
+    iceYieldMultiplier: Double? = nil
   ) {
     self.typeID = typeID
     self.name = name
@@ -208,6 +220,9 @@ public struct IndustryRigDefinition: Identifiable, Codable, Equatable,
     self.jobCostBonusPercent = jobCostBonusPercent
     self.lowSecurityMultiplier = lowSecurityMultiplier
     self.nullSecurityMultiplier = nullSecurityMultiplier
+    self.normalOreYieldMultiplier = normalOreYieldMultiplier
+    self.moonOreYieldMultiplier = moonOreYieldMultiplier
+    self.iceYieldMultiplier = iceYieldMultiplier
     self.source = source
   }
 

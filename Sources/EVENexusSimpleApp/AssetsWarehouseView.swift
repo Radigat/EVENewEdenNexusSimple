@@ -34,6 +34,7 @@ struct AssetsWarehouseView: View {
   @State private var targetError: String?
   @State private var isResolvingNames = false
   @State private var isPreparingWarehouse = false
+  @State private var isStoragePositionExplanationExpanded = false
   @State private var warehouse = AssetWarehouse(inventories: [])
   @State private var inventoryCount = 0
   @State private var ownerStatuses: [PreparedAssetOwnerStatus] = []
@@ -227,15 +228,15 @@ struct AssetsWarehouseView: View {
       } else {
         corporationAssetStatus
       }
-      DisclosureGroup {
+      FullWidthDisclosure(isExpanded: $isStoragePositionExplanationExpanded) {
+        Label("What does storage position mean?", systemImage: "info.circle")
+      } content: {
         Text(
           "The storage position is the raw ESI location flag: it describes where EVE placed an item inside its parent inventory. It is not an access permission and does not change the counted quantity. Hangar means the personal item hangar; AutoFit normally marks an item inside a container; Unlocked or Locked describes the locking state inside an audit-log container. Other values identify cargo holds, fitting slots or specialized bays."
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         .padding(.top, DesignTokens.spacingXS)
-      } label: {
-        Label("What does storage position mean?", systemImage: "info.circle")
       }
     }
   }
@@ -628,7 +629,11 @@ struct AssetsWarehouseView: View {
       spacing: 7
     ) {
       ForEach(sortedOwnerRows(rows, owner: owner, targets: targets)) { row in
-        EVEEntityText(value: typeName(row.typeID), lineLimit: 2)
+        EVEItemText(
+          value: typeName(row.typeID),
+          typeID: row.typeID,
+          lineLimit: 2
+        )
         Text(row.quantity.formatted())
           .font(.body.monospacedDigit())
         inventoryFlagView(
@@ -936,16 +941,6 @@ struct AssetsWarehouseView: View {
       ?? "Unknown location".localizedUI
   }
 
-  private func locationKindLabel(_ kind: AssetLocationKind) -> String {
-    switch kind {
-    case .station: "Station".localizedUI
-    case .structure: "Player structure".localizedUI
-    case .solarSystem: "Solar system".localizedUI
-    case .item: "Container".localizedUI
-    case .unresolved: "Unresolved location".localizedUI
-    }
-  }
-
   private func locationSummary(_ location: AssetWarehouseLocation) -> String {
     if activeInventoryFilter == nil {
       let owners =
@@ -985,10 +980,7 @@ struct AssetsWarehouseView: View {
   private func locationIcon(_ location: AssetWarehouseLocation) -> some View {
     if location.kind == .structure,
       let typeID = structureTypeID(for: location),
-      let url = URL(
-        string:
-          "https://images.evetech.net/types/\(typeID)/icon?size=32&tenant=tranquility"
-      )
+      let url = EVETypeImageURL.icon(typeID: typeID)
     {
       AsyncImage(url: url) { phase in
         switch phase {
@@ -1405,7 +1397,7 @@ private struct StockTargetEditorRow: View {
 
   var body: some View {
     GridRow {
-      EVEEntityText(value: target.typeName)
+      EVEItemText(value: target.typeName, typeID: target.typeID)
       Text(stock.factualQuantity.formatted())
         .font(.body.monospacedDigit())
       WarehouseMinimumEditor(
@@ -1504,8 +1496,14 @@ private struct WarehouseItemSearchField: View {
         }
       HStack {
         if let selection {
-          Label(selection.name, systemImage: "checkmark.circle.fill")
+          Image(systemName: "checkmark.circle.fill")
             .foregroundStyle(DesignTokens.positive)
+          EVEItemText(
+            value: selection.name,
+            typeID: selection.id,
+            font: .caption,
+            iconSize: 18
+          )
         } else {
           let hint =
             query.trimmingCharacters(in: .whitespacesAndNewlines).count < 3
@@ -1543,10 +1541,13 @@ private struct WarehouseItemSearchField: View {
                 query = item.name
                 isShowingResults = false
               } label: {
-                Text(item.name)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .padding(.vertical, DesignTokens.spacingSM)
-                  .contentShape(Rectangle())
+                HStack(spacing: DesignTokens.spacingXS) {
+                  EVEItemIcon(typeID: item.id)
+                  Text(item.name)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, DesignTokens.spacingSM)
+                .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
               if item.id != results.last?.id {

@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DashboardIndustryActivity: String, Codable, CaseIterable,
-  Identifiable, Sendable
+  Identifiable, Hashable, Sendable
 {
   case manufacturing
   case reaction
@@ -32,6 +32,177 @@ public enum DashboardIndustryActivity: String, Codable, CaseIterable,
     case .copying, .invention, .materialResearch, .timeResearch: true
     case .manufacturing, .reaction: false
     }
+  }
+}
+
+public struct DashboardIndustryCharacterInput: Sendable {
+  public let characterID: Int64
+  public let characterName: String
+  public let capabilitySnapshot: Data?
+  public let jobSnapshot: Data?
+
+  public init(
+    characterID: Int64,
+    characterName: String,
+    capabilitySnapshot: Data?,
+    jobSnapshot: Data?
+  ) {
+    self.characterID = characterID
+    self.characterName = characterName
+    self.capabilitySnapshot = capabilitySnapshot
+    self.jobSnapshot = jobSnapshot
+  }
+}
+
+public struct DashboardIndustryOwnedJob: Identifiable, Sendable {
+  public let characterID: Int64
+  public let characterName: String
+  public let job: ESIIndustryJobDTO
+
+  public var id: String { "\(characterID):\(job.jobID)" }
+}
+
+public struct DashboardIndustryCapacitySummary: Equatable, Sendable {
+  public let value: Int?
+  public let isComplete: Bool
+
+  public init(value: Int?, isComplete: Bool) {
+    self.value = value
+    self.isComplete = isComplete
+  }
+}
+
+public struct DashboardIndustrySnapshot: Sendable {
+  public static let empty = DashboardIndustrySnapshot(
+    jobs: [],
+    decodedJobSnapshotCount: 0,
+    characterCount: 0,
+    incompleteJobSourceCount: 0,
+    capacities: [:]
+  )
+
+  public let jobs: [DashboardIndustryOwnedJob]
+  public let decodedJobSnapshotCount: Int
+  public let characterCount: Int
+  public let incompleteJobSourceCount: Int
+  private let capacities: [DashboardIndustryActivity: DashboardIndustryCapacitySummary]
+
+  public var hasAnyJobSnapshot: Bool { decodedJobSnapshotCount > 0 }
+
+  public var jobTypeIDs: Set<Int64> {
+    Set(jobs.map { $0.job.blueprintTypeID })
+  }
+
+  public func capacity(
+    for activity: DashboardIndustryActivity
+  ) -> DashboardIndustryCapacitySummary {
+    capacities[activity]
+      ?? DashboardIndustryCapacitySummary(value: nil, isComplete: false)
+  }
+
+  public var overallCapacity: DashboardIndustryCapacitySummary {
+    let pools: [DashboardIndustryActivity] = [
+      .manufacturing, .reaction, .copying,
+    ]
+    let summaries = pools.map(capacity(for:))
+    guard summaries.allSatisfy({ $0.value != nil }) else {
+      return DashboardIndustryCapacitySummary(value: nil, isComplete: false)
+    }
+    return DashboardIndustryCapacitySummary(
+      value: summaries.compactMap(\.value).reduce(0, +),
+      isComplete: summaries.allSatisfy(\.isComplete)
+    )
+  }
+
+  fileprivate init(
+    jobs: [DashboardIndustryOwnedJob],
+    decodedJobSnapshotCount: Int,
+    characterCount: Int,
+    incompleteJobSourceCount: Int,
+    capacities:
+      [DashboardIndustryActivity: DashboardIndustryCapacitySummary]
+  ) {
+    self.jobs = jobs
+    self.decodedJobSnapshotCount = decodedJobSnapshotCount
+    self.characterCount = characterCount
+    self.incompleteJobSourceCount = incompleteJobSourceCount
+    self.capacities = capacities
+  }
+}
+
+public enum DashboardIndustrySnapshotBuilder {
+  public static func build(
+    inputs: [DashboardIndustryCharacterInput]
+  ) -> DashboardIndustrySnapshot {
+    var jobs: [DashboardIndustryOwnedJob] = []
+    var decodedJobSnapshotCount = 0
+    var incompleteJobSourceCount = 0
+    var capacityTotals = Dictionary(
+      uniqueKeysWithValues: DashboardIndustryActivity.allCases.map { ($0, 0) }
+    )
+    var knownCapacityCounts = Dictionary(
+      uniqueKeysWithValues: DashboardIndustryActivity.allCases.map { ($0, 0) }
+    )
+
+    for input in inputs {
+      if let data = input.jobSnapshot,
+        let snapshot = try? JSONDecoder().decode(
+          Sourced<[ESIIndustryJobDTO]>.self,
+          from: data
+        )
+      {
+        decodedJobSnapshotCount += 1
+        if snapshot.state != .fresh { incompleteJobSourceCount += 1 }
+        jobs.append(
+          contentsOf: (snapshot.value ?? []).map {
+            DashboardIndustryOwnedJob(
+              characterID: input.characterID,
+              characterName: input.characterName,
+              job: $0
+            )
+          }
+        )
+      } else {
+        incompleteJobSourceCount += 1
+      }
+
+      guard let capabilityData = input.capabilitySnapshot,
+        let capability = try? JSONDecoder().decode(
+          CharacterCapabilitySnapshot.self,
+          from: capabilityData
+        )
+      else { continue }
+      for activity in DashboardIndustryActivity.allCases {
+        guard
+          let value = IndustrySlotCapacityRules.capacity(
+            for: activity,
+            skills: capability.skills
+          )
+        else { continue }
+        capacityTotals[activity, default: 0] += value
+        knownCapacityCounts[activity, default: 0] += 1
+      }
+    }
+
+    let capacities = Dictionary(
+      uniqueKeysWithValues: DashboardIndustryActivity.allCases.map { activity in
+        let knownCount = knownCapacityCounts[activity, default: 0]
+        return (
+          activity,
+          DashboardIndustryCapacitySummary(
+            value: knownCount > 0 ? capacityTotals[activity] : nil,
+            isComplete: knownCount == inputs.count
+          )
+        )
+      }
+    )
+    return DashboardIndustrySnapshot(
+      jobs: jobs,
+      decodedJobSnapshotCount: decodedJobSnapshotCount,
+      characterCount: inputs.count,
+      incompleteJobSourceCount: incompleteJobSourceCount,
+      capacities: capacities
+    )
   }
 }
 
@@ -394,6 +565,7 @@ public struct MakeOrBuyRecommendationApplication: Sendable {
 public enum ManualBlueprintKind: String, Codable, CaseIterable, Sendable {
   case bpc = "BPC"
   case bpo = "BPO"
+  case formula = "FORMULA"
 
   public var costTreatment: String {
     switch self {
@@ -401,6 +573,8 @@ public enum ManualBlueprintKind: String, Codable, CaseIterable, Sendable {
       "Consumed copy acquisition cost"
     case .bpo:
       "Owner-entered BPO cost allocation"
+    case .formula:
+      "Explicit owned reaction formula allocation"
     }
   }
 }
@@ -421,6 +595,9 @@ public struct PlanNode: Identifiable, Codable, Sendable {
   public let blueprintTypeID: Int64?
   public let facilityName: String?
   public let manufacturingCategory: ManufacturingCategory?
+  public let sourceCategory: String?
+  public let sourceGroup: String?
+  public let sourceTechLevel: Int?
   public let children: [UUID]
   public let topLevelRequestID: UUID?
 
@@ -438,6 +615,9 @@ public struct PlanNode: Identifiable, Codable, Sendable {
     blueprintTypeID: Int64? = nil,
     facilityName: String? = nil,
     manufacturingCategory: ManufacturingCategory? = nil,
+    sourceCategory: String? = nil,
+    sourceGroup: String? = nil,
+    sourceTechLevel: Int? = nil,
     children: [UUID],
     topLevelRequestID: UUID?
   ) {
@@ -454,8 +634,27 @@ public struct PlanNode: Identifiable, Codable, Sendable {
     self.blueprintTypeID = blueprintTypeID
     self.facilityName = facilityName
     self.manufacturingCategory = manufacturingCategory
+    self.sourceCategory = sourceCategory
+    self.sourceGroup = sourceGroup
+    self.sourceTechLevel = sourceTechLevel
     self.children = children
     self.topLevelRequestID = topLevelRequestID
+  }
+}
+
+public enum HighSecurityCapitalTransferPolicy {
+  public static let ruleVersion = "ccp-capital-highsec-2024-07-15"
+
+  public static func isRestrictedCapital(_ node: PlanNode) -> Bool {
+    guard
+      node.sourceCategory?.localizedCaseInsensitiveCompare("Ship")
+        == .orderedSame,
+      node.manufacturingCategory == .capital,
+      let group = node.sourceGroup?.lowercased()
+    else { return false }
+    // Freighters and Jump Freighters are classified as capital production but
+    // are the ordinary high-security transport exceptions.
+    return group != "freighter" && group != "jump freighter"
   }
 }
 
@@ -551,6 +750,9 @@ public struct IndustryJobCost: Identifiable, Codable, Sendable {
   public let total: Double
   public let facilityName: String?
   public let manufacturingCategory: ManufacturingCategory?
+  public let blueprintSupplyJobID: UUID?
+  public let blueprintSource: BlueprintSourceReference?
+  public var durationSeconds: Int64? = nil
 
   public init(
     id: UUID,
@@ -570,7 +772,10 @@ public struct IndustryJobCost: Identifiable, Codable, Sendable {
     alphaSurcharge: Double,
     total: Double,
     facilityName: String? = nil,
-    manufacturingCategory: ManufacturingCategory? = nil
+    manufacturingCategory: ManufacturingCategory? = nil,
+    blueprintSupplyJobID: UUID? = nil,
+    blueprintSource: BlueprintSourceReference? = nil,
+    durationSeconds: Int64? = nil
   ) {
     self.id = id
     self.typeID = typeID
@@ -590,6 +795,9 @@ public struct IndustryJobCost: Identifiable, Codable, Sendable {
     self.total = total
     self.facilityName = facilityName
     self.manufacturingCategory = manufacturingCategory
+    self.blueprintSupplyJobID = blueprintSupplyJobID
+    self.blueprintSource = blueprintSource
+    self.durationSeconds = durationSeconds
   }
 }
 
@@ -610,6 +818,29 @@ public enum LogisticsChargeBasis: String, Codable, Sendable {
   case collateral
 }
 
+public struct LogisticsCargoLine: Identifiable, Codable, Equatable, Sendable {
+  public var id: Int64 { typeID }
+  public let typeID: Int64
+  public let name: String?
+  public let quantity: Int64
+  public let volumeM3: Double
+  public let collateral: Double
+
+  public init(
+    typeID: Int64,
+    name: String?,
+    quantity: Int64,
+    volumeM3: Double,
+    collateral: Double
+  ) {
+    self.typeID = typeID
+    self.name = name
+    self.quantity = quantity
+    self.volumeM3 = volumeM3
+    self.collateral = collateral
+  }
+}
+
 public struct LogisticsCostLeg: Identifiable, Codable, Equatable, Sendable {
   public let id: UUID
   public let kind: LogisticsLegKind
@@ -624,6 +855,11 @@ public struct LogisticsCostLeg: Identifiable, Codable, Equatable, Sendable {
   public let chargedBy: LogisticsChargeBasis
   public let unroundedCharge: Double
   public let roundedCharge: Double
+  /// `nil` identifies historical snapshots that predate per-contract cargo
+  /// persistence. New calculations always persist a concrete collection.
+  public let cargo: [LogisticsCargoLine]?
+
+  public var cargoItems: [LogisticsCargoLine] { cargo ?? [] }
 
   public init(
     id: UUID = UUID(),
@@ -638,7 +874,8 @@ public struct LogisticsCostLeg: Identifiable, Codable, Equatable, Sendable {
     collateralCharge: Double,
     chargedBy: LogisticsChargeBasis,
     unroundedCharge: Double,
-    roundedCharge: Double
+    roundedCharge: Double,
+    cargo: [LogisticsCargoLine]? = nil
   ) {
     self.id = id
     self.kind = kind
@@ -653,6 +890,7 @@ public struct LogisticsCostLeg: Identifiable, Codable, Equatable, Sendable {
     self.chargedBy = chargedBy
     self.unroundedCharge = unroundedCharge
     self.roundedCharge = roundedCharge
+    self.cargo = cargo
   }
 }
 
@@ -681,10 +919,50 @@ public struct LogisticsCostBreakdown: Codable, Equatable, Sendable {
   public let total: Double
 }
 
+public enum LogisticsRouteStatus: String, Codable, Equatable, Sendable {
+  case calculated
+  case notRequired
+  case manualTransferRequired
+  case prohibited
+  case unavailable
+}
+
+public struct LogisticsRouteAssessment: Codable, Equatable, Sendable {
+  public let status: LogisticsRouteStatus
+  public let origin: String
+  public let destination: String
+  public let breakdown: LogisticsCostBreakdown?
+  public let jumpFreighter: JumpFreighterCostBreakdown?
+  public let selfJumpingCapitals: CapitalSelfJumpCostBreakdown?
+  public let cost: Double?
+  public let reason: String?
+
+  public init(
+    status: LogisticsRouteStatus,
+    origin: String,
+    destination: String,
+    breakdown: LogisticsCostBreakdown? = nil,
+    jumpFreighter: JumpFreighterCostBreakdown? = nil,
+    selfJumpingCapitals: CapitalSelfJumpCostBreakdown? = nil,
+    cost: Double? = nil,
+    reason: String? = nil
+  ) {
+    self.status = status
+    self.origin = origin
+    self.destination = destination
+    self.breakdown = breakdown
+    self.jumpFreighter = jumpFreighter
+    self.selfJumpingCapitals = selfJumpingCapitals
+    self.cost = cost
+    self.reason = reason
+  }
+}
+
 public struct IndustryCostBreakdown: Codable, Equatable, Sendable {
   public let materialCost: Double?
   public let purchasedMaterialCost: Double?
   public let stockMaterialCost: Double?
+  public var refiningCost: Double? = nil
   public let blueprintCosts: BlueprintCostBreakdown?
   public let systemIndexCost: Double?
   public let facilityTax: Double?
@@ -699,6 +977,15 @@ public struct IndustryCostBreakdown: Codable, Equatable, Sendable {
     logisticsCost
       ?? logistics?.total
       ?? (totalProductionCost == nil ? nil : 0)
+  }
+
+  public var productionCostBeforeLogistics: Double? {
+    Self.total(
+      materialCost: materialCost,
+      blueprintCost: blueprintCosts?.total,
+      installationCost: installationCost,
+      logisticsCost: 0
+    )
   }
 
   public var recomputedTotalProductionCost: Double? {
@@ -751,8 +1038,14 @@ public struct SaleScenarioResult: Codable, Sendable {
   public let scenario: PriceScenario
   public let marketLocation: ProcurementLocation?
   public let grossRevenue: Double?
+  public let salesTaxRate: Double?
   public let salesTax: Double?
+  public let brokerFeeRate: Double?
+  public let brokerFeeIsApplicable: Bool?
   public let brokerFee: Double?
+  public let contractFee: Double?
+  public let inboundLogisticsAssessment: LogisticsRouteAssessment?
+  public let outboundLogisticsAssessment: LogisticsRouteAssessment?
   public let outboundLogistics: LogisticsCostBreakdown?
   public let outboundLogisticsCost: Double?
   public let totalCost: Double?
@@ -762,12 +1055,48 @@ public struct SaleScenarioResult: Codable, Sendable {
   public let roi: Double?
   public let quotes: [PriceQuote]
 
+  /// The displayed scenario cost and profitability omit at least one route
+  /// that requires a separate manual transport quote. The known subtotal is
+  /// still useful, but it is not the final landed cost.
+  public var hasPendingManualTransportCost: Bool {
+    inboundLogisticsAssessment?.status == .manualTransferRequired
+      || outboundLogisticsAssessment?.status == .manualTransferRequired
+  }
+
+  /// Public Contracts ESI observations do not include the personal fee quote
+  /// for issuing a new contract. Until a confirmed rate is configured, the
+  /// revenue and profitability values are explicitly before that fee.
+  public var hasPendingPublicContractFee: Bool {
+    scenario == .contractSale && grossRevenue != nil && contractFee == nil
+  }
+
+  /// A currently observed comparable public contract can support a useful
+  /// estimate while the universe index is still finishing. It remains
+  /// explicitly distinct from a proven complete-universe minimum.
+  public var hasProvisionalPublicContractReference: Bool {
+    quotes.contains { quote in
+      quote.warnings.contains {
+        $0.code == "contracts.reference-provisional"
+      }
+    }
+  }
+
+  public var hasPendingScenarioCost: Bool {
+    hasPendingManualTransportCost || hasPendingPublicContractFee
+  }
+
   public init(
     scenario: PriceScenario,
     marketLocation: ProcurementLocation? = nil,
     grossRevenue: Double? = nil,
+    salesTaxRate: Double? = nil,
     salesTax: Double? = nil,
+    brokerFeeRate: Double? = nil,
+    brokerFeeIsApplicable: Bool? = nil,
     brokerFee: Double? = nil,
+    contractFee: Double? = nil,
+    inboundLogisticsAssessment: LogisticsRouteAssessment? = nil,
+    outboundLogisticsAssessment: LogisticsRouteAssessment? = nil,
     outboundLogistics: LogisticsCostBreakdown? = nil,
     outboundLogisticsCost: Double? = nil,
     totalCost: Double? = nil,
@@ -780,8 +1109,14 @@ public struct SaleScenarioResult: Codable, Sendable {
     self.scenario = scenario
     self.marketLocation = marketLocation
     self.grossRevenue = grossRevenue
+    self.salesTaxRate = salesTaxRate
     self.salesTax = salesTax
+    self.brokerFeeRate = brokerFeeRate
+    self.brokerFeeIsApplicable = brokerFeeIsApplicable
     self.brokerFee = brokerFee
+    self.contractFee = contractFee
+    self.inboundLogisticsAssessment = inboundLogisticsAssessment
+    self.outboundLogisticsAssessment = outboundLogisticsAssessment
     self.outboundLogistics = outboundLogistics
     self.outboundLogisticsCost = outboundLogisticsCost
     self.totalCost = totalCost
@@ -821,10 +1156,19 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public let materialCost: Double?
   public let installationCost: Double?
   public let costBreakdown: IndustryCostBreakdown?
+  public var compressedOreRefining: CompressedOreRefiningPlan? = nil
+  /// `nil` identifies historical snapshots created before concrete Blueprint
+  /// source, job and run allocation was persisted.
+  public var blueprintSupplyPlans: [BlueprintSupplyPlan]? = nil
   public let immediateSale: SaleScenarioResult
   public let listedSale: SaleScenarioResult
+  public let mainContractSale: SaleScenarioResult?
   public let homeImmediateSale: SaleScenarioResult?
   public let homeListedSale: SaleScenarioResult?
+  public let homeContractSale: SaleScenarioResult?
+  public let coalitionImmediateSale: SaleScenarioResult?
+  public let coalitionListedSale: SaleScenarioResult?
+  public let coalitionContractSale: SaleScenarioResult?
   public let totalJobSeconds: Int64
   public let makespanSeconds: Int64
   public let warnings: [DomainWarning]
@@ -844,13 +1188,24 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
     return total
   }
 
+  /// Returns the produced root item for one top-level request.
+  ///
+  /// Recursive plans are stored child-first, so the first matching node can be
+  /// a raw material or an intermediate. Item presentation and output costing
+  /// must use the produced node that is not referenced as another node's child.
+  public func topLevelProductNode(for requestID: UUID) -> PlanNode? {
+    let requestNodes = nodes.filter { $0.topLevelRequestID == requestID }
+    let referencedChildIDs = Set(requestNodes.flatMap(\.children))
+    return requestNodes.last {
+      $0.action == .produce && !referencedChildIDs.contains($0.id)
+    }
+  }
+
   public var plannedOutputUnits: Int64? {
     var total: Int64 = 0
     for request in requests {
       guard
-        let node = nodes.last(where: {
-          $0.topLevelRequestID == request.id && $0.action == .produce
-        }),
+        let node = topLevelProductNode(for: request.id),
         node.requiredQuantity > 0
       else { return nil }
       let addition = total.addingReportingOverflow(node.requiredQuantity)
@@ -861,7 +1216,7 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   }
 
   public var productionCostPerOutputUnit: Double? {
-    guard let totalCost = costBreakdown?.totalProductionCost,
+    guard let totalCost = costBreakdown?.productionCostBeforeLogistics,
       totalCost.isFinite,
       totalCost >= 0,
       let plannedOutputUnits
@@ -874,16 +1229,49 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
 public protocol IndustryCatalogQuerying: Sendable {
   func typeID(named name: String) async throws -> Int64?
   func typeName(id: Int64) async throws -> String?
+  func typeNames(ids: Set<Int64>) async throws -> [Int64: String]
   func productionDefinition(productTypeID: Int64) async throws
     -> BlueprintDefinition?
+  func blueprintScienceActivities(blueprintTypeID: Int64) async throws
+    -> [BlueprintScienceActivityDefinition]
+  func decryptorDefinitions() async throws -> [BlueprintDecryptorDefinition]
   func manufacturingDefinitions() async throws -> [BlueprintDefinition]
   func reactionDefinitions() async throws -> [BlueprintDefinition]
   func industryClassification(productTypeID: Int64) async throws
     -> IndustryItemClassification?
+  func industryClassifications(typeIDs: Set<Int64>) async throws
+    -> [Int64: IndustryItemClassification]
   func packagedVolume(typeID: Int64) async throws -> Double?
+  func packagedVolumes(typeIDs: Set<Int64>) async throws -> [Int64: Double]
+  func compressedOreOptions(producing materialTypeIDs: Set<Int64>) async throws
+    -> [CompressedOreOption]
 }
 
 extension IndustryCatalogQuerying {
+  public func decryptorDefinitions() async throws
+    -> [BlueprintDecryptorDefinition]
+  {
+    []
+  }
+
+  public func blueprintScienceActivities(blueprintTypeID: Int64) async throws
+    -> [BlueprintScienceActivityDefinition]
+  {
+    []
+  }
+
+  public func typeNames(ids: Set<Int64>) async throws -> [Int64: String] {
+    var result: [Int64: String] = [:]
+    result.reserveCapacity(ids.count)
+    for typeID in ids.sorted() {
+      try Task.checkCancellation()
+      if let name = try await typeName(id: typeID) {
+        result[typeID] = name
+      }
+    }
+    return result
+  }
+
   public func manufacturingDefinitions() async throws -> [BlueprintDefinition] {
     []
   }
@@ -898,7 +1286,43 @@ extension IndustryCatalogQuerying {
     nil
   }
 
+  public func industryClassifications(typeIDs: Set<Int64>) async throws
+    -> [Int64: IndustryItemClassification]
+  {
+    var result: [Int64: IndustryItemClassification] = [:]
+    result.reserveCapacity(typeIDs.count)
+    for typeID in typeIDs.sorted() {
+      try Task.checkCancellation()
+      if let classification = try await industryClassification(
+        productTypeID: typeID
+      ) {
+        result[typeID] = classification
+      }
+    }
+    return result
+  }
+
   public func packagedVolume(typeID: Int64) async throws -> Double? {
     nil
+  }
+
+  public func packagedVolumes(typeIDs: Set<Int64>) async throws
+    -> [Int64: Double]
+  {
+    var result: [Int64: Double] = [:]
+    result.reserveCapacity(typeIDs.count)
+    for typeID in typeIDs.sorted() {
+      try Task.checkCancellation()
+      if let volume = try await packagedVolume(typeID: typeID) {
+        result[typeID] = volume
+      }
+    }
+    return result
+  }
+
+  public func compressedOreOptions(
+    producing materialTypeIDs: Set<Int64>
+  ) async throws -> [CompressedOreOption] {
+    []
   }
 }

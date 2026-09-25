@@ -103,6 +103,7 @@ private enum SolarSystemSecurityOutcome: Sendable {
 public actor SolarSystemSearchService {
   public static let maximumConcurrentNameRequests = 4
   public static let maximumConcurrentSecurityRequests = 8
+  public static let maximumInteractiveSearchResults = 50
 
   private let esi: ESIClient
   private var cachedSystems: [SolarSystemOption]?
@@ -114,15 +115,24 @@ public actor SolarSystemSearchService {
     self.esi = esi
   }
 
-  public func search(query: String) async throws -> [SolarSystemOption] {
+  public func prepareSearchIndex() async throws -> Int {
+    try await allSystems().count
+  }
+
+  public func search(
+    query: String,
+    limit: Int? = nil
+  ) async throws -> [SolarSystemOption] {
     let acceptedQuery = query.trimmingCharacters(
       in: .whitespacesAndNewlines
     )
     guard acceptedQuery.count >= 3 else { return [] }
     let systems = try await allSystems()
-    return systems.filter {
+    let matches = systems.filter {
       $0.name.localizedCaseInsensitiveContains(acceptedQuery)
     }
+    guard let limit else { return matches }
+    return Array(matches.prefix(max(0, limit)))
   }
 
   public func securityStatuses(

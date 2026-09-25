@@ -7,6 +7,155 @@ import Testing
 @Suite("Public Contracts index")
 struct PublicContractTests {
   @Test
+  func contractReferenceUsesLowestComparableUnitPriceAtExactLocation() {
+    let now = Date(timeIntervalSince1970: 20_000)
+    let locationID: Int64 = 60_003_760
+    let snapshot = PublicContractReferenceSnapshot.project(
+      locationID: locationID,
+      locationName: "Jita IV - Moon 4",
+      offers: [
+        100: [
+          referenceOffer(
+            contractID: 1,
+            typeID: 100,
+            price: 200,
+            quantity: 1,
+            locationID: locationID,
+            now: now
+          ),
+          referenceOffer(
+            contractID: 2,
+            typeID: 100,
+            price: 300,
+            quantity: 2,
+            locationID: locationID,
+            now: now
+          ),
+          referenceOffer(
+            contractID: 3,
+            typeID: 100,
+            price: 1,
+            quantity: 1,
+            locationID: locationID,
+            offeredLineCount: 2,
+            now: now
+          ),
+          referenceOffer(
+            contractID: 4,
+            typeID: 100,
+            price: 1,
+            quantity: 1,
+            locationID: locationID,
+            requestedLineCount: 1,
+            now: now
+          ),
+          referenceOffer(
+            contractID: 5,
+            typeID: 100,
+            price: 1,
+            quantity: 1,
+            locationID: 99,
+            now: now
+          ),
+        ]
+      ],
+      progress: completeReferenceProgress(now: now),
+      limitPerType: 500,
+      capturedAt: now
+    )
+
+    #expect(snapshot.hasCompleteSearchCoverage)
+    #expect(snapshot.prices[100]?.contractID == 2)
+    #expect(snapshot.prices[100]?.totalContractPrice == 300)
+    #expect(snapshot.prices[100]?.contractQuantity == 2)
+    #expect(snapshot.prices[100]?.unitPrice == 150)
+  }
+
+  @Test
+  func universeWideReferenceUsesLowestComparableRegionAndSupportsFutureScope() {
+    let now = Date(timeIntervalSince1970: 20_500)
+    let offers: [Int64: [PublicContractSearchResult]] = [
+      100: [
+        referenceOffer(
+          contractID: 10,
+          typeID: 100,
+          price: 200,
+          quantity: 1,
+          locationID: 60_003_760,
+          regionID: 10_000_002,
+          now: now
+        ),
+        referenceOffer(
+          contractID: 11,
+          typeID: 100,
+          price: 100,
+          quantity: 1,
+          locationID: 60_002_999,
+          regionID: 10_000_043,
+          now: now
+        ),
+      ]
+    ]
+    let universe = PublicContractReferenceSnapshot.projectUniverseWide(
+      offers: offers,
+      progress: completeReferenceProgress(now: now),
+      limitPerType: 500,
+      capturedAt: now
+    )
+    let selected = PublicContractReferenceSnapshot.projectUniverseWide(
+      offers: offers,
+      progress: completeReferenceProgress(now: now),
+      limitPerType: 500,
+      allowedRegionIDs: [10_000_002],
+      capturedAt: now
+    )
+
+    #expect(universe.prices[100]?.contractID == 11)
+    #expect(universe.allowedRegionIDs == nil)
+    #expect(selected.prices[100]?.contractID == 10)
+    #expect(selected.allowedRegionIDs == [10_000_002])
+  }
+
+  @Test
+  func contractReferenceKeepsPartialOrTruncatedCoverageUnavailable() {
+    let now = Date(timeIntervalSince1970: 21_000)
+    let offer = referenceOffer(
+      contractID: 7,
+      typeID: 101,
+      price: 50,
+      quantity: 1,
+      locationID: 60_003_760,
+      now: now
+    )
+    let partial = PublicContractReferenceSnapshot.project(
+      locationID: 60_003_760,
+      locationName: "Jita IV - Moon 4",
+      offers: [101: [offer]],
+      progress: PublicContractSyncProgress(
+        phase: .partial,
+        regionCount: 2,
+        completedRegions: 1,
+        freshRegions: 1,
+        remainingInitialRegions: 1,
+        lastCompletedAt: now
+      ),
+      limitPerType: 500,
+      capturedAt: now
+    )
+    let truncated = PublicContractReferenceSnapshot.project(
+      locationID: 60_003_760,
+      locationName: "Jita IV - Moon 4",
+      offers: [101: [offer]],
+      progress: completeReferenceProgress(now: now),
+      limitPerType: 1,
+      capturedAt: now
+    )
+
+    #expect(!partial.hasCompleteSearchCoverage)
+    #expect(!truncated.hasCompleteSearchCoverage)
+  }
+
+  @Test
   func publicContractJSONPreservesMissingForCorporationAsUnknown() throws {
     let data = Data(
       #"[{"contract_id":233700434,"date_expired":"2026-08-03T15:41:25Z","date_issued":"2026-07-06T15:41:25Z","issuer_corporation_id":98120737,"issuer_id":93138851,"type":"item_exchange"}]"#
@@ -19,6 +168,92 @@ struct PublicContractTests {
 
     #expect(contracts.count == 1)
     #expect(contracts.first?.forCorporation == nil)
+  }
+
+  @Test
+  func publicContractItemJSONPreservesBlueprintRunsMEAndTE() throws {
+    let data = Data(
+      #"[{"is_blueprint_copy":true,"is_included":true,"material_efficiency":8,"quantity":1,"record_id":7,"runs":25,"time_efficiency":16,"type_id":9001}]"#
+        .utf8
+    )
+
+    let items = try JSONDecoder().decode(
+      [ESIPublicContractItemDTO].self,
+      from: data
+    )
+
+    #expect(items.first?.isBlueprintCopy == true)
+    #expect(items.first?.runs == 25)
+    #expect(items.first?.materialEfficiency == 8)
+    #expect(items.first?.timeEfficiency == 16)
+  }
+
+  @Test
+  func attributableBlueprintOfferRejectsBundlesAndPreservesKnownCopyCost()
+    async throws
+  {
+    let fixture = try ContractStoreFixture()
+    let now = Date(timeIntervalSince1970: 5_000)
+    try await fixture.store.upsertRegions([(10_000_002, "The Forge")])
+    try await fixture.store.recordRegionSuccess(
+      regionID: 10_000_002,
+      contracts: [contract(id: 70, now: now), contract(id: 71, now: now)],
+      fetchedAt: now,
+      nextAllowedAt: now.addingTimeInterval(1_800)
+    )
+    let blueprint = metadata(
+      typeID: 9_001,
+      name: "Fixture Blueprint",
+      groupID: 9,
+      group: "Blueprint",
+      categoryID: 9,
+      category: "Blueprint"
+    )
+    try await fixture.store.storeItems(
+      contractID: 70,
+      items: [
+        item(
+          recordID: 700,
+          typeID: 9_001,
+          isBlueprintCopy: true,
+          materialEfficiency: 8,
+          runs: 25,
+          timeEfficiency: 16
+        )
+      ],
+      metadata: [9_001: blueprint],
+      fetchedAt: now
+    )
+    try await fixture.store.storeItems(
+      contractID: 71,
+      items: [
+        item(
+          recordID: 710,
+          typeID: 9_001,
+          isBlueprintCopy: true,
+          materialEfficiency: 10,
+          runs: 50,
+          timeEfficiency: 20
+        ),
+        item(recordID: 711, typeID: 34, included: false),
+      ],
+      metadata: [9_001: blueprint],
+      fetchedAt: now
+    )
+
+    let offers =
+      try await fixture.store.includedOffers(
+        typeIDs: [9_001],
+        now: now
+      )[9_001] ?? []
+    let single = try #require(offers.first { $0.contractID == 70 })
+    let bundle = try #require(offers.first { $0.contractID == 71 })
+    #expect(single.isAttributableBlueprintOffer)
+    #expect(single.effectiveContractPrice == 1_000_000)
+    #expect(single.runs == 25)
+    #expect(!bundle.isAttributableBlueprintOffer)
+    #expect(bundle.requestedLineCount == 1)
+    await fixture.cleanup()
   }
 
   @Test
@@ -114,6 +349,7 @@ struct PublicContractTests {
     #expect(first.indexedItems == 1)
     #expect(await remote.contractRequestCount == 1)
     #expect(await remote.itemRequestCount == 1)
+    #expect(await remote.contractCacheReleaseCount == 1)
     #expect(await remote.requestedLocationIDs == [60_003_760])
     let indexed = try await indexer.search(
       PublicContractSearchFilter(itemQuery: "Ark")
@@ -126,6 +362,60 @@ struct PublicContractTests {
     #expect(second.phase == .completed)
     #expect(await remote.contractRequestCount == 1)
     #expect(await remote.itemRequestCount == 1)
+    #expect(await remote.contractCacheReleaseCount == 1)
+    await fixture.cleanup()
+  }
+
+  @Test
+  func revalidatedRegionAdvancesFreshnessWithoutRewritingActivatedContracts()
+    async throws
+  {
+    let fixture = try ContractStoreFixture()
+    let now = Date(timeIntervalSince1970: 2_250)
+    try await fixture.store.upsertRegions([(10_000_002, "The Forge")])
+    try await fixture.store.recordRegionSuccess(
+      regionID: 10_000_002,
+      contracts: [contract(id: 42, now: now, title: "Activated title")],
+      fetchedAt: now.addingTimeInterval(-3_600),
+      nextAllowedAt: now
+    )
+    try await fixture.store.storeItems(
+      contractID: 42,
+      items: [item(recordID: 1, typeID: 28_372)],
+      metadata: [
+        28_372: metadata(
+          typeID: 28_372,
+          name: "Ark",
+          groupID: 902,
+          group: "Jump Freighter",
+          categoryID: 6,
+          category: "Ship"
+        )
+      ],
+      fetchedAt: now.addingTimeInterval(-3_600)
+    )
+    let remote = ContractRemoteFixture(
+      now: now,
+      contractStatusCode: 304,
+      contractTitle: "Unactivated 304 payload"
+    )
+    let indexer = PublicContractIndexer(
+      remote: remote,
+      catalog: ContractCatalogFixture(),
+      store: fixture.store,
+      now: { now },
+      sleep: { _ in }
+    )
+
+    let result = try await indexer.synchronizeAll { _ in }
+    let rows = try await fixture.store.search(
+      PublicContractSearchFilter(itemQuery: "Ark"),
+      now: now
+    )
+
+    #expect(result.phase == .completed)
+    #expect(rows.first?.title == "Activated title")
+    #expect(await remote.itemRequestCount == 0)
     await fixture.cleanup()
   }
 
@@ -423,7 +713,7 @@ struct PublicContractTests {
     )
     let databaseURL = root.appendingPathComponent("contracts.sqlite")
     try makeLegacyContractDatabase(at: databaseURL)
-    let store = try PublicContractStore(url: databaseURL)
+    let store = try await PublicContractStore.open(url: databaseURL)
     let now = Date(timeIntervalSince1970: 10_000)
 
     let preserved = try await store.search(
@@ -450,6 +740,70 @@ struct PublicContractTests {
     #expect(progress.indexedContracts == 1)
     #expect(progress.indexedItems == 1)
     await store.close()
+    try? FileManager.default.removeItem(at: root)
+  }
+
+  @Test
+  func blueprintDetailMigrationDoesNotQueueEveryExistingBlueprintContract()
+    async throws
+  {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-public-contracts-blueprint-details-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: true
+    )
+    let databaseURL = root.appendingPathComponent("contracts.sqlite")
+    try makeLegacyContractDatabase(at: databaseURL, containsBlueprint: true)
+    let store = try await PublicContractStore.open(url: databaseURL)
+    let now = Date(timeIntervalSince1970: 10_000)
+
+    let pending = try await store.pendingContractIDs(now: now)
+    let preserved = try await store.search(
+      PublicContractSearchFilter(itemQuery: "Ark Blueprint"),
+      now: now
+    )
+
+    #expect(pending.isEmpty)
+    #expect(preserved.count == 1)
+    #expect(preserved.first?.runs == nil)
+    #expect(preserved.first?.materialEfficiency == nil)
+    #expect(preserved.first?.timeEfficiency == nil)
+    await store.close()
+    try? FileManager.default.removeItem(at: root)
+  }
+
+  @Test
+  func unboundedBlueprintBackfillRollbackPreservesRowsAndFailedWork()
+    async throws
+  {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-public-contracts-blueprint-rollback-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: true
+    )
+    let databaseURL = root.appendingPathComponent("contracts.sqlite")
+    try makeLegacyContractDatabase(at: databaseURL, containsBlueprint: true)
+    let initialStore = try await PublicContractStore.open(url: databaseURL)
+    await initialStore.close()
+    try markLegacyBlueprintBackfillPending(at: databaseURL)
+
+    let repairedStore = try await PublicContractStore.open(url: databaseURL)
+    let now = Date(timeIntervalSince1970: 10_000)
+    let pending = try await repairedStore.pendingContractIDs(now: now)
+    let preserved = try await repairedStore.search(
+      PublicContractSearchFilter(itemQuery: "Ark Blueprint"),
+      now: now
+    )
+
+    #expect(pending == [43])
+    #expect(preserved.map(\.contractID) == [42, 43])
+    await repairedStore.close()
     try? FileManager.default.removeItem(at: root)
   }
 
@@ -695,6 +1049,63 @@ struct PublicContractTests {
     )
   }
 
+  @Test
+  func bulkRegionPersistenceKeepsEveryContractAndReportsItsDuration()
+    async throws
+  {
+    let fixture = try ContractStoreFixture()
+    let now = Date(timeIntervalSince1970: 9_000)
+    let contracts = (1...10_000).map {
+      contract(id: Int64($0), now: now)
+    }
+    try await fixture.store.upsertRegions([(10_000_002, "The Forge")])
+    let clock = ContinuousClock()
+
+    let elapsed = try await clock.measure {
+      try await fixture.store.recordRegionSuccess(
+        regionID: 10_000_002,
+        contracts: contracts,
+        fetchedAt: now,
+        nextAllowedAt: now.addingTimeInterval(1_800)
+      )
+    }
+
+    let progress = try await fixture.store.progress()
+    #expect(progress.activeContracts == contracts.count)
+    print("public-contract-bulk-upsert count=10000 duration=\(elapsed)")
+    await fixture.cleanup()
+  }
+
+  @Test
+  func unchangedSuccessfulRegionDoesNotRewriteExistingContractRows()
+    async throws
+  {
+    let fixture = try ContractStoreFixture()
+    let observedAt = Date(timeIntervalSince1970: 9_500)
+    let unchanged = contract(id: 42, now: observedAt)
+    try await fixture.store.upsertRegions([(10_000_002, "The Forge")])
+    try await fixture.store.recordRegionSuccess(
+      regionID: 10_000_002,
+      contracts: [unchanged],
+      fetchedAt: observedAt,
+      nextAllowedAt: observedAt.addingTimeInterval(1_800)
+    )
+
+    try await fixture.store.recordRegionSuccess(
+      regionID: 10_000_002,
+      contracts: [unchanged],
+      fetchedAt: observedAt.addingTimeInterval(60),
+      nextAllowedAt: observedAt.addingTimeInterval(1_860)
+    )
+    await fixture.store.close()
+
+    #expect(
+      try contractObservedAt(at: fixture.databaseURL, contractID: 42)
+        == observedAt.timeIntervalSince1970
+    )
+    fixture.removeFiles()
+  }
+
   private func contract(
     id: Int64,
     now: Date,
@@ -720,12 +1131,20 @@ struct PublicContractTests {
   private func item(
     recordID: Int64,
     typeID: Int64,
-    included: Bool = true
+    included: Bool = true,
+    isBlueprintCopy: Bool? = nil,
+    materialEfficiency: Int? = nil,
+    runs: Int? = nil,
+    timeEfficiency: Int? = nil
   ) -> ESIPublicContractItemDTO {
     ESIPublicContractItemDTO(
+      isBlueprintCopy: isBlueprintCopy,
       isIncluded: included,
+      materialEfficiency: materialEfficiency,
       quantity: 1,
       recordID: recordID,
+      runs: runs,
+      timeEfficiency: timeEfficiency,
       typeID: typeID
     )
   }
@@ -747,14 +1166,65 @@ struct PublicContractTests {
       categoryName: category
     )
   }
+
+  private func referenceOffer(
+    contractID: Int64,
+    typeID: Int64,
+    price: Double,
+    quantity: Int64,
+    locationID: Int64,
+    regionID: Int64 = EVEConstants.theForgeRegionID,
+    offeredLineCount: Int = 1,
+    requestedLineCount: Int = 0,
+    now: Date
+  ) -> PublicContractSearchResult {
+    PublicContractSearchResult(
+      contractID: contractID,
+      recordID: contractID * 10,
+      regionID: regionID,
+      regionName: "The Forge",
+      contractType: "item_exchange",
+      price: price,
+      dateIssued: now,
+      dateExpired: now.addingTimeInterval(86_400),
+      startLocationID: locationID,
+      startLocationName: "Fixture Location",
+      typeID: typeID,
+      typeName: "Fixture Product",
+      isIncluded: true,
+      quantity: quantity,
+      offeredLineCount: offeredLineCount,
+      requestedLineCount: requestedLineCount
+    )
+  }
+
+  private func completeReferenceProgress(
+    now: Date
+  ) -> PublicContractSyncProgress {
+    PublicContractSyncProgress(
+      phase: .completed,
+      regionCount: 2,
+      completedRegions: 2,
+      freshRegions: 2,
+      remainingInitialRegions: 0,
+      lastCompletedAt: now
+    )
+  }
 }
 
-private func makeLegacyContractDatabase(at url: URL) throws {
+private func makeLegacyContractDatabase(
+  at url: URL,
+  containsBlueprint: Bool = false
+) throws {
   var database: OpaquePointer?
   guard sqlite3_open(url.path, &database) == SQLITE_OK else {
     throw NSError(domain: "PublicContractTests", code: 1)
   }
   defer { sqlite3_close(database) }
+  let itemValues =
+    containsBlueprint
+    ? "42, 1, 28372, 'Ark Blueprint', 902, 'Jump Freighter Blueprint', 9, 'Blueprint', 1, 1, 1"
+    : "42, 1, 28372, 'Ark', 902, 'Jump Freighter', 6, 'Ship', 1, 1, NULL"
   let sql = """
     PRAGMA foreign_keys=ON;
     CREATE TABLE regions(
@@ -820,9 +1290,9 @@ private func makeLegacyContractDatabase(at url: URL) throws {
     );
     INSERT INTO contract_items(
       contract_id, record_id, type_id, type_name, group_id, group_name,
-      category_id, category_name, is_included, quantity
+      category_id, category_name, is_included, quantity, is_blueprint_copy
     ) VALUES(
-      42, 1, 28372, 'Ark', 902, 'Jump Freighter', 6, 'Ship', 1, 1
+      \(itemValues)
     );
     """
   var errorPointer: UnsafeMutablePointer<CChar>?
@@ -832,6 +1302,78 @@ private func makeLegacyContractDatabase(at url: URL) throws {
     throw NSError(
       domain: "PublicContractTests",
       code: 2,
+      userInfo: [NSLocalizedDescriptionKey: message]
+    )
+  }
+}
+
+private func contractObservedAt(at url: URL, contractID: Int64) throws
+  -> Double?
+{
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK
+  else {
+    throw NSError(domain: "PublicContractTests", code: 5)
+  }
+  defer { sqlite3_close(database) }
+  var statement: OpaquePointer?
+  guard
+    sqlite3_prepare_v2(
+      database,
+      "SELECT observed_at FROM contracts WHERE contract_id=?",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+  else {
+    throw NSError(domain: "PublicContractTests", code: 6)
+  }
+  defer { sqlite3_finalize(statement) }
+  sqlite3_bind_int64(statement, 1, contractID)
+  guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+  return sqlite3_column_double(statement, 0)
+}
+
+private func markLegacyBlueprintBackfillPending(at url: URL) throws {
+  var database: OpaquePointer?
+  guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+    throw NSError(domain: "PublicContractTests", code: 3)
+  }
+  defer { sqlite3_close(database) }
+  let sql = """
+    INSERT INTO contracts(
+      contract_id, region_id, issuer_id, issuer_corporation_id,
+      for_corporation, contract_type, price, date_issued, date_expired,
+      observed_at, item_status, item_fetched_at, item_error
+    ) SELECT
+      43, region_id, issuer_id, issuer_corporation_id,
+      for_corporation, contract_type, price, date_issued, date_expired,
+      observed_at, 'pending', item_fetched_at, 'temporary'
+    FROM contracts WHERE contract_id=42;
+    INSERT INTO contract_items(
+      contract_id, record_id, type_id, type_name, group_id, group_name,
+      category_id, category_name, is_included, quantity, item_id,
+      raw_quantity, is_blueprint_copy, material_efficiency,
+      time_efficiency, runs
+    ) SELECT
+      43, 2, type_id, type_name, group_id, group_name,
+      category_id, category_name, is_included, quantity, item_id,
+      raw_quantity, is_blueprint_copy, material_efficiency,
+      time_efficiency, runs
+    FROM contract_items WHERE contract_id=42;
+    UPDATE contracts
+    SET item_status='pending', item_error=NULL
+    WHERE contract_id=42;
+    INSERT INTO contract_settings(key, value)
+    VALUES('blueprint_item_details_backfill_v1', 'complete');
+    """
+  var errorPointer: UnsafeMutablePointer<CChar>?
+  guard sqlite3_exec(database, sql, nil, nil, &errorPointer) == SQLITE_OK else {
+    let message = errorPointer.map { String(cString: $0) } ?? "backfill fixture"
+    sqlite3_free(errorPointer)
+    throw NSError(
+      domain: "PublicContractTests",
+      code: 4,
       userInfo: [NSLocalizedDescriptionKey: message]
     )
   }
@@ -869,11 +1411,14 @@ private actor ContractRemoteFixture: PublicContractRemoteFetching {
   private let itemPageCount: Int
   private let regionIDsValue: [Int64]
   private let contractIDs: [Int64]
+  private let contractStatusCode: Int
+  private let contractTitle: String?
   private let itemResponseDelay: Duration?
   private(set) var contractRequestCount = 0
   private(set) var itemRequestCount = 0
   private(set) var concurrentItemRequests = 0
   private(set) var maximumConcurrentItemRequests = 0
+  private(set) var contractCacheReleaseCount = 0
   private(set) var itemCacheReleaseCount = 0
   private(set) var requestedLocationIDs: Set<Int64> = []
 
@@ -885,6 +1430,8 @@ private actor ContractRemoteFixture: PublicContractRemoteFetching {
     itemPageCount: Int = 1,
     regionIDs: [Int64] = [10_000_002],
     contractIDs: [Int64] = [42],
+    contractStatusCode: Int = 200,
+    contractTitle: String? = nil,
     itemResponseDelay: Duration? = nil
   ) {
     self.now = now
@@ -894,6 +1441,8 @@ private actor ContractRemoteFixture: PublicContractRemoteFetching {
     self.itemPageCount = itemPageCount
     self.regionIDsValue = regionIDs
     self.contractIDs = contractIDs
+    self.contractStatusCode = contractStatusCode
+    self.contractTitle = contractTitle
     self.itemResponseDelay = itemResponseDelay
   }
 
@@ -940,11 +1489,13 @@ private actor ContractRemoteFixture: PublicContractRemoteFetching {
           issuerID: 100,
           price: 1_000_000,
           startLocationID: 60_003_760,
+          title: contractTitle,
           type: "item_exchange"
         )
       },
       expiresAt: now.addingTimeInterval(1_800),
-      pages: 1
+      pages: 1,
+      statusCode: contractStatusCode
     )
   }
 
@@ -980,15 +1531,20 @@ private actor ContractRemoteFixture: PublicContractRemoteFetching {
     itemCacheReleaseCount += 1
   }
 
+  func releaseCachedContractResponses(regionID: Int64?) async {
+    contractCacheReleaseCount += 1
+  }
+
   private func response<Value: Sendable>(
     _ value: Value,
     expiresAt: Date?,
-    pages: Int? = nil
+    pages: Int? = nil,
+    statusCode: Int = 200
   ) -> ESIResponse<Value> {
     ESIResponse(
       value: value,
       source: source,
-      statusCode: 200,
+      statusCode: statusCode,
       expiresAt: expiresAt,
       lastModified: "fixture",
       pages: pages,

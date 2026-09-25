@@ -8,6 +8,8 @@ struct PublicContractsView: View {
   @State private var selectedCategoryID: Int64?
   @State private var selectedGroupID: Int64?
   @State private var direction: PublicContractItemDirection = .included
+  @State private var explicitSearchSequence = 0
+  @State private var pendingExplicitSearchIdentity: SearchIdentity?
   @AppStorage("contracts.disclosure.esi-safe", store: AppDefaults.store)
   private var isSyncStatusExpanded = false
 
@@ -22,7 +24,7 @@ struct PublicContractsView: View {
         .foregroundStyle(DesignTokens.caution)
       }
       syncStatus
-      if isInitialImport {
+      if runtime.publicContractStoreState == .ready, isInitialImport {
         firstImportNotice
       }
       filters
@@ -36,18 +38,27 @@ struct PublicContractsView: View {
     .task {
       await runtime.loadPublicContractBrowser()
     }
-    .task(id: searchIdentity) {
-      do {
-        try await Task.sleep(for: .milliseconds(250))
-      } catch {
-        return
+    .task(id: searchTaskIdentity) {
+      let request = searchIdentity
+      let isExplicitSubmission = pendingExplicitSearchIdentity == request
+      if isExplicitSubmission {
+        pendingExplicitSearchIdentity = nil
       }
-      await search()
+      if let delay = PublicContractSearchPolicy.delay(
+        isExplicitSubmission: isExplicitSubmission
+      ) {
+        do {
+          try await Task.sleep(for: delay)
+        } catch {
+          return
+        }
+      }
+      await search(request)
     }
-    .task(id: runtime.publicContractProgress.indexedItems / 250) {
-      guard runtime.isSynchronizingPublicContracts else { return }
-      await runtime.refreshPublicContractFacets()
-      await search()
+    .onChange(of: runtime.isSynchronizingPublicContracts) { wasRunning, isRunning in
+      guard wasRunning, !isRunning else { return }
+      let request = searchIdentity
+      Task { await search(request) }
     }
     .onChange(of: selectedCategoryID) { _, categoryID in
       if let selectedGroupID,
@@ -73,7 +84,24 @@ struct PublicContractsView: View {
         .foregroundStyle(DesignTokens.textSecondary)
       }
       Spacer(minLength: DesignTokens.spacingMD)
-      if runtime.isSynchronizingPublicContracts {
+      if runtime.publicContractStoreState == .preparing {
+        HStack(spacing: DesignTokens.spacingSM) {
+          ProgressView().controlSize(.small)
+          Text("Preparing local Public Contracts database")
+            .font(.callout)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("public-contracts.store-preparing")
+      } else if runtime.publicContractStoreState == .failed {
+        Button {
+          runtime.retryPublicContractStorePreparation()
+        } label: {
+          Label("Retry local index", systemImage: "arrow.clockwise")
+        }
+        .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("public-contracts.store-retry")
+      } else if runtime.isSynchronizingPublicContracts {
         Button(role: .cancel) {
           runtime.cancelPublicContractSynchronization()
         } label: {
@@ -220,7 +248,7 @@ struct PublicContractsView: View {
         .font(.title2.weight(.bold))
         .accessibilityHidden(true)
       Text(
-        "Important: The first import of all contracts that are still active at that time can take two to three days. It continues in the background while the app is running and resumes after the next app launch. During this time, the app is significantly slower and can only be used to a limited extent. Import performance will continue to be optimized."
+        "Important: The first import of all contracts that are still active at that time can take two to three days. It continues in the background while the app is running and resumes after the next app launch. You can leave this section at any time and control the import from the navigation sidebar. During this time, the app can be slower. Import performance will continue to be optimized."
       )
       .font(.headline.weight(.bold))
       .fixedSize(horizontal: false, vertical: true)
@@ -252,6 +280,10 @@ struct PublicContractsView: View {
         ) {
           TextField("Item name (3+ characters), e.g. Ark", text: $itemQuery)
             .textFieldStyle(.roundedBorder)
+            .onSubmit {
+              pendingExplicitSearchIdentity = searchIdentity
+              explicitSearchSequence &+= 1
+            }
           Picker("Category", selection: $selectedCategoryID) {
             Text("All categories").tag(Int64?.none)
             ForEach(runtime.publicContractCategories) { category in
@@ -279,8 +311,14 @@ struct PublicContractsView: View {
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
+        Text(
+          "The search starts after a short typing pause. Press Return to search immediately."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
       }
     }
+    .disabled(runtime.publicContractStoreState != .ready)
   }
 
   @ViewBuilder private var results: some View {
@@ -335,8 +373,11 @@ struct PublicContractsView: View {
   private func resultRow(_ result: PublicContractSearchResult) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
-        EVEEntityText(value: result.typeName ?? "Unknown item".localizedUI)
-          .lineLimit(2)
+        EVEItemText(
+          value: result.typeName ?? "Unknown item".localizedUI,
+          typeID: result.typeID
+        )
+        .lineLimit(2)
         Text(result.isIncluded ? "Offered" : "Requested")
           .font(.caption.bold())
           .padding(.horizontal, DesignTokens.spacingSM)
@@ -365,6 +406,32 @@ struct PublicContractsView: View {
         Text(verbatim: title)
           .font(.callout)
           .textSelection(.enabled)
+      }
+      if result.isBlueprintCopy != nil || result.runs != nil {
+        HStack(spacing: DesignTokens.spacingSM) {
+          Text(
+            result.runs == -1
+              ? "BPO"
+              : result.isBlueprintCopy == true ? "BPC" : "Blueprint unresolved"
+          )
+          if let runs = result.runs, runs >= 0 {
+            Text(AppLocalization.format("%@ runs", runs.formatted()))
+          }
+          if let me = result.materialEfficiency {
+            Text(verbatim: "ME \(me)")
+          }
+          if let te = result.timeEfficiency {
+            Text(verbatim: "TE \(te)")
+          }
+          if result.isAttributableBlueprintOffer {
+            Label("Cost attributable", systemImage: "checkmark.seal.fill")
+              .foregroundStyle(DesignTokens.positive)
+          } else {
+            Label("Bundle or incomplete", systemImage: "questionmark.diamond")
+              .foregroundStyle(DesignTokens.caution)
+          }
+        }
+        .font(.caption.monospacedDigit())
       }
     }
     .padding(DesignTokens.spacingMD)
@@ -419,13 +486,20 @@ struct PublicContractsView: View {
     )
   }
 
-  private func search() async {
+  private var searchTaskIdentity: SearchTaskIdentity {
+    SearchTaskIdentity(
+      request: searchIdentity,
+      explicitSearchSequence: explicitSearchSequence
+    )
+  }
+
+  private func search(_ request: SearchIdentity) async {
     await runtime.searchPublicContracts(
       PublicContractSearchFilter(
-        itemQuery: itemQuery,
-        groupID: selectedGroupID,
-        categoryID: selectedCategoryID,
-        direction: direction
+        itemQuery: request.query,
+        groupID: request.groupID,
+        categoryID: request.categoryID,
+        direction: request.direction
       )
     )
   }
@@ -463,6 +537,16 @@ struct PublicContractsView: View {
   }
 
   private var statusLabel: String {
+    switch runtime.publicContractStoreState {
+    case .preparing:
+      return "Preparing local Public Contracts database".localizedUI
+    case .failed:
+      return "Local Public Contracts database unavailable".localizedUI
+    case .disabled:
+      return "Public Contracts background services are disabled".localizedUI
+    case .ready:
+      break
+    }
     if runtime.publicContractProgress.failedRegions > 0,
       runtime.publicContractProgress.phase == .idle
     {
@@ -486,6 +570,12 @@ struct PublicContractsView: View {
   }
 
   private var statusIcon: String {
+    switch runtime.publicContractStoreState {
+    case .preparing: return "hourglass"
+    case .failed: return "externaldrive.badge.xmark"
+    case .disabled: return "pause.circle"
+    case .ready: break
+    }
     if runtime.publicContractProgress.failedRegions > 0,
       runtime.publicContractProgress.phase == .idle
     {
@@ -500,6 +590,11 @@ struct PublicContractsView: View {
   }
 
   private var statusColor: Color {
+    switch runtime.publicContractStoreState {
+    case .preparing, .disabled: return DesignTokens.textSecondary
+    case .failed: return DesignTokens.negative
+    case .ready: break
+    }
     if runtime.publicContractProgress.failedRegions > 0,
       runtime.publicContractProgress.phase == .idle
     {
@@ -627,4 +722,17 @@ private struct SearchIdentity: Hashable {
   let categoryID: Int64?
   let groupID: Int64?
   let direction: PublicContractItemDirection
+}
+
+private struct SearchTaskIdentity: Hashable {
+  let request: SearchIdentity
+  let explicitSearchSequence: Int
+}
+
+enum PublicContractSearchPolicy {
+  static let typingPause: Duration = .milliseconds(700)
+
+  static func delay(isExplicitSubmission: Bool) -> Duration? {
+    isExplicitSubmission ? nil : typingPause
+  }
 }

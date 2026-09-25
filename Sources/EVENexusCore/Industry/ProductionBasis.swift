@@ -28,15 +28,21 @@ public struct IndustryItemClassification: Codable, Equatable, Sendable {
   public let categoryName: String
   public let groupName: String
   public let manufacturingCategory: ManufacturingCategory
+  public let metaGroupID: Int64?
+  public let techLevel: Int?
 
   public init(
     categoryName: String,
     groupName: String,
-    manufacturingCategory: ManufacturingCategory
+    manufacturingCategory: ManufacturingCategory,
+    metaGroupID: Int64? = nil,
+    techLevel: Int? = nil
   ) {
     self.categoryName = categoryName
     self.groupName = groupName
     self.manufacturingCategory = manufacturingCategory
+    self.metaGroupID = metaGroupID
+    self.techLevel = techLevel
   }
 }
 
@@ -338,6 +344,14 @@ public enum IndustryStructureKind: String, Codable, CaseIterable, Identifiable,
     default: 0
     }
   }
+
+  public var defaultReprocessingEfficiencyBonusPercent: Double {
+    switch self {
+    case .athanor: 2
+    case .tatara: 5.5
+    default: 0
+    }
+  }
 }
 
 public enum IndustryRigKind: String, Codable, CaseIterable, Identifiable,
@@ -459,6 +473,9 @@ public struct IndustryRigConfiguration: Identifiable, Codable, Equatable,
   public var baseJobCostBonusPercent: Double?
   public var lowSecurityMultiplier: Double?
   public var nullSecurityMultiplier: Double?
+  public var normalOreYieldMultiplier: Double?
+  public var moonOreYieldMultiplier: Double?
+  public var iceYieldMultiplier: Double?
 
   public init(
     id: UUID = UUID(),
@@ -489,6 +506,9 @@ public struct IndustryRigConfiguration: Identifiable, Codable, Equatable,
     self.baseJobCostBonusPercent = nil
     self.lowSecurityMultiplier = nil
     self.nullSecurityMultiplier = nil
+    self.normalOreYieldMultiplier = nil
+    self.moonOreYieldMultiplier = nil
+    self.iceYieldMultiplier = nil
   }
 
   public init(
@@ -512,6 +532,9 @@ public struct IndustryRigConfiguration: Identifiable, Codable, Equatable,
     self.baseJobCostBonusPercent = definition.jobCostBonusPercent
     self.lowSecurityMultiplier = definition.lowSecurityMultiplier
     self.nullSecurityMultiplier = definition.nullSecurityMultiplier
+    self.normalOreYieldMultiplier = definition.normalOreYieldMultiplier
+    self.moonOreYieldMultiplier = definition.moonOreYieldMultiplier
+    self.iceYieldMultiplier = definition.iceYieldMultiplier
   }
 
   public func supports(_ category: ManufacturingCategory) -> Bool {
@@ -549,6 +572,25 @@ public struct IndustryRigConfiguration: Identifiable, Codable, Equatable,
       return jobCostBonusPercent ?? 0
     }
     return baseJobCostBonusPercent * securityMultiplier(in: band)
+  }
+
+  public func reprocessingYieldMultiplier(
+    for kind: ReprocessableMaterialKind,
+    in band: SecurityBand
+  ) -> Double? {
+    let base: Double?
+    switch kind {
+    case .asteroidOre:
+      base = normalOreYieldMultiplier
+    case .moonOre:
+      base = moonOreYieldMultiplier
+    case .ice:
+      base = iceYieldMultiplier
+    case .gas, .unknown:
+      base = nil
+    }
+    guard let base, base.isFinite, base > 0 else { return nil }
+    return base * securityMultiplier(in: band)
   }
 
   private func securityMultiplier(in band: SecurityBand) -> Double {
@@ -645,6 +687,54 @@ public enum IndustryStructureActivityAssignmentMode: String, Codable,
   }
 }
 
+public enum ReprocessingReadinessIssue: String, CaseIterable, Equatable,
+  Sendable
+{
+  case missingService
+  case missingOreYield
+  case unconfirmedTax
+}
+
+public enum ReprocessingYieldSourceKind: String, Equatable, Sendable {
+  case serviceModule
+  case rig
+}
+
+public struct ReprocessingYieldBasis: Equatable, Sendable {
+  public let sourceKind: ReprocessingYieldSourceKind
+  public let sourceName: String
+  public let sourceTypeID: Int64?
+  /// Equipment yield after the security-space multiplier, before the
+  /// structure hull bonus and character multipliers.
+  public let equipmentYieldMultiplier: Double
+  public let structureBonusPercent: Double
+  /// Facility-only result before character skills and a planned implant.
+  public let effectiveYieldMultiplier: Double
+
+  public init(
+    sourceKind: ReprocessingYieldSourceKind,
+    sourceName: String,
+    sourceTypeID: Int64?,
+    equipmentYieldMultiplier: Double,
+    structureBonusPercent: Double,
+    effectiveYieldMultiplier: Double
+  ) {
+    self.sourceKind = sourceKind
+    self.sourceName = sourceName
+    self.sourceTypeID = sourceTypeID
+    self.equipmentYieldMultiplier = equipmentYieldMultiplier
+    self.structureBonusPercent = structureBonusPercent
+    self.effectiveYieldMultiplier = effectiveYieldMultiplier
+  }
+}
+
+private struct ReprocessingYieldCandidate {
+  let sourceKind: ReprocessingYieldSourceKind
+  let sourceName: String
+  let sourceTypeID: Int64?
+  let multiplier: Double
+}
+
 public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   Sendable
 {
@@ -656,6 +746,14 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   public var solarSystemName: String
   public var securityBand: SecurityBand
   public var facilityTaxRate: Double
+  /// Owner-configured Reprocessing tax. `nil` means unknown, while an
+  /// explicitly entered zero is a confirmed fee-free facility.
+  public var reprocessingTaxRate: Double?
+  /// When absent, the Planner chooses the best connected character per ore.
+  public var reprocessingCharacterID: Int64?
+  /// Optional per-character choices keep older production profiles decodable.
+  /// A missing entry means that no Reprocessing implant is assumed.
+  public var reprocessingImplantsByCharacterID: [Int64: OreRefiningImplant]?
   public var rigs: [IndustryRigConfiguration]
   public var serviceModules: [IndustryServiceModuleConfiguration]?
   /// Optional storage keeps profiles written before activity assignment modes
@@ -664,6 +762,9 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   public var manuallyEnabledActivities: Set<IndustryActivitySystem>?
   public var structureMaterialBonusPercent: Double
   public var structureTimeBonusPercent: Double
+  /// SDE-backed Upwell structure bonus. Optional storage keeps older saved
+  /// profiles decodable; known structure kinds provide the current fallback.
+  public var reprocessingEfficiencyBonusPercent: Double?
   public var jobCostMultiplier: Double
   public var source: IndustryModifierSource
   public var structureID: Int64?
@@ -686,6 +787,9 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     securityStatus: Double? = nil,
     regionID: Int64? = nil,
     facilityTaxRate: Double = 0,
+    reprocessingTaxRate: Double? = nil,
+    reprocessingCharacterID: Int64? = nil,
+    reprocessingImplantsByCharacterID: [Int64: OreRefiningImplant]? = nil,
     rigs: [IndustryRigConfiguration] = [],
     serviceModules: [IndustryServiceModuleConfiguration]? = nil,
     activityAssignmentMode: IndustryStructureActivityAssignmentMode =
@@ -693,6 +797,7 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     manuallyEnabledActivities: Set<IndustryActivitySystem>? = nil,
     structureMaterialBonusPercent: Double? = nil,
     structureTimeBonusPercent: Double? = nil,
+    reprocessingEfficiencyBonusPercent: Double? = nil,
     jobCostMultiplier: Double = 1,
     source: IndustryModifierSource? = nil
   ) {
@@ -710,6 +815,10 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
         regionID: regionID
       )
     self.facilityTaxRate = facilityTaxRate
+    self.reprocessingTaxRate = Self.acceptedRate(reprocessingTaxRate)
+    self.reprocessingCharacterID = reprocessingCharacterID
+    self.reprocessingImplantsByCharacterID =
+      reprocessingImplantsByCharacterID
     self.rigs = rigs
     self.serviceModules = serviceModules
     self.activityAssignmentMode = activityAssignmentMode
@@ -720,6 +829,9 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     self.structureTimeBonusPercent =
       structureTimeBonusPercent
       ?? kind.defaultManufacturingTimeBonusPercent
+    self.reprocessingEfficiencyBonusPercent =
+      reprocessingEfficiencyBonusPercent
+      ?? kind.defaultReprocessingEfficiencyBonusPercent
     self.jobCostMultiplier = jobCostMultiplier
     self.source = source ?? (kind == .custom ? .manual : .ravworksReference)
     self.structureID = nil
@@ -730,6 +842,25 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     self.rigSize = nil
     self.maximumRigSlots = kind == .npcStation ? 0 : 3
     self.securityStatus = securityStatus
+  }
+
+  public func reprocessingImplant(
+    for characterID: Int64
+  ) -> OreRefiningImplant {
+    reprocessingImplantsByCharacterID?[characterID] ?? .none
+  }
+
+  public mutating func setReprocessingImplant(
+    _ implant: OreRefiningImplant,
+    for characterID: Int64
+  ) {
+    var selections = reprocessingImplantsByCharacterID ?? [:]
+    if implant == .none {
+      selections.removeValue(forKey: characterID)
+    } else {
+      selections[characterID] = implant
+    }
+    reprocessingImplantsByCharacterID = selections.isEmpty ? nil : selections
   }
 
   public mutating func apply(
@@ -743,6 +874,9 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     structureMaterialBonusPercent =
       definition.manufacturingMaterialBonusPercent
     structureTimeBonusPercent = definition.manufacturingTimeBonusPercent
+    reprocessingEfficiencyBonusPercent =
+      definition.reprocessingEfficiencyBonusPercent
+      ?? kind.defaultReprocessingEfficiencyBonusPercent
     jobCostMultiplier = definition.jobCostMultiplier
     source = .staticData
     rigs = Array(
@@ -883,6 +1017,109 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
 
   public var hasReprocessingService: Bool {
     supportsService(.reprocessing)
+  }
+
+  public func effectiveReprocessingYieldMultiplier(
+    for kind: ReprocessableMaterialKind
+  ) -> Double? {
+    reprocessingYieldBasis(for: kind)?.effectiveYieldMultiplier
+  }
+
+  public func reprocessingYieldBasis(
+    for kind: ReprocessableMaterialKind
+  ) -> ReprocessingYieldBasis? {
+    let serviceCandidates = (serviceModules ?? []).compactMap {
+      module -> ReprocessingYieldCandidate? in
+      guard module.supports(.reprocessing) else { return nil }
+      let multiplier: Double?
+      switch kind {
+      case .asteroidOre: multiplier = module.normalOreYieldMultiplier
+      case .moonOre: multiplier = module.moonOreYieldMultiplier
+      case .ice: multiplier = module.iceYieldMultiplier
+      case .gas: multiplier = module.gasYieldMultiplier
+      case .unknown: multiplier = nil
+      }
+      guard let multiplier, multiplier.isFinite, multiplier > 0 else {
+        return nil
+      }
+      return ReprocessingYieldCandidate(
+        sourceKind: .serviceModule,
+        sourceName: module.name,
+        sourceTypeID: module.typeID,
+        multiplier: multiplier
+      )
+    }
+    guard !serviceCandidates.isEmpty else { return nil }
+
+    let rigCandidates = rigs.compactMap {
+      rig -> ReprocessingYieldCandidate? in
+      guard rig.source != .unresolved,
+        rig.compatibleStructureSize == nil
+          || rigSize == nil
+          || rig.compatibleStructureSize == rigSize
+      else { return nil }
+      guard
+        let multiplier = rig.reprocessingYieldMultiplier(
+          for: kind,
+          in: securityBand
+        ), multiplier.isFinite, multiplier > 0
+      else { return nil }
+      return ReprocessingYieldCandidate(
+        sourceKind: .rig,
+        sourceName: rig.name,
+        sourceTypeID: rig.typeID,
+        multiplier: multiplier
+      )
+    }
+    let candidates =
+      kind == .gas ? serviceCandidates : serviceCandidates + rigCandidates
+    guard
+      let selected = candidates.max(by: { lhs, rhs in
+        if lhs.multiplier != rhs.multiplier {
+          return lhs.multiplier < rhs.multiplier
+        }
+        return lhs.sourceKind == .serviceModule && rhs.sourceKind == .rig
+      })
+    else { return nil }
+    let structureBonus =
+      reprocessingEfficiencyBonusPercent
+      ?? self.kind.defaultReprocessingEfficiencyBonusPercent
+    guard structureBonus.isFinite, structureBonus >= 0 else { return nil }
+    let yield = selected.multiplier * (1 + structureBonus / 100)
+    guard yield.isFinite, yield > 0 else { return nil }
+    return ReprocessingYieldBasis(
+      sourceKind: selected.sourceKind,
+      sourceName: selected.sourceName,
+      sourceTypeID: selected.sourceTypeID,
+      equipmentYieldMultiplier: selected.multiplier,
+      structureBonusPercent: structureBonus,
+      effectiveYieldMultiplier: yield
+    )
+  }
+
+  public var isReprocessingCapable: Bool {
+    reprocessingReadinessIssues.isEmpty
+  }
+
+  public var reprocessingReadinessIssues: [ReprocessingReadinessIssue] {
+    var issues: [ReprocessingReadinessIssue] = []
+    if !hasReprocessingService {
+      issues.append(.missingService)
+    }
+    if effectiveReprocessingYieldMultiplier(for: .asteroidOre) == nil,
+      effectiveReprocessingYieldMultiplier(for: .moonOre) == nil
+    {
+      issues.append(.missingOreYield)
+    }
+    if reprocessingTaxRate == nil {
+      issues.append(.unconfirmedTax)
+    }
+    return issues
+  }
+
+  private static func acceptedRate(_ value: Double?) -> Double? {
+    guard let value, value.isFinite, value >= 0, value < 1 else { return nil }
+    return value
   }
 
   public var isReactionCapable: Bool {
@@ -1122,7 +1359,9 @@ public struct MarketProfitabilityConfiguration: Codable, Equatable, Sendable {
 }
 
 public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
-  public static let ruleVersion = "ccp-market-fees-2026-07-02"
+  public static let ruleVersion = "ccp-market-fees-2026-08-13"
+  public static let exordiumRegionID: Int64 = 10_001_004
+  public static let exordiumNonImmediateOrderFeeRate = 0.05
 
   public var traderCharacterID: Int64?
   public var salesTaxRate: Double?
@@ -1252,13 +1491,17 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
       let corporationStanding
     {
       brokerFeeSource = .npcStation
-      brokerFeeRate = max(
+      let standardBrokerFeeRate = max(
         0.01,
         0.03
           - 0.003 * Double(min(max(brokerRelationsLevel, 0), 5))
           - 0.0003 * min(max(factionStanding, -10), 10)
           - 0.0002 * min(max(corporationStanding, -10), 10)
       )
+      brokerFeeRate =
+        standardBrokerFeeRate
+        + (location.regionID == Self.exordiumRegionID
+          ? Self.exordiumNonImmediateOrderFeeRate : 0)
     } else {
       brokerFeeSource = .unresolvedLocation
       brokerFeeRate = nil
@@ -1275,6 +1518,11 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
     } else if brokerFeeRate == nil {
       warnings.append(
         "The station owner, Broker Relations or standing data is unavailable."
+      )
+    }
+    if brokerFeeRate != nil, location.regionID == Self.exordiumRegionID {
+      warnings.append(
+        "The fee includes Exordium's additional 5% charge for non-immediate market orders."
       )
     }
     if capability.skills.state == .stale
@@ -1406,6 +1654,7 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
   public var homeTradeHub: ProcurementLocation
   public var iskPerCubicMeter: Double?
   public var maximumContractVolumeM3: Double
+  public var jumpFreighter: JumpFreighterLogisticsConfiguration
   public var ruleVersion: String
 
   public init(
@@ -1419,6 +1668,7 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
     iskPerCubicMeter: Double? = nil,
     maximumContractVolumeM3: Double =
       LogisticsConfiguration.defaultMaximumContractVolumeM3,
+    jumpFreighter: JumpFreighterLogisticsConfiguration = .init(),
     ruleVersion: String = LogisticsConfiguration.ruleVersion
   ) {
     self.isEnabled = isEnabled
@@ -1430,6 +1680,7 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
       homeTradeHub ?? .legacy(name: productionLocationName)
     self.iskPerCubicMeter = iskPerCubicMeter
     self.maximumContractVolumeM3 = maximumContractVolumeM3
+    self.jumpFreighter = jumpFreighter
     self.ruleVersion = ruleVersion
   }
 
@@ -1453,7 +1704,7 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
   private enum CodingKeys: String, CodingKey {
     case isEnabled, includeInboundMaterials, includeOutboundProducts
     case productionLocationName, marketLocationName, homeTradeHub
-    case iskPerCubicMeter, maximumContractVolumeM3, ruleVersion
+    case iskPerCubicMeter, maximumContractVolumeM3, jumpFreighter, ruleVersion
   }
 
   public init(from decoder: Decoder) throws {
@@ -1475,6 +1726,11 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
     maximumContractVolumeM3 =
       try container.decodeIfPresent(Double.self, forKey: .maximumContractVolumeM3)
       ?? Self.defaultMaximumContractVolumeM3
+    jumpFreighter =
+      try container.decodeIfPresent(
+        JumpFreighterLogisticsConfiguration.self,
+        forKey: .jumpFreighter
+      ) ?? .init()
     ruleVersion =
       try container.decodeIfPresent(String.self, forKey: .ruleVersion) ?? Self.ruleVersion
   }
@@ -1486,18 +1742,35 @@ public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
   public let id: UUID
   public var location: ProcurementLocation
   public var marketTaxes: MarketTaxConfiguration
+  /// Manually confirmed, combined non-refundable public-contract fee rate.
+  /// A refundable contract deposit is deliberately not a cost.
+  public var publicContractFeeRate: Double?
+  /// Latest complete fee outcome observed through the selected trader's ESI
+  /// contract and wallet history at this exact location. It remains evidence
+  /// until the owner explicitly confirms its rate for planning.
+  public var observedPublicContractFee: PublicContractFeeEvidence?
 
   public init(
     id: UUID = UUID(),
     location: ProcurementLocation,
     traderCharacterID: Int64? = nil,
-    marketTaxes: MarketTaxConfiguration? = nil
+    marketTaxes: MarketTaxConfiguration? = nil,
+    publicContractFeeRate: Double? = nil,
+    observedPublicContractFee: PublicContractFeeEvidence? = nil
   ) {
     self.id = id
     self.location = location
     self.marketTaxes =
       marketTaxes
       ?? MarketTaxConfiguration(traderCharacterID: traderCharacterID)
+    self.publicContractFeeRate = Self.validPublicContractFeeRate(
+      publicContractFeeRate
+    )
+    self.observedPublicContractFee = Self.validObservedPublicContractFee(
+      observedPublicContractFee,
+      traderCharacterID: self.marketTaxes.traderCharacterID,
+      locationID: location.locationID
+    )
   }
 
   public var traderCharacterID: Int64? {
@@ -1512,6 +1785,8 @@ public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
     case location
     case traderCharacterID
     case marketTaxes
+    case publicContractFeeRate
+    case observedPublicContractFee
   }
 
   public init(from decoder: any Decoder) throws {
@@ -1534,6 +1809,20 @@ public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
         )
       )
     }
+    publicContractFeeRate = Self.validPublicContractFeeRate(
+      try container.decodeIfPresent(
+        Double.self,
+        forKey: .publicContractFeeRate
+      )
+    )
+    observedPublicContractFee = Self.validObservedPublicContractFee(
+      try container.decodeIfPresent(
+        PublicContractFeeEvidence.self,
+        forKey: .observedPublicContractFee
+      ),
+      traderCharacterID: marketTaxes.traderCharacterID,
+      locationID: location.locationID
+    )
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -1541,6 +1830,32 @@ public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
     try container.encode(id, forKey: .id)
     try container.encode(location, forKey: .location)
     try container.encode(marketTaxes, forKey: .marketTaxes)
+    try container.encodeIfPresent(
+      publicContractFeeRate,
+      forKey: .publicContractFeeRate
+    )
+    try container.encodeIfPresent(
+      observedPublicContractFee,
+      forKey: .observedPublicContractFee
+    )
+  }
+
+  private static func validPublicContractFeeRate(_ rate: Double?) -> Double? {
+    guard let rate, rate.isFinite, rate >= 0, rate < 1 else { return nil }
+    return rate
+  }
+
+  private static func validObservedPublicContractFee(
+    _ evidence: PublicContractFeeEvidence?,
+    traderCharacterID: Int64?,
+    locationID: Int64?
+  ) -> PublicContractFeeEvidence? {
+    guard let evidence,
+      evidence.characterID == traderCharacterID,
+      evidence.locationID == locationID,
+      evidence.effectiveRate != nil
+    else { return nil }
+    return evidence
   }
 }
 
@@ -1793,6 +2108,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   public var coalitionTradingLocationID: UUID?
   public var comparisonTradingLocationIDs: Set<UUID>
   public var logistics: LogisticsConfiguration
+  public var compressedOreRefining: CompressedOreRefiningConfiguration
   public var scheduling: ProductionSchedulingConfiguration
   public var invention: InventionConfiguration
   public var blacklist: ProductionBlacklistConfiguration
@@ -1850,6 +2166,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     coalitionTradingLocationID: UUID? = nil,
     comparisonTradingLocationIDs: Set<UUID> = [],
     logistics: LogisticsConfiguration = .init(),
+    compressedOreRefining: CompressedOreRefiningConfiguration = .init(),
     scheduling: ProductionSchedulingConfiguration = .init(),
     invention: InventionConfiguration = .init(),
     blacklist: ProductionBlacklistConfiguration = .init(),
@@ -1904,6 +2221,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     self.coalitionTradingLocationID = coalitionTradingLocationID
     self.comparisonTradingLocationIDs = comparisonTradingLocationIDs
     self.logistics = logistics
+    self.compressedOreRefining = compressedOreRefining
     self.scheduling = scheduling
     self.invention = invention
     self.blacklist = blacklist
@@ -2304,6 +2622,10 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
             == .orderedSame
       })
     {
+      if tradingLocations[legacyIndex].location.locationID != location.locationID {
+        tradingLocations[legacyIndex].publicContractFeeRate = nil
+        tradingLocations[legacyIndex].observedPublicContractFee = nil
+      }
       tradingLocations[legacyIndex].location = location
       if includeAsComparison,
         Self.isResolvedMarketLocation(location)
@@ -2355,6 +2677,10 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
         $0.id == configurationID
       })
     else { return false }
+    if tradingLocations[index].location.locationID != location.locationID {
+      tradingLocations[index].publicContractFeeRate = nil
+      tradingLocations[index].observedPublicContractFee = nil
+    }
     tradingLocations[index].location = location
     normalizeTradingLocations()
     return true
@@ -2445,6 +2771,10 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   ) {
     guard let index = tradingLocations.firstIndex(where: { $0.id == id })
     else { return }
+    if tradingLocations[index].traderCharacterID != characterID {
+      tradingLocations[index].publicContractFeeRate = nil
+      tradingLocations[index].observedPublicContractFee = nil
+    }
     tradingLocations[index].marketTaxes.selectTrader(
       characterID: characterID,
       capability: nil
@@ -2484,6 +2814,10 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       acceptedLocation = location
     }
     tradingLocations[index].location = acceptedLocation
+    if previous.locationID != acceptedLocation.locationID {
+      tradingLocations[index].publicContractFeeRate = nil
+      tradingLocations[index].observedPublicContractFee = nil
+    }
     if id == mainTradingLocationID {
       logistics.homeTradeHub = acceptedLocation
     }
@@ -2519,6 +2853,51 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     if id == mainTradingLocationID {
       marketTaxes = tradingLocations[index].marketTaxes
     }
+  }
+
+  public mutating func setPublicContractFeeRate(
+    _ rate: Double?,
+    forTradingLocationID id: UUID
+  ) {
+    guard let index = tradingLocations.firstIndex(where: { $0.id == id })
+    else { return }
+    guard let rate else {
+      tradingLocations[index].publicContractFeeRate = nil
+      return
+    }
+    tradingLocations[index].publicContractFeeRate =
+      rate.isFinite && rate >= 0 && rate < 1 ? rate : nil
+  }
+
+  @discardableResult
+  public mutating func setObservedPublicContractFee(
+    _ evidence: PublicContractFeeEvidence?,
+    forTradingLocationID id: UUID
+  ) -> Bool {
+    guard let index = tradingLocations.firstIndex(where: { $0.id == id })
+    else { return false }
+    guard let evidence else {
+      tradingLocations[index].observedPublicContractFee = nil
+      return true
+    }
+    guard
+      tradingLocations[index].traderCharacterID == evidence.characterID,
+      tradingLocations[index].location.locationID == evidence.locationID,
+      evidence.effectiveRate != nil
+    else { return false }
+    tradingLocations[index].observedPublicContractFee = evidence
+    return true
+  }
+
+  @discardableResult
+  public mutating func confirmObservedPublicContractFee(
+    forTradingLocationID id: UUID
+  ) -> Bool {
+    guard let index = tradingLocations.firstIndex(where: { $0.id == id }),
+      let rate = tradingLocations[index].observedPublicContractFee?.effectiveRate
+    else { return false }
+    tradingLocations[index].publicContractFeeRate = rate
+    return true
   }
 
   public mutating func refreshResolvableMarketFees(
@@ -2761,6 +3140,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     case coalitionTradingLocationID
     case comparisonTradingLocationIDs
     case logistics
+    case compressedOreRefining
     case scheduling
     case invention
     case blacklist
@@ -2926,6 +3306,11 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
         LogisticsConfiguration.self,
         forKey: .logistics
       ) ?? .init()
+    compressedOreRefining =
+      try container.decodeIfPresent(
+        CompressedOreRefiningConfiguration.self,
+        forKey: .compressedOreRefining
+      ) ?? .init()
     scheduling =
       try container.decodeIfPresent(
         ProductionSchedulingConfiguration.self,
@@ -3036,6 +3421,10 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       forKey: .comparisonTradingLocationIDs
     )
     try container.encode(logistics, forKey: .logistics)
+    try container.encode(
+      compressedOreRefining,
+      forKey: .compressedOreRefining
+    )
     try container.encode(scheduling, forKey: .scheduling)
     try container.encode(invention, forKey: .invention)
     try container.encode(blacklist, forKey: .blacklist)

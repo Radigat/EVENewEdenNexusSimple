@@ -116,6 +116,7 @@ struct MarketBrowserView: View {
           if let selectedItem {
             selectionBadge(
               title: selectedItem.name,
+              typeID: selectedItem.id,
               clearLabel: "Clear item"
             ) {
               self.selectedItem = nil
@@ -227,9 +228,12 @@ struct MarketBrowserView: View {
               itemResults = []
               refresh()
             } label: {
-              Text(verbatim: item.name)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+              HStack(spacing: DesignTokens.spacingXS) {
+                EVEItemIcon(typeID: item.id)
+                Text(verbatim: item.name)
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.horizontal, DesignTokens.spacingSM)
@@ -245,11 +249,12 @@ struct MarketBrowserView: View {
 
   private func selectionBadge(
     title: String,
+    typeID: Int64,
     clearLabel: LocalizedStringKey,
     clear: @escaping () -> Void
   ) -> some View {
     HStack(spacing: DesignTokens.spacingSM) {
-      EVEEntityText(value: title)
+      EVEItemText(value: title, typeID: typeID)
       Spacer()
       Button(clearLabel, action: clear)
         .buttonStyle(.borderless)
@@ -331,6 +336,8 @@ struct MarketBrowserView: View {
           "Player-structure docking rights are not published with public market orders. A visible order therefore does not prove that your character can dock there."
         )
         .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        .padding(.horizontal, DesignTokens.spacingSM)
         .foregroundStyle(DesignTokens.caution)
       }
     }
@@ -876,6 +883,8 @@ struct MarketBrowserView: View {
 }
 
 struct ManufacturingOpportunitiesView: View {
+  let onBuildInPlanner: (PlannerLaunchRequest) -> Void
+
   @EnvironmentObject private var runtime: RuntimeState
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
@@ -885,28 +894,36 @@ struct ManufacturingOpportunitiesView: View {
   private var activePlans: [StoredPlan]
 
   @AppStorage(
-    "market-opportunities.target-quantity",
+    "market-opportunities.minimum-average-daily-demand",
     store: AppDefaults.store
   )
-  private var targetQuantity = 1
-  @AppStorage("market-opportunities.me", store: AppDefaults.store)
-  private var materialEfficiency = 10
-  @AppStorage("market-opportunities.te", store: AppDefaults.store)
-  private var timeEfficiency = 20
+  private var minimumAverageDailyDemand = 0
+  @AppStorage(
+    "market-opportunities.analysis-basis-expanded",
+    store: AppDefaults.store
+  )
+  private var analysisBasisExpanded = true
   @AppStorage(
     "market-opportunities.favorite-type-ids",
     store: AppDefaults.store
   )
   private var encodedFavoriteIDs = "[]"
+  @AppStorage(
+    "market-opportunities.filter.product-families",
+    store: AppDefaults.store
+  )
+  private var encodedProductFamilies = ""
+  @AppStorage(
+    "market-opportunities.filter.production-classes",
+    store: AppDefaults.store
+  )
+  private var encodedProductionClasses = ""
   @State private var selectedProductFamilies = Set(
     ManufacturingOpportunityProductFamily.allCases
   )
-  @State private var includesPersonal = true
-  @State private var includesCorporation = true
-  @State private var includesNotOwned = true
-  @State private var includesUnknownOwnership = true
-  @State private var includesBPO = true
-  @State private var includesBPC = true
+  @State private var selectedProductionClasses = Set(
+    ManufacturingOpportunityProductionClass.allCases
+  )
   @AppStorage(
     "asset.inventory.include-corporation-hangars",
     store: AppDefaults.store
@@ -922,13 +939,42 @@ struct ManufacturingOpportunitiesView: View {
     store: AppDefaults.store
   )
   private var blueprintCostPerRunText = ""
-  @State private var topTab = OpportunityTopTab.profile
+  @AppStorage(
+    "manufacturing-opportunity.maximum-material-purchase-isk",
+    store: AppDefaults.store
+  )
+  private var maximumMaterialPurchaseISKText = ""
+  @AppStorage(
+    "market-opportunities.filter.expanded",
+    store: AppDefaults.store
+  )
+  private var filterDeckExpanded = true
   @State private var lowerTab = OpportunityLowerTab.shopping
-  @State private var searchText = ""
-  @State private var selectedCategory = ""
-  @State private var selectedGroup = ""
-  @State private var favoritesOnly = false
-  @State private var valueFilter = ManufacturingOpportunityValueFilter.all
+  @AppStorage(
+    "market-opportunities.filter.search-text",
+    store: AppDefaults.store
+  )
+  private var searchText = ""
+  @AppStorage(
+    "market-opportunities.filter.category",
+    store: AppDefaults.store
+  )
+  private var selectedCategory = ""
+  @AppStorage(
+    "market-opportunities.filter.group",
+    store: AppDefaults.store
+  )
+  private var selectedGroup = ""
+  @AppStorage(
+    "market-opportunities.filter.favorites-only",
+    store: AppDefaults.store
+  )
+  private var favoritesOnly = false
+  @AppStorage(
+    "market-opportunities.filter.value",
+    store: AppDefaults.store
+  )
+  private var valueFilter = ManufacturingOpportunityValueFilter.all
   @State private var tableSort: ManufacturingOpportunitySortDescriptor?
   @State private var selectedTypeID: Int64?
   @State private var analysisTask: Task<Void, Never>?
@@ -938,61 +984,104 @@ struct ManufacturingOpportunitiesView: View {
   @State private var preparedPlanReservations = PreparedPlanReservations.empty
   @State private var preparedPlanReservationRevision = UUID()
   @State private var preparedCandidateProjection: PreparedManufacturingOpportunityCandidates?
+  @State private var requestedRunsByTypeID: [Int64: Int] = [:]
+  @State private var requestedRunTextsByTypeID: [Int64: String] = [:]
+  @State private var requestedMEByTypeID: [Int64: Int] = [:]
+  @State private var requestedMETextsByTypeID: [Int64: String] = [:]
+  @State private var requestedTEByTypeID: [Int64: Int] = [:]
+  @State private var requestedTETextsByTypeID: [Int64: String] = [:]
   @State private var shoppingCopyStatus: String?
   @State private var expandedOpportunityTypeID: Int64?
   @State private var productionTree: ManufacturingProductionTreeSnapshot?
-  @State private var productionTreeQuantity = 1
   @State private var productionTreeError: String?
   @State private var isLoadingProductionTree = false
   @State private var productionTreeTask: Task<Void, Never>?
+  @State private var productionTreeRunSyncTask: Task<Void, Never>?
   @State private var expandedProductionNodeIDs = Set<UUID>()
   @State private var treeProcurementPreferences: [Int64: MaterialProcurementPreference] = [:]
   @State private var treeBlueprintActions: [Int64: ProductionTreeBlueprintAction] = [:]
+  @State private var treePreferredBlueprintSources: [Int64: [BlueprintSourceReference]] = [:]
+  @State private var treeBlueprintCostTexts: [Int64: String] = [:]
+
+  init(onBuildInPlanner: @escaping (PlannerLaunchRequest) -> Void) {
+    self.onBuildInPlanner = onBuildInPlanner
+  }
 
   var body: some View {
     let planPayloads = activePlanSnapshotPayloads
     let planReservationsAreCurrent =
       preparedPlanReservations.source == planPayloads
     let candidateTrigger = candidateProjectionTrigger
-    let preparedCandidates =
+    let allPreparedCandidates =
       preparedCandidateProjection?.trigger == candidateTrigger
       ? preparedCandidateProjection?.candidates : nil
-    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      header
-      filterDeck
-      if let error = runtime.manufacturingOpportunityError {
-        Label(error.localizedUI, systemImage: "exclamationmark.triangle.fill")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.negative)
-      }
-      if runtime.isAnalyzingManufacturingOpportunities { scanProgress }
-      if let snapshot = runtime.manufacturingOpportunityAnalysis {
-        basis(snapshot)
-      }
-      if let snapshotError = runtime.manufacturingOpportunitySnapshotError {
-        Label(
-          snapshotError.localizedUI,
-          systemImage: "externaldrive.badge.exclamationmark"
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.caution)
-      }
-      if planReservationsAreCurrent {
-        if preparedPlanReservations.invalidSnapshotCount > 0 {
-          Label(
-            "One or more active production plans could not be read. Their Warehouse reservations remain unavailable.",
-            systemImage: "externaldrive.badge.exclamationmark"
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.caution)
+    let preparedCandidates = allPreparedCandidates.map { candidates in
+      candidates
+        .map(candidateApplyingRequestedParameters)
+        .filter { candidate in
+          valueFilter.accepts(candidate.costs)
+            && ManufacturingOpportunityBudgetFilter.accepts(
+              maximumMaterialPurchaseISK: parsedMaximumMaterialPurchaseISK,
+              purchaseCashRequirement: candidate.purchaseCashRequirement
+            )
+            && ManufacturingOpportunityAverageDemandFilter.accepts(
+              minimumAverageDailyDemand: Int64(minimumAverageDailyDemand),
+              averageDailyDemand: candidate.row.averageDailyDemand
+            )
         }
-        calculatorWorkspace(
-          runtime.manufacturingOpportunityAnalysis,
-          candidates: preparedCandidates
+    }
+    GeometryReader { geometry in
+      let upperControlsHeight =
+        ManufacturingOpportunityPageLayout.upperControlsHeight(
+          viewportHeight: geometry.size.height,
+          filtersAreExpanded: filterDeckExpanded,
+          basisIsExpanded: analysisBasisExpanded
         )
-      } else {
-        ProgressView("Preparing active plan reservations…")
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      VStack(alignment: .leading, spacing: 0) {
+        ScrollView(.vertical) {
+          VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+            header
+            filterDeck
+            if let error = runtime.manufacturingOpportunityError {
+              Label(error.localizedUI, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(DesignTokens.negative)
+            }
+            if runtime.isAnalyzingManufacturingOpportunities { scanProgress }
+            if let snapshot = runtime.manufacturingOpportunityAnalysis {
+              basis(snapshot)
+            }
+            if let snapshotError = runtime.manufacturingOpportunitySnapshotError {
+              Label(
+                snapshotError.localizedUI,
+                systemImage: "externaldrive.badge.exclamationmark"
+              )
+              .font(.caption)
+              .foregroundStyle(DesignTokens.caution)
+            }
+            if planReservationsAreCurrent,
+              preparedPlanReservations.invalidSnapshotCount > 0
+            {
+              Label(
+                "One or more active production plans could not be read. Their Warehouse reservations remain unavailable.",
+                systemImage: "externaldrive.badge.exclamationmark"
+              )
+              .font(.caption)
+              .foregroundStyle(DesignTokens.caution)
+            }
+          }
+        }
+        .frame(height: upperControlsHeight)
+
+        if planReservationsAreCurrent {
+          calculatorWorkspace(
+            runtime.manufacturingOpportunityAnalysis,
+            candidates: preparedCandidates
+          )
+        } else {
+          ProgressView("Preparing active plan reservations…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
       }
     }
     .padding(DesignTokens.spacingMD)
@@ -1012,8 +1101,9 @@ struct ManufacturingOpportunitiesView: View {
       await prepareCandidates(trigger: candidateTrigger)
     }
     .onAppear {
-      materialEfficiency = min(10, max(0, materialEfficiency))
-      timeEfficiency = min(20, max(0, timeEfficiency))
+      restoreCatalogFilters()
+      minimumAverageDailyDemand = max(0, minimumAverageDailyDemand)
+      normalizeStoredISKFields()
     }
     .task {
       await runtime.loadManufacturingOpportunityAnalysis()
@@ -1021,13 +1111,29 @@ struct ManufacturingOpportunitiesView: View {
       runtime.prepareMainHubMarketAutomation()
     }
     .onChange(of: runtime.manufacturingOpportunityAnalysis?.id) { _, _ in
-      selectedTypeID = nil
+      discardUnavailableStoredCatalogChoices()
       shoppingCopyStatus = nil
+      requestedRunsByTypeID = [:]
+      requestedRunTextsByTypeID = [:]
+      requestedMEByTypeID = [:]
+      requestedMETextsByTypeID = [:]
+      requestedTEByTypeID = [:]
+      requestedTETextsByTypeID = [:]
       collapseProductionTree()
+    }
+    .onChange(of: requestedRunsByTypeID) { _, _ in
+      scheduleExpandedProductionTreeReload()
+    }
+    .onChange(of: requestedMEByTypeID) { _, _ in
+      scheduleExpandedProductionTreeReload()
+    }
+    .onChange(of: requestedTEByTypeID) { _, _ in
+      scheduleExpandedProductionTreeReload()
     }
     .onDisappear {
       analysisTask?.cancel()
       productionTreeTask?.cancel()
+      productionTreeRunSyncTask?.cancel()
     }
   }
 
@@ -1035,21 +1141,14 @@ struct ManufacturingOpportunitiesView: View {
     _ snapshot: ManufacturingOpportunitySnapshot?,
     candidates: [ManufacturingOpportunityCandidate]?
   ) -> some View {
-    VSplitView {
-      Group {
-        if let snapshot, let candidates {
-          candidatePane(snapshot, candidates: candidates)
-        } else if let snapshot {
-          preparingCandidatePane(snapshot)
-        } else {
-          emptyCandidatePane
-        }
+    Group {
+      if let snapshot, let candidates {
+        candidatePane(snapshot, candidates: candidates)
+      } else if let snapshot {
+        preparingCandidatePane(snapshot)
+      } else {
+        emptyCandidatePane
       }
-      .frame(minHeight: 300)
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      workbench(snapshot)
-        .frame(minHeight: 220, idealHeight: 270)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
@@ -1090,10 +1189,10 @@ struct ManufacturingOpportunitiesView: View {
   private var header: some View {
     HStack(spacing: DesignTokens.spacingMD) {
       VStack(alignment: .leading, spacing: 2) {
-        Text("Industry Calculator · Main Hub")
+        Text("Market Opportunities · Main Hub")
           .font(.title2.bold())
         Text(
-          "Main Hub market · Assigned production locations · Warehouse allocation · Shopping"
+          "Main Hub market · Production candidates · Ranking · Planner handoff"
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
@@ -1139,34 +1238,42 @@ struct ManufacturingOpportunitiesView: View {
 
   private var filterDeck: some View {
     VStack(alignment: .leading, spacing: 0) {
-      Picker("Configuration", selection: $topTab) {
-        ForEach(OpportunityTopTab.allCases) { tab in
-          Text(tab.title).tag(tab)
+      FullWidthDisclosure(isExpanded: $filterDeckExpanded) {
+        HStack(spacing: DesignTokens.spacingSM) {
+          Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
+            .font(.headline)
+          Text(
+            "Products, production classes, favorites, catalog, results and costs adapt to the available width."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          Spacer()
         }
-      }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .frame(maxWidth: 620)
-      .padding(.horizontal, DesignTokens.spacingSM)
-      .padding(.top, DesignTokens.spacingSM)
-
-      Rectangle()
-        .fill(DesignTokens.accent)
-        .frame(height: 2)
-        .padding(.top, DesignTokens.spacingSM)
-
-      Group {
-        switch topTab {
-        case .profile: profileFilters
-        case .costSheet: costSheetControls
-        case .advanced: advancedFilters
-        }
-      }
-      .padding(DesignTokens.spacingSM)
-
-      Divider()
-      searchToolbar
         .padding(DesignTokens.spacingSM)
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+          LazyVGrid(
+            columns: [
+              GridItem(
+                .adaptive(minimum: 250, maximum: 380),
+                spacing: DesignTokens.spacingSM,
+                alignment: .top
+              )
+            ],
+            alignment: .leading,
+            spacing: DesignTokens.spacingSM
+          ) {
+            unifiedFilters
+          }
+          .padding(.vertical, DesignTokens.spacingSM)
+
+          Divider()
+          searchToolbar
+        }
+        .padding(.horizontal, DesignTokens.spacingSM)
+        .padding(.bottom, DesignTokens.spacingSM)
+      }
+      .accessibilityIdentifier("market-opportunities.filters")
     }
     .background(DesignTokens.panel)
     .overlay {
@@ -1176,147 +1283,194 @@ struct ManufacturingOpportunitiesView: View {
     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
   }
 
-  private var profileFilters: some View {
-    ScrollView(.horizontal) {
-      HStack(alignment: .top, spacing: DesignTokens.spacingLG) {
-        filterColumn("Ownership") {
-          compactToggle("Personal", isOn: $includesPersonal)
-          compactToggle("Corporation", isOn: $includesCorporation)
-          compactToggle("Not owned", isOn: $includesNotOwned)
-          compactToggle("Unknown", isOn: $includesUnknownOwnership)
-          disabledToggle("Loyalty Store")
-          disabledToggle("App Store")
+  @ViewBuilder
+  private var unifiedFilters: some View {
+    filterColumn(
+      "Products",
+      help:
+        "Select broad product families. Multiple choices within this card are combined with OR; this card is combined with Production class, Catalog and Result by AND. Changes filter the saved scan locally and do not start ESI or SDE work. Other preserves complete recipes that cannot be classified into one listed family."
+    ) {
+      HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
+        VStack(alignment: .leading, spacing: 3) {
+          familyToggle(.ships)
+          familyToggle(.modules)
+          familyToggle(.charges)
+          familyToggle(.drones)
+          familyToggle(.rigs)
+          familyToggle(.structures)
         }
-        filterColumn("Blueprints") {
-          compactToggle("BPOs", isOn: $includesBPO)
-          compactToggle("BPCs", isOn: $includesBPC)
-          compactToggle("Favorites", isOn: $favoritesOnly)
-          compactToggle(
-            "Corporation hangars",
-            isOn: $includeCorporationHangars
-          )
-        }
-        filterColumn("Products") {
-          HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
-            VStack(alignment: .leading, spacing: 3) {
-              familyToggle(.ships)
-              familyToggle(.modules)
-              familyToggle(.charges)
-              familyToggle(.drones)
-              familyToggle(.rigs)
-              familyToggle(.structures)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-              familyToggle(.reactions)
-              familyToggle(.boosters)
-              familyToggle(.implants)
-              familyToggle(.components)
-              familyToggle(.deployables)
-              familyToggle(.other)
-            }
-          }
-        }
-        filterColumn("Scenario") {
-          LabeledContent("Quantity") {
-            TextField("Quantity", value: $targetQuantity, format: .number)
-              .textFieldStyle(.roundedBorder)
-              .frame(width: 90)
-          }
-          LabeledContent("ME") {
-            Stepper(value: $materialEfficiency, in: 0...10) {
-              Text(materialEfficiency.formatted()).monospacedDigit()
-            }
-            .frame(width: 105)
-          }
-          LabeledContent("TE") {
-            Stepper(value: $timeEfficiency, in: 0...20) {
-              Text(timeEfficiency.formatted()).monospacedDigit()
-            }
-            .frame(width: 105)
-          }
-          if settingsChanged {
-            Label("Update required", systemImage: "arrow.triangle.2.circlepath")
-              .font(.caption)
-              .foregroundStyle(DesignTokens.caution)
-          }
+        VStack(alignment: .leading, spacing: 3) {
+          familyToggle(.reactions)
+          familyToggle(.boosters)
+          familyToggle(.implants)
+          familyToggle(.components)
+          familyToggle(.deployables)
+          familyToggle(.other)
         }
       }
     }
-  }
 
-  private var costSheetControls: some View {
-    HStack(alignment: .top, spacing: DesignTokens.spacingLG) {
-      filterColumn("Automatic calculation") {
-        Label("Material replacement value", systemImage: "checkmark.circle.fill")
-        Label("Installation cost", systemImage: "checkmark.circle.fill")
-        Label("Sales tax and broker fee", systemImage: "checkmark.circle.fill")
-        Label("Profile logistics", systemImage: "checkmark.circle.fill")
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      filterColumn(
+        "Production class",
+        help:
+          "Uses factual SDE meta-group and tech-level metadata to limit results to Tech I, Tech II, Tech III, faction, storyline or other. Multiple choices inside this card use OR; other active filter cards use AND. Missing metadata stays Other or unclassified and is never guessed from the item name. If the warning appears, update the SDE and run the Main Hub scan again before expecting exact class filtering."
+      ) {
+        HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
+          VStack(alignment: .leading, spacing: 3) {
+            productionClassToggle(.techI)
+            productionClassToggle(.techII)
+            productionClassToggle(.techIII)
+          }
+          VStack(alignment: .leading, spacing: 3) {
+            productionClassToggle(.faction)
+            productionClassToggle(.storyline)
+            productionClassToggle(.other)
+          }
+        }
+        if !hasProductionClassMetadata {
+          OpportunityExplanationButton(
+            title: "Production-class filter is incomplete",
+            explanation:
+              "This saved scan does not contain the required SDE meta-group or tech-level fields for every candidate. The app keeps those rows under Other or unclassified instead of guessing from names. Update the SDE catalog and run the Main Hub analysis again to populate the factual classification.",
+            systemImage: "exclamationmark.triangle",
+            color: DesignTokens.caution,
+            font: .caption
+          )
+          .frame(maxWidth: 300, alignment: .leading)
+        }
+      }
+
+      filterColumn(
+        "Favorites",
+        help:
+          "Favorites only keeps products that are marked with a star. The filter uses the saved candidate list locally and does not start a new Main Hub calculation."
+      ) {
+        compactToggle("Favorites only", isOn: $favoritesOnly)
+        Text("Starred products remain available across local filter changes.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+
+    filterColumn(
+      "Catalog",
+      help:
+        "Select one exact SDE category and group from the saved Main Hub scan. Category and group use AND with each other and with Product, Production class and Result. Changing them is a local list filter and does not refresh market or SDE data. All categories or All groups disables only that respective restriction."
+    ) {
+      Picker("Category", selection: $selectedCategory) {
+        Text("All categories").tag("")
+        ForEach(categories, id: \.self) { Text($0).tag($0) }
+      }
+      .frame(maxWidth: .infinity)
+      Picker("Group", selection: $selectedGroup) {
+        Text("All groups").tag("")
+        ForEach(groups, id: \.self) { Text($0).tag($0) }
+      }
+      .frame(maxWidth: .infinity)
+    }
+
+    filterColumn(
+      "Result",
+      help:
+        "Value limits rows by their already calculated profit state. Minimum average daily demand uses the known multi-day average: zero disables the threshold and keeps unavailable averages; a positive number accepts only known averages at or above it. Sorting remains controlled by the clickable table headings and missing values stay distinct from zero."
+    ) {
+      Picker("Value", selection: $valueFilter) {
+        ForEach(ManufacturingOpportunityValueFilter.allCases) {
+          Text($0.title).tag($0)
+        }
+      }
+      .frame(maxWidth: .infinity)
+      Label("Sort via a table heading", systemImage: "arrow.up.arrow.down")
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text("Unavailable values stay after factual values in both directions.")
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      LabeledContent("Minimum average daily demand") {
+        HStack(spacing: 4) {
+          TextField(
+            "Minimum average daily demand",
+            value: minimumAverageDailyDemandBinding,
+            format: groupedIntegerFormat
+          )
+          .textFieldStyle(.roundedBorder)
+          .frame(width: 90)
+          Stepper(
+            "Minimum average daily demand",
+            value: minimumAverageDailyDemandBinding,
+            in: 0...1_000_000
+          )
+          .labelsHidden()
+        }
+      }
+      .accessibilityHint(
+        "Zero disables this filter. A positive value shows only rows whose known multi-day average daily demand reaches the threshold."
+      )
+      Text(
+        (minimumAverageDailyDemand == 0
+          ? "0 keeps known and unavailable averages visible."
+          : "Only known averages at or above this value are shown.")
+          .localizedUI
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+
+    filterColumn(
+      "Costs and budget",
+      help:
+        "Market material replacement value, installation, Profile logistics, sales tax and broker fee are applied automatically from the saved scan and Profile. Blueprint allocation is optional and affects every required manufacturing run only when enabled with a valid ISK amount; reactions have no Blueprint allocation. Maximum material purchases limits only new wallet cash for material shortfalls; Warehouse stock keeps its replacement value but does not consume this limit. Missing market, Warehouse, volume, fee or logistics data remains unavailable and is never replaced by zero."
+    ) {
+      Label("Automatic calculation", systemImage: "checkmark.circle.fill")
+        .font(.caption)
+        .foregroundStyle(DesignTokens.positive)
+      Text(
+        "Material replacement value, installation, sales tax, broker fee and Profile logistics are applied automatically."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      compactToggle("Include blueprint allocation", isOn: $costIncludesBlueprint)
+      TextField(
+        "ISK per run",
+        text: groupedISKBinding($blueprintCostPerRunText)
+      )
+      .textFieldStyle(.roundedBorder)
+      .disabled(!costIncludesBlueprint)
+      if costIncludesBlueprint, parsedBlueprintCost == nil {
+        OpportunityExplanationButton(
+          title: "Enter a valid ISK amount",
+          explanation:
+            "Blueprint allocation is enabled, but the amount is empty or invalid. Enter the complete ISK allocation per required Blueprint run. Until then, cost, profit, ROI and ISK rates that depend on this allocation remain unavailable instead of treating the Blueprint as free.",
+          systemImage: "exclamationmark.triangle",
+          color: DesignTokens.caution,
+          font: .caption
+        )
+      }
+      TextField(
+        "Maximum material purchases (ISK)",
+        text: groupedISKBinding($maximumMaterialPurchaseISKText)
+      )
+      .textFieldStyle(.roundedBorder)
+      .accessibilityHint(
+        "Limits new wallet cash for material shortfalls; Warehouse stock keeps its replacement value but does not consume this budget."
+      )
+      if maximumMaterialPurchaseISKIsInvalid {
+        OpportunityExplanationButton(
+          title: "Enter a valid ISK amount",
+          explanation:
+            "The material-purchase limit must be empty or a non-negative ISK amount. It limits only new wallet cash for material shortfalls. Invalid input does not become zero and cannot silently exclude every candidate.",
+          systemImage: "exclamationmark.triangle",
+          color: DesignTokens.caution,
+          font: .caption
+        )
+      } else if parsedMaximumMaterialPurchaseISK != nil {
         Text(
-          "Warehouse stock is valued at the Main Hub replacement price. Only the missing quantity is assigned to purchasing and inbound logistics."
+          "Rows with unknown purchase coverage are excluded while the budget is active."
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
-        .frame(maxWidth: 340, alignment: .leading)
       }
-      filterColumn("Blueprint allocation") {
-        compactToggle("Include blueprint allocation", isOn: $costIncludesBlueprint)
-        TextField("ISK per run", text: $blueprintCostPerRunText)
-          .textFieldStyle(.roundedBorder)
-          .frame(width: 150)
-          .disabled(!costIncludesBlueprint)
-        if costIncludesBlueprint, parsedBlueprintCost == nil {
-          Label("Enter a valid ISK amount", systemImage: "exclamationmark.triangle")
-            .font(.caption)
-            .foregroundStyle(DesignTokens.caution)
-        }
-      }
-      Spacer()
-      VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
-        Label("Main Hub prices", systemImage: "building.columns")
-        Label("Assigned production locations", systemImage: "hammer.fill")
-        Text("Unavailable profile inputs remain unavailable, never zero.")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-      }
-    }
-  }
-
-  private var advancedFilters: some View {
-    HStack(alignment: .top, spacing: DesignTokens.spacingLG) {
-      filterColumn("Catalog") {
-        Picker("Category", selection: $selectedCategory) {
-          Text("All categories").tag("")
-          ForEach(categories, id: \.self) { Text($0).tag($0) }
-        }
-        .frame(width: 210)
-        Picker("Group", selection: $selectedGroup) {
-          Text("All groups").tag("")
-          ForEach(groups, id: \.self) { Text($0).tag($0) }
-        }
-        .frame(width: 210)
-      }
-      filterColumn("Result") {
-        Picker("Value", selection: $valueFilter) {
-          ForEach(ManufacturingOpportunityValueFilter.allCases) {
-            Text($0.title).tag($0)
-          }
-        }
-        .frame(width: 210)
-        Label("Sort via a table heading", systemImage: "arrow.up.arrow.down")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-      }
-      filterColumn("Tech level") {
-        disabledFilterLine("Tech I · Tech II · Tech III")
-        disabledFilterLine("Faction · Storyline · Misc")
-      }
-      filterColumn("Size") {
-        disabledFilterLine("S · M · L · XL · U")
-        Text("Requires additional SDE metadata")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-      }
-      Spacer()
     }
   }
 
@@ -1328,9 +1482,9 @@ struct ManufacturingOpportunitiesView: View {
         .frame(minWidth: 260, idealWidth: 420, maxWidth: 540)
       Button("Clear filters") { resetFilters() }
         .buttonStyle(.bordered)
-      Button("Select all") { selectAllFamilies() }
+      Button("Select all") { selectAllCatalogFilters() }
         .buttonStyle(.bordered)
-      Button("Uncheck all") { selectedProductFamilies = [] }
+      Button("Uncheck all") { uncheckAllCatalogFilters() }
         .buttonStyle(.bordered)
       Spacer()
     }
@@ -1348,8 +1502,13 @@ struct ManufacturingOpportunitiesView: View {
         Spacer()
         if runtime.manufacturingOpportunityProgress.totalPages > 0 {
           Text(
-            verbatim:
-              "\(runtime.manufacturingOpportunityProgress.completedPages) / \(runtime.manufacturingOpportunityProgress.totalPages) pages"
+            AppLocalization.format(
+              "%@ / %@ pages",
+              formatInteger(
+                runtime.manufacturingOpportunityProgress.completedPages
+              ),
+              formatInteger(runtime.manufacturingOpportunityProgress.totalPages)
+            )
           )
           .monospacedDigit()
         }
@@ -1361,69 +1520,153 @@ struct ManufacturingOpportunitiesView: View {
 
   private func basis(_ snapshot: ManufacturingOpportunitySnapshot) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-      HStack {
-        Label(snapshot.mainHub.name, systemImage: "building.columns")
-        Text("→")
-        Label {
-          Text(verbatim: productionScopeLabel(snapshot.productionWarehouseScope))
-        } icon: {
-          Image(systemName: "hammer.fill")
-        }
-        Spacer()
-        Text(
-          AppLocalization.format(
-            "Updated %@",
-            snapshot.marketSource.capturedAt.formatted(
-              date: .abbreviated,
-              time: .shortened
+      FullWidthDisclosure(isExpanded: $analysisBasisExpanded) {
+        HStack(spacing: DesignTokens.spacingSM) {
+          Label("Data basis and explanations", systemImage: "info.circle")
+            .font(.caption.bold())
+          Spacer()
+          Text(
+            AppLocalization.format(
+              "Updated %@",
+              snapshot.marketSource.capturedAt.formatted(
+                date: .abbreviated,
+                time: .shortened
+              )
             )
           )
-        )
-        .monospacedDigit()
-      }
-      LazyVGrid(
-        columns: [GridItem(.adaptive(minimum: 190, maximum: 320))],
-        alignment: .leading,
-        spacing: DesignTokens.spacingXS
-      ) {
-        Label(
-          "Market-listed build candidates: \(snapshot.coverage.candidateCount)",
-          systemImage: "shippingbox.and.arrow.backward"
-        )
-        Text(
-          "Complete manufacturing definitions: \(snapshot.coverage.completeManufacturingDefinitionCount)"
-        )
-        Text(
-          "With sell orders: \(snapshot.coverage.candidatesWithSellOrders)"
-        )
-        Text(
-          "With buy orders: \(snapshot.coverage.candidatesWithBuyOrders)"
-        )
-        Text(
-          "Main Hub active order types: \(snapshot.coverage.mainHubActiveOrderTypeCount)"
-        )
-        if let demand = snapshot.demand {
-          Text("Demand observations today: \(demand.sampleCount)")
-        } else {
-          Text("Demand observations today: 0")
+          .monospacedDigit()
+          .foregroundStyle(DesignTokens.textSecondary)
         }
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          HStack(spacing: DesignTokens.spacingXS) {
+            Image(systemName: "building.columns")
+              .foregroundStyle(DesignTokens.textSecondary)
+            EVEEntityText(value: snapshot.mainHub.name, font: .caption)
+            Text("→")
+            Image(systemName: "hammer.fill")
+              .foregroundStyle(DesignTokens.textSecondary)
+            if snapshot.productionWarehouseScope.locations.count == 1,
+              let location = snapshot.productionWarehouseScope.locations.first
+            {
+              EVEEntityText(value: location.structureName, font: .caption)
+            } else {
+              Text(
+                verbatim: productionScopeLabel(
+                  snapshot.productionWarehouseScope
+                )
+              )
+            }
+          }
+          LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 190, maximum: 320))],
+            alignment: .leading,
+            spacing: DesignTokens.spacingXS
+          ) {
+            Label(
+              AppLocalization.format(
+                "Production candidates: %@",
+                formatInteger(snapshot.coverage.candidateCount)
+              ),
+              systemImage: "shippingbox.and.arrow.backward"
+            )
+            Text(
+              AppLocalization.format(
+                "Complete manufacturing definitions: %@",
+                formatInteger(
+                  snapshot.coverage.completeManufacturingDefinitionCount
+                )
+              )
+            )
+            if let reactionCount =
+              snapshot.coverage.completeReactionDefinitionCount
+            {
+              Text(
+                AppLocalization.format(
+                  "Complete reaction definitions: %@",
+                  formatInteger(reactionCount)
+                )
+              )
+            }
+            Text(
+              AppLocalization.format(
+                "With sell orders: %@",
+                formatInteger(snapshot.coverage.candidatesWithSellOrders)
+              )
+            )
+            Text(
+              AppLocalization.format(
+                "With buy orders: %@",
+                formatInteger(snapshot.coverage.candidatesWithBuyOrders)
+              )
+            )
+            Text(
+              AppLocalization.format(
+                "Main Hub active order types: %@",
+                formatInteger(snapshot.coverage.mainHubActiveOrderTypeCount)
+              )
+            )
+            if let demand = snapshot.demand {
+              Text(
+                AppLocalization.format(
+                  "Rolling demand samples: %@",
+                  formatInteger(demand.sampleCount)
+                )
+              )
+              if let history = runtime.manufacturingOpportunityDemand,
+                history.regionID == demand.regionID,
+                history.locationID == demand.locationID
+              {
+                Text(
+                  AppLocalization.format(
+                    "Demand history: %@ UTC days",
+                    formatInteger(history.dailyHistory?.count ?? 0)
+                  )
+                )
+              } else {
+                Text("Demand history unavailable")
+              }
+            } else {
+              Text(
+                AppLocalization.format(
+                  "Rolling demand samples: %@",
+                  formatInteger(0)
+                )
+              )
+              Text("Demand history unavailable")
+            }
+          }
+          .monospacedDigit()
+          Text(
+            "A candidate is a complete published manufacturing or reaction product. Products without an active Main-Hub sell order remain visible with unavailable revenue and profitability instead of disappearing. Active orders are not completed sales."
+          )
+          .foregroundStyle(DesignTokens.textSecondary)
+          Text(
+            "Build transfers this row's complete output and Runs to the Planner. Manufacturing rows also transfer ME and TE; reactions have neither. A like-for-like Main-Hub comparison also requires the same material sources, applicable Blueprint costs and market depth: this table screens the direct published recipe with captured prices, while the Planner can recursively build intermediates and refresh deeper order-book quantities."
+          )
+          .foregroundStyle(DesignTokens.textSecondary)
+          if let demand = snapshot.demand,
+            demand.sampleCount >= 2,
+            demand.comparedOrderCountByType != nil,
+            demand.observationDuration
+              >= ManufacturingOpportunityDemandSnapshot
+              .minimumRateObservationDuration
+          {
+            Text(
+              "Daily demand is normalized from the exact Main Hub lower bound observed between \(formatUTCTime(demand.firstObservedAt)) and \(formatUTCTime(demand.lastObservedAt)). Each item needs a surviving comparable order and at least 30 minutes of observation."
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text(
+              "A second exact Main Hub scan at least 30 minutes after the baseline is required before a daily demand rate can be calculated."
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+        .padding(.top, DesignTokens.spacingSM)
       }
-      .monospacedDigit()
-      Text(
-        "A candidate is a complete manufacturing product with at least one active buy or sell order at the exact Main Hub. Active orders are not completed sales."
-      )
-      .foregroundStyle(DesignTokens.textSecondary)
-      if let demand = snapshot.demand, demand.sampleCount >= 2 {
-        Text(
-          "Demand today is the observed lower bound between \(formatUTCTime(demand.firstObservedAt)) and \(formatUTCTime(demand.lastObservedAt)). Only decreases in orders observed in consecutive snapshots are counted."
-        )
-        .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        Text(
-          "A second scan on the same UTC day is required before today's observed demand is available."
-        )
-        .foregroundStyle(DesignTokens.textSecondary)
-      }
+      .accessibilityIdentifier("market-opportunities.analysis-basis")
+
       if !snapshot.productionWarehouseScope.unresolvedActivities.isEmpty {
         Label(
           "Some production activities do not have an exact assigned asset location and are excluded from Warehouse allocation.",
@@ -1449,6 +1692,13 @@ struct ManufacturingOpportunitiesView: View {
     }
     .font(.caption)
     .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(DesignTokens.spacingSM)
+    .background(DesignTokens.panel)
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+        .stroke(DesignTokens.border)
+    }
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
   }
 
   private func candidatePane(
@@ -1462,9 +1712,12 @@ struct ManufacturingOpportunitiesView: View {
           .font(.caption.bold())
           .tracking(1.1)
         Spacer()
-        Text(verbatim: "\(candidates.count) / \(snapshot.rows.count)")
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(DesignTokens.textSecondary)
+        Text(
+          verbatim:
+            "\(formatInteger(candidates.count)) / \(formatInteger(snapshot.rows.count))"
+        )
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
       }
       .padding(.horizontal, DesignTokens.spacingSM)
       .padding(.vertical, 6)
@@ -1472,23 +1725,34 @@ struct ManufacturingOpportunitiesView: View {
       .overlay(alignment: .bottom) {
         Rectangle().fill(DesignTokens.accent).frame(height: 2)
       }
-      ScrollView([.horizontal, .vertical]) {
-        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-          Section {
-            ForEach(candidates) { candidate in
-              opportunityRow(
-                candidate.row,
-                costs: candidate.costs,
-                isFavorite: favorites.contains(candidate.row.productTypeID)
-              )
-            }
-          } header: {
+      GeometryReader { geometry in
+        ScrollView(.horizontal) {
+          VStack(alignment: .leading, spacing: 0) {
             opportunityHeader
+            ScrollView(.vertical) {
+              LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(candidates) { candidate in
+                  opportunityRow(
+                    candidate.row,
+                    costs: candidate.costs,
+                    isFavorite: favorites.contains(candidate.row.productTypeID)
+                  )
+                }
+              }
+            }
+            .defaultScrollAnchor(.top)
           }
+          .frame(
+            height: ManufacturingOpportunityTableLayout.clampedViewportLength(
+              geometry.size.height
+            ),
+            alignment: .topLeading
+          )
+          .fixedSize(horizontal: true, vertical: false)
         }
+        .defaultScrollAnchor(.leading)
+        .accessibilityIdentifier("market-opportunities.table")
       }
-      .defaultScrollAnchor(.topLeading)
-      .accessibilityIdentifier("market-opportunities.table")
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1507,7 +1771,7 @@ struct ManufacturingOpportunitiesView: View {
           .font(.caption.bold())
           .tracking(1.1)
         Spacer()
-        Text(verbatim: "— / \(snapshot.rows.count)")
+        Text(verbatim: "— / \(formatInteger(snapshot.rows.count))")
           .font(.caption.monospacedDigit())
           .foregroundStyle(DesignTokens.textSecondary)
       }
@@ -1529,28 +1793,37 @@ struct ManufacturingOpportunitiesView: View {
 
   private var opportunityHeader: some View {
     HStack(spacing: 0) {
-      headerCell("", width: 28)
       headerCell("", width: 32)
-      sortableHeaderCell("Task", column: .task, width: 58, alignment: .leading)
-      sortableHeaderCell("Item", column: .item, width: 240, alignment: .leading)
-      sortableHeaderCell("Demand today", column: .demand, width: 100)
-      sortableHeaderCell("Quantity", column: .quantity, width: 80)
-      sortableHeaderCell("Runs", column: .runs, width: 55)
-      sortableHeaderCell("Duration", column: .duration, width: 90)
-      sortableHeaderCell("Cost", column: .cost, width: 110)
-      sortableHeaderCell("Revenue", column: .revenue, width: 110)
-      sortableHeaderCell("Sales tax", column: .salesTax, width: 95)
-      sortableHeaderCell("Broker fee", column: .brokerFee, width: 95)
-      sortableHeaderCell("Profit", column: .profit, width: 120)
-      sortableHeaderCell("ROI", column: .roi, width: 75)
-      sortableHeaderCell("ISK / h", column: .iskPerHour, width: 105)
-      sortableHeaderCell("ISK / m³", column: .iskPerCubicMeter, width: 105)
-      sortableHeaderCell("ME", column: .materialEfficiency, width: 55)
-      sortableHeaderCell("TE", column: .timeEfficiency, width: 55)
-      sortableHeaderCell("Group", column: .group, width: 180, alignment: .leading)
-      sortableHeaderCell("Category", column: .category, width: 150, alignment: .leading)
+      sortableHeaderCell("Task", column: .task, width: 52, alignment: .leading)
+      sortableHeaderCell("Item", column: .item, width: 210, alignment: .leading)
+      sortableHeaderCell("Daily demand", column: .demand, width: 155)
+      sortableHeaderCell("Quantity", column: .quantity, width: 70)
+      sortableHeaderCell("Runs", column: .runs, width: 68)
+      sortableHeaderCell("ME", column: .materialEfficiency, width: 58)
+      sortableHeaderCell("TE", column: .timeEfficiency, width: 58)
+      sortableHeaderCell("Duration", column: .duration, width: 80)
+      sortableHeaderCell("Cost", column: .cost, width: 100)
+      sortableHeaderCell("Revenue", column: .revenue, width: 100)
+      sortableHeaderCell("Sales tax", column: .salesTax, width: 85)
+      sortableHeaderCell("Broker fee", column: .brokerFee, width: 85)
+      sortableHeaderCell("Profit", column: .profit, width: 105)
+      sortableHeaderCell(
+        "Daily profit potential",
+        column: .dailyProfitPotential,
+        width: 125
+      )
+      sortableHeaderCell("ROI", column: .roi, width: 65)
+      sortableHeaderCell("ISK / h", column: .iskPerHour, width: 95)
+      sortableHeaderCell("ISK / m³", column: .iskPerCubicMeter, width: 95)
+        .padding(.leading, DesignTokens.spacingSM)
+      sortableHeaderCell("Group", column: .group, width: 145, alignment: .leading)
+        .padding(.leading, DesignTokens.spacingSM)
+      sortableHeaderCell("Category", column: .category, width: 125, alignment: .leading)
     }
     .background(DesignTokens.panel)
+    .overlay(alignment: .bottom) {
+      Rectangle().fill(DesignTokens.border).frame(height: 1)
+    }
   }
 
   private func opportunityRow(
@@ -1558,84 +1831,87 @@ struct ManufacturingOpportunitiesView: View {
     costs: ManufacturingOpportunityCostProjection,
     isFavorite: Bool
   ) -> some View {
-    let isExpanded = expandedOpportunityTypeID == row.productTypeID
-    return VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 0) {
-        Button {
-          toggleProductionTree(row)
-        } label: {
-          Image(systemName: "chevron.right")
-            .font(.caption2)
-            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            .foregroundStyle(DesignTokens.textSecondary)
-            .frame(width: 28, height: 20)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-          isExpanded ? "Collapse production tree" : "Expand production tree"
+    HStack(spacing: 0) {
+      Button {
+        toggleFavorite(row.productTypeID)
+      } label: {
+        Image(
+          systemName: isFavorite ? "star.fill" : "star"
         )
-        Button {
-          toggleFavorite(row.productTypeID)
-        } label: {
-          Image(
-            systemName: isFavorite ? "star.fill" : "star"
-          )
-          .foregroundStyle(
-            isFavorite ? DesignTokens.highlight : DesignTokens.textSecondary
-          )
-          .frame(width: 32)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Toggle favorite")
-        textCell("Build", width: 58, alignment: .leading)
-        Button {
-          toggleProductionTree(row)
-        } label: {
-          Text(verbatim: row.productName)
-            .font(.caption.monospacedDigit())
-            .lineLimit(1)
-            .help(row.productName)
-            .frame(width: 240, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(DesignTokens.textPrimary)
-        .accessibilityLabel(
-          isExpanded ? "Collapse production tree" : "Expand production tree"
+        .foregroundStyle(
+          isFavorite ? DesignTokens.highlight : DesignTokens.textSecondary
         )
-        textCell(row.observedDailyDemand?.formatted() ?? "—", width: 100)
-        textCell(row.producedQuantity.formatted(), width: 80)
-        textCell(row.runs.formatted(), width: 55)
-        textCell(formatDuration(row.durationSeconds), width: 90)
-        textCell(formatISK(costs.totalCost), width: 110)
-        textCell(formatISK(costs.grossRevenue), width: 110)
-        textCell(formatISK(costs.salesTax), width: 95)
-        textCell(formatISK(costs.brokerFee), width: 95)
-        textCell(
-          formatSignedISK(costs.profit),
-          width: 120,
-          color: costs.profit.map {
-            $0 >= 0 ? DesignTokens.positive : DesignTokens.negative
-          } ?? DesignTokens.caution
-        )
-        textCell(formatPercent(costs.returnOnInvestment), width: 75)
-        textCell(formatISK(costs.iskPerHour), width: 105)
-        textCell(formatISK(costs.iskPerCubicMeter), width: 105)
-        textCell("\(row.materialEfficiency.formatted()) %", width: 55)
-        textCell("\(row.timeEfficiency.formatted()) %", width: 55)
-        textCell(row.groupName, width: 180, alignment: .leading)
-        textCell(row.categoryName, width: 150, alignment: .leading)
+        .frame(width: 32)
       }
-      .padding(.vertical, 5)
-      .background(
-        selectedTypeID == row.productTypeID
-          ? DesignTokens.accentSoft : Color.clear
+      .buttonStyle(.plain)
+      .accessibilityLabel("Toggle favorite")
+      Button("Build") {
+        onBuildInPlanner(
+          MainHubOpportunityPlannerHandoff.request(
+            productTypeID: row.productTypeID,
+            productName: row.productName,
+            requestedRuns: row.runs,
+            wantedQuantity: Int(clamping: row.producedQuantity),
+            materialEfficiency: row.displayedMaterialEfficiency ?? 0,
+            timeEfficiency: row.displayedTimeEfficiency ?? 0
+          )
+        )
+      }
+      .buttonStyle(.plain)
+      .font(.caption.monospacedDigit())
+      .frame(width: 52, alignment: .leading)
+      .accessibilityLabel("Build in Planner")
+      .help(
+        "Transfer this row's visible quantity, Runs, ME and TE directly to Planner. Concrete Blueprint sources are selected and verified there."
       )
-      .contentShape(Rectangle())
-      .onTapGesture { selectedTypeID = row.productTypeID }
-      if isExpanded {
-        productionTreePane(row)
-      }
+      EVEItemText(
+        value: row.productName,
+        typeID: row.productTypeID,
+        font: .caption.monospacedDigit(),
+        lineLimit: 1,
+        accessibilityIdentifier:
+          "market-opportunities.product.copy.\(row.productTypeID)"
+      )
+      .help(row.productName)
+      .frame(width: 210, alignment: .leading)
+      dailyDemandCell(row)
+      textCell(formatInteger(row.producedQuantity), width: 70)
+      requestedRunsCell(row)
+      requestedEfficiencyCell(row, kind: .material)
+      requestedEfficiencyCell(row, kind: .time)
+      textCell(formatDuration(row.durationSeconds), width: 80)
+      textCell(formatISK(costs.totalCost), width: 100)
+      textCell(formatISK(costs.grossRevenue), width: 100)
+      textCell(formatISK(costs.salesTax), width: 85)
+      textCell(formatISK(costs.brokerFee), width: 85)
+      textCell(
+        formatSignedISK(costs.profit),
+        width: 105,
+        color: costs.profit.map {
+          $0 >= 0 ? DesignTokens.positive : DesignTokens.negative
+        } ?? DesignTokens.caution
+      )
+      textCell(
+        formatSignedISK(
+          ManufacturingOpportunityScenarioProjector.dailyProfitPotential(
+            for: row,
+            costs: costs
+          )
+        ),
+        width: 125,
+        color: costs.profit.map {
+          $0 >= 0 ? DesignTokens.positive : DesignTokens.negative
+        } ?? DesignTokens.caution
+      )
+      textCell(formatPercent(costs.returnOnInvestment), width: 65)
+      textCell(formatISK(costs.iskPerHour), width: 95)
+      textCell(formatISK(costs.iskPerCubicMeter), width: 95)
+        .padding(.leading, DesignTokens.spacingSM)
+      textCell(row.groupName, width: 145, alignment: .leading)
+        .padding(.leading, DesignTokens.spacingSM)
+      textCell(row.categoryName, width: 125, alignment: .leading)
     }
+    .padding(.vertical, 5)
     .overlay(alignment: .bottom) { Divider() }
     .accessibilityElement(children: .contain)
   }
@@ -1689,13 +1965,48 @@ struct ManufacturingOpportunitiesView: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .help("Click to sort ascending; click again to sort descending.")
+    .help(Text(sortableColumnHelp(column)))
     .accessibilityLabel(title)
     .accessibilityValue(
       tableSort?.column == column
         ? (tableSort?.direction == .ascending ? "Ascending" : "Descending")
         : "Not sorted"
     )
+  }
+
+  private func sortableColumnHelp(
+    _ column: ManufacturingOpportunitySortColumn
+  ) -> LocalizedStringKey {
+    switch column {
+    case .cost:
+      "Total cost: material replacement value plus installation, optional Blueprint allocation and both required Profile logistics legs. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
+    case .revenue:
+      "Gross revenue: lowest active sell-order price at the exact Main Hub multiplied by the complete scenario output. No tax or fee has been deducted yet. Click to sort."
+    case .salesTax:
+      "Sales tax: gross revenue multiplied by the effective trader sales-tax rate from the configured Main-Hub Profile. It is deducted from revenue. Click to sort."
+    case .brokerFee:
+      "Broker fee: gross revenue multiplied by the effective broker-fee rate from the configured Main-Hub Profile. It is deducted from revenue. Click to sort."
+    case .profit:
+      "Profit: gross revenue minus sales tax and broker fee, then minus total cost. If any required market, fee, Warehouse or logistics value is unavailable, profit remains unavailable. Click to sort."
+    case .dailyProfitPotential:
+      "Daily profit potential: scenario profit divided by produced units, multiplied by the lower of the selected batch quantity and currently observed daily demand. It cannot exceed this batch's profit and is not a sales guarantee. Click to sort."
+    case .demand:
+      "Daily demand shows the conservative current exact-hub rate, plus the previous UTC day and the average of known recorded days where available. Missing observations remain unavailable. Click to sort by current demand."
+    case .runs:
+      "Runs is editable for each item. A change recalculates only that row from the saved Main Hub scenario and captured weighted unit prices; use Update for fresh market depth. Click the heading to sort."
+    case .materialEfficiency:
+      "ME is editable for manufacturing items and changes material quantities with EVE rounding. Reactions have no ME and remain unavailable in this column. Tech I modules start at ME 10, Loyalty Store BPC products at ME 0 and Tech II candidates at ME 3 until a concrete Blueprint is selected in the Planner. Click the heading to sort."
+    case .timeEfficiency:
+      "TE is editable for manufacturing items and changes production duration. Reactions have no TE and remain unavailable in this column. Tech I modules start at TE 20, Loyalty Store BPC products at TE 0 and Tech II candidates at TE 2 until a concrete Blueprint is selected in the Planner. Click the heading to sort."
+    case .roi:
+      "ROI: profit divided by total scenario cost. Missing profit or cost remains unavailable. Click to sort."
+    case .iskPerHour:
+      "ISK per hour: scenario profit divided by the calculated production duration for the row's selected ME and TE. Click to sort."
+    case .iskPerCubicMeter:
+      "ISK per cubic metre: scenario profit divided by the packaged volume of the complete output. Missing volume remains unavailable. Click to sort."
+    default:
+      "Click to sort ascending; click again to sort descending."
+    }
   }
 
   private func textCell(
@@ -1712,6 +2023,166 @@ struct ManufacturingOpportunitiesView: View {
       .frame(width: width, alignment: alignment)
   }
 
+  private func requestedRunsCell(
+    _ row: ManufacturingOpportunityRow
+  ) -> some View {
+    let text =
+      requestedRunTextsByTypeID[row.productTypeID]
+      ?? String(requestedRunsByTypeID[row.productTypeID] ?? row.runs)
+    let isValid = requestedRuns(from: text) != nil
+    let hasOverride = requestedRunsByTypeID[row.productTypeID] != nil
+    return HStack(spacing: 3) {
+      TextField(
+        "Runs",
+        text: requestedRunsBinding(for: row)
+      )
+      .textFieldStyle(.roundedBorder)
+      .font(.caption.monospacedDigit())
+      .multilineTextAlignment(.trailing)
+      .frame(width: hasOverride ? 50 : 68)
+      .overlay {
+        if !isValid {
+          RoundedRectangle(cornerRadius: 4).stroke(DesignTokens.negative)
+        }
+      }
+      .onSubmit { normalizeRequestedRuns(for: row) }
+      .accessibilityLabel(
+        AppLocalization.format("Runs for %@", row.productName)
+      )
+      .accessibilityHint(
+        "Changing this value recalculates only this item from the saved Main Hub scenario."
+      )
+      if hasOverride {
+        Image(systemName: "info.circle")
+          .font(.caption2)
+          .foregroundStyle(DesignTokens.caution)
+          .help(
+            "This item-only estimate reuses the captured weighted Main Hub unit prices. Use Update for fresh market depth."
+          )
+          .accessibilityLabel("Item-only estimate")
+          .accessibilityHint(
+            "Uses captured weighted Main Hub unit prices; Update fetches fresh market depth."
+          )
+      }
+    }
+    .frame(width: 68, alignment: .trailing)
+  }
+
+  @ViewBuilder
+  private func requestedEfficiencyCell(
+    _ row: ManufacturingOpportunityRow,
+    kind: OpportunityEfficiencyKind
+  ) -> some View {
+    if !row.supportsBlueprintEfficiency {
+      textCell("—", width: 58)
+        .help("Reactions use formula runs. ME and TE do not apply.")
+        .accessibilityLabel(
+          kind == .material
+            ? "Material efficiency does not apply"
+            : "Time efficiency does not apply"
+        )
+    } else {
+      let text = requestedEfficiencyText(for: row, kind: kind)
+      let isValid =
+        requestedEfficiency(from: text, kind: kind, row: row) != nil
+      TextField(
+        kind == .material ? "ME" : "TE",
+        text: requestedEfficiencyBinding(for: row, kind: kind)
+      )
+      .textFieldStyle(.roundedBorder)
+      .font(.caption.monospacedDigit())
+      .multilineTextAlignment(.trailing)
+      .frame(width: 58)
+      .overlay {
+        if !isValid {
+          RoundedRectangle(cornerRadius: 4).stroke(DesignTokens.negative)
+        }
+      }
+      .onSubmit { normalizeRequestedEfficiency(for: row, kind: kind) }
+      .help(
+        kind == .material
+          ? "Material efficiency for this candidate. Tech I modules start at ME 10, Loyalty Store BPC products at ME 0 and Tech II candidates at ME 3. The Planner verifies the concrete Blueprint value."
+          : "Time efficiency for this candidate. Tech I modules start at TE 20, Loyalty Store BPC products at TE 0 and Tech II candidates at TE 2. The Planner verifies the concrete Blueprint value."
+      )
+      .accessibilityLabel(
+        AppLocalization.format(
+          "%@ for %@",
+          kind == .material ? "ME" : "TE",
+          row.productName
+        )
+      )
+    }
+  }
+
+  private func dailyDemandCell(
+    _ row: ManufacturingOpportunityRow
+  ) -> some View {
+    let previousAndAverage: String?
+    if let previous = row.previousDayDemand,
+      let average = row.averageDailyDemand
+    {
+      previousAndAverage = AppLocalization.format(
+        "Previous day %@ · average %@ (%@ days)",
+        formatInteger(previous),
+        formatInteger(average),
+        formatInteger(row.recordedDemandDayCount ?? 0)
+      )
+    } else if let previous = row.previousDayDemand {
+      previousAndAverage = AppLocalization.format(
+        "Previous day %@",
+        formatInteger(previous)
+      )
+    } else if let average = row.averageDailyDemand {
+      previousAndAverage = AppLocalization.format(
+        "Average %@ (%@ days)",
+        formatInteger(average),
+        formatInteger(row.recordedDemandDayCount ?? 0)
+      )
+    } else {
+      previousAndAverage = nil
+    }
+    let changeText = row.demandChangeFromPreviousDayPercent.map { change in
+      let number = abs(change).formatted(
+        .number
+          .locale(AppLocalization.currentLanguage.locale)
+          .grouping(.automatic)
+          .precision(.fractionLength(1))
+      )
+      let signed = change > 0 ? "+\(number)%" : change < 0 ? "−\(number)%" : "0%"
+      return AppLocalization.format("≈ %@ vs previous day", signed)
+    }
+    let help = [
+      row.observedDailyDemand.map {
+        AppLocalization.format("Current daily demand: %@", formatInteger($0))
+      },
+      previousAndAverage,
+      changeText,
+    ].compactMap { $0 }.joined(separator: "\n")
+
+    return VStack(alignment: .trailing, spacing: 1) {
+      Text(verbatim: row.observedDailyDemand.map(formatInteger) ?? "—")
+        .font(.caption.monospacedDigit())
+      if let previousAndAverage {
+        Text(verbatim: previousAndAverage)
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(DesignTokens.textSecondary)
+          .lineLimit(1)
+      }
+      if let changeText {
+        Text(verbatim: changeText)
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(
+            (row.demandChangeFromPreviousDayPercent ?? 0) >= 0
+              ? DesignTokens.positive : DesignTokens.negative
+          )
+          .lineLimit(1)
+      }
+    }
+    .help(help)
+    .accessibilityElement(children: .combine)
+    .frame(width: 155, alignment: .trailing)
+  }
+
   private func productionTreePane(
     _ opportunity: ManufacturingOpportunityRow
   ) -> some View {
@@ -1719,21 +2190,15 @@ struct ManufacturingOpportunitiesView: View {
       HStack(spacing: DesignTokens.spacingSM) {
         Label("Production tree", systemImage: "point.3.connected.trianglepath.dotted")
           .font(.caption.bold())
-        LabeledContent("Target quantity") {
-          TextField(
-            "Quantity",
-            value: $productionTreeQuantity,
-            format: .number
+        Text(
+          AppLocalization.format(
+            "%@ runs · produces %@ units",
+            formatInteger(opportunity.runs),
+            formatInteger(opportunity.producedQuantity)
           )
-          .textFieldStyle(.roundedBorder)
-          .frame(width: 100)
-          .onSubmit { reloadProductionTree(opportunity) }
-        }
-        Button("Recalculate") {
-          reloadProductionTree(opportunity)
-        }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.small)
+        )
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
         Spacer()
         if let plan = productionTree?.selectedPlan {
           treeSummaryMetric(
@@ -1808,13 +2273,56 @@ struct ManufacturingOpportunitiesView: View {
           .padding(DesignTokens.spacingSM)
         }
         Label(
-          "Blueprint source selections are recorded in this open tree. Contract bundle prices and copy or invention costs remain excluded until they can be attributed without guessing.",
+          "Blueprint source selections are recorded as concrete jobs in this open tree. Copying, research and invention remain disabled until their complete Science jobs are available.",
           systemImage: "doc.on.doc"
         )
         .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-        .padding(.horizontal, DesignTokens.spacingSM)
-        .padding(.bottom, DesignTokens.spacingSM)
+        if let supplyPlans = tree.selectedPlan.blueprintSupplyPlans,
+          !supplyPlans.isEmpty
+        {
+          VStack(alignment: .leading, spacing: 4) {
+            ForEach(supplyPlans) { supply in
+              HStack(spacing: DesignTokens.spacingSM) {
+                EVEItemText(
+                  value: supply.productName,
+                  typeID: supply.productTypeID,
+                  font: .caption
+                )
+                Text(
+                  AppLocalization.format(
+                    "%@ concrete Blueprint job(s) · %@ required runs",
+                    supply.manufacturingJobs.count.formatted(),
+                    supply.requiredRuns.formatted()
+                  )
+                )
+                .font(.caption.monospacedDigit())
+              }
+              ForEach(supply.manufacturingJobs) { job in
+                HStack(spacing: DesignTokens.spacingSM) {
+                  Text(
+                    AppLocalization.format(
+                      "%@ runs · ME %@ · TE %@ · %@ remaining",
+                      job.runs.formatted(),
+                      job.allocation.materialEfficiency.formatted(),
+                      job.allocation.timeEfficiency.formatted(),
+                      job.allocation.remainingRuns?.formatted() ?? "unlimited"
+                    )
+                  )
+                  .font(.caption.monospacedDigit())
+                  if let owner = job.allocation.ownerName {
+                    EVEEntityText(value: owner, font: .caption)
+                  }
+                  if let location = job.allocation.locationName {
+                    EVEEntityText(value: location, font: .caption)
+                  }
+                }
+                .padding(.leading, DesignTokens.spacingMD)
+              }
+            }
+          }
+          .padding(DesignTokens.spacingSM)
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
       }
     }
     .frame(minWidth: 1_600, alignment: .leading)
@@ -1852,19 +2360,19 @@ struct ManufacturingOpportunitiesView: View {
             Image(systemName: productionTreeIcon(node))
               .foregroundStyle(productionTreeActionColor(node.action))
               .frame(width: 18)
-            Button {
-              if !node.children.isEmpty { toggleProductionNode(node.id) }
-            } label: {
-              VStack(alignment: .leading, spacing: 1) {
-                EVEEntityText(value: node.name, lineLimit: 1)
-                Text(verbatim: productionTreeSubtitle(node))
-                  .font(.caption2)
-                  .foregroundStyle(DesignTokens.textSecondary)
-                  .lineLimit(1)
-              }
-              .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+              EVEItemText(
+                value: node.name,
+                typeID: node.typeID,
+                lineLimit: 1,
+                iconSize: 20
+              )
+              Text(verbatim: productionTreeSubtitle(node))
+                .font(.caption2)
+                .foregroundStyle(DesignTokens.textSecondary)
+                .lineLimit(1)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
           }
           .padding(.leading, CGFloat(depth) * 18 + 6)
           .frame(width: 420, alignment: .leading)
@@ -1909,7 +2417,8 @@ struct ManufacturingOpportunitiesView: View {
           if let blueprint = node.blueprint {
             blueprintSourceView(
               blueprint,
-              node: node
+              node: node,
+              opportunity: opportunity
             )
             .frame(width: 360, alignment: .leading)
           } else {
@@ -1976,7 +2485,8 @@ struct ManufacturingOpportunitiesView: View {
   ) -> some View {
     let text: String
     if let usable = node.usableWarehouseQuantity {
-      text = "\(usable.formatted()) / \(node.totalRequiredQuantity.formatted())"
+      text =
+        "\(formatInteger(usable)) / \(formatInteger(node.totalRequiredQuantity))"
     } else {
       text = "Stock unavailable".localizedUI
     }
@@ -1992,27 +2502,128 @@ struct ManufacturingOpportunitiesView: View {
 
   private func blueprintSourceView(
     _ blueprint: ProductionTreeBlueprintAssessment,
-    node: ManufacturingProductionTreeNode
+    node: ManufacturingProductionTreeNode,
+    opportunity: ManufacturingOpportunityRow
   ) -> some View {
-    HStack(spacing: 4) {
-      Picker(
-        "Blueprint source",
-        selection: treeBlueprintBinding(blueprint)
-      ) {
-        ForEach(
-          blueprint.availableActions.sorted { $0.rawValue < $1.rawValue },
-          id: \.self
-        ) { action in
-          Text(blueprintActionTitle(action)).tag(action)
+    VStack(alignment: .leading, spacing: 3) {
+      EVEItemText(
+        value: blueprint.blueprintName,
+        typeID: blueprint.blueprintTypeID,
+        font: .caption2,
+        lineLimit: 1,
+        iconSize: 14
+      )
+      HStack(spacing: 4) {
+        Picker(
+          "Blueprint source",
+          selection: treeBlueprintBinding(
+            blueprint,
+            opportunity: opportunity
+          )
+        ) {
+          ForEach(
+            blueprint.availableActions.sorted { $0.rawValue < $1.rawValue },
+            id: \.self
+          ) { action in
+            Text(blueprintActionTitle(action, assessment: blueprint)).tag(action)
+          }
         }
-      }
-      .pickerStyle(.menu)
-      .labelsHidden()
-      .frame(maxWidth: 225, alignment: .leading)
-      Text(verbatim: blueprintRecommendationLabel(blueprint.recommendation))
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(maxWidth: 225, alignment: .leading)
+        Text(
+          verbatim: blueprintRecommendationLabel(
+            blueprint.recommendation,
+            assessment: blueprint
+          )
+        )
         .font(.caption2.bold())
         .foregroundStyle(blueprintActionColor(blueprint.recommendation))
         .lineLimit(1)
+      }
+      let action =
+        treeBlueprintActions[blueprint.blueprintTypeID]
+        ?? blueprint.recommendation
+      let concreteSources = treeConcreteBlueprintSources(
+        blueprint,
+        action: action
+      )
+      if !concreteSources.isEmpty {
+        Picker(
+          "Concrete Blueprint",
+          selection: treeConcreteBlueprintSourceBinding(
+            blueprint,
+            opportunity: opportunity
+          )
+        ) {
+          Text("Automatic concrete allocation").tag(
+            Optional<BlueprintSourceReference>.none
+          )
+          ForEach(concreteSources, id: \.source) { option in
+            Text(option.title).tag(Optional(option.source))
+          }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(maxWidth: 225, alignment: .leading)
+      }
+      if action == .useOwnedBPC || action == .useOwnedBPO {
+        ForEach(blueprint.productionLocationNames, id: \.self) { name in
+          EVEEntityText(value: name, font: .caption2, lineLimit: 1)
+        }
+        let owners =
+          action == .useOwnedBPC
+          ? blueprint.exactLocationBPCOwnerNames
+          : blueprint.exactLocationBPOOwnerNames
+        ForEach(owners, id: \.self) { owner in
+          EVEEntityText(value: owner, font: .caption2, lineLimit: 1)
+        }
+        let sourceStates =
+          action == .useOwnedBPC
+          ? blueprint.exactLocationBPCSourceStates
+          : blueprint.exactLocationBPOSourceStates
+        if sourceStates.contains(where: { $0 != .fresh }) {
+          Label(
+            "Owned Blueprint evidence is retained but not fully fresh.",
+            systemImage: "clock.badge.exclamationmark"
+          )
+          .font(.caption2)
+          .foregroundStyle(DesignTokens.caution)
+        }
+      } else if blueprint.otherLocationBPOCount > 0
+        || blueprint.otherLocationBPCCount > 0
+      {
+        Label(
+          "An owned Blueprint exists at another location. Move it to the displayed production location and refresh Blueprints and Assets before selecting it.",
+          systemImage: "shippingbox.and.arrow.backward"
+        )
+        .font(.caption2)
+        .foregroundStyle(DesignTokens.caution)
+      }
+      if action == .buyContractBPC,
+        let price = blueprint.attributableBPCContractPrice
+      {
+        Text(
+          AppLocalization.format(
+            "Included BPC cost: %@ · %@ contracts · %@ runs",
+            formatISK(price),
+            formatInteger(blueprint.attributableBPCContractSelectionCount),
+            blueprint.attributableBPCContractRuns.map(formatInteger) ?? "—"
+          )
+        )
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(DesignTokens.positive)
+      } else if action.requiresExplicitCost {
+        TextField(
+          "Allocated ISK",
+          text: treeBlueprintCostBinding(
+            blueprintTypeID: blueprint.blueprintTypeID
+          )
+        )
+        .textFieldStyle(.roundedBorder)
+        .frame(width: 150)
+        .onSubmit { reloadProductionTree(opportunity) }
+      }
     }
     .help(blueprintAssessmentHelp(blueprint, node: node))
   }
@@ -2047,7 +2658,7 @@ struct ManufacturingOpportunitiesView: View {
     width: CGFloat,
     dashForZero: Bool = false
   ) -> some View {
-    Text(verbatim: dashForZero && value == 0 ? "—" : value.formatted())
+    Text(verbatim: dashForZero && value == 0 ? "—" : formatInteger(value))
       .font(.caption.monospacedDigit())
       .frame(width: width, alignment: .trailing)
   }
@@ -2062,8 +2673,10 @@ struct ManufacturingOpportunitiesView: View {
       ?? "Main Hub"
 
     return GeometryReader { geometry in
-      let columnWidth = max(320, (geometry.size.width - 8) / 2)
-      HSplitView {
+      let layout = ManufacturingOpportunityWorkbenchLayout(
+        viewportSize: geometry.size
+      )
+      HStack(spacing: 0) {
         Group {
           if let row, let procurement {
             warehousePane(
@@ -2076,12 +2689,13 @@ struct ManufacturingOpportunitiesView: View {
           }
         }
         .frame(
-          minWidth: 320,
-          idealWidth: columnWidth,
-          maxWidth: .infinity,
-          maxHeight: .infinity,
+          width: layout.columnWidth,
+          height: layout.viewportHeight,
           alignment: .topLeading
         )
+        if layout.dividerWidth > 0 {
+          Divider().frame(width: layout.dividerWidth)
+        }
         VStack(alignment: .leading, spacing: 0) {
           Picker("Details", selection: $lowerTab) {
             ForEach(OpportunityLowerTab.allCases) { tab in
@@ -2112,17 +2726,15 @@ struct ManufacturingOpportunitiesView: View {
           }
         }
         .frame(
-          minWidth: 320,
-          idealWidth: columnWidth,
-          maxWidth: .infinity,
-          maxHeight: .infinity,
+          width: layout.columnWidth,
+          height: layout.viewportHeight,
           alignment: .topLeading
         )
         .background(DesignTokens.canvas)
       }
       .frame(
-        width: geometry.size.width,
-        height: geometry.size.height,
+        width: layout.viewportWidth,
+        height: layout.viewportHeight,
         alignment: .topLeading
       )
     }
@@ -2145,8 +2757,8 @@ struct ManufacturingOpportunitiesView: View {
             verbatim:
               String(
                 format: "%@ owners · %@ units".localizedUI,
-                preparedWarehouse.inventoryCount.formatted(),
-                preparedWarehouse.totalUnits.formatted()
+                formatInteger(preparedWarehouse.inventoryCount),
+                formatInteger(preparedWarehouse.totalUnits)
               )
           )
           .font(.caption.monospacedDigit())
@@ -2185,8 +2797,8 @@ struct ManufacturingOpportunitiesView: View {
                       verbatim:
                         String(
                           format: "%@ types · %@ units".localizedUI,
-                          warehouseLocation.distinctTypeCount.formatted(),
-                          warehouseLocation.totalUnits.formatted()
+                          formatInteger(warehouseLocation.distinctTypeCount),
+                          formatInteger(warehouseLocation.totalUnits)
                         )
                     )
                     .font(.caption.monospacedDigit())
@@ -2286,8 +2898,8 @@ struct ManufacturingOpportunitiesView: View {
             verbatim:
               String(
                 format: "%@ owners · %@ units".localizedUI,
-                preparedWarehouse.inventoryCount.formatted(),
-                preparedWarehouse.totalUnits.formatted()
+                formatInteger(preparedWarehouse.inventoryCount),
+                formatInteger(preparedWarehouse.totalUnits)
               )
           )
           .font(.caption.monospacedDigit())
@@ -2303,14 +2915,24 @@ struct ManufacturingOpportunitiesView: View {
             Section {
               ForEach(procurement.lines) { line in
                 HStack(spacing: 0) {
-                  entityLowerCell(line.name, width: 190)
-                  lowerCell(line.requiredQuantity.formatted(), width: 76)
-                  lowerCell(line.factualWarehouseQuantity.formatted(), width: 76)
-                  lowerCell(line.protectedQuantity.formatted(), width: 70)
-                  lowerCell(line.reservedQuantity.formatted(), width: 70)
-                  lowerCell(line.usableWarehouseQuantity.formatted(), width: 76)
+                  entityLowerCell(
+                    line.name,
+                    typeID: line.typeID,
+                    width: 190
+                  )
+                  lowerCell(formatInteger(line.requiredQuantity), width: 76)
                   lowerCell(
-                    line.fromWarehouse.formatted(),
+                    formatInteger(line.factualWarehouseQuantity),
+                    width: 76
+                  )
+                  lowerCell(formatInteger(line.protectedQuantity), width: 70)
+                  lowerCell(formatInteger(line.reservedQuantity), width: 70)
+                  lowerCell(
+                    formatInteger(line.usableWarehouseQuantity),
+                    width: 76
+                  )
+                  lowerCell(
+                    formatInteger(line.fromWarehouse),
                     width: 76,
                     color: line.fromWarehouse > 0
                       ? DesignTokens.positive : DesignTokens.textSecondary
@@ -2390,10 +3012,14 @@ struct ManufacturingOpportunitiesView: View {
           ForEach(Array(zip(row.materials, procurement.lines)), id: \.0.id) {
             material, line in
             HStack(spacing: 0) {
-              entityLowerCell(material.name, width: 220)
-              lowerCell(material.quantity.formatted(), width: 85)
+              entityLowerCell(
+                material.name,
+                typeID: material.typeID,
+                width: 220
+              )
+              lowerCell(formatInteger(material.quantity), width: 85)
               lowerCell(
-                "\(line.marketFilledQuantity.formatted()) / \(material.quantity.formatted())",
+                "\(formatInteger(line.marketFilledQuantity)) / \(formatInteger(material.quantity))",
                 width: 85,
                 color: line.hasCompleteMarketCoverage
                   ? DesignTokens.positive : DesignTokens.caution
@@ -2440,9 +3066,13 @@ struct ManufacturingOpportunitiesView: View {
             }
             ForEach(procurement.lines.filter { $0.toBuy > 0 }) { line in
               HStack(spacing: 0) {
-                entityLowerCell(line.name, width: 220)
-                lowerCell(line.fromWarehouse.formatted(), width: 90)
-                lowerCell(line.toBuy.formatted(), width: 85)
+                entityLowerCell(
+                  line.name,
+                  typeID: line.typeID,
+                  width: 220
+                )
+                lowerCell(formatInteger(line.fromWarehouse), width: 90)
+                lowerCell(formatInteger(line.toBuy), width: 85)
                 lowerCell(formatISK(line.weightedUnitPrice), width: 115)
                 lowerCell(formatISK(line.purchaseCashRequirement), width: 125)
               }
@@ -2457,8 +3087,13 @@ struct ManufacturingOpportunitiesView: View {
               .foregroundStyle(DesignTokens.positive)
           }
           Spacer()
-          Text("\(procurement.totalQuantityToBuy.formatted()) units")
-            .foregroundStyle(DesignTokens.textSecondary)
+          Text(
+            AppLocalization.format(
+              "%@ units",
+              formatInteger(procurement.totalQuantityToBuy)
+            )
+          )
+          .foregroundStyle(DesignTokens.textSecondary)
           Text(formatISK(procurement.purchaseCashRequirement))
             .fontWeight(.semibold)
             .monospacedDigit()
@@ -2479,6 +3114,7 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private func costDetailPane(_ row: ManufacturingOpportunityRow) -> some View {
+    let procurement = procurementProjection(for: row)
     let logistics = logisticsProjection(for: row)
     let costs = ManufacturingOpportunityScenarioProjector.costs(
       for: row,
@@ -2488,7 +3124,7 @@ struct ManufacturingOpportunitiesView: View {
     return ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
         HStack(alignment: .firstTextBaseline) {
-          EVEEntityText(value: row.productName)
+          EVEItemText(value: row.productName, typeID: row.productTypeID)
           Spacer()
           Text(verbatim: "\(row.groupName) · \(row.categoryName)")
             .font(.caption)
@@ -2500,6 +3136,10 @@ struct ManufacturingOpportunitiesView: View {
           spacing: DesignTokens.spacingSM
         ) {
           detailMetric("Material cost", formatISK(costs.materialCost))
+          detailMetric(
+            "Material purchase cash",
+            formatISK(procurement.purchaseCashRequirement)
+          )
           detailMetric("Installation", formatISK(costs.installationCost))
           detailMetric("Blueprint allocation", formatISK(costs.blueprintAllocation))
           detailMetric("Logistics", formatISK(costs.logisticsCost))
@@ -2508,6 +3148,22 @@ struct ManufacturingOpportunitiesView: View {
           detailMetric("Sales tax", formatISK(costs.salesTax))
           detailMetric("Broker fee", formatISK(costs.brokerFee))
           detailMetric("Profit", formatSignedISK(costs.profit))
+          detailMetric(
+            "Daily profit potential",
+            formatSignedISK(
+              ManufacturingOpportunityScenarioProjector.dailyProfitPotential(
+                for: row,
+                costs: costs
+              )
+            )
+          )
+          detailMetric(
+            "Estimated sell-through",
+            formatDays(
+              ManufacturingOpportunityScenarioProjector
+                .estimatedSellThroughDays(for: row)
+            )
+          )
           detailMetric("ROI", formatPercent(costs.returnOnInvestment))
           detailMetric("ISK / h", formatISK(costs.iskPerHour))
           detailMetric("ISK / m³", formatISK(costs.iskPerCubicMeter))
@@ -2516,6 +3172,17 @@ struct ManufacturingOpportunitiesView: View {
           Label(facilityName, systemImage: "hammer.fill")
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
+        }
+        ForEach(logistics.legs) { leg in
+          HStack(spacing: DesignTokens.spacingSM) {
+            EVEEntityText(value: leg.origin, font: .caption)
+            Image(systemName: "arrow.right")
+              .foregroundStyle(DesignTokens.textSecondary)
+            EVEEntityText(value: leg.destination, font: .caption)
+            Spacer()
+            Text(formatISK(leg.roundedCharge))
+              .font(.caption.monospacedDigit())
+          }
         }
         ForEach(logistics.warnings) { warning in
           Label(
@@ -2571,23 +3238,45 @@ struct ManufacturingOpportunitiesView: View {
       .frame(width: width, alignment: alignment)
   }
 
-  private func entityLowerCell(_ value: String, width: CGFloat) -> some View {
-    EVEEntityText(value: value, lineLimit: 1)
-      .help(value)
-      .frame(width: width, alignment: .leading)
+  private func entityLowerCell(
+    _ value: String,
+    typeID: Int64,
+    width: CGFloat
+  ) -> some View {
+    EVEItemText(
+      value: value,
+      typeID: typeID,
+      lineLimit: 1,
+      iconSize: 18
+    )
+    .help(value)
+    .frame(width: width, alignment: .leading)
   }
 
   private func filterColumn<Content: View>(
     _ title: LocalizedStringKey,
+    help: LocalizedStringKey,
     @ViewBuilder content: () -> Content
   ) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(title)
-        .font(.caption.bold())
-        .foregroundStyle(DesignTokens.accent)
+      OpportunityExplanationButton(
+        title: title,
+        explanation: help,
+        systemImage: "info.circle",
+        color: DesignTokens.accent,
+        font: .caption.bold()
+      )
       content()
     }
-    .padding(.trailing, DesignTokens.spacingSM)
+    .help(Text(help))
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .padding(DesignTokens.spacingSM)
+    .background(DesignTokens.elevated)
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+        .stroke(DesignTokens.border)
+    }
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
   }
 
   private func compactToggle(
@@ -2598,21 +3287,6 @@ struct ManufacturingOpportunitiesView: View {
       .toggleStyle(.checkbox)
       .controlSize(.small)
       .font(.caption)
-  }
-
-  private func disabledToggle(_ title: LocalizedStringKey) -> some View {
-    Toggle(title, isOn: .constant(false))
-      .toggleStyle(.checkbox)
-      .controlSize(.small)
-      .font(.caption)
-      .disabled(true)
-      .help("This source is not available in the current app data.")
-  }
-
-  private func disabledFilterLine(_ title: LocalizedStringKey) -> some View {
-    Label(title, systemImage: "circle.dashed")
-      .font(.caption)
-      .foregroundStyle(DesignTokens.textDisabled)
   }
 
   private func familyToggle(
@@ -2634,13 +3308,29 @@ struct ManufacturingOpportunitiesView: View {
     )
   }
 
-  private func costProjection(
-    for row: ManufacturingOpportunityRow
-  ) -> ManufacturingOpportunityCostProjection {
-    ManufacturingOpportunityScenarioProjector.costs(
-      for: row,
-      sheet: costSheet,
-      logistics: logisticsProjection(for: row)
+  private func productionClassToggle(
+    _ productionClass: ManufacturingOpportunityProductionClass
+  ) -> some View {
+    compactToggle(
+      productionClass.title,
+      isOn: productionClassBinding(productionClass)
+    )
+  }
+
+  private func productionClassBinding(
+    _ productionClass: ManufacturingOpportunityProductionClass
+  ) -> Binding<Bool> {
+    Binding(
+      get: { selectedProductionClasses.contains(productionClass) },
+      set: { isSelected in
+        var values = selectedProductionClasses
+        if isSelected {
+          values.insert(productionClass)
+        } else {
+          values.remove(productionClass)
+        }
+        persistProductionClasses(values)
+      }
     )
   }
 
@@ -2686,6 +3376,12 @@ struct ManufacturingOpportunitiesView: View {
       .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
   }
 
+  private var hasProductionClassMetadata: Bool {
+    runtime.manufacturingOpportunityAnalysis?.rows.contains {
+      $0.metaGroupID != nil || $0.techLevel != nil
+    } == true
+  }
+
   private var favoriteIDs: Set<Int64> {
     guard let data = encodedFavoriteIDs.data(using: .utf8),
       let values = try? JSONDecoder().decode([Int64].self, from: data)
@@ -2707,6 +3403,16 @@ struct ManufacturingOpportunitiesView: View {
 
   private var parsedBlueprintCost: Double? {
     parseNonnegativeISK(blueprintCostPerRunText)
+  }
+
+  private var parsedMaximumMaterialPurchaseISK: Double? {
+    parseNonnegativeISK(maximumMaterialPurchaseISKText)
+  }
+
+  private var maximumMaterialPurchaseISKIsInvalid: Bool {
+    !maximumMaterialPurchaseISKText.trimmingCharacters(
+      in: .whitespacesAndNewlines
+    ).isEmpty && parsedMaximumMaterialPurchaseISK == nil
   }
 
   private var protectedQuantities: [Int64: Int64] {
@@ -2735,7 +3441,7 @@ struct ManufacturingOpportunitiesView: View {
   private var activeCandidateSort: ManufacturingOpportunitySortDescriptor {
     tableSort
       ?? ManufacturingOpportunitySortDescriptor(
-        column: .profit,
+        column: .dailyProfitPotential,
         direction: .descending
       )
   }
@@ -2744,19 +3450,11 @@ struct ManufacturingOpportunitiesView: View {
     let stockTargetIdentity: [String] = stockTargets.map { target in
       "\(target.typeID):\(target.targetQuantity):\(target.updatedAt.timeIntervalSince1970)"
     }.sorted()
-    let ownershipIdentity: [String] = characters.map { character -> String in
-      let components: [String] = [
-        String(character.characterID),
-        String(character.corporationID ?? 0),
-        String(character.blueprintSnapshot?.count ?? 0),
-        String(character.corporationAssetSnapshot?.count ?? 0),
-        String(character.lastSyncAt?.timeIntervalSince1970 ?? 0),
-      ]
-      return components.joined(separator: ":")
-    }.sorted()
     let sortedFavoriteIDs: [Int64] = favoriteIDs.sorted()
     let productFamilies: [String] =
       selectedProductFamilies.map(\.rawValue).sorted()
+    let productionClasses: [String] =
+      selectedProductionClasses.map(\.rawValue).sorted()
     let activeSort = activeCandidateSort
 
     return ManufacturingOpportunityCandidateProjectionTrigger(
@@ -2765,37 +3463,20 @@ struct ManufacturingOpportunitiesView: View {
       preparedWarehouseIdentity: preparedWarehouseIdentity,
       reservationRevision: preparedPlanReservationRevision,
       stockTargetIdentity: stockTargetIdentity,
-      ownershipIdentity: ownershipIdentity,
       searchText: searchText,
       selectedCategory: selectedCategory,
       selectedGroup: selectedGroup,
       favoritesOnly: favoritesOnly,
       favoriteIDs: sortedFavoriteIDs,
       productFamilies: productFamilies,
+      productionClasses: productionClasses,
       valueFilter: valueFilter.rawValue,
-      includesPersonal: includesPersonal,
-      includesCorporation: includesCorporation,
-      includesNotOwned: includesNotOwned,
-      includesUnknownOwnership: includesUnknownOwnership,
-      includesBPO: includesBPO,
-      includesBPC: includesBPC,
       includesCorporationHangars: includeCorporationHangars,
       includesBlueprintCost: costIncludesBlueprint,
       blueprintCostText: blueprintCostPerRunText,
       sortColumn: activeSort.column.rawValue,
       sortDirection: activeSort.direction.rawValue
     )
-  }
-
-  private var candidateOwnershipPayloads: [ManufacturingOpportunityOwnershipPayload] {
-    characters.map {
-      ManufacturingOpportunityOwnershipPayload(
-        characterID: $0.characterID,
-        corporationID: $0.corporationID,
-        blueprintSnapshot: $0.blueprintSnapshot,
-        corporationAssetSnapshot: $0.corporationAssetSnapshot
-      )
-    }
   }
 
   private var warehouseHasSnapshot: Bool {
@@ -2837,20 +3518,15 @@ struct ManufacturingOpportunitiesView: View {
     expandedOpportunityTypeID = opportunity.productTypeID
     productionTree = nil
     productionTreeError = nil
-    productionTreeQuantity = max(
-      1,
-      runtime.manufacturingOpportunityAnalysis.flatMap {
-        Int(exactly: $0.settings.targetQuantity)
-      }
-        ?? targetQuantity
-    )
     expandedProductionNodeIDs = []
     reloadProductionTree(opportunity)
   }
 
   private func collapseProductionTree() {
     productionTreeTask?.cancel()
+    productionTreeRunSyncTask?.cancel()
     productionTreeTask = nil
+    productionTreeRunSyncTask = nil
     expandedOpportunityTypeID = nil
     productionTree = nil
     productionTreeError = nil
@@ -2861,8 +3537,10 @@ struct ManufacturingOpportunitiesView: View {
   private func reloadProductionTree(
     _ opportunity: ManufacturingOpportunityRow
   ) {
-    productionTreeQuantity = max(1, productionTreeQuantity)
-    let requestedQuantity = Int64(productionTreeQuantity)
+    let requestedQuantity = min(
+      ManufacturingOpportunitySettings.maximumTargetQuantity,
+      max(1, opportunity.producedQuantity)
+    )
     let warehouse = preparedWarehouse.warehouse
     let hasWarehouseSnapshot = warehouseHasSnapshot
     let targets = protectedQuantities
@@ -2883,8 +3561,15 @@ struct ManufacturingOpportunitiesView: View {
           warehouseHasSnapshot: hasWarehouseSnapshot,
           stockTargets: targets,
           existingReservations: reservations,
+          existingBlueprintReservations: activeBlueprintReservations,
           procurementPreferences: preferences,
-          blueprintInventories: inventories
+          blueprintInventories: inventories,
+          blueprintActions: treeBlueprintActions,
+          blueprintManualCosts: parsedTreeBlueprintCosts,
+          preferredBlueprintSources: treePreferredBlueprintSources,
+          loyaltyStoreBlueprintTypeIDs: Set(
+            runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? []
+          )
         )
         try Task.checkCancellation()
         guard expandedOpportunityTypeID == opportunity.productTypeID else {
@@ -2892,14 +3577,23 @@ struct ManufacturingOpportunitiesView: View {
         }
         productionTree = tree
         expandedProductionNodeIDs.formUnion(tree.rootIDs)
+        var changedAutomaticSelection = false
         for node in tree.nodes {
-          guard let blueprint = node.blueprint,
-            treeBlueprintActions[blueprint.blueprintTypeID] == nil
-          else { continue }
-          treeBlueprintActions[blueprint.blueprintTypeID] =
-            blueprint.recommendation
+          guard let blueprint = node.blueprint else { continue }
+          let selected = treeBlueprintActions[blueprint.blueprintTypeID]
+          if selected == nil
+            || selected.map(blueprint.availableActions.contains) == false
+          {
+            treeBlueprintActions[blueprint.blueprintTypeID] =
+              blueprint.recommendation
+            changedAutomaticSelection = true
+          }
         }
         productionTreeError = nil
+        if changedAutomaticSelection {
+          reloadProductionTree(opportunity)
+          return
+        }
       } catch is CancellationError {
         return
       } catch {
@@ -2911,6 +3605,27 @@ struct ManufacturingOpportunitiesView: View {
     }
   }
 
+  private func scheduleExpandedProductionTreeReload() {
+    productionTreeRunSyncTask?.cancel()
+    guard let typeID = expandedOpportunityTypeID,
+      let base = preparedCandidateProjection?.candidates.first(where: {
+        $0.row.productTypeID == typeID
+      })
+    else { return }
+    let opportunity = candidateApplyingRequestedParameters(base).row
+    productionTreeRunSyncTask = Task { @MainActor in
+      do {
+        try await Task.sleep(for: .milliseconds(250))
+        try Task.checkCancellation()
+        guard expandedOpportunityTypeID == typeID else { return }
+        reloadProductionTree(opportunity)
+      } catch {
+        return
+      }
+      productionTreeRunSyncTask = nil
+    }
+  }
+
   private func productionTreeErrorMessage(_ error: Error) -> String {
     switch error {
     case StaticCatalogError.noActiveCatalog:
@@ -2919,7 +3634,7 @@ struct ManufacturingOpportunitiesView: View {
       "The configured Main Hub or a required production location is unresolved."
         .localizedUI
     case ManufacturingOpportunityError.invalidSettings:
-      "Enter a positive target quantity with valid ME and TE values."
+      "Enter valid Runs with valid ME and TE values."
         .localizedUI
     default:
       AppLocalization.format(
@@ -2964,15 +3679,103 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private func treeBlueprintBinding(
-    _ blueprint: ProductionTreeBlueprintAssessment
+    _ blueprint: ProductionTreeBlueprintAssessment,
+    opportunity: ManufacturingOpportunityRow
   ) -> Binding<ProductionTreeBlueprintAction> {
     Binding(
       get: {
         treeBlueprintActions[blueprint.blueprintTypeID]
           ?? blueprint.recommendation
       },
-      set: { treeBlueprintActions[blueprint.blueprintTypeID] = $0 }
+      set: {
+        treeBlueprintActions[blueprint.blueprintTypeID] = $0
+        treePreferredBlueprintSources.removeValue(
+          forKey: blueprint.blueprintTypeID
+        )
+        reloadProductionTree(opportunity)
+      }
     )
+  }
+
+  private func treeConcreteBlueprintSources(
+    _ blueprint: ProductionTreeBlueprintAssessment,
+    action: ProductionTreeBlueprintAction
+  ) -> [(source: BlueprintSourceReference, title: String)] {
+    switch action {
+    case .useOwnedBPC, .useOwnedBPO:
+      let kind: BlueprintCopyKind = action == .useOwnedBPC ? .copy : .original
+      return
+        (blueprint.exactLocationInstanceOptions
+        + blueprint.otherLocationInstanceOptions).filter {
+          $0.kind == kind
+        }.map { option in
+          let runs = option.runs.map { " · \($0) runs" } ?? " · unlimited"
+          return (
+            action == .useOwnedBPC
+              ? .ownedBPC(itemID: option.itemID)
+              : .ownedBPO(itemID: option.itemID),
+            "Item \(option.itemID)\(runs) · ME \(option.materialEfficiency) · TE \(option.timeEfficiency)"
+          )
+        }
+    case .buyContractBPC, .buyContractBPO:
+      let kind: BlueprintCopyKind =
+        action == .buyContractBPC ? .copy : .original
+      return blueprint.attributableContractOptions.filter {
+        $0.kind == kind
+      }.map { option in
+        let runs = option.runs.map { " · \($0) runs" } ?? " · unlimited"
+        let quality =
+          option.materialEfficiency.flatMap { me in
+            option.timeEfficiency.map { " · ME \(me) · TE \($0)" }
+          } ?? ""
+        return (
+          action == .buyContractBPC
+            ? .contractBPC(recordID: option.recordID)
+            : .contractBPO(recordID: option.recordID),
+          "Contract \(option.contractID)\(runs)\(quality)"
+        )
+      }
+    case .buyMarketBPO:
+      return blueprint.marketBPOOptions.map { option in
+        (
+          BlueprintSourceReference.marketBPO(orderID: option.orderID),
+          "Market order \(option.orderID) · \(formatISK(option.price)) · ME 0 · TE 0"
+        )
+      }
+    default:
+      return []
+    }
+  }
+
+  private func treeConcreteBlueprintSourceBinding(
+    _ blueprint: ProductionTreeBlueprintAssessment,
+    opportunity: ManufacturingOpportunityRow
+  ) -> Binding<BlueprintSourceReference?> {
+    let blueprintTypeID = blueprint.blueprintTypeID
+    return Binding(
+      get: { treePreferredBlueprintSources[blueprintTypeID]?.first },
+      set: { source in
+        treePreferredBlueprintSources[blueprintTypeID] = source.map { [$0] } ?? []
+        reloadProductionTree(opportunity)
+      }
+    )
+  }
+
+  private func treeBlueprintCostBinding(
+    blueprintTypeID: Int64
+  ) -> Binding<String> {
+    Binding(
+      get: { treeBlueprintCostTexts[blueprintTypeID, default: ""] },
+      set: { treeBlueprintCostTexts[blueprintTypeID] = $0 }
+    )
+  }
+
+  private var parsedTreeBlueprintCosts: [Int64: Double] {
+    treeBlueprintCostTexts.reduce(into: [:]) { result, entry in
+      if let value = parseNonnegativeISK(entry.value) {
+        result[entry.key] = value
+      }
+    }
   }
 
   private var blueprintInventories: [OwnedBlueprintInventory] {
@@ -2993,6 +3796,10 @@ struct ManufacturingOpportunitiesView: View {
 
   private var activeStockAllocations: [StockAllocation] {
     preparedPlanReservations.allocations
+  }
+
+  private var activeBlueprintReservations: [BlueprintRunReservation] {
+    preparedPlanReservations.blueprintReservations
   }
 
   private func productionTreeIcon(
@@ -3027,9 +3834,12 @@ struct ManufacturingOpportunitiesView: View {
   ) -> String {
     let activity: String =
       switch node.activity {
+      case .copying: "Copying".localizedUI
       case .manufacturing: "Manufacturing".localizedUI
       case .reaction: "Reaction".localizedUI
       case .invention: "Invention".localizedUI
+      case .materialResearch: "ME Research".localizedUI
+      case .timeResearch: "TE Research".localizedUI
       case nil: productionTreeActionTitle(node.action)
       }
     return [activity, node.facilityName]
@@ -3065,29 +3875,70 @@ struct ManufacturingOpportunitiesView: View {
         "No factual asset snapshot is available for the exact configured production, reaction and science locations."
     }
     return
-      "Factual \(factual.formatted()) · protected target \(protected.formatted()) · reserved \(reserved.formatted()) · usable \(usable.formatted()) · total required \(node.totalRequiredQuantity.formatted())."
+      "Factual \(formatInteger(factual)) · protected target \(formatInteger(protected)) · reserved \(formatInteger(reserved)) · usable \(formatInteger(usable)) · total required \(formatInteger(node.totalRequiredQuantity))."
   }
 
   private func blueprintActionTitle(
-    _ action: ProductionTreeBlueprintAction
+    _ action: ProductionTreeBlueprintAction,
+    assessment: ProductionTreeBlueprintAssessment? = nil
   ) -> String {
     switch action {
-    case .useOwnedBPC: "Use owned BPC".localizedUI
-    case .useOwnedBPO: "Use owned BPO".localizedUI
-    case .copyOwnedBPO: "Copy owned BPO".localizedUI
-    case .invent: "Invent BPC".localizedUI
-    case .buyContract: "Buy contract".localizedUI
-    case .unavailable: "Unavailable".localizedUI
-    case .unresolved: "Status unresolved".localizedUI
+    case .useOwnedBPC:
+      if let assessment,
+        let count = assessment.exactLocationBPCRequiredCount
+      {
+        return AppLocalization.format(
+          "Use %@ owned BPCs (%@ runs available)",
+          formatInteger(count),
+          formatInteger(assessment.exactLocationBPCRuns)
+        )
+      }
+      return "Use owned BPC".localizedUI
+    case .useOwnedBPO:
+      if let assessment {
+        return AppLocalization.format(
+          "Use owned BPO (%@ available)",
+          formatInteger(assessment.exactLocationBPOCount)
+        )
+      }
+      return "Use owned BPO".localizedUI
+    case .copyOwnedBPO: return "Copy owned BPO".localizedUI
+    case .invent: return "Invent BPC".localizedUI
+    case .manualExternalBPC: return "External / manual BPC".localizedUI
+    case .buyContractBPC:
+      if let assessment {
+        return AppLocalization.format(
+          "Buy %@ BPC contracts (%@ runs)",
+          formatInteger(assessment.attributableBPCContractSelectionCount),
+          assessment.attributableBPCContractRuns.map(formatInteger) ?? "—"
+        )
+      }
+      return "Buy BPC contract".localizedUI
+    case .buyContractBPO: return "Buy BPO contract".localizedUI
+    case .buyMarketBPO: return "Buy market BPO".localizedUI
+    case .buyLoyaltyStoreBPC: return "Buy Loyalty Store BPC".localizedUI
+    case .useOwnedReactionFormula:
+      return "Use owned reaction formula".localizedUI
+    case .unavailable, .unresolved:
+      if let assessment, assessment.otherLocationBPOCount > 0 {
+        return "Owned BPO at another location".localizedUI
+      }
+      if let assessment, assessment.otherLocationBPCCount > 0 {
+        return "Owned BPC at another location".localizedUI
+      }
+      return
+        action == .unavailable
+        ? "Unavailable".localizedUI : "Status unresolved".localizedUI
     }
   }
 
   private func blueprintRecommendationLabel(
-    _ action: ProductionTreeBlueprintAction
+    _ action: ProductionTreeBlueprintAction,
+    assessment: ProductionTreeBlueprintAssessment? = nil
   ) -> String {
     AppLocalization.format(
       "Recommended: %@",
-      blueprintActionTitle(action)
+      blueprintActionTitle(action, assessment: assessment)
     )
   }
 
@@ -3095,11 +3946,12 @@ struct ManufacturingOpportunitiesView: View {
     _ action: ProductionTreeBlueprintAction
   ) -> Color {
     switch action {
-    case .useOwnedBPC, .useOwnedBPO:
+    case .useOwnedBPC, .useOwnedBPO, .useOwnedReactionFormula:
       DesignTokens.positive
     case .copyOwnedBPO, .invent:
       DesignTokens.information
-    case .buyContract:
+    case .buyContractBPC, .buyContractBPO, .buyMarketBPO, .buyLoyaltyStoreBPC,
+      .manualExternalBPC:
       DesignTokens.highlight
     case .unavailable:
       DesignTokens.negative
@@ -3116,40 +3968,114 @@ struct ManufacturingOpportunitiesView: View {
       blueprint.blueprintName,
       AppLocalization.format(
         "Required runs: %@",
-        blueprint.requiredRuns.formatted()
+        formatInteger(blueprint.requiredRuns)
       ),
       AppLocalization.format(
-        "At production location: %@ BPC, %@ BPO, %@ unknown",
-        blueprint.exactLocationBPCCount.formatted(),
-        blueprint.exactLocationBPOCount.formatted(),
-        blueprint.exactLocationUnknownCount.formatted()
+        "At production location: %@ BPC with %@ runs, %@ BPO, %@ unknown",
+        formatInteger(blueprint.exactLocationBPCCount),
+        formatInteger(blueprint.exactLocationBPCRuns),
+        formatInteger(blueprint.exactLocationBPOCount),
+        formatInteger(blueprint.exactLocationUnknownCount)
       ),
       AppLocalization.format(
         "At copying location: %@ BPO",
-        blueprint.copyingLocationBPOCount.formatted()
+        formatInteger(blueprint.copyingLocationBPOCount)
       ),
       AppLocalization.format(
         "Usable invention sources: %@",
-        blueprint.inventionSourceCount.formatted()
+        formatInteger(blueprint.inventionSourceCount)
       ),
       AppLocalization.format(
         "At ME/TE research locations: %@ BPC, %@ BPO",
-        blueprint.researchLocationBPCCount.formatted(),
-        blueprint.researchLocationBPOCount.formatted()
+        formatInteger(blueprint.researchLocationBPCCount),
+        formatInteger(blueprint.researchLocationBPOCount)
       ),
       AppLocalization.format(
-        "Other locations: %@",
-        blueprint.otherLocationCount.formatted()
+        "Other locations: %@ (%@ BPC, %@ BPO)",
+        formatInteger(blueprint.otherLocationCount),
+        formatInteger(blueprint.otherLocationBPCCount),
+        formatInteger(blueprint.otherLocationBPOCount)
       ),
       AppLocalization.format(
         "Indexed public-contract offers: %@",
-        blueprint.indexedContractOfferCount.formatted()
+        formatInteger(blueprint.indexedContractOfferCount)
       ),
     ]
+    if !blueprint.productionLocationNames.isEmpty {
+      parts.insert(
+        AppLocalization.format(
+          "Production location: %@",
+          blueprint.productionLocationNames.joined(separator: ", ")
+        ),
+        at: 1
+      )
+    } else {
+      parts.insert(
+        "The exact production location could not be matched unambiguously; owned Blueprints are not offered as available."
+          .localizedUI,
+        at: 1
+      )
+    }
+    if !blueprint.exactLocationBPCOwnerNames.isEmpty {
+      parts.append(
+        AppLocalization.format(
+          "Owned BPC characters: %@",
+          blueprint.exactLocationBPCOwnerNames.joined(separator: ", ")
+        )
+      )
+    }
+    if !blueprint.exactLocationBPOOwnerNames.isEmpty {
+      parts.append(
+        AppLocalization.format(
+          "Owned BPO characters: %@",
+          blueprint.exactLocationBPOOwnerNames.joined(separator: ", ")
+        )
+      )
+    }
+    let nonFreshExactStates = Set(
+      blueprint.exactLocationBPCSourceStates
+        + blueprint.exactLocationBPOSourceStates
+    ).filter { $0 != .fresh }
+    if !nonFreshExactStates.isEmpty {
+      parts.append(
+        AppLocalization.format(
+          "Owned Blueprint evidence at the production location is retained with source state: %@. It remains selectable, but the inventory is not reported as complete.",
+          nonFreshExactStates.map(\.rawValue).sorted().joined(separator: ", ")
+        )
+      )
+    }
+    if blueprint.otherLocationBPOCount > 0
+      || blueprint.otherLocationBPCCount > 0
+    {
+      parts.append(
+        "Owned Blueprints at other locations cannot start this job. Move them to the displayed production location, then refresh Blueprints and Assets."
+          .localizedUI
+      )
+    }
     if let price = blueprint.lowestWholeContractPrice {
       parts.append(
         AppLocalization.format(
           "Lowest whole-contract price: %@",
+          formatISK(price)
+        )
+      )
+    }
+    if let price = blueprint.attributableBPCContractPrice {
+      parts.append(
+        AppLocalization.format(
+          "Attributable Main Hub BPC coverage: %@ · %@ contracts · %@ runs · common ME %@ · common TE %@",
+          formatISK(price),
+          formatInteger(blueprint.attributableBPCContractSelectionCount),
+          blueprint.attributableBPCContractRuns.map(formatInteger) ?? "—",
+          blueprint.attributableBPCContractME.map(formatInteger) ?? "—",
+          blueprint.attributableBPCContractTE.map(formatInteger) ?? "—"
+        )
+      )
+    }
+    if let price = blueprint.attributableBPOContractPrice {
+      parts.append(
+        AppLocalization.format(
+          "Attributable Main Hub BPO purchase: %@; enter the allocation for this plan separately.",
           formatISK(price)
         )
       )
@@ -3175,23 +4101,14 @@ struct ManufacturingOpportunitiesView: View {
 
   private var currentSettings: ManufacturingOpportunitySettings {
     ManufacturingOpportunitySettings(
-      targetQuantity: Int64(max(1, targetQuantity)),
-      materialEfficiency: materialEfficiency,
-      timeEfficiency: timeEfficiency
+      targetQuantity: 1,
+      requestedRuns: nil,
+      materialEfficiency: 0,
+      timeEfficiency: 0
     )
   }
 
-  private var settingsChanged: Bool {
-    guard let snapshot = runtime.manufacturingOpportunityAnalysis else {
-      return false
-    }
-    return snapshot.settings != currentSettings
-  }
-
   private func startAnalysis() {
-    targetQuantity = max(1, targetQuantity)
-    materialEfficiency = min(10, max(0, materialEfficiency))
-    timeEfficiency = min(20, max(0, timeEfficiency))
     analysisTask?.cancel()
     shoppingCopyStatus = nil
     analysisTask = Task { @MainActor in
@@ -3216,10 +4133,70 @@ struct ManufacturingOpportunitiesView: View {
     _ values: Set<ManufacturingOpportunityProductFamily>
   ) {
     selectedProductFamilies = values
+    encodedProductFamilies = encodeRawValues(values.map(\.rawValue))
+  }
+
+  private func persistProductionClasses(
+    _ values: Set<ManufacturingOpportunityProductionClass>
+  ) {
+    selectedProductionClasses = values
+    encodedProductionClasses = encodeRawValues(values.map(\.rawValue))
+  }
+
+  private func restoreCatalogFilters() {
+    if let rawValues = decodeRawValues(encodedProductFamilies) {
+      selectedProductFamilies = Set(
+        rawValues.compactMap(ManufacturingOpportunityProductFamily.init)
+      )
+    }
+    if let rawValues = decodeRawValues(encodedProductionClasses) {
+      selectedProductionClasses = Set(
+        rawValues.compactMap(ManufacturingOpportunityProductionClass.init)
+      )
+    }
+    discardUnavailableStoredCatalogChoices()
+  }
+
+  private func encodeRawValues(_ values: [String]) -> String {
+    guard let data = try? JSONEncoder().encode(values.sorted()),
+      let encoded = String(data: data, encoding: .utf8)
+    else { return "" }
+    return encoded
+  }
+
+  private func decodeRawValues(_ encoded: String) -> [String]? {
+    guard !encoded.isEmpty, let data = encoded.data(using: .utf8) else {
+      return nil
+    }
+    return try? JSONDecoder().decode([String].self, from: data)
+  }
+
+  private func discardUnavailableStoredCatalogChoices() {
+    guard runtime.manufacturingOpportunityAnalysis != nil else { return }
+    if !selectedCategory.isEmpty, !categories.contains(selectedCategory) {
+      selectedCategory = ""
+    }
+    if !selectedGroup.isEmpty, !groups.contains(selectedGroup) {
+      selectedGroup = ""
+    }
   }
 
   private func selectAllFamilies() {
     persistProductFamilies(Set(ManufacturingOpportunityProductFamily.allCases))
+  }
+
+  private func selectAllCatalogFilters() {
+    selectAllFamilies()
+    persistProductionClasses(
+      Set(
+        ManufacturingOpportunityProductionClass.allCases
+      )
+    )
+  }
+
+  private func uncheckAllCatalogFilters() {
+    persistProductFamilies([])
+    persistProductionClasses([])
   }
 
   private func resetFilters() {
@@ -3228,25 +4205,52 @@ struct ManufacturingOpportunitiesView: View {
     selectedGroup = ""
     favoritesOnly = false
     valueFilter = .all
-    includesPersonal = true
-    includesCorporation = true
-    includesNotOwned = true
-    includesUnknownOwnership = true
-    includesBPO = true
-    includesBPC = true
-    selectAllFamilies()
+    minimumAverageDailyDemand = 0
+    maximumMaterialPurchaseISKText = ""
+    selectAllCatalogFilters()
   }
 
   private func parseNonnegativeISK(_ text: String) -> Double? {
+    let locale = AppLocalization.currentLanguage.locale
+    let groupingSeparator = locale.groupingSeparator ?? ","
+    let decimalSeparator = locale.decimalSeparator ?? "."
     let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
       .replacingOccurrences(of: " ", with: "")
-      .replacingOccurrences(of: ",", with: ".")
+      .replacingOccurrences(of: "\u{00A0}", with: "")
+      .replacingOccurrences(of: groupingSeparator, with: "")
+      .replacingOccurrences(of: decimalSeparator, with: ".")
     guard !normalized.isEmpty,
       let value = Double(normalized),
       value.isFinite,
       value >= 0
     else { return nil }
     return value
+  }
+
+  private func groupedISKBinding(_ source: Binding<String>) -> Binding<String> {
+    Binding(
+      get: { source.wrappedValue },
+      set: { proposed in
+        let decimalSeparator =
+          AppLocalization.currentLanguage.locale.decimalSeparator ?? "."
+        if proposed.isEmpty || proposed.hasSuffix(decimalSeparator) {
+          source.wrappedValue = proposed
+        } else if let value = parseNonnegativeISK(proposed) {
+          source.wrappedValue = formatEditableISK(value)
+        } else {
+          source.wrappedValue = proposed
+        }
+      }
+    )
+  }
+
+  private func normalizeStoredISKFields() {
+    if let value = parseNonnegativeISK(blueprintCostPerRunText) {
+      blueprintCostPerRunText = formatEditableISK(value)
+    }
+    if let value = parseNonnegativeISK(maximumMaterialPurchaseISKText) {
+      maximumMaterialPurchaseISKText = formatEditableISK(value)
+    }
   }
 
   private func copyShoppingList(
@@ -3266,6 +4270,52 @@ struct ManufacturingOpportunitiesView: View {
     shoppingCopyStatus = "Multibuy copied"
   }
 
+  private func candidateApplyingRequestedParameters(
+    _ candidate: ManufacturingOpportunityCandidate
+  ) -> ManufacturingOpportunityCandidate {
+    let row = candidate.row
+    let requestedRuns = requestedRunsByTypeID[row.productTypeID] ?? row.runs
+    let requestedME = requestedMEValue(for: row)
+    let requestedTE = requestedTEValue(for: row)
+    guard
+      requestedRuns != row.runs
+        || row.supportsBlueprintEfficiency
+          && (requestedME != row.materialEfficiency
+            || requestedTE != row.timeEfficiency)
+    else { return candidate }
+    guard let snapshot = runtime.manufacturingOpportunityAnalysis,
+      let projectedRow = ManufacturingOpportunityRunProjector.project(
+        row,
+        requestedRuns: requestedRuns,
+        materialEfficiency: requestedME,
+        timeEfficiency: requestedTE
+      )
+    else { return candidate }
+    let procurement = ManufacturingOpportunityScenarioProjector.procurement(
+      for: projectedRow,
+      factualWarehouseQuantities: preparedWarehouse.factualQuantities,
+      protectedQuantities: protectedQuantities,
+      reservedQuantities: reservedQuantities
+    )
+    let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+      for: projectedRow,
+      procurement: procurement,
+      configuration: snapshot.logisticsConfiguration,
+      mainHub: snapshot.mainHub,
+      warehouseIsAvailable: warehouseHasSnapshot
+    )
+    let costs = ManufacturingOpportunityScenarioProjector.costs(
+      for: projectedRow,
+      sheet: costSheet,
+      logistics: logistics
+    )
+    return ManufacturingOpportunityCandidate(
+      row: projectedRow,
+      costs: costs,
+      purchaseCashRequirement: procurement.purchaseCashRequirement
+    )
+  }
+
   @MainActor
   private func prepareCandidates(
     trigger: ManufacturingOpportunityCandidateProjectionTrigger
@@ -3281,16 +4331,9 @@ struct ManufacturingOpportunitiesView: View {
       protectedQuantities: protectedQuantities,
       reservedQuantities: reservedQuantities,
       warehouseIsAvailable: warehouseHasSnapshot,
-      ownershipPayloads: candidateOwnershipPayloads,
-      includesCorporationHangars: includeCorporationHangars,
       favorites: favoriteIDs,
       productFamilies: selectedProductFamilies,
-      includesPersonal: includesPersonal,
-      includesCorporation: includesCorporation,
-      includesNotOwned: includesNotOwned,
-      includesUnknownOwnership: includesUnknownOwnership,
-      includesBPO: includesBPO,
-      includesBPC: includesBPC,
+      productionClasses: selectedProductionClasses,
       searchText: searchText,
       selectedCategory: selectedCategory,
       selectedGroup: selectedGroup,
@@ -3306,9 +4349,19 @@ struct ManufacturingOpportunitiesView: View {
       !Task.isCancelled,
       trigger == candidateProjectionTrigger
     else { return }
+    let sortedCandidates = candidates.sorted { lhs, rhs in
+      let projectedLHS = candidateApplyingRequestedParameters(lhs)
+      let projectedRHS = candidateApplyingRequestedParameters(rhs)
+      return activeCandidateSort.orderedBefore(
+        lhs: projectedLHS.row,
+        lhsCosts: projectedLHS.costs,
+        rhs: projectedRHS.row,
+        rhsCosts: projectedRHS.costs
+      )
+    }
     preparedCandidateProjection = PreparedManufacturingOpportunityCandidates(
       trigger: trigger,
-      candidates: candidates
+      candidates: sortedCandidates
     )
   }
 
@@ -3362,9 +4415,210 @@ struct ManufacturingOpportunitiesView: View {
     }
   }
 
+  private var groupedIntegerFormat: IntegerFormatStyle<Int> {
+    .number
+      .locale(AppLocalization.currentLanguage.locale)
+      .grouping(.automatic)
+  }
+
+  private func requestedRunsBinding(
+    for row: ManufacturingOpportunityRow
+  ) -> Binding<String> {
+    Binding(
+      get: {
+        requestedRunTextsByTypeID[row.productTypeID]
+          ?? String(requestedRunsByTypeID[row.productTypeID] ?? row.runs)
+      },
+      set: { proposed in
+        guard proposed.isEmpty || proposed.allSatisfy(\.isNumber),
+          proposed.count <= 7
+        else { return }
+        requestedRunTextsByTypeID[row.productTypeID] = proposed
+        guard let runs = requestedRuns(from: proposed) else { return }
+        requestedRunsByTypeID[row.productTypeID] = runs
+      }
+    )
+  }
+
+  private func requestedRuns(from text: String) -> Int? {
+    guard let runs = Int(text),
+      (1...ManufacturingOpportunitySettings.maximumRequestedRuns).contains(runs)
+    else { return nil }
+    return runs
+  }
+
+  private func normalizeRequestedRuns(for row: ManufacturingOpportunityRow) {
+    let typeID = row.productTypeID
+    guard let text = requestedRunTextsByTypeID[typeID],
+      let runs = requestedRuns(from: text)
+    else {
+      requestedRunTextsByTypeID[typeID] = String(
+        requestedRunsByTypeID[typeID] ?? row.runs
+      )
+      return
+    }
+    requestedRunsByTypeID[typeID] = runs
+    requestedRunTextsByTypeID[typeID] = String(runs)
+  }
+
+  private func requestedMEValue(for row: ManufacturingOpportunityRow) -> Int {
+    guard row.supportsBlueprintEfficiency else { return 0 }
+    return requestedMEByTypeID[row.productTypeID]
+      ?? defaultEfficiencyAssumption(for: row).materialEfficiency
+  }
+
+  private func requestedTEValue(for row: ManufacturingOpportunityRow) -> Int {
+    guard row.supportsBlueprintEfficiency else { return 0 }
+    return requestedTEByTypeID[row.productTypeID]
+      ?? defaultEfficiencyAssumption(for: row).timeEfficiency
+  }
+
+  private func defaultEfficiencyAssumption(
+    for row: ManufacturingOpportunityRow
+  ) -> ManufacturingOpportunityEfficiencyAssumption {
+    ManufacturingOpportunityEfficiencyDefaults.resolve(
+      blueprintTypeID: row.blueprintTypeID,
+      categoryName: row.categoryName,
+      groupName: row.groupName,
+      metaGroupID: row.metaGroupID,
+      techLevel: row.techLevel,
+      fallbackMaterialEfficiency: row.materialEfficiency,
+      fallbackTimeEfficiency: row.timeEfficiency,
+      loyaltyStoreBlueprintTypeIDs: Set(
+        runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? []
+      )
+    )
+  }
+
+  private func requestedEfficiencyText(
+    for row: ManufacturingOpportunityRow,
+    kind: OpportunityEfficiencyKind
+  ) -> String {
+    switch kind {
+    case .material:
+      requestedMETextsByTypeID[row.productTypeID]
+        ?? String(requestedMEValue(for: row))
+    case .time:
+      requestedTETextsByTypeID[row.productTypeID]
+        ?? String(requestedTEValue(for: row))
+    }
+  }
+
+  private func requestedEfficiencyBinding(
+    for row: ManufacturingOpportunityRow,
+    kind: OpportunityEfficiencyKind
+  ) -> Binding<String> {
+    Binding(
+      get: { requestedEfficiencyText(for: row, kind: kind) },
+      set: { proposed in
+        guard proposed.isEmpty || proposed.allSatisfy(\.isNumber),
+          proposed.count <= 2
+        else { return }
+        switch kind {
+        case .material:
+          requestedMETextsByTypeID[row.productTypeID] = proposed
+        case .time:
+          requestedTETextsByTypeID[row.productTypeID] = proposed
+        }
+        guard
+          let value = requestedEfficiency(
+            from: proposed,
+            kind: kind,
+            row: row
+          )
+        else { return }
+        switch kind {
+        case .material:
+          requestedMEByTypeID[row.productTypeID] = value
+        case .time:
+          requestedTEByTypeID[row.productTypeID] = value
+        }
+      }
+    )
+  }
+
+  private func requestedEfficiency(
+    from text: String,
+    kind: OpportunityEfficiencyKind,
+    row: ManufacturingOpportunityRow
+  ) -> Int? {
+    guard let value = Int(text) else { return nil }
+    let range =
+      kind == .material
+      ? 0...10
+      : 0...20
+    return range.contains(value) ? value : nil
+  }
+
+  private func normalizeRequestedEfficiency(
+    for row: ManufacturingOpportunityRow,
+    kind: OpportunityEfficiencyKind
+  ) {
+    let typeID = row.productTypeID
+    let text = requestedEfficiencyText(for: row, kind: kind)
+    guard
+      let value = requestedEfficiency(
+        from: text,
+        kind: kind,
+        row: row
+      )
+    else {
+      switch kind {
+      case .material:
+        requestedMETextsByTypeID[typeID] = String(requestedMEValue(for: row))
+      case .time:
+        requestedTETextsByTypeID[typeID] = String(requestedTEValue(for: row))
+      }
+      return
+    }
+    switch kind {
+    case .material:
+      requestedMEByTypeID[typeID] = value
+      requestedMETextsByTypeID[typeID] = String(value)
+    case .time:
+      requestedTEByTypeID[typeID] = value
+      requestedTETextsByTypeID[typeID] = String(value)
+    }
+  }
+
+  private var minimumAverageDailyDemandBinding: Binding<Int> {
+    Binding(
+      get: { minimumAverageDailyDemand },
+      set: {
+        minimumAverageDailyDemand = min(1_000_000, max(0, $0))
+      }
+    )
+  }
+
+  private func formatInteger(_ value: Int) -> String {
+    value.formatted(groupedIntegerFormat)
+  }
+
+  private func formatInteger(_ value: Int64) -> String {
+    value.formatted(
+      .number
+        .locale(AppLocalization.currentLanguage.locale)
+        .grouping(.automatic)
+    )
+  }
+
+  private func formatEditableISK(_ value: Double) -> String {
+    value.formatted(
+      .number
+        .locale(AppLocalization.currentLanguage.locale)
+        .grouping(.automatic)
+        .precision(.fractionLength(0...2))
+    )
+  }
+
   private func formatISK(_ value: Double?) -> String {
     guard let value, value.isFinite else { return "—" }
-    return value.formatted(.currency(code: "ISK").precision(.fractionLength(0)))
+    return value.formatted(
+      .currency(code: "ISK")
+        .locale(AppLocalization.currentLanguage.locale)
+        .grouping(.automatic)
+        .precision(.fractionLength(0))
+    )
   }
 
   private func formatSignedISK(_ value: Double?) -> String {
@@ -3374,7 +4628,25 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private func formatPercent(_ value: Double?) -> String {
-    value?.formatted(.percent.precision(.fractionLength(1))) ?? "—"
+    value?.formatted(
+      .percent
+        .locale(AppLocalization.currentLanguage.locale)
+        .grouping(.automatic)
+        .precision(.fractionLength(1))
+    ) ?? "—"
+  }
+
+  private func formatDays(_ value: Double?) -> String {
+    guard let value, value.isFinite, value >= 0 else { return "—" }
+    return AppLocalization.format(
+      "%@ days",
+      value.formatted(
+        .number
+          .locale(AppLocalization.currentLanguage.locale)
+          .grouping(.automatic)
+          .precision(.fractionLength(1))
+      )
+    )
   }
 
   private func formatDuration(_ seconds: Int64) -> String {
@@ -3409,6 +4681,126 @@ struct ManufacturingOpportunitiesView: View {
   }
 }
 
+enum ManufacturingOpportunityPageLayout {
+  static func upperControlsHeight(
+    viewportHeight proposedHeight: CGFloat,
+    filtersAreExpanded: Bool,
+    basisIsExpanded: Bool
+  ) -> CGFloat {
+    let viewportHeight =
+      ManufacturingOpportunityTableLayout.clampedViewportLength(proposedHeight)
+    let requestedHeight: CGFloat =
+      105
+      + (filtersAreExpanded ? 280 : 0)
+      + (basisIsExpanded ? 120 : 0)
+    return min(requestedHeight, min(420, viewportHeight * 0.48))
+  }
+}
+
+enum ManufacturingOpportunityTableLayout {
+  static func clampedViewportLength(_ proposedLength: CGFloat) -> CGFloat {
+    guard proposedLength.isFinite, proposedLength > 0 else { return 0 }
+    return proposedLength
+  }
+}
+
+struct ManufacturingOpportunityWorkspaceLayout: Equatable {
+  let viewportHeight: CGFloat
+  let candidateHeight: CGFloat
+  let dividerHeight: CGFloat
+  let workbenchHeight: CGFloat
+
+  init(viewportHeight proposedHeight: CGFloat) {
+    viewportHeight =
+      ManufacturingOpportunityTableLayout.clampedViewportLength(proposedHeight)
+    dividerHeight = viewportHeight > 0 ? 1 : 0
+    let usableHeight = max(0, viewportHeight - dividerHeight)
+    if usableHeight >= 520 {
+      workbenchHeight = min(270, max(220, usableHeight * 0.35))
+    } else {
+      workbenchHeight = usableHeight * 0.4
+    }
+    candidateHeight = max(0, usableHeight - workbenchHeight)
+  }
+}
+
+struct ManufacturingOpportunityWorkbenchLayout: Equatable {
+  let viewportWidth: CGFloat
+  let viewportHeight: CGFloat
+  let columnWidth: CGFloat
+  let dividerWidth: CGFloat
+
+  init(viewportSize proposedSize: CGSize) {
+    viewportWidth =
+      ManufacturingOpportunityTableLayout.clampedViewportLength(
+        proposedSize.width
+      )
+    viewportHeight =
+      ManufacturingOpportunityTableLayout.clampedViewportLength(
+        proposedSize.height
+      )
+    dividerWidth = viewportWidth > 0 ? 1 : 0
+    columnWidth = max(0, (viewportWidth - dividerWidth) / 2)
+  }
+}
+
+private struct OpportunityExplanationButton: View {
+  let title: LocalizedStringKey
+  let explanation: LocalizedStringKey
+  let systemImage: String
+  let color: Color
+  let font: Font
+
+  @State private var isExplanationPresented = false
+
+  var body: some View {
+    Button {
+      isExplanationPresented.toggle()
+    } label: {
+      HStack(spacing: 4) {
+        Text(title)
+        Spacer(minLength: DesignTokens.spacingSM)
+        Image(systemName: systemImage)
+          .accessibilityHidden(true)
+      }
+      .font(font)
+      .foregroundStyle(color)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("Click for details")
+    .popover(
+      isPresented: $isExplanationPresented,
+      attachmentAnchor: .rect(.bounds),
+      arrowEdge: .bottom
+    ) {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        HStack {
+          Text(title)
+            .font(.headline)
+          Spacer()
+          Button {
+            isExplanationPresented = false
+          } label: {
+            Image(systemName: "xmark")
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Close explanation")
+        }
+        Text(explanation)
+          .foregroundStyle(DesignTokens.textPrimary)
+          .fixedSize(horizontal: false, vertical: true)
+          .textSelection(.enabled)
+      }
+      .padding(DesignTokens.spacingMD)
+      .frame(width: 480)
+    }
+    .accessibilityLabel(Text(title))
+    .accessibilityHint("Shows explanatory details.")
+  }
+}
+
 private struct StoredPlanSnapshotPayload: Hashable, Sendable {
   let id: UUID
   let encodedSnapshot: Data
@@ -3417,12 +4809,14 @@ private struct StoredPlanSnapshotPayload: Hashable, Sendable {
 private struct PreparedPlanReservations: Sendable {
   let source: [StoredPlanSnapshotPayload]
   let allocations: [StockAllocation]
+  let blueprintReservations: [BlueprintRunReservation]
   let quantities: [Int64: Int64]
   let invalidSnapshotCount: Int
 
   static let empty = PreparedPlanReservations(
     source: [],
     allocations: [],
+    blueprintReservations: [],
     quantities: [:],
     invalidSnapshotCount: 0
   )
@@ -3434,6 +4828,7 @@ private enum StoredPlanReservationProjection {
   ) async -> PreparedPlanReservations {
     await Task.detached(priority: .userInitiated) {
       var allocations: [StockAllocation] = []
+      var blueprintReservations: [BlueprintRunReservation] = []
       var invalidSnapshotCount = 0
       for payload in payloads {
         guard
@@ -3450,6 +4845,9 @@ private enum StoredPlanReservationProjection {
             $0.source.kind == .warehouse || $0.source.kind == .assetSnapshot
           }
         )
+        blueprintReservations.append(
+          contentsOf: plan.blueprintSupplyPlans?.flatMap(\.reservations) ?? []
+        )
       }
       let quantities = allocations.reduce(into: [Int64: Int64]()) {
         result, allocation in
@@ -3461,6 +4859,7 @@ private enum StoredPlanReservationProjection {
       return PreparedPlanReservations(
         source: payloads,
         allocations: allocations,
+        blueprintReservations: blueprintReservations,
         quantities: quantities,
         invalidSnapshotCount: invalidSnapshotCount
       )
@@ -3474,32 +4873,19 @@ private struct ManufacturingOpportunityCandidateProjectionTrigger: Hashable {
   let preparedWarehouseIdentity: String?
   let reservationRevision: UUID
   let stockTargetIdentity: [String]
-  let ownershipIdentity: [String]
   let searchText: String
   let selectedCategory: String
   let selectedGroup: String
   let favoritesOnly: Bool
   let favoriteIDs: [Int64]
   let productFamilies: [String]
+  let productionClasses: [String]
   let valueFilter: String
-  let includesPersonal: Bool
-  let includesCorporation: Bool
-  let includesNotOwned: Bool
-  let includesUnknownOwnership: Bool
-  let includesBPO: Bool
-  let includesBPC: Bool
   let includesCorporationHangars: Bool
   let includesBlueprintCost: Bool
   let blueprintCostText: String
   let sortColumn: String
   let sortDirection: String
-}
-
-private struct ManufacturingOpportunityOwnershipPayload: Sendable {
-  let characterID: Int64
-  let corporationID: Int64?
-  let blueprintSnapshot: Data?
-  let corporationAssetSnapshot: Data?
 }
 
 private struct ManufacturingOpportunityCandidateProjectionInput: Sendable {
@@ -3508,16 +4894,9 @@ private struct ManufacturingOpportunityCandidateProjectionInput: Sendable {
   let protectedQuantities: [Int64: Int64]
   let reservedQuantities: [Int64: Int64]
   let warehouseIsAvailable: Bool
-  let ownershipPayloads: [ManufacturingOpportunityOwnershipPayload]
-  let includesCorporationHangars: Bool
   let favorites: Set<Int64>
   let productFamilies: Set<ManufacturingOpportunityProductFamily>
-  let includesPersonal: Bool
-  let includesCorporation: Bool
-  let includesNotOwned: Bool
-  let includesUnknownOwnership: Bool
-  let includesBPO: Bool
-  let includesBPC: Bool
+  let productionClasses: Set<ManufacturingOpportunityProductionClass>
   let searchText: String
   let selectedCategory: String
   let selectedGroup: String
@@ -3539,7 +4918,6 @@ private enum ManufacturingOpportunityCandidateProjection {
     let task: Task<[ManufacturingOpportunityCandidate], Never> = Task.detached(
       priority: .userInitiated
     ) {
-      let ownership = ownershipFilter(input: input)
       let searchQuery = ManufacturingOpportunitySearchPolicy.effectiveQuery(
         input.searchText
       )
@@ -3558,13 +4936,15 @@ private enum ManufacturingOpportunityCandidateProjection {
             || row.categoryName == input.selectedCategory,
           input.selectedGroup.isEmpty || row.groupName == input.selectedGroup,
           !input.favoritesOnly || input.favorites.contains(row.productTypeID),
-          input.productFamilies.contains(
-            ManufacturingOpportunityProductFamily.classify(
-              categoryName: row.categoryName,
-              groupName: row.groupName
-            )
-          ),
-          ownership.accepts(row)
+          ManufacturingOpportunityCatalogFilter.accepts(
+            activityKind: row.effectiveActivityKind,
+            categoryName: row.categoryName,
+            groupName: row.groupName,
+            metaGroupID: row.metaGroupID,
+            techLevel: row.techLevel,
+            productFamilies: input.productFamilies,
+            productionClasses: input.productionClasses
+          )
         else { continue }
         let procurement = ManufacturingOpportunityScenarioProjector.procurement(
           for: row,
@@ -3586,7 +4966,11 @@ private enum ManufacturingOpportunityCandidateProjection {
         )
         guard input.valueFilter.accepts(costs) else { continue }
         candidates.append(
-          ManufacturingOpportunityCandidate(row: row, costs: costs)
+          ManufacturingOpportunityCandidate(
+            row: row,
+            costs: costs,
+            purchaseCashRequirement: procurement.purchaseCashRequirement
+          )
         )
       }
       return candidates.sorted {
@@ -3605,125 +4989,18 @@ private enum ManufacturingOpportunityCandidateProjection {
     }
   }
 
-  private static func ownershipFilter(
-    input: ManufacturingOpportunityCandidateProjectionInput
-  ) -> ManufacturingOpportunityOwnershipFilter {
-    let personalSnapshots: [Sourced<[OwnedBlueprintInstance]>] =
-      input.ownershipPayloads.compactMap { payload in
-        guard let data = payload.blueprintSnapshot else { return nil }
-        return try? JSONDecoder().decode(
-          Sourced<[OwnedBlueprintInstance]>.self,
-          from: data
-        )
-      }
-    let personalKinds = personalSnapshots.reduce(into: [Int64: Set<String>]()) {
-      result, sourced in
-      for blueprint in sourced.value ?? [] {
-        result[blueprint.blueprintTypeID, default: []]
-          .insert(blueprint.kind.rawValue)
-      }
-    }
-    let personalComplete =
-      !input.ownershipPayloads.isEmpty
-      && personalSnapshots.count == input.ownershipPayloads.count
-      && personalSnapshots.allSatisfy {
-        $0.state == .fresh && $0.value != nil
-      }
-    var seen = Set<Int64>()
-    let corporationSnapshots: [Sourced<AssetSnapshot>] =
-      input.includesCorporationHangars
-      ? input.ownershipPayloads.compactMap { payload in
-        guard let corporationID = payload.corporationID,
-          seen.insert(corporationID).inserted,
-          let data = payload.corporationAssetSnapshot
-        else { return nil }
-        return try? JSONDecoder().decode(Sourced<AssetSnapshot>.self, from: data)
-      } : []
-    let corporationTypeIDs = Set(
-      corporationSnapshots.flatMap { sourced in
-        (sourced.value?.items ?? []).map(\.typeID)
-      }
-    )
-    let corporationIDs = Set(input.ownershipPayloads.compactMap(\.corporationID))
-    let corporationComplete =
-      !input.includesCorporationHangars
-      || (!corporationIDs.isEmpty
-        && corporationSnapshots.count == corporationIDs.count
-        && corporationSnapshots.allSatisfy {
-          $0.state == .fresh && $0.value != nil
-        })
-    return ManufacturingOpportunityOwnershipFilter(
-      personalKinds: personalKinds,
-      corporationTypeIDs: corporationTypeIDs,
-      personalComplete: personalComplete,
-      corporationComplete: corporationComplete,
-      includesPersonal: input.includesPersonal,
-      includesCorporation: input.includesCorporation,
-      includesNotOwned: input.includesNotOwned,
-      includesUnknown: input.includesUnknownOwnership,
-      includesBPO: input.includesBPO,
-      includesBPC: input.includesBPC
-    )
-  }
 }
 
 private struct ManufacturingOpportunityCandidate: Identifiable, Sendable {
   var id: Int64 { row.id }
   let row: ManufacturingOpportunityRow
   let costs: ManufacturingOpportunityCostProjection
+  let purchaseCashRequirement: Double?
 }
 
-private struct ManufacturingOpportunityOwnershipFilter: Sendable {
-  let personalKinds: [Int64: Set<String>]
-  let corporationTypeIDs: Set<Int64>
-  let personalComplete: Bool
-  let corporationComplete: Bool
-  let includesPersonal: Bool
-  let includesCorporation: Bool
-  let includesNotOwned: Bool
-  let includesUnknown: Bool
-  let includesBPO: Bool
-  let includesBPC: Bool
-
-  func accepts(_ row: ManufacturingOpportunityRow) -> Bool {
-    let kinds = personalKinds[row.blueprintTypeID] ?? []
-    let personallyOwned = !kinds.isEmpty
-    let corporationOwned = corporationTypeIDs.contains(row.blueprintTypeID)
-    if includesPersonal, personallyOwned, personalKindFilterAccepts(kinds) {
-      return true
-    }
-    if includesCorporation, corporationOwned { return true }
-    guard !personallyOwned, !corporationOwned else { return false }
-    return personalComplete && corporationComplete
-      ? includesNotOwned : includesUnknown
-  }
-
-  private func personalKindFilterAccepts(_ kinds: Set<String>) -> Bool {
-    if includesBPO, kinds.contains(BlueprintCopyKind.original.rawValue) {
-      return true
-    }
-    if includesBPC, kinds.contains(BlueprintCopyKind.copy.rawValue) {
-      return true
-    }
-    return includesBPO && includesBPC
-      && kinds.contains(BlueprintCopyKind.unknown.rawValue)
-  }
-}
-
-private enum OpportunityTopTab: String, CaseIterable, Identifiable {
-  case profile
-  case costSheet
-  case advanced
-
-  var id: Self { self }
-
-  var title: LocalizedStringKey {
-    switch self {
-    case .profile: "Simple Profile"
-    case .costSheet: "Cost Sheet"
-    case .advanced: "Advanced Filters"
-    }
-  }
+private enum OpportunityEfficiencyKind {
+  case material
+  case time
 }
 
 private enum OpportunityLowerTab: String, CaseIterable, Identifiable {
@@ -3743,7 +5020,7 @@ private enum OpportunityLowerTab: String, CaseIterable, Identifiable {
 }
 
 extension ManufacturingOpportunityProductFamily {
-  fileprivate var title: LocalizedStringKey {
+  var title: LocalizedStringKey {
     switch self {
     case .ships: "Ships"
     case .modules: "Modules"
@@ -3757,6 +5034,32 @@ extension ManufacturingOpportunityProductFamily {
     case .components: "Components"
     case .deployables: "Deployables"
     case .other: "Other"
+    }
+  }
+}
+
+extension ManufacturingOpportunityProductionClass {
+  var title: LocalizedStringKey {
+    switch self {
+    case .techI: "Tech I"
+    case .techII: "Tech II"
+    case .techIII: "Tech III"
+    case .faction: "Faction"
+    case .storyline: "Storyline"
+    case .other: "Other / unclassified"
+    }
+  }
+}
+
+extension ProductionTreeBlueprintAction {
+  fileprivate var requiresExplicitCost: Bool {
+    switch self {
+    case .useOwnedBPC, .useOwnedBPO, .copyOwnedBPO, .invent,
+      .manualExternalBPC,
+      .buyContractBPO, .buyMarketBPO, .buyLoyaltyStoreBPC:
+      true
+    case .buyContractBPC, .useOwnedReactionFormula, .unavailable, .unresolved:
+      false
     }
   }
 }

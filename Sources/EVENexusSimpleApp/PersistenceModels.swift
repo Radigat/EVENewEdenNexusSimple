@@ -523,3 +523,203 @@ extension ModelContext {
     }
   }
 }
+
+@MainActor
+enum CharacterSyncPersistence {
+  static func apply(
+    _ latest: CharacterSyncSnapshot,
+    to character: StoredCharacter,
+    in modelContext: ModelContext
+  ) throws {
+    let previousCapabilities = character.capabilitySnapshot.flatMap {
+      try? JSONDecoder().decode(CharacterCapabilitySnapshot.self, from: $0)
+    }
+    character.capabilitySnapshot = try JSONEncoder().encode(
+      CharacterCapabilitySnapshot(
+        id: latest.capabilities.id,
+        character: latest.capabilities.character,
+        cloneState: latest.capabilities.cloneState,
+        skills: latest.capabilities.skills.retainingLastKnownValue(
+          from: previousCapabilities?.skills
+        ),
+        standings: latest.capabilities.standings.retainingLastKnownValue(
+          from: previousCapabilities?.standings
+        )
+      )
+    )
+    character.assetSnapshot = try retainedData(
+      latest.assets,
+      previousData: character.assetSnapshot
+    )
+
+    let previousCorporationID = character.corporationID
+    let latestCorporationID = latest.capabilities.character.corporationID
+    let canRetainCorporation = previousCorporationID == latestCorporationID
+    character.corporationID = latestCorporationID
+    character.corporationName =
+      latest.corporationAssets.value?.corporationName
+      ?? (canRetainCorporation ? character.corporationName : nil)
+    character.corporationAssetSnapshot = try retainedData(
+      latest.corporationAssets,
+      previousData: canRetainCorporation
+        ? character.corporationAssetSnapshot : nil
+    )
+    character.blueprintSnapshot = try retainedData(
+      latest.blueprints,
+      previousData: character.blueprintSnapshot
+    )
+    try persistSettingSnapshot(
+      latest.jobs,
+      key: AppSettingKey.industryJobs(characterID: character.characterID),
+      in: modelContext
+    )
+    try persistSettingSnapshot(
+      latest.openOrders,
+      key: AppSettingKey.openOrders(characterID: character.characterID),
+      in: modelContext
+    )
+    try persistSettingSnapshot(
+      latest.privateContracts,
+      key: AppSettingKey.privateContracts(characterID: character.characterID),
+      in: modelContext
+    )
+    try persistCorporationWallet(
+      latest.corporationWallet,
+      characterID: character.characterID,
+      corporationID: latestCorporationID,
+      canRetainPrevious: canRetainCorporation,
+      in: modelContext
+    )
+    character.walletBalanceSnapshot = try retainedData(
+      latest.walletBalance,
+      previousData: character.walletBalanceSnapshot
+    )
+    character.lastSyncAt = .now
+    if latest.walletBalance.value != nil {
+      character.walletLastSyncAt = latest.walletBalance.source.capturedAt
+    }
+    try persistMetadata(latest, in: modelContext)
+  }
+
+  private static func retainedData<Value: Codable & Sendable>(
+    _ latest: Sourced<Value>,
+    previousData: Data?
+  ) throws -> Data {
+    let previous = previousData.flatMap {
+      try? JSONDecoder().decode(Sourced<Value>.self, from: $0)
+    }
+    return try JSONEncoder().encode(
+      latest.retainingLastKnownValue(from: previous)
+    )
+  }
+
+  private static func persistSettingSnapshot<Value: Codable & Sendable>(
+    _ latest: Sourced<Value>,
+    key: String,
+    in modelContext: ModelContext
+  ) throws {
+    let previous = try modelContext.appSettingValue(for: key).flatMap {
+      Data(base64Encoded: $0)
+    }.flatMap {
+      try? JSONDecoder().decode(Sourced<Value>.self, from: $0)
+    }
+    let data = try JSONEncoder().encode(
+      latest.retainingLastKnownValue(from: previous)
+    )
+    try modelContext.upsertAppSetting(
+      key: key,
+      value: data.base64EncodedString()
+    )
+  }
+
+  private static func persistCorporationWallet(
+    _ latest: Sourced<CorporationWalletSnapshot>,
+    characterID: Int64,
+    corporationID: Int64?,
+    canRetainPrevious: Bool,
+    in modelContext: ModelContext
+  ) throws {
+    let key = AppSettingKey.corporationWallet(characterID: characterID)
+    let storedPrevious = try modelContext.appSettingValue(for: key).flatMap {
+      Data(base64Encoded: $0)
+    }.flatMap {
+      try? JSONDecoder().decode(
+        Sourced<CorporationWalletSnapshot>.self,
+        from: $0
+      )
+    }
+    let previous =
+      canRetainPrevious && storedPrevious?.value?.corporationID == corporationID
+      ? storedPrevious : nil
+    let data = try JSONEncoder().encode(
+      latest.retainingLastKnownValue(from: previous)
+    )
+    try modelContext.upsertAppSetting(
+      key: key,
+      value: data.base64EncodedString()
+    )
+  }
+
+  private static func persistMetadata(
+    _ snapshot: CharacterSyncSnapshot,
+    in modelContext: ModelContext
+  ) throws {
+    let characterID = snapshot.authorization.characterID
+    try persistMetadata(
+      snapshot.capabilities.skills,
+      domain: "skills",
+      characterID: characterID,
+      in: modelContext
+    )
+    try persistMetadata(
+      snapshot.capabilities.standings,
+      domain: "standings",
+      characterID: characterID,
+      in: modelContext
+    )
+    try persistMetadata(
+      snapshot.blueprints, domain: "blueprints", characterID: characterID, in: modelContext)
+    try persistMetadata(
+      snapshot.assets, domain: "assets", characterID: characterID, in: modelContext)
+    try persistMetadata(
+      snapshot.corporationAssets, domain: "corporation-assets", characterID: characterID,
+      in: modelContext)
+    try persistMetadata(
+      snapshot.jobs, domain: "industry-jobs", characterID: characterID, in: modelContext)
+    try persistMetadata(
+      snapshot.openOrders, domain: "open-orders", characterID: characterID, in: modelContext)
+    try persistMetadata(
+      snapshot.orderHistory, domain: "order-history", characterID: characterID, in: modelContext)
+    try persistMetadata(
+      snapshot.privateContracts, domain: "private-contracts", characterID: characterID,
+      in: modelContext)
+    try persistMetadata(
+      snapshot.walletBalance, domain: "wallet-balance", characterID: characterID, in: modelContext)
+    try persistMetadata(
+      snapshot.walletJournal, domain: "wallet-journal", characterID: characterID, in: modelContext)
+    try persistMetadata(
+      snapshot.walletTransactions, domain: "wallet-transactions", characterID: characterID,
+      in: modelContext)
+    try persistMetadata(
+      snapshot.corporationWallet, domain: "corporation-wallet", characterID: characterID,
+      in: modelContext)
+  }
+
+  private static func persistMetadata<Value: Codable & Sendable>(
+    _ sourced: Sourced<Value>,
+    domain: String,
+    characterID: Int64,
+    in modelContext: ModelContext
+  ) throws {
+    try modelContext.upsertESISnapshotMetadata(
+      characterID: characterID,
+      domain: domain,
+      freshness: sourced.state.rawValue,
+      provider: sourced.source.provider,
+      sourceVersion: sourced.source.version,
+      sourceSnapshotID: sourced.source.snapshotID,
+      capturedAt: sourced.source.capturedAt,
+      diagnostics: sourced.diagnostics
+    )
+  }
+}

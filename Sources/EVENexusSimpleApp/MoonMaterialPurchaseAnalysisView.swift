@@ -4,19 +4,132 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum MaterialPurchaseAnalysisKind: Hashable {
+  case moonMaterials
+  case minerals
+
+  var title: LocalizedStringKey {
+    switch self {
+    case .moonMaterials: "Moon material purchase analysis"
+    case .minerals: "Mineral purchase analysis"
+    }
+  }
+
+  var itemHeader: LocalizedStringKey {
+    switch self {
+    case .moonMaterials: "Moon material"
+    case .minerals: "Mineral"
+    }
+  }
+
+  var loadingTitle: LocalizedStringKey {
+    switch self {
+    case .moonMaterials: "Loading Moon materials and market orders…"
+    case .minerals: "Loading minerals and market orders…"
+    }
+  }
+
+  var emptyTitle: LocalizedStringKey {
+    switch self {
+    case .moonMaterials: "No Moon purchase analysis yet"
+    case .minerals: "No mineral purchase analysis yet"
+    }
+  }
+
+  var emptyDescription: LocalizedStringKey {
+    switch self {
+    case .moonMaterials:
+      "Refresh to compare all Moon materials across the configured markets."
+    case .minerals:
+      "Refresh to compare all minerals across the configured markets."
+    }
+  }
+
+  var catalogExplanation: LocalizedStringKey {
+    switch self {
+    case .moonMaterials:
+      "The active SDE group Moon Materials defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market."
+    case .minerals:
+      "The active SDE group Mineral defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market."
+    }
+  }
+
+  var countFormat: String {
+    switch self {
+    case .moonMaterials: "%lld Moon materials"
+    case .minerals: "%lld minerals"
+    }
+  }
+
+  var accessibilityPrefix: String {
+    switch self {
+    case .moonMaterials: "moon-material-analysis"
+    case .minerals: "mineral-purchase-analysis"
+    }
+  }
+
+  var exportPanelTitle: String {
+    switch self {
+    case .moonMaterials: "Export Moon material table as image"
+    case .minerals: "Export mineral table as image"
+    }
+  }
+
+  var exportFilePrefix: String {
+    switch self {
+    case .moonMaterials: "Moon-Material-Kaufanalyse"
+    case .minerals: "Mineralien-Kaufanalyse"
+    }
+  }
+}
+
 struct MoonMaterialPurchaseAnalysisView: View {
+  var body: some View {
+    MaterialPurchaseAnalysisView(kind: .moonMaterials)
+  }
+}
+
+struct MineralPurchaseAnalysisView: View {
+  var body: some View {
+    MaterialPurchaseAnalysisView(kind: .minerals)
+  }
+}
+
+private struct MaterialPurchaseAnalysisView: View {
+  let kind: MaterialPurchaseAnalysisKind
   @EnvironmentObject private var runtime: RuntimeState
   @Query private var characters: [StoredCharacter]
   @State private var isExportingImage = false
   @State private var imageExportMessage: String?
   @State private var materialSort = AppTableSortDescriptor(
-    column: MoonMaterialSortColumn.material,
+    column: MaterialPurchaseSortColumn.material,
     direction: .ascending
   )
 
   private let materialColumnWidth: CGFloat = 190
   private let marketColumnWidth: CGFloat = 190
   private let rowMinimumHeight: CGFloat = 72
+
+  private var analysis: MaterialPurchaseAnalysisSnapshot? {
+    switch kind {
+    case .moonMaterials: runtime.moonMaterialAnalysis
+    case .minerals: runtime.mineralPurchaseAnalysis
+    }
+  }
+
+  private var isRefreshing: Bool {
+    switch kind {
+    case .moonMaterials: runtime.isRefreshingMoonMaterialAnalysis
+    case .minerals: runtime.isRefreshingMineralPurchaseAnalysis
+    }
+  }
+
+  private var analysisError: String? {
+    switch kind {
+    case .moonMaterials: runtime.moonMaterialAnalysisError
+    case .minerals: runtime.mineralPurchaseAnalysisError
+    }
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingLG) {
@@ -28,28 +141,26 @@ struct MoonMaterialPurchaseAnalysisView: View {
       }
       explanation
 
-      if let error = runtime.moonMaterialAnalysisError {
+      if let error = analysisError {
         Label(error.localizedUI, systemImage: "exclamationmark.triangle.fill")
           .foregroundStyle(DesignTokens.negative)
       }
 
-      if let analysis = runtime.moonMaterialAnalysis {
+      if let analysis {
         configurationWarnings(analysis)
         sourceStatus(analysis)
         analysisGrid(analysis)
-      } else if runtime.isRefreshingMoonMaterialAnalysis {
+      } else if isRefreshing {
         Spacer()
-        ProgressView("Loading Moon materials and market orders…")
+        ProgressView(kind.loadingTitle)
           .frame(maxWidth: .infinity)
         Spacer()
       } else {
         Spacer()
         ContentUnavailableView(
-          "No Moon purchase analysis yet",
+          kind.emptyTitle,
           systemImage: "chart.xyaxis.line",
-          description: Text(
-            "Refresh to compare all Moon materials across the configured markets."
-          )
+          description: Text(kind.emptyDescription)
         )
         Spacer()
       }
@@ -63,7 +174,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
   private var header: some View {
     HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-        Text("Moon material purchase analysis")
+        Text(kind.title)
           .font(.largeTitle.bold())
           .foregroundStyle(DesignTokens.textPrimary)
         Text(
@@ -73,7 +184,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
       }
       Spacer(minLength: DesignTokens.spacingMD)
       Button {
-        guard let analysis = runtime.moonMaterialAnalysis else { return }
+        guard let analysis else { return }
         exportImage(analysis)
       } label: {
         if isExportingImage {
@@ -83,12 +194,12 @@ struct MoonMaterialPurchaseAnalysisView: View {
           Label("Export as image", systemImage: "photo.badge.arrow.down")
         }
       }
-      .disabled(runtime.moonMaterialAnalysis == nil || isExportingImage)
-      .accessibilityIdentifier("moon-material-analysis.export-image")
+      .disabled(analysis == nil || isExportingImage)
+      .accessibilityIdentifier("\(kind.accessibilityPrefix).export-image")
       Button {
         Task { await refresh() }
       } label: {
-        if runtime.isRefreshingMoonMaterialAnalysis {
+        if isRefreshing {
           ProgressView()
             .controlSize(.small)
         } else {
@@ -96,8 +207,8 @@ struct MoonMaterialPurchaseAnalysisView: View {
         }
       }
       .buttonStyle(.borderedProminent)
-      .disabled(runtime.isRefreshingMoonMaterialAnalysis)
-      .accessibilityIdentifier("moon-material-analysis.refresh")
+      .disabled(isRefreshing)
+      .accessibilityIdentifier("\(kind.accessibilityPrefix).refresh")
     }
   }
 
@@ -116,10 +227,8 @@ struct MoonMaterialPurchaseAnalysisView: View {
           "Only fresh markets with sell orders are ranked by their lowest price. Equal prices share the same rank."
         )
         .foregroundStyle(DesignTokens.textSecondary)
-        Text(
-          "The active SDE group Moon Materials defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market."
-        )
-        .foregroundStyle(DesignTokens.textSecondary)
+        Text(kind.catalogExplanation)
+          .foregroundStyle(DesignTokens.textSecondary)
         Text(
           "ESI caches market orders for five minutes. Refreshes inside that window reuse the current result when the Profile and authorizations have not changed."
         )
@@ -131,7 +240,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
 
   @ViewBuilder
   private func configurationWarnings(
-    _ analysis: MoonMaterialPurchaseAnalysisSnapshot
+    _ analysis: MaterialPurchaseAnalysisSnapshot
   ) -> some View {
     if analysis.configuredHubs.contains(where: {
       $0.location.kind == .playerStructure
@@ -158,7 +267,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
   }
 
   private func sourceStatus(
-    _ analysis: MoonMaterialPurchaseAnalysisSnapshot
+    _ analysis: MaterialPurchaseAnalysisSnapshot
   ) -> some View {
     let freshCount = analysis.configuredMarkets.values.filter {
       $0.state == .fresh
@@ -169,7 +278,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
     return HStack(spacing: DesignTokens.spacingMD) {
       Label(
         AppLocalization.format(
-          "%lld Moon materials",
+          kind.countFormat,
           Int64(analysis.materialCatalog.materials.count)
         ),
         systemImage: "circle.grid.3x3.fill"
@@ -203,18 +312,18 @@ struct MoonMaterialPurchaseAnalysisView: View {
   }
 
   private func analysisGrid(
-    _ analysis: MoonMaterialPurchaseAnalysisSnapshot
+    _ analysis: MaterialPurchaseAnalysisSnapshot
   ) -> some View {
     ScrollView([.horizontal, .vertical]) {
       LazyVStack(spacing: 1) {
         gridHeader(analysis)
         ForEach(sortedMaterials(analysis)) { material in
-          let ranks = MoonMaterialMarketPriceRankAnalyzer.ranks(
+          let ranks = MaterialPurchaseMarketPriceRankAnalyzer.ranks(
             typeID: material.id,
             markets: analysis.configuredMarkets
           )
           HStack(spacing: 1) {
-            EVEEntityText(value: material.name)
+            EVEItemText(value: material.name, typeID: material.id)
               .frame(width: materialColumnWidth, alignment: .leading)
               .frame(minHeight: rowMinimumHeight, alignment: .leading)
               .padding(.horizontal, DesignTokens.spacingSM)
@@ -238,27 +347,27 @@ struct MoonMaterialPurchaseAnalysisView: View {
   }
 
   private func gridHeader(
-    _ analysis: MoonMaterialPurchaseAnalysisSnapshot
+    _ analysis: MaterialPurchaseAnalysisSnapshot
   ) -> some View {
     HStack(spacing: 1) {
       SortableTableHeader(
-        title: "Moon material",
-        column: MoonMaterialSortColumn.material,
+        title: kind.itemHeader,
+        column: MaterialPurchaseSortColumn.material,
         sort: $materialSort
       )
-        .font(.caption.bold())
-        .textCase(.uppercase)
-        .tracking(0.8)
-        .frame(width: materialColumnWidth, alignment: .leading)
-        .frame(minHeight: 58, alignment: .leading)
-        .padding(.horizontal, DesignTokens.spacingSM)
-        .background(DesignTokens.elevated)
+      .font(.caption.bold())
+      .textCase(.uppercase)
+      .tracking(0.8)
+      .frame(width: materialColumnWidth, alignment: .leading)
+      .frame(minHeight: 58, alignment: .leading)
+      .padding(.horizontal, DesignTokens.spacingSM)
+      .background(DesignTokens.elevated)
 
       ForEach(analysis.configuredHubs) { hub in
         VStack(spacing: DesignTokens.spacingXS) {
           SortableTableHeader(
             title: "Lowest price",
-            column: MoonMaterialSortColumn.market(hub.id),
+            column: MaterialPurchaseSortColumn.market(hub.id),
             sort: $materialSort
           )
           .font(.caption2.bold())
@@ -283,14 +392,14 @@ struct MoonMaterialPurchaseAnalysisView: View {
   }
 
   private func sortedMaterials(
-    _ analysis: MoonMaterialPurchaseAnalysisSnapshot
-  ) -> [MoonMaterial] {
+    _ analysis: MaterialPurchaseAnalysisSnapshot
+  ) -> [MaterialPurchaseItem] {
     analysis.materialCatalog.materials.sorted { lhs, rhs in
       let ordered: Bool?
       switch materialSort.column {
       case .material:
         ordered = compareMaterialValues(lhs.name, rhs.name)
-      case let .market(hubID):
+      case .market(let hubID):
         ordered = compareOptionalMaterialValues(
           lowestPrice(typeID: lhs.id, hubID: hubID, analysis: analysis),
           lowestPrice(typeID: rhs.id, hubID: hubID, analysis: analysis)
@@ -303,12 +412,12 @@ struct MoonMaterialPurchaseAnalysisView: View {
   private func lowestPrice(
     typeID: Int64,
     hubID: UUID,
-    analysis: MoonMaterialPurchaseAnalysisSnapshot
+    analysis: MaterialPurchaseAnalysisSnapshot
   ) -> Double? {
     guard let snapshot = analysis.configuredMarkets[hubID]?.value else {
       return nil
     }
-    return MoonMaterialPriceBandAnalyzer.analyze(
+    return MaterialPurchasePriceBandAnalyzer.analyze(
       typeID: typeID,
       snapshot: snapshot
     )?.lowestSellPrice
@@ -327,7 +436,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
     _ rhs: Value?
   ) -> Bool? {
     switch (lhs, rhs) {
-    case let (lhs?, rhs?): return compareMaterialValues(lhs, rhs)
+    case (let lhs?, let rhs?): return compareMaterialValues(lhs, rhs)
     case (nil, nil): return nil
     case (nil, _): return materialSort.direction == .descending
     case (_, nil): return materialSort.direction == .ascending
@@ -336,14 +445,14 @@ struct MoonMaterialPurchaseAnalysisView: View {
 
   @ViewBuilder
   private func marketCell(
-    material: MoonMaterial,
+    material: MaterialPurchaseItem,
     hub: MarketHubConfigurationSnapshot,
     sourced: Sourced<MarketOrderSnapshot>?,
-    priceRank: MoonMaterialMarketPriceRank?
+    priceRank: MaterialPurchaseMarketPriceRank?
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       if let sourced, let snapshot = sourced.value {
-        if let band = MoonMaterialPriceBandAnalyzer.analyze(
+        if let band = MaterialPurchasePriceBandAnalyzer.analyze(
           typeID: material.id,
           snapshot: snapshot
         ) {
@@ -397,8 +506,51 @@ struct MoonMaterialPurchaseAnalysisView: View {
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel(
-      "\(material.name), \(hub.location.name)"
+      marketAccessibilityLabel(
+        material: material,
+        hub: hub,
+        sourced: sourced,
+        priceRank: priceRank
+      )
     )
+  }
+
+  private func marketAccessibilityLabel(
+    material: MaterialPurchaseItem,
+    hub: MarketHubConfigurationSnapshot,
+    sourced: Sourced<MarketOrderSnapshot>?,
+    priceRank: MaterialPurchaseMarketPriceRank?
+  ) -> String {
+    var components = [material.name, hub.location.name]
+    if let sourced, let snapshot = sourced.value {
+      if let band = MaterialPurchasePriceBandAnalyzer.analyze(
+        typeID: material.id,
+        snapshot: snapshot
+      ) {
+        components.append(
+          "\("Lowest price".localizedUI) \(formatPrice(band.lowestSellPrice)) ISK"
+        )
+        components.append(
+          "+10 % \(formatPrice(band.maximumBandPrice)) ISK"
+        )
+        components.append(
+          "\(formatQuantity(band.availableQuantity)) \("units within +10%".localizedUI)"
+        )
+        if let priceRank {
+          components.append(rankLabel(priceRank))
+        }
+      } else {
+        components.append("No sell orders at this location".localizedUI)
+      }
+      components.append(sourceStateLabel(sourced.state))
+      if sourced.state != .fresh {
+        components.append(marketFailureLabel(sourced))
+      }
+    } else {
+      components.append(marketFailureLabel(sourced))
+      components.append("No market value was substituted".localizedUI)
+    }
+    return components.joined(separator: ", ")
   }
 
   private func roleLabels(
@@ -424,39 +576,47 @@ struct MoonMaterialPurchaseAnalysisView: View {
     _ sourced: Sourced<MarketOrderSnapshot>?
   ) -> String {
     let diagnostics = sourced?.diagnostics ?? []
-    if diagnostics.contains("esi.moon-market.structure-scope-missing") {
+    if diagnostics.contains("esi.material-market.structure-scope-missing") {
       return "Character reauthorization required".localizedUI
     }
     if diagnostics.contains(
-      "esi.moon-market.structure-authorization-required"
+      "esi.material-market.structure-authorization-required"
     ) {
       return "Connect an authorized character".localizedUI
     }
-    if diagnostics.contains("esi.moon-market.structure-access-forbidden") {
+    if diagnostics.contains("esi.material-market.structure-access-forbidden") {
       return "Structure market is not accessible".localizedUI
     }
-    if diagnostics.contains("esi.moon-market.structure-not-found") {
+    if diagnostics.contains("esi.material-market.structure-not-found") {
       return "Structure location is no longer valid".localizedUI
     }
-    if diagnostics.contains("esi.moon-market.structure-token-unavailable") {
+    if diagnostics.contains("esi.material-market.structure-token-unavailable") {
       return "Character authorization is unavailable".localizedUI
     }
-    if diagnostics.contains("esi.moon-market.rate-limited") {
+    if diagnostics.contains("esi.material-market.rate-limited") {
       return "ESI rate limit reached".localizedUI
     }
     return sourceStateLabel(sourced?.state)
   }
 
   private func refresh() async {
-    await runtime.refreshMoonMaterialAnalysis(
-      authorizations: authorizationSnapshots,
-      clientID: clientID
-    )
+    switch kind {
+    case .moonMaterials:
+      await runtime.refreshMoonMaterialAnalysis(
+        authorizations: authorizationSnapshots,
+        clientID: clientID
+      )
+    case .minerals:
+      await runtime.refreshMineralPurchaseAnalysis(
+        authorizations: authorizationSnapshots,
+        clientID: clientID
+      )
+    }
   }
 
   @MainActor
   private func exportImage(
-    _ analysis: MoonMaterialPurchaseAnalysisSnapshot
+    _ analysis: MaterialPurchaseAnalysisSnapshot
   ) {
     guard !isExportingImage else { return }
     isExportingImage = true
@@ -464,7 +624,8 @@ struct MoonMaterialPurchaseAnalysisView: View {
     defer { isExportingImage = false }
 
     let exportedAt = Date()
-    let content = MoonMaterialPurchaseAnalysisExportView(
+    let content = MaterialPurchaseAnalysisExportView(
+      kind: kind,
       analysis: analysis,
       materials: sortedMaterials(analysis),
       exportedAt: exportedAt
@@ -487,10 +648,11 @@ struct MoonMaterialPurchaseAnalysisView: View {
     panel.allowedContentTypes = [.png]
     panel.canCreateDirectories = true
     panel.isExtensionHidden = false
-    panel.nameFieldStringValue = MoonMaterialImageExportNaming.fileName(
+    panel.nameFieldStringValue = MaterialPurchaseImageExportNaming.fileName(
+      kind: kind,
       at: exportedAt
     )
-    panel.title = "Export Moon material table as image".localizedUI
+    panel.title = kind.exportPanelTitle.localizedUI
 
     guard panel.runModal() == .OK, let destination = panel.url else {
       imageExportMessage = "Image export cancelled.".localizedUI
@@ -529,6 +691,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
       "\($0.characterID):\($0.id.uuidString):\($0.authorizedAt.timeIntervalSince1970):\($0.scopes.contains(TradeHubMarketService.structureMarketScope))"
     }.sorted().joined(separator: "|")
     return [
+      kind.accessibilityPrefix,
       profile.mainTradingLocationID?.uuidString ?? "none",
       profile.homeTradingLocationID?.uuidString ?? "none",
       profile.coalitionTradingLocationID?.uuidString ?? "none",
@@ -541,7 +704,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
   }
 
   private func rankLegend(
-    _ rank: MoonMaterialMarketPriceRank
+    _ rank: MaterialPurchaseMarketPriceRank
   ) -> some View {
     HStack(spacing: DesignTokens.spacingXS) {
       Circle()
@@ -553,14 +716,14 @@ struct MoonMaterialPurchaseAnalysisView: View {
   }
 
   private func rankBadge(
-    _ rank: MoonMaterialMarketPriceRank
+    _ rank: MaterialPurchaseMarketPriceRank
   ) -> some View {
     Text(rankLabel(rank))
       .font(.caption2.bold())
       .foregroundStyle(rankColor(rank))
   }
 
-  private func rankLabel(_ rank: MoonMaterialMarketPriceRank) -> String {
+  private func rankLabel(_ rank: MaterialPurchaseMarketPriceRank) -> String {
     switch rank {
     case .cheapest: "Cheapest".localizedUI
     case .secondCheapest: "Second cheapest".localizedUI
@@ -568,7 +731,7 @@ struct MoonMaterialPurchaseAnalysisView: View {
     }
   }
 
-  private func rankColor(_ rank: MoonMaterialMarketPriceRank) -> Color {
+  private func rankColor(_ rank: MaterialPurchaseMarketPriceRank) -> Color {
     switch rank {
     case .cheapest: DesignTokens.positive
     case .secondCheapest: DesignTokens.caution
@@ -629,19 +792,23 @@ struct MoonMaterialPurchaseAnalysisView: View {
   }
 }
 
-private enum MoonMaterialImageExportNaming {
-  static func fileName(at date: Date) -> String {
+enum MaterialPurchaseImageExportNaming {
+  static func fileName(
+    kind: MaterialPurchaseAnalysisKind,
+    at date: Date
+  ) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = .current
     formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-    return "Moon-Material-Kaufanalyse_\(formatter.string(from: date)).png"
+    return "\(kind.exportFilePrefix)_\(formatter.string(from: date)).png"
   }
 }
 
-private struct MoonMaterialPurchaseAnalysisExportView: View {
-  let analysis: MoonMaterialPurchaseAnalysisSnapshot
-  let materials: [MoonMaterial]
+private struct MaterialPurchaseAnalysisExportView: View {
+  let kind: MaterialPurchaseAnalysisKind
+  let analysis: MaterialPurchaseAnalysisSnapshot
+  let materials: [MaterialPurchaseItem]
   let exportedAt: Date
 
   private let materialColumnWidth: CGFloat = 230
@@ -660,7 +827,7 @@ private struct MoonMaterialPurchaseAnalysisExportView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       VStack(alignment: .leading, spacing: 5) {
-        Text("Moon material purchase analysis")
+        Text(kind.title)
           .font(.system(size: 30, weight: .bold))
           .foregroundStyle(DesignTokens.textPrimary)
         Text(exportTimestamp)
@@ -709,7 +876,7 @@ private struct MoonMaterialPurchaseAnalysisExportView: View {
 
   private var tableHeader: some View {
     HStack(spacing: 1) {
-      Text("Moon material")
+      Text(kind.itemHeader)
         .font(.caption.bold())
         .textCase(.uppercase)
         .tracking(0.8)
@@ -740,13 +907,13 @@ private struct MoonMaterialPurchaseAnalysisExportView: View {
     }
   }
 
-  private func tableRow(_ material: MoonMaterial) -> some View {
-    let ranks = MoonMaterialMarketPriceRankAnalyzer.ranks(
+  private func tableRow(_ material: MaterialPurchaseItem) -> some View {
+    let ranks = MaterialPurchaseMarketPriceRankAnalyzer.ranks(
       typeID: material.id,
       markets: analysis.configuredMarkets
     )
     return HStack(spacing: 1) {
-      EVEEntityText(value: material.name)
+      EVEItemText(value: material.name, typeID: material.id)
         .padding(.horizontal, 10)
         .frame(width: materialColumnWidth, alignment: .leading)
         .frame(height: rowHeight, alignment: .leading)
@@ -763,13 +930,13 @@ private struct MoonMaterialPurchaseAnalysisExportView: View {
   }
 
   private func exportMarketCell(
-    material: MoonMaterial,
+    material: MaterialPurchaseItem,
     sourced: Sourced<MarketOrderSnapshot>?,
-    rank: MoonMaterialMarketPriceRank?
+    rank: MaterialPurchaseMarketPriceRank?
   ) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       if let sourced, let snapshot = sourced.value,
-        let band = MoonMaterialPriceBandAnalyzer.analyze(
+        let band = MaterialPurchasePriceBandAnalyzer.analyze(
           typeID: material.id,
           snapshot: snapshot
         )
@@ -838,7 +1005,7 @@ private struct MoonMaterialPurchaseAnalysisExportView: View {
     return labels.joined(separator: " · ")
   }
 
-  private func rankLabel(_ rank: MoonMaterialMarketPriceRank) -> String {
+  private func rankLabel(_ rank: MaterialPurchaseMarketPriceRank) -> String {
     switch rank {
     case .cheapest: "Cheapest".localizedUI
     case .secondCheapest: "Second cheapest".localizedUI
@@ -846,7 +1013,7 @@ private struct MoonMaterialPurchaseAnalysisExportView: View {
     }
   }
 
-  private func rankColor(_ rank: MoonMaterialMarketPriceRank) -> Color {
+  private func rankColor(_ rank: MaterialPurchaseMarketPriceRank) -> Color {
     switch rank {
     case .cheapest: DesignTokens.positive
     case .secondCheapest: DesignTokens.caution
@@ -898,7 +1065,7 @@ private struct MoonMaterialPurchaseAnalysisExportView: View {
   }
 }
 
-private enum MoonMaterialSortColumn: Hashable {
+private enum MaterialPurchaseSortColumn: Hashable {
   case material
   case market(UUID)
 }

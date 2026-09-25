@@ -6,6 +6,181 @@ import Testing
 @Suite("Production basis")
 struct ProductionBasisTests {
   @Test
+  func reprocessingReadinessExplainsEveryMissingInput() {
+    let unresolved = ConfiguredIndustryStructure(
+      name: "Fixture Tatara",
+      kind: .tatara,
+      serviceModules: []
+    )
+    #expect(
+      unresolved.reprocessingReadinessIssues
+        == [.missingService, .missingOreYield, .unconfirmedTax]
+    )
+    #expect(!unresolved.isReprocessingCapable)
+
+    let feeMissing = ConfiguredIndustryStructure(
+      name: "Fixture Tatara",
+      kind: .tatara,
+      reprocessingTaxRate: nil,
+      serviceModules: [
+        IndustryServiceModuleConfiguration(
+          definition: IndustryServiceModuleDefinition(
+            typeID: 100,
+            name: "Fixture Reprocessing Service",
+            activities: [.reprocessing],
+            normalOreYieldMultiplier: 0.5,
+            moonOreYieldMultiplier: 0.5,
+            source: SourceIdentity(provider: "fixture", version: "1")
+          )
+        )
+      ]
+    )
+    #expect(feeMissing.reprocessingReadinessIssues == [.unconfirmedTax])
+    #expect(!feeMissing.isReprocessingCapable)
+
+    var ready = feeMissing
+    ready.reprocessingTaxRate = 0
+    #expect(ready.reprocessingReadinessIssues.isEmpty)
+    #expect(ready.isReprocessingCapable)
+  }
+
+  @Test
+  func reprocessingImplantSelectionPersistsAndLegacyProfilesAssumeNone()
+    throws
+  {
+    var structure = ConfiguredIndustryStructure(name: "Fixture Tatara")
+    structure.setReprocessingImplant(.rx804, for: 42)
+
+    let roundTrip = try JSONDecoder().decode(
+      ConfiguredIndustryStructure.self,
+      from: JSONEncoder().encode(structure)
+    )
+    #expect(roundTrip.reprocessingImplant(for: 42) == .rx804)
+    #expect(roundTrip.reprocessingImplant(for: 43) == .none)
+
+    var legacyObject = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(structure)
+      ) as? [String: Any]
+    )
+    legacyObject.removeValue(forKey: "reprocessingImplantsByCharacterID")
+    let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+    let legacy = try JSONDecoder().decode(
+      ConfiguredIndustryStructure.self,
+      from: legacyData
+    )
+    #expect(legacy.reprocessingImplantsByCharacterID == nil)
+    #expect(legacy.reprocessingImplant(for: 42) == .none)
+  }
+
+  @Test
+  func upwellReprocessingCombinesSDEEquipmentSecurityAndStructureBonuses() {
+    let source = SourceIdentity(provider: "CCP SDE", version: "fixture")
+    let service = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 35_899,
+        name: "Standup Reprocessing Facility I",
+        activities: [.reprocessing],
+        normalOreYieldMultiplier: 0.5,
+        moonOreYieldMultiplier: 0.5,
+        iceYieldMultiplier: 0.5,
+        source: source
+      )
+    )
+    let t2Monitor = IndustryRigConfiguration(
+      definition: IndustryRigDefinition(
+        typeID: 46_640,
+        name: "Standup L-Set Reprocessing Monitor II",
+        size: .large,
+        manufacturingCategories: [],
+        isReactionRig: false,
+        materialBonusPercent: 0,
+        timeBonusPercent: 0,
+        lowSecurityMultiplier: 1.06,
+        nullSecurityMultiplier: 1.12,
+        source: source,
+        normalOreYieldMultiplier: 0.53,
+        moonOreYieldMultiplier: 0.53,
+        iceYieldMultiplier: 0.53
+      )
+    )
+    let mediumRig = IndustryRigConfiguration(
+      definition: IndustryRigDefinition(
+        typeID: 46_634,
+        name: "Standup M-Set Asteroid Ore Grading Processor II",
+        size: .medium,
+        manufacturingCategories: [],
+        isReactionRig: false,
+        materialBonusPercent: 0,
+        timeBonusPercent: 0,
+        lowSecurityMultiplier: 1.06,
+        nullSecurityMultiplier: 1.12,
+        source: source,
+        normalOreYieldMultiplier: 0.53
+      )
+    )
+
+    var noRig = ConfiguredIndustryStructure(
+      name: "Fixture Tatara",
+      kind: .tatara,
+      securityBand: .lowSecurity,
+      serviceModules: [service]
+    )
+    noRig.rigSize = .large
+    let noRigYield = noRig.effectiveReprocessingYieldMultiplier(
+      for: .asteroidOre
+    )
+    #expect(abs((noRigYield ?? 0) - (0.5 * 1.055)) < 0.000_000_1)
+    let noRigBasis = noRig.reprocessingYieldBasis(for: .asteroidOre)
+    #expect(noRigBasis?.sourceKind == .serviceModule)
+    #expect(noRigBasis?.sourceName == "Standup Reprocessing Facility I")
+
+    var withRig = noRig
+    withRig.rigs = [mediumRig, t2Monitor]
+    let expected = 0.53 * 1.06 * 1.055
+    #expect(
+      abs(
+        (withRig.effectiveReprocessingYieldMultiplier(for: .asteroidOre) ?? 0)
+          - expected
+      ) < 0.000_000_1
+    )
+    #expect(
+      abs(
+        (withRig.effectiveReprocessingYieldMultiplier(for: .moonOre) ?? 0)
+          - expected
+      ) < 0.000_000_1
+    )
+    #expect(
+      abs(
+        (withRig.effectiveReprocessingYieldMultiplier(for: .ice) ?? 0)
+          - expected
+      ) < 0.000_000_1
+    )
+    let rigBasis = withRig.reprocessingYieldBasis(for: .asteroidOre)
+    #expect(rigBasis?.sourceKind == .rig)
+    #expect(rigBasis?.sourceName == "Standup L-Set Reprocessing Monitor II")
+    #expect(abs((rigBasis?.equipmentYieldMultiplier ?? 0) - (0.53 * 1.06)) < 0.000_000_1)
+  }
+
+  @Test
+  func reprocessingBatchCountRoundsTheCombinedOutputStack() {
+    #expect(
+      ReprocessingYieldCalculator.minimumBatches(
+        requiredQuantity: 199,
+        baseQuantity: 100,
+        yieldMultiplier: 0.995
+      ) == 2
+    )
+    #expect(
+      ReprocessingYieldCalculator.minimumBatches(
+        requiredQuantity: 200,
+        baseQuantity: 100,
+        yieldMultiplier: 0.995
+      ) == 3
+    )
+  }
+
+  @Test
   func resolvesStructureToItsAssignedManufacturingSystem() {
     let jita = ActivitySystemConfiguration(
       activity: .manufacturing,
@@ -948,6 +1123,58 @@ struct ProductionBasisTests {
   }
 
   @Test
+  func exordiumAddsItsNonImmediateOrderFeeToTheNPCBrokerRate() {
+    let source = SourceIdentity(provider: "ESI", version: "fixture")
+    let capability = CharacterCapabilitySnapshot(
+      character: CharacterIdentity(id: 42, name: "Trader"),
+      cloneState: .omega,
+      skills: Sourced(
+        state: .fresh,
+        value: [
+          TrainedSkill(
+            skillID: EVEConstants.accountingSkillTypeID,
+            trainedLevel: 5,
+            activeLevel: 5,
+            skillpoints: 1
+          ),
+          TrainedSkill(
+            skillID: EVEConstants.brokerRelationsSkillTypeID,
+            trainedLevel: 4,
+            activeLevel: 4,
+            skillpoints: 1
+          ),
+        ],
+        source: source
+      ),
+      standings: Sourced(
+        state: .fresh,
+        value: [500_002: -1, 1_000_004: 2],
+        source: source
+      )
+    )
+    let exordiumStation = ProcurementLocation(
+      id: "npc:exordium-fixture",
+      name: "Manifest Fixture Station",
+      locationID: 60_100_001,
+      kind: .npcTradeHub,
+      solarSystemID: 30_100_001,
+      regionID: MarketTaxConfiguration.exordiumRegionID,
+      ownerCorporationID: 1_000_004,
+      ownerFactionID: 500_002
+    )
+    var taxes = MarketTaxConfiguration(traderCharacterID: 42)
+
+    taxes.apply(capability: capability, at: exordiumStation)
+
+    #expect(abs((taxes.effectiveBrokerFeeRate ?? 0) - 0.0679) < 0.000_001)
+    #expect(
+      taxes.calculation?.warnings.contains {
+        $0.contains("Exordium's additional 5%")
+      } == true
+    )
+  }
+
+  @Test
   func manualBrokerFeeFallbackPersistsAndYieldsToAutomaticNPCFee() throws {
     let source = SourceIdentity(provider: "ESI", version: "fixture")
     let capability = CharacterCapabilitySnapshot(
@@ -1119,6 +1346,102 @@ struct ProductionBasisTests {
       basis.mainTradingLocation?.marketTaxes.effectiveBrokerFeeRate == 0.03
     )
     #expect(basis.marketTaxes.manualBrokerFeeUpdatedAt == updatedAt)
+  }
+
+  @Test
+  func publicContractFeePersistsButLegacyAndInvalidValuesStayUnknown() throws {
+    let configured = TradingLocationConfiguration(
+      location: .amarr,
+      publicContractFeeRate: 0.0125
+    )
+    let restored = try JSONDecoder().decode(
+      TradingLocationConfiguration.self,
+      from: JSONEncoder().encode(configured)
+    )
+    #expect(restored.publicContractFeeRate == 0.0125)
+
+    var legacyObject = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(configured))
+        as? [String: Any]
+    )
+    legacyObject.removeValue(forKey: "publicContractFeeRate")
+    let legacy = try JSONDecoder().decode(
+      TradingLocationConfiguration.self,
+      from: JSONSerialization.data(withJSONObject: legacyObject)
+    )
+    #expect(legacy.publicContractFeeRate == nil)
+
+    var basis = ProductionBasis(
+      tradingLocations: [configured],
+      homeTradingLocationID: configured.id
+    )
+    basis.setPublicContractFeeRate(
+      1,
+      forTradingLocationID: configured.id
+    )
+    #expect(basis.homeTradingLocation?.publicContractFeeRate == nil)
+  }
+
+  @Test
+  func observedPublicContractFeeRequiresExactTraderAndLocationBeforeConfirmation()
+    throws
+  {
+    let location = ProcurementLocation.amarr
+    let locationID = try #require(location.locationID)
+    let evidence = PublicContractFeeEvidence(
+      characterID: 7,
+      contractID: 41,
+      locationID: locationID,
+      contractPrice: 1_000_000,
+      brokerFee: 12_000,
+      salesTax: 8_000,
+      deposit: 100_000,
+      depositRefund: 100_000,
+      observedAt: Date(timeIntervalSince1970: 1_776_000_000),
+      source: SourceIdentity(
+        provider: "ESI fixture",
+        version: "2026-08-16",
+        capturedAt: Date(timeIntervalSince1970: 1_776_000_000),
+        snapshotID: UUID(
+          uuidString: "00000000-0000-0000-0000-000000000041"
+        )!
+      )
+    )
+    let configuration = TradingLocationConfiguration(
+      location: location,
+      traderCharacterID: 7,
+      observedPublicContractFee: evidence
+    )
+    let restored = try JSONDecoder().decode(
+      TradingLocationConfiguration.self,
+      from: JSONEncoder().encode(configuration)
+    )
+    var basis = ProductionBasis(
+      tradingLocations: [restored],
+      homeTradingLocationID: restored.id
+    )
+
+    #expect(restored.observedPublicContractFee == evidence)
+    #expect(restored.publicContractFeeRate == nil)
+    let confirmed = basis.confirmObservedPublicContractFee(
+      forTradingLocationID: restored.id
+    )
+    #expect(confirmed)
+    #expect(basis.homeTradingLocation?.publicContractFeeRate == 0.02)
+
+    basis.selectTrader(
+      characterID: 8,
+      forTradingLocationID: restored.id
+    )
+    #expect(basis.homeTradingLocation?.observedPublicContractFee == nil)
+    #expect(basis.homeTradingLocation?.publicContractFeeRate == nil)
+
+    let accepted = basis.setObservedPublicContractFee(
+      evidence,
+      forTradingLocationID: restored.id
+    )
+    #expect(!accepted)
+    #expect(basis.homeTradingLocation?.observedPublicContractFee == nil)
   }
 
   @Test

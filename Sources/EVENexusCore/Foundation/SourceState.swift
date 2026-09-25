@@ -1,5 +1,35 @@
 import Foundation
 
+/// Limits presentation-only progress publications without delaying explicit
+/// phase boundaries or final states. Domain work continues at full speed; only
+/// redundant UI invalidations are coalesced.
+public struct ProgressPublicationThrottle: Sendable {
+  public let minimumInterval: TimeInterval
+  private var lastPublicationAt: Date?
+
+  public init(minimumInterval: TimeInterval) {
+    self.minimumInterval = max(0, minimumInterval)
+  }
+
+  public mutating func shouldPublish(
+    at now: Date,
+    force: Bool = false
+  ) -> Bool {
+    guard !force, let lastPublicationAt else {
+      self.lastPublicationAt = now
+      return true
+    }
+    let elapsed = now.timeIntervalSince(lastPublicationAt)
+    guard elapsed < 0 || elapsed >= minimumInterval else { return false }
+    self.lastPublicationAt = now
+    return true
+  }
+
+  public mutating func reset() {
+    lastPublicationAt = nil
+  }
+}
+
 public enum DataFreshness: String, Codable, CaseIterable, Sendable {
   case fresh
   case partial

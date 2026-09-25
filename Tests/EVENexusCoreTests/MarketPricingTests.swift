@@ -123,6 +123,31 @@ struct MarketPricingTests {
   }
 
   @Test
+  func contractSaleNeverUsesAMarketSellOrderAsItsReference() {
+    let snapshot = makeSnapshot(
+      orders: [
+        order(id: 1, side: .sell, price: 100, volume: 1),
+        order(id: 2, side: .sell, price: 105, volume: 100),
+      ]
+    )
+    let quote = JitaPriceEngine.quote(
+      typeID: 34,
+      quantity: 10,
+      scenario: .contractSale,
+      snapshot: snapshot
+    )
+
+    #expect(quote.total == nil)
+    #expect(quote.weightedUnitPrice == nil)
+    #expect(quote.filledQuantity == 0)
+    #expect(
+      quote.warnings.contains {
+        $0.code == "market.contract-sale-requires-public-contracts"
+      }
+    )
+  }
+
+  @Test
   func rejectsInvalidOrdersAndFeeRates() {
     let snapshot = makeSnapshot(
       orders: [
@@ -265,6 +290,35 @@ struct MarketPricingTests {
       MoonMaterialPriceBandAnalyzer.analyze(
         typeID: 34,
         snapshot: snapshot
+      ) == nil
+    )
+  }
+
+  @Test
+  func materialPurchaseBandSaturatesOverflowAndRejectsInvalidMarkup() {
+    let snapshot = makeSnapshot(
+      orders: [
+        order(
+          id: 1,
+          side: .sell,
+          price: 100,
+          volume: Int64.max - 5
+        ),
+        order(id: 2, side: .sell, price: 105, volume: 10),
+      ]
+    )
+
+    let band = MaterialPurchasePriceBandAnalyzer.analyze(
+      typeID: 34,
+      snapshot: snapshot
+    )
+
+    #expect(band?.availableQuantity == .max)
+    #expect(
+      MaterialPurchasePriceBandAnalyzer.analyze(
+        typeID: 34,
+        snapshot: snapshot,
+        markup: -.leastNonzeroMagnitude
       ) == nil
     )
   }

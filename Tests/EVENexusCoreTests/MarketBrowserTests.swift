@@ -217,7 +217,22 @@ struct MarketBrowserTests {
       sampleCount: 2,
       comparedOrderCount: 2,
       decreasedOrderCount: 1,
+      comparedOrderCountByType: [100: 2],
       observedUnitsByType: [100: 17],
+      dailyHistory: [
+        ManufacturingOpportunityDailyDemandRecord(
+          utcDay: market.capturedAt.addingTimeInterval(-24 * 60 * 60),
+          observedAt: market.capturedAt.addingTimeInterval(-24 * 60 * 60),
+          estimatedUnitsByType: [100: 100],
+          sourceSnapshotID: UUID()
+        ),
+        ManufacturingOpportunityDailyDemandRecord(
+          utcDay: market.capturedAt,
+          observedAt: market.capturedAt,
+          estimatedUnitsByType: [100: 408],
+          sourceSnapshotID: source.snapshotID
+        ),
+      ],
       source: source
     )
 
@@ -228,12 +243,15 @@ struct MarketBrowserTests {
         100: IndustryItemClassification(
           categoryName: "Module",
           groupName: "Fixture Group",
-          manufacturingCategory: .module
+          manufacturingCategory: .module,
+          metaGroupID: 2,
+          techLevel: 2
         )
       ],
       packagedVolumes: [100: 5],
       settings: ManufacturingOpportunitySettings(
         targetQuantity: 3,
+        requestedRuns: nil,
         materialEfficiency: 10,
         timeEfficiency: 20
       ),
@@ -249,12 +267,32 @@ struct MarketBrowserTests {
       brokerFeeRate: 0.05
     )
     let row = try #require(snapshot.rows.first)
+    #expect(row.metaGroupID == 2)
+    #expect(row.techLevel == 2)
+    #expect(row.observedDailyDemand == 408)
+    #expect(row.previousDayDemand == 100)
+    #expect(row.averageDailyDemand == 254)
+    #expect(row.recordedDemandDayCount == 2)
+    #expect(snapshot.demand?.dailyHistory == nil)
 
     #expect(snapshot.coverage.completeManufacturingDefinitionCount == 2)
     #expect(snapshot.coverage.mainHubActiveOrderTypeCount == 2)
-    #expect(snapshot.coverage.candidateCount == 1)
+    #expect(snapshot.coverage.candidateCount == 2)
     #expect(snapshot.coverage.candidatesWithSellOrders == 1)
     #expect(snapshot.coverage.candidatesWithBuyOrders == 1)
+    let unlistedRow = try #require(
+      snapshot.rows.first(where: { $0.productTypeID == 101 })
+    )
+    #expect(unlistedRow.grossRevenue == nil)
+    #expect(unlistedRow.contributionProfit == nil)
+    #expect(
+      unlistedRow.warnings.contains {
+        $0.code == "manufacturing-opportunity.product-sell-order-unavailable"
+          && $0.severity == .blocking
+      }
+    )
+    #expect(snapshot.settings.targetQuantity == 3)
+    #expect(snapshot.settings.requestedRuns == nil)
     #expect(row.runs == 2)
     #expect(row.producedQuantity == 4)
     #expect(row.materials.first?.quantity == 18)
@@ -267,7 +305,7 @@ struct MarketBrowserTests {
     #expect(row.contributionProfit == 156)
     #expect(abs((row.returnOnInvestment ?? 0) - (156.0 / 184.0)) < 0.000_001)
     #expect(row.durationSeconds == 5_760)
-    #expect(row.observedDailyDemand == 17)
+    #expect(row.observedDailyDemand == 408)
     #expect(row.iskPerHour == 97.5)
     #expect(row.iskPerCubicMeter == 7.8)
     #expect(row.activeBuyDemand == 50)
@@ -305,6 +343,14 @@ struct MarketBrowserTests {
     #expect(sourcing.toBuy == 11)
     #expect(sourcing.warehouseReplacementValue == 70)
     #expect(sourcing.purchaseCashRequirement == 110)
+    #expect(
+      ManufacturingOpportunityScenarioProjector.purchaseCashRequirement(
+        for: row,
+        factualWarehouseQuantities: [34: 12],
+        protectedQuantities: [34: 2],
+        reservedQuantities: [34: 3]
+      ) == procurement.purchaseCashRequirement
+    )
     #expect(procurement.multibuyText == "Tritanium 11")
     #expect(
       snapshot.warnings.contains {
@@ -371,11 +417,54 @@ struct MarketBrowserTests {
     #expect(observed.comparedOrderCount == 2)
     #expect(observed.decreasedOrderCount == 2)
     #expect(observed.observedUnits(for: 100) == 5)
+    #expect(observed.estimatedDailyUnits(for: 100) == 120)
+    #expect(observed.observedUnits(for: 999) == nil)
     #expect(ledger.observe(second).sampleCount == 2)
   }
 
   @Test
-  func exactHubDemandResetsAtTheNextUTCDay() throws {
+  func shortManualDemandRescanDoesNotCreateADailyRate() throws {
+    let firstDate = try #require(
+      ISO8601DateFormatter().date(from: "2026-08-02T08:00:00Z")
+    )
+    var ledger = ManufacturingOpportunityDemandLedger()
+    _ = ledger.observe(
+      marketSnapshot(
+        at: firstDate,
+        sourceID: UUID(),
+        orders: [
+          marketOrder(
+            id: 1,
+            typeID: 100,
+            side: .sell,
+            price: 10,
+            volume: 10
+          )
+        ]
+      )
+    )
+    let observed = ledger.observe(
+      marketSnapshot(
+        at: firstDate.addingTimeInterval(60),
+        sourceID: UUID(),
+        orders: [
+          marketOrder(
+            id: 1,
+            typeID: 100,
+            side: .sell,
+            price: 10,
+            volume: 9
+          )
+        ]
+      )
+    )
+
+    #expect(observed.observedUnits(for: 100) == 1)
+    #expect(observed.estimatedDailyUnits(for: 100) == nil)
+  }
+
+  @Test
+  func exactHubDemandContinuesAcrossUTCMidnightWithinTheRollingWindow() throws {
     let firstDate = try #require(
       ISO8601DateFormatter().date(from: "2026-08-02T23:30:00Z")
     )
@@ -396,8 +485,183 @@ struct MarketBrowserTests {
       )
     )
 
-    #expect(next.sampleCount == 1)
-    #expect(next.observedUnits(for: 100) == nil)
+    #expect(next.sampleCount == 2)
+    #expect(next.observedUnits(for: 100) == 5)
+    #expect(next.estimatedDailyUnits(for: 100) == 120)
+  }
+
+  @Test
+  func demandHistoryKeepsThePreviousUTCDayAndCalculatesAMultiDayAverage() throws {
+    let firstDate = try #require(
+      ISO8601DateFormatter().date(from: "2026-08-02T08:00:00Z")
+    )
+    var ledger = ManufacturingOpportunityDemandLedger()
+
+    func observe(hours: TimeInterval, volume: Int64) -> ManufacturingOpportunityDemandSnapshot {
+      ledger.observe(
+        marketSnapshot(
+          at: firstDate.addingTimeInterval(hours * 60 * 60),
+          sourceID: UUID(),
+          orders: [
+            marketOrder(
+              id: 1,
+              typeID: 100,
+              side: .sell,
+              price: 10,
+              volume: volume
+            )
+          ]
+        )
+      )
+    }
+
+    _ = observe(hours: 0, volume: 100)
+    #expect(observe(hours: 12, volume: 90).estimatedDailyUnits(for: 100) == 20)
+    _ = observe(hours: 24, volume: 85)
+    #expect(observe(hours: 36, volume: 75).estimatedDailyUnits(for: 100) == 15)
+    let thirdDay = observe(hours: 48, volume: 65)
+    let summary = thirdDay.dailySummary(for: 100)
+
+    #expect(thirdDay.dailyHistory?.count == 3)
+    #expect(summary.currentUnits == 20)
+    #expect(summary.previousDayUnits == 15)
+    #expect(summary.averageUnits == 18)
+    #expect(summary.recordedDayCount == 3)
+    #expect(
+      abs((summary.changeFromPreviousDayPercent ?? 0) - 33.333_333) < 0.001
+    )
+    let unknown = thirdDay.dailySummary(for: 999)
+    #expect(unknown.currentUnits == nil)
+    #expect(unknown.previousDayUnits == nil)
+    #expect(unknown.averageUnits == nil)
+    #expect(unknown.recordedDayCount == 0)
+
+    let restored = try JSONDecoder().decode(
+      ManufacturingOpportunityDemandLedger.self,
+      from: JSONEncoder().encode(ledger)
+    )
+    #expect(restored.demand?.dailySummary(for: 100) == summary)
+  }
+
+  @Test
+  func demandLedgerMigratesTheVerboseV1BaselineToCompactV4() throws {
+    let firstDate = try #require(
+      ISO8601DateFormatter().date(from: "2026-08-02T12:00:00Z")
+    )
+    let firstSourceID = UUID()
+    let firstMarket = marketSnapshot(
+      at: firstDate,
+      sourceID: firstSourceID,
+      orders: [
+        marketOrder(
+          id: 1,
+          typeID: 100,
+          side: .sell,
+          price: 10,
+          volume: 10
+        )
+      ]
+    )
+    var original = ManufacturingOpportunityDemandLedger()
+    let firstDemand = original.observe(firstMarket)
+    let legacy = try JSONEncoder().encode(
+      LegacyDemandLedgerFixture(
+        version: 1,
+        demand: firstDemand,
+        previousOrdersByID: [
+          1: LegacyOrderBaselineFixture(
+            typeID: 100,
+            locationID: firstMarket.locationID,
+            side: .sell,
+            volumeRemaining: 10
+          )
+        ],
+        previousSourceSnapshotID: firstSourceID
+      )
+    )
+
+    var migrated = try JSONDecoder().decode(
+      ManufacturingOpportunityDemandLedger.self,
+      from: legacy
+    )
+    let compact = try JSONEncoder().encode(migrated)
+    let compactText = try #require(String(data: compact, encoding: .utf8))
+
+    #expect(migrated.version == 4)
+    #expect(migrated.baselineOrderCount == 1)
+    #expect(compactText.contains("\"v\":4"))
+    #expect(compactText.contains("\"o\":[["))
+    #expect(!compactText.contains("volumeRemaining"))
+    #expect(compact.count < legacy.count)
+
+    let observed = migrated.observe(
+      marketSnapshot(
+        at: firstDate.addingTimeInterval(60),
+        sourceID: UUID(),
+        orders: [
+          marketOrder(
+            id: 1,
+            typeID: 100,
+            side: .sell,
+            price: 10,
+            volume: 7
+          )
+        ]
+      )
+    )
+    #expect(observed.sampleCount == 2)
+    #expect(observed.comparedOrderCount == 1)
+    #expect(observed.observedUnits(for: 100) == 3)
+  }
+
+  @Test
+  func cancelledDemandObservationLeavesThePreviousLedgerUnchanged() throws {
+    let firstDate = try #require(
+      ISO8601DateFormatter().date(from: "2026-08-02T12:00:00Z")
+    )
+    var ledger = ManufacturingOpportunityDemandLedger()
+    _ = ledger.observe(
+      marketSnapshot(
+        at: firstDate,
+        sourceID: UUID(),
+        orders: [
+          marketOrder(
+            id: 1,
+            typeID: 100,
+            side: .sell,
+            price: 10,
+            volume: 10
+          )
+        ]
+      )
+    )
+    let unchanged = ledger
+    let manyOrders = (1...4_096).map { index in
+      marketOrder(
+        id: Int64(index),
+        typeID: 100,
+        side: .sell,
+        price: 10,
+        volume: 9
+      )
+    }
+    var cancellationCheckCount = 0
+
+    #expect(throws: CancellationError.self) {
+      _ = try ledger.observe(
+        marketSnapshot(
+          at: firstDate.addingTimeInterval(60),
+          sourceID: UUID(),
+          orders: manyOrders
+        )
+      ) {
+        cancellationCheckCount += 1
+        if cancellationCheckCount == 2 {
+          throw CancellationError()
+        }
+      }
+    }
+    #expect(ledger == unchanged)
   }
 
   @Test
@@ -466,6 +730,9 @@ struct MarketBrowserTests {
     #expect(restored.id == snapshot.id)
     #expect(restored.rows.map(\.productName) == ["Persisted Product"])
     #expect(restored.coverage.candidateCount == 1)
+    await reopened.releaseCachedSnapshot()
+    let reloadedAfterPressure = try await reopened.load()
+    #expect(reloadedAfterPressure?.id == snapshot.id)
 
     let corrupted = Data("not-json".utf8)
     try corrupted.write(to: fileURL, options: .atomic)
@@ -480,7 +747,35 @@ struct MarketBrowserTests {
   }
 
   @Test
-  func opportunityFiltersClassifyProductFamiliesWithoutGuessingTechLevel() {
+  func legacyOpportunityRowsDecodeWithoutDailyHistoryFields() throws {
+    let snapshot = opportunitySnapshot(productName: "Legacy Product")
+    let encoded = try JSONEncoder().encode(snapshot)
+    var object = try #require(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    var rows = try #require(object["rows"] as? [[String: Any]])
+    var row = try #require(rows.first)
+    row.removeValue(forKey: "previousDayDemand")
+    row.removeValue(forKey: "averageDailyDemand")
+    row.removeValue(forKey: "recordedDemandDayCount")
+    row.removeValue(forKey: "demandChangeFromPreviousDayPercent")
+    rows[0] = row
+    object["rows"] = rows
+
+    let legacyData = try JSONSerialization.data(withJSONObject: object)
+    let restored = try JSONDecoder().decode(
+      ManufacturingOpportunitySnapshot.self,
+      from: legacyData
+    )
+    let restoredRow = try #require(restored.rows.first)
+    #expect(restoredRow.previousDayDemand == nil)
+    #expect(restoredRow.averageDailyDemand == nil)
+    #expect(restoredRow.recordedDemandDayCount == nil)
+    #expect(restoredRow.demandChangeFromPreviousDayPercent == nil)
+  }
+
+  @Test
+  func opportunityFiltersCombineProductFamiliesAndProductionClasses() {
     #expect(
       ManufacturingOpportunityProductFamily.classify(
         categoryName: "Ship", groupName: "Cruiser"
@@ -501,6 +796,237 @@ struct MarketBrowserTests {
         categoryName: "Commodity", groupName: "Unknown Published Group"
       ) == .other
     )
+    #expect(
+      ManufacturingOpportunityProductionClass.classify(
+        metaGroupID: 1,
+        techLevel: 1
+      ) == .techI
+    )
+    #expect(
+      ManufacturingOpportunityProductionClass.classify(
+        metaGroupID: 2,
+        techLevel: 2
+      ) == .techII
+    )
+    #expect(
+      ManufacturingOpportunityProductionClass.classify(
+        metaGroupID: 14,
+        techLevel: 3
+      ) == .techIII
+    )
+    #expect(
+      ManufacturingOpportunityProductionClass.classify(
+        metaGroupID: 4,
+        techLevel: 1
+      ) == .faction
+    )
+    #expect(
+      ManufacturingOpportunityProductionClass.classify(
+        metaGroupID: 3,
+        techLevel: 1
+      ) == .storyline
+    )
+    #expect(
+      ManufacturingOpportunityProductionClass.classify(
+        metaGroupID: nil,
+        techLevel: nil
+      ) == .other
+    )
+
+    let ships: Set<ManufacturingOpportunityProductFamily> = [.ships]
+    let factions: Set<ManufacturingOpportunityProductionClass> = [.faction]
+    #expect(
+      ManufacturingOpportunityCatalogFilter.accepts(
+        categoryName: "Ship",
+        groupName: "Frigate",
+        metaGroupID: 4,
+        techLevel: 1,
+        productFamilies: ships,
+        productionClasses: factions
+      )
+    )
+    #expect(
+      !ManufacturingOpportunityCatalogFilter.accepts(
+        categoryName: "Ship",
+        groupName: "Frigate",
+        metaGroupID: 1,
+        techLevel: 1,
+        productFamilies: ships,
+        productionClasses: factions
+      )
+    )
+    #expect(
+      !ManufacturingOpportunityCatalogFilter.accepts(
+        categoryName: "Module",
+        groupName: "Armor Repair Unit",
+        metaGroupID: 4,
+        techLevel: 1,
+        productFamilies: ships,
+        productionClasses: factions
+      )
+    )
+    #expect(
+      ManufacturingOpportunityCatalogFilter.accepts(
+        activityKind: .reaction,
+        categoryName: "Material",
+        groupName: "Molecular-Forged Materials",
+        metaGroupID: nil,
+        techLevel: nil,
+        productFamilies: [.reactions],
+        productionClasses: [.other]
+      )
+    )
+    #expect(
+      !ManufacturingOpportunityCatalogFilter.accepts(
+        activityKind: .reaction,
+        categoryName: "Material",
+        groupName: "Molecular-Forged Materials",
+        metaGroupID: nil,
+        techLevel: nil,
+        productFamilies: [.components],
+        productionClasses: [.other]
+      )
+    )
+  }
+
+  @Test
+  func marketOpportunitiesUseReactionRulesWithoutMEOrBlueprintAllocation() throws {
+    let source = SourceIdentity(provider: "Synthetic SDE", version: "reaction-v1")
+    let inputTypeID: Int64 = 91_000_101
+    let productTypeID: Int64 = 91_000_102
+    let formulaTypeID: Int64 = 91_000_103
+    let definition = BlueprintDefinition(
+      blueprintTypeID: formulaTypeID,
+      productTypeID: productTypeID,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .reaction,
+        durationSeconds: 180,
+        materials: [BlueprintMaterial(typeID: inputTypeID, quantity: 100)],
+        products: [
+          BlueprintProduct(typeID: productTypeID, quantity: 200, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    let market = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: 10_000_002,
+      locationID: 60_003_760,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [
+        inputTypeID: [
+          marketOrder(
+            id: 91_000_201,
+            typeID: inputTypeID,
+            side: .sell,
+            price: 2,
+            volume: 10_000
+          )
+        ],
+        productTypeID: [
+          marketOrder(
+            id: 91_000_202,
+            typeID: productTypeID,
+            side: .sell,
+            price: 5,
+            volume: 10_000
+          ),
+          marketOrder(
+            id: 91_000_203,
+            typeID: productTypeID,
+            side: .buy,
+            price: 4,
+            volume: 10_000
+          ),
+        ],
+      ],
+      source: source
+    )
+    let reactionFacility = ReactionFacilityCostContext(
+      name: "Synthetic Tatara",
+      materialMultiplier: 0.9,
+      timeMultiplier: 0.8,
+      jobCostMultiplier: 1,
+      facilityTaxRate: 0,
+      systemCostIndex: 0.1,
+      sccSurchargeRate: 0.04,
+      alphaSurchargeRate: 0,
+      ruleVersion: "synthetic-reaction-v1"
+    )
+
+    let snapshot = try ManufacturingOpportunityAnalyzer.analyze(
+      definitions: [definition],
+      typeNames: [
+        inputTypeID: "Synthetic Reaction Input",
+        productTypeID: "Synthetic Reaction Product",
+      ],
+      classifications: [
+        productTypeID: IndustryItemClassification(
+          categoryName: "Material",
+          groupName: "Molecular-Forged Materials",
+          manufacturingCategory: .module
+        )
+      ],
+      packagedVolumes: [inputTypeID: 1, productTypeID: 2],
+      settings: ManufacturingOpportunitySettings(requestedRuns: 3),
+      mainHub: .jita,
+      productionWarehouseScope: ProductionWarehouseScope(locations: []),
+      logisticsConfiguration: LogisticsConfiguration(),
+      market: market,
+      adjustedPrices: [
+        inputTypeID: AdjustedPrice(
+          typeID: inputTypeID,
+          adjustedPrice: 1,
+          averagePrice: nil
+        )
+      ],
+      facilities: [:],
+      reactionFacility: reactionFacility,
+      salesTaxRate: 0.10,
+      brokerFeeRate: 0.05
+    )
+
+    #expect(snapshot.coverage.completeManufacturingDefinitionCount == 0)
+    #expect(snapshot.coverage.completeReactionDefinitionCount == 1)
+    let row = try #require(snapshot.rows.first)
+    #expect(row.effectiveActivityKind == .reaction)
+    #expect(row.supportsBlueprintEfficiency == false)
+    #expect(row.displayedMaterialEfficiency == nil)
+    #expect(row.displayedTimeEfficiency == nil)
+    #expect(row.runs == 3)
+    #expect(row.producedQuantity == 600)
+    #expect(row.materials.first?.quantity == 270)
+    #expect(row.materialCost == 540)
+    #expect(abs((row.installationCost ?? 0) - 42) < 0.000_001)
+    #expect(row.durationSeconds == 432)
+    #expect(row.grossRevenue == 3_000)
+    #expect(row.contributionProfit == 1_968)
+
+    let projected = try #require(
+      ManufacturingOpportunityRunProjector.project(
+        row,
+        requestedRuns: 4,
+        materialEfficiency: 10,
+        timeEfficiency: 20
+      )
+    )
+    #expect(projected.materialEfficiency == 0)
+    #expect(projected.timeEfficiency == 0)
+    #expect(projected.materials.first?.quantity == 360)
+    #expect(projected.producedQuantity == 800)
+    #expect(projected.durationSeconds == 576)
+
+    let costs = ManufacturingOpportunityScenarioProjector.costs(
+      for: row,
+      sheet: ManufacturingOpportunityCostSheet(
+        includesBlueprintAllocation: true,
+        blueprintAllocationPerRun: 1_000
+      )
+    )
+    #expect(costs.blueprintAllocation == 0)
+    #expect(abs((costs.totalCost ?? 0) - 582) < 0.000_001)
   }
 
   @Test
@@ -589,7 +1115,9 @@ struct MarketBrowserTests {
   }
 
   @Test
-  func opportunityLogisticsUsesOnlyTheProductionWarehouseShortfall() throws {
+  func opportunityLogisticsPricesInboundShortfallAndFullOutboundProduct()
+    throws
+  {
     let row = sortableOpportunityRow(
       name: "Product",
       value: 18,
@@ -612,7 +1140,7 @@ struct MarketBrowserTests {
         includeInboundMaterials: true,
         includeOutboundProducts: false,
         productionLocationName: "Home Factory",
-        homeTradeHub: .jita,
+        homeTradeHub: .legacy(name: "Home Factory"),
         iskPerCubicMeter: 100
       ),
       mainHub: .jita,
@@ -621,18 +1149,20 @@ struct MarketBrowserTests {
 
     #expect(procurement.lines.first?.fromWarehouse == 7)
     #expect(procurement.lines.first?.toBuy == 11)
-    #expect(logistics.cost == 1_000_000)
-    #expect(logistics.legs.count == 1)
+    #expect(logistics.cost == 2_000_000)
+    #expect(logistics.legs.count == 2)
     #expect(logistics.legs.first?.cargoVolumeM3 == 55)
     #expect(logistics.legs.first?.collateral == 110)
+    #expect(logistics.legs.last?.kind == .outboundProducts)
+    #expect(logistics.legs.last?.cargoVolumeM3 == 18)
     let costs = ManufacturingOpportunityScenarioProjector.costs(
       for: row,
       sheet: ManufacturingOpportunityCostSheet(),
       logistics: logistics
     )
-    #expect(costs.logisticsCost == 1_000_000)
-    #expect(costs.totalCost == 1_000_180)
-    #expect(costs.profit == -999_980)
+    #expect(costs.logisticsCost == 2_000_000)
+    #expect(costs.totalCost == 2_000_180)
+    #expect(costs.profit == -1_999_980)
 
     let fullyStocked = ManufacturingOpportunityScenarioProjector.procurement(
       for: row,
@@ -648,14 +1178,15 @@ struct MarketBrowserTests {
         includeInboundMaterials: true,
         includeOutboundProducts: false,
         productionLocationName: "Home Factory",
-        homeTradeHub: .jita,
+        homeTradeHub: .legacy(name: "Home Factory"),
         iskPerCubicMeter: 100
       ),
       mainHub: .jita,
       warehouseIsAvailable: true
     )
-    #expect(noHaul.cost == 0)
-    #expect(noHaul.legs.isEmpty)
+    #expect(noHaul.cost == 1_000_000)
+    #expect(noHaul.legs.count == 1)
+    #expect(noHaul.legs.first?.kind == .outboundProducts)
   }
 
   @Test
@@ -681,7 +1212,7 @@ struct MarketBrowserTests {
         isEnabled: true,
         includeInboundMaterials: true,
         productionLocationName: "Home Factory",
-        homeTradeHub: .jita,
+        homeTradeHub: .legacy(name: "Home Factory"),
         iskPerCubicMeter: 100
       ),
       mainHub: .jita,
@@ -705,6 +1236,130 @@ struct MarketBrowserTests {
   }
 
   @Test
+  func disabledRoundTripLogisticsDoesNotBecomeZeroProfitInput() {
+    let row = sortableOpportunityRow(name: "Product", value: 1, demand: 1)
+    let procurement = ManufacturingOpportunityScenarioProjector.procurement(
+      for: row,
+      factualWarehouseQuantities: [:],
+      protectedQuantities: [:],
+      reservedQuantities: [:]
+    )
+    let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+      for: row,
+      procurement: procurement,
+      configuration: LogisticsConfiguration(
+        isEnabled: false,
+        homeTradeHub: .legacy(name: "Home Factory")
+      ),
+      mainHub: .jita,
+      warehouseIsAvailable: true
+    )
+    let costs = ManufacturingOpportunityScenarioProjector.costs(
+      for: row,
+      sheet: ManufacturingOpportunityCostSheet(),
+      logistics: logistics
+    )
+
+    #expect(logistics.cost == nil)
+    #expect(
+      logistics.warnings.contains {
+        $0.code == "manufacturing-opportunity.round-trip-logistics-disabled"
+      }
+    )
+    #expect(costs.profit == nil)
+  }
+
+  @Test
+  func identicalMainAndHomeHubHaveNoRoundTripCost() {
+    let row = sortableOpportunityRow(name: "Product", value: 1, demand: 1)
+    let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+      for: row,
+      procurement: ManufacturingOpportunityScenarioProjector.procurement(
+        for: row,
+        factualWarehouseQuantities: [:],
+        protectedQuantities: [:],
+        reservedQuantities: [:]
+      ),
+      configuration: LogisticsConfiguration(
+        isEnabled: true,
+        productionLocationName: ProcurementLocation.jita.name,
+        homeTradeHub: .jita,
+        iskPerCubicMeter: nil
+      ),
+      mainHub: .jita,
+      warehouseIsAvailable: false
+    )
+
+    #expect(logistics.cost == 0)
+    #expect(logistics.legs.isEmpty)
+    #expect(logistics.warnings.isEmpty)
+  }
+
+  @Test
+  func explicitProductionLocationPreventsFalseZeroMainHubLogistics() {
+    let row = sortableOpportunityRow(name: "Product", value: 1, demand: 1)
+    let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+      for: row,
+      procurement: ManufacturingOpportunityScenarioProjector.procurement(
+        for: row,
+        factualWarehouseQuantities: [34: 1],
+        protectedQuantities: [:],
+        reservedQuantities: [:]
+      ),
+      configuration: LogisticsConfiguration(
+        isEnabled: true,
+        productionLocationName: "UALX-3 - Production",
+        homeTradeHub: .jita,
+        iskPerCubicMeter: 100
+      ),
+      mainHub: .jita,
+      warehouseIsAvailable: true
+    )
+
+    #expect(logistics.cost == 1_000_000)
+    #expect(logistics.legs.count == 1)
+    #expect(logistics.legs.first?.origin == "UALX-3 - Production")
+    #expect(logistics.legs.first?.destination == ProcurementLocation.jita.name)
+    #expect(logistics.legs.first?.kind == .outboundProducts)
+  }
+
+  @Test
+  func equalDisplayNamesDoNotHideDifferentLocationIdentities() {
+    let row = sortableOpportunityRow(name: "Product", value: 1, demand: 1)
+    let mainHub = ProcurementLocation(
+      id: "npc:1",
+      name: "Same visible name",
+      locationID: 1,
+      kind: .npcTradeHub
+    )
+    let homeHub = ProcurementLocation(
+      id: "npc:2",
+      name: "Same visible name",
+      locationID: 2,
+      kind: .npcTradeHub
+    )
+    let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+      for: row,
+      procurement: ManufacturingOpportunityScenarioProjector.procurement(
+        for: row,
+        factualWarehouseQuantities: [:],
+        protectedQuantities: [:],
+        reservedQuantities: [:]
+      ),
+      configuration: LogisticsConfiguration(
+        isEnabled: true,
+        homeTradeHub: homeHub,
+        iskPerCubicMeter: 100
+      ),
+      mainHub: mainHub,
+      warehouseIsAvailable: true
+    )
+
+    #expect(logistics.cost == 2_000_000)
+    #expect(logistics.legs.count == 2)
+  }
+
+  @Test
   func opportunityColumnsToggleBetweenAscendingAndDescending() {
     let low = sortableOpportunityRow(name: "Alpha", value: 1, demand: 1)
     let high = sortableOpportunityRow(name: "Zulu", value: 9, demand: 9)
@@ -713,6 +1368,7 @@ struct MarketBrowserTests {
     let numericColumns: [ManufacturingOpportunitySortColumn] = [
       .demand, .quantity, .runs, .duration, .cost, .revenue, .salesTax,
       .brokerFee, .profit, .roi, .iskPerHour, .iskPerCubicMeter,
+      .dailyProfitPotential,
       .materialEfficiency, .timeEfficiency,
     ]
     for column in numericColumns {
@@ -762,14 +1418,431 @@ struct MarketBrowserTests {
   }
 
   @Test
-  func opportunitySettingsClampPersistedTEOutsideTheEveRange() {
+  func materialPurchaseBudgetRejectsUnknownAndAcceptsOnlyKnownCashWithinLimit() {
+    #expect(
+      ManufacturingOpportunityBudgetFilter.accepts(
+        maximumMaterialPurchaseISK: nil,
+        purchaseCashRequirement: nil
+      )
+    )
+    #expect(
+      ManufacturingOpportunityBudgetFilter.accepts(
+        maximumMaterialPurchaseISK: 1_000,
+        purchaseCashRequirement: 1_000
+      )
+    )
+    #expect(
+      !ManufacturingOpportunityBudgetFilter.accepts(
+        maximumMaterialPurchaseISK: 1_000,
+        purchaseCashRequirement: 1_001
+      )
+    )
+    #expect(
+      !ManufacturingOpportunityBudgetFilter.accepts(
+        maximumMaterialPurchaseISK: 1_000,
+        purchaseCashRequirement: nil
+      )
+    )
+  }
+
+  @Test
+  func guidedScreeningKeepsCompleteRankingAndAppliesMaterialPurchaseBudget() {
+    let rows = (1...25).map { index in
+      sortableOpportunityRow(
+        name: "Candidate \(index)",
+        value: Int64(index),
+        demand: Int64(index),
+        materialQuantity: Int64(index),
+        materialUnitPrice: 1
+      )
+    }
+    let snapshot = opportunitySnapshot(rows: rows)
+
+    let complete = ManufacturingOpportunityScreening.candidates(
+      snapshot: snapshot,
+      query: "",
+      factualWarehouseQuantities: [:],
+      protectedQuantities: [:],
+      reservedQuantities: [:],
+      maximumMaterialPurchaseISK: nil
+    )
+    let budgeted = ManufacturingOpportunityScreening.candidates(
+      snapshot: snapshot,
+      query: "",
+      factualWarehouseQuantities: [:],
+      protectedQuantities: [:],
+      reservedQuantities: [:],
+      maximumMaterialPurchaseISK: 10
+    )
+
+    #expect(complete.count == 25)
+    #expect(budgeted.count == 10)
+    #expect(
+      budgeted.allSatisfy {
+        ($0.purchaseCashRequirement ?? .infinity) <= 10
+      }
+    )
+  }
+
+  @Test
+  func guidedScreeningCombinesCatalogCategoryGroupAndLoyaltyFilters() {
+    let factionShip = sortableOpportunityRow(
+      name: "Faction Ship",
+      value: 1,
+      demand: 1,
+      blueprintTypeID: 101,
+      categoryName: "Ship",
+      groupName: "Battleship",
+      metaGroupID: 4,
+      techLevel: 1
+    )
+    let factionModule = sortableOpportunityRow(
+      name: "Faction Module",
+      value: 2,
+      demand: 1,
+      blueprintTypeID: 102,
+      categoryName: "Module",
+      groupName: "Armor Module",
+      metaGroupID: 4,
+      techLevel: 1
+    )
+    let techIIShip = sortableOpportunityRow(
+      name: "Tech II Ship",
+      value: 3,
+      demand: 1,
+      blueprintTypeID: 103,
+      categoryName: "Ship",
+      groupName: "Battleship",
+      metaGroupID: 2,
+      techLevel: 2
+    )
+    let snapshot = opportunitySnapshot(
+      rows: [factionShip, factionModule, techIIShip]
+    )
+
+    let filtered = ManufacturingOpportunityScreening.candidates(
+      snapshot: snapshot,
+      query: "",
+      factualWarehouseQuantities: [:],
+      protectedQuantities: [:],
+      reservedQuantities: [:],
+      maximumMaterialPurchaseISK: nil,
+      productFamilies: [.ships],
+      productionClasses: [.faction],
+      selectedCategory: "Ship",
+      selectedGroup: "Battleship",
+      loyaltyStoreBlueprintsOnly: true,
+      loyaltyStoreBlueprintTypeIDs: [101, 103]
+    )
+
+    #expect(filtered.map(\.row.productTypeID) == [1])
+  }
+
+  @Test
+  func opportunitySettingsClampQuantityRunsAndResearchToSupportedRanges() {
     let settings = ManufacturingOpportunitySettings(
-      targetQuantity: 1,
+      targetQuantity: Int64.max,
+      requestedRuns: Int.max,
       materialEfficiency: 42,
       timeEfficiency: 420
     )
+    #expect(
+      settings.targetQuantity
+        == ManufacturingOpportunitySettings.maximumTargetQuantity
+    )
+    #expect(
+      settings.requestedRuns
+        == ManufacturingOpportunitySettings.maximumRequestedRuns
+    )
     #expect(settings.materialEfficiency == 10)
     #expect(settings.timeEfficiency == 20)
+  }
+
+  @Test
+  func mainHubOpportunityBaselineDefersMEAndTEToConcreteProduction() {
+    let settings = ManufacturingOpportunitySettings(
+      targetQuantity: 4,
+      requestedRuns: 3,
+      materialEfficiency: 10,
+      timeEfficiency: 20
+    ).mainHubOpportunityBaseline
+
+    #expect(settings.targetQuantity == 4)
+    #expect(settings.requestedRuns == nil)
+    #expect(settings.materialEfficiency == 0)
+    #expect(settings.timeEfficiency == 0)
+  }
+
+  @Test
+  func opportunityEfficiencyDefaultsDistinguishT1ModulesAndLoyaltyStoreBPCs() {
+    let researchedT1Module = ManufacturingOpportunityEfficiencyDefaults.resolve(
+      blueprintTypeID: 101,
+      categoryName: "Module",
+      groupName: "Armor Repair Unit",
+      metaGroupID: 1,
+      techLevel: 1,
+      fallbackMaterialEfficiency: 0,
+      fallbackTimeEfficiency: 0,
+      loyaltyStoreBlueprintTypeIDs: []
+    )
+    #expect(
+      researchedT1Module
+        == ManufacturingOpportunityEfficiencyAssumption(
+          materialEfficiency: 10,
+          timeEfficiency: 20
+        )
+    )
+
+    let loyaltyStoreCopy = ManufacturingOpportunityEfficiencyDefaults.resolve(
+      blueprintTypeID: 101,
+      categoryName: "Module",
+      groupName: "Armor Repair Unit",
+      metaGroupID: 1,
+      techLevel: 1,
+      fallbackMaterialEfficiency: 10,
+      fallbackTimeEfficiency: 20,
+      loyaltyStoreBlueprintTypeIDs: [101]
+    )
+    #expect(
+      loyaltyStoreCopy
+        == ManufacturingOpportunityEfficiencyAssumption(
+          materialEfficiency: 0,
+          timeEfficiency: 0
+        )
+    )
+
+    let t1Ship = ManufacturingOpportunityEfficiencyDefaults.resolve(
+      blueprintTypeID: 102,
+      categoryName: "Ship",
+      groupName: "Frigate",
+      metaGroupID: 1,
+      techLevel: 1,
+      fallbackMaterialEfficiency: 4,
+      fallbackTimeEfficiency: 8,
+      loyaltyStoreBlueprintTypeIDs: []
+    )
+    #expect(
+      t1Ship
+        == ManufacturingOpportunityEfficiencyAssumption(
+          materialEfficiency: 4,
+          timeEfficiency: 8
+        )
+    )
+  }
+
+  @Test
+  func runProjectorRecalculatesOnlyTheRequestedRowFromCapturedPrices() throws {
+    let original = sortableOpportunityRow(
+      name: "Requested item",
+      value: 2,
+      demand: 30,
+      materialQuantity: 3,
+      materialUnitPrice: 4
+    )
+
+    let projected = try #require(
+      ManufacturingOpportunityRunProjector.project(
+        original,
+        requestedRuns: 5
+      )
+    )
+
+    #expect(original.runs == 2)
+    #expect(original.producedQuantity == 2)
+    #expect(projected.runs == 5)
+    #expect(projected.producedQuantity == 5)
+    #expect(projected.durationSeconds == 5)
+    #expect(projected.materials.first?.quantity == 8)
+    #expect(projected.materials.first?.quote.weightedUnitPrice == 4)
+    #expect(projected.materials.first?.quote.total == 32)
+    #expect(projected.materialCost == 32)
+    #expect(projected.grossRevenue == 92.5)
+    #expect(
+      projected.warnings.contains {
+        $0.code == "manufacturing-opportunity.run-projection"
+      }
+    )
+  }
+
+  @Test
+  func runProjectorRejectsInvalidRequestedRuns() {
+    let row = sortableOpportunityRow(name: "Item", value: 1, demand: nil)
+
+    #expect(
+      ManufacturingOpportunityRunProjector.project(row, requestedRuns: 0)
+        == nil
+    )
+    #expect(
+      ManufacturingOpportunityRunProjector.project(
+        row,
+        requestedRuns:
+          ManufacturingOpportunitySettings.maximumRequestedRuns + 1
+      ) == nil
+    )
+  }
+
+  @Test
+  func runProjectorAppliesExactMEAndTEInputsWhenScanHasSDEBasis() throws {
+    let source = SourceIdentity(provider: "Fixture", version: "1")
+    let row = ManufacturingOpportunityRow(
+      blueprintTypeID: 1,
+      productTypeID: 2,
+      productName: "Tech II Product",
+      categoryName: "Ship",
+      groupName: "Expedition Frigate",
+      metaGroupID: 2,
+      techLevel: 2,
+      facilityName: "Sotiyo",
+      facilityMaterialMultiplier: 0.98,
+      facilityTimeMultiplier: 0.9,
+      activityDurationSecondsPerRun: 3_600,
+      runs: 1,
+      outputPerRun: 1,
+      producedQuantity: 1,
+      materialEfficiency: 0,
+      timeEfficiency: 0,
+      durationSeconds: 3_240,
+      observedDailyDemand: 1,
+      activeBuyDemand: 1,
+      activeSellSupply: 1,
+      materials: [
+        ManufacturingOpportunityMaterial(
+          typeID: 34,
+          name: "Material",
+          baseQuantityPerRun: 100,
+          quantity: 98,
+          quote: PriceQuote(
+            id: UUID(),
+            typeID: 34,
+            quantity: 98,
+            scenario: .materialBuy,
+            total: 980,
+            weightedUnitPrice: 10,
+            filledQuantity: 98,
+            capturedAt: .now,
+            source: source,
+            warnings: []
+          ),
+          packagedVolumePerUnit: 1
+        )
+      ],
+      materialCost: 980,
+      installationCost: 100,
+      productionCostBeforeBlueprintAndLogistics: 1_080,
+      grossRevenue: 4_000,
+      salesTax: 100,
+      brokerFee: 50,
+      netRevenue: 3_850,
+      contributionProfit: 2_770,
+      returnOnInvestment: 2_770.0 / 1_080.0,
+      iskPerHour: nil,
+      iskPerCubicMeter: nil,
+      packagedVolumePerUnit: 1,
+      warnings: []
+    )
+
+    let projected = try #require(
+      ManufacturingOpportunityRunProjector.project(
+        row,
+        requestedRuns: 2,
+        materialEfficiency: 3,
+        timeEfficiency: 2
+      )
+    )
+
+    #expect(projected.materialEfficiency == 3)
+    #expect(projected.timeEfficiency == 2)
+    #expect(projected.materials.first?.quantity == 191)
+    #expect(projected.materialCost == 1_910)
+    #expect(projected.durationSeconds == 6_351)
+    #expect(projected.installationCost == 200)
+    #expect(
+      !projected.warnings.contains {
+        $0.code == "manufacturing-opportunity.efficiency-approximation"
+      }
+    )
+  }
+
+  @Test
+  func averageDailyDemandQuickFilterPreservesUnknownOnlyWhenDisabled() {
+    #expect(
+      ManufacturingOpportunityAverageDemandFilter.accepts(
+        minimumAverageDailyDemand: 0,
+        averageDailyDemand: nil
+      )
+    )
+    #expect(
+      !ManufacturingOpportunityAverageDemandFilter.accepts(
+        minimumAverageDailyDemand: 1,
+        averageDailyDemand: nil
+      )
+    )
+    #expect(
+      !ManufacturingOpportunityAverageDemandFilter.accepts(
+        minimumAverageDailyDemand: 2,
+        averageDailyDemand: 1
+      )
+    )
+    #expect(
+      ManufacturingOpportunityAverageDemandFilter.accepts(
+        minimumAverageDailyDemand: 2,
+        averageDailyDemand: 2
+      )
+    )
+  }
+
+  @Test
+  func legacyQuantitySettingsDecodeWithoutInventingExplicitRuns() throws {
+    let legacy = Data(
+      #"{"targetQuantity":5,"materialEfficiency":10,"timeEfficiency":20}"#
+        .utf8
+    )
+    let settings = try JSONDecoder().decode(
+      ManufacturingOpportunitySettings.self,
+      from: legacy
+    )
+
+    #expect(settings.requestedRuns == nil)
+    #expect(settings.resolvedRuns(outputPerRun: 2) == 3)
+  }
+
+  @Test
+  func dailyProfitPotentialIsLimitedBySelectedBatchAndDemand() {
+    let belowBatchDemand = sortableOpportunityRow(
+      name: "Below batch demand",
+      value: 10,
+      demand: 5
+    )
+    let matchingDemand = sortableOpportunityRow(
+      name: "Matching demand",
+      value: 10,
+      demand: 10
+    )
+    let aboveBatchDemand = sortableOpportunityRow(
+      name: "Above batch demand",
+      value: 10,
+      demand: 1_000
+    )
+    let batchProfit = sortableCosts(value: 100)
+
+    #expect(
+      ManufacturingOpportunityScenarioProjector.dailyProfitPotential(
+        for: belowBatchDemand,
+        costs: batchProfit
+      ) == 50
+    )
+    #expect(
+      ManufacturingOpportunityScenarioProjector.dailyProfitPotential(
+        for: matchingDemand,
+        costs: batchProfit
+      ) == 100
+    )
+    #expect(
+      ManufacturingOpportunityScenarioProjector.dailyProfitPotential(
+        for: aboveBatchDemand,
+        costs: batchProfit
+      ) == 100
+    )
   }
 
   @Test
@@ -829,16 +1902,23 @@ struct MarketBrowserTests {
     demand: Int64?,
     materialQuantity: Int64 = 1,
     materialUnitPrice: Double = 1,
-    materialVolume: Double = 1
+    materialVolume: Double = 1,
+    blueprintTypeID: Int64? = nil,
+    categoryName: String? = nil,
+    groupName: String? = nil,
+    metaGroupID: Int64? = nil,
+    techLevel: Int? = nil
   ) -> ManufacturingOpportunityRow {
     let source = SourceIdentity(provider: "Fixture", version: "1")
     let materialTotal = Double(materialQuantity) * materialUnitPrice
     return ManufacturingOpportunityRow(
-      blueprintTypeID: value,
+      blueprintTypeID: blueprintTypeID ?? value,
       productTypeID: value,
       productName: name,
-      categoryName: name,
-      groupName: name,
+      categoryName: categoryName ?? name,
+      groupName: groupName ?? name,
+      metaGroupID: metaGroupID,
+      techLevel: techLevel,
       facilityName: "Home Factory",
       runs: Int(value),
       outputPerRun: 1,
@@ -1029,6 +2109,42 @@ struct MarketBrowserTests {
       warnings: []
     )
   }
+
+  private func opportunitySnapshot(
+    rows: [ManufacturingOpportunityRow]
+  ) -> ManufacturingOpportunitySnapshot {
+    let source = SourceIdentity(provider: "Fixture", version: "1")
+    return ManufacturingOpportunitySnapshot(
+      settings: ManufacturingOpportunitySettings(),
+      mainHub: .jita,
+      productionWarehouseScope: ProductionWarehouseScope(locations: []),
+      rows: rows,
+      coverage: ManufacturingOpportunityCoverage(
+        completeManufacturingDefinitionCount: rows.count,
+        mainHubActiveOrderTypeCount: rows.count,
+        candidateCount: rows.count,
+        candidatesWithSellOrders: rows.count,
+        candidatesWithBuyOrders: rows.count
+      ),
+      sdeSource: source,
+      marketSource: source,
+      warnings: []
+    )
+  }
+}
+
+private struct LegacyOrderBaselineFixture: Codable {
+  let typeID: Int64
+  let locationID: Int64
+  let side: MarketOrderSide
+  let volumeRemaining: Int64
+}
+
+private struct LegacyDemandLedgerFixture: Codable {
+  let version: Int
+  let demand: ManufacturingOpportunityDemandSnapshot?
+  let previousOrdersByID: [Int64: LegacyOrderBaselineFixture]
+  let previousSourceSnapshotID: UUID?
 }
 
 private actor MarketScanProgressRecorder {

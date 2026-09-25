@@ -7,6 +7,130 @@ import Testing
 @Suite("Authentication and blueprint boundaries")
 struct AuthAndBlueprintTests {
   @Test
+  func concreteBPCReservationsDoNotOverlapAcrossPlans() async {
+    let ledger = BlueprintRunReservationLedger()
+    let firstPlan = UUID()
+    let secondPlan = UUID()
+
+    #expect(
+      await ledger.reserve(
+        planID: firstPlan,
+        requestedRuns: [9_001: 7],
+        availableRuns: [9_001: 10]
+      )
+    )
+    #expect(
+      !(await ledger.reserve(
+        planID: secondPlan,
+        requestedRuns: [9_001: 4],
+        availableRuns: [9_001: 10]
+      ))
+    )
+    await ledger.release(planID: firstPlan)
+    #expect(
+      await ledger.reserve(
+        planID: secondPlan,
+        requestedRuns: [9_001: 4],
+        availableRuns: [9_001: 10]
+      )
+    )
+  }
+
+  @Test
+  func copyingSeparatesCopiesFromLicensedRunsAndInheritsQuality() throws {
+    let activity = BlueprintScienceActivityDefinition(
+      kind: .copying,
+      durationSeconds: 100,
+      materials: [BlueprintMaterial(typeID: 34, quantity: 2)],
+      products: [],
+      requiredSkills: [],
+      source: SourceIdentity(provider: "fixture", version: "1")
+    )
+    let plan = try BlueprintSciencePlanner.copyPlan(
+      sourceBPO: .ownedBPO(itemID: 77),
+      blueprintTypeID: 100,
+      activity: activity,
+      copyCount: 3,
+      runsPerCopy: 5,
+      maximumRunsPerCopy: 10,
+      materialEfficiency: 9,
+      timeEfficiency: 18
+    )
+
+    #expect(plan.copyCount == 3)
+    #expect(plan.runsPerCopy == 5)
+    #expect(plan.totalLicensedRuns == 15)
+    #expect(plan.materials == [BlueprintMaterial(typeID: 34, quantity: 6)])
+    #expect(plan.durationSeconds == 1_500)
+    #expect(plan.materialEfficiency == 9)
+    #expect(plan.timeEfficiency == 18)
+  }
+
+  @Test
+  func inventionUsesThreeSkillsConsumesAttemptsAndAllowsMEFive() throws {
+    let activity = BlueprintScienceActivityDefinition(
+      kind: .invention,
+      durationSeconds: 1_000,
+      materials: [
+        BlueprintMaterial(typeID: 11, quantity: 2),
+        BlueprintMaterial(typeID: 12, quantity: 2),
+      ],
+      products: [
+        BlueprintProduct(typeID: 200, quantity: 10, probability: 0.4),
+        BlueprintProduct(typeID: 201, quantity: 1, probability: 0.3),
+      ],
+      requiredSkills: [
+        BlueprintSkillRequirement(typeID: 1, level: 1),
+        BlueprintSkillRequirement(typeID: 2, level: 1),
+        BlueprintSkillRequirement(typeID: 3, level: 1),
+      ],
+      source: SourceIdentity(provider: "fixture", version: "1")
+    )
+    let decryptor = BlueprintDecryptorDefinition(
+      typeID: 34205,
+      probabilityMultiplier: 1.1,
+      runModifier: 0,
+      materialEfficiencyModifier: 3,
+      timeEfficiencyModifier: 6,
+      source: SourceIdentity(provider: "fixture", version: "1")
+    )
+    let plan = try BlueprintSciencePlanner.inventionPlan(
+      inputBPC: .ownedBPC(itemID: 88),
+      inputBlueprintTypeID: 100,
+      selectedOutputBlueprintTypeID: 200,
+      activity: activity,
+      characterID: 42,
+      characterName: "Fixture Pilot",
+      trainedSkillLevels: [1: 5, 2: 5, 3: 5],
+      decryptor: decryptor,
+      attemptCost: 1_000,
+      requiredSuccesses: 2
+    )
+
+    #expect(plan.outputBlueprintTypeID == 200)
+    #expect(plan.outputRuns == 10)
+    #expect(plan.outputMaterialEfficiency == 5)
+    #expect(plan.outputTimeEfficiency == 10)
+    #expect(plan.forecast.expectedAttempts > 2)
+    #expect(plan.confidenceInputBPCRuns == plan.forecast.attemptsForConfidence)
+    #expect(plan.forecast.confidencePlanCost == Double(plan.confidenceInputBPCRuns) * 1_000)
+  }
+
+  @Test
+  func binomialConfidencePlanUsesWholeAttempts() {
+    let forecast = BlueprintInventionRisk.forecast(
+      requiredSuccesses: 1,
+      successProbability: 0.5,
+      attemptCost: 100
+    )
+
+    #expect(forecast.expectedAttempts == 2)
+    #expect(forecast.attemptsForConfidence == 5)
+    #expect(forecast.expectedCost == 200)
+    #expect(forecast.confidencePlanCost == 500)
+  }
+
+  @Test
   func pkceUsesS256SafeValues() throws {
     let value = try PKCEChallenge.generate()
 

@@ -29,14 +29,16 @@ private enum NetWorthHistoryRange: Int, CaseIterable, Identifiable {
 }
 
 private enum NetWorthHistoryMode: String, CaseIterable, Identifiable {
-  case combined
+  case total
+  case components
   case character
 
   var id: Self { self }
 
   var title: LocalizedStringKey {
     switch self {
-    case .combined: "Combined"
+    case .total: "Total"
+    case .components: "Components"
     case .character: "Per Character"
     }
   }
@@ -49,6 +51,7 @@ private enum NetWorthComponent: String, CaseIterable, Identifiable {
   case escrow
   case contracts
   case courier
+  case industryInProgress
   case corporationWallet
   case corporationAssets
 
@@ -62,6 +65,7 @@ private enum NetWorthComponent: String, CaseIterable, Identifiable {
     case .escrow: "Buy-order escrow"
     case .contracts: "Contracts"
     case .courier: "In transit"
+    case .industryInProgress: "In production"
     case .corporationWallet: "Corp Wallet"
     case .corporationAssets: "Corp Assets"
     }
@@ -75,6 +79,7 @@ private enum NetWorthComponent: String, CaseIterable, Identifiable {
     case .escrow: "lock.fill"
     case .contracts: "doc.text.fill"
     case .courier: "truck.box.fill"
+    case .industryInProgress: "gearshape.2.fill"
     case .corporationWallet: "building.columns.fill"
     case .corporationAssets: "building.2.fill"
     }
@@ -88,6 +93,7 @@ private enum NetWorthComponent: String, CaseIterable, Identifiable {
     case .escrow: Color(red: 0.98, green: 0.45, blue: 0.09)
     case .contracts: Color(red: 0.91, green: 0.47, blue: 0.90)
     case .courier: Color(red: 0.18, green: 0.78, blue: 0.72)
+    case .industryInProgress: Color(red: 0.95, green: 0.72, blue: 0.18)
     case .corporationWallet: Color(red: 0.65, green: 0.55, blue: 0.98)
     case .corporationAssets: Color(red: 0.55, green: 0.36, blue: 0.96)
     }
@@ -117,6 +123,7 @@ private enum NetWorthComponent: String, CaseIterable, Identifiable {
         )
     case .contracts: snapshot.contractsTotal
     case .courier: snapshot.courierTotal
+    case .industryInProgress: snapshot.industryInProgressTotal
     case .corporationWallet: snapshot.corporationWalletTotal
     case .corporationAssets: snapshot.corporationAssetTotal
     }
@@ -130,6 +137,7 @@ private enum NetWorthComponent: String, CaseIterable, Identifiable {
     case .escrow: character.escrowValue
     case .contracts: character.contractsValue
     case .courier: character.courierValue
+    case .industryInProgress: character.industryInProgressValue
     case .corporationWallet, .corporationAssets: nil
     }
   }
@@ -149,7 +157,10 @@ struct NetWorthView: View {
   private var settings: [AppSetting]
 
   @State private var selectedRange: NetWorthHistoryRange = .thirty
-  @State private var selectedMode: NetWorthHistoryMode = .combined
+  @State private var selectedMode: NetWorthHistoryMode = .total
+  @State private var selectedComponents: Set<NetWorthComponent> = [
+    .assets, .industryInProgress,
+  ]
   @State private var selectedSnapshotID: UUID?
   @State private var pendingDeletion: DashboardWealthSnapshot?
   @State private var isCapturing = false
@@ -413,6 +424,7 @@ struct NetWorthView: View {
         NetWorthHistoryChart(
           snapshots: filteredHistory,
           mode: selectedMode,
+          selectedComponents: selectedComponents,
           selectedSnapshotID: $selectedSnapshotID
         )
         .frame(minHeight: 390)
@@ -447,25 +459,57 @@ struct NetWorthView: View {
 
   @ViewBuilder
   private var chartLegend: some View {
-    if selectedMode == .combined {
-      HStack(spacing: DesignTokens.spacingSM) {
-        ForEach(visibleComponents) { component in
-          Label {
-            Text(component.title)
-          } icon: {
-            Circle().fill(component.color).frame(width: 7, height: 7)
+    switch selectedMode {
+    case .total:
+      Label("Known net worth", systemImage: "chart.line.uptrend.xyaxis")
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+    case .components:
+      ScrollView(.horizontal) {
+        HStack(spacing: DesignTokens.spacingXS) {
+          ForEach(visibleComponents) { component in
+            Button {
+              toggleComponent(component)
+            } label: {
+              Label {
+                Text(component.title)
+              } icon: {
+                Circle().fill(component.color).frame(width: 7, height: 7)
+              }
+              .font(.caption2)
+              .padding(.horizontal, DesignTokens.spacingXS)
+              .padding(.vertical, 4)
+              .background(
+                selectedComponents.contains(component)
+                  ? component.color.opacity(0.14) : Color.clear
+              )
+              .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(
+              selectedComponents.contains(component)
+                ? DesignTokens.textPrimary : DesignTokens.textSecondary
+            )
+            .accessibilityValue(
+              selectedComponents.contains(component) ? "Shown" : "Hidden"
+            )
           }
-          .font(.caption2)
-          .foregroundStyle(DesignTokens.textSecondary)
         }
-        Label("Total", systemImage: "minus")
-          .font(.caption2)
-          .foregroundStyle(DesignTokens.textPrimary)
       }
-    } else {
+      .scrollIndicators(.hidden)
+    case .character:
       Text("One line per character")
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func toggleComponent(_ component: NetWorthComponent) {
+    if selectedComponents.contains(component) {
+      guard selectedComponents.count > 1 else { return }
+      selectedComponents.remove(component)
+    } else {
+      selectedComponents.insert(component)
     }
   }
 
@@ -540,7 +584,7 @@ struct NetWorthView: View {
               }
             }
           }
-          .frame(minWidth: 1_210)
+          .frame(minWidth: 1_350)
         }
       } else {
         Text("No current valuation is available.")
@@ -565,6 +609,8 @@ struct NetWorthView: View {
         .frame(width: 130, alignment: .trailing)
       characterSortHeader("In transit", column: .courier)
         .frame(width: 130, alignment: .trailing)
+      characterSortHeader("In production", column: .industryInProgress)
+        .frame(width: 140, alignment: .trailing)
       characterSortHeader("Total", column: .total)
         .frame(width: 145, alignment: .trailing)
       characterSortHeader("State", column: .state)
@@ -609,6 +655,11 @@ struct NetWorthView: View {
         ordered = compareOptionalCharacterValues(lhs.contractsValue, rhs.contractsValue)
       case .courier:
         ordered = compareOptionalCharacterValues(lhs.courierValue, rhs.courierValue)
+      case .industryInProgress:
+        ordered = compareOptionalCharacterValues(
+          lhs.industryInProgressValue,
+          rhs.industryInProgressValue
+        )
       case .total:
         ordered = compareOptionalCharacterValues(lhs.knownValue, rhs.knownValue)
       case .state:
@@ -634,7 +685,7 @@ struct NetWorthView: View {
     _ rhs: Value?
   ) -> Bool? {
     switch (lhs, rhs) {
-    case let (lhs?, rhs?): return compareCharacterValues(lhs, rhs)
+    case (let lhs?, let rhs?): return compareCharacterValues(lhs, rhs)
     case (nil, nil): return nil
     case (nil, _): return characterSort.direction == .descending
     case (_, nil): return characterSort.direction == .ascending
@@ -680,6 +731,7 @@ struct NetWorthView: View {
       characterValue(character.escrowValue, width: 130)
       characterValue(character.contractsValue, width: 130)
       characterValue(character.courierValue, width: 130)
+      characterValue(character.industryInProgressValue, width: 140)
       characterValue(character.knownValue, width: 145, emphasized: true)
       freshnessPill(
         character.isComplete ? character.freshness : .partial,
@@ -795,6 +847,10 @@ struct NetWorthView: View {
           systemImage: "truck.box"
         )
         Label(
+          "In production retains consumed Manufacturing and Reaction inputs until delivery. It uses SDE material quantities and the same ESI reference-price policy; unavailable facility or rig modifiers remain a visible estimate instead of becoming zero.",
+          systemImage: "gearshape.2"
+        )
+        Label(
           "Corporation assets and wallet divisions are included once per accessible corporation. Director is required for assets; Accountant or Junior Accountant is required for wallet balances.",
           systemImage: "building.2"
         )
@@ -884,7 +940,9 @@ struct NetWorthView: View {
         openOrders: storedOpenOrders(character),
         privateContracts: storedPrivateContracts(character),
         corporationAssets: storedCorporationAssetSnapshot(character),
-        corporationWallet: storedCorporationWallet(character)
+        corporationWallet: storedCorporationWallet(character),
+        industryJobs: storedIndustryJobs(character),
+        blueprints: storedBlueprintSnapshot(character)
       )
     }
   }
@@ -959,6 +1017,33 @@ struct NetWorthView: View {
     )
   }
 
+  private func storedIndustryJobs(
+    _ character: StoredCharacter
+  ) -> Sourced<[ESIIndustryJobDTO]> {
+    storedSettingSnapshot(
+      key: AppSettingKey.industryJobs(characterID: character.characterID),
+      capturedAt: character.lastSyncAt,
+      diagnostic: "industry-jobs.not-synchronized"
+    )
+  }
+
+  private func storedBlueprintSnapshot(
+    _ character: StoredCharacter
+  ) -> Sourced<[OwnedBlueprintInstance]> {
+    guard let data = character.blueprintSnapshot,
+      let value = try? JSONDecoder().decode(
+        Sourced<[OwnedBlueprintInstance]>.self,
+        from: data
+      )
+    else {
+      return unavailableSource(
+        capturedAt: character.lastSyncAt,
+        diagnostic: "blueprints.not-synchronized"
+      )
+    }
+    return value
+  }
+
   private func storedCorporationWallet(
     _ character: StoredCharacter
   ) -> Sourced<CorporationWalletSnapshot> {
@@ -1030,6 +1115,13 @@ struct NetWorthView: View {
     defer { isCapturing = false }
 
     await runtime.refreshDashboardWealth(inputs: wealthInputs)
+    if let error = runtime.dashboardWealthError {
+      localError = AppLocalization.format(
+        "%@ The previous valuation remains unchanged.",
+        AppLocalization.text(error)
+      )
+      return
+    }
     guard let snapshot = runtime.dashboardWealthSnapshot else {
       localError =
         runtime.dashboardWealthError.map(AppLocalization.text)
@@ -1119,6 +1211,13 @@ struct NetWorthView: View {
     case .contracts, .courier:
       return snapshot.characters.allSatisfy { component.value(in: $0) != nil }
         && componentFreshness(component, snapshot: snapshot) == .fresh
+    case .industryInProgress:
+      return snapshot.characters.allSatisfy {
+        $0.industryInProgressValue != nil
+          && $0.unresolvedIndustryJobCount == 0
+          && $0.unvaluedIndustryMaterialTypeCount == 0
+          && $0.estimatedIndustryJobCount == 0
+      } && snapshot.industryInProgressFreshness == .fresh
     case .corporationWallet, .corporationAssets:
       return component.value(in: snapshot) != nil
         && componentFreshness(component, snapshot: snapshot) == .fresh
@@ -1150,6 +1249,27 @@ struct NetWorthView: View {
         coverage,
         requiredRole: "Director"
       )
+    }
+    if component == .industryInProgress {
+      let jobs = snapshot.characters.reduce(0) {
+        $0 + $1.inProgressIndustryJobCount
+      }
+      let unresolved = snapshot.characters.reduce(0) {
+        $0 + $1.unresolvedIndustryJobCount
+          + $1.unvaluedIndustryMaterialTypeCount
+      }
+      if jobs > 0 {
+        return unresolved > 0
+          ? AppLocalization.format(
+            "%lld jobs estimated; %lld inputs unresolved",
+            Int64(jobs),
+            Int64(unresolved)
+          )
+          : AppLocalization.format(
+            "%lld jobs at material replacement value (estimate)",
+            Int64(jobs)
+          )
+      }
     }
     if component.value(in: snapshot) != nil {
       if component == .assets {
@@ -1189,6 +1309,8 @@ struct NetWorthView: View {
     switch component {
     case .contracts, .courier:
       return AppLocalization.text("Private contracts not synchronized")
+    case .industryInProgress:
+      return AppLocalization.text("Industry jobs not synchronized")
     case .corporationWallet, .corporationAssets:
       return AppLocalization.text("Corporation value not synchronized")
     default:
@@ -1264,6 +1386,14 @@ struct NetWorthView: View {
         )
       )
     }
+    if character.inProgressIndustryJobCount > 0 {
+      warnings.append(
+        AppLocalization.format(
+          "%lld industry jobs estimated",
+          Int64(character.inProgressIndustryJobCount)
+        )
+      )
+    }
     return warnings
   }
 
@@ -1322,7 +1452,12 @@ struct NetWorthView: View {
               Text("Assets")
                 .font(.caption.weight(.semibold))
               ForEach(character.unvaluedAssetTypes) { type in
-                EVEEntityText(value: type.name, font: .caption)
+                EVEItemText(
+                  value: type.name,
+                  typeID: type.typeID,
+                  font: .caption,
+                  iconSize: 18
+                )
               }
             }
             if !character.unvaluedContractItemTypes.isEmpty {
@@ -1330,7 +1465,12 @@ struct NetWorthView: View {
                 .font(.caption.weight(.semibold))
                 .padding(.top, DesignTokens.spacingXS)
               ForEach(character.unvaluedContractItemTypes) { type in
-                EVEEntityText(value: type.name, font: .caption)
+                EVEItemText(
+                  value: type.name,
+                  typeID: type.typeID,
+                  font: .caption,
+                  iconSize: 18
+                )
               }
             }
           }
@@ -1350,6 +1490,7 @@ struct NetWorthView: View {
     switch component {
     case .contracts: snapshot.contractsFreshness
     case .courier: snapshot.courierFreshness
+    case .industryInProgress: snapshot.industryInProgressFreshness
     case .corporationWallet: snapshot.corporationWalletFreshness
     case .corporationAssets: snapshot.corporationAssetFreshness
     case .wallet, .assets, .orders, .escrow: nil
@@ -1419,6 +1560,8 @@ struct NetWorthView: View {
       && snapshot.freshness == .fresh
       && snapshot.contractsFreshness == .fresh
       && snapshot.courierFreshness == .fresh
+      && (snapshot.industryInProgressFreshness == nil
+        || snapshot.industryInProgressFreshness == .fresh)
       && (snapshot.corporationWalletFreshness == nil
         || snapshot.corporationWalletFreshness == .fresh)
       && (snapshot.corporationAssetFreshness == nil
@@ -1434,13 +1577,35 @@ private enum NetWorthCharacterSortColumn: Hashable {
   case escrow
   case contracts
   case courier
+  case industryInProgress
   case total
   case state
+}
+
+enum NetWorthHistoryGeometry {
+  static func xFraction(date: Date, first: Date, last: Date) -> Double {
+    guard last > first else { return 0.5 }
+    return min(
+      max(date.timeIntervalSince(first) / last.timeIntervalSince(first), 0),
+      1
+    )
+  }
+
+  static func valueDomain(values: [Double]) -> ClosedRange<Double> {
+    let finite = values.filter(\.isFinite)
+    guard let minimum = finite.min(), let maximum = finite.max()
+    else { return 0...1 }
+    let rawRange = maximum - minimum
+    let padding = max(rawRange * 0.12, max(abs(maximum) * 0.005, 1))
+    let lower = max(0, minimum - padding)
+    return lower...max(lower + 1, maximum + padding)
+  }
 }
 
 private struct NetWorthHistoryChart: View {
   let snapshots: [DashboardWealthSnapshot]
   let mode: NetWorthHistoryMode
+  let selectedComponents: Set<NetWorthComponent>
   @Binding var selectedSnapshotID: UUID?
 
   private let characterColors: [Color] = [
@@ -1464,9 +1629,12 @@ private struct NetWorthHistoryChart: View {
       ZStack {
         Canvas { context, _ in
           drawGrid(context: &context, plot: plot)
-          if mode == .combined {
-            drawCombined(context: &context, plot: plot)
-          } else {
+          switch mode {
+          case .total:
+            drawTotal(context: &context, plot: plot)
+          case .components:
+            drawComponents(context: &context, plot: plot)
+          case .character:
             drawCharacters(context: &context, plot: plot)
           }
           drawSelection(context: &context, plot: plot)
@@ -1509,59 +1677,48 @@ private struct NetWorthHistoryChart: View {
         style: StrokeStyle(lineWidth: 1, dash: [4, 5])
       )
     }
+    for index in dateLabelIndices {
+      let x = xPosition(index: index, plot: plot)
+      var line = Path()
+      line.move(to: CGPoint(x: x, y: plot.minY))
+      line.addLine(to: CGPoint(x: x, y: plot.maxY))
+      context.stroke(
+        line,
+        with: .color(DesignTokens.border.opacity(0.28)),
+        lineWidth: 1
+      )
+    }
   }
 
-  private func drawCombined(
+  private func drawTotal(
     context: inout GraphicsContext,
     plot: CGRect
   ) {
-    let completeComponents = NetWorthComponent.allCases.filter { component in
-      snapshots.allSatisfy { component.value(in: $0) != nil }
-    }
-    let scale = maximumValue
-    var lower = Array(repeating: 0.0, count: snapshots.count)
-    for component in completeComponents {
-      let upper = snapshots.enumerated().map { index, snapshot in
-        lower[index] + (component.value(in: snapshot) ?? 0)
-      }
-      guard upper.contains(where: { $0 > 0 }) else {
-        lower = upper
-        continue
-      }
-      let upperPoints = upper.enumerated().map { index, value in
-        point(index: index, value: value, scale: scale, plot: plot)
-      }
-      let lowerPoints = lower.enumerated().map { index, value in
-        point(index: index, value: value, scale: scale, plot: plot)
-      }
-      var area = Path()
-      if let first = upperPoints.first {
-        area.move(to: first)
-        for point in upperPoints.dropFirst() { area.addLine(to: point) }
-        for point in lowerPoints.reversed() { area.addLine(to: point) }
-        area.closeSubpath()
-        context.fill(area, with: .color(component.color.opacity(0.22)))
-      }
-      var edge = Path()
-      for (offset, point) in upperPoints.enumerated() {
-        if offset == 0 { edge.move(to: point) } else { edge.addLine(to: point) }
-      }
-      context.stroke(
-        edge,
-        with: .color(component.color.opacity(0.8)),
-        lineWidth: 1.4
-      )
-      lower = upper
-    }
-
     drawLine(
       context: &context,
       values: snapshots.map(\.knownTotalValue),
-      color: DesignTokens.textPrimary,
-      width: 2.4,
-      scale: scale,
+      color: DesignTokens.highlight,
+      width: 2.8,
+      domain: valueDomain,
       plot: plot
     )
+  }
+
+  private func drawComponents(
+    context: inout GraphicsContext,
+    plot: CGRect
+  ) {
+    for component in NetWorthComponent.allCases
+    where selectedComponents.contains(component) {
+      drawLine(
+        context: &context,
+        values: snapshots.map { component.value(in: $0) },
+        color: component.color,
+        width: 2.2,
+        domain: valueDomain,
+        plot: plot
+      )
+    }
   }
 
   private func drawCharacters(
@@ -1586,7 +1743,7 @@ private struct NetWorthHistoryChart: View {
         values: values,
         color: characterColors[offset % characterColors.count],
         width: 2,
-        scale: maximumValue,
+        domain: valueDomain,
         plot: plot
       )
     }
@@ -1597,7 +1754,7 @@ private struct NetWorthHistoryChart: View {
     values: [Double?],
     color: Color,
     width: CGFloat,
-    scale: Double,
+    domain: ClosedRange<Double>,
     plot: CGRect
   ) {
     var path = Path()
@@ -1607,7 +1764,7 @@ private struct NetWorthHistoryChart: View {
         hasCurrentSegment = false
         continue
       }
-      let point = point(index: index, value: value, scale: scale, plot: plot)
+      let point = point(index: index, value: value, domain: domain, plot: plot)
       if hasCurrentSegment {
         path.addLine(to: point)
       } else {
@@ -1620,6 +1777,14 @@ private struct NetWorthHistoryChart: View {
       with: .color(color),
       style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
     )
+    for (index, value) in values.enumerated() {
+      guard let value, value.isFinite else { continue }
+      let center = point(index: index, value: value, domain: domain, plot: plot)
+      context.fill(
+        Path(ellipseIn: CGRect(x: center.x - 2.5, y: center.y - 2.5, width: 5, height: 5)),
+        with: .color(color)
+      )
+    }
   }
 
   private func drawSelection(
@@ -1642,62 +1807,102 @@ private struct NetWorthHistoryChart: View {
 
   @ViewBuilder
   private func chartLabels(plot: CGRect) -> some View {
-    let firstDate = snapshots.first?.capturedAt
-    let lastDate = snapshots.last?.capturedAt
-    Text(compactISK(maximumValue))
+    Text(compactISK(valueDomain.upperBound))
       .font(.caption2.monospacedDigit())
       .foregroundStyle(DesignTokens.textSecondary)
       .position(x: 26, y: plot.minY + 6)
-    Text("0")
+    Text(compactISK(valueDomain.lowerBound))
       .font(.caption2.monospacedDigit())
       .foregroundStyle(DesignTokens.textSecondary)
       .position(x: 42, y: plot.maxY - 4)
-    if let firstDate {
-      Text(firstDate.formatted(date: .abbreviated, time: .omitted))
-        .font(.caption2)
-        .foregroundStyle(DesignTokens.textSecondary)
-        .position(x: plot.minX + 38, y: plot.maxY + 24)
-    }
-    if let lastDate {
-      Text(lastDate.formatted(date: .abbreviated, time: .omitted))
-        .font(.caption2)
-        .foregroundStyle(DesignTokens.textSecondary)
-        .position(x: plot.maxX - 38, y: plot.maxY + 24)
+    ForEach(dateLabelIndices, id: \.self) { index in
+      Text(
+        snapshots[index].capturedAt.formatted(
+          date: .abbreviated,
+          time: .omitted
+        )
+      )
+      .font(.caption2)
+      .foregroundStyle(DesignTokens.textSecondary)
+      .position(
+        x: xPosition(index: index, plot: plot),
+        y: plot.maxY + 24
+      )
     }
   }
 
-  private var maximumValue: Double {
-    let combined = snapshots.compactMap(\.knownTotalValue)
-    let perCharacter = snapshots.flatMap(\.characters).compactMap(\.knownValue)
-    let values = mode == .combined ? combined : perCharacter
-    return max((values.max() ?? 0) * 1.08, 1)
+  private var dateLabelIndices: [Int] {
+    guard snapshots.count > 1 else { return snapshots.isEmpty ? [] : [0] }
+    let maximumLabels = 5
+    guard snapshots.count > maximumLabels else {
+      return Array(snapshots.indices)
+    }
+    let last = snapshots.count - 1
+    return Array(
+      Set(
+        (0..<maximumLabels).map { offset in
+          Int((Double(last) * Double(offset) / Double(maximumLabels - 1)).rounded())
+        })
+    ).sorted()
+  }
+
+  private var chartValues: [Double] {
+    switch mode {
+    case .total:
+      snapshots.compactMap(\.knownTotalValue)
+    case .components:
+      NetWorthComponent.allCases
+        .filter { selectedComponents.contains($0) }
+        .flatMap { component in
+          snapshots.compactMap { component.value(in: $0) }
+        }
+    case .character:
+      snapshots.flatMap(\.characters).compactMap(\.knownValue)
+    }
+  }
+
+  private var valueDomain: ClosedRange<Double> {
+    NetWorthHistoryGeometry.valueDomain(values: chartValues)
   }
 
   private func point(
     index: Int,
     value: Double,
-    scale: Double,
+    domain: ClosedRange<Double>,
     plot: CGRect
   ) -> CGPoint {
-    CGPoint(
+    let range = max(domain.upperBound - domain.lowerBound, 1)
+    return CGPoint(
       x: xPosition(index: index, plot: plot),
-      y: plot.maxY - plot.height * CGFloat(max(0, value) / scale)
+      y: plot.maxY
+        - plot.height * CGFloat((value - domain.lowerBound) / range)
     )
   }
 
   private func xPosition(index: Int, plot: CGRect) -> CGFloat {
-    guard snapshots.count > 1 else { return plot.midX }
+    guard snapshots.count > 1,
+      let first = snapshots.first?.capturedAt,
+      let last = snapshots.last?.capturedAt,
+      last > first
+    else { return plot.midX }
     return plot.minX
-      + plot.width * CGFloat(index) / CGFloat(snapshots.count - 1)
+      + plot.width
+      * CGFloat(
+        NetWorthHistoryGeometry.xFraction(
+          date: snapshots[index].capturedAt,
+          first: first,
+          last: last
+        )
+      )
   }
 
   private func selectNearest(to x: CGFloat, plot: CGRect) {
     guard !snapshots.isEmpty else { return }
-    let ratio = min(max((x - plot.minX) / plot.width, 0), 1)
-    let index = Int(
-      (ratio * CGFloat(max(0, snapshots.count - 1))).rounded()
-    )
-    selectedSnapshotID = snapshots[index].id
+    let nearest = snapshots.enumerated().min { lhs, rhs in
+      abs(xPosition(index: lhs.offset, plot: plot) - x)
+        < abs(xPosition(index: rhs.offset, plot: plot) - x)
+    }
+    selectedSnapshotID = nearest?.element.id
   }
 
   private func compactISK(_ value: Double) -> String {

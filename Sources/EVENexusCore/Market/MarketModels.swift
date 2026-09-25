@@ -70,6 +70,8 @@ public struct DashboardWealthCharacterInput: Sendable {
   public let privateContracts: Sourced<PrivateContractSnapshot>?
   public let corporationAssets: Sourced<AssetSnapshot>?
   public let corporationWallet: Sourced<CorporationWalletSnapshot>?
+  public let industryJobs: Sourced<[ESIIndustryJobDTO]>?
+  public let blueprints: Sourced<[OwnedBlueprintInstance]>?
 
   public init(
     character: CharacterIdentity,
@@ -78,7 +80,9 @@ public struct DashboardWealthCharacterInput: Sendable {
     openOrders: Sourced<[ESICharacterOrderDTO]>? = nil,
     privateContracts: Sourced<PrivateContractSnapshot>? = nil,
     corporationAssets: Sourced<AssetSnapshot>? = nil,
-    corporationWallet: Sourced<CorporationWalletSnapshot>? = nil
+    corporationWallet: Sourced<CorporationWalletSnapshot>? = nil,
+    industryJobs: Sourced<[ESIIndustryJobDTO]>? = nil,
+    blueprints: Sourced<[OwnedBlueprintInstance]>? = nil
   ) {
     self.character = character
     self.wallet = wallet
@@ -87,6 +91,194 @@ public struct DashboardWealthCharacterInput: Sendable {
     self.privateContracts = privateContracts
     self.corporationAssets = corporationAssets
     self.corporationWallet = corporationWallet
+    self.industryJobs = industryJobs
+    self.blueprints = blueprints
+  }
+}
+
+public struct DashboardWealthInProgressIndustryValue: Codable, Equatable,
+  Sendable
+{
+  public let characterID: Int64
+  public let value: Double?
+  public let jobCount: Int
+  public let unresolvedJobCount: Int
+  public let unvaluedMaterialTypeCount: Int
+  public let estimatedJobCount: Int
+  public let isComplete: Bool
+  public let freshness: DataFreshness
+
+  public init(
+    characterID: Int64,
+    value: Double?,
+    jobCount: Int,
+    unresolvedJobCount: Int,
+    unvaluedMaterialTypeCount: Int,
+    estimatedJobCount: Int,
+    isComplete: Bool,
+    freshness: DataFreshness
+  ) {
+    self.characterID = characterID
+    self.value = value
+    self.jobCount = jobCount
+    self.unresolvedJobCount = unresolvedJobCount
+    self.unvaluedMaterialTypeCount = unvaluedMaterialTypeCount
+    self.estimatedJobCount = estimatedJobCount
+    self.isComplete = isComplete
+    self.freshness = freshness
+  }
+}
+
+public enum DashboardInProgressIndustryProjector {
+  public static let valuationPolicy = "sde-job-material-reference-v1"
+
+  public static func project(
+    inputs: [DashboardWealthCharacterInput],
+    prices: [Int64: AdjustedPrice],
+    definitionsByProductTypeID: [Int64: BlueprintDefinition]
+  ) -> [Int64: DashboardWealthInProgressIndustryValue] {
+    Dictionary(
+      uniqueKeysWithValues: inputs.map { input in
+        (
+          input.character.id,
+          project(
+            input: input,
+            prices: prices,
+            definitionsByProductTypeID: definitionsByProductTypeID
+          )
+        )
+      }
+    )
+  }
+
+  private static func project(
+    input: DashboardWealthCharacterInput,
+    prices: [Int64: AdjustedPrice],
+    definitionsByProductTypeID: [Int64: BlueprintDefinition]
+  ) -> DashboardWealthInProgressIndustryValue {
+    guard let sourcedJobs = input.industryJobs else {
+      return unavailableIndustryValue(characterID: input.character.id)
+    }
+    guard let jobs = usableValue(sourcedJobs) else {
+      return DashboardWealthInProgressIndustryValue(
+        characterID: input.character.id,
+        value: nil,
+        jobCount: 0,
+        unresolvedJobCount: 0,
+        unvaluedMaterialTypeCount: 0,
+        estimatedJobCount: 0,
+        isComplete: false,
+        freshness: sourcedJobs.state
+      )
+    }
+
+    let relevantJobs = jobs.filter {
+      guard let activity = $0.dashboardActivity else { return false }
+      return (activity == .manufacturing || activity == .reaction)
+        && !$0.isDelivered
+        && !$0.isCancelledOrReverted
+    }
+    let blueprints = input.blueprints.flatMap(usableValue) ?? []
+    let blueprintsByID = Dictionary(
+      blueprints.map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
+    var knownValue = 0.0
+    var hasKnownValue = relevantJobs.isEmpty
+    var unresolvedJobCount = 0
+    var unvaluedMaterialTypeIDs = Set<Int64>()
+    var estimatedJobCount = 0
+
+    for job in relevantJobs {
+      guard job.runs > 0,
+        let productTypeID = job.productTypeID,
+        let definition = definitionsByProductTypeID[productTypeID]
+      else {
+        unresolvedJobCount += 1
+        continue
+      }
+      // ESI does not expose the installed job's facility/rig material modifier.
+      // Use the known Blueprint ME when the installed instance is still present;
+      // otherwise retain a visible neutral-ME estimate rather than dropping the
+      // consumed materials from net worth entirely.
+      let blueprintME = blueprintsByID[job.blueprintID]?.materialEfficiency ?? 0
+      estimatedJobCount += 1
+      for material in definition.activity.materials {
+        let quantity: Int64
+        if definition.activity.kind == .reaction {
+          quantity = saturatedMultiply(Int64(job.runs), material.quantity)
+        } else {
+          quantity = IndustryPlanner.manufacturingMaterialQuantity(
+            baseQuantity: material.quantity,
+            runs: job.runs,
+            materialEfficiency: blueprintME,
+            facilityMultiplier: 1
+          )
+        }
+        guard quantity > 0,
+          let reference = prices[material.typeID],
+          let unitPrice = reference.averagePrice ?? reference.adjustedPrice,
+          unitPrice.isFinite,
+          unitPrice >= 0
+        else {
+          unvaluedMaterialTypeIDs.insert(material.typeID)
+          continue
+        }
+        let value = Double(quantity) * unitPrice
+        guard value.isFinite else {
+          unvaluedMaterialTypeIDs.insert(material.typeID)
+          continue
+        }
+        hasKnownValue = true
+        knownValue += value
+      }
+    }
+
+    let hasIncompleteCoverage =
+      unresolvedJobCount > 0
+      || !unvaluedMaterialTypeIDs.isEmpty
+      || estimatedJobCount > 0
+      || sourcedJobs.state != .fresh
+    return DashboardWealthInProgressIndustryValue(
+      characterID: input.character.id,
+      value: hasKnownValue && knownValue.isFinite ? knownValue : nil,
+      jobCount: relevantJobs.count,
+      unresolvedJobCount: unresolvedJobCount,
+      unvaluedMaterialTypeCount: unvaluedMaterialTypeIDs.count,
+      estimatedJobCount: estimatedJobCount,
+      isComplete: !hasIncompleteCoverage,
+      freshness: hasIncompleteCoverage ? .partial : .fresh
+    )
+  }
+
+  private static func usableValue<Value: Codable & Sendable>(
+    _ sourced: Sourced<Value>
+  ) -> Value? {
+    switch sourced.state {
+    case .fresh, .partial, .stale: sourced.value
+    case .forbidden, .unavailable: nil
+    }
+  }
+
+  private static func saturatedMultiply(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+    let (value, overflow) = lhs.multipliedReportingOverflow(by: rhs)
+    if overflow { return lhs.signum() == rhs.signum() ? .max : .min }
+    return value
+  }
+
+  private static func unavailableIndustryValue(
+    characterID: Int64
+  ) -> DashboardWealthInProgressIndustryValue {
+    DashboardWealthInProgressIndustryValue(
+      characterID: characterID,
+      value: nil,
+      jobCount: 0,
+      unresolvedJobCount: 0,
+      unvaluedMaterialTypeCount: 0,
+      estimatedJobCount: 0,
+      isComplete: false,
+      freshness: .unavailable
+    )
   }
 }
 
@@ -137,6 +329,7 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
   public let escrowValue: Double?
   public let contractsValue: Double?
   public let courierValue: Double?
+  public let industryInProgressValue: Double?
   public let knownValue: Double?
   public let unvaluedAssetTypeCount: Int
   public let unvaluedAssetTypes: [DashboardWealthUnpricedType]
@@ -148,6 +341,10 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
   public let excludedContractBlueprintCopyCount: Int
   public let unavailableContractCount: Int
   public let invalidCourierCollateralCount: Int
+  public let inProgressIndustryJobCount: Int
+  public let unresolvedIndustryJobCount: Int
+  public let unvaluedIndustryMaterialTypeCount: Int
+  public let estimatedIndustryJobCount: Int
   public let isComplete: Bool
   public let freshness: DataFreshness
 
@@ -160,6 +357,7 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     case escrowValue
     case contractsValue
     case courierValue
+    case industryInProgressValue
     case knownValue
     case unvaluedAssetTypeCount
     case unvaluedAssetTypes
@@ -171,6 +369,10 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     case excludedContractBlueprintCopyCount
     case unavailableContractCount
     case invalidCourierCollateralCount
+    case inProgressIndustryJobCount
+    case unresolvedIndustryJobCount
+    case unvaluedIndustryMaterialTypeCount
+    case estimatedIndustryJobCount
     case isComplete
     case freshness
   }
@@ -184,6 +386,7 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     escrowValue: Double? = nil,
     contractsValue: Double? = nil,
     courierValue: Double? = nil,
+    industryInProgressValue: Double? = nil,
     knownValue: Double?,
     unvaluedAssetTypeCount: Int,
     unvaluedAssetTypes: [DashboardWealthUnpricedType] = [],
@@ -195,6 +398,10 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     excludedContractBlueprintCopyCount: Int = 0,
     unavailableContractCount: Int = 0,
     invalidCourierCollateralCount: Int = 0,
+    inProgressIndustryJobCount: Int = 0,
+    unresolvedIndustryJobCount: Int = 0,
+    unvaluedIndustryMaterialTypeCount: Int = 0,
+    estimatedIndustryJobCount: Int = 0,
     isComplete: Bool,
     freshness: DataFreshness
   ) {
@@ -206,6 +413,7 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     self.escrowValue = escrowValue
     self.contractsValue = contractsValue
     self.courierValue = courierValue
+    self.industryInProgressValue = industryInProgressValue
     self.knownValue = knownValue
     self.unvaluedAssetTypeCount = unvaluedAssetTypeCount
     self.unvaluedAssetTypes = unvaluedAssetTypes
@@ -218,6 +426,11 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
       excludedContractBlueprintCopyCount
     self.unavailableContractCount = unavailableContractCount
     self.invalidCourierCollateralCount = invalidCourierCollateralCount
+    self.inProgressIndustryJobCount = inProgressIndustryJobCount
+    self.unresolvedIndustryJobCount = unresolvedIndustryJobCount
+    self.unvaluedIndustryMaterialTypeCount =
+      unvaluedIndustryMaterialTypeCount
+    self.estimatedIndustryJobCount = estimatedIndustryJobCount
     self.isComplete = isComplete
     self.freshness = freshness
   }
@@ -237,6 +450,10 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     courierValue = try values.decodeIfPresent(
       Double.self,
       forKey: .courierValue
+    )
+    industryInProgressValue = try values.decodeIfPresent(
+      Double.self,
+      forKey: .industryInProgressValue
     )
     knownValue = try values.decodeIfPresent(Double.self, forKey: .knownValue)
     unvaluedAssetTypeCount =
@@ -289,6 +506,26 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
         Int.self,
         forKey: .invalidCourierCollateralCount
       ) ?? 0
+    inProgressIndustryJobCount =
+      try values.decodeIfPresent(
+        Int.self,
+        forKey: .inProgressIndustryJobCount
+      ) ?? 0
+    unresolvedIndustryJobCount =
+      try values.decodeIfPresent(
+        Int.self,
+        forKey: .unresolvedIndustryJobCount
+      ) ?? 0
+    unvaluedIndustryMaterialTypeCount =
+      try values.decodeIfPresent(
+        Int.self,
+        forKey: .unvaluedIndustryMaterialTypeCount
+      ) ?? 0
+    estimatedIndustryJobCount =
+      try values.decodeIfPresent(
+        Int.self,
+        forKey: .estimatedIndustryJobCount
+      ) ?? 0
     isComplete = try values.decode(Bool.self, forKey: .isComplete)
     freshness = try values.decode(DataFreshness.self, forKey: .freshness)
   }
@@ -310,10 +547,12 @@ public struct DashboardWealthSnapshot: Identifiable, Codable, Equatable,
   public let courierTotal: Double?
   public let corporationWalletTotal: Double?
   public let corporationAssetTotal: Double?
+  public let industryInProgressTotal: Double?
   public let contractsFreshness: DataFreshness?
   public let courierFreshness: DataFreshness?
   public let corporationWalletFreshness: DataFreshness?
   public let corporationAssetFreshness: DataFreshness?
+  public let industryInProgressFreshness: DataFreshness?
   public let corporationWalletCoverage: DashboardWealthCorporationCoverage?
   public let corporationAssetCoverage: DashboardWealthCorporationCoverage?
   public let isComplete: Bool
@@ -334,10 +573,12 @@ public struct DashboardWealthSnapshot: Identifiable, Codable, Equatable,
     courierTotal: Double? = nil,
     corporationWalletTotal: Double? = nil,
     corporationAssetTotal: Double? = nil,
+    industryInProgressTotal: Double? = nil,
     contractsFreshness: DataFreshness? = nil,
     courierFreshness: DataFreshness? = nil,
     corporationWalletFreshness: DataFreshness? = nil,
     corporationAssetFreshness: DataFreshness? = nil,
+    industryInProgressFreshness: DataFreshness? = nil,
     corporationWalletCoverage: DashboardWealthCorporationCoverage? = nil,
     corporationAssetCoverage: DashboardWealthCorporationCoverage? = nil,
     isComplete: Bool,
@@ -357,10 +598,12 @@ public struct DashboardWealthSnapshot: Identifiable, Codable, Equatable,
     self.courierTotal = courierTotal
     self.corporationWalletTotal = corporationWalletTotal
     self.corporationAssetTotal = corporationAssetTotal
+    self.industryInProgressTotal = industryInProgressTotal
     self.contractsFreshness = contractsFreshness
     self.courierFreshness = courierFreshness
     self.corporationWalletFreshness = corporationWalletFreshness
     self.corporationAssetFreshness = corporationAssetFreshness
+    self.industryInProgressFreshness = industryInProgressFreshness
     self.corporationWalletCoverage = corporationWalletCoverage
     self.corporationAssetCoverage = corporationAssetCoverage
     self.isComplete = isComplete
@@ -370,15 +613,23 @@ public struct DashboardWealthSnapshot: Identifiable, Codable, Equatable,
 }
 
 public enum DashboardWealthProjector {
-  public static let valuationPolicy = "esi-average-then-adjusted-v1"
+  public static let valuationPolicy =
+    "esi-average-then-adjusted-plus-sde-job-materials-v2"
 
   public static func project(
     inputs: [DashboardWealthCharacterInput],
     prices: ReferencePriceSnapshot,
-    typeNames: [Int64: String] = [:]
+    typeNames: [Int64: String] = [:],
+    inProgressIndustryValues:
+      [Int64: DashboardWealthInProgressIndustryValue] = [:]
   ) -> DashboardWealthSnapshot {
     let rows = inputs.map { input in
-      project(input: input, prices: prices.prices, typeNames: typeNames)
+      project(
+        input: input,
+        prices: prices.prices,
+        typeNames: typeNames,
+        inProgressIndustry: inProgressIndustryValues[input.character.id]
+      )
     }.sorted {
       $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
         == .orderedAscending
@@ -408,6 +659,9 @@ public enum DashboardWealthProjector {
       courierTotal: componentTotal(rows.map(\.courierValue)),
       corporationWalletTotal: corporationWallet.value,
       corporationAssetTotal: corporationAssets.value,
+      industryInProgressTotal: componentTotal(
+        rows.map(\.industryInProgressValue)
+      ),
       contractsFreshness: valuedComponentFreshness(
         values: rows.map(\.contractsValue),
         states: inputs.map { $0.privateContracts?.state ?? .unavailable },
@@ -425,6 +679,18 @@ public enum DashboardWealthProjector {
       ),
       corporationWalletFreshness: corporationWallet.freshness,
       corporationAssetFreshness: corporationAssets.freshness,
+      industryInProgressFreshness: valuedComponentFreshness(
+        values: rows.map(\.industryInProgressValue),
+        states: rows.map { row in
+          inProgressIndustryValues[row.characterID]?.freshness
+            ?? .unavailable
+        },
+        hasIncompleteValuation: rows.contains {
+          $0.unresolvedIndustryJobCount > 0
+            || $0.unvaluedIndustryMaterialTypeCount > 0
+            || $0.estimatedIndustryJobCount > 0
+        }
+      ),
       corporationWalletCoverage: corporationWallet.coverage,
       corporationAssetCoverage: corporationAssets.coverage,
       isComplete: !rows.isEmpty && rows.allSatisfy(\.isComplete),
@@ -436,7 +702,8 @@ public enum DashboardWealthProjector {
   private static func project(
     input: DashboardWealthCharacterInput,
     prices: [Int64: AdjustedPrice],
-    typeNames: [Int64: String]
+    typeNames: [Int64: String],
+    inProgressIndustry: DashboardWealthInProgressIndustryValue?
   ) -> DashboardWealthCharacterValue {
     let walletValue = usableValue(input.wallet)
     let assetSnapshot = usableValue(input.assets)
@@ -556,7 +823,7 @@ public enum DashboardWealthProjector {
     }
     let knownParts = [
       walletValue, assetValue, ordersValue, escrowValue, contractsValue,
-      courierValue,
+      courierValue, inProgressIndustry?.value,
     ].compactMap { $0 }
     let knownValue = knownParts.isEmpty ? nil : knownParts.reduce(0, +)
     return DashboardWealthCharacterValue(
@@ -568,6 +835,7 @@ public enum DashboardWealthProjector {
       escrowValue: escrowValue,
       contractsValue: contractsValue,
       courierValue: courierValue,
+      industryInProgressValue: inProgressIndustry?.value,
       knownValue: knownValue,
       unvaluedAssetTypeCount: unvaluedTypeIDs.count,
       unvaluedAssetTypes: unpricedTypes(
@@ -586,6 +854,11 @@ public enum DashboardWealthProjector {
         excludedContractBlueprintCopyCount,
       unavailableContractCount: unavailableContractCount,
       invalidCourierCollateralCount: invalidCourierCollateralCount,
+      inProgressIndustryJobCount: inProgressIndustry?.jobCount ?? 0,
+      unresolvedIndustryJobCount: inProgressIndustry?.unresolvedJobCount ?? 0,
+      unvaluedIndustryMaterialTypeCount:
+        inProgressIndustry?.unvaluedMaterialTypeCount ?? 0,
+      estimatedIndustryJobCount: inProgressIndustry?.estimatedJobCount ?? 0,
       isComplete: walletValue != nil && assetValue != nil
         && ordersValue != nil && escrowValue != nil
         && contractsValue != nil && courierValue != nil
@@ -593,13 +866,15 @@ public enum DashboardWealthProjector {
         && missingEscrowOrderCount == 0
         && unvaluedContractItemTypeIDs.isEmpty
         && unavailableContractCount == 0
-        && invalidCourierCollateralCount == 0,
-      freshness: combinedFreshness([
-        input.wallet.state,
-        assetValuationFreshness(input.assets),
-        input.openOrders?.state ?? .unavailable,
-        input.privateContracts?.state ?? .unavailable,
-      ])
+        && invalidCourierCollateralCount == 0
+        && (inProgressIndustry?.isComplete ?? true),
+      freshness: combinedFreshness(
+        [
+          input.wallet.state,
+          assetValuationFreshness(input.assets),
+          input.openOrders?.state ?? .unavailable,
+          input.privateContracts?.state ?? .unavailable,
+        ] + (inProgressIndustry.map { [$0.freshness] } ?? []))
     )
   }
 
@@ -969,7 +1244,23 @@ public struct MarketHubConfigurationSnapshot: Identifiable, Codable,
   }
 }
 
-public struct MoonMaterial: Identifiable, Codable, Equatable, Sendable {
+public enum MaterialPurchaseCatalogKind: String, Codable, CaseIterable,
+  Sendable
+{
+  case moonMaterials = "Moon Materials"
+  case minerals = "Mineral"
+
+  public var missingCatalogDiagnostic: String {
+    switch self {
+    case .moonMaterials: "missing-moon-materials"
+    case .minerals: "missing-minerals"
+    }
+  }
+}
+
+public struct MaterialPurchaseItem: Identifiable, Codable, Equatable,
+  Sendable
+{
   public let id: Int64
   public let name: String
 
@@ -979,21 +1270,31 @@ public struct MoonMaterial: Identifiable, Codable, Equatable, Sendable {
   }
 }
 
-public struct MoonMaterialCatalogSnapshot: Codable, Sendable {
-  public let materials: [MoonMaterial]
+public struct MaterialPurchaseCatalogSnapshot: Codable, Sendable {
+  public let materials: [MaterialPurchaseItem]
   public let source: SourceIdentity
 
-  public init(materials: [MoonMaterial], source: SourceIdentity) {
+  public init(materials: [MaterialPurchaseItem], source: SourceIdentity) {
     self.materials = materials
     self.source = source
   }
+}
+
+public protocol MaterialPurchaseCatalogQuerying: Sendable {
+  func materialPurchaseCatalog(
+    for kind: MaterialPurchaseCatalogKind
+  ) async throws -> MaterialPurchaseCatalogSnapshot
 }
 
 public protocol MoonMaterialCatalogQuerying: Sendable {
   func moonMaterials() async throws -> MoonMaterialCatalogSnapshot
 }
 
-public struct MoonMaterialPriceBand: Codable, Equatable, Sendable {
+public protocol MineralMaterialCatalogQuerying: Sendable {
+  func minerals() async throws -> MaterialPurchaseCatalogSnapshot
+}
+
+public struct MaterialPurchasePriceBand: Codable, Equatable, Sendable {
   public let lowestSellPrice: Double
   public let maximumBandPrice: Double
   public let availableQuantity: Int64
@@ -1012,20 +1313,22 @@ public struct MoonMaterialPriceBand: Codable, Equatable, Sendable {
   }
 }
 
-public enum MoonMaterialMarketPriceRank: Int, Codable, Equatable, Sendable {
+public enum MaterialPurchaseMarketPriceRank: Int, Codable, Equatable,
+  Sendable
+{
   case cheapest = 1
   case secondCheapest = 2
   case thirdCheapest = 3
 }
 
-public struct MoonMaterialPurchaseAnalysisSnapshot: Codable, Sendable {
-  public let materialCatalog: MoonMaterialCatalogSnapshot
+public struct MaterialPurchaseAnalysisSnapshot: Codable, Sendable {
+  public let materialCatalog: MaterialPurchaseCatalogSnapshot
   public let configuredHubs: [MarketHubConfigurationSnapshot]
   public let configuredMarkets: [UUID: Sourced<MarketOrderSnapshot>]
   public let refreshedAt: Date
 
   public init(
-    materialCatalog: MoonMaterialCatalogSnapshot,
+    materialCatalog: MaterialPurchaseCatalogSnapshot,
     configuredHubs: [MarketHubConfigurationSnapshot] = [],
     configuredMarkets: [UUID: Sourced<MarketOrderSnapshot>] = [:],
     refreshedAt: Date
@@ -1036,6 +1339,13 @@ public struct MoonMaterialPurchaseAnalysisSnapshot: Codable, Sendable {
     self.refreshedAt = refreshedAt
   }
 }
+
+public typealias MoonMaterial = MaterialPurchaseItem
+public typealias MoonMaterialCatalogSnapshot = MaterialPurchaseCatalogSnapshot
+public typealias MoonMaterialPriceBand = MaterialPurchasePriceBand
+public typealias MoonMaterialMarketPriceRank = MaterialPurchaseMarketPriceRank
+public typealias MoonMaterialPurchaseAnalysisSnapshot =
+  MaterialPurchaseAnalysisSnapshot
 
 public struct MarketOrder: Identifiable, Codable, Hashable, Sendable {
   public let id: Int64
@@ -1106,6 +1416,7 @@ public enum PriceScenario: String, Codable, CaseIterable, Sendable {
   case materialBuy
   case immediateSale
   case listedSale
+  case contractSale
 }
 
 public struct PriceQuote: Identifiable, Codable, Equatable, Sendable {
@@ -1156,6 +1467,69 @@ public struct IndustrySystemIndex: Codable, Hashable, Sendable {
   public let costIndex: Double
 }
 
+/// A calculation-scoped projection that validates and sorts each market type
+/// once. Quote semantics stay owned by `MarketPriceEngine`; only the repeated
+/// order-book preparation is removed from planner hot paths.
+public struct PreparedMarketOrderBook: Sendable {
+  private let snapshot: MarketOrderSnapshot
+  private let sellOrdersByType: [Int64: [MarketOrder]]
+  private let buyOrdersByType: [Int64: [MarketOrder]]
+
+  public init(snapshot: MarketOrderSnapshot) {
+    self.snapshot = snapshot
+    var sells: [Int64: [MarketOrder]] = [:]
+    var buys: [Int64: [MarketOrder]] = [:]
+    sells.reserveCapacity(snapshot.ordersByType.count)
+    buys.reserveCapacity(snapshot.ordersByType.count)
+    for (typeID, orders) in snapshot.ordersByType {
+      let relevant = orders.filter {
+        $0.locationID == snapshot.locationID
+          && $0.price.isFinite
+          && $0.price > 0
+          && $0.volumeRemaining > 0
+          && $0.minimumVolume > 0
+      }
+      let sellOrders = relevant.filter { $0.side == .sell }
+        .sorted { $0.price < $1.price }
+      let buyOrders = relevant.filter { $0.side == .buy }
+        .sorted { $0.price > $1.price }
+      if !sellOrders.isEmpty {
+        sells[typeID] = sellOrders
+      }
+      if !buyOrders.isEmpty {
+        buys[typeID] = buyOrders
+      }
+    }
+    sellOrdersByType = sells
+    buyOrdersByType = buys
+  }
+
+  public func quote(
+    typeID: Int64,
+    quantity: Int64,
+    scenario: PriceScenario,
+    salesTaxRate: Double? = nil,
+    brokerFeeRate: Double? = nil
+  ) -> PriceQuote {
+    let orders =
+      switch scenario {
+      case .materialBuy, .listedSale, .contractSale:
+        sellOrdersByType[typeID] ?? []
+      case .immediateSale:
+        buyOrdersByType[typeID] ?? []
+      }
+    return MarketPriceEngine.quote(
+      typeID: typeID,
+      quantity: quantity,
+      scenario: scenario,
+      snapshot: snapshot,
+      sortedOrders: orders,
+      salesTaxRate: salesTaxRate,
+      brokerFeeRate: brokerFeeRate
+    )
+  }
+}
+
 public enum MarketPriceEngine {
   public static func quote(
     typeID: Int64,
@@ -1164,6 +1538,42 @@ public enum MarketPriceEngine {
     snapshot: MarketOrderSnapshot,
     salesTaxRate: Double? = nil,
     brokerFeeRate: Double? = nil
+  ) -> PriceQuote {
+    let relevant = (snapshot.ordersByType[typeID] ?? []).filter {
+      $0.locationID == snapshot.locationID
+        && $0.price.isFinite
+        && $0.price > 0
+        && $0.volumeRemaining > 0
+        && $0.minimumVolume > 0
+    }
+    let sorted: [MarketOrder]
+    switch scenario {
+    case .materialBuy, .listedSale, .contractSale:
+      sorted = relevant.filter { $0.side == .sell }
+        .sorted { $0.price < $1.price }
+    case .immediateSale:
+      sorted = relevant.filter { $0.side == .buy }
+        .sorted { $0.price > $1.price }
+    }
+    return quote(
+      typeID: typeID,
+      quantity: quantity,
+      scenario: scenario,
+      snapshot: snapshot,
+      sortedOrders: sorted,
+      salesTaxRate: salesTaxRate,
+      brokerFeeRate: brokerFeeRate
+    )
+  }
+
+  fileprivate static func quote(
+    typeID: Int64,
+    quantity: Int64,
+    scenario: PriceScenario,
+    snapshot: MarketOrderSnapshot,
+    sortedOrders: [MarketOrder],
+    salesTaxRate: Double?,
+    brokerFeeRate: Double?
   ) -> PriceQuote {
     let source = snapshot.source
     guard quantity > 0 else {
@@ -1181,24 +1591,7 @@ public enum MarketPriceEngine {
       )
     }
 
-    let relevant = (snapshot.ordersByType[typeID] ?? []).filter {
-      $0.locationID == snapshot.locationID
-        && $0.price.isFinite
-        && $0.price > 0
-        && $0.volumeRemaining > 0
-        && $0.minimumVolume > 0
-    }
-    let sorted: [MarketOrder]
-    switch scenario {
-    case .materialBuy, .listedSale:
-      sorted = relevant.filter { $0.side == .sell }
-        .sorted { $0.price < $1.price }
-    case .immediateSale:
-      sorted = relevant.filter { $0.side == .buy }
-        .sorted { $0.price > $1.price }
-    }
-
-    guard !sorted.isEmpty else {
+    guard !sortedOrders.isEmpty else {
       return missingQuote(
         typeID: typeID,
         quantity: quantity,
@@ -1226,7 +1619,7 @@ public enum MarketPriceEngine {
           code: "market.missing-sales-fees"
         )
       }
-      let price = sorted[0].price
+      let price = sortedOrders[0].price
       let gross = price * Double(quantity)
       let net = gross * (1 - salesTaxRate - brokerFeeRate)
       guard gross.isFinite, net.isFinite else {
@@ -1253,10 +1646,21 @@ public enum MarketPriceEngine {
       )
     }
 
+    if scenario == .contractSale {
+      return missingQuote(
+        typeID: typeID,
+        quantity: quantity,
+        scenario: scenario,
+        source: source,
+        capturedAt: snapshot.capturedAt,
+        code: "market.contract-sale-requires-public-contracts"
+      )
+    }
+
     var remaining = quantity
     var filled: Int64 = 0
     var total = 0.0
-    for order in sorted where remaining > 0 {
+    for order in sortedOrders where remaining > 0 {
       if order.minimumVolume > 1,
         remaining < order.minimumVolume
       {
@@ -1346,14 +1750,14 @@ public enum MarketPriceEngine {
   }
 }
 
-public enum MoonMaterialPriceBandAnalyzer {
+public enum MaterialPurchasePriceBandAnalyzer {
   public static let defaultMarkup = 0.10
 
   public static func analyze(
     typeID: Int64,
     snapshot: MarketOrderSnapshot,
     markup: Double = defaultMarkup
-  ) -> MoonMaterialPriceBand? {
+  ) -> MaterialPurchasePriceBand? {
     guard markup.isFinite, markup >= 0 else { return nil }
     let sellOrders = (snapshot.ordersByType[typeID] ?? []).filter {
       $0.locationID == snapshot.locationID
@@ -1378,7 +1782,7 @@ public enum MoonMaterialPriceBandAnalyzer {
       )
       availableQuantity = overflow ? .max : sum
     }
-    return MoonMaterialPriceBand(
+    return MaterialPurchasePriceBand(
       lowestSellPrice: lowestSellPrice,
       maximumBandPrice: maximumBandPrice,
       availableQuantity: availableQuantity,
@@ -1387,17 +1791,17 @@ public enum MoonMaterialPriceBandAnalyzer {
   }
 }
 
-public enum MoonMaterialMarketPriceRankAnalyzer {
+public enum MaterialPurchaseMarketPriceRankAnalyzer {
   public static func ranks<Key: Hashable>(
     typeID: Int64,
     markets: [Key: Sourced<MarketOrderSnapshot>]
-  ) -> [Key: MoonMaterialMarketPriceRank] {
+  ) -> [Key: MaterialPurchaseMarketPriceRank] {
     let observations: [(location: Key, price: Double)] = markets.compactMap {
       entry in
       let (location, sourced) = entry
       guard sourced.state == .fresh,
         let snapshot = sourced.value,
-        let band = MoonMaterialPriceBandAnalyzer.analyze(
+        let band = MaterialPurchasePriceBandAnalyzer.analyze(
           typeID: typeID,
           snapshot: snapshot
         )
@@ -1412,15 +1816,20 @@ public enum MoonMaterialMarketPriceRankAnalyzer {
     }
     .prefix(3)
 
-    var result: [Key: MoonMaterialMarketPriceRank] = [:]
+    var result: [Key: MaterialPurchaseMarketPriceRank] = [:]
     for observation in observations {
       guard let index = rankedPrices.firstIndex(of: observation.price),
-        let rank = MoonMaterialMarketPriceRank(rawValue: index + 1)
+        let rank = MaterialPurchaseMarketPriceRank(rawValue: index + 1)
       else { continue }
       result[observation.location] = rank
     }
     return result
   }
 }
+
+public typealias MoonMaterialPriceBandAnalyzer =
+  MaterialPurchasePriceBandAnalyzer
+public typealias MoonMaterialMarketPriceRankAnalyzer =
+  MaterialPurchaseMarketPriceRankAnalyzer
 
 public typealias JitaPriceEngine = MarketPriceEngine

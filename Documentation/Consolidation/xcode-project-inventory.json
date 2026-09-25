@@ -1,0 +1,21 @@
+{
+  "project" : {
+    "configurations" : [
+      "Debug",
+      "Release"
+    ],
+    "name" : "EVENexusSimple",
+    "schemes" : [
+      "CSQLite",
+      "EVENexusCore",
+      "EVENexusSimple",
+      "EVEStaticDataKit"
+    ],
+    "targets" : [
+      "CSQLite",
+      "EVENexusCore",
+      "EVENexusCoreTests",
+      "EVENexusSimple"
+    ]
+  }
+}

@@ -2,7 +2,7 @@
 
 Status: accepted
 
-EVE Nexus Simple uses Swift 6, SwiftUI and a macOS 14 deployment target. The
+EVE New Eden Nexus - Assets, Industry, Markets uses Swift 6, SwiftUI and a macOS 14 deployment target. The
 application target owns presentation and composition. `EVENexusCore` owns domain
 contracts and orchestration. The vendored `EVEStaticDataKit` remains unchanged.
 

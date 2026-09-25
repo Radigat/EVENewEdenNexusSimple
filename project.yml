@@ -52,8 +52,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.local.EVENexusSimple
-        PRODUCT_NAME: EVE Nexus Simple
-        INFOPLIST_KEY_CFBundleDisplayName: EVE Nexus Simple
+        PRODUCT_NAME: EVE New Eden Nexus - Assets, Industry, Markets
+        PRODUCT_MODULE_NAME: EVE_Nexus_Simple
+        INFOPLIST_KEY_CFBundleName: EVE New Eden Nexus - Assets, Industry, Markets
+        INFOPLIST_KEY_CFBundleDisplayName: EVE New Eden Nexus - Assets, Industry, Markets
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         GENERATE_INFOPLIST_FILE: YES

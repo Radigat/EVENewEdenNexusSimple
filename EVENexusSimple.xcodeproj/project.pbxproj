@@ -7,12 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		019FD0410000000000000011 /* AppDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000001 /* AppDefaults.swift */; };
-		019FD0410000000000000012 /* AppOperatorConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000002 /* AppOperatorConfiguration.swift */; };
-		019FD0410000000000000013 /* PersistenceSchemaV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000003 /* PersistenceSchemaV1.swift */; };
-		019FD0410000000000000014 /* PersistenceRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000004 /* PersistenceRecovery.swift */; };
-		019FC95E0000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 019FC95E0000000000000001 /* Assets.xcassets */; };
-		019FC9890000000000000011 /* NetWorthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC9890000000000000001 /* NetWorthView.swift */; };
+		01A0D7370000000000000011 /* LoyaltyStoreCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D7370000000000000001 /* LoyaltyStoreCatalogTests.swift */; };
 		012EB53DCA55C2E96CBDD71F /* IndustrySystemIndexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */; };
 		019FBDB4A2CA78E19C87A002 /* MoonMaterialPurchaseAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBDB4A2CA78E19C87A001 /* MoonMaterialPurchaseAnalysisView.swift */; };
 		019FBE470000000000000011 /* MarketBrowserModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000001 /* MarketBrowserModels.swift */; };
@@ -26,6 +21,19 @@
 		019FC10B0000000000000015 /* PublicContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC10B0000000000000005 /* PublicContractTests.swift */; };
 		019FC2000000000000000011 /* LogisticsCostCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC2000000000000000001 /* LogisticsCostCalculator.swift */; };
 		019FC3000000000000000011 /* ProductionTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC3000000000000000001 /* ProductionTree.swift */; };
+		019FC95E0000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 019FC95E0000000000000001 /* Assets.xcassets */; };
+		019FC9890000000000000011 /* NetWorthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC9890000000000000001 /* NetWorthView.swift */; };
+		019FD0410000000000000011 /* AppDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000001 /* AppDefaults.swift */; };
+		019FD0410000000000000012 /* AppOperatorConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000002 /* AppOperatorConfiguration.swift */; };
+		019FD0410000000000000013 /* PersistenceSchemaV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000003 /* PersistenceSchemaV1.swift */; };
+		019FD0410000000000000014 /* PersistenceRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000004 /* PersistenceRecovery.swift */; };
+		019FE1000000000000000011 /* RecursiveProductionCalculationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FE1000000000000000001 /* RecursiveProductionCalculationView.swift */; };
+		01A09B090000000000000012 /* LoyaltyStoreCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */; };
+		01A09C090000000000000012 /* UniverseTypeVolumeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09C090000000000000002 /* UniverseTypeVolumeService.swift */; };
+		01A09D090000000000000012 /* PackagedVolumeSnapshotCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */; };
+		01A0A0010000000000000011 /* OreRefining.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0A0010000000000000001 /* OreRefining.swift */; };
+		01A0B0010000000000000011 /* JumpFreighterLogistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0B0010000000000000001 /* JumpFreighterLogistics.swift */; };
+		01A0B0020000000000000011 /* JumpFreighterLogisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0B0020000000000000001 /* JumpFreighterLogisticsTests.swift */; };
 		0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */; };
 		0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */; };
 		12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */; };
@@ -72,6 +80,7 @@
 		99D95412344E68545253E28B /* EVEOnlineServiceStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520CD44233AFF34B9A2A5C8F /* EVEOnlineServiceStatus.swift */; };
 		9D4F26AF76B35CCCCF6C13DA /* AuthAndBlueprintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */; };
 		9EF04E083678916EF31CE726 /* AssetsWarehouseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */; };
+		A17D4A7E09F64AE4A1B87D21 /* IndustryJobsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E98438B8A94102A6354E62 /* IndustryJobsView.swift */; };
 		A1A07595FEE9253FD0A90517 /* MemoizedIndustryCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55562529E8D8E64E9E34055C /* MemoizedIndustryCatalog.swift */; };
 		A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */; };
 		A5E4B7A644B743FE3142871D /* ProductionJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A555FBA531B59AA843FDF2BD /* ProductionJournal.swift */; };
@@ -79,7 +88,6 @@
 		B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */; };
 		B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */; };
 		B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AC75DF5C57565C1C95D785 /* ContentView.swift */; };
-		A17D4A7E09F64AE4A1B87D21 /* IndustryJobsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E98438B8A94102A6354E62 /* IndustryJobsView.swift */; };
 		B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */; };
 		BC748CDBAC934DCA02A356B9 /* EVENexusCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E58C6EA5E4842768987863A4 /* EVENexusCore.framework */; };
 		BC8A106455EAE98782C571DE /* KeychainRefreshTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E6D99D0A74D9DCEC012888 /* KeychainRefreshTokenStore.swift */; };
@@ -183,12 +191,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		019FD0410000000000000001 /* AppDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDefaults.swift; sourceTree = "<group>"; };
-		019FD0410000000000000002 /* AppOperatorConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOperatorConfiguration.swift; sourceTree = "<group>"; };
-		019FD0410000000000000003 /* PersistenceSchemaV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceSchemaV1.swift; sourceTree = "<group>"; };
-		019FD0410000000000000004 /* PersistenceRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceRecovery.swift; sourceTree = "<group>"; };
-		019FC95E0000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		019FC9890000000000000001 /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
+		01A0D7370000000000000001 /* LoyaltyStoreCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyStoreCatalogTests.swift; sourceTree = "<group>"; };
 		0125A339DC2931CACBE9D073 /* EVENexusSimpleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVENexusSimpleApp.swift; sourceTree = "<group>"; };
 		019FBDB4A2CA78E19C87A001 /* MoonMaterialPurchaseAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonMaterialPurchaseAnalysisView.swift; sourceTree = "<group>"; };
 		019FBE470000000000000001 /* MarketBrowserModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserModels.swift; sourceTree = "<group>"; };
@@ -201,6 +204,20 @@
 		019FC10B0000000000000004 /* PublicContractsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicContractsView.swift; sourceTree = "<group>"; };
 		019FC10B0000000000000005 /* PublicContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicContractTests.swift; sourceTree = "<group>"; };
 		019FC2000000000000000001 /* LogisticsCostCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogisticsCostCalculator.swift; sourceTree = "<group>"; };
+		019FC3000000000000000001 /* ProductionTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionTree.swift; sourceTree = "<group>"; };
+		019FC95E0000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		019FC9890000000000000001 /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
+		019FD0410000000000000001 /* AppDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDefaults.swift; sourceTree = "<group>"; };
+		019FD0410000000000000002 /* AppOperatorConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOperatorConfiguration.swift; sourceTree = "<group>"; };
+		019FD0410000000000000003 /* PersistenceSchemaV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceSchemaV1.swift; sourceTree = "<group>"; };
+		019FD0410000000000000004 /* PersistenceRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceRecovery.swift; sourceTree = "<group>"; };
+		019FE1000000000000000001 /* RecursiveProductionCalculationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecursiveProductionCalculationView.swift; sourceTree = "<group>"; };
+		01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyStoreCatalog.swift; sourceTree = "<group>"; };
+		01A09C090000000000000002 /* UniverseTypeVolumeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseTypeVolumeService.swift; sourceTree = "<group>"; };
+		01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackagedVolumeSnapshotCatalog.swift; sourceTree = "<group>"; };
+		01A0A0010000000000000001 /* OreRefining.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OreRefining.swift; sourceTree = "<group>"; };
+		01A0B0010000000000000001 /* JumpFreighterLogistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JumpFreighterLogistics.swift; sourceTree = "<group>"; };
+		01A0B0020000000000000001 /* JumpFreighterLogisticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JumpFreighterLogisticsTests.swift; sourceTree = "<group>"; };
 		0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustrySystemIndexService.swift; sourceTree = "<group>"; };
 		06AC99CCF87D838E4211AD71 /* AppDataPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataPaths.swift; sourceTree = "<group>"; };
 		117EBA1775ABC2E46A9C6C4B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -227,9 +244,8 @@
 		5083443D1BA0C9BAC3493E20 /* SourceState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceState.swift; sourceTree = "<group>"; };
 		520CD44233AFF34B9A2A5C8F /* EVEOnlineServiceStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEOnlineServiceStatus.swift; sourceTree = "<group>"; };
 		55562529E8D8E64E9E34055C /* MemoizedIndustryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoizedIndustryCatalog.swift; sourceTree = "<group>"; };
-		556E4D9E564D673C4B552828 /* EVE Nexus Simple.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "EVE Nexus Simple.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		556E4D9E564D673C4B552828 /* EVE New Eden Nexus - Assets, Industry, Markets.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "EVE New Eden Nexus - Assets, Industry, Markets.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		58053BB787C584ABA9902B32 /* ProductionInputParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionInputParserTests.swift; sourceTree = "<group>"; };
-		019FC3000000000000000001 /* ProductionTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionTree.swift; sourceTree = "<group>"; };
 		5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderViews.swift; sourceTree = "<group>"; };
 		63E840AAB5750A598C980F11 /* BlueprintModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlueprintModels.swift; sourceTree = "<group>"; };
 		653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBookViews.swift; sourceTree = "<group>"; };
@@ -258,6 +274,7 @@
 		BE377FA66F95657D70359168 /* EVESSOService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVESSOService.swift; sourceTree = "<group>"; };
 		BEA7D7D00A16AD19F38B956B /* LoopbackCallbackServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoopbackCallbackServer.swift; sourceTree = "<group>"; };
 		C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionContractTests.swift; sourceTree = "<group>"; };
+		C2E98438B8A94102A6354E62 /* IndustryJobsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryJobsView.swift; sourceTree = "<group>"; };
 		CA2F5055B38824F803FA5FBA /* IndustryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryModels.swift; sourceTree = "<group>"; };
 		CED06FCDEA88E08CFA55E851 /* ProductionInputParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionInputParser.swift; sourceTree = "<group>"; };
 		CF480041A24E3F7755C5897D /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
@@ -267,7 +284,6 @@
 		E1121279592F9529DC639AF4 /* IndustryPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryPlannerTests.swift; sourceTree = "<group>"; };
 		E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBasisTests.swift; sourceTree = "<group>"; };
 		E4AC75DF5C57565C1C95D785 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		C2E98438B8A94102A6354E62 /* IndustryJobsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryJobsView.swift; sourceTree = "<group>"; };
 		E58C6EA5E4842768987863A4 /* EVENexusCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = EVENexusCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileReferenceComponents.swift; sourceTree = "<group>"; };
 		E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventionReadinessTests.swift; sourceTree = "<group>"; };
@@ -322,6 +338,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		019FC10B0000000000000020 /* Contracts */ = {
+			isa = PBXGroup;
+			children = (
+				019FC10B0000000000000003 /* PublicContractIndexer.swift */,
+				019FC10B0000000000000001 /* PublicContractModels.swift */,
+				019FC10B0000000000000002 /* PublicContractStore.swift */,
+			);
+			path = Contracts;
+			sourceTree = "<group>";
+		};
 		0E446FA62B66D55C59FDD5AE /* Blueprints */ = {
 			isa = PBXGroup;
 			children = (
@@ -347,6 +373,7 @@
 				D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */,
 				2075A47C979DE7B546D22CEC /* ESIClient.swift */,
 				1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */,
+				01A09C090000000000000002 /* UniverseTypeVolumeService.swift */,
 				520CD44233AFF34B9A2A5C8F /* EVEOnlineServiceStatus.swift */,
 				0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */,
 				4C7C78585E5BA3B164F251BC /* PlayerStructureSearchService.swift */,
@@ -354,16 +381,6 @@
 				38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */,
 			);
 			path = ESI;
-			sourceTree = "<group>";
-		};
-		019FC10B0000000000000020 /* Contracts */ = {
-			isa = PBXGroup;
-			children = (
-				019FC10B0000000000000003 /* PublicContractIndexer.swift */,
-				019FC10B0000000000000001 /* PublicContractModels.swift */,
-				019FC10B0000000000000002 /* PublicContractStore.swift */,
-			);
-			path = Contracts;
 			sourceTree = "<group>";
 		};
 		4AF4E25A3F6A792D0513C7E3 /* Update */ = {
@@ -388,6 +405,7 @@
 				D774BDC3DB16984A0AE06E68 /* JitaMarketService.swift */,
 				019FBE470000000000000001 /* MarketBrowserModels.swift */,
 				019FBE470000000000000002 /* MarketBrowserService.swift */,
+				01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */,
 				34B7BB4788BEBA60D7A5800B /* MarketModels.swift */,
 			);
 			path = Market;
@@ -427,8 +445,11 @@
 				788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */,
 				2752B0216E3CA21C973CDD83 /* IndustrySystemIndices.swift */,
 				8DC8486F6DF515AE09308AE1 /* InventionReadiness.swift */,
+				01A0B0010000000000000001 /* JumpFreighterLogistics.swift */,
 				019FC2000000000000000001 /* LogisticsCostCalculator.swift */,
 				55562529E8D8E64E9E34055C /* MemoizedIndustryCatalog.swift */,
+				01A0A0010000000000000001 /* OreRefining.swift */,
+				01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */,
 				A91941A4CADEFD1746872D53 /* ProductionBasis.swift */,
 				CED06FCDEA88E08CFA55E851 /* ProductionInputParser.swift */,
 				A555FBA531B59AA843FDF2BD /* ProductionJournal.swift */,
@@ -511,6 +532,7 @@
 				019FD0410000000000000004 /* PersistenceRecovery.swift */,
 				019FD0410000000000000003 /* PersistenceSchemaV1.swift */,
 				5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */,
+				019FE1000000000000000001 /* RecursiveProductionCalculationView.swift */,
 				F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */,
 				653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */,
 				E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */,
@@ -535,11 +557,13 @@
 				4D63C6D9737BFB95A38ED859 /* IndustryPlannerPerformanceTests.swift */,
 				E1121279592F9529DC639AF4 /* IndustryPlannerTests.swift */,
 				352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */,
+				01A0B0020000000000000001 /* JumpFreighterLogisticsTests.swift */,
 				E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */,
 				019FBE470000000000000004 /* MarketBrowserTests.swift */,
 				BBBDCD301666D06C8735887C /* MarketPricingTests.swift */,
 				40B81E1970CDE5ECE390B481 /* PersistenceStabilityTests.swift */,
 				E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */,
+				01A0D7370000000000000001 /* LoyaltyStoreCatalogTests.swift */,
 				58053BB787C584ABA9902B32 /* ProductionInputParserTests.swift */,
 				EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */,
 				019FC10B0000000000000005 /* PublicContractTests.swift */,
@@ -564,7 +588,7 @@
 			children = (
 				E58C6EA5E4842768987863A4 /* EVENexusCore.framework */,
 				9A0261C40A57129D5175FDC7 /* EVENexusCoreTests.xctest */,
-				556E4D9E564D673C4B552828 /* EVE Nexus Simple.app */,
+				556E4D9E564D673C4B552828 /* EVE New Eden Nexus - Assets, Industry, Markets.app */,
 				1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */,
 			);
 			name = Products;
@@ -639,7 +663,7 @@
 				AC79578EDDF540A631FCA360 /* EVEStaticDataKit */,
 			);
 			productName = EVENexusSimple;
-			productReference = 556E4D9E564D673C4B552828 /* EVE Nexus Simple.app */;
+			productReference = 556E4D9E564D673C4B552828 /* EVE New Eden Nexus - Assets, Industry, Markets.app */;
 			productType = "com.apple.product-type.application";
 		};
 		B9516674610675F02C224E08 /* CSQLite */ = {
@@ -748,11 +772,13 @@
 				73ABADB15A2BD4FA5FEE2E30 /* IndustryPlannerPerformanceTests.swift in Sources */,
 				2F272FC5588FAFBD87D0ADED /* IndustryPlannerTests.swift in Sources */,
 				EA30DEE9EDC4BAFD7B575678 /* IndustryRulesTests.swift in Sources */,
+				01A0B0020000000000000011 /* JumpFreighterLogisticsTests.swift in Sources */,
 				7F3AFE42523B5E194D8DA2C8 /* InventionReadinessTests.swift in Sources */,
 				019FBE470000000000000014 /* MarketBrowserTests.swift in Sources */,
 				356CA43B1852389B5D0DE060 /* MarketPricingTests.swift in Sources */,
 				EEDD4F60A1E90EF08684F7D8 /* PersistenceStabilityTests.swift in Sources */,
 				FCA1B225E89C22DE8A61E6C8 /* ProductionBasisTests.swift in Sources */,
+				01A0D7370000000000000011 /* LoyaltyStoreCatalogTests.swift in Sources */,
 				E0F526CDDC40158A77B76CF6 /* ProductionInputParserTests.swift in Sources */,
 				70F0B9F4FAE35585BD4438A2 /* ProductionOverviewTests.swift in Sources */,
 				019FC10B0000000000000015 /* PublicContractTests.swift in Sources */,
@@ -789,6 +815,7 @@
 				019FD0410000000000000014 /* PersistenceRecovery.swift in Sources */,
 				019FD0410000000000000013 /* PersistenceSchemaV1.swift in Sources */,
 				A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */,
+				019FE1000000000000000011 /* RecursiveProductionCalculationView.swift in Sources */,
 				B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */,
 				FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */,
 				29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */,
@@ -813,24 +840,29 @@
 				B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */,
 				C303BFC5D96562616A2E5B31 /* ESIClient.swift in Sources */,
 				5D6F2CE98F6969D5DF667A41 /* ESIDTOs.swift in Sources */,
+				01A09C090000000000000012 /* UniverseTypeVolumeService.swift in Sources */,
 				57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */,
 				99D95412344E68545253E28B /* EVEOnlineServiceStatus.swift in Sources */,
 				180F00EAEA55A5FECB622EDF /* EVESSOService.swift in Sources */,
 				B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */,
 				77707C0132DD1407672A8302 /* IndustryModels.swift in Sources */,
 				0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */,
+				01A0A0010000000000000011 /* OreRefining.swift in Sources */,
 				019FC3000000000000000011 /* ProductionTree.swift in Sources */,
 				012EB53DCA55C2E96CBDD71F /* IndustrySystemIndexService.swift in Sources */,
 				6B9BE172F270727A6C945825 /* IndustrySystemIndices.swift in Sources */,
 				D0D842AFB26403A28F33D42C /* InventionReadiness.swift in Sources */,
+				01A0B0010000000000000011 /* JumpFreighterLogistics.swift in Sources */,
 				019FC2000000000000000011 /* LogisticsCostCalculator.swift in Sources */,
 				E5380BF0913F7CD882038A4E /* JitaMarketService.swift in Sources */,
 				BC8A106455EAE98782C571DE /* KeychainRefreshTokenStore.swift in Sources */,
 				C06F91A81025FE554EB56413 /* LoopbackCallbackServer.swift in Sources */,
 				019FBE470000000000000011 /* MarketBrowserModels.swift in Sources */,
 				019FBE470000000000000012 /* MarketBrowserService.swift in Sources */,
+				01A09B090000000000000012 /* LoyaltyStoreCatalog.swift in Sources */,
 				C1331DC10EACED041A875426 /* MarketModels.swift in Sources */,
 				A1A07595FEE9253FD0A90517 /* MemoizedIndustryCatalog.swift in Sources */,
+				01A09D090000000000000012 /* PackagedVolumeSnapshotCatalog.swift in Sources */,
 				D64C9AA4A9EB1B7CB07EA070 /* PKCE.swift in Sources */,
 				C13D7DC0C18469290C1E5363 /* PlayerStructureSearchService.swift in Sources */,
 				019FC10B0000000000000013 /* PublicContractIndexer.swift in Sources */,
@@ -932,7 +964,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/XcodeSupport/CSQLite";
-				INFOPLIST_KEY_CFBundleDisplayName = "EVE Nexus Simple";
+				INFOPLIST_KEY_CFBundleDisplayName = "EVE New Eden Nexus - Assets, Industry, Markets";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -944,7 +976,9 @@
 					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.local.EVENexusSimple;
-				PRODUCT_NAME = "EVE Nexus Simple";
+				PRODUCT_NAME = "EVE New Eden Nexus - Assets, Industry, Markets";
+				PRODUCT_MODULE_NAME = EVE_Nexus_Simple;
+				INFOPLIST_KEY_CFBundleName = "EVE New Eden Nexus - Assets, Industry, Markets";
 				SDKROOT = macosx;
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/XcodeSupport/CSQLite";
 				SWIFT_VERSION = 6.0;
@@ -1075,7 +1109,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/XcodeSupport/CSQLite";
-				INFOPLIST_KEY_CFBundleDisplayName = "EVE Nexus Simple";
+				INFOPLIST_KEY_CFBundleDisplayName = "EVE New Eden Nexus - Assets, Industry, Markets";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1087,7 +1121,9 @@
 					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.local.EVENexusSimple;
-				PRODUCT_NAME = "EVE Nexus Simple";
+				PRODUCT_NAME = "EVE New Eden Nexus - Assets, Industry, Markets";
+				PRODUCT_MODULE_NAME = EVE_Nexus_Simple;
+				INFOPLIST_KEY_CFBundleName = "EVE New Eden Nexus - Assets, Industry, Markets";
 				SDKROOT = macosx;
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/XcodeSupport/CSQLite";
 				SWIFT_VERSION = 6.0;

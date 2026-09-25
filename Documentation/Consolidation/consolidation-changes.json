@@ -1,0 +1,16 @@
+{
+  "AGENTS.md": "changed",
+  "Documentation/ACCEPTANCE.md": "changed",
+  "Documentation/ADR-001-local-native-modular.md": "changed",
+  "Documentation/ARCHITECTURE.md": "changed",
+  "Documentation/PRODUCTION_BASIS.md": "changed",
+  "EVENexusSimple.xcodeproj/project.pbxproj": "changed",
+  "EVENexusSimple.xcodeproj/xcshareddata/xcschemes/EVENexusSimple.xcscheme": "changed",
+  "Optimierung.md": "changed",
+  "Package.swift": "changed",
+  "README.md": "changed",
+  "Sources/EVENexusSimpleApp/ContentView.swift": "changed",
+  "dev-diary.md": "changed",
+  "dokumentation.md": "changed",
+  "project.yml": "changed"
+}

@@ -6,6 +6,170 @@ import Testing
 @Suite("Production overview")
 struct ProductionOverviewTests {
   @Test
+  func allocatesSharedRecursiveCostsOnceAcrossFinishedProducts() throws {
+    let firstID = UUID()
+    let secondID = UUID()
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    func quote(typeID: Int64, quantity: Int64, total: Double) -> PriceQuote {
+      PriceQuote(
+        id: UUID(),
+        typeID: typeID,
+        quantity: quantity,
+        scenario: .materialBuy,
+        total: total,
+        weightedUnitPrice: total / Double(quantity),
+        filledQuantity: quantity,
+        capturedAt: Date(timeIntervalSince1970: 100),
+        source: source,
+        warnings: []
+      )
+    }
+    let firstQuote = quote(typeID: 34, quantity: 10, total: 100)
+    let secondQuote = quote(typeID: 35, quantity: 30, total: 300)
+    let requests = [
+      ProductionRequestLine(
+        id: firstID,
+        lineNumber: 1,
+        productName: "First Product",
+        wantedQuantity: 1,
+        materialEfficiency: 0,
+        timeEfficiency: 0
+      ),
+      ProductionRequestLine(
+        id: secondID,
+        lineNumber: 2,
+        productName: "Second Product",
+        wantedQuantity: 1,
+        materialEfficiency: 0,
+        timeEfficiency: 0
+      ),
+    ]
+    let plan = IndustryPlanSnapshot(
+      id: UUID(),
+      createdAt: Date(timeIntervalSince1970: 100),
+      requests: requests,
+      nodes: [
+        PlanNode(
+          id: UUID(), typeID: 100, name: "First Product",
+          requiredQuantity: 1, action: .produce, activity: .manufacturing,
+          runs: 1, materialEfficiency: 0, timeEfficiency: 0, children: [],
+          topLevelRequestID: firstID
+        ),
+        PlanNode(
+          id: UUID(), typeID: 34, name: "First Material",
+          requiredQuantity: 10, action: .buy, activity: nil, runs: nil,
+          materialEfficiency: nil, timeEfficiency: nil, children: [],
+          topLevelRequestID: firstID
+        ),
+        PlanNode(
+          id: UUID(), typeID: 200, name: "Second Product",
+          requiredQuantity: 1, action: .produce, activity: .manufacturing,
+          runs: 1, materialEfficiency: 0, timeEfficiency: 0, children: [],
+          topLevelRequestID: secondID
+        ),
+        PlanNode(
+          id: UUID(), typeID: 35, name: "Second Material",
+          requiredQuantity: 30, action: .buy, activity: nil, runs: nil,
+          materialEfficiency: nil, timeEfficiency: nil, children: [],
+          topLevelRequestID: secondID
+        ),
+      ],
+      materials: [
+        MaterialRequirement(
+          typeID: 34, name: "First Material", required: 10, fromStock: 0,
+          toBuy: 10, toProduce: 0, quote: firstQuote,
+          replacementQuote: firstQuote
+        ),
+        MaterialRequirement(
+          typeID: 35, name: "Second Material", required: 30, fromStock: 0,
+          toBuy: 30, toProduce: 0, quote: secondQuote,
+          replacementQuote: secondQuote
+        ),
+      ],
+      stockAllocations: [],
+      jobs: [],
+      materialCost: 400,
+      installationCost: 80,
+      costBreakdown: IndustryCostBreakdown(
+        materialCost: 400,
+        purchasedMaterialCost: 400,
+        stockMaterialCost: 0,
+        blueprintCosts: BlueprintCostBreakdown(
+          entries: [], requestsWithoutEnteredCost: [], total: 40
+        ),
+        systemIndexCost: 80,
+        facilityTax: 0,
+        sccSurcharge: 0,
+        alphaSurcharge: 0,
+        installationCost: 80,
+        logistics: nil,
+        logisticsCost: 20,
+        totalProductionCost: 540
+      ),
+      immediateSale: Self.emptySale(.immediateSale),
+      listedSale: Self.emptySale(.listedSale),
+      mainContractSale: nil,
+      homeImmediateSale: nil,
+      homeListedSale: nil,
+      homeContractSale: nil,
+      coalitionImmediateSale: nil,
+      coalitionListedSale: nil,
+      coalitionContractSale: nil,
+      totalJobSeconds: 1,
+      makespanSeconds: 1,
+      warnings: [],
+      explanations: [],
+      provenance: PlanProvenance(
+        sdeBuild: 1,
+        esiCompatibilityDate: "fixture",
+        snapshotIDs: [],
+        priceTimestamp: Date(timeIntervalSince1970: 100),
+        ruleVersion: "fixture"
+      )
+    )
+
+    let first = try #require(
+      ProductionOverviewProjector.projection(for: firstID, in: plan)
+    )
+    let second = try #require(
+      ProductionOverviewProjector.projection(for: secondID, in: plan)
+    )
+    #expect(first.materialCost == 100)
+    #expect(second.materialCost == 300)
+    #expect(first.installationCost == 20)
+    #expect(second.installationCost == 60)
+    #expect(first.blueprintCost == 10)
+    #expect(second.blueprintCost == 30)
+    #expect(first.logisticsCost == 5)
+    #expect(second.logisticsCost == 15)
+
+    var legacyObject = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(plan)
+      ) as? [String: Any]
+    )
+    for key in [
+      "mainContractSale",
+      "homeContractSale",
+      "coalitionImmediateSale",
+      "coalitionListedSale",
+      "coalitionContractSale",
+    ] {
+      legacyObject.removeValue(forKey: key)
+    }
+    let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+    let restored = try JSONDecoder().decode(
+      IndustryPlanSnapshot.self,
+      from: legacyData
+    )
+    #expect(restored.mainContractSale == nil)
+    #expect(restored.homeContractSale == nil)
+    #expect(restored.coalitionImmediateSale == nil)
+    #expect(restored.coalitionListedSale == nil)
+    #expect(restored.coalitionContractSale == nil)
+  }
+
+  @Test
   func projectionCarriesLogisticsAndSeparateFeeRatesFromThePlanSnapshot()
     throws
   {
@@ -30,6 +194,18 @@ struct ProductionOverviewTests {
       scenario: .listedSale,
       total: 1_880,
       weightedUnitPrice: 1_880,
+      filledQuantity: 1,
+      capturedAt: Date(timeIntervalSince1970: 100),
+      source: source,
+      warnings: []
+    )
+    let homeListedQuote = PriceQuote(
+      id: UUID(),
+      typeID: 100,
+      quantity: 1,
+      scenario: .listedSale,
+      total: 1_275,
+      weightedUnitPrice: 1_275,
       filledQuantity: 1,
       capturedAt: Date(timeIntervalSince1970: 100),
       source: source,
@@ -124,6 +300,8 @@ struct ProductionOverviewTests {
         grossRevenue: 2_000,
         salesTax: 100,
         brokerFee: 0,
+        outboundLogisticsCost: 400,
+        totalCost: 1_950,
         grossOrNetRevenue: 1_900,
         profit: 350,
         margin: 350 / 1_900,
@@ -135,14 +313,45 @@ struct ProductionOverviewTests {
         grossRevenue: 2_000,
         salesTax: 100,
         brokerFee: 20,
+        outboundLogisticsCost: 400,
+        totalCost: 1_950,
         grossOrNetRevenue: 1_880,
         profit: 330,
         margin: 330 / 1_880,
         roi: 330 / 1_550,
         quotes: [listedQuote]
       ),
-      homeImmediateSale: nil,
-      homeListedSale: nil,
+      mainContractSale: nil,
+      homeImmediateSale: SaleScenarioResult(
+        scenario: .immediateSale,
+        grossRevenue: 1_400,
+        salesTax: 140,
+        brokerFee: 0,
+        outboundLogisticsCost: 0,
+        totalCost: 1_550,
+        grossOrNetRevenue: 1_260,
+        profit: -290,
+        margin: -290 / 1_260,
+        roi: -290 / 1_550,
+        quotes: []
+      ),
+      homeListedSale: SaleScenarioResult(
+        scenario: .listedSale,
+        grossRevenue: 1_500,
+        salesTax: 150,
+        brokerFee: 75,
+        outboundLogisticsCost: 0,
+        totalCost: 1_550,
+        grossOrNetRevenue: 1_275,
+        profit: -275,
+        margin: -275 / 1_275,
+        roi: -275 / 1_550,
+        quotes: [homeListedQuote]
+      ),
+      homeContractSale: nil,
+      coalitionImmediateSale: nil,
+      coalitionListedSale: nil,
+      coalitionContractSale: nil,
       totalJobSeconds: 1,
       makespanSeconds: 1,
       warnings: [],
@@ -165,10 +374,36 @@ struct ProductionOverviewTests {
 
     #expect(projection.materialCost == 1_000)
     #expect(projection.installationCost == 200)
+    #expect(projection.blueprintCost == 50)
     #expect(projection.logisticsCost == 300)
     #expect(projection.salesTaxRate == 0.05)
     #expect(projection.brokerFeeRate == 0.01)
     #expect(projection.suggestedSalePricePerUnit == 2_000)
+
+    let homePlan = ProductionOverviewProjector.reconstructedPlan(
+      plan,
+      route: .mainToHome
+    )
+    let homeProjection = try #require(
+      ProductionOverviewProjector.projection(for: requestID, in: homePlan)
+    )
+    #expect(homeProjection.logisticsCost == 300)
+    #expect(homeProjection.salesTaxRate == 0.10)
+    #expect(homeProjection.brokerFeeRate == 0.05)
+    #expect(homeProjection.suggestedSalePricePerUnit == 1_500)
+    #expect(homePlan.costBreakdown?.totalProductionCost == 1_550)
+
+    let returnPlan = ProductionOverviewProjector.reconstructedPlan(
+      plan,
+      route: .mainToHomeToMain
+    )
+    let returnProjection = try #require(
+      ProductionOverviewProjector.projection(for: requestID, in: returnPlan)
+    )
+    #expect(returnProjection.logisticsCost == 700)
+    #expect(returnProjection.salesTaxRate == 0.05)
+    #expect(returnProjection.brokerFeeRate == 0.01)
+    #expect(returnPlan.costBreakdown?.totalProductionCost == 1_950)
   }
 
   @Test
@@ -248,6 +483,34 @@ struct ProductionOverviewTests {
   }
 
   @Test
+  func capitalWithoutApplicableBrokerFeeStillCalculatesMinimumAndProfit() {
+    let calculation = ProductionOverviewCalculation(
+      units: 10,
+      materialCost: 100,
+      installationCost: 20,
+      blueprintCost: 10,
+      logisticsCost: 5,
+      salesTaxRate: 0.05,
+      brokerFeeRate: nil,
+      brokerFeeIsApplicable: false,
+      salePricePerUnit: 20,
+      soldUnits: 4
+    )
+
+    #expect(calculation.productionCost == 135)
+    #expect(calculation.salesTax == 10)
+    #expect(calculation.brokerFee == nil)
+    #expect(calculation.netSaleTotal == 190)
+    #expect(
+      abs((calculation.minimumSalePricePerUnit ?? 0) - 15.631_578_947)
+        < 0.000_001
+    )
+    #expect(calculation.projectedProfit == 55)
+    #expect(abs((calculation.margin ?? 0) - 55 / 190) < 0.000_001)
+    #expect(calculation.realProfit == -59)
+  }
+
+  @Test
   func realProfitUsesSoldTaxAndFullListingBrokerFee() {
     func calculation(soldUnits: Int64) -> ProductionOverviewCalculation {
       ProductionOverviewCalculation(
@@ -308,5 +571,18 @@ struct ProductionOverviewTests {
     #expect(calculation.saleTotal == nil)
     #expect(calculation.projectedProfit == nil)
     #expect(calculation.realProfit == nil)
+  }
+
+  private static func emptySale(
+    _ scenario: PriceScenario
+  ) -> SaleScenarioResult {
+    SaleScenarioResult(
+      scenario: scenario,
+      grossOrNetRevenue: nil,
+      profit: nil,
+      margin: nil,
+      roi: nil,
+      quotes: []
+    )
   }
 }

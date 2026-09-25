@@ -1,4 +1,45 @@
-# Repository interaction rules
+# EVE New Eden Nexus - Assets, Industry, Markets
+
+Projekt: EVE New Eden Nexus - Assets, Industry, Markets
+
+Standardmodell: Astra Medium
+
+Aktuelle Regel: Es gibt nur einen aktiven Projektstand.
+
+Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
+
+Einziger aktiver Projektordner: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`.
+Diese Regeln ersetzen die Projektsteuerung aller Legacy-Stände; historische
+Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
+
+## Verbindliche Arbeitsgrenzen
+
+- In dieser Phase ausschließlich Konsolidierung; keine neuen Funktionen planen
+  oder implementieren, keine Produktlogik ändern und keine vorhandenen Funktionen
+  unbeabsichtigt entfernen. Nach dem Konsolidierungsbericht stoppen.
+- Tatsächlicher Quellcode, vorhandener Diff und konkrete Benutzeranweisung haben
+  Vorrang vor historischen Planungen. Geplant, implementiert, getestet und vom
+  Eigentümer abgenommen getrennt ausweisen.
+- Vor Änderungen Branch, HEAD, Index und Arbeitsbaum prüfen. Vorhandene lokale
+  Änderungen erhalten. Altstände nicht löschen; ihre Herkunft und Konflikte
+  in `Documentation/Consolidation/DECISIONS.md` dokumentieren.
+- Aktuelle Steuerdateien sind README, PROJECT_STATE, ARCHITECTURE, PRODUCT,
+  WORKFLOW, MODEL_POLICY und ROADMAP im Projektstamm. Detailverträge unter
+  `Documentation/` bleiben erhalten. Alte Einstiegspfade sind nur Verweise.
+- Bundle-ID, Swift-Module, Keychain-Dienste, OAuth-Callback, UserDefaults,
+  Datenbankpfade, Schemas und Migrationsketten nicht durch Namensbereinigung ändern.
+- Bestehende deterministische Fachregeln, explizite fehlende Datenzustände,
+  SDE-/ESI-Trennung und lokale Datenintegrität bewahren. Keine produktiven
+  Benutzerdaten als Testdaten verwenden; keine Tokens in Git oder Protokollen.
+- Bei Code-/Projektänderungen SwiftPM und natives Xcode-Debug prüfen; das lokale
+  `EVEStaticDataKit` separat testen. Live-Abnahmen bleiben opt-in.
+- Git nur in dieser eigenen Repository-Wurzel verwenden, niemals im
+  übergeordneten Home-Repository. Der Benutzerauftrag autorisiert den lokalen
+  Konsolidierungs-Checkpoint. Kein Push, Force-Push oder Umschreiben der Historie.
+- `MODEL_POLICY.md` ist die verbindliche Modellvorgabe; keine automatische
+  Eskalation auf andere Modelle oder selbstständige Folgearbeit.
+
+## Erhaltene Interaktionsregeln
 
 ## Copyable EVE names
 
@@ -22,8 +63,8 @@
 
 ## Continuous documentation
 
-- Keep `dokumentation.md` current as part of every implementation, bug fix, migration, configuration change, or material behavior change. Documentation is part of the change, not a deferred follow-up.
+- Keep `PRODUCT.md` current as part of every implementation, bug fix, migration, configuration change, or material behavior change. Documentation is part of the change, not a deferred follow-up.
 - Record the corresponding development step in `dev-diary.md` with its date, scope, result, verification evidence, and remaining open work.
-- Describe only the current factual behavior in `dokumentation.md`; move chronology and superseded behavior to `dev-diary.md` instead of leaving contradictory guidance in the main documentation.
+- Describe only the current factual behavior in `PRODUCT.md`; move chronology and superseded behavior to `dev-diary.md` instead of leaving contradictory guidance in the main documentation.
 - Keep planned, implemented, automatically verified, live-service-verified, and owner-accepted states distinct. Never present one evidence level as another.
 - Link to the authoritative contract or evidence under `Documentation/` rather than duplicating detailed rules in several files. Preserve explicit unavailable, partial, stale, forbidden, and unresolved states in all documentation.

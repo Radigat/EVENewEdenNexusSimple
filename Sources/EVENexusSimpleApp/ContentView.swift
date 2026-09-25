@@ -8,11 +8,13 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case dashboard
   case industryJobs
   case planner
+  case recursiveProductionCalculation
   case marketBrowser
   case manufacturingOpportunities
   case publicContracts
   case reactions
   case moonMaterialAnalysis
+  case mineralPurchaseAnalysis
   case items
   case warehouse
   case blueprints
@@ -23,16 +25,22 @@ enum NavigationSection: String, CaseIterable, Identifiable {
 
   var id: Self { self }
 
+  static var establishedCases: [Self] {
+    allCases
+  }
+
   var title: LocalizedStringKey {
     switch self {
     case .dashboard: "Dashboard"
     case .industryJobs: "Industry Jobs"
     case .planner: "Planner"
+    case .recursiveProductionCalculation: "Recursive calculation"
     case .marketBrowser: "Market Browser"
     case .manufacturingOpportunities: "Main Hub Opportunities"
     case .publicContracts: "Public Contracts"
     case .reactions: "Reactions"
     case .moonMaterialAnalysis: "Moon purchase analysis"
+    case .mineralPurchaseAnalysis: "Mineral purchase analysis"
     case .items: "All items"
     case .warehouse: "Warehouse"
     case .blueprints: "Blueprints"
@@ -48,11 +56,13 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .dashboard: "gauge.with.dots.needle.67percent"
     case .industryJobs: "hammer.fill"
     case .planner: "hammer.fill"
+    case .recursiveProductionCalculation: "arrow.triangle.branch"
     case .marketBrowser: "chart.bar.doc.horizontal"
     case .manufacturingOpportunities: "chart.line.uptrend.xyaxis"
     case .publicContracts: "doc.text.magnifyingglass"
     case .reactions: "atom"
     case .moonMaterialAnalysis: "chart.xyaxis.line"
+    case .mineralPurchaseAnalysis: "circle.grid.3x3.fill"
     case .items: "square.grid.2x2.fill"
     case .warehouse: "shippingbox.fill"
     case .blueprints: "doc.on.doc.fill"
@@ -69,6 +79,7 @@ enum DataSettingsSection: String, CaseIterable, Identifiable {
   case sde
   case esi
   case industrySettings
+  case logistics
   case marketSettings
 
   var id: Self { self }
@@ -79,6 +90,7 @@ enum DataSettingsSection: String, CaseIterable, Identifiable {
     case .sde: "SDE"
     case .esi: "ESI"
     case .industrySettings: "Industry Settings"
+    case .logistics: "Logistics"
     case .marketSettings: "Market Settings"
     }
   }
@@ -89,6 +101,7 @@ enum DataSettingsSection: String, CaseIterable, Identifiable {
     case .sde: "externaldrive.fill"
     case .esi: "network"
     case .industrySettings: "slider.horizontal.3"
+    case .logistics: "truck.box.fill"
     case .marketSettings: "building.columns.fill"
     }
   }
@@ -104,10 +117,121 @@ struct HistoricalPlannerRequest: Equatable {
   }
 }
 
+struct PlannerLaunchRequest: Equatable {
+  let id: UUID
+  let productTypeID: Int64
+  let productName: String
+  let requestedRuns: Int
+  let wantedQuantity: Int
+  let materialEfficiency: Int
+  let timeEfficiency: Int
+  let blueprintSupplyPlanData: Data?
+  let sourceSnapshotIDs: [UUID]
+
+  init(
+    id: UUID = UUID(),
+    productTypeID: Int64,
+    productName: String,
+    requestedRuns: Int,
+    wantedQuantity: Int,
+    materialEfficiency: Int,
+    timeEfficiency: Int,
+    blueprintSupplyPlans: [BlueprintSupplyPlan] = [],
+    sourceSnapshotIDs: [UUID] = []
+  ) {
+    self.id = id
+    self.productTypeID = productTypeID
+    self.productName = productName
+    self.requestedRuns = min(
+      ManufacturingOpportunitySettings.maximumRequestedRuns,
+      max(1, requestedRuns)
+    )
+    self.wantedQuantity = min(
+      ProductionInputParser.maximumWantedQuantity,
+      max(1, wantedQuantity)
+    )
+    self.materialEfficiency = min(10, max(0, materialEfficiency))
+    self.timeEfficiency = min(20, max(0, timeEfficiency))
+    self.blueprintSupplyPlanData =
+      blueprintSupplyPlans.isEmpty
+      ? nil : try? JSONEncoder().encode(blueprintSupplyPlans)
+    self.sourceSnapshotIDs = Array(Set(sourceSnapshotIDs)).sorted {
+      $0.uuidString < $1.uuidString
+    }
+  }
+
+  var blueprintSupplyPlans: [BlueprintSupplyPlan] {
+    guard let blueprintSupplyPlanData else { return [] }
+    return
+      (try? JSONDecoder().decode(
+        [BlueprintSupplyPlan].self,
+        from: blueprintSupplyPlanData
+      )) ?? []
+  }
+
+  var inputLine: String {
+    ProductionInputFormatter.format([
+      ProductionRequestLine(
+        lineNumber: 1,
+        productName: productName,
+        wantedQuantity: wantedQuantity,
+        materialEfficiency: materialEfficiency,
+        timeEfficiency: timeEfficiency
+      )
+    ])
+  }
+}
+
+enum PlannerLaunchApplicationMode {
+  case replace
+  case append
+}
+
+enum PlannerLaunchInputPolicy {
+  static func requiresExplicitChoice(
+    currentInput: String,
+    hasCalculatedPlan: Bool
+  ) -> Bool {
+    hasCalculatedPlan
+      || !currentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  static func applying(
+    _ request: PlannerLaunchRequest,
+    to currentInput: String,
+    mode: PlannerLaunchApplicationMode
+  ) -> String {
+    switch mode {
+    case .replace:
+      request.inputLine
+    case .append:
+      ProductionInputFormatter.appending(request.inputLine, to: currentInput)
+    }
+  }
+}
+
+enum MainHubOpportunityPlannerHandoff {
+  static func request(
+    productTypeID: Int64,
+    productName: String,
+    requestedRuns: Int,
+    wantedQuantity: Int,
+    materialEfficiency: Int,
+    timeEfficiency: Int
+  ) -> PlannerLaunchRequest {
+    PlannerLaunchRequest(
+      productTypeID: productTypeID,
+      productName: productName,
+      requestedRuns: requestedRuns,
+      wantedQuantity: wantedQuantity,
+      materialEfficiency: materialEfficiency,
+      timeEfficiency: timeEfficiency
+    )
+  }
+}
+
 struct ContentView: View {
-  @EnvironmentObject private var runtime: RuntimeState
-  @AppStorage(AppLanguage.storageKey, store: AppDefaults.store)
-  private var storedLanguage = AppLanguage.defaultLanguage.rawValue
+  let runtime: RuntimeState
   @Query(sort: \StoredProductionBasis.updatedAt, order: .reverse)
   private var storedBases: [StoredProductionBasis]
   @Query(sort: \StoredCharacter.characterName)
@@ -115,16 +239,21 @@ struct ContentView: View {
   @State private var selection: NavigationSection? = .dashboard
   @State private var dataSettingsSelection: DataSettingsSection = .general
   @State private var historicalPlannerRequest: HistoricalPlannerRequest?
+  @State private var plannerLaunchRequest: PlannerLaunchRequest?
   @State private var didPreparePlannerConfiguration = false
   @StateObject private var profileNavigationGuard =
     ProfileNavigationGuard()
 
   var body: some View {
     NavigationSplitView {
-      List(NavigationSection.allCases, selection: guardedSelection) { item in
-        Label(item.title, systemImage: item.icon)
-          .tag(item)
-          .accessibilityIdentifier("navigation.\(item.rawValue)")
+      List(selection: guardedSelection) {
+        Section("Established workflows") {
+          ForEach(NavigationSection.establishedCases) { item in
+            Label(item.title, systemImage: item.icon)
+              .tag(item)
+              .accessibilityIdentifier("navigation.\(item.rawValue)")
+          }
+        }
       }
       .scrollContentBackground(.hidden)
       .background(DesignTokens.sidebar)
@@ -133,21 +262,24 @@ struct ContentView: View {
         ideal: DesignTokens.sidebarIdeal
       )
       .safeAreaInset(edge: .bottom) {
-        Image("BrandLogo")
-          .resizable()
-          .interpolation(.high)
-          .scaledToFit()
-          .frame(maxWidth: 124)
-          .accessibilityLabel("New Eden Nexus Simple")
-          .frame(maxWidth: .infinity)
-          .padding(.horizontal, DesignTokens.spacingMD)
-          .padding(.vertical, DesignTokens.spacingSM)
-          .background(DesignTokens.sidebarElevated)
-          .overlay(alignment: .top) {
-            Rectangle()
-              .fill(DesignTokens.border)
-              .frame(height: 1)
-          }
+        VStack(spacing: 0) {
+          PublicContractSidebarStatus(runtime: runtime)
+          Image("BrandLogo")
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(maxWidth: 124)
+            .accessibilityLabel("EVE New Eden Nexus - Assets, Industry, Markets")
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, DesignTokens.spacingMD)
+            .padding(.vertical, DesignTokens.spacingSM)
+        }
+        .background(DesignTokens.sidebarElevated)
+        .overlay(alignment: .top) {
+          Rectangle()
+            .fill(DesignTokens.border)
+            .frame(height: 1)
+        }
       }
     } detail: {
       VStack(spacing: 0) {
@@ -165,18 +297,28 @@ struct ContentView: View {
             }
           case .planner:
             PlannerView(
-              historicalPlannerRequest: $historicalPlannerRequest
+              historicalPlannerRequest: $historicalPlannerRequest,
+              launchRequest: $plannerLaunchRequest,
+              runtime: runtime
             )
+          case .recursiveProductionCalculation:
+            RecursiveProductionCalculationView(runtime: runtime)
           case .marketBrowser:
             MarketBrowserView()
           case .manufacturingOpportunities:
-            ManufacturingOpportunitiesView()
+            ManufacturingOpportunitiesView { request in
+              historicalPlannerRequest = nil
+              plannerLaunchRequest = request
+              selection = .planner
+            }
           case .publicContracts:
             PublicContractsView()
           case .reactions:
             ReactionsView()
           case .moonMaterialAnalysis:
             MoonMaterialPurchaseAnalysisView()
+          case .mineralPurchaseAnalysis:
+            MineralPurchaseAnalysisView()
           case .items:
             AssetsWarehouseView(mode: .allItems)
           case .warehouse:
@@ -199,7 +341,6 @@ struct ContentView: View {
         }
         .background(DesignTokens.canvas)
       }
-      .id(storedLanguage)
     }
     .navigationSplitViewStyle(.balanced)
     .tint(DesignTokens.accent)
@@ -292,17 +433,305 @@ struct ContentView: View {
   }
 }
 
-private struct DashboardOwnedJob: Identifiable {
-  let characterID: Int64
-  let characterName: String
-  let job: ESIIndustryJobDTO
-
-  var id: String { "\(characterID):\(job.jobID)" }
+enum PublicContractBackgroundPhase: Equatable {
+  case disabled
+  case preparing
+  case failed
+  case stopping
+  case synchronizing
+  case incomplete
+  case partial
+  case syncFailed
+  case scheduled
+  case current
 }
 
-private struct DashboardCapacitySummary {
-  let value: Int?
-  let isComplete: Bool
+struct PublicContractBackgroundPresentation: Equatable {
+  let phase: PublicContractBackgroundPhase
+  let progressFraction: Double?
+
+  init(
+    storeState: PublicContractStoreState,
+    progress: PublicContractSyncProgress,
+    isSynchronizing: Bool,
+    isCancelling: Bool,
+    automaticUpdatesEnabled: Bool
+  ) {
+    let hasIncompleteInitialImport =
+      progress.regionCount == 0
+      || progress.remainingInitialRegions > 0
+      || progress.pendingItemContracts > 0
+    let hasPartialIndex =
+      progress.phase == .partial
+      || progress.failedRegions > 0
+      || progress.failedItemContracts > 0
+    switch storeState {
+    case .disabled:
+      phase = .disabled
+    case .preparing:
+      phase = .preparing
+    case .failed:
+      phase = .failed
+    case .ready where isCancelling:
+      phase = .stopping
+    case .ready where isSynchronizing:
+      phase = .synchronizing
+    case .ready where hasIncompleteInitialImport:
+      phase = .incomplete
+    case .ready where hasPartialIndex:
+      phase = .partial
+    case .ready where progress.phase == .failed:
+      phase = .syncFailed
+    case .ready where automaticUpdatesEnabled:
+      phase = .scheduled
+    case .ready:
+      phase = .current
+    }
+
+    guard isSynchronizing else {
+      progressFraction = nil
+      return
+    }
+    switch progress.phase {
+    case .loadingRegions:
+      progressFraction = 0.01
+    case .loadingContracts:
+      guard progress.regionCount > 0 else {
+        progressFraction = 0.05
+        return
+      }
+      progressFraction = min(
+        0.4,
+        0.05 + 0.35 * Double(progress.completedRegions)
+          / Double(progress.regionCount)
+      )
+    case .loadingItems:
+      guard progress.indexedContracts > 0 else {
+        progressFraction = 0.4
+        return
+      }
+      progressFraction = min(
+        1,
+        0.4 + 0.6
+          * Double(progress.indexedContracts - progress.pendingItemContracts)
+          / Double(progress.indexedContracts)
+      )
+    case .completed:
+      progressFraction = 1
+    default:
+      progressFraction = nil
+    }
+  }
+}
+
+struct PublicContractSidebarStatus: View {
+  @ObservedObject var runtime: RuntimeState
+
+  private var presentation: PublicContractBackgroundPresentation {
+    PublicContractBackgroundPresentation(
+      storeState: runtime.publicContractStoreState,
+      progress: runtime.publicContractProgress,
+      isSynchronizing: runtime.isSynchronizingPublicContracts,
+      isCancelling: runtime.isCancellingPublicContracts,
+      automaticUpdatesEnabled: runtime.publicContractAutomaticUpdatesEnabled
+    )
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Label("Contract import", systemImage: statusIcon)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(statusColor)
+      Text(statusText)
+        .font(.caption2)
+        .foregroundStyle(statusDetailColor)
+        .fixedSize(horizontal: false, vertical: true)
+      if let progressFraction = presentation.progressFraction {
+        ProgressView(value: progressFraction)
+          .tint(DesignTokens.accent)
+          .controlSize(.mini)
+      }
+      Text(progressText)
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+      action
+        .font(.caption)
+        .controlSize(.small)
+    }
+    .padding(.horizontal, DesignTokens.spacingMD)
+    .padding(.vertical, DesignTokens.spacingSM)
+    // SwiftUI also measures the sidebar at zero width to derive its minimum
+    // window size. Bound the wrapping width so fixed-height status text does
+    // not force the entire split view taller than the screen.
+    .frame(
+      minWidth: DesignTokens.sidebarMinimum,
+      maxWidth: .infinity,
+      alignment: .leading
+    )
+    .background(
+      presentation.phase == .incomplete
+        ? DesignTokens.negative.opacity(0.08) : Color.clear
+    )
+    .overlay(alignment: .top) {
+      Rectangle()
+        .fill(DesignTokens.border)
+        .frame(height: 1)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("navigation.public-contract-background-status")
+  }
+
+  private var statusText: String {
+    switch presentation.phase {
+    case .disabled:
+      return "Public Contracts background services are disabled".localizedUI
+    case .preparing:
+      return "Preparing the local index in the background. The menu remains available."
+        .localizedUI
+    case .failed:
+      return "The local index could not be prepared. Existing data was not replaced."
+        .localizedUI
+    case .stopping:
+      return "Stopping safely; partial progress remains stored.".localizedUI
+    case .synchronizing:
+      return "The import runs in the background. You can switch sections at any time."
+        .localizedUI
+    case .incomplete:
+      return
+        ("First import: allow two to three days. Start or continue it here without opening the contract list.")
+        .localizedUI
+    case .partial:
+      return "A partial index was preserved. Continue the background import when convenient."
+        .localizedUI
+    case .syncFailed:
+      return "The background import stopped with an error. Existing data was preserved."
+        .localizedUI
+    case .scheduled:
+      return "Automatic continuation is scheduled in the background.".localizedUI
+    case .current:
+      return "The local Public Contracts index is current.".localizedUI
+    }
+  }
+
+  private var progressText: String {
+    AppLocalization.format(
+      "%lld/%lld regions · %lld details pending",
+      Int64(runtime.publicContractProgress.completedRegions),
+      Int64(runtime.publicContractProgress.regionCount),
+      Int64(runtime.publicContractProgress.pendingItemContracts)
+    )
+  }
+
+  @ViewBuilder private var action: some View {
+    switch presentation.phase {
+    case .preparing, .disabled:
+      EmptyView()
+    case .failed:
+      Button("Retry preparation") {
+        runtime.retryPublicContractStorePreparation()
+      }
+      .accessibilityIdentifier("navigation.public-contract-retry")
+    case .stopping:
+      Button("Stopping …") {}
+        .disabled(true)
+    case .synchronizing:
+      Button("Pause background import", role: .cancel) {
+        runtime.cancelPublicContractSynchronization()
+      }
+      .accessibilityIdentifier("navigation.public-contract-pause")
+    case .incomplete, .partial, .syncFailed:
+      Button("Start or continue in background") {
+        runtime.startPublicContractSynchronization()
+      }
+      .buttonStyle(.borderedProminent)
+      .accessibilityIdentifier("navigation.public-contract-start")
+    case .scheduled:
+      HStack(spacing: DesignTokens.spacingXS) {
+        Button("Update now") {
+          runtime.startPublicContractSynchronization()
+        }
+        Button("Pause") {
+          runtime.cancelPublicContractSynchronization()
+        }
+      }
+    case .current:
+      Button("Update in background") {
+        runtime.startPublicContractSynchronization()
+      }
+    }
+  }
+
+  private var statusIcon: String {
+    switch presentation.phase {
+    case .preparing, .stopping: "hourglass"
+    case .failed, .syncFailed: "exclamationmark.triangle.fill"
+    case .synchronizing: "arrow.triangle.2.circlepath"
+    case .incomplete: "exclamationmark.octagon.fill"
+    case .partial: "exclamationmark.triangle.fill"
+    case .scheduled: "clock.arrow.circlepath"
+    case .current: "checkmark.circle.fill"
+    case .disabled: "pause.circle"
+    }
+  }
+
+  private var statusColor: Color {
+    switch presentation.phase {
+    case .failed, .incomplete, .syncFailed: DesignTokens.negative
+    case .partial: DesignTokens.caution
+    case .synchronizing: DesignTokens.accent
+    case .current, .scheduled: DesignTokens.positive
+    case .preparing, .stopping, .disabled: DesignTokens.textSecondary
+    }
+  }
+
+  private var statusDetailColor: Color {
+    switch presentation.phase {
+    case .failed, .incomplete, .syncFailed: DesignTokens.negative
+    case .partial: DesignTokens.caution
+    default: DesignTokens.textSecondary
+    }
+  }
+}
+
+private struct DashboardIndustryRefreshIdentity: Hashable {
+  let inputHash: Int
+  let activeSDEBuild: Int?
+}
+
+private enum DashboardWealthSeries: String, CaseIterable, Identifiable {
+  case total
+  case wallet
+  case assets
+  case industryInProgress
+
+  var id: Self { self }
+
+  var title: LocalizedStringKey {
+    switch self {
+    case .total: "Total"
+    case .wallet: "Wallet"
+    case .assets: "Assets"
+    case .industryInProgress: "In production"
+    }
+  }
+
+  var color: Color {
+    switch self {
+    case .total: DesignTokens.highlight
+    case .wallet: DesignTokens.accent
+    case .assets: DesignTokens.positive
+    case .industryInProgress: DesignTokens.caution
+    }
+  }
+
+  func value(in snapshot: DashboardWealthSnapshot) -> Double? {
+    switch self {
+    case .total: snapshot.knownTotalValue
+    case .wallet: snapshot.walletTotal
+    case .assets: snapshot.assetTotal
+    case .industryInProgress: snapshot.industryInProgressTotal
+    }
+  }
 }
 
 struct DashboardView: View {
@@ -313,7 +742,13 @@ struct DashboardView: View {
   @Query(sort: \AppSetting.key)
   private var settings: [AppSetting]
   @State private var blueprintNames: [Int64: String] = [:]
+  @State private var industrySnapshot = DashboardIndustrySnapshot.empty
   @State private var wealthPersistenceError: String?
+  @State private var isRefreshingDashboardData = false
+  @State private var dashboardDataRefreshMessage: String?
+  @State private var dashboardDataRefreshError: String?
+  @State private var hasFinishedDashboardStartupRefresh = false
+  @State private var selectedDashboardWealthSeries: DashboardWealthSeries = .total
   @AppStorage(
     "dashboard.reaction-opportunity-groups",
     store: AppDefaults.store
@@ -359,20 +794,38 @@ struct DashboardView: View {
       }
     }
     .navigationTitle(AppLocalization.text("Dashboard"))
-    .task(id: jobTypeIdentity) {
-      blueprintNames = await runtime.resolveAssetTypeNames(jobTypeIDs)
+    .task(id: dashboardIndustryRefreshIdentity) {
+      let inputs = dashboardIndustryInputs
+      let prepared = await Task.detached(priority: .utility) {
+        DashboardIndustrySnapshotBuilder.build(inputs: inputs)
+      }.value
+      guard !Task.isCancelled else { return }
+      industrySnapshot = prepared
+      blueprintNames = await runtime.resolveAssetTypeNames(prepared.jobTypeIDs)
       if runtime.mineralPriceTickerState == nil {
         await runtime.refreshMineralPriceTicker()
       }
     }
     .task(id: wealthInputIdentity) {
+      guard hasFinishedDashboardStartupRefresh else { return }
       await runtime.refreshDashboardWealth(inputs: wealthInputs)
-      if let snapshot = runtime.dashboardWealthSnapshot {
+      if runtime.dashboardWealthError == nil,
+        let snapshot = runtime.dashboardWealthSnapshot
+      {
         persistWealthSnapshot(snapshot)
       }
     }
     .task(id: mainHubAutomationIdentity) {
       runtime.prepareMainHubMarketAutomation()
+    }
+    .task(id: dashboardStartupCharacterIdentity) {
+      guard !characters.isEmpty else { return }
+      guard runtime.reserveDashboardStartupRefresh() else {
+        hasFinishedDashboardStartupRefresh = true
+        return
+      }
+      await refreshDashboardData(isStartup: true)
+      hasFinishedDashboardStartupRefresh = true
     }
   }
 
@@ -710,8 +1163,8 @@ struct DashboardView: View {
   }
 
   private func jobCapacityPanel(now: Date) -> some View {
-    let running = jobs.filter { $0.job.isRunning(at: now) }
-    let overall = overallCapacity
+    let running = industrySnapshot.jobs.filter { $0.job.isRunning(at: now) }
+    let overall = industrySnapshot.overallCapacity
     return Panel(title: "Industry capacity") {
       HStack(alignment: .firstTextBaseline) {
         Text("\(running.count)")
@@ -728,43 +1181,63 @@ struct DashboardView: View {
           freshnessPill(.partial, text: "Partial")
         }
       }
-      LazyVGrid(
-        columns: [GridItem(.adaptive(minimum: 240), spacing: DesignTokens.spacingSM)],
-        spacing: DesignTokens.spacingSM
-      ) {
-        ForEach(DashboardIndustryActivity.allCases) { activity in
-          let activityRunning = running.filter {
-            $0.job.dashboardActivity == activity
-          }.count
-          let capacity = capacity(for: activity)
-          VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-            Label(activityTitle(activity), systemImage: activityIcon(activity))
-              .font(.caption.weight(.semibold))
-              .lineLimit(1)
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-              Text("\(activityRunning)")
-                .font(.title2.bold().monospacedDigit())
-              Text("/ \(capacityText(capacity))")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(DesignTokens.textSecondary)
-            }
-            if activity.usesSharedScienceSlots {
-              Text("Shared science slots")
-                .font(.caption2)
-                .foregroundStyle(DesignTokens.textSecondary)
-            }
-          }
-          .padding(DesignTokens.spacingSM)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(DesignTokens.elevated)
-          .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
-        }
+      ViewThatFits(in: .horizontal) {
+        industryCapacityGrid(running: running, columnCount: 3)
+          .frame(minWidth: 744)
+        industryCapacityGrid(running: running, columnCount: 2)
+          .frame(minWidth: 496)
+        industryCapacityGrid(running: running, columnCount: 1)
       }
       jobDataNotice
       Button(action: onOpenIndustryJobs) {
         Label("Show all industry jobs", systemImage: "list.bullet.rectangle")
       }
       .buttonStyle(.bordered)
+    }
+  }
+
+  private func industryCapacityGrid(
+    running: [DashboardIndustryOwnedJob],
+    columnCount: Int
+  ) -> some View {
+    LazyVGrid(
+      columns: Array(
+        repeating: GridItem(
+          .flexible(minimum: 240),
+          spacing: DesignTokens.spacingSM,
+          alignment: .top
+        ),
+        count: columnCount
+      ),
+      spacing: DesignTokens.spacingSM
+    ) {
+      ForEach(DashboardIndustryActivity.allCases) { activity in
+        let activityRunning = running.filter {
+          $0.job.dashboardActivity == activity
+        }.count
+        let capacity = industrySnapshot.capacity(for: activity)
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Label(activityTitle(activity), systemImage: activityIcon(activity))
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+          HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text("\(activityRunning)")
+              .font(.title2.bold().monospacedDigit())
+            Text("/ \(capacityText(capacity))")
+              .font(.callout.monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
+          if activity.usesSharedScienceSlots {
+            Text("Shared science slots")
+              .font(.caption2)
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+        .padding(DesignTokens.spacingSM)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DesignTokens.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+      }
     }
   }
 
@@ -793,7 +1266,21 @@ struct DashboardView: View {
           .foregroundStyle(DesignTokens.textSecondary)
         }
         Spacer()
-        freshnessPill(walletPortfolio.freshness)
+        VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
+          freshnessPill(walletPortfolio.freshness)
+          Button {
+            Task { await refreshDashboardData(isStartup: false) }
+          } label: {
+            if isRefreshingDashboardData {
+              ProgressView().controlSize(.small)
+            } else {
+              Label("Refresh dashboard", systemImage: "arrow.clockwise")
+            }
+          }
+          .buttonStyle(.bordered)
+          .disabled(isRefreshingDashboardData || characters.isEmpty)
+          .accessibilityIdentifier("dashboard.refresh")
+        }
       }
       Divider()
       ForEach(walletPortfolio.balances) { row in
@@ -819,23 +1306,38 @@ struct DashboardView: View {
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
+      if let dashboardDataRefreshMessage {
+        Label(dashboardDataRefreshMessage, systemImage: "checkmark.circle.fill")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.positive)
+      }
+      if let dashboardDataRefreshError {
+        Label(dashboardDataRefreshError, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
+      }
     }
   }
 
   private func readyJobsPanel(now: Date) -> some View {
-    let ready = jobs.filter { $0.job.isReadyForDelivery(at: now) }
-      .sorted {
-        $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
-          == .orderedAscending
-      }
+    let ready = industrySnapshot.jobs.filter {
+      $0.job.isReadyForDelivery(at: now)
+    }
+    .sorted {
+      $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
+        == .orderedAscending
+    }
     return Panel(title: "Ready for delivery", fillsAvailableHeight: true) {
-      if ready.isEmpty {
+      if isPreparingIndustrySnapshot {
+        Label("Preparing", systemImage: "hourglass")
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else if ready.isEmpty {
         Label(
-          hasAnyJobSnapshot
+          industrySnapshot.hasAnyJobSnapshot
             ? "No jobs are currently ready for delivery."
             : "Synchronize characters to load industry jobs.",
           systemImage:
-            hasAnyJobSnapshot
+            industrySnapshot.hasAnyJobSnapshot
             ? "checkmark.circle" : "arrow.triangle.2.circlepath"
         )
         .foregroundStyle(DesignTokens.textSecondary)
@@ -849,13 +1351,16 @@ struct DashboardView: View {
 
   private func upcomingJobsPanel(now: Date) -> some View {
     let cutoff = now.addingTimeInterval(48 * 60 * 60)
-    let upcoming = jobs.filter {
+    let upcoming = industrySnapshot.jobs.filter {
       $0.job.isRunning(at: now) && $0.job.endDate <= cutoff
     }.sorted { $0.job.endDate < $1.job.endDate }
     return Panel(title: "Next 48 hours", fillsAvailableHeight: true) {
-      if upcoming.isEmpty {
+      if isPreparingIndustrySnapshot {
+        Label("Preparing", systemImage: "hourglass")
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else if upcoming.isEmpty {
         Label(
-          hasAnyJobSnapshot
+          industrySnapshot.hasAnyJobSnapshot
             ? "No running jobs finish within the next 48 hours."
             : "Synchronize characters to load the next completions.",
           systemImage: "clock"
@@ -913,7 +1418,11 @@ struct DashboardView: View {
         ForEach(filteredNegativeReactions.prefix(8)) { row in
           HStack {
             VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-              EVEEntityText(value: row.productName, font: .callout.weight(.semibold))
+              EVEItemText(
+                value: row.productName,
+                typeID: row.productTypeID,
+                font: .callout.weight(.semibold)
+              )
               Text(row.groupName)
                 .font(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
@@ -956,11 +1465,25 @@ struct DashboardView: View {
         }
       }
       if wealthHistory.count > 1 {
+        Picker("Displayed history", selection: $selectedDashboardWealthSeries) {
+          ForEach(DashboardWealthSeries.allCases) { series in
+            Text(series.title).tag(series)
+          }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("dashboard.wealth-series")
         DashboardWealthChart(
-          values: wealthHistory.compactMap(\.knownTotalValue),
-          color: DesignTokens.highlight
+          samples: wealthHistory.compactMap { snapshot in
+            selectedDashboardWealthSeries.value(in: snapshot).map {
+              DashboardWealthChartSample(
+                date: snapshot.capturedAt,
+                value: $0
+              )
+            }
+          },
+          color: selectedDashboardWealthSeries.color
         )
-        .frame(height: 86)
+        .frame(height: 112)
         .accessibilityLabel("Total net-worth history")
       } else {
         Label(
@@ -971,6 +1494,27 @@ struct DashboardView: View {
         .foregroundStyle(DesignTokens.textSecondary)
       }
       if let snapshot = runtime.dashboardWealthSnapshot {
+        LazyVGrid(
+          columns: [GridItem(.adaptive(minimum: 128))],
+          alignment: .leading,
+          spacing: DesignTokens.spacingXS
+        ) {
+          dashboardWealthComponent(
+            title: "Wallet",
+            value: snapshot.walletTotal,
+            color: DesignTokens.accent
+          )
+          dashboardWealthComponent(
+            title: "Assets",
+            value: snapshot.assetTotal,
+            color: DesignTokens.positive
+          )
+          dashboardWealthComponent(
+            title: "In production",
+            value: snapshot.industryInProgressTotal,
+            color: DesignTokens.caution
+          )
+        }
         Divider()
         ForEach(snapshot.characters) { character in
           HStack {
@@ -1019,10 +1563,15 @@ struct DashboardView: View {
             }
             Spacer()
             DashboardWealthChart(
-              values: wealthHistory.compactMap { history in
+              samples: wealthHistory.compactMap { history in
                 history.characters.first {
                   $0.characterID == character.characterID
-                }?.knownValue
+                }?.knownValue.map {
+                  DashboardWealthChartSample(
+                    date: history.capturedAt,
+                    value: $0
+                  )
+                }
               },
               color: DesignTokens.accent
             )
@@ -1033,11 +1582,25 @@ struct DashboardView: View {
           }
         }
         Text(
-          "Assets and own outstanding contract items use ESI average prices with adjusted prices as the visible fallback. Blueprint copies are excluded; courier collateral is an estimate. Missing personal or accessible corporation values remain partial and are never treated as zero."
+          "Assets and own outstanding contract items use ESI average prices with adjusted prices as the visible fallback. Consumed Manufacturing and Reaction materials remain under In production until delivery; missing facility or rig modifiers make that component an explicit estimate. Blueprint copies are excluded; courier collateral is an estimate. Missing personal or accessible corporation values remain partial and are never treated as zero."
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
+        if let error = runtime.dashboardWealthError {
+          Label {
+            Text(
+              AppLocalization.format(
+                "%@ Showing the previous valuation.",
+                AppLocalization.text(error)
+              )
+            )
+          } icon: {
+            Image(systemName: "exclamationmark.triangle")
+          }
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
+        }
       } else if let error = runtime.dashboardWealthError {
         Label {
           Text(AppLocalization.text(error))
@@ -1080,8 +1643,31 @@ struct DashboardView: View {
     .menuStyle(.borderlessButton)
   }
 
+  private func dashboardWealthComponent(
+    title: LocalizedStringKey,
+    value: Double?,
+    color: Color
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      HStack(spacing: DesignTokens.spacingXS) {
+        Circle().fill(color).frame(width: 7, height: 7)
+        Text(title)
+          .font(.caption.weight(.semibold))
+      }
+      Text(value.map(formatISK) ?? AppLocalization.text("Unavailable"))
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(
+          value == nil ? DesignTokens.textSecondary : DesignTokens.textPrimary
+        )
+    }
+    .padding(DesignTokens.spacingXS)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+  }
+
   private func dashboardJobRow(
-    _ owned: DashboardOwnedJob,
+    _ owned: DashboardIndustryOwnedJob,
     trailing: String
   ) -> some View {
     HStack(spacing: DesignTokens.spacingSM) {
@@ -1089,9 +1675,10 @@ struct DashboardView: View {
         .foregroundStyle(DesignTokens.accent)
         .frame(width: 18)
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-        EVEEntityText(
+        EVEItemText(
           value: blueprintNames[owned.job.blueprintTypeID]
             ?? AppLocalization.format("Blueprint #%lld", owned.job.blueprintTypeID),
+          typeID: owned.job.blueprintTypeID,
           font: .callout.weight(.semibold),
           lineLimit: 1
         )
@@ -1109,40 +1696,48 @@ struct DashboardView: View {
     .accessibilityElement(children: .combine)
   }
 
-  private var jobSnapshots: [(StoredCharacter, Sourced<[ESIIndustryJobDTO]>)] {
-    let values = Dictionary(uniqueKeysWithValues: settings.map { ($0.key, $0.value) })
-    return characters.compactMap { character in
-      guard let encoded = values[AppSettingKey.industryJobs(characterID: character.characterID)],
-        let data = Data(base64Encoded: encoded),
-        let snapshot = try? JSONDecoder().decode(
-          Sourced<[ESIIndustryJobDTO]>.self,
-          from: data
-        )
-      else { return nil }
-      return (character, snapshot)
+  private var dashboardIndustryRefreshIdentity: DashboardIndustryRefreshIdentity {
+    var hasher = Hasher()
+    let jobSettings = jobSettingsByCharacterID
+    for character in characters {
+      hasher.combine(character.characterID)
+      hasher.combine(character.characterName)
+      hasher.combine(character.capabilitySnapshot)
+      hasher.combine(jobSettings[character.characterID])
+    }
+    return DashboardIndustryRefreshIdentity(
+      inputHash: hasher.finalize(),
+      activeSDEBuild: runtime.activeSDEBuild
+    )
+  }
+
+  private var dashboardIndustryInputs: [DashboardIndustryCharacterInput] {
+    let jobSettings = jobSettingsByCharacterID
+    return characters.map { character in
+      DashboardIndustryCharacterInput(
+        characterID: character.characterID,
+        characterName: character.characterName,
+        capabilitySnapshot: character.capabilitySnapshot,
+        jobSnapshot: jobSettings[character.characterID].flatMap {
+          Data(base64Encoded: $0)
+        }
+      )
     }
   }
 
-  private var jobs: [DashboardOwnedJob] {
-    jobSnapshots.flatMap { character, snapshot in
-      (snapshot.value ?? []).map {
-        DashboardOwnedJob(
-          characterID: character.characterID,
-          characterName: character.characterName,
-          job: $0
+  private var jobSettingsByCharacterID: [Int64: String] {
+    let settingsByKey = Dictionary(
+      settings.map { ($0.key, $0.value) },
+      uniquingKeysWith: { _, latest in latest }
+    )
+    return Dictionary(
+      uniqueKeysWithValues: characters.compactMap { character in
+        let key = AppSettingKey.industryJobs(
+          characterID: character.characterID
         )
+        return settingsByKey[key].map { (character.characterID, $0) }
       }
-    }
-  }
-
-  private var hasAnyJobSnapshot: Bool { !jobSnapshots.isEmpty }
-
-  private var jobTypeIDs: Set<Int64> {
-    Set(jobs.map { $0.job.blueprintTypeID })
-  }
-
-  private var jobTypeIdentity: String {
-    jobTypeIDs.sorted().map(String.init).joined(separator: ",")
+    )
   }
 
   private var mainHubAutomationIdentity: String {
@@ -1156,60 +1751,23 @@ struct DashboardView: View {
     ].joined(separator: ":")
   }
 
-  private func capacity(
-    for activity: DashboardIndustryActivity
-  ) -> DashboardCapacitySummary {
-    guard !characters.isEmpty else {
-      return DashboardCapacitySummary(value: nil, isComplete: false)
-    }
-    var total = 0
-    var known = 0
-    for character in characters {
-      guard let data = character.capabilitySnapshot,
-        let capability = try? JSONDecoder().decode(
-          CharacterCapabilitySnapshot.self,
-          from: data
-        ),
-        let value = IndustrySlotCapacityRules.capacity(
-          for: activity,
-          skills: capability.skills
-        )
-      else { continue }
-      total += value
-      known += 1
-    }
-    return DashboardCapacitySummary(
-      value: known > 0 ? total : nil,
-      isComplete: known == characters.count
-    )
-  }
-
-  private var overallCapacity: DashboardCapacitySummary {
-    let pools: [DashboardIndustryActivity] = [
-      .manufacturing, .reaction, .copying,
-    ]
-    let summaries = pools.map(capacity(for:))
-    guard summaries.allSatisfy({ $0.value != nil }) else {
-      return DashboardCapacitySummary(value: nil, isComplete: false)
-    }
-    return DashboardCapacitySummary(
-      value: summaries.compactMap(\.value).reduce(0, +),
-      isComplete: summaries.allSatisfy(\.isComplete)
-    )
-  }
-
-  private func capacityText(_ summary: DashboardCapacitySummary) -> String {
+  private func capacityText(
+    _ summary: DashboardIndustryCapacitySummary
+  ) -> String {
     guard let value = summary.value else { return "—" }
     return summary.isComplete ? String(value) : "≥\(value)"
   }
 
+  private var isPreparingIndustrySnapshot: Bool {
+    industrySnapshot.characterCount != characters.count
+  }
+
   private var jobDataNotice: some View {
-    let incomplete =
-      jobSnapshots.filter {
-        $0.1.state != .fresh
-      }.count + max(0, characters.count - jobSnapshots.count)
+    let incomplete = industrySnapshot.incompleteJobSourceCount
     return Group {
-      if characters.isEmpty {
+      if isPreparingIndustrySnapshot {
+        Text("Preparing")
+      } else if characters.isEmpty {
         Text(
           "Connect a character under Data & Settings to load jobs and skills."
         )
@@ -1253,7 +1811,9 @@ struct DashboardView: View {
         openOrders: storedOpenOrders(character),
         privateContracts: storedPrivateContracts(character),
         corporationAssets: storedCorporationAssetSnapshot(character),
-        corporationWallet: storedCorporationWallet(character)
+        corporationWallet: storedCorporationWallet(character),
+        industryJobs: storedIndustryJobs(character),
+        blueprints: storedBlueprintSnapshot(character)
       )
     }
   }
@@ -1262,6 +1822,10 @@ struct DashboardView: View {
     characters.map {
       "\($0.characterID):\($0.lastSyncAt?.timeIntervalSince1970 ?? -1):\($0.walletLastSyncAt?.timeIntervalSince1970 ?? -1)"
     }.joined(separator: "|")
+  }
+
+  private var dashboardStartupCharacterIdentity: String {
+    characters.map { String($0.characterID) }.joined(separator: ",")
   }
 
   private var wealthHistory: [DashboardWealthSnapshot] {
@@ -1348,6 +1912,79 @@ struct DashboardView: View {
     }
   }
 
+  @MainActor
+  private func refreshDashboardData(isStartup: Bool) async {
+    guard !isRefreshingDashboardData, !characters.isEmpty else { return }
+    isRefreshingDashboardData = true
+    dashboardDataRefreshMessage = nil
+    dashboardDataRefreshError = nil
+    defer { isRefreshingDashboardData = false }
+
+    var synchronizedCount = 0
+    var failures: [String] = []
+    let orderedCharacters = characters.sorted {
+      $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
+        == .orderedAscending
+    }
+    for character in orderedCharacters {
+      guard !Task.isCancelled else { return }
+      do {
+        let authorization = try JSONDecoder().decode(
+          AuthorizationSnapshot.self,
+          from: character.authorizationSnapshot
+        )
+        try await runtime.syncCharacter(
+          authorization: authorization,
+          clientID: EVEConstants.ssoClientID
+        )
+        guard let latest = runtime.lastCharacterSync,
+          latest.authorization.characterID == character.characterID
+        else {
+          throw ESIError.notFound
+        }
+        try CharacterSyncPersistence.apply(
+          latest,
+          to: character,
+          in: modelContext
+        )
+        try modelContext.save()
+        synchronizedCount += 1
+      } catch {
+        modelContext.rollback()
+        failures.append(character.characterName)
+      }
+    }
+
+    if !runtime.isRefreshingDashboardWealth {
+      await runtime.refreshDashboardWealth(inputs: wealthInputs)
+      if runtime.dashboardWealthError == nil,
+        let snapshot = runtime.dashboardWealthSnapshot
+      {
+        persistWealthSnapshot(snapshot)
+      }
+    }
+
+    if failures.isEmpty {
+      dashboardDataRefreshMessage =
+        isStartup
+        ? AppLocalization.format(
+          "Dashboard updated at app start for %lld characters.",
+          Int64(synchronizedCount)
+        )
+        : AppLocalization.format(
+          "Dashboard updated for %lld characters.",
+          Int64(synchronizedCount)
+        )
+    } else {
+      dashboardDataRefreshError = AppLocalization.format(
+        "%lld of %lld characters updated; unavailable characters kept their previous data: %@",
+        Int64(synchronizedCount),
+        Int64(orderedCharacters.count),
+        failures.joined(separator: ", ")
+      )
+    }
+  }
+
   private func storedWalletBalance(_ character: StoredCharacter) -> Sourced<Double> {
     if let data = character.walletBalanceSnapshot,
       let value = try? JSONDecoder().decode(Sourced<Double>.self, from: data)
@@ -1369,31 +2006,11 @@ struct DashboardView: View {
   private func storedOpenOrders(
     _ character: StoredCharacter
   ) -> Sourced<[ESICharacterOrderDTO]> {
-    guard
-      let encoded = settings.first(where: {
-        $0.key
-          == AppSettingKey.openOrders(
-            characterID: character.characterID
-          )
-      })?.value,
-      let data = Data(base64Encoded: encoded),
-      let value = try? JSONDecoder().decode(
-        Sourced<[ESICharacterOrderDTO]>.self,
-        from: data
-      )
-    else {
-      return Sourced(
-        state: .unavailable,
-        value: nil,
-        source: SourceIdentity(
-          provider: "Local",
-          version: "not-synchronized",
-          capturedAt: character.lastSyncAt ?? .distantPast
-        ),
-        diagnostics: ["orders.not-synchronized"]
-      )
-    }
-    return value
+    storedSettingSnapshot(
+      key: AppSettingKey.openOrders(characterID: character.characterID),
+      capturedAt: character.lastSyncAt,
+      diagnostic: "orders.not-synchronized"
+    )
   }
 
   private func storedPrivateContracts(
@@ -1406,6 +2023,33 @@ struct DashboardView: View {
       capturedAt: character.lastSyncAt,
       diagnostic: "private-contracts.not-synchronized"
     )
+  }
+
+  private func storedIndustryJobs(
+    _ character: StoredCharacter
+  ) -> Sourced<[ESIIndustryJobDTO]> {
+    storedSettingSnapshot(
+      key: AppSettingKey.industryJobs(characterID: character.characterID),
+      capturedAt: character.lastSyncAt,
+      diagnostic: "industry-jobs.not-synchronized"
+    )
+  }
+
+  private func storedBlueprintSnapshot(
+    _ character: StoredCharacter
+  ) -> Sourced<[OwnedBlueprintInstance]> {
+    guard let data = character.blueprintSnapshot,
+      let value = try? JSONDecoder().decode(
+        Sourced<[OwnedBlueprintInstance]>.self,
+        from: data
+      )
+    else {
+      return unavailableStoredSource(
+        capturedAt: character.lastSyncAt,
+        diagnostic: "blueprints.not-synchronized"
+      )
+    }
+    return value
   }
 
   private func storedCorporationWallet(
@@ -1442,8 +2086,15 @@ struct DashboardView: View {
     capturedAt: Date?,
     diagnostic: String
   ) -> Sourced<Value> {
+    let persistedValue: String?
+    do {
+      persistedValue = try modelContext.appSettingValue(for: key)
+    } catch {
+      persistedValue = nil
+    }
     guard
-      let encoded = settings.first(where: { $0.key == key })?.value,
+      let encoded = persistedValue
+        ?? settings.first(where: { $0.key == key })?.value,
       let data = Data(base64Encoded: encoded),
       let value = try? JSONDecoder().decode(Sourced<Value>.self, from: data)
     else {
@@ -1601,32 +2252,63 @@ struct DashboardView: View {
   }
 }
 
+private struct DashboardWealthChartSample {
+  let date: Date
+  let value: Double
+}
+
 private struct DashboardWealthChart: View {
-  let values: [Double]
+  let samples: [DashboardWealthChartSample]
   let color: Color
 
   var body: some View {
     GeometryReader { proxy in
-      let valid = values.filter { $0.isFinite }
+      let valid = samples.filter { $0.value.isFinite }.sorted {
+        $0.date < $1.date
+      }
       if valid.count > 1 {
-        let minimum = valid.min() ?? 0
-        let maximum = valid.max() ?? minimum
-        let range = max(maximum - minimum, max(abs(maximum) * 0.01, 1))
-        Path { path in
-          for (index, value) in valid.enumerated() {
-            let x =
-              proxy.size.width * CGFloat(index)
-              / CGFloat(valid.count - 1)
-            let normalized = (value - minimum) / range
-            let y = proxy.size.height * (1 - CGFloat(normalized))
-            if index == 0 {
-              path.move(to: CGPoint(x: x, y: y))
-            } else {
-              path.addLine(to: CGPoint(x: x, y: y))
+        let values = valid.map(\.value)
+        let minimum = values.min() ?? 0
+        let maximum = values.max() ?? minimum
+        let rawRange = maximum - minimum
+        let padding = max(rawRange * 0.12, max(abs(maximum) * 0.005, 1))
+        let lower = max(0, minimum - padding)
+        let upper = max(lower + 1, maximum + padding)
+        let range = upper - lower
+        let firstDate = valid[0].date
+        let lastDate = valid[valid.count - 1].date
+        let duration = max(lastDate.timeIntervalSince(firstDate), 1)
+        ZStack(alignment: .bottom) {
+          Path { path in
+            for (index, sample) in valid.enumerated() {
+              let x =
+                proxy.size.width
+                * CGFloat(sample.date.timeIntervalSince(firstDate) / duration)
+              let normalized = (sample.value - lower) / range
+              let y = (proxy.size.height - 18) * (1 - CGFloat(normalized))
+              if index == 0 {
+                path.move(to: CGPoint(x: x, y: y))
+              } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+              }
             }
           }
+          .stroke(
+            color,
+            style: StrokeStyle(
+              lineWidth: 2,
+              lineCap: .round,
+              lineJoin: .round
+            )
+          )
+          HStack {
+            Text(firstDate.formatted(date: .abbreviated, time: .omitted))
+            Spacer()
+            Text(lastDate.formatted(date: .abbreviated, time: .omitted))
+          }
+          .font(.caption2)
+          .foregroundStyle(DesignTokens.textSecondary)
         }
-        .stroke(color, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
       } else if !valid.isEmpty {
         Circle()
           .fill(color)
@@ -1642,42 +2324,164 @@ private struct DashboardWealthChart: View {
 private struct DashboardMineralTicker: View {
   let rows: [MineralPriceTrend]
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.scenePhase) private var scenePhase
 
   private let itemWidth: CGFloat = 190
+  private let animationDuration: TimeInterval = 32
 
   var body: some View {
     if reduceMotion {
       ScrollView(.horizontal) {
-        tickerContent(repeated: false)
+        DashboardMineralTickerContent(
+          rows: rows,
+          repetitions: 1,
+          itemWidth: itemWidth
+        )
       }
       .scrollIndicators(.hidden)
     } else {
-      GeometryReader { proxy in
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-          let width = max(itemWidth, CGFloat(rows.count) * itemWidth)
-          let progress =
-            timeline.date.timeIntervalSinceReferenceDate
-            .truncatingRemainder(dividingBy: 32) / 32
-          tickerContent(repeated: true)
-            .offset(x: -CGFloat(progress) * width)
-            .frame(
-              width: max(proxy.size.width, width * 2),
-              alignment: .leading
-            )
-        }
-      }
+      DashboardMineralTickerMarquee(
+        rows: rows,
+        itemWidth: itemWidth,
+        animationDuration: animationDuration,
+        isActive: scenePhase == .active
+      )
       .clipped()
     }
   }
+}
 
-  private func tickerContent(repeated: Bool) -> some View {
+private struct DashboardMineralTickerMarquee: NSViewRepresentable {
+  let rows: [MineralPriceTrend]
+  let itemWidth: CGFloat
+  let animationDuration: TimeInterval
+  let isActive: Bool
+
+  func makeNSView(context: Context) -> DashboardMineralTickerMarqueeView {
+    let view = DashboardMineralTickerMarqueeView()
+    view.update(
+      rows: rows,
+      itemWidth: itemWidth,
+      animationDuration: animationDuration,
+      isActive: isActive
+    )
+    return view
+  }
+
+  func updateNSView(
+    _ nsView: DashboardMineralTickerMarqueeView,
+    context: Context
+  ) {
+    nsView.update(
+      rows: rows,
+      itemWidth: itemWidth,
+      animationDuration: animationDuration,
+      isActive: isActive
+    )
+  }
+}
+
+@MainActor
+private final class DashboardMineralTickerMarqueeView: NSView {
+  private var hostingView: NSHostingView<DashboardMineralTickerContent>?
+  private var rows: [MineralPriceTrend] = []
+  private var itemWidth: CGFloat = 190
+  private var animationDuration: TimeInterval = 32
+  private var isAnimationActive = false
+  private var lastLayoutSize: CGSize = .zero
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    layer?.masksToBounds = true
+  }
+
+  required init?(coder: NSCoder) {
+    nil
+  }
+
+  func update(
+    rows: [MineralPriceTrend],
+    itemWidth: CGFloat,
+    animationDuration: TimeInterval,
+    isActive: Bool
+  ) {
+    let contentChanged = self.rows != rows || self.itemWidth != itemWidth
+    let timingChanged = self.animationDuration != animationDuration
+    self.rows = rows
+    self.itemWidth = itemWidth
+    self.animationDuration = animationDuration
+    isAnimationActive = isActive && !rows.isEmpty
+
+    let content = DashboardMineralTickerContent(
+      rows: rows,
+      repetitions: 2,
+      itemWidth: itemWidth
+    )
+    if let hostingView {
+      if contentChanged {
+        hostingView.rootView = content
+      }
+    } else {
+      let hostingView = NSHostingView(rootView: content)
+      hostingView.wantsLayer = true
+      hostingView.layerContentsRedrawPolicy = .onSetNeedsDisplay
+      addSubview(hostingView)
+      self.hostingView = hostingView
+    }
+
+    needsLayout = true
+    layoutSubtreeIfNeeded()
+    updateAnimation(restart: contentChanged || timingChanged)
+  }
+
+  override func layout() {
+    super.layout()
+    guard let hostingView else { return }
+    let contentWidth = max(itemWidth, CGFloat(rows.count) * itemWidth)
+    let newSize = CGSize(
+      width: max(bounds.width, contentWidth * 2),
+      height: bounds.height
+    )
+    hostingView.frame = CGRect(origin: .zero, size: newSize)
+    if newSize != lastLayoutSize {
+      lastLayoutSize = newSize
+      updateAnimation(restart: true)
+    }
+  }
+
+  private func updateAnimation(restart: Bool) {
+    guard let contentLayer = hostingView?.layer else { return }
+    if !isAnimationActive {
+      contentLayer.removeAnimation(forKey: "mineral-marquee")
+      return
+    }
+    guard restart || contentLayer.animation(forKey: "mineral-marquee") == nil
+    else { return }
+
+    let contentWidth = max(itemWidth, CGFloat(rows.count) * itemWidth)
+    let animation = CABasicAnimation(keyPath: "transform.translation.x")
+    animation.fromValue = 0
+    animation.toValue = -contentWidth
+    animation.duration = animationDuration
+    animation.repeatCount = .infinity
+    animation.timingFunction = CAMediaTimingFunction(name: .linear)
+    animation.isRemovedOnCompletion = false
+    contentLayer.add(animation, forKey: "mineral-marquee")
+  }
+}
+
+private struct DashboardMineralTickerContent: View {
+  let rows: [MineralPriceTrend]
+  let repetitions: Int
+  let itemWidth: CGFloat
+
+  var body: some View {
     HStack(spacing: 0) {
-      ForEach(
-        Array((repeated ? rows + rows : rows).enumerated()),
-        id: \.offset
-      ) { _, row in
+      ForEach(0..<(rows.count * repetitions), id: \.self) { index in
+        let row = rows[index % rows.count]
         HStack(spacing: DesignTokens.spacingSM) {
-          Text(verbatim: row.name)
+          EVEItemText(value: row.name, typeID: row.typeID, iconSize: 20)
             .font(.callout.weight(.semibold))
           Text(row.averagePrice.formatted(.number.precision(.fractionLength(2))))
             .font(.callout.monospacedDigit())
@@ -1764,6 +2568,8 @@ private struct DataSettingsWorkspace: View {
           CharactersView()
         case .industrySettings:
           ProfilesView()
+        case .logistics:
+          LogisticsSettingsView()
         case .marketSettings:
           MarketSettingsView()
         }
@@ -1910,7 +2716,7 @@ private struct GeneralSettingsView: View {
       Text("Example")
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
-      EVEEntityText(value: "Tritanium")
+      EVEItemText(value: "Tritanium", typeID: 34)
       EVEEntityText(value: "Jita IV-4")
       EVEEntityText(value: "The Forge")
     }
@@ -2353,6 +3159,125 @@ struct EVEEntityLabel: View {
   }
 }
 
+enum EVETypeImageURL {
+  static func icon(typeID: Int64) -> URL? {
+    guard typeID > 0 else { return nil }
+    return URL(
+      string:
+        "https://images.evetech.net/types/\(typeID)/icon?size=64&tenant=tranquility"
+    )
+  }
+
+  static func render(typeID: Int64) -> URL? {
+    guard typeID > 0 else { return nil }
+    return URL(
+      string:
+        "https://images.evetech.net/types/\(typeID)/render?size=64&tenant=tranquility"
+    )
+  }
+}
+
+enum EVETypeImageKind {
+  case icon
+  case render
+}
+
+struct EVEItemIcon: View {
+  let typeID: Int64
+  var size: CGFloat = 22
+  var imageKind: EVETypeImageKind = .icon
+
+  var body: some View {
+    Group {
+      if imageKind == .render,
+        let renderURL = EVETypeImageURL.render(typeID: typeID)
+      {
+        remoteImage(
+          url: renderURL,
+          fallbackURL: EVETypeImageURL.icon(typeID: typeID)
+        )
+      } else if let iconURL = EVETypeImageURL.icon(typeID: typeID) {
+        remoteImage(url: iconURL, fallbackURL: nil)
+      } else {
+        fallbackIcon(systemName: "photo.badge.exclamationmark")
+      }
+    }
+    .frame(width: size, height: size)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: max(3, size * 0.18)))
+    .overlay {
+      RoundedRectangle(cornerRadius: max(3, size * 0.18))
+        .stroke(DesignTokens.border.opacity(0.7), lineWidth: 0.5)
+    }
+    .accessibilityHidden(true)
+  }
+
+  @ViewBuilder
+  private func remoteImage(url: URL, fallbackURL: URL?) -> some View {
+    AsyncImage(url: url) { phase in
+      switch phase {
+      case .success(let image):
+        image
+          .resizable()
+          .scaledToFit()
+      case .failure:
+        if let fallbackURL {
+          AsyncImage(url: fallbackURL) { fallbackPhase in
+            switch fallbackPhase {
+            case .success(let fallbackImage):
+              fallbackImage
+                .resizable()
+                .scaledToFit()
+            case .failure:
+              fallbackIcon(systemName: "photo.badge.exclamationmark")
+            case .empty:
+              fallbackIcon(systemName: "shippingbox")
+            @unknown default:
+              fallbackIcon(systemName: "shippingbox")
+            }
+          }
+        } else {
+          fallbackIcon(systemName: "photo.badge.exclamationmark")
+        }
+      case .empty:
+        fallbackIcon(systemName: "shippingbox")
+      @unknown default:
+        fallbackIcon(systemName: "shippingbox")
+      }
+    }
+  }
+
+  private func fallbackIcon(systemName: String) -> some View {
+    Image(systemName: systemName)
+      .resizable()
+      .scaledToFit()
+      .padding(size * 0.2)
+      .foregroundStyle(DesignTokens.textSecondary)
+  }
+}
+
+struct EVEItemText: View {
+  let value: String
+  let typeID: Int64
+  var font: Font = .body.weight(.semibold)
+  var lineLimit: Int? = nil
+  var iconSize: CGFloat = 22
+  var imageKind: EVETypeImageKind = .icon
+  var accessibilityIdentifier: String? = nil
+
+  var body: some View {
+    HStack(spacing: DesignTokens.spacingXS) {
+      EVEItemIcon(typeID: typeID, size: iconSize, imageKind: imageKind)
+      EVEEntityText(
+        value: value,
+        font: font,
+        lineLimit: lineLimit,
+        accessibilityIdentifier: accessibilityIdentifier
+      )
+    }
+  }
+}
+
 enum AppTableSortDirection: String, Sendable {
   case ascending
   case descending
@@ -2544,6 +3469,7 @@ struct Panel<Content: View>: View {
 struct FullWidthDisclosureButton<Label: View>: View {
   let isExpanded: Bool
   let action: () -> Void
+  var fillsAvailableHeight = false
   @ViewBuilder let label: Label
 
   var body: some View {
@@ -2563,6 +3489,12 @@ struct FullWidthDisclosureButton<Label: View>: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .frame(
+      maxWidth: .infinity,
+      maxHeight: fillsAvailableHeight ? .infinity : nil,
+      alignment: .topLeading
+    )
+    .contentShape(Rectangle())
     .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
   }
 }

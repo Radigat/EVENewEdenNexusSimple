@@ -23,6 +23,10 @@ public struct SDEUpdatePreview: Equatable, Sendable {
     availability == .notInstalled || availability == .updateAvailable
   }
 
+  public var allowsSameBuildReimport: Bool {
+    availability == .current
+  }
+
   public var requiresSchemaReview: Bool {
     schemaHighestAfterBuild > (activeBuild ?? 0)
   }
@@ -46,6 +50,8 @@ public enum SDELifecycleError: Error, Equatable, Sendable {
   case metadataNotModifiedWithoutCache
   case confirmationDoesNotMatchPreview
   case schemaReviewNotConfirmed
+  case updateNotRequired
+  case sameBuildReimportUnavailable
 }
 
 public actor SDELifecycleService {
@@ -139,6 +145,36 @@ public actor SDELifecycleService {
     preview: SDEUpdatePreview,
     schemaReviewConfirmed: Bool,
     progress: SDEInstallationProgressHandler? = nil
+  ) async throws -> SDEActivationSummary {
+    guard preview.requiresUpdate else {
+      throw SDELifecycleError.updateNotRequired
+    }
+    return try await installValidated(
+      preview: preview,
+      schemaReviewConfirmed: schemaReviewConfirmed,
+      progress: progress
+    )
+  }
+
+  public func reimportCurrentConfirmed(
+    preview: SDEUpdatePreview,
+    schemaReviewConfirmed: Bool,
+    progress: SDEInstallationProgressHandler? = nil
+  ) async throws -> SDEActivationSummary {
+    guard preview.allowsSameBuildReimport else {
+      throw SDELifecycleError.sameBuildReimportUnavailable
+    }
+    return try await installValidated(
+      preview: preview,
+      schemaReviewConfirmed: schemaReviewConfirmed,
+      progress: progress
+    )
+  }
+
+  private func installValidated(
+    preview: SDEUpdatePreview,
+    schemaReviewConfirmed: Bool,
+    progress: SDEInstallationProgressHandler?
   ) async throws -> SDEActivationSummary {
     guard latestPreview == preview else {
       throw SDELifecycleError.confirmationDoesNotMatchPreview

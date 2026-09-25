@@ -15,6 +15,7 @@ struct SDEUpdatePreviewTests {
 
     #expect(preview.availability == .current)
     #expect(!preview.requiresUpdate)
+    #expect(preview.allowsSameBuildReimport)
     #expect(!preview.requiresSchemaReview)
   }
 
@@ -28,6 +29,7 @@ struct SDEUpdatePreviewTests {
 
     #expect(preview.availability == .updateAvailable)
     #expect(preview.requiresUpdate)
+    #expect(!preview.allowsSameBuildReimport)
     #expect(!preview.requiresSchemaReview)
   }
 
@@ -41,6 +43,7 @@ struct SDEUpdatePreviewTests {
 
     #expect(preview.availability == .localBuildAhead)
     #expect(!preview.requiresUpdate)
+    #expect(!preview.allowsSameBuildReimport)
   }
 
   @Test

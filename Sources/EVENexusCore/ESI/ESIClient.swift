@@ -84,6 +84,196 @@ public struct ESIResponseCacheUsage: Equatable, Sendable {
   }
 }
 
+public enum ESIRequestPriority: Int, Comparable, Sendable {
+  case automatic = 0
+  case standard = 1
+  case interactive = 2
+
+  public static func < (lhs: Self, rhs: Self) -> Bool {
+    lhs.rawValue < rhs.rawValue
+  }
+}
+
+public enum ESIRequestContext {
+  @TaskLocal public static var priority: ESIRequestPriority = .standard
+
+  public static func withPriority<Result>(
+    _ priority: ESIRequestPriority,
+    isolation: isolated (any Actor)? = #isolation,
+    operation: () async throws -> Result
+  ) async rethrows -> Result {
+    try await $priority.withValue(
+      priority,
+      operation: operation,
+      isolation: isolation
+    )
+  }
+}
+
+public struct ESIRequestCoordinatorUsage: Equatable, Sendable {
+  public let active: Int
+  public let activeAutomatic: Int
+  public let queued: Int
+  public let maximumConcurrent: Int
+  public let maximumAutomaticConcurrent: Int
+
+  public init(
+    active: Int,
+    activeAutomatic: Int,
+    queued: Int,
+    maximumConcurrent: Int,
+    maximumAutomaticConcurrent: Int
+  ) {
+    self.active = active
+    self.activeAutomatic = activeAutomatic
+    self.queued = queued
+    self.maximumConcurrent = maximumConcurrent
+    self.maximumAutomaticConcurrent = maximumAutomaticConcurrent
+  }
+}
+
+/// One cancellation-aware admission queue for every HTTP request made by an
+/// `ESIClient`. Endpoint services may keep their narrower domain limits, while
+/// this coordinator prevents their overlapping task groups from multiplying
+/// the process-wide transport load.
+public actor ESIRequestCoordinator {
+  private struct Waiter {
+    let id: UUID
+    let priority: ESIRequestPriority
+    let sequence: UInt64
+    let continuation: CheckedContinuation<Void, any Error>
+  }
+
+  private let maximumConcurrent: Int
+  private let maximumAutomaticConcurrent: Int
+  private var active = 0
+  private var activeAutomatic = 0
+  private var sequence: UInt64 = 0
+  private var waiters: [Waiter] = []
+
+  public init(
+    maximumConcurrent: Int = 6,
+    maximumAutomaticConcurrent: Int = 2
+  ) {
+    let acceptedMaximum = min(32, max(1, maximumConcurrent))
+    self.maximumConcurrent = acceptedMaximum
+    self.maximumAutomaticConcurrent = min(
+      acceptedMaximum,
+      max(1, maximumAutomaticConcurrent)
+    )
+  }
+
+  public func usage() -> ESIRequestCoordinatorUsage {
+    ESIRequestCoordinatorUsage(
+      active: active,
+      activeAutomatic: activeAutomatic,
+      queued: waiters.count,
+      maximumConcurrent: maximumConcurrent,
+      maximumAutomaticConcurrent: maximumAutomaticConcurrent
+    )
+  }
+
+  public func perform<Result: Sendable>(
+    priority: ESIRequestPriority,
+    operation: @Sendable () async throws -> Result
+  ) async throws -> Result {
+    let id = UUID()
+    try await acquire(id: id, priority: priority)
+    do {
+      try Task.checkCancellation()
+      let result = try await operation()
+      release(priority: priority)
+      return result
+    } catch {
+      release(priority: priority)
+      throw error
+    }
+  }
+
+  private func acquire(
+    id: UUID,
+    priority: ESIRequestPriority
+  ) async throws {
+    try Task.checkCancellation()
+    if canStart(priority) {
+      markStarted(priority)
+      return
+    }
+    sequence &+= 1
+    let waiterSequence = sequence
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        waiters.append(
+          Waiter(
+            id: id,
+            priority: priority,
+            sequence: waiterSequence,
+            continuation: continuation
+          )
+        )
+      }
+    } onCancel: {
+      Task { await self.cancelWaiter(id: id) }
+    }
+    do {
+      try Task.checkCancellation()
+    } catch {
+      release(priority: priority)
+      throw error
+    }
+  }
+
+  private func cancelWaiter(id: UUID) {
+    guard let index = waiters.firstIndex(where: { $0.id == id }) else {
+      return
+    }
+    let waiter = waiters.remove(at: index)
+    waiter.continuation.resume(throwing: CancellationError())
+  }
+
+  private func release(priority: ESIRequestPriority) {
+    active = max(0, active - 1)
+    if priority == .automatic {
+      activeAutomatic = max(0, activeAutomatic - 1)
+    }
+    resumeEligibleWaiters()
+  }
+
+  private func resumeEligibleWaiters() {
+    while active < maximumConcurrent {
+      let eligibleIndices = waiters.indices.filter {
+        canStart(waiters[$0].priority)
+      }
+      guard
+        let index = eligibleIndices.min(by: { lhs, rhs in
+          let left = waiters[lhs]
+          let right = waiters[rhs]
+          if left.priority != right.priority {
+            return left.priority > right.priority
+          }
+          return left.sequence < right.sequence
+        })
+      else { return }
+      let waiter = waiters.remove(at: index)
+      markStarted(waiter.priority)
+      waiter.continuation.resume()
+    }
+  }
+
+  private func canStart(_ priority: ESIRequestPriority) -> Bool {
+    active < maximumConcurrent
+      && (priority != .automatic
+        || activeAutomatic < maximumAutomaticConcurrent)
+  }
+
+  private func markStarted(_ priority: ESIRequestPriority) {
+    active += 1
+    if priority == .automatic {
+      activeAutomatic += 1
+    }
+  }
+}
+
 public enum ESIError: Error, Equatable, Sendable {
   case invalidURL
   case authorizationRequired
@@ -148,6 +338,7 @@ public actor ESIClient {
   private let maximumPageCount: Int
   private let maximumCachedResponses: Int
   private let maximumCachedBytes: Int
+  private let requestCoordinator: ESIRequestCoordinator
   private let userAgent: String
   private let now: @Sendable () -> Date
   private var validators: [String: Validator] = [:]
@@ -160,6 +351,8 @@ public actor ESIClient {
     maximumPageCount: Int = 1_000,
     maximumCachedResponses: Int = 512,
     maximumCachedBytes: Int = 64 * 1_024 * 1_024,
+    maximumConcurrentRequests: Int = 6,
+    maximumAutomaticConcurrentRequests: Int = 2,
     userAgent: String = CCPUserAgentConfiguration.genericValue,
     now: @escaping @Sendable () -> Date = { Date() }
   ) {
@@ -168,6 +361,10 @@ public actor ESIClient {
     self.maximumPageCount = min(10_000, max(1, maximumPageCount))
     self.maximumCachedResponses = max(0, maximumCachedResponses)
     self.maximumCachedBytes = max(0, maximumCachedBytes)
+    self.requestCoordinator = ESIRequestCoordinator(
+      maximumConcurrent: maximumConcurrentRequests,
+      maximumAutomaticConcurrent: maximumAutomaticConcurrentRequests
+    )
     self.userAgent = userAgent
     self.now = now
     let decoder = JSONDecoder()
@@ -182,6 +379,29 @@ public actor ESIClient {
       maximumEntries: maximumCachedResponses,
       maximumBytes: maximumCachedBytes
     )
+  }
+
+  public func requestCoordinatorUsage() async -> ESIRequestCoordinatorUsage {
+    await requestCoordinator.usage()
+  }
+
+  /// Retains the most recently used cached response bodies up to the supplied
+  /// byte target. Removing a body also removes its validator so a later 304 can
+  /// never be decoded against missing data.
+  @discardableResult
+  public func trimCachedResponses(
+    toMaximumBytes requestedMaximumBytes: Int
+  ) -> ESIResponseCacheUsage {
+    let target = min(max(0, requestedMaximumBytes), maximumCachedBytes)
+    while cachedResponseBytes > target {
+      guard
+        let oldestKey = validators.min(by: {
+          $0.value.lastAccess < $1.value.lastAccess
+        })?.key
+      else { break }
+      removeCachedResponse(forKey: oldestKey)
+    }
+    return cachedResponseUsage()
   }
 
   public func removeCachedResponses(forCharacterID characterID: Int64) {
@@ -278,10 +498,17 @@ public actor ESIClient {
       }
     }
 
+    let transport = transport
+    let transportRequest = request
+    let requestPriority = ESIRequestContext.priority
     var attempt = 0
     while true {
       do {
-        let (data, response) = try await transport.data(for: request)
+        let (data, response) = try await requestCoordinator.perform(
+          priority: requestPriority
+        ) {
+          try await transport.data(for: transportRequest)
+        }
         try validateSize(data, response: response)
         let usableData: Data
         if response.statusCode == 304,
@@ -316,6 +543,13 @@ public actor ESIClient {
           ?? (response.statusCode == 304
             ? cachedAtRequest?.lastModified : nil)
         let pages = try pageCount(response)
+        // A conditional 304 commonly omits representation headers such as
+        // X-Pages. The cached body and its page count belong to the same
+        // validated representation, so keep both together in the response
+        // envelope. Otherwise a revalidated multi-page resource would look
+        // like a one-page resource to its domain consumer.
+        let effectivePages =
+          pages ?? (response.statusCode == 304 ? cachedAtRequest?.pages : nil)
         let source = SourceIdentity(
           provider: "ESI",
           version: EVEConstants.esiCompatibilityDate,
@@ -328,7 +562,7 @@ public actor ESIClient {
               lastModified: modified,
               data: usableData,
               expiresAt: expires,
-              pages: pages ?? cachedAtRequest?.pages,
+              pages: effectivePages,
               source: source,
               statusCode: response.statusCode,
               lastAccess: 0
@@ -345,7 +579,7 @@ public actor ESIClient {
           expiresAt: expires,
           etag: etag,
           lastModified: modified,
-          pages: pages,
+          pages: effectivePages,
           errorLimitRemain: Int(
             response.value(
               forHTTPHeaderField: "X-ESI-Error-Limit-Remain"
@@ -491,8 +725,15 @@ public actor ESIClient {
       )
     }
 
+    let transport = transport
+    let transportRequest = request
+    let requestPriority = ESIRequestContext.priority
     do {
-      let (data, response) = try await transport.data(for: request)
+      let (data, response) = try await requestCoordinator.perform(
+        priority: requestPriority
+      ) {
+        try await transport.data(for: transportRequest)
+      }
       try validateSize(data, response: response)
       try validate(response)
       let decoded: Value
