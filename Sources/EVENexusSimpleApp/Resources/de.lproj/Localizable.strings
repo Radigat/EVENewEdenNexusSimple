@@ -35,9 +35,9 @@
 "%lld permissions missing" = "%lld Berechtigungen fehlen";
 "Review %lld requested permissions before EVE SSO opens." = "Prüfe die %lld angeforderten Berechtigungen, bevor EVE SSO geöffnet wird.";
 "Show %lld requested ESI permissions and their modules" = "%lld angeforderte ESI-Berechtigungen und zugehörige Module anzeigen";
-"Shows which ESI permissions EVE Nexus requests, why they are needed, and which modules use them." = "Zeigt, welche ESI-Berechtigungen EVE Nexus anfordert, warum sie benötigt werden und welche Module sie verwenden.";
+"Shows which ESI permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why they are needed, and which modules use them." = "Zeigt, welche ESI-Berechtigungen EVE New Eden Nexus - Assets, Industry, Markets anfordert, warum sie benötigt werden und welche Module sie verwenden.";
 "Requested ESI permissions" = "Angeforderte ESI-Berechtigungen";
-"This overview explains which permissions EVE Nexus requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain." = "Diese Übersicht erklärt, welche Berechtigungen EVE Nexus anfordert, warum jede Berechtigung benötigt wird und welche App-Module sie verwenden. Sie ist hier jederzeit abrufbar und unterbricht die Autorisierung nicht mehr. EVE SSO bittet weiterhin um Zustimmung zu den angeforderten Berechtigungen. Der Refresh-Token bleibt ausschließlich im macOS-Schlüsselbund.";
+"This overview explains which permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain." = "Diese Übersicht erklärt, welche Berechtigungen EVE New Eden Nexus - Assets, Industry, Markets anfordert, warum jede Berechtigung benötigt wird und welche App-Module sie verwenden. Sie ist hier jederzeit abrufbar und unterbricht die Autorisierung nicht mehr. EVE SSO bittet weiterhin um Zustimmung zu den angeforderten Berechtigungen. Der Refresh-Token bleibt ausschließlich im macOS-Schlüsselbund.";
 "Used by: %@" = "Verwendet von: %@";
 "Close" = "Schließen";
 "Update permissions for %@" = "Berechtigungen für %@ aktualisieren";
@@ -54,7 +54,7 @@
 "Read trained skills used for planning." = "Liest die für die Planung verwendeten trainierten Skills.";
 "Read details of accessible player structures." = "Liest Details zugänglicher Spielerstrukturen.";
 "Read the character's wallet balance." = "Liest das Wallet-Guthaben des Charakters.";
-"Required by a current EVE Nexus feature." = "Wird von einer aktuellen EVE-Nexus-Funktion benötigt.";
+"Required by a current EVE New Eden Nexus - Assets, Industry, Markets feature." = "Wird von einer aktuellen Funktion von EVE New Eden Nexus - Assets, Industry, Markets benötigt.";
 "No characters" = "Keine Charaktere";
 "Calculate" = "Berechnen";
 "Cancel" = "Abbrechen";

@@ -1,4 +1,6 @@
-# Konsolidierungsprüfung – 25.09.2026
+# Organisatorische Konsolidierungsprüfung – Checkpoint 182f1a9
+
+Historischer Nachweis vor der fachlichen Integration. Aktuell gilt [FUNCTIONAL_VALIDATION.md](FUNCTIONAL_VALIDATION.md).
 
 Projekt: **EVE New Eden Nexus - Assets, Industry, Markets**. Standardmodell: **Astra Medium**.
 Einziger aktiver Stamm: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`.

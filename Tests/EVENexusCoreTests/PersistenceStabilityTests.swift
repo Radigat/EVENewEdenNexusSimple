@@ -1,3 +1,4 @@
+import CSQLite
 import Foundation
 import Testing
 
@@ -152,8 +153,11 @@ struct PersistenceStabilityTests {
       fileExists: { _ in false }
     )
     try paths.prepareDirectories()
-    let source = Data("fixture-store".utf8)
-    try source.write(to: paths.swiftDataStoreURL)
+    var database: OpaquePointer?
+    #expect(sqlite3_open(paths.swiftDataStoreURL.path, &database) == SQLITE_OK)
+    #expect(sqlite3_exec(database, "CREATE TABLE fixture (value INTEGER); INSERT INTO fixture VALUES (42);", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(database)
+    let source = try Data(contentsOf: paths.swiftDataStoreURL)
 
     let first = try PersistenceSafetyBackup.createIfNeeded(
       paths: paths,
@@ -172,12 +176,14 @@ struct PersistenceStabilityTests {
     #expect(first != nil)
     #expect(second == nil)
     #expect(try Data(contentsOf: paths.swiftDataStoreURL) == source)
-    #expect(
-      try Data(
-        contentsOf: first!.appendingPathComponent(
-          paths.swiftDataStoreURL.lastPathComponent
-        )
-      ) == source
-    )
+    var saved: OpaquePointer?
+    let copy = first!.appendingPathComponent(paths.swiftDataStoreURL.lastPathComponent)
+    #expect(sqlite3_open_v2(copy.path, &saved, SQLITE_OPEN_READONLY, nil) == SQLITE_OK)
+    defer { sqlite3_close(saved) }
+    var query: OpaquePointer?
+    #expect(sqlite3_prepare_v2(saved, "SELECT value FROM fixture", -1, &query, nil) == SQLITE_OK)
+    defer { sqlite3_finalize(query) }
+    #expect(sqlite3_step(query) == SQLITE_ROW)
+    #expect(sqlite3_column_int(query, 0) == 42)
   }
 }

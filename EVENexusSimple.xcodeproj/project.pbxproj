@@ -115,6 +115,18 @@
 		FBAAAD153AB20096A45B5A73 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 8496FDA859C1C053F3404F93 /* libsqlite3.tbd */; };
 		FCA1B225E89C22DE8A61E6C8 /* ProductionBasisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */; };
 		FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */; };
+		2F168A5D52FA47B15D7DD1BC /* ConsolidationBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F9FE09B2DC20F96EAAB86DD /* ConsolidationBackup.swift */; };
+		A11F66345B951BD4EBC5B828 /* ConsolidationCSV.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E8C110D9340C3E7DF3BF7E /* ConsolidationCSV.swift */; };
+		C3E714B142E43A23FD55A640 /* ConsolidationImports.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D09BF0095D8B516A5E8441 /* ConsolidationImports.swift */; };
+		F4152ED0B5881AE736E55C74 /* ConsolidationMoney.swift in Sources */ = {isa = PBXBuildFile; fileRef = 538783C2FA49B5AD4D3955A4 /* ConsolidationMoney.swift */; };
+		4B404AA11BD0B65D40F4C9FA /* ConsolidationScience.swift in Sources */ = {isa = PBXBuildFile; fileRef = EECE8CE690CD153CB094B1E1 /* ConsolidationScience.swift */; };
+		48D8A9FA0DFF27BEF7490EF0 /* ConsolidationWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAFA20F1F22980164CBDE78D /* ConsolidationWorkspace.swift */; };
+		130BCA3F0F7FB4F2D3301A66 /* ConsolidationBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0DC66FD179C9D08ED08CC0 /* ConsolidationBackupView.swift */; };
+		58DFD988B13B7E2DA8D93872 /* ConsolidationPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9646D9B42C8D2BB01C851515 /* ConsolidationPersistence.swift */; };
+		045606C176F5692C1B14889A /* ConsolidationScienceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC843DF084E747C25AA50FA /* ConsolidationScienceView.swift */; };
+		D1C3A78E6F72CC9F6174896C /* ConsolidationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */; };
+		5E6D9BCA1E56982470D7E62E /* ConsolidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B5940BF552F364923C5845 /* ConsolidationTests.swift */; };
+		4D7D5F7AD1EA49AB1C7CECE6 /* ConsolidationCSVParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 287FAE8A73B5F74C31A78479 /* ConsolidationCSVParserTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -296,6 +308,18 @@
 		F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPersistenceController.swift; sourceTree = "<group>"; };
 		FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		FEE2812212934D7FCB3FA513 /* EVEStaticDataKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = EVEStaticDataKit; path = Packages/EVEStaticDataKit; sourceTree = SOURCE_ROOT; };
+		0F9FE09B2DC20F96EAAB86DD /* ConsolidationBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationBackup.swift; sourceTree = "<group>"; };
+		17E8C110D9340C3E7DF3BF7E /* ConsolidationCSV.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationCSV.swift; sourceTree = "<group>"; };
+		84D09BF0095D8B516A5E8441 /* ConsolidationImports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationImports.swift; sourceTree = "<group>"; };
+		538783C2FA49B5AD4D3955A4 /* ConsolidationMoney.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationMoney.swift; sourceTree = "<group>"; };
+		EECE8CE690CD153CB094B1E1 /* ConsolidationScience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationScience.swift; sourceTree = "<group>"; };
+		DAFA20F1F22980164CBDE78D /* ConsolidationWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationWorkspace.swift; sourceTree = "<group>"; };
+		6D0DC66FD179C9D08ED08CC0 /* ConsolidationBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationBackupView.swift; sourceTree = "<group>"; };
+		9646D9B42C8D2BB01C851515 /* ConsolidationPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationPersistence.swift; sourceTree = "<group>"; };
+		DFC843DF084E747C25AA50FA /* ConsolidationScienceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationScienceView.swift; sourceTree = "<group>"; };
+		7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationViews.swift; sourceTree = "<group>"; };
+		45B5940BF552F364923C5845 /* ConsolidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationTests.swift; sourceTree = "<group>"; };
+		287FAE8A73B5F74C31A78479 /* ConsolidationCSVParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationCSVParserTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -496,6 +520,12 @@
 		A6273A1E936ABCE457B4A8C7 /* EVENexusCore */ = {
 			isa = PBXGroup;
 			children = (
+				DAFA20F1F22980164CBDE78D /* ConsolidationWorkspace.swift */,
+				EECE8CE690CD153CB094B1E1 /* ConsolidationScience.swift */,
+				538783C2FA49B5AD4D3955A4 /* ConsolidationMoney.swift */,
+				84D09BF0095D8B516A5E8441 /* ConsolidationImports.swift */,
+				17E8C110D9340C3E7DF3BF7E /* ConsolidationCSV.swift */,
+				0F9FE09B2DC20F96EAAB86DD /* ConsolidationBackup.swift */,
 				DF5521A367E8C63463962D5A /* Assets */,
 				601188C167E37541F602DF53 /* Auth */,
 				0E446FA62B66D55C59FDD5AE /* Blueprints */,
@@ -517,6 +547,10 @@
 		C95F62BB297D5C07BCE53145 /* EVENexusSimpleApp */ = {
 			isa = PBXGroup;
 			children = (
+				7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */,
+				DFC843DF084E747C25AA50FA /* ConsolidationScienceView.swift */,
+				9646D9B42C8D2BB01C851515 /* ConsolidationPersistence.swift */,
+				6D0DC66FD179C9D08ED08CC0 /* ConsolidationBackupView.swift */,
 				019FD0410000000000000001 /* AppDefaults.swift */,
 				019FD0410000000000000002 /* AppOperatorConfiguration.swift */,
 				FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */,
@@ -549,6 +583,8 @@
 		CF66EE833DB5E2A7CB2DCC5C /* EVENexusCoreTests */ = {
 			isa = PBXGroup;
 			children = (
+				287FAE8A73B5F74C31A78479 /* ConsolidationCSVParserTests.swift */,
+				45B5940BF552F364923C5845 /* ConsolidationTests.swift */,
 				EE347DEDC4E3894E787D864C /* AssetWarehouseTests.swift */,
 				A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */,
 				4C80E158DF92CE41088EDE05 /* ESIClientTests.swift */,
@@ -764,6 +800,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4D7D5F7AD1EA49AB1C7CECE6 /* ConsolidationCSVParserTests.swift in Sources */,
+				5E6D9BCA1E56982470D7E62E /* ConsolidationTests.swift in Sources */,
 				33C2EA30560570E2B46B970C /* AssetWarehouseTests.swift in Sources */,
 				9D4F26AF76B35CCCCF6C13DA /* AuthAndBlueprintTests.swift in Sources */,
 				FB83EC72B2B6E644781E1DB4 /* ESIClientTests.swift in Sources */,
@@ -800,6 +838,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D1C3A78E6F72CC9F6174896C /* ConsolidationViews.swift in Sources */,
+				045606C176F5692C1B14889A /* ConsolidationScienceView.swift in Sources */,
+				58DFD988B13B7E2DA8D93872 /* ConsolidationPersistence.swift in Sources */,
+				130BCA3F0F7FB4F2D3301A66 /* ConsolidationBackupView.swift in Sources */,
 				019FD0410000000000000011 /* AppDefaults.swift in Sources */,
 				019FD0410000000000000012 /* AppOperatorConfiguration.swift in Sources */,
 				1D00ECB0F3388C5B32184441 /* AppLanguage.swift in Sources */,
@@ -830,6 +872,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				48D8A9FA0DFF27BEF7490EF0 /* ConsolidationWorkspace.swift in Sources */,
+				4B404AA11BD0B65D40F4C9FA /* ConsolidationScience.swift in Sources */,
+				F4152ED0B5881AE736E55C74 /* ConsolidationMoney.swift in Sources */,
+				C3E714B142E43A23FD55A640 /* ConsolidationImports.swift in Sources */,
+				A11F66345B951BD4EBC5B828 /* ConsolidationCSV.swift in Sources */,
+				2F168A5D52FA47B15D7DD1BC /* ConsolidationBackup.swift in Sources */,
 				F42CFC0584909BF14A0EA729 /* AppDataPaths.swift in Sources */,
 				75C7B721D66FEDE97C71A2F8 /* AssetModels.swift in Sources */,
 				C36B7F038721A4D9DFA14505 /* AssetWarehouse.swift in Sources */,

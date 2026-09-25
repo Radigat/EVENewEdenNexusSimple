@@ -941,6 +941,7 @@ final class RuntimeState: ObservableObject {
   func calculate(
     input: String,
     manualStockInput: String = "",
+    availableStockOverride: [Int64: Int64]? = nil,
     existingReservations: [StockAllocation] = [],
     assetWarehouse: AssetWarehouse? = nil,
     stockTargets: [Int64: Int64] = [:],
@@ -1129,7 +1130,7 @@ final class RuntimeState: ObservableObject {
           throw CancellationError()
         }
         var availableStock: [Int64: Int64]
-        let assetSource: StockSource?
+        var assetSource: StockSource?
         let packagedVolumeSnapshot = values.6
         var snapshotIDs: [UUID] = [
           packagedVolumeSnapshot.source.snapshotID
@@ -1189,7 +1190,7 @@ final class RuntimeState: ObservableObject {
           availableStock = [:]
           assetSource = nil
         }
-        if let assetSource {
+        if let assetSource, availableStockOverride == nil {
           for allocation in existingReservations
           where allocation.source == assetSource
             || assetSource.kind == .warehouse
@@ -1200,6 +1201,12 @@ final class RuntimeState: ObservableObject {
               availableStock[allocation.typeID, default: 0]
                 - allocation.quantity
             )
+          }
+        }
+        if let availableStockOverride, manualStock.isEmpty {
+          availableStock = availableStockOverride
+          if assetSource == nil && !availableStockOverride.isEmpty {
+            assetSource = StockSource(kind: .manual, reference: "explicit-project-warehouses")
           }
         }
         let configuredReaction =
@@ -1737,7 +1744,8 @@ final class RuntimeState: ObservableObject {
     includesHomeSaleScenarios: Bool = false,
     plannerInputOverride: String? = nil,
     forceRecursiveProduction: Bool = false,
-    requiresCompleteBlueprintCostsInSelectedPlan: Bool = true
+    requiresCompleteBlueprintCostsInSelectedPlan: Bool = true,
+    availableStockOverride: [Int64: Int64]? = nil
   ) async throws -> ManufacturingProductionTreeSnapshot {
     guard targetQuantity > 0,
       (0...10).contains(materialEfficiency),
@@ -1898,6 +1906,8 @@ final class RuntimeState: ObservableObject {
         )
       }
     }
+
+    if let availableStockOverride { allocatableStock = availableStockOverride }
 
     var calculatorBasis = productionBasis
     calculatorBasis.logistics.isEnabled = true
@@ -3438,6 +3448,21 @@ final class RuntimeState: ObservableObject {
       matching: query,
       limit: 80
     )
+  }
+
+  func consolidationCatalogNames(_ ids: Set<Int64>) async throws -> [Int64: String] {
+    guard activeSDEBuild != nil else {
+      throw ConsolidationError.unavailable("Zuerst unter Daten & Einstellungen einen geprüften SDE-Datenkatalog installieren.")
+    }
+    return try await catalog.consolidationPublishedNames(ids)
+  }
+  func consolidationScienceDefinitions(_ blueprintID: Int64) async throws -> ([BlueprintScienceActivityDefinition], [BlueprintDecryptorDefinition]) {
+    async let activities = catalog.blueprintScienceActivities(blueprintTypeID: blueprintID)
+    async let decryptors = catalog.decryptorDefinitions()
+    return try await (activities, decryptors)
+  }
+  func consolidationManufacturingDefinition(_ blueprintID: Int64) async throws -> BlueprintDefinition? {
+    try await catalog.consolidationManufacturingDefinition(blueprintID)
   }
 
   func blueprintResearchQuote(

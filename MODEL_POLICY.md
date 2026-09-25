@@ -13,3 +13,6 @@ Medium die Denktiefe. Frühere Modellstrategien in Archivmaterial sind außer Kr
 Die Datei dokumentiert die verbindliche Vorgabe; sie behauptet keine Änderung
 globaler App-Einstellungen oder des Modells einer bereits laufenden Sitzung.
 Es gibt keine automatische Modelleskalation und keinen automatischen Folgeauftrag.
+
+Die fachliche Zusammenführung verwendet denselben Standard. Legacy-Modellvorgaben
+und dortige Agenten-/Kit-Aufträge werden nicht reaktiviert. Der Abschlussbericht beendet den Auftrag.

@@ -59,6 +59,8 @@ private enum PlannerCalculationPhase: Equatable {
 }
 
 struct PlannerView: View {
+  @EnvironmentObject private var consolidation: ConsolidationController
+  @State private var showsProjectWorkspace = false
   @Binding var historicalPlannerRequest: HistoricalPlannerRequest?
   @Binding var launchRequest: PlannerLaunchRequest?
   let runtime: RuntimeState
@@ -424,6 +426,13 @@ struct PlannerView: View {
       .padding(DesignTokens.spacingLG)
     }
     .navigationTitle(AppLocalization.text("Planner"))
+    .toolbar {
+      Button("Projekte & Einkauf") { persistDraft(); showsProjectWorkspace = true }
+    }
+    .sheet(isPresented: $showsProjectWorkspace) { ConsolidationWorkbenchView(area: .projects) }
+    .onChange(of: consolidation.workspace.selectedProjectID) { restoreSelectedProject() }
+    .onChange(of: consolidation.workspace.selectedProject?.blueprintSupplyData) { loadProjectScience() }
+
     .onAppear {
       restoreStateIfNeeded()
       openRequestedHistoricalPlanIfNeeded()
@@ -4687,7 +4696,9 @@ struct PlannerView: View {
 
   private func restoreStateIfNeeded() {
     guard !hasRestoredState else { return }
+    do { try consolidation.start(container: modelContext.container) } catch { persistenceError = error.localizedDescription; return }
     hasRestoredState = true
+    if !consolidation.workspace.projects.isEmpty { restoreSelectedProject(); return }
     let latestProductionRecord: StoredProductionRecord?
     do {
       latestProductionRecord =
@@ -4734,6 +4745,34 @@ struct PlannerView: View {
         )
       }
     }
+  }
+
+  private func restoreSelectedProject() {
+    calculationTask?.cancel()
+    guard let project = consolidation.workspace.selectedProject else { input = ""; manualStockInput = ""; runtime.plan = nil; return }
+    input = project.input; manualStockInput = project.manualStockInput
+    runtime.plan = project.planSnapshot.flatMap { try? JSONDecoder().decode(IndustryPlanSnapshot.self, from: $0) }
+    blueprintTree = nil; blueprintActions = [:]; blueprintCostTexts = [:]; blueprintEfficiencies = [:]
+    preferredBlueprintSources = [:]; handedOffBlueprintSupplyPlans = [:]; handedOffBlueprintSnapshotIDs = []
+    blueprintSupplyDraftData = project.blueprintSupplyData ?? Data()
+    procurementPreferences = Dictionary(uniqueKeysWithValues: (runtime.plan?.materials ?? []).compactMap { material in material.procurement.map { (material.typeID, $0) } })
+    parseResult = ProductionInputParser.parse(input)
+    loadProjectScience()
+  }
+
+  private func loadProjectScience() {
+    guard let data = consolidation.workspace.selectedProject?.blueprintSupplyData,
+      let plans = try? JSONDecoder().decode([BlueprintSupplyPlan].self, from: data) else { return }
+    handedOffBlueprintSupplyPlans = Dictionary(uniqueKeysWithValues: plans.map { ($0.blueprintTypeID, $0) })
+    for plan in plans {
+      if let job = plan.manufacturingJobs.first {
+        blueprintEfficiencies[plan.productTypeID] = IndustryProductionEfficiency(materialEfficiency: job.allocation.materialEfficiency, timeEfficiency: job.allocation.timeEfficiency)
+        blueprintActions[plan.blueprintTypeID] = plannerAction(for: job.allocation.source)
+        preferredBlueprintSources[plan.blueprintTypeID] = plan.manufacturingJobs.map(\.allocation.source)
+      }
+    }
+    handedOffBlueprintSnapshotIDs = Array(Set(plans.flatMap(\.sourceSnapshotIDs)))
+    blueprintSelectionNeedsRecalculation = true
   }
 
   private func appendPlannerInputLine(_ line: String) {
@@ -5213,6 +5252,10 @@ struct PlannerView: View {
     for step: PlannerBlueprintStep,
     action: ProductionTreeBlueprintAction
   ) -> IndustryProductionEfficiency? {
+    if let supply = handedOffBlueprintSupplyPlans[step.blueprint.blueprintTypeID], !supply.scienceJobs.isEmpty,
+      let job = supply.manufacturingJobs.first {
+      return IndustryProductionEfficiency(materialEfficiency: job.allocation.materialEfficiency, timeEfficiency: job.allocation.timeEfficiency)
+    }
     if let owned = selectedPlannerOwnedEfficiencyOption(
       for: step,
       action: action
@@ -5503,6 +5546,7 @@ struct PlannerView: View {
     recommendationSuccessMessage: String? = nil
   ) {
     guard !isPlannerCalculationActive else { return }
+    guard consolidation.workspace.selectedProject?.status != .archived, consolidation.workspace.selectedProjectID != nil else { persistenceError = "Ein aktives Fertigungsprojekt auswählen."; return }
     let requestedCalculationID = UUID()
     calculationID = requestedCalculationID
     calculationPhase = .preparing
@@ -5524,11 +5568,17 @@ struct PlannerView: View {
         )
       }
       let requestedPreferences = preferences ?? procurementPreferences
-      let activePlanSnapshots = activePlans.filter {
-        !supersededActivePlanIDs.contains($0.id)
-      }.map(\.snapshot)
+      let activePlanSnapshots: [Data] = consolidation.workspace.projects.filter {
+        $0.id != consolidation.workspace.selectedProjectID && $0.status != .archived
+      }.compactMap(\.planSnapshot)
       let authorizationPayloads = storedCharacters.map(\.authorizationSnapshot)
       let capabilityPayloads = storedCharacters.compactMap(\.capabilitySnapshot)
+      let projectID = consolidation.workspace.selectedProjectID
+      let protectedESI = runtime.warehouseStockEnabled ? assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities : [:]
+      consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.sourceStates.allSatisfy { $0 == .fresh })
+      let projectStock: [Int64: Int64]?
+      do { projectStock = try projectID.map { try consolidation.workspace.availableStock(projectID: $0, esi: protectedESI) } }
+      catch { persistenceError = error.localizedDescription; return }
       let plannerInput = input
       let plannerManualStockInput = manualStockInput
       let plannerWarehouse = assetWarehouse
@@ -5548,6 +5598,8 @@ struct PlannerView: View {
         runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? []
       )
       persistDraft()
+      let projectRevision = consolidation.workspace.revision
+      let scienceReservations = consolidation.workspace.scienceRunReservations()
       let preparedInputs = await Task.detached(priority: .userInitiated) {
         let decodedPlans = activePlanSnapshots.compactMap { snapshot in
           try? JSONDecoder().decode(
@@ -5573,7 +5625,7 @@ struct PlannerView: View {
         }
         return (
           reservations,
-          blueprintReservations,
+          blueprintReservations + scienceReservations,
           authorizations,
           capabilities
         )
@@ -5609,7 +5661,8 @@ struct PlannerView: View {
           authorizations: preparedInputs.2,
           clientID: EVEConstants.ssoClientID,
           plannerInputOverride: plannerInput,
-          requiresCompleteBlueprintCostsInSelectedPlan: false
+          requiresCompleteBlueprintCostsInSelectedPlan: false,
+          availableStockOverride: projectStock
         )
       } catch is CancellationError {
         return
@@ -5658,7 +5711,8 @@ struct PlannerView: View {
             authorizations: preparedInputs.2,
             clientID: EVEConstants.ssoClientID,
             plannerInputOverride: plannerInput,
-            requiresCompleteBlueprintCostsInSelectedPlan: false
+            requiresCompleteBlueprintCostsInSelectedPlan: false,
+          availableStockOverride: projectStock
           )
         } catch is CancellationError {
           return
@@ -5673,7 +5727,7 @@ struct PlannerView: View {
         }
       }
       blueprintTree = resolvedBlueprintTree
-      let allocations = plannerBlueprintAllocations(
+      var allocations = plannerBlueprintAllocations(
         from: resolvedBlueprintTree
       )
       var finalBlueprintSupplyPlans = Dictionary(
@@ -5686,10 +5740,16 @@ struct PlannerView: View {
       {
         finalBlueprintSupplyPlans[blueprintTypeID] = handedOffPlan
       }
+      for (type, supplied) in finalBlueprintSupplyPlans where !supplied.scienceJobs.isEmpty {
+        if let cost = supplied.batchAllocationCost {
+          allocations[type] = IndustryBlueprintCostAllocation(blueprintTypeID: type, productName: supplied.productName, kind: supplied.manufacturingJobs.first?.allocation.source.isOriginal == true ? .bpo : .bpc, amount: cost, source: "Konkreter Wissenschaftsauftrag")
+        }
+      }
       calculationPhase = .calculating
       await runtime.calculate(
         input: plannerInput,
         manualStockInput: plannerManualStockInput,
+        availableStockOverride: projectStock,
         existingReservations: preparedInputs.0,
         assetWarehouse: plannerWarehouse,
         stockTargets: targets,
@@ -5706,6 +5766,12 @@ struct PlannerView: View {
         clientID: EVEConstants.ssoClientID
       )
       guard !Task.isCancelled else { return }
+      guard projectID == consolidation.workspace.selectedProjectID,
+        projectRevision == consolidation.workspace.revision else {
+        persistenceError = "Projekt oder Ausgangsdaten wurden während der Berechnung geändert. Bitte erneut berechnen."
+        runtime.plan = consolidation.workspace.selectedProject?.planSnapshot.flatMap { try? JSONDecoder().decode(IndustryPlanSnapshot.self, from: $0) }
+        return
+      }
       guard runtime.errorMessage == nil, let plan = runtime.plan else { return }
       blueprintSelectionNeedsRecalculation = false
       procurementPreferences = Dictionary(
@@ -5727,12 +5793,11 @@ struct PlannerView: View {
         existingDraft: plannerDrafts.first,
         in: modelContext
       )
-      let plans =
-        blueprintTree?.selectedPlan.blueprintSupplyPlans
-        ?? handedOffBlueprintSupplyPlans.values.sorted {
-          $0.blueprintTypeID < $1.blueprintTypeID
-        }
+      var byType = Dictionary(uniqueKeysWithValues: (blueprintTree?.selectedPlan.blueprintSupplyPlans ?? []).map { ($0.blueprintTypeID, $0) })
+      for (id, supply) in handedOffBlueprintSupplyPlans { byType[id] = supply }
+      let plans = byType.values.sorted { $0.blueprintTypeID < $1.blueprintTypeID }
       blueprintSupplyDraftData = try JSONEncoder().encode(plans)
+      try consolidation.saveDraft(input: input, manualStockInput: manualStockInput, supply: blueprintSupplyDraftData)
     } catch {
       if reportErrors {
         persistenceError = error.localizedDescription
@@ -5753,6 +5818,9 @@ struct PlannerView: View {
         activePlans: activePlans,
         in: modelContext
       )
+      if let projectID = consolidation.workspace.selectedProjectID {
+        try consolidation.edit { try $0.synchronizePurchases(projectID: projectID, plan: plan) }
+      }
       persistenceError = nil
       return true
     } catch is CancellationError {
@@ -5846,6 +5914,7 @@ struct PlannerView: View {
     guard !Task.isCancelled else { return }
     assetWarehouse = productionWarehouse.warehouse
     warehouseFactualQuantities = productionWarehouse.factualQuantities
+    consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.sourceStates.allSatisfy { $0 == .fresh })
   }
 }
 
@@ -7073,7 +7142,7 @@ struct CharactersView: View {
           }
           .buttonStyle(.link)
           .help(
-            "Shows which ESI permissions EVE Nexus requests, why they are needed, and which modules use them."
+            "Shows which ESI permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why they are needed, and which modules use them."
           )
           .accessibilityIdentifier("characters.authorization.show-permissions")
           if let batchMessage {
@@ -7383,7 +7452,7 @@ struct CharactersView: View {
       .font(.title2.bold())
 
       Text(
-        "This overview explains which permissions EVE Nexus requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain."
+        "This overview explains which permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain."
       )
       .foregroundStyle(DesignTokens.textSecondary)
 
@@ -7475,7 +7544,7 @@ struct CharactersView: View {
     case "esi-wallet.read_character_wallet.v1":
       AppLocalization.text("Read the character's wallet balance.")
     default:
-      AppLocalization.text("Required by a current EVE Nexus feature.")
+      AppLocalization.text("Required by a current EVE New Eden Nexus - Assets, Industry, Markets feature.")
     }
   }
 
@@ -7516,7 +7585,7 @@ struct CharactersView: View {
       case "esi-wallet.read_character_wallet.v1":
         ["Wallet", "Net Worth"]
       default:
-        ["EVE Nexus"]
+        ["EVE New Eden Nexus - Assets, Industry, Markets"]
       }
     return moduleKeys.map { AppLocalization.text($0) }.joined(separator: ", ")
   }

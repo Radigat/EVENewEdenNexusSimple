@@ -1,0 +1,63 @@
+{
+  "membership": {
+    "EVENexusCore": {
+      "actual": 56,
+      "expected": 56,
+      "unassigned": [],
+      "stale": []
+    },
+    "EVENexusSimple": {
+      "actual": 27,
+      "expected": 27,
+      "unassigned": [],
+      "stale": []
+    },
+    "EVENexusCoreTests": {
+      "actual": 23,
+      "expected": 23,
+      "unassigned": [],
+      "stale": []
+    }
+  },
+  "missing_xcode_paths": [],
+  "broken_document_links": [],
+  "archive_hashes": {
+    "simple-current": {
+      "count": 158,
+      "different": []
+    },
+    "simple-backup-20260923": {
+      "count": 158,
+      "different": []
+    },
+    "nexus-legacy": {
+      "count": 733,
+      "different": []
+    }
+  },
+  "active_xcode_projects": [
+    "EVENexusSimple.xcodeproj"
+  ],
+  "swiftpm": {
+    "passed": 451,
+    "skipped": 1,
+    "failed": 0
+  },
+  "static_data_kit": {
+    "passed": 7,
+    "skipped": 1,
+    "failed": 0
+  },
+  "native": {
+    "passed": 415,
+    "skipped": 1,
+    "failed": 0
+  },
+  "legacy_limited_run": {
+    "passed": 715,
+    "failed_test_cases": 1,
+    "failed_assertions": 7,
+    "scope": "AccountsView.body excluded in temporary compiler-only fixture; see LEGACY_TEST_DISPOSITIONS.md"
+  },
+  "broken_active_symlinks": []
+}

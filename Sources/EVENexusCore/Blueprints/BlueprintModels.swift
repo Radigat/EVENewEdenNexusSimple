@@ -441,6 +441,7 @@ public struct BlueprintInventionPlan: Identifiable, Codable, Hashable,
   public let outputTimeEfficiency: Int
   public let attemptCost: Double?
   public let forecast: BlueprintInventionForecast
+  public let durationSeconds: Int64?
 
   /// Every attempt consumes exactly one input-copy run, regardless of result.
   public var expectedInputBPCRuns: Double { forecast.expectedAttempts }
@@ -462,9 +463,11 @@ public struct BlueprintInventionPlan: Identifiable, Codable, Hashable,
     outputTimeEfficiency: Int,
     attemptCost: Double?,
     requiredSuccesses: Int,
-    confidence: Double = 0.95
+    confidence: Double = 0.95,
+    durationSeconds: Int64? = nil
   ) {
     self.id = id
+    self.durationSeconds = durationSeconds
     self.inputBPC = inputBPC
     self.inputBlueprintTypeID = inputBlueprintTypeID
     self.outputBlueprintTypeID = outputBlueprintTypeID
@@ -622,7 +625,8 @@ public enum BlueprintSciencePlanner {
     decryptor: BlueprintDecryptorDefinition? = nil,
     attemptCost: Double?,
     requiredSuccesses: Int,
-    confidence: Double = 0.95
+    confidence: Double = 0.95,
+    durationMultiplier: Double = 1
   ) throws -> BlueprintInventionPlan {
     guard technology == .techII else {
       throw BlueprintSciencePlanningError.reverseEngineeringUnsupported
@@ -686,7 +690,11 @@ public enum BlueprintSciencePlanner {
         + (decryptor?.timeEfficiencyModifier ?? 0),
       attemptCost: validCost(attemptCost),
       requiredSuccesses: requiredSuccesses,
-      confidence: confidence
+      confidence: confidence,
+      durationSeconds: scaledDuration(activity.durationSeconds,
+        units: BlueprintInventionRisk.forecast(requiredSuccesses: requiredSuccesses, successProbability: probability,
+          attemptCost: attemptCost, confidence: confidence).attemptsForConfidence,
+        multiplier: durationMultiplier)
     )
   }
 

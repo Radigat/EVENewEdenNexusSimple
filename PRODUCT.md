@@ -4,7 +4,29 @@
 > Fachbeschreibung aus dem aktuellen lokalen Stand vollständig erhalten; historische
 > Testzahlen sind datierte Nachweise, keine neue Gesamtabnahme.
 
-Stand der übernommenen Fachbeschreibung: 15. August 2026
+Aktueller Konsolidierungsstand: 25. September 2026
+
+## Zusammengeführte vorhandene Fachabläufe
+
+Der Planner enthält **Projekte & Einkauf**; Warehouse öffnet **Manuelle Lager**, Blueprints
+**Wissenschaftsaufträge**, die Produktionsübersicht **Verkaufsbelege** und Einstellungen
+**Preisprofile & Sicherung**. Alle Einstiege verwenden denselben lokalen Datenbestand.
+Fertigungsprojekte sind getrennte Planungsdatensätze innerhalb der einen aktiven App.
+
+Projektstatus, eigene Entwürfe, Lagerfreigaben, Prioritäten, persistente Reservierungen,
+kontrollierte CSV-Importe, Preisprofile, Einkaufsfortschritt und Exporte sind verbunden.
+Copying, ME-/TE-Forschung und Invention erzeugen konkrete gespeicherte Versorgung und
+übernehmen deren Effizienzen, Kosten und vorgeschaltete Zeiten in die aktuelle Fertigung.
+Verkaufsbelege besitzen eine kontrollierte Teilzuordnung und ersetzen bei ausdrücklichem
+Wechsel die manuelle Verkaufsschätzung. Kostenstände und ursprüngliche Werte bleiben erhalten.
+Lokale Sicherungen werden geprüft und bei Wiederherstellung erst beim nächsten Start aktiviert.
+Bestätigungsvorschauen zeigen die konkreten geprüften Zielwerte. Ein Bereichswechsel verwirft eine
+noch ungespeicherte Vorschau; bereits gespeicherte Daten bleiben erhalten.
+
+Der vollständige Bedien-, Daten- und Konfliktvertrag steht unter
+[Fachliche Konsolidierung](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md).
+Die heutige Gewinnrechnung, Produktionsnummerierung und Schutzmengenformel bleiben maßgeblich.
+Die zurückgezogene Projektfinanzansicht wird nicht wieder eingeführt.
 
 ## Zweck und Zielgruppe
 
@@ -24,9 +46,9 @@ Verbindliche Detailverträge und Prüfnachweise liegen unter
 
 Das Repository enthält eine ausführbare SwiftUI-App, eine wiederverwendbare
 Core-Bibliothek, ein Live-Acceptance-Werkzeug und automatisierte Tests. Der
-aktuelle lokale Arbeitsbaum enthält noch nicht abgeschlossene Änderungen. Ein
-vorher dokumentierter erfolgreicher Build oder Testlauf belegt deshalb nicht
-automatisch jede nachfolgende lokale Änderung.
+aktuelle fachliche Stand und seine Tests sind im
+[aktuellen Konsolidierungsnachweis](Documentation/Consolidation/FUNCTIONAL_VALIDATION.md) dokumentiert.
+Historische Buildberichte bleiben datierte Nachweise ihres jeweiligen Stands.
 
 Statusangaben werden in fünf Ebenen getrennt:
 
@@ -1422,9 +1444,9 @@ Standardsatz getrennt.
 - Der gemeinsame Science-Domänenkern und SDE-Katalog unterstützen Copying,
   ME-/TE-Forschung, Erfindungs-Skills, Decryptor-Modifikatoren sowie Erwartungs-
   und 95%-Plan. Die Planner-Quellen **Copying**, **Forschung** und **Erfindung**
-  bleiben in der Oberfläche bis zur vollständigen Anlagen-/Kosten- und
-  Persistenzanbindung gesperrt; als Übergang dient eine ausdrücklich manuelle
-  externe BPC. Tech-III-Reverse-Engineering ist nicht unterstützt.
+  sind als konkrete lokale Planungsaufträge angebunden. Unvollständige Anlagen-,
+  Kosten-, Skill- oder Run-Daten blockieren die Übernahme. Externe manuelle BPCs
+  bleiben weiterhin nutzbar. Tech-III-Reverse-Engineering ist nicht unterstützt.
 - ESI liefert keine allgemeine Liste aller Player Structures mit Dockingrecht
   und keine vom Eigentümer festgelegte Structure-Brokergebühr.
 - Öffentliche Marktorders sind keine abgeschlossene Verkaufshistorie.

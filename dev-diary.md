@@ -4349,3 +4349,32 @@ SwiftPM 417 bestanden / 1 Skip, Kit 7 / 1, Xcode Build erfolgreich und native Te
 Originalarbeitsbäume samt Git und Index recoverbar archiviert. Technische und
 historische Namensausnahmen sowie die nicht integrierten Nexus-Komponenten sind
 im Konsolidierungsbericht offen ausgewiesen. Kein neues Feature geplant.
+
+
+## 25.09.2026 – Fachliche Konsolidierung nach Checkpoint 182f1a9
+
+Der ausdrücklich freigegebene Implementierungsauftrag ersetzt die frühere Beschränkung auf
+organisatorische Zusammenführung. Vorhandene Projekt-, Lager-/CSV-, Reservierungs-, Preis-/Einkaufs-,
+Wissenschafts-, Beleg- und Sicherungsabläufe sind in die aktive App integriert. SwiftData V3 ist
+additiv; alte Snapshots und technische Identitäten bleiben erhalten. CSV-Parser und ISK-Werttyp
+wurden aus der Legacy-Quelle adaptiert, UI-/Persistenzkonflikte über aktive Adapter aufgelöst.
+Die entfernte Finanzansicht, alte Datenbankimporte und nur geplante Vorhaben bleiben ausgeschlossen.
+
+Bei der Prüfung wurden insbesondere macOS-Pfadkanonisierung und temporäre SQLite-Begleitdateien
+in Sicherungen, centgenaue Journalteilbeträge, veraltete Vorschauen, Archivstatus und konkrete
+Wissenschaftsdauern abgesichert. Nachweise und verbleibende Live-/Owner-Grenzen stehen in
+[FUNCTIONAL_VALIDATION.md](Documentation/Consolidation/FUNCTIONAL_VALIDATION.md).
+Es folgt kein automatischer Featureauftrag.
+
+Abschlussnachtrag 25.09.2026: Vorschauen zeigen zusätzlich konkrete gespeicherte Mengen/Beträge;
+fehlender SDE-Katalog wird verständlich erklärt. Isolierter nativer Bedien-Smoketest mit Projekt,
+Lager, Wissenschaftssperre, Verkaufsbeleg-Einstieg und geprüfter Sicherung durchgeführt.
+V2-Wiederherstellung nach absichtlich unvollständiger V3-Initialisierung ergänzt. Letzte sichtbare
+Altbezeichnungen in den Berechtigungserklärungen bereinigt. Finale Zahlen: SwiftPM 451 bestanden +
+1 opt-in Skip, Kit 7 + 1, native Core-Tests 415 + 1; Details und Legacy-Einzelfehler im aktuellen Prüfbericht.
+
+Legacy-Nachprüfung: 715 Fälle bestanden, ein alter Architektur-/UI-Texttest mit sieben Assertions
+zur ausdrücklich entfernten Finanzansicht. Nur dessen großer Accounts-Bildschirm wurde in der
+temporären Testkopie wegen einer Compilergrenze ausgeklammert; keine Testdatei oder Archivquelle geändert.
+Die sieben Aussagen sind in LEGACY_TEST_DISPOSITIONS einzeln eingeordnet. Finale Reservierungsvorschauen
+bewahren außerdem die manuelle Herkunft eines ohne ESI gerechneten Plans und verlangen frische ESI-Daten.

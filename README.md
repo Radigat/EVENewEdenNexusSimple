@@ -5,7 +5,11 @@ Einziger aktiver Projektstand: `/Users/svenstolze/Documents/EVE New Eden Nexus -
 
 Der zuletzt verwendete lokale App-Stand einschließlich aller vorhandenen Änderungen,
 Tests und `EVEStaticDataKit` ist die aktive Codebasis. Andere Entwicklungslinien
-sind vollständig als Quellen archiviert. Die Konsolidierung ändert keine Fachlogik.
+sind vollständig als Quellen archiviert. Ihre fehlenden vorhandenen Fachabläufe sind über Adapter
+in die aktive App integriert; bestehende Berechnungsregeln bleiben maßgeblich.
+
+Aktueller Umfang und Entscheidungen: [Fachliche Konsolidierung](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md).
+Prüfnachweise: [Aktuelle Verifikation](Documentation/Consolidation/FUNCTIONAL_VALIDATION.md).
 
 | Dokument | Verbindlicher Inhalt |
 | --- | --- |

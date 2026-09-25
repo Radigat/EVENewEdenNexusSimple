@@ -21,7 +21,7 @@ und DerivedData unter `/private/tmp` setzen. Die vorhandenen Schalter sind:
 - `CLANG_MODULE_CACHE_PATH` und `SWIFTPM_MODULECACHE_OVERRIDE`: separate Modulcaches.
 
 Die tatsächlichen Befehle und Ergebnisse stehen im
-[Prüfbericht](Documentation/Consolidation/VALIDATION.md). `--disable-sandbox` betrifft
+[aktuellen Prüfbericht](Documentation/Consolidation/FUNCTIONAL_VALIDATION.md). `--disable-sandbox` betrifft
 bei SwiftPM nur den Manifest-/Build-Prozess; bei macOS-Ausführungsbeschränkungen
 den vorgesehenen Berechtigungsweg verwenden. Keine produktiven Stores als Fixtures.
 Reale SDE-/SSO-/ESI-Abnahmen bleiben opt-in und werden nicht durch Unit-Tests ersetzt.
@@ -42,3 +42,10 @@ Status in PROJECT_STATE, Produktbeschreibung in PRODUCT, Architektur in ARCHITEC
 datierte Nachweise in Documentation und dev-diary. Kompatibilitätsdateien sind keine
 zweiten Quellen. Legacy-Prompts nicht automatisch ausführen.
 Nach Checkpoint und Abschlussbericht stoppen; keine neuen Features planen.
+
+## Additive Datenprüfung
+
+Migrationen V2→V3 und wiederholte Initialisierung mit synthetischen Stores prüfen.
+SQLite-Sicherungen müssen WAL-Daten enthalten; manipulierte und fremde Sicherungen müssen scheitern.
+Niemals die produktive Installation oder Nutzerdaten für diese Tests verwenden.
+Neue Kernquellen/-tests müssen sowohl in SwiftPM als auch im bestehenden Xcode-Projekt enthalten sein.

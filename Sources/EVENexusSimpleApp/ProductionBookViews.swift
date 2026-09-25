@@ -608,6 +608,7 @@ final class ProductionOverviewProjectionCache {
 }
 
 private struct ProductionOverviewGrid: View {
+  @EnvironmentObject private var consolidation: ConsolidationController
   let rows: [StoredProductionOverviewRow]
   let isEditable: Bool
   let availableWidth: CGFloat
@@ -1050,7 +1051,7 @@ private struct ProductionOverviewGrid: View {
     column: Int,
     rowIndex: Int
   ) -> some View {
-    if isEditable {
+    if isEditable && !consolidation.workspace.costs.contains(where: { $0.id == row.id }) {
       TextField(
         "",
         value: Binding(
@@ -1093,7 +1094,7 @@ private struct ProductionOverviewGrid: View {
     column: Int,
     rowIndex: Int
   ) -> some View {
-    if isEditable {
+    if isEditable && !consolidation.workspace.costs.contains(where: { $0.id == row.id && $0.evidenceMode }) {
       TextField(
         "",
         value: Binding(
@@ -1141,7 +1142,7 @@ private struct ProductionOverviewGrid: View {
     column: Int,
     rowIndex: Int
   ) -> some View {
-    if isEditable {
+    if isEditable && !consolidation.workspace.costs.contains(where: { $0.id == row.id && $0.evidenceMode }) {
       HStack(spacing: 2) {
         Button {
           row.soldUnits = row.soldUnits > 0 ? 0 : row.units
@@ -1296,6 +1297,12 @@ private func deleteProductionOverviewRow(
   _ row: StoredProductionOverviewRow,
   in modelContext: ModelContext
 ) throws {
+  if let stored = try modelContext.fetch(FetchDescriptor<StoredConsolidationWorkspace>()).first {
+    let workspace = try JSONDecoder().decode(ConsolidationWorkspace.self, from: stored.payload)
+    guard !workspace.sales.contains(where: { $0.rowID == row.id }) else {
+      throw ConsolidationError.invalid("Die Produktion besitzt bestätigte Verkaufsbelege und bleibt als Nachweis erhalten.")
+    }
+  }
   modelContext.delete(row)
   do {
     try modelContext.save()

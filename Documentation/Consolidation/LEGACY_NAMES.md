@@ -17,3 +17,9 @@ Aktiver Projekt-/Produktname: **EVE New Eden Nexus - Assets, Industry, Markets**
 Der installierte Alt-Build unter `~/Applications/EVE Nexus Simple.app` ist ein
 separates Installationsartefakt. Die Konsolidierung überschreibt weder diese App
 noch Benutzerdaten. Der neu gebaute App-Produktname steht im Prüfbericht.
+
+
+Nach der fachlichen Zusammenführung wurden auch die sichtbaren Berechtigungserklärungen in beiden
+Sprachen umgestellt. Alte Namen in Portierungs-Kommentaren und im Test für das abgelehnte fremde
+Sicherungsformat bleiben absichtliche Herkunfts-/Negativtestbezeichnungen. Die ChatGPT-Projektanzeige
+„EVE New Eden Nexus“ bleibt vom Repository getrennt; sie wird hier nicht als zweiter aktiver Codebestand behandelt.

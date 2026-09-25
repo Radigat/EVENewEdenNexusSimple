@@ -231,6 +231,8 @@ enum MainHubOpportunityPlannerHandoff {
 }
 
 struct ContentView: View {
+  @EnvironmentObject private var consolidation: ConsolidationController
+  @State private var consolidationArea: ConsolidationArea?
   let runtime: RuntimeState
   @Query(sort: \StoredProductionBasis.updatedAt, order: .reverse)
   private var storedBases: [StoredProductionBasis]
@@ -342,6 +344,15 @@ struct ContentView: View {
         .background(DesignTokens.canvas)
       }
     }
+    .toolbar {
+      if selection != .planner {
+        if selection == .warehouse { Button("Manuelle Lager") { consolidationArea = .warehouses } }
+        if selection == .blueprints { Button("Wissenschaftsaufträge") { consolidationArea = .science } }
+        if selection == .productionBook { Button("Verkaufsbelege") { consolidationArea = .sales } }
+        if selection == .data { Button("Preisprofile & Sicherung") { consolidationArea = dataSettingsSelection == .marketSettings ? .prices : .backup } }
+      }
+    }
+    .sheet(item: $consolidationArea) { area in ConsolidationWorkbenchView(area: area) }
     .navigationSplitViewStyle(.balanced)
     .tint(DesignTokens.accent)
     .frame(minWidth: 640, minHeight: 480)

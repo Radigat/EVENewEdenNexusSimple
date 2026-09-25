@@ -6,6 +6,7 @@ import SwiftUI
 
 @main
 struct EVENexusSimpleApp: App {
+  @StateObject private var consolidation = ConsolidationController()
   @StateObject private var runtimeOwner: RuntimeStateOwner
   @AppStorage(AppLanguage.storageKey, store: AppDefaults.store)
   private var storedLanguage = AppLanguage.defaultLanguage.rawValue
@@ -75,6 +76,11 @@ struct EVENexusSimpleApp: App {
       Group {
         if let modelContainer {
           ContentView(runtime: runtimeOwner.runtime)
+            .environmentObject(consolidation)
+            .task {
+              do { try consolidation.start(container: modelContainer) }
+              catch { consolidation.error = error.localizedDescription }
+            }
             .environmentObject(runtimeOwner.runtime)
             .environment(\.locale, appLanguage.locale)
             .environment(\.dynamicTypeSize, appTextSize.dynamicTypeSize)

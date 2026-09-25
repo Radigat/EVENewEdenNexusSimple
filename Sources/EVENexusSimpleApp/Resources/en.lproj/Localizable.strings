@@ -97,9 +97,9 @@
 "%lld permissions missing" = "%lld permissions missing";
 "Review %lld requested permissions before EVE SSO opens." = "Review %lld requested permissions before EVE SSO opens.";
 "Show %lld requested ESI permissions and their modules" = "Show %lld requested ESI permissions and their modules";
-"Shows which ESI permissions EVE Nexus requests, why they are needed, and which modules use them." = "Shows which ESI permissions EVE Nexus requests, why they are needed, and which modules use them.";
+"Shows which ESI permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why they are needed, and which modules use them." = "Shows which ESI permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why they are needed, and which modules use them.";
 "Requested ESI permissions" = "Requested ESI permissions";
-"This overview explains which permissions EVE Nexus requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain." = "This overview explains which permissions EVE Nexus requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain.";
+"This overview explains which permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain." = "This overview explains which permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain.";
 "Used by: %@" = "Used by: %@";
 "Close" = "Close";
 "Update permissions for %@" = "Update permissions for %@";
@@ -116,7 +116,7 @@
 "Read trained skills used for planning." = "Read trained skills used for planning.";
 "Read details of accessible player structures." = "Read details of accessible player structures.";
 "Read the character's wallet balance." = "Read the character's wallet balance.";
-"Required by a current EVE Nexus feature." = "Required by a current EVE Nexus feature.";
+"Required by a current EVE New Eden Nexus - Assets, Industry, Markets feature." = "Required by a current EVE New Eden Nexus - Assets, Industry, Markets feature.";
 "No characters" = "No characters";
 "Open EVE SSO again for this character and replace its stored authorization with the currently required permissions. Selecting another character is rejected without replacing the existing authorization." = "Open EVE SSO again for this character and replace its stored authorization with the currently required permissions. Selecting another character is rejected without replacing the existing authorization.";
 "EVE SSO authorization was cancelled or denied." = "EVE SSO authorization was cancelled or denied.";

@@ -1,5 +1,9 @@
 # Konsolidierungsentscheidungen – 25.09.2026
 
+Aktuell: Die folgenden nummerierten Entscheidungen beschreiben den organisatorischen
+Checkpoint `182f1a9`. Die anschließend ausdrücklich freigegebene fachliche Integration
+und deren Konfliktentscheidungen stehen in [FUNCTIONAL_CONSOLIDATION.md](FUNCTIONAL_CONSOLIDATION.md).
+
 Projekt: EVE New Eden Nexus - Assets, Industry, Markets. Standardmodell: Astra Medium.
 
 1. **Ein aktiver Stamm.** `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets` ist die alleinige Arbeitswurzel.

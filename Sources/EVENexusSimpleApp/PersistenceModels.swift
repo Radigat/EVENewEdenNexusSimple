@@ -51,29 +51,32 @@ enum EVENexusMigrationPlan: SchemaMigrationPlan {
   static let schemas: [any VersionedSchema.Type] = [
     EVENexusSchemaV1.self,
     EVENexusSchemaV2.self,
+    EVENexusSchemaV3.self,
   ]
   static var stages: [MigrationStage] {
     [
       .lightweight(
         fromVersion: EVENexusSchemaV1.self,
         toVersion: EVENexusSchemaV2.self
-      )
+      ),
+      .lightweight(fromVersion: EVENexusSchemaV2.self, toVersion: EVENexusSchemaV3.self)
     ]
   }
 }
 
 @MainActor
 enum AppPersistence {
-  static let schemaVersion = 2
+  static let schemaVersion = 3
 
   static func open(paths: AppDataPaths) throws -> ModelContainer {
+    try ConsolidationPreferences.applyPending(paths: paths)
     try paths.prepareDirectories()
     _ = try PersistenceStoreSeeder.seedCanonicalStoreIfNeeded(paths: paths)
     _ = try PersistenceSafetyBackup.createIfNeeded(
       paths: paths,
       schemaVersion: schemaVersion
     )
-    let schema = Schema(versionedSchema: EVENexusSchemaV2.self)
+    let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
     let configuration = ModelConfiguration(
       "EVENexusSimple",
       schema: schema,

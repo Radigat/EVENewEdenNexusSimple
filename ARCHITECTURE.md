@@ -8,6 +8,14 @@
 > ist vollständig archiviert und keine zweite aktive Implementierung.
 > Auswahl und Grenzen: [Konsolidierungsentscheidungen](Documentation/Consolidation/DECISIONS.md).
 
+## Additive fachliche Integration
+
+SwiftData V3 ergänzt einen versionierten, revisionsgesicherten Arbeitsdatenverbund.
+V1 und V2 bleiben eingefroren. Projekt-, Lager-, Preis-, Reservierungs-, Einkaufs- und
+Belegdienste leben im bestehenden Kern; die App stellt Persistenz und Bedienung bereit.
+Die Details zu Schnittstellen, Wissenschaftsversorgung und Sicherung stehen im
+[Funktionsvertrag](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md).
+
 | Module | Owning skill | Input | Output |
 | --- | --- | --- | --- |
 | Governance | `eve-documentation-kit` | decisions and evidence | ADRs, contracts, handoffs |
@@ -151,9 +159,8 @@ never converted to an empty hangar. Industry derives
 reservations. A target shortfall is visible but never becomes negative stock.
 All current manufacturing and reaction graph steps consume this one projection;
 the shared pool does not claim that assets were transported between locations.
-Invention, copying and research facilities consume the same contract when their
-job planners are added, but version 1 still does not claim executable Science
-job planning.
+Concrete copying, research and invention planning now uses these established
+source contracts through the additive consolidation adapter. It never executes in-game jobs.
 
 `BlueprintPortfolio` is a read-only target composition over every persisted
 personal blueprint snapshot. It retains owner identity, source state and
@@ -1145,9 +1152,9 @@ required skills; decryptors retain probability, runs, ME and TE Dogma
 modifiers. `BlueprintSciencePlanner` separates copies from runs per copy,
 permits research only on originals, consumes one input-BPC run per invention
 attempt, computes skill/decryptor probability, and separates expected cost from
-the smallest whole-attempt binomial plan reaching 95% confidence. The app UI
-still disables Copy/Research/Invention as Planner supply until facility,
-installation-cost and draft persistence are complete. Tech-III reverse
+the smallest whole-attempt binomial plan reaching 95% confidence. The app binds concrete Copy/Research/Invention jobs to Planner supply after
+validating facility, fresh blueprint/skill sources, costs, licensed runs and persisted project identity.
+Science durations are counted once and conservatively precede manufacturing; incomplete jobs remain blocked. Tech-III reverse
 engineering is explicitly unsupported.
 
 The established **Recursive calculation** entry is a session-only reconstruction

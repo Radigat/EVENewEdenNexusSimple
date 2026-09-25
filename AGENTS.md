@@ -14,9 +14,10 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 
 ## Verbindliche Arbeitsgrenzen
 
-- In dieser Phase ausschließlich Konsolidierung; keine neuen Funktionen planen
-  oder implementieren, keine Produktlogik ändern und keine vorhandenen Funktionen
-  unbeabsichtigt entfernen. Nach dem Konsolidierungsbericht stoppen.
+- Ausschließlich die ausdrücklich autorisierte fachliche Konsolidierung bestehender
+  Funktionen durchführen; notwendige Adapter, UI-Anbindung und additive Migrationen
+  gehören dazu. Bestehende Rechenregeln erhalten. Keine weiteren Funktionen planen
+  oder implementieren. Nach Prüfung, lokalem Checkpoint und Abschlussbericht stoppen.
 - Tatsächlicher Quellcode, vorhandener Diff und konkrete Benutzeranweisung haben
   Vorrang vor historischen Planungen. Geplant, implementiert, getestet und vom
   Eigentümer abgenommen getrennt ausweisen.
@@ -68,3 +69,9 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 - Describe only the current factual behavior in `PRODUCT.md`; move chronology and superseded behavior to `dev-diary.md` instead of leaving contradictory guidance in the main documentation.
 - Keep planned, implemented, automatically verified, live-service-verified, and owner-accepted states distinct. Never present one evidence level as another.
 - Link to the authoritative contract or evidence under `Documentation/` rather than duplicating detailed rules in several files. Preserve explicit unavailable, partial, stale, forbidden, and unresolved states in all documentation.
+
+## Fachliche Konsolidierungsverträge
+
+Maßgeblich sind [Funktionsvertrag](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md) und
+[Feature-Zuordnung](Documentation/Consolidation/FEATURE_COVERAGE.md).
+Fertigungsprojekte sind Datensätze in der einzigen aktiven App, keine weiteren Arbeitsordner.

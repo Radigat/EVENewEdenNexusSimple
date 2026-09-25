@@ -1175,8 +1175,24 @@ public struct IndustryPlanner: Sendable {
         )
       )
     }
+    var scienceSeconds: Int64 = 0
+    let concreteScienceJobs = Set(context.blueprintSupplyPlans.values.flatMap(\.scienceJobs))
+    for job in concreteScienceJobs {
+      let duration: Int64?
+      switch job {
+      case .copying(let value): duration = value.durationSeconds
+      case .research(let value): duration = value.durationSeconds
+      case .invention(let value): duration = value.durationSeconds
+      }
+      if let duration { scienceSeconds = Self.saturatedAdd(scienceSeconds, duration) }
+      else { warnings.append(DomainWarning(code: "science.duration-unavailable", message: "Die Dauer eines vorgeschalteten Wissenschaftsauftrags ist nicht verfügbar.", severity: .blocking)) }
+    }
+    if !concreteScienceJobs.isEmpty {
+      totalSeconds = Self.saturatedAdd(totalSeconds, scienceSeconds)
+      warnings.append(DomainWarning(code: "science.sequential-prerequisites", message: "Geplante Wissenschaftsaufträge werden konservativ nacheinander vor der Fertigung eingeplant; tatsächliche Slot-Belegung und Invention-Erfolge können abweichen.", severity: .information))
+    }
     let configuredScheduling = context.productionBasis?.scheduling
-    let makespan = max(
+    let productionMakespan = max(
       Self.slotMakespan(
         durations: manufacturingDurations,
         slots: configuredScheduling?.manufacturingSlots ?? 1
@@ -1186,6 +1202,7 @@ public struct IndustryPlanner: Sendable {
         slots: configuredScheduling?.reactionSlots ?? 1
       )
     )
+    let makespan = Self.saturatedAdd(scienceSeconds, productionMakespan)
     if consolidatedJobs.count > 1 {
       warnings.append(
         DomainWarning(

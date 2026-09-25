@@ -180,16 +180,10 @@ public enum PersistenceSafetyBackup {
 
     do {
       let source = paths.swiftDataStoreURL
-      for suffix in ["", "-wal", "-shm"] {
-        let sourceFile = URL(fileURLWithPath: source.path + suffix)
-        guard fileManager.fileExists(atPath: sourceFile.path) else { continue }
-        try fileManager.copyItem(
-          at: sourceFile,
-          to: destination.appendingPathComponent(
-            source.lastPathComponent + suffix
-          )
-        )
-      }
+      try ConsolidationBackup.snapshotSQLite(
+        source: source,
+        destination: destination.appendingPathComponent(source.lastPathComponent)
+      )
       let manifest = PersistenceBackupManifest(
         schemaVersion: schemaVersion,
         createdAt: now,
