@@ -4445,3 +4445,40 @@ Eingebettete Daten und die bereits angelegte DEV-Arbeitskopie wurden nicht erset
 App wurde nicht aktualisiert oder beendet. Regulärer Start über Finder anschließend beobachtet:
 DEV-Hauptfenster „Dashboard“ erreichbar, kopierte Charakter- und Bestandsdaten sichtbar,
 keine Startfehlermeldung. Keine neue Anmeldung durchgeführt; Live-Zugriffe nicht abgenommen.
+
+
+## 25.09.2026 – Einstellungsreiter unter der Titelleiste stabilisiert
+
+Nutzerbefund: Die obere Bereichsauswahl schwankte in ihrer Höhe und verschwand
+teilweise unter dem Fensterrahmen. In der laufenden DEV-App auf Allgemein und ESI
+sichtbar nachvollzogen. Die bisherige Geschwister-VStack reservierte den oberen
+sicheren Bereich nicht für die Reiter; der innere Scrollbereich berücksichtigte
+den Fensterabstand separat.
+
+`SettingsWorkspaceLayout` reserviert die Navigation mit `safeAreaInset` oberhalb
+des Seiteninhalts. `DataSettingsNavigationBar` behält ihre Eigenhöhe, erstreckt den
+Hintergrund über die verfügbare Breite und verwendet unverändert Reiter bzw. die
+bestehende kompakte Menüauswahl. Keine festen Titelleisten-Pixelabstände eingeführt.
+Berechnungen, Einstellungen, Datenpfade und Anmeldung bleiben unverändert.
+
+Automatische Prüfung mit synthetischen Daten: SwiftPM 454 bestanden + 1 opt-in Skip,
+EVEStaticDataKit 7 + 1, native Core-Tests 416 + 1; Xcode Debug und Release erfolgreich.
+Neue UI-Geometrieprüfungen: Eigenhöhe bei 420/900/2300 Punkten Breite und 80/1300
+Punkten Angebotshöhe; Reiter unter der nativen Toolbar bei 2555 × 1300 und
+900 × 540 Punkten. Die ursprüngliche Überdeckung trat im vereinfachten nativen
+Testfenster nicht auf; diese Tests sind zusätzliche Layoutabdeckung, kein
+behaupteter automatischer Rot-/Grün-Nachweis. Protokolle liegen lokal unter
+`/private/tmp/eve-settings-layout-{tests,kit,debug,release,native-tests}.log`.
+
+Die bestehende DEV-App unter Downloads wurde aktualisiert, signiert und regulär
+geöffnet. Reiter auf Allgemein, ESI und Industrieeinstellungen vollständig sichtbar;
+maximiertes Fenster (Screenshot 2560 × 1357) und Bildschirmviertel (1281 × 679),
+Seitenwechsel sowie Scrollen geprüft. Anschließend ESI und ursprüngliche Fenstergröße
+wiederhergestellt. Vorherige Programmdateien für Rücknahme:
+`/private/tmp/eve-dev-code-before-layout-fix-1790330772`.
+
+Seed einschließlich Manifest (30 Dateien) und vorhandene DEV-Arbeitskopie
+(38 Dateien) direkt vor/nach Programmaustausch per SHA-256 unverändert. Keine
+Benutzerdaten in Tests oder Git übernommen. Normale App nicht ersetzt oder beendet.
+Keine Live-Service-Abnahme oder Nutzerabnahme behauptet. Keine weiteren offenen
+Probleme in dieser Layoutkorrektur; weitere Funktionsarbeit ist nicht Bestandteil.

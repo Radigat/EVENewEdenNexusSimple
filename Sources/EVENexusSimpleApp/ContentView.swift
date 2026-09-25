@@ -347,9 +347,15 @@ struct ContentView: View {
     .toolbar {
       if selection != .planner {
         if selection == .warehouse { Button("Manuelle Lager") { consolidationArea = .warehouses } }
-        if selection == .blueprints { Button("Wissenschaftsaufträge") { consolidationArea = .science } }
+        if selection == .blueprints {
+          Button("Wissenschaftsaufträge") { consolidationArea = .science }
+        }
         if selection == .productionBook { Button("Verkaufsbelege") { consolidationArea = .sales } }
-        if selection == .data { Button("Preisprofile & Sicherung") { consolidationArea = dataSettingsSelection == .marketSettings ? .prices : .backup } }
+        if selection == .data {
+          Button("Preisprofile & Sicherung") {
+            consolidationArea = dataSettingsSelection == .marketSettings ? .prices : .backup
+          }
+        }
       }
     }
     .sheet(item: $consolidationArea) { area in ConsolidationWorkbenchView(area: area) }
@@ -2545,48 +2551,80 @@ private struct DataSettingsWorkspace: View {
   @Binding var selection: DataSettingsSection
 
   var body: some View {
-    VStack(spacing: 0) {
-      ViewThatFits(in: .horizontal) {
-        settingsPicker
-          .pickerStyle(.segmented)
-          .labelStyle(.titleAndIcon)
-          .labelsHidden()
-          .fixedSize(horizontal: true, vertical: false)
-
-        HStack(spacing: DesignTokens.spacingSM) {
-          Label(selection.title, systemImage: selection.icon)
-            .font(.headline)
-          Spacer(minLength: DesignTokens.spacingSM)
-          settingsPicker
-            .pickerStyle(.menu)
-            .labelsHidden()
-        }
+    SettingsWorkspaceLayout {
+      DataSettingsNavigationBar(selection: $selection)
+    } content: {
+      switch selection {
+      case .general:
+        GeneralSettingsView()
+      case .sde:
+        DataSettingsView()
+      case .esi:
+        CharactersView()
+      case .industrySettings:
+        ProfilesView()
+      case .logistics:
+        LogisticsSettingsView()
+      case .marketSettings:
+        MarketSettingsView()
       }
-      .padding(.horizontal, DesignTokens.spacingLG)
-      .padding(.vertical, DesignTokens.spacingSM)
-      .background(DesignTokens.panel)
-      .accessibilityIdentifier("data-settings.navigation")
-
-      Divider()
-
-      Group {
-        switch selection {
-        case .general:
-          GeneralSettingsView()
-        case .sde:
-          DataSettingsView()
-        case .esi:
-          CharactersView()
-        case .industrySettings:
-          ProfilesView()
-        case .logistics:
-          LogisticsSettingsView()
-        case .marketSettings:
-          MarketSettingsView()
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+  }
+}
+
+/// Reserve the navigation bar inside the native safe area. A sibling VStack
+/// can let an inner scroll view consume the title-bar inset on its own.
+struct SettingsWorkspaceLayout<Navigation: View, Content: View>: View {
+  let navigation: Navigation
+  let content: Content
+
+  init(
+    @ViewBuilder navigation: () -> Navigation,
+    @ViewBuilder content: () -> Content
+  ) {
+    self.navigation = navigation()
+    self.content = content()
+  }
+
+  var body: some View {
+    content
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .safeAreaInset(edge: .top, spacing: 0) {
+        VStack(spacing: 0) {
+          navigation
+          Divider()
+        }
+      }
+  }
+}
+
+struct DataSettingsNavigationBar: View {
+  @Binding var selection: DataSettingsSection
+
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      settingsPicker
+        .pickerStyle(.segmented)
+        .labelStyle(.titleAndIcon)
+        .labelsHidden()
+        .fixedSize(horizontal: true, vertical: false)
+
+      HStack(spacing: DesignTokens.spacingSM) {
+        Label(selection.title, systemImage: selection.icon)
+          .font(.headline)
+        Spacer(minLength: DesignTokens.spacingSM)
+        settingsPicker
+          .pickerStyle(.menu)
+          .labelsHidden()
+      }
+    }
+    .fixedSize(horizontal: false, vertical: true)
+    .padding(.horizontal, DesignTokens.spacingLG)
+    .padding(.vertical, DesignTokens.spacingSM)
+    .frame(maxWidth: .infinity)
+    .background(DesignTokens.panel)
+    .accessibilityIdentifier("data-settings.navigation")
+
   }
 
   private var settingsPicker: some View {
@@ -2747,7 +2785,7 @@ private struct GeneralSettingsView: View {
   }
 }
 
-private struct EVEOnlineServiceBanner: View {
+struct EVEOnlineServiceBanner: View {
   @EnvironmentObject private var runtime: RuntimeState
 
   private struct Notice {

@@ -47,6 +47,66 @@ struct RuntimeFeatureStateTests {
   }
 
   @Test
+  func settingsNavigationKeepsItsIntrinsicHeight() {
+    let controller = NSHostingController(
+      rootView: DataSettingsNavigationBar(selection: .constant(.esi))
+        .environment(\.locale, Locale(identifier: "de"))
+    )
+    for width: CGFloat in [420, 900, 2300] {
+      let short = controller.sizeThatFits(in: CGSize(width: width, height: 80))
+      let tall = controller.sizeThatFits(in: CGSize(width: width, height: 1300))
+      #expect(abs(short.height - tall.height) <= 1)
+      #expect(tall.height <= 80)
+    }
+  }
+
+  @Test
+  func settingsNavigationStaysBelowNativeToolbar() {
+    let marker = NSView()
+    let controller = NSHostingController(
+      rootView: NavigationSplitView {
+        Text("Navigation").navigationSplitViewColumnWidth(220)
+      } detail: {
+        VStack(spacing: 0) {
+          EVEOnlineServiceBanner()
+          SettingsWorkspaceLayout {
+            DataSettingsNavigationBar(selection: .constant(.esi))
+              .background(SettingsNavigationFrameProbe(view: marker))
+          } content: {
+            ScrollView {
+              Text("Synthetic settings content").frame(minHeight: 1000)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("ESI")
+          }.background(DesignTokens.canvas)
+        }
+      }
+      .environmentObject(RuntimeState(startBackgroundServices: false))
+      .toolbar { Button("Settings action") {} }
+      .environment(\.locale, Locale(identifier: "de"))
+    )
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 1280, height: 760),
+      styleMask: [.titled, .resizable, .fullSizeContentView],
+      backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentViewController = controller
+    window.toolbarStyle = .unified
+    defer { window.close() }
+    for size in [NSSize(width: 2555, height: 1300), NSSize(width: 900, height: 540)] {
+      window.setContentSize(size)
+      controller.view.layoutSubtreeIfNeeded()
+      drainMainRunLoop()
+      controller.view.layoutSubtreeIfNeeded()
+      let header = marker.convert(marker.bounds, to: nil)
+      print("HEADER frame=\(header) layout=\(window.contentLayoutRect) window=\(window.frame)")
+      #expect(marker.window === window)
+      #expect(header.height >= 24)
+      #expect(header.maxY <= window.contentLayoutRect.maxY + 1)
+    }
+  }
+
+  @Test
   func primaryNavigationKeepsPlannerAndMovesLogisticsIntoSettings() {
     #expect(NavigationSection.establishedCases.contains(.planner))
     #expect(
@@ -305,4 +365,10 @@ private struct PlannerObservationProbe: View {
     counter.record()
     return Text("Planner revision \(featureState.revision)")
   }
+}
+
+private struct SettingsNavigationFrameProbe: NSViewRepresentable {
+  let view: NSView
+  func makeNSView(context: Context) -> NSView { view }
+  func updateNSView(_ nsView: NSView, context: Context) {}
 }

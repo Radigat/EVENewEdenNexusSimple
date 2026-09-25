@@ -163,6 +163,12 @@ Statusmeldungen vergrößern dadurch nicht den gesamten Navigationsbereich über
 die Fensterhöhe hinaus. Kopfmenüs, oberster Navigationseintrag und Logo bleiben
 innerhalb des Fensters; bei kleiner Höhe scrollt die Navigationsliste.
 
+Die Bereichsauswahl unter „Daten & Einstellungen“ belegt einen eigenen Bereich
+unterhalb der nativen Titelleiste. Ihre Höhe folgt den Bedienelementen und bleibt
+von der Fensterhöhe und dem gewählten Seiteninhalt unabhängig. Der Seiteninhalt
+scrollt darunter. Bei ausreichender Breite erscheinen Reiter; bei wenig Platz
+bleibt die bestehende kompakte Menüauswahl verfügbar.
+
 Aufgelöste EVE-Items mit positiver Type-ID verwenden zusätzlich die gemeinsame
 Darstellung `EVEItemText`: Ein kleines, vom offiziellen EVE-Bilddienst geladenes
 Type-Icon steht vor dem weiterhin direkt kopierbaren Namen. Während des Ladens

@@ -1,8 +1,8 @@
 # Lokaler App-Export und DEV-Kopie
 
 Aktives Quellprojekt: **EVE New Eden Nexus - Assets, Industry, Markets**.
-Beide exportierten Apps verwenden denselben geprüften Release-Code für Apple Silicon und
-macOS 14 oder neuer. `-DEV` kennzeichnet die isolierte Datenkopie, keine zusätzliche Fachfunktion.
+Die exportierten Apps basieren auf geprüftem Release-Code für Apple Silicon und
+macOS 14 oder neuer. Der jeweilige Quellstand steht in den Build-Metadaten. `-DEV` kennzeichnet die isolierte Datenkopie, keine zusätzliche Fachfunktion.
 
 ## Dateien und Nutzung
 
@@ -77,3 +77,23 @@ liegen unter `dist/` nur Build-Metadaten; keine App-Datenkopie und kein ZIP-Arch
 vorsorglich von Git ausgeschlossen. Die DEV-App enthält private Nutzdaten und ist kein
 öffentliches Distributionspaket. Für weitere Exporte ebenfalls ein lokales, nicht synchronisiertes
 Ziel verwenden.
+
+## Korrektur der Einstellungsreiter vom 25.09.2026
+
+Die DEV-App in Downloads enthält die korrigierte Reiterleiste: eigener Platz innerhalb
+des sichtbaren Inhaltsbereichs unter der nativen Titelleiste, konstante Eigenhöhe und
+vollbreiter Hintergrund. Allgemein, ESI und Industrieeinstellungen wurden direkt in
+der laufenden DEV-App geprüft, einschließlich Seitenwechsel, Scrollen und Wechsel
+zwischen maximiertem Fenster und einem Bildschirmviertel. Keine Überdeckung mehr
+beobachtet. Die normale exportierte App bleibt auf ihrem bisherigen Quellstand.
+
+SwiftPM: 454 bestanden / 1 optionaler Skip; EVEStaticDataKit: 7 / 1; native Tests:
+416 / 1. Debug- und Release-Build erfolgreich. Zwei zusätzliche synthetische UI-Tests
+prüfen die Eigenhöhe bei verschiedenen Breiten/Höhen und die Lage relativ zur nativen
+Toolbar. Der ursprüngliche Fehler ließ sich im vereinfachten Testfenster nicht
+reproduzieren; der Vorher-/Nachher-Nachweis stammt aus der laufenden DEV-App.
+
+Nur Programmdateien und lokale Signatur wurden erneuert. Alle 30 Dateien im Seed
+(einschließlich Manifest) sowie alle 38 vorhandenen DEV-Arbeitsdateien waren vor und
+unmittelbar nach der Aktualisierung per SHA-256 identisch. Kein erneuter Datenexport,
+keine Migration, keine neue Anmeldung. Die App-Signatur ist strikt geprüft.
