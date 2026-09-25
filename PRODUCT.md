@@ -1355,7 +1355,8 @@ mit kurzen, wiederverwendbaren Prompts steht in
 
 ## Installation und Entwicklung
 
-Lokale Release-Exporte liegen unter `dist/` (Apple Silicon, macOS 14+, lokale Ad-hoc-Signatur).
+Die fertigen lokalen Release-Apps liegen unter `~/Downloads/` (Apple Silicon, macOS 14+,
+lokale Ad-hoc-Signatur). Build-Nachweise liegen unter `dist/`.
 Die separat benannte `EVE New Eden Nexus - Assets, Industry, Markets-DEV.app` enthält eine
 geprüfte Kopie der lokalen Daten, Kataloge und Einstellungen zum Exportzeitpunkt. Beim ersten
 Start wird sie atomar nach `~/Library/Application Support/com.local.EVENexusSimple.DEV/`
@@ -1368,7 +1369,8 @@ Anmeldeschlüssel sind nicht enthalten; Live-Abfragen erfordern eine erneute Anm
 Der bestehende lokale SSO-Callback bleibt erhalten; Anmeldungen deshalb nacheinander durchführen.
 Normale App, produktive Datenpfade und deren technische Identitäten bleiben unverändert.
 Der DEV-Starter und Exporter unter `Scripts/` gehören zur Verpackung, nicht zu einem zweiten
-App-Target. `dist/` ist wegen der privaten Datenkopie von Git ausgeschlossen.
+App-Target. `dist/` bleibt vorsorglich von Git ausgeschlossen. Die DEV-App enthält private Daten und wird
+ausschließlich lokal außerhalb synchronisierter Ordner aufbewahrt.
 Prüfnachweise und Exportablauf: [DEV_EXPORT.md](Documentation/DEV_EXPORT.md).
 
 

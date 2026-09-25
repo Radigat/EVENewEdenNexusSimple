@@ -6,8 +6,8 @@ macOS 14 oder neuer. `-DEV` kennzeichnet die isolierte Datenkopie, keine zusätz
 
 ## Dateien und Nutzung
 
-- `dist/EVE New Eden Nexus - Assets, Industry, Markets.app`: normale App mit bestehenden Datenpfaden.
-- `dist/EVE New Eden Nexus - Assets, Industry, Markets-DEV.app`: separate DEV-App mit eingebettetem
+- `~/Downloads/EVE New Eden Nexus - Assets, Industry, Markets.app`: normale App mit bestehenden Datenpfaden.
+- `~/Downloads/EVE New Eden Nexus - Assets, Industry, Markets-DEV.app`: separate DEV-App mit eingebettetem
   Datenbestand zum Exportzeitpunkt (25.09.2026).
 - `dist/BUILD_INFO.json` und `dist/DEV_BUILD_INFO.json`: Herkunft, Prüfergebnis und Build-Metadaten.
 
@@ -53,5 +53,10 @@ verweigert symbolische Links und bricht bei erkannten Quelldatenänderungen wäh
 `Scripts/DevAppLauncher.swift` wird ausschließlich als Starter des exportierten Pakets gebaut;
 Xcode-Projekt, App-Target, fachliche Berechnungen und produktiver OAuth-Callback bleiben erhalten.
 
-Alle Dateien unter `dist/` sind lokale Artefakte und von Git ausgeschlossen. Die DEV-App enthält
-private Nutzdaten und ist kein öffentliches Distributionspaket.
+Die fertigen Apps liegen im lokalen Downloads-Ordner. Der File Provider des synchronisierten
+Dokumente-Ordners ergänzte dort wiederholt Finder-Metadaten, die die strikte Signaturprüfung
+störten. Außerhalb dieses Ordners bleiben die App-Signaturen unverändert prüfbar. Im Projekt
+liegen unter `dist/` nur Build-Metadaten; keine App-Datenkopie und kein ZIP-Archiv. `dist/` bleibt
+vorsorglich von Git ausgeschlossen. Die DEV-App enthält private Nutzdaten und ist kein
+öffentliches Distributionspaket. Für weitere Exporte ebenfalls ein lokales, nicht synchronisiertes
+Ziel verwenden.

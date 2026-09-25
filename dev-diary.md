@@ -4405,3 +4405,10 @@ Die finale private Datenkopie wurde nicht für Funktionstests gestartet. Starter
 mit ausschließlich synthetischen Daten geprüft. Lokale Ad-hoc-Signatur; keine Notarisierung,
 keine Installation über die bestehende App, kein Live-Service-Test und keine Nutzerabnahme.
 Details und reproduzierbare Prüfung: [DEV_EXPORT.md](Documentation/DEV_EXPORT.md).
+
+
+Exportnachtrag: Die fertigen Apps liegen unter `~/Downloads/`. Der File Provider ergänzte im
+synchronisierten Dokumente-Ordner wiederholt Finder-Metadaten an den Frameworks und störte damit
+die strikte Signaturprüfung. Beide Pakete wurden deshalb aus `dist/` an den lokalen Zielort
+verschoben und dort erneut geprüft. Es wurde kein ZIP-/Cloud-Archiv angelegt; `dist/` enthält
+nur Build-Metadaten. Die installierte produktive App wurde nicht ersetzt.
