@@ -46,7 +46,7 @@ struct ConsolidationBackupView: View {
   @State private var restoreURL: URL?
   @State private var confirmRestore = false
   var body: some View {
-    Form {
+    Panel(title: "Sicherung & Wiederherstellung") {
       Text(
         "Die Sicherung enthält lokale Anwendungsdaten, Einstellungen und installierte Datenkataloge. Anmeldeschlüssel verbleiben im macOS-Schlüsselbund."
       )
@@ -59,7 +59,19 @@ struct ConsolidationBackupView: View {
       Button("Anonymisierte Diagnose exportieren") { diagnostics() }
       if busy { ProgressView("Dateien werden geprüft…") }
       if let message { Text(message).textSelection(.enabled) }
-      Section("Letzte Importberichte") {
+      if let error = controller.error {
+        Text(error)
+          .foregroundStyle(DesignTokens.negative)
+          .textSelection(.enabled)
+      }
+      Divider()
+      Text("Letzte Importberichte")
+        .font(.headline)
+      if controller.workspace.imports.isEmpty {
+        Text("Keine Importberichte vorhanden.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else {
         ForEach(controller.workspace.imports.suffix(10).reversed()) { report in
           DisclosureGroup("\(report.filename) · \(report.outcomes.count) Zeilen") {
             Text("SHA256: \(report.sha256)\n\(report.encoding), \(report.delimiter)").font(.caption)
@@ -68,27 +80,28 @@ struct ConsolidationBackupView: View {
           }
         }
       }
-    }.formStyle(.grouped)
-      .confirmationDialog(
-        "Geprüfte Sicherung beim nächsten Start wiederherstellen?", isPresented: $confirmRestore
-      ) {
-        Button("Wiederherstellung vormerken") {
-          guard let restoreURL else { return }
-          busy = true
-          Task {
-            defer { busy = false }
-            do {
-              let paths = try AppDataPaths.live()
-              try await Task.detached(priority: .utility) {
-                try ConsolidationBackup.scheduleRestore(restoreURL, paths: paths)
-              }.value
-              message =
-                "Wiederherstellung vorbereitet. Die App vollständig beenden und erneut öffnen. Vorherige Daten werden aufbewahrt."
-            } catch { controller.error = error.localizedDescription }
-          }
+    }
+    .accessibilityIdentifier("general.backup-recovery")
+    .confirmationDialog(
+      "Geprüfte Sicherung beim nächsten Start wiederherstellen?", isPresented: $confirmRestore
+    ) {
+      Button("Wiederherstellung vormerken") {
+        guard let restoreURL else { return }
+        busy = true
+        Task {
+          defer { busy = false }
+          do {
+            let paths = try AppDataPaths.live()
+            try await Task.detached(priority: .utility) {
+              try ConsolidationBackup.scheduleRestore(restoreURL, paths: paths)
+            }.value
+            message =
+              "Wiederherstellung vorbereitet. Die App vollständig beenden und erneut öffnen. Vorherige Daten werden aufbewahrt."
+          } catch { controller.error = error.localizedDescription }
         }
-        Button("Abbrechen", role: .cancel) {}
       }
+      Button("Abbrechen", role: .cancel) {}
+    }
   }
   private func create() {
     let panel = NSSavePanel()

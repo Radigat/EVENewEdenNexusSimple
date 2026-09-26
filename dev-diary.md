@@ -4566,3 +4566,27 @@ vorgesehenen opt-in Real-SDE-Skip. Die deutschen und englischen
 Lokalisierungskataloge sind gültig, und der native unsignierte Xcode-Debug-Build
 endet mit `BUILD SUCCEEDED`. Keine Live-ESI-, installierte-App- oder
 Nutzerabnahme behauptet.
+
+
+## 27.09.2026 – Preisprofile und Sicherung in Einstellungen integriert
+
+Auf Nutzerauftrag den gemeinsamen Toolbar-Einstieg „Preisprofile & Sicherung“
+und die beiden eigenständigen Bereiche der Projektverwaltung entfernt. Manuelle
+Preisprofile einschließlich Gültigkeit, Einzelpreisen, CSV-Import und
+Bestätigungsvorschau sind nun direkt in den Markteinstellungen eingebettet.
+Lokale Sicherung, Prüfung, vorbereitete Wiederherstellung, anonymisierter
+Diagnoseexport und letzte Importberichte liegen in den allgemeinen Einstellungen.
+
+Die zugehörigen Fachmodelle und Verträge bleiben erhalten: Projektzuweisungen
+verwenden weiterhin manuelle Preisprofile, aktive Marktpreise bleiben der
+Standard, und Wiederherstellungen werden weiterhin geprüft beim nächsten
+App-Start ausgeführt. Automatische Sicherheitskopien für Migrationen und
+SDE-Aktualisierungen wurden nicht verändert. Die laufende beziehungsweise
+installierte DEV-App wurde in diesem Schritt nicht ersetzt.
+
+Der vollständige isolierte SwiftPM-Lauf besteht mit 450 Tests. Das separate
+`EVEStaticDataKit` besteht mit 8 Tests einschließlich des vorgesehenen opt-in
+Real-SDE-Skips. Der native unsignierte Xcode-Debug-Build endet mit
+`BUILD SUCCEEDED`; die einzige fachfremde Compiler-Warnung bleibt die bereits
+bekannte TaskLocal-Abkündigung im ESI-Client. Keine Live-ESI-, installierte-App-
+oder visuelle Nutzerabnahme behauptet.

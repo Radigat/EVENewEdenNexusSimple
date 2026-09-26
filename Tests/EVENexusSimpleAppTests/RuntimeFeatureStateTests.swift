@@ -125,6 +125,10 @@ struct RuntimeFeatureStateTests {
       NavigationSection.establishedCases.contains(.mineralPurchaseAnalysis)
     )
     #expect(DataSettingsSection.allCases.contains(.logistics))
+    #expect(DataSettingsSection.allCases.contains(.general))
+    #expect(DataSettingsSection.allCases.contains(.marketSettings))
+    #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Preisprofile"))
+    #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Sicherung"))
   }
 
   @Test

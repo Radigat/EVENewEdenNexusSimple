@@ -3146,6 +3146,7 @@ struct MarketSettingsView: View {
         addMarketConfiguration
         configuredMarkets
         profitabilityConfiguration
+        ConsolidationPricesView()
       }
       .padding(DesignTokens.spacingLG)
     }

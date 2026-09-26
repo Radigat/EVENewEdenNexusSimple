@@ -14,7 +14,7 @@ Quelle: archivierte Feature-Matrix; Status gegen vorhandenen Quellcode und die a
 | TEC-013 | Begrenzte Katalogsuche und gestaffelte Großgraphen-UI | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | TEC-014 | Adaptive, tastatur- und VoiceOver-vermittelbare Kernoberfläche | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | TEC-010 | Versionierte Referenzdaten und gemeinsame Testhelfer | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
-| TEC-008 | Lokale Backups und Restore | Adaptierte konsistente SQLite-Sicherung, geprüftes neues Datenfamilienformat und Wiederherstellung beim Start; SDE-Rollback bleibt bestehen. |
+| TEC-008 | Lokale Backups und Restore | In Allgemeine Einstellungen integrierte, konsistente SQLite-Sicherung, geprüftes neues Datenfamilienformat und Wiederherstellung beim Start; SDE-Rollback bleibt bestehen. |
 | TEC-009 | Domain, Application, Infrastructure und Persistence getrennt | Aktive Core/App-Schichtung beibehalten; Legacy-Schichten werden über Adapter zusammengeführt. |
 | TEC-011 | Eigene Git-Wurzel mit reviewbarer Baseline | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | TEC-012 | Eigenständiges Xcode-Projekt und gemeinsame Schemes | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
@@ -52,8 +52,8 @@ Quelle: archivierte Feature-Matrix; Status gegen vorhandenen Quellcode und die a
 | RES-001 | Materialien für Projekte reservieren | Übernommen: persistente Herkunftsreservierungen, Lebenszyklus, Prioritätsvorschau und Konflikte. |
 | RES-002 | Konkurrenz und Schutzmengen erkennen | Übernommen: persistente Herkunftsreservierungen, Lebenszyklus, Prioritätsvorschau und Konflikte. |
 | BOB-001 | Bestand verwenden und Zwischenstufen bauen/kaufen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
-| PRC-001 | Manuelle Preise und Profile | Übernommen: exakte manuelle Preisprofile, Gültigkeit und CSV-Vorschau; aktive Marktpreise bleiben Standard. |
-| PRC-002 | CSV-Preisimport | Übernommen: exakte manuelle Preisprofile, Gültigkeit und CSV-Vorschau; aktive Marktpreise bleiben Standard. |
+| PRC-001 | Manuelle Preise und Profile | In Markteinstellungen integriert: exakte manuelle Preisprofile, Gültigkeit und CSV-Vorschau; aktive Marktpreise bleiben Standard. |
+| PRC-002 | CSV-Preisimport | In Markteinstellungen integriert: exakte manuelle Preisprofile, Gültigkeit und CSV-Vorschau; aktive Marktpreise bleiben Standard. |
 | FIN-001 | Material-/Job-/Gesamtkosten | Zurückgezogene Legacy-Ansicht bleibt entfernt; bestehende aktuelle Rechnung/Wallet und erforderliche Belegdienste bleiben nutzbar. |
 | FIN-002 | Erlös, Gewinn, Marge, ROI, Break-even | Zurückgezogene Legacy-Ansicht bleibt entfernt; bestehende aktuelle Rechnung/Wallet und erforderliche Belegdienste bleiben nutzbar. |
 | FIN-003 | Materialeinkauf, Logistik, Produktion und benötigtes Projektbudget | Übernommen als ausdrückliches Einkaufsbudget mit ersetzenden Kostenangaben; aktuelle Gewinnlogik bleibt maßgeblich. |
@@ -90,7 +90,7 @@ Quellpfade beziehen sich auf den unveränderten Legacy-Ordner, Zielpfade auf den
 | Domain/PriceProfile.swift, Application/PriceProfileManagement.swift | ConsolidationMoney, Imports und Preisprofilverwaltung | Exaktes Geld, Gültigkeit, fehlende Werte, Überlauf |
 | Application/ProjectBudgetPlanning.swift, ProjectEconomics.swift, ShoppingListManagement.swift | Explizites Einkaufsbudget, Ersatzbeträge, Fortschritt, aggregierter Export | Budgetabgrenzung und Bestandsneutralität |
 | Application/ProductionBatchCostManagement.swift und ProductionBatchSaleManagement.swift | Aktuelles Produktionsbuch plus Kosten-/Belegzuordnung | Teilverkauf, Doppelbeleg, Überverkauf und Cent-Restverteilung |
-| Application/LocalBackupManagement.swift, Persistence/SQLiteLocalBackupService.swift | ConsolidationBackup und Einstellungsdialog | WAL-Snapshot, Prüfsummen, fremdes Format und Wiederherstellung |
+| Application/LocalBackupManagement.swift, Persistence/SQLiteLocalBackupService.swift | ConsolidationBackup und Allgemeine Einstellungen | WAL-Snapshot, Prüfsummen, fremdes Format und Wiederherstellung |
 | Aktive Blueprints/BlueprintModels.swift und vorhandene SDE-/Research-Dienste | ConsolidationScience und Science-Formular | Bestehende Wahrscheinlichkeitsfälle, konkrete Versorgung und Zeitregression |
 
 `ConsolidationTests.swift`, `ConsolidationCSVParserTests.swift` und

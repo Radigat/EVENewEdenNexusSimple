@@ -331,11 +331,6 @@ struct ContentView: View {
           Button("Wissenschaftsaufträge") { consolidationArea = .science }
         }
         if selection == .productionBook { Button("Verkaufsbelege") { consolidationArea = .sales } }
-        if selection == .data {
-          Button("Preisprofile & Sicherung") {
-            consolidationArea = dataSettingsSelection == .marketSettings ? .prices : .backup
-          }
-        }
       }
     }
     .sheet(item: $consolidationArea) { area in ConsolidationWorkbenchView(area: area) }
@@ -2714,6 +2709,8 @@ private struct GeneralSettingsView: View {
             }
           }
         }
+
+        ConsolidationBackupView()
       }
       .padding(DesignTokens.spacingLG)
       .frame(maxWidth: 1_600, alignment: .leading)

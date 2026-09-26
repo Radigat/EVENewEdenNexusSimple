@@ -8,11 +8,9 @@ enum ConsolidationArea: String, CaseIterable, Identifiable {
   case projects = "Projekte"
   case warehouses = "Manuelle Lager"
   case reservations = "Reservierungen"
-  case prices = "Preisprofile"
   case purchasing = "Einkauf"
   case science = "Wissenschaft"
   case sales = "Verkaufsbelege"
-  case backup = "Sicherung"
   var id: Self { self }
 }
 
@@ -44,49 +42,15 @@ struct ConsolidationWorkbenchView: View {
       Picker("Bereich", selection: $area) {
         ForEach(ConsolidationArea.allCases) { Text($0.rawValue).tag($0) }
       }
-      if let error = controller.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-      if let preview = controller.preview {
-        GroupBox("Vorschau – noch nicht gespeichert") {
-          VStack(alignment: .leading) {
-            ScrollView {
-              Text(
-                (Array(preview.summary.prefix(200))
-                  + (preview.summary.count > 200
-                    ? [
-                      "Weitere Zeilen: \(preview.summary.count - 200). Vollständige Vorschau exportieren."
-                    ] : []))
-                  .joined(separator: "\n")
-              ).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-            }.frame(maxHeight: 150)
-            HStack {
-              Button("Bestätigen und speichern") {
-                controller.confirm(catalogBuild: runtime.activeSDEBuild)
-              }.buttonStyle(.borderedProminent)
-              Button("Vorschau exportieren") {
-                let panel = NSSavePanel()
-                panel.nameFieldStringValue = "Vorschau.txt"
-                if panel.runModal() == .OK, let url = panel.url {
-                  do {
-                    try preview.summary.joined(separator: "\n").write(
-                      to: url, atomically: true, encoding: .utf8)
-                  } catch { controller.error = error.localizedDescription }
-                }
-              }
-              Button("Verwerfen") { controller.preview = nil }
-            }
-          }
-        }
-      }
+      ConsolidationChangeStatusView()
       Group {
         switch area {
         case .projects: ConsolidationProjectsView()
         case .warehouses: ConsolidationWarehousesView()
         case .reservations: ConsolidationReservationsView()
-        case .prices: ConsolidationPricesView()
         case .purchasing: ConsolidationPurchasingView()
         case .science: ConsolidationScienceView()
         case .sales: ConsolidationSalesView()
-        case .backup: ConsolidationBackupView()
         }
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -126,6 +90,60 @@ struct ConsolidationWorkbenchView: View {
     .onChange(of: runtime.activeSDEContentSHA256) { controller.stockRevision = UUID() }
     .onChange(of: runtime.productionBasis) { controller.stockRevision = UUID() }
 
+  }
+}
+
+struct ConsolidationChangeStatusView: View {
+  @EnvironmentObject private var controller: ConsolidationController
+  @EnvironmentObject private var runtime: RuntimeState
+
+  var body: some View {
+    if let error = controller.error {
+      Text(error)
+        .foregroundStyle(.red)
+        .textSelection(.enabled)
+    }
+    if let preview = controller.preview {
+      GroupBox("Vorschau – noch nicht gespeichert") {
+        VStack(alignment: .leading) {
+          ScrollView {
+            Text(
+              (Array(preview.summary.prefix(200))
+                + (preview.summary.count > 200
+                  ? [
+                    "Weitere Zeilen: \(preview.summary.count - 200). Vollständige Vorschau exportieren."
+                  ] : []))
+                .joined(separator: "\n")
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+          }
+          .frame(maxHeight: 150)
+          HStack {
+            Button("Bestätigen und speichern") {
+              controller.confirm(catalogBuild: runtime.activeSDEBuild)
+            }
+            .buttonStyle(.borderedProminent)
+            Button("Vorschau exportieren") {
+              let panel = NSSavePanel()
+              panel.nameFieldStringValue = "Vorschau.txt"
+              if panel.runModal() == .OK, let url = panel.url {
+                do {
+                  try preview.summary.joined(separator: "\n").write(
+                    to: url,
+                    atomically: true,
+                    encoding: .utf8
+                  )
+                } catch {
+                  controller.error = error.localizedDescription
+                }
+              }
+            }
+            Button("Verwerfen") { controller.preview = nil }
+          }
+        }
+      }
+    }
   }
 }
 
@@ -513,7 +531,7 @@ private struct ConsolidationCSVImportControls: View {
   }
 }
 
-private struct ConsolidationPricesView: View {
+struct ConsolidationPricesView: View {
   @EnvironmentObject private var controller: ConsolidationController
   @EnvironmentObject private var runtime: RuntimeState
   @State private var id: UUID?
@@ -525,65 +543,81 @@ private struct ConsolidationPricesView: View {
   @State private var hasEnd = false
   var profile: ManualPriceProfile? { controller.workspace.priceProfiles.first { $0.id == id } }
   var body: some View {
-    Form {
-      Picker("Profil", selection: $id) {
-        Text("Auswählen").tag(Optional<UUID>.none)
-        ForEach(controller.workspace.priceProfiles) { Text($0.name).tag(Optional($0.id)) }
-      }
-      TextField("Name", text: $name)
-      DatePicker("Gültig ab (einschließlich)", selection: $from)
-      Toggle("Gültigkeitsende festlegen", isOn: $hasEnd)
-      if hasEnd { DatePicker("Gültig bis (ausschließlich)", selection: $until) }
-      HStack {
-        Button("Profil erstellen") {
-          do {
-            try controller.edit {
-              try $0.createPriceProfile(name: name, from: from, until: hasEnd ? until : nil)
-            }
-            id = controller.workspace.priceProfiles.last?.id
-          } catch { controller.error = error.localizedDescription }
+    VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+      ConsolidationChangeStatusView()
+      Panel(title: "Preisprofile") {
+        Text(
+          "Manuelle Preisprofile gelten ausschließlich für das Einkaufsbudget eines ausdrücklich zugewiesenen Fertigungsprojekts. Aktuelle Marktpreise bleiben der Standard."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        Picker("Profil", selection: $id) {
+          Text("Auswählen").tag(Optional<UUID>.none)
+          ForEach(controller.workspace.priceProfiles) { Text($0.name).tag(Optional($0.id)) }
         }
-        Button("Name und Gültigkeit ändern") {
-          controller.propose(["Gültigkeit des ausgewählten Preisprofils ändern."]) { w in
-            guard let i = w.priceProfiles.firstIndex(where: { $0.id == id }),
-              !hasEnd || until > from
-            else { throw ConsolidationError.invalid("Ungültiger Zeitraum.") }
-            guard !ConsolidationWorkspace.normalized(name).isEmpty,
-              !w.priceProfiles.contains(where: {
-                $0.id != id
-                  && ConsolidationWorkspace.normalized($0.name)
-                    == ConsolidationWorkspace.normalized(name)
-              })
-            else {
-              throw ConsolidationError.invalid("Preisprofilname ist leer oder bereits vergeben.")
+        TextField("Name", text: $name)
+        DatePicker("Gültig ab (einschließlich)", selection: $from)
+        Toggle("Gültigkeitsende festlegen", isOn: $hasEnd)
+        if hasEnd { DatePicker("Gültig bis (ausschließlich)", selection: $until) }
+        HStack {
+          Button("Profil erstellen") {
+            do {
+              try controller.edit {
+                try $0.createPriceProfile(name: name, from: from, until: hasEnd ? until : nil)
+              }
+              id = controller.workspace.priceProfiles.last?.id
+            } catch { controller.error = error.localizedDescription }
+          }
+          Button("Name und Gültigkeit ändern") {
+            controller.propose(["Gültigkeit des ausgewählten Preisprofils ändern."]) { w in
+              guard let i = w.priceProfiles.firstIndex(where: { $0.id == id }),
+                !hasEnd || until > from
+              else { throw ConsolidationError.invalid("Ungültiger Zeitraum.") }
+              guard !ConsolidationWorkspace.normalized(name).isEmpty,
+                !w.priceProfiles.contains(where: {
+                  $0.id != id
+                    && ConsolidationWorkspace.normalized($0.name)
+                      == ConsolidationWorkspace.normalized(name)
+                })
+              else {
+                throw ConsolidationError.invalid("Preisprofilname ist leer oder bereits vergeben.")
+              }
+              w.priceProfiles[i].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+              w.priceProfiles[i].validFrom = from
+              w.priceProfiles[i].validUntil = hasEnd ? until : nil
             }
-            w.priceProfiles[i].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            w.priceProfiles[i].validFrom = from
-            w.priceProfiles[i].validUntil = hasEnd ? until : nil
           }
         }
+        TextField("CCP Typ-ID", text: $type)
+        TextField("Einzelpreis in ISK", text: $price)
+        Button("Preis prüfen") { Task { await addPrice() } }
+        Button("Marktpreise aus aktuellem Projektplan prüfen") { importMarket() }
+        if let id { ConsolidationCSVImportControls(kind: .prices(id)) }
+        if let profile {
+          Text("Quelle: \(profile.source)").font(.caption).textSelection(.enabled)
+          ConsolidationPriceTable(
+            rows: profile.prices.map { type, price in
+              ConsolidationPriceRow(
+                id: type,
+                name: profile.names[type] ?? "Name nicht aufgelöst",
+                cents: price.hundredths
+              )
+            })
+        }
       }
-      TextField("CCP Typ-ID", text: $type)
-      TextField("Einzelpreis in ISK", text: $price)
-      Button("Preis prüfen") { Task { await addPrice() } }
-      Button("Marktpreise aus aktuellem Projektplan prüfen") { importMarket() }
-      if let id { ConsolidationCSVImportControls(kind: .prices(id)) }
-      if let profile {
-        Text("Quelle: \(profile.source)").font(.caption).textSelection(.enabled)
-        ConsolidationPriceTable(
-          rows: profile.prices.map { type, price in
-            ConsolidationPriceRow(
-              id: type, name: profile.names[type] ?? "Name nicht aufgelöst", cents: price.hundredths
-            )
-          })
-      }
-    }.formStyle(.grouped).onChange(of: id) {
+    }
+    .accessibilityIdentifier("market-settings.price-profiles")
+    .onChange(of: id) {
       if let p = profile {
         name = p.name
         from = p.validFrom
         hasEnd = p.validUntil != nil
         until = p.validUntil ?? .now
       }
+    }
+    .onDisappear {
+      controller.error = nil
+      controller.preview = nil
     }
   }
   private func addPrice() async {

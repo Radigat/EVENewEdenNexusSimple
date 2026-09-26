@@ -16,6 +16,13 @@ Belegdienste leben im bestehenden Kern; die App stellt Persistenz und Bedienung 
 Die Details zu Schnittstellen, Wissenschaftsversorgung und Sicherung stehen im
 [Funktionsvertrag](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md).
 
+Die Projektverwaltung besitzt keine Bereiche `Preisprofile` oder `Sicherung`
+mehr. Ihre Fachmodelle und Sicherheitsgrenzen bleiben unverändert: Die
+Preisprofil-Bedienung ist Teil der bestehenden Markteinstellungen, die lokale
+Sicherung/Wiederherstellung und der anonymisierte Diagnoseexport sind Teil der
+allgemeinen Einstellungen. Automatische Migrations- und SDE-Sicherungen bleiben
+im Kern und im App-Lebenszyklus unabhängig von diesen Bedienflächen aktiv.
+
 | Module | Owning skill | Input | Output |
 | --- | --- | --- | --- |
 | Governance | `eve-documentation-kit` | decisions and evidence | ADRs, contracts, handoffs |

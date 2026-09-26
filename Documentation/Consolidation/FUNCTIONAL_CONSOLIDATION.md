@@ -24,7 +24,9 @@ ursprüngliche Patches bleiben unter `_archive/` bzw. diesem Dokumentverzeichnis
 
 **Fertigungsprojekte sind Datensätze in derselben App, keine weiteren Projektordner.**
 Der Planner öffnet über **Projekte & Einkauf** die gemeinsame Verwaltung. Warehouse, Blueprints,
-Produktionsübersicht und Einstellungen öffnen denselben Dialog im passenden Bereich.
+und Produktionsübersicht öffnen denselben Dialog im passenden Bereich. Preisprofile sind direkt
+in den Markteinstellungen integriert; lokale Sicherung, Wiederherstellung und Diagnose liegen in
+den allgemeinen Einstellungen. Der frühere gemeinsame Einstellungsdialog ist entfernt.
 
 - Projekte: stabile UUID, getrennte Eingaben/Handbestände/Blueprint-Versorgung, Status, Duplizieren,
   Archivieren/Wiederherstellen, Priorität, Lagerfreigaben, Ausschlüsse, Gesamtmengenlimits und Preisprofil.
@@ -47,7 +49,8 @@ Produktionsübersicht und Einstellungen öffnen denselben Dialog im passenden Be
   Prioritätsvorschlag, der ausdrücklich bestätigt werden muss. Fehlende ESI-Daten sind kein leeres Lager.
 - Preise/Einkauf: exakte positive Centbeträge, Gültigkeit mit ausgeschlossenem Endzeitpunkt, CSV und
   bestätigte Übernahme der gewichteten Preise eines gespeicherten Plans. Profile gelten ausdrücklich für
-  das Einkaufsbudget; es werden keine fiktiven Marktorders erzeugt. Offene Mengen, Zielabweichungen und
+  das Einkaufsbudget und werden in den bestehenden Markteinstellungen gepflegt; es werden keine fiktiven
+  Marktorders erzeugt. Offene Mengen, Zielabweichungen und
   gekaufte Mengen sind getrennt. Einkaufsfortschritt erzeugt keinen Lagerzugang. CSV-/Textausgabe kann alle
   aktiven Projekte nach Typ zusammenfassen. Logistik-/Installationsbeträge sind ausdrücklich beschriftete
   Ersatzwerte, keine zusätzlichen Aufschläge. Das Budget ist keine alternative Gewinnrechnung.
@@ -70,7 +73,8 @@ Produktionsübersicht und Einstellungen öffnen denselben Dialog im passenden Be
   in den Belegmodus werden frühere manuelle Verkaufswerte gesichert; die aktuelle Zeile folgt ausschließlich
   den Zuordnungen. Historische Daten bleiben nach Trennen eines Charakters erhalten. Die bestehende
   Gebühren-/Gewinnberechnung bleibt maßgeblich; belegte Erlöse werden zusätzlich ausdrücklich brutto gezeigt.
-- Sicherung: konsistente SQLite-Online-Snapshots einschließlich WAL, Prüfsummen, Manifest und verifizierte
+- Sicherung: Die Bedienung liegt in den allgemeinen Einstellungen. Konsistente SQLite-Online-Snapshots
+  einschließlich WAL, Prüfsummen, Manifest und verifizierte
   Wiederherstellung beim nächsten App-Start. Vorher entstehen eine zusätzliche Sicherung und ein erhaltener
   vorheriger Datenordner. Die aktuelle Familie ist `com.local.EVENexusSimple`, das Paket `.nexusbackup`.
   Alte Nexus-Backups und künftige unbekannte Schemas werden nicht still importiert. Diagnoseexporte enthalten

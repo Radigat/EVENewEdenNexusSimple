@@ -73,6 +73,11 @@ Geprüft wurden:
 - Sicherungsdialog: Testbestand als `.nexusbackup` erstellt und vollständig geprüft;
 - kompakte Dialogdarstellung, scrollbare Formulare und vorhandene sortierbare Tabellenköpfe.
 
+Die Prüfung des damaligen Sicherungsdialogs ist historische Evidenz für die Funktion. Der aktuelle
+Bedienpfad liegt unter **Daten & Einstellungen → Allgemein**; Preisprofile liegen unter
+**Daten & Einstellungen → Markteinstellungen**. Für diese Verlagerung wird keine erneute visuelle
+Eigentümerabnahme behauptet.
+
 Beim Sichttest gefundene zu allgemeine Vorschautexte und die technische Meldung bei fehlendem Katalog wurden
 korrigiert. Bereichswechsel verwerfen die vorige ungespeicherte Vorschau und entfernen veraltete Fehlermeldungen.
 Das ist ein Bedien-Smoketest, keine vollständige Eigentümer-, VoiceOver- oder Live-Abnahme mit echten Beständen.
