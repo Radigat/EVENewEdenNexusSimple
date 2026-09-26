@@ -680,7 +680,11 @@ errors and refresh identities remain separate. A changed SDE build, Profile
 market resolution, selected trader, client ID or authorization identity
 invalidates the affected reuse immediately.
 
-The cross-region Market Browser is a separate read-only market snapshot. For
+The cross-region Market Browser implementation remains a separate read-only
+market snapshot, but it is no longer exposed as a navigation area. The active
+Planner, Main-Hub opportunity and material-analysis workflows keep using their
+own shared trade-hub market services; removing the menu entry does not remove
+those requests or calculations. For
 one published SDE item it requests public sell and buy orders from every ESI
 region with bounded concurrency; a failed or forbidden region is recorded as a
 failure and does not erase orders returned by other regions. Location and solar

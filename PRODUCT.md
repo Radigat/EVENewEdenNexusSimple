@@ -128,7 +128,6 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Planner | Produktionsgraph, Build/Buy/Warehouse-Auswahl, Installation, Logistik, Gebühren, Erlös, Profit und ROI |
 | Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen und festen Capital-Routen im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
 | Rekursive Kalkulation | sitzungsgebundene Nachkalkulation nicht erfasster Produktion aus EVE-Itemzeilen, mit vollständigem Baugraph, Blueprintquelle/-kosten je Stufe und wählbarer Main→Home- oder Main→Home→Main-Logistik |
-| Market Browser | öffentliche Kauf- und Verkaufsorders über Regionen mit Quellen- und Ortsauflösung |
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Bauen** übergibt die konkrete Charge an den Planner |
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
 | Reactions | veröffentlichte Reaktionsrezepte, vollständige Batch-Kosten, Logistik und Make-or-Buy-Vergleich |
@@ -141,6 +140,11 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Wallet | persönliche Wallet-Salden je verbundenem Charakter |
 | Net Worth | tägliche lokale Bewertung von Wallet, Assets, laufender Produktion, Orders, Contracts und zugänglichen Corporation-Anteilen |
 | Data & Settings | allgemeine Darstellung, SDE, ESI, Industrie- und Marktkonfiguration |
+
+Der eigenständige regionsübergreifende Market Browser ist kein sichtbarer
+Navigationsbereich mehr. Die von Planner, Main-Hub-Chancen sowie Moon- und
+Mineralien-Kaufanalyse benötigten Markt-, Struktur- und Preisroutinen bleiben
+unverändert in ihren jeweiligen Arbeitsabläufen aktiv.
 
 Die Benutzeroberfläche verwendet für sichtbare EVE-Namen die gemeinsame
 Komponente `EVEEntityText` beziehungsweise die passende Label-Variante. Namen

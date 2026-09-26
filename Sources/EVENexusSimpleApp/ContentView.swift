@@ -9,7 +9,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case industryJobs
   case planner
   case recursiveProductionCalculation
-  case marketBrowser
   case manufacturingOpportunities
   case publicContracts
   case reactions
@@ -35,7 +34,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .industryJobs: "Industry Jobs"
     case .planner: "Planner"
     case .recursiveProductionCalculation: "Recursive calculation"
-    case .marketBrowser: "Market Browser"
     case .manufacturingOpportunities: "Main Hub Opportunities"
     case .publicContracts: "Public Contracts"
     case .reactions: "Reactions"
@@ -57,7 +55,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .industryJobs: "hammer.fill"
     case .planner: "hammer.fill"
     case .recursiveProductionCalculation: "arrow.triangle.branch"
-    case .marketBrowser: "chart.bar.doc.horizontal"
     case .manufacturingOpportunities: "chart.line.uptrend.xyaxis"
     case .publicContracts: "doc.text.magnifyingglass"
     case .reactions: "atom"
@@ -305,8 +302,6 @@ struct ContentView: View {
             )
           case .recursiveProductionCalculation:
             RecursiveProductionCalculationView(runtime: runtime)
-          case .marketBrowser:
-            MarketBrowserView()
           case .manufacturingOpportunities:
             ManufacturingOpportunitiesView { request in
               historicalPlannerRequest = nil
@@ -947,7 +942,7 @@ struct DashboardView: View {
         color: mainHubAutomaticStatusColor,
         progress: mainHubAutomaticProgress
       )
-      Text("Market Browser & analysis")
+      Text("Market analyses")
         .font(.caption2)
         .foregroundStyle(DesignTokens.textSecondary)
         .frame(maxWidth: .infinity, alignment: .trailing)

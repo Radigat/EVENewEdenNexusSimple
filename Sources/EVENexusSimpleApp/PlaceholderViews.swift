@@ -7564,22 +7564,22 @@ struct CharactersView: View {
       case CorporationWalletSyncService.walletScope:
         ["Net Worth"]
       case "esi-characters.read_blueprints.v1":
-        ["Blueprints", "Production Planner", "Market Browser"]
+        ["Blueprints", "Production Planner"]
       case "esi-characters.read_standings.v1":
-        ["Profile", "Production Planner", "Market Browser"]
+        ["Profile", "Production Planner"]
       case "esi-industry.read_character_jobs.v1":
         ["Industry Jobs", "Dashboard", "Profile"]
       case "esi-markets.read_character_orders.v1":
         ["Net Worth", "Profile"]
       case TradeHubMarketService.structureMarketScope:
-        ["Market Browser", "Production Planner", "Moon material purchase analysis"]
+        ["Production Planner", "Moon material purchase analysis"]
       case "esi-search.search_structures.v1":
         ["Profile"]
       case "esi-skills.read_skills.v1":
-        ["Profile", "Production Planner", "Market Browser"]
+        ["Profile", "Production Planner"]
       case "esi-universe.read_structures.v1":
         [
-          "Profile", "Assets & Warehouse", "Market Browser",
+          "Profile", "Assets & Warehouse",
           "Moon material purchase analysis",
         ]
       case "esi-wallet.read_character_wallet.v1":

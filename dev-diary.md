@@ -4499,3 +4499,24 @@ zeigen die Reiter vollständig unterhalb der Titelleiste. Die erfolgreichen Debu
 Builds und Tests der vorherigen Korrektur gelten für denselben unveränderten Build;
 keine erneuten Fachtests mit Benutzerdaten durchgeführt. `dist/BUILD_INFO.json` aktualisiert.
 Keine offenen Übertragungsprobleme, keine neue Funktionsplanung oder Live-Service-Abnahme.
+
+
+## 26.09.2026 – Market Browser aus der Navigation entfernt
+
+Auf Nutzerauftrag den eigenständigen Market Browser vollständig aus der
+Hauptnavigation und aus den sichtbaren Modulhinweisen der ESI-Berechtigungen
+entfernt. Der Dashboard-Hinweis bezeichnet die verbleibenden Abläufe nur noch
+als Marktanalysen. Planner, Main-Hub-Chancen sowie Moon- und
+Mineralien-Kaufanalyse behalten ihre bestehenden gemeinsamen Markt-, Struktur-
+und Preisroutinen; Berechnungsregeln, Datenpfade und Berechtigungen wurden nicht
+verändert.
+
+Ein App-Test sichert ab, dass `marketBrowser` nicht mehr als primärer
+Navigationsfall vorhanden ist. Der vollständige isolierte SwiftPM-Lauf besteht
+mit 455 Tests; der ausdrücklich opt-in Real-SDE-Test bleibt wie vorgesehen
+übersprungen. Das separate `EVEStaticDataKit` besteht mit 8 Tests einschließlich
+dieses vorgesehenen Skips. Der native, unsignierte Xcode-Debug-Build endet mit
+`BUILD SUCCEEDED`. Die vorhandenen Build-Ausgaben im synchronisierten
+Projektpfad trugen zunächst Finder-/Resource-Fork-Metadaten; deshalb liefen die
+erfolgreichen Prüfungen mit isolierten temporären Build-Verzeichnissen. Keine
+Live-ESI- oder Nutzerabnahme behauptet.

@@ -108,6 +108,9 @@ struct RuntimeFeatureStateTests {
 
   @Test
   func primaryNavigationKeepsPlannerAndMovesLogisticsIntoSettings() {
+    #expect(
+      !NavigationSection.allCases.map(\.rawValue).contains("marketBrowser")
+    )
     #expect(NavigationSection.establishedCases.contains(.planner))
     #expect(
       NavigationSection.establishedCases.contains(
