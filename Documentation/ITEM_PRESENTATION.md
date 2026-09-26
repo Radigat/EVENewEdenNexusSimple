@@ -44,9 +44,10 @@ Planung oder Auswahl stammen.
 ## Abdeckung
 
 Die gemeinsame Darstellung ist für aufgelöste Items in Dashboard und
-Mineralticker, Assets/Warehouse, Blueprints, Industry Jobs, Planner und Guided
-Production, Marktchancen und Produktionsbaum, Public Contracts, Reaktionen,
-Moon-Materialanalyse, Net-Worth-Details sowie Produktionshistorie eingebunden.
+Mineralticker, Assets/Warehouse, Blueprints, Dashboard-Jobkarten, Planner und
+Guided Production, Marktchancen und Produktionsbaum, Public Contracts,
+Reaktionen, Moon-Materialanalyse, Net-Worth-Details sowie Produktionshistorie
+eingebunden.
 Service-Module, Rigs und SDE-Produktsucher zeigen ebenfalls das Type-Icon in
 ihren Auswahlzeilen.
 

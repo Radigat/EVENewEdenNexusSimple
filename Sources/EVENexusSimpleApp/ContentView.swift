@@ -6,7 +6,6 @@ import SwiftUI
 
 enum NavigationSection: String, CaseIterable, Identifiable {
   case dashboard
-  case industryJobs
   case planner
   case manufacturingOpportunities
   case publicContracts
@@ -30,7 +29,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   var title: LocalizedStringKey {
     switch self {
     case .dashboard: "Dashboard"
-    case .industryJobs: "Industry Jobs"
     case .planner: "Planner"
     case .manufacturingOpportunities: "Main Hub Opportunities"
     case .publicContracts: "Public Contracts"
@@ -50,7 +48,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   var icon: String {
     switch self {
     case .dashboard: "gauge.with.dots.needle.67percent"
-    case .industryJobs: "hammer.fill"
     case .planner: "hammer.fill"
     case .manufacturingOpportunities: "chart.line.uptrend.xyaxis"
     case .publicContracts: "doc.text.magnifyingglass"
@@ -283,14 +280,7 @@ struct ContentView: View {
         Group {
           switch selection ?? .dashboard {
           case .dashboard:
-            DashboardView {
-              selection = .industryJobs
-            }
-          case .industryJobs:
-            IndustryJobsView {
-              dataSettingsSelection = .esi
-              selection = .data
-            }
+            DashboardView()
           case .planner:
             PlannerView(
               historicalPlannerRequest: $historicalPlannerRequest,
@@ -761,8 +751,6 @@ struct DashboardView: View {
     store: AppDefaults.store
   )
   private var encodedReactionGroups = "[]"
-  let onOpenIndustryJobs: () -> Void
-
   var body: some View {
     TimelineView(.periodic(from: .now, by: 60)) { context in
       ScrollView {
@@ -1196,10 +1184,6 @@ struct DashboardView: View {
         industryCapacityGrid(running: running, columnCount: 1)
       }
       jobDataNotice
-      Button(action: onOpenIndustryJobs) {
-        Label("Show all industry jobs", systemImage: "list.bullet.rectangle")
-      }
-      .buttonStyle(.bordered)
     }
   }
 

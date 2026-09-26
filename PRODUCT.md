@@ -124,7 +124,6 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Bereich | Zweck und wesentliche Grenze |
 | --- | --- |
 | Dashboard | verdichteter Überblick über Jobs, Finanzen, Markt und Automatisierungszustände; beim ersten Dashboard-Aufruf eines App-Laufs werden die verbundenen Charaktere einmal synchronisiert |
-| Industry Jobs | gespeicherte Charakter-Jobs mit Aktivität, Status, Zeitpunkt und expliziten Quellenlücken |
 | Planner | Produktionsgraph, Build/Buy/Warehouse-Auswahl, Installation, Logistik, Gebühren, Erlös, Profit und ROI |
 | Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen und festen Capital-Routen im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Bauen** übergibt die konkrete Charge an den Planner |
@@ -151,6 +150,13 @@ Produktionsgraphen sowie die benötigten Blueprint-, ME/TE-, Reaktions-, Lager-,
 Markt- und Logistikfunktionen. Der nur für die separate Nachkalkulation
 bestimmte EVE-Zeilenimport, die erzwungene Vollproduktion und ihre
 Routen-/Produktionsbuchprojektion sind entfernt.
+
+Der eigenständige Bereich Industriejobs ist ebenfalls entfernt. Die
+Charaktersynchronisierung speichert Jobdaten und Quellzustände weiterhin. Das
+Dashboard integriert daraus Slot-Auslastung, Aktivitätskapazitäten, bereite
+und bevorstehende Jobs; der Nettowert verwendet aktive Fertigungs- und
+Reaktionsjobs weiterhin für die ausdrücklich geschätzte laufende Produktion.
+Die Tabellenfilter und die separate Standort-/Jobliste entfallen.
 
 Die Benutzeroberfläche verwendet für sichtbare EVE-Namen die gemeinsame
 Komponente `EVEEntityText` beziehungsweise die passende Label-Variante. Namen
@@ -199,7 +205,7 @@ Type-ID des sichtbaren Blueprints.
 
 Beim ersten Dashboard-Aufruf eines laufenden App-Prozesses synchronisiert die
 App jeden verbundenen Charakter genau einmal über den bestehenden vollständigen
-Charakter-Sync. Dazu gehoeren insbesondere Wallet, Assets, Industry Jobs,
+Charakter-Sync. Dazu gehören insbesondere Wallet, Assets, Industriejobdaten,
 Orders, private Contracts sowie zugängliche Corporation-Wallets und -Assets.
 Einzelne Fehler behalten den letzten bekannten Quellstand und werden als
 partiell gemeldet; sie ersetzen ihn nicht durch null. Die Wallet-Karte bietet

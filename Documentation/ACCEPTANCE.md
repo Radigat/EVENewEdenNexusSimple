@@ -445,6 +445,11 @@ market values.
 
 ## Dashboard and industry jobs, 2026-08-04
 
+The standalone Industry Jobs table described in this historical evidence was
+retired on 2026-09-26. Its DTO/source-state evidence remains applicable to the
+Dashboard and Net Worth consumers; table filters and table-layout acceptance
+are no longer current product requirements.
+
 | Area | Automated evidence | Owner evidence still required |
 | --- | --- | --- |
 | Startup and industry jobs | Dashboard is the first sidebar item and initial selection. The linked Industry Jobs table provides All/Active/Ready/Delivered/Cancelled plus six activity filters, an optional delivered-history view, character, product/blueprint, runs, status, remaining/completion time and Station/Structure. The persisted ESI DTO remains backward-compatible while retaining current `station_id`, `product_type_id`, timing and success fields. NPC stations are resolved publicly; Player Structures use the already authorized structure-detail scope, and unresolved names remain explicit. A cached `active` job whose `end_date` has elapsed is projected as ready immediately instead of disappearing until the next sync; `paused` remains paused because facility downtime can suspend progress. Deterministic tests cover both transitions plus current-schema and legacy-snapshot decoding | synchronize every intended character once, relaunch, and compare filters, active/capacity totals, finished jobs, next completions and representative NPC/Player-Structure names with the EVE Industry window; verify narrow-window table behavior, keyboard and VoiceOver. Player Structures hidden by ACL or missing scope must remain visibly unresolved |

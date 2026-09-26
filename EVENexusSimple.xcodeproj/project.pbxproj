@@ -79,7 +79,6 @@
 		99D95412344E68545253E28B /* EVEOnlineServiceStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520CD44233AFF34B9A2A5C8F /* EVEOnlineServiceStatus.swift */; };
 		9D4F26AF76B35CCCCF6C13DA /* AuthAndBlueprintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */; };
 		9EF04E083678916EF31CE726 /* AssetsWarehouseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */; };
-		A17D4A7E09F64AE4A1B87D21 /* IndustryJobsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E98438B8A94102A6354E62 /* IndustryJobsView.swift */; };
 		A1A07595FEE9253FD0A90517 /* MemoizedIndustryCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55562529E8D8E64E9E34055C /* MemoizedIndustryCatalog.swift */; };
 		A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */; };
 		A5E4B7A644B743FE3142871D /* ProductionJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A555FBA531B59AA843FDF2BD /* ProductionJournal.swift */; };
@@ -284,7 +283,6 @@
 		BE377FA66F95657D70359168 /* EVESSOService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVESSOService.swift; sourceTree = "<group>"; };
 		BEA7D7D00A16AD19F38B956B /* LoopbackCallbackServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoopbackCallbackServer.swift; sourceTree = "<group>"; };
 		C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionContractTests.swift; sourceTree = "<group>"; };
-		C2E98438B8A94102A6354E62 /* IndustryJobsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryJobsView.swift; sourceTree = "<group>"; };
 		CA2F5055B38824F803FA5FBA /* IndustryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryModels.swift; sourceTree = "<group>"; };
 		CED06FCDEA88E08CFA55E851 /* ProductionInputParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionInputParser.swift; sourceTree = "<group>"; };
 		CF480041A24E3F7755C5897D /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
@@ -555,7 +553,6 @@
 				A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */,
 				AEED60D10F72549632C98A56 /* BlueprintsView.swift */,
 				E4AC75DF5C57565C1C95D785 /* ContentView.swift */,
-				C2E98438B8A94102A6354E62 /* IndustryJobsView.swift */,
 				0125A339DC2931CACBE9D073 /* EVENexusSimpleApp.swift */,
 				019FBE470000000000000003 /* MarketBrowserView.swift */,
 				019FBDB4A2CA78E19C87A001 /* MoonMaterialPurchaseAnalysisView.swift */,
@@ -845,7 +842,6 @@
 				9EF04E083678916EF31CE726 /* AssetsWarehouseView.swift in Sources */,
 				237C28B3A49F5D209A81A7D1 /* BlueprintsView.swift in Sources */,
 				B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */,
-				A17D4A7E09F64AE4A1B87D21 /* IndustryJobsView.swift in Sources */,
 				98497C10BA5823BCC7904928 /* EVENexusSimpleApp.swift in Sources */,
 				019FBE470000000000000013 /* MarketBrowserView.swift in Sources */,
 				019FBDB4A2CA78E19C87A002 /* MoonMaterialPurchaseAnalysisView.swift in Sources */,

@@ -3,10 +3,12 @@
 Every row is a handoff envelope. “Version” is the contract or rule version, not
 a claim that a live service was exercised.
 
-The standalone Market Browser and Recursive calculation envelopes below are
-retained as historical records. Both navigation workspaces are retired; their
-shared market and production contracts remain active only in the workflows
-that still consume them.
+The standalone Market Browser, Recursive calculation and Industry Jobs
+envelopes below are retained as historical records. All three navigation
+workspaces are retired; their shared market, production and synchronized-job
+contracts remain active only in the workflows that still consume them. Job
+capacity, ready/upcoming status and in-production valuation remain integrated
+in Dashboard and Net Worth; the separate filter table is retired.
 
 | Source skill | Source identity and version | Accepted output and target boundary | Open risk | Next skill |
 | --- | --- | --- | --- | --- |

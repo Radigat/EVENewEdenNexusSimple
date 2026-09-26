@@ -7564,7 +7564,7 @@ struct CharactersView: View {
       case "esi-characters.read_standings.v1":
         ["Profile", "Production Planner"]
       case "esi-industry.read_character_jobs.v1":
-        ["Industry Jobs", "Dashboard", "Profile"]
+        ["Dashboard", "Net Worth", "Profile"]
       case "esi-markets.read_character_orders.v1":
         ["Net Worth", "Profile"]
       case TradeHubMarketService.structureMarketScope:

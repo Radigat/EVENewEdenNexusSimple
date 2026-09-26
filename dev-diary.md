@@ -4542,3 +4542,27 @@ Der vollständige isolierte SwiftPM-Lauf besteht mit 450 Tests. Das separate
 opt-in Real-SDE-Skips. Beide Lokalisierungskataloge sind gültig; der native,
 unsignierte Xcode-Debug-Build endet mit `BUILD SUCCEEDED`. Keine Live-ESI-,
 installierte-App- oder Nutzerabnahme behauptet.
+
+
+## 26.09.2026 – Eigenständige Industriejobs-Ansicht entfernt
+
+Auf Nutzerauftrag den eigenständigen Bereich „Industriejobs“ aus der
+Hauptnavigation und dem App-Build entfernt. Die ausschließlich dort verwendete
+sortierbare Jobtabelle mit Status-/Aktivitätsfiltern, eigener Standortauflösung
+und ihren Textressourcen wurde ebenfalls entfernt.
+
+Die ESI-Jobabfrage, Quellzustände und per Charakter gespeicherten Job-Snapshots
+bleiben erhalten. Das Dashboard integriert weiterhin Slot-Auslastung,
+Aktivitätskapazitäten, bereite und bevorstehende Jobs; der vollständige
+Dashboard-Refresh synchronisiert die Jobdaten weiterhin manuell und beim ersten
+Aufruf eines App-Laufs. Nettowert behält aktive Fertigungs- und Reaktionsjobs
+für die geschätzte laufende Produktion. Der Berechtigungsdialog nennt dafür nun
+Dashboard und Nettowert statt des entfernten Bereichs. Die laufende bzw.
+installierte DEV-App wurde nicht ersetzt.
+
+Der vollständige isolierte SwiftPM-Lauf besteht mit 450 Tests. Das separate
+`EVEStaticDataKit` besteht mit 8 Tests; beide Läufe enthalten nur den
+vorgesehenen opt-in Real-SDE-Skip. Die deutschen und englischen
+Lokalisierungskataloge sind gültig, und der native unsignierte Xcode-Debug-Build
+endet mit `BUILD SUCCEEDED`. Keine Live-ESI-, installierte-App- oder
+Nutzerabnahme behauptet.

@@ -489,6 +489,14 @@ character record. The SDE-backed Science skill list and those freshness-aware
 snapshots feed `InventionReadinessMatrix`; unavailable skill sheets remain
 unknown. See `INVENTION_SKILL_MATRIX.md`.
 
+The standalone Industry Jobs table is removed from the navigation and build
+target. Per-character sourced job snapshots remain part of character
+synchronization. Dashboard owns their capacity, activity, ready and upcoming
+projections; Net Worth consumes active Manufacturing and Reaction jobs for its
+explicitly estimated in-production component. Missing, stale, partial or
+forbidden job sources retain their prior source-state semantics and never
+become an empty authoritative list.
+
 Personal wallet balances use the authenticated
 `/characters/{character_id}/wallet/` ESI route and the
 `esi-wallet.read_character_wallet.v1` scope. `CharacterWalletService` owns the

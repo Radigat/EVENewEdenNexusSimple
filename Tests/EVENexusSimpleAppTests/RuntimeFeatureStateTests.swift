@@ -116,6 +116,9 @@ struct RuntimeFeatureStateTests {
         "recursiveProductionCalculation"
       )
     )
+    #expect(
+      !NavigationSection.allCases.map(\.rawValue).contains("industryJobs")
+    )
     #expect(NavigationSection.establishedCases.contains(.planner))
     #expect(NavigationSection.allCases.contains(.planner))
     #expect(
