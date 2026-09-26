@@ -4520,3 +4520,25 @@ dieses vorgesehenen Skips. Der native, unsignierte Xcode-Debug-Build endet mit
 Projektpfad trugen zunächst Finder-/Resource-Fork-Metadaten; deshalb liefen die
 erfolgreichen Prüfungen mit isolierten temporären Build-Verzeichnissen. Keine
 Live-ESI- oder Nutzerabnahme behauptet.
+
+
+## 26.09.2026 – Rekursive Produktionskalkulation entfernt
+
+Auf Nutzerauftrag den eigenständigen Bereich „Rekursive Kalkulation“ aus der
+Hauptnavigation und dem App-Build entfernt. Ebenfalls entfernt wurden dessen
+dedizierter EVE-Zeilenimport, die erzwungene Vollproduktion herstellbarer
+Zwischenprodukte, die besondere Main→Home-/Rückroutenprojektion, die
+Produktionsbuch-Rekonstruktion und der separate Runtime-Einstieg.
+
+Planner und Main-Hub-Chancen behalten den gemeinsamen rekursiven
+Produktionsgraphen, Lager-/Reservierungslogik, Blueprintquellen, ME/TE,
+Reaktionsformeln, Markt-, Installations- und Logistikberechnung. Der vom
+Planner-Parametereditor weiterhin benötigte lokalisierte Zahlenparser wurde
+neutral benannt und mit eigenem Regressionstest erhalten. Die laufende bzw.
+installierte DEV-App wurde in diesem Schritt nicht ersetzt.
+
+Der vollständige isolierte SwiftPM-Lauf besteht mit 450 Tests. Das separate
+`EVEStaticDataKit` besteht mit 8 Tests einschließlich des vorgesehenen
+opt-in Real-SDE-Skips. Beide Lokalisierungskataloge sind gültig; der native,
+unsignierte Xcode-Debug-Build endet mit `BUILD SUCCEEDED`. Keine Live-ESI-,
+installierte-App- oder Nutzerabnahme behauptet.

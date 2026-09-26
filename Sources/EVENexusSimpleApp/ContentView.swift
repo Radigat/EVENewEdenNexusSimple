@@ -8,7 +8,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case dashboard
   case industryJobs
   case planner
-  case recursiveProductionCalculation
   case manufacturingOpportunities
   case publicContracts
   case reactions
@@ -33,7 +32,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .dashboard: "Dashboard"
     case .industryJobs: "Industry Jobs"
     case .planner: "Planner"
-    case .recursiveProductionCalculation: "Recursive calculation"
     case .manufacturingOpportunities: "Main Hub Opportunities"
     case .publicContracts: "Public Contracts"
     case .reactions: "Reactions"
@@ -54,7 +52,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .dashboard: "gauge.with.dots.needle.67percent"
     case .industryJobs: "hammer.fill"
     case .planner: "hammer.fill"
-    case .recursiveProductionCalculation: "arrow.triangle.branch"
     case .manufacturingOpportunities: "chart.line.uptrend.xyaxis"
     case .publicContracts: "doc.text.magnifyingglass"
     case .reactions: "atom"
@@ -300,8 +297,6 @@ struct ContentView: View {
               launchRequest: $plannerLaunchRequest,
               runtime: runtime
             )
-          case .recursiveProductionCalculation:
-            RecursiveProductionCalculationView(runtime: runtime)
           case .manufacturingOpportunities:
             ManufacturingOpportunitiesView { request in
               historicalPlannerRequest = nil

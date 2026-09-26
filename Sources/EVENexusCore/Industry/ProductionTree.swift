@@ -7,47 +7,6 @@ public enum ProductionTreeStockCoverage: String, Sendable {
   case unavailable
 }
 
-public enum RecursiveProductionPreferenceProjector {
-  public static func forceProduction(
-    typeIDs: Set<Int64>,
-    existing: [Int64: MaterialProcurementPreference],
-    mainHub: ProcurementLocation
-  ) -> [Int64: MaterialProcurementPreference] {
-    var projected = existing
-    for typeID in typeIDs.sorted() {
-      projected[typeID] = MaterialProcurementPreference(
-        supplyMode: .produce,
-        purchaseLocation: mainHub,
-        usesAvailableStockFirst: true
-      )
-    }
-    return projected
-  }
-}
-
-public enum RecursiveProductionBlueprintCostProjector {
-  public static func ownedReactionFormulaAllocations(
-    nodes: [PlanNode],
-    explicitActions: [Int64: ProductionTreeBlueprintAction]
-  ) -> [Int64: IndustryBlueprintCostAllocation] {
-    var allocations: [Int64: IndustryBlueprintCostAllocation] = [:]
-    for node in nodes
-    where node.action == .produce && node.activity == .reaction {
-      guard let blueprintTypeID = node.blueprintTypeID,
-        explicitActions[blueprintTypeID] == nil
-      else { continue }
-      allocations[blueprintTypeID] = IndustryBlueprintCostAllocation(
-        blueprintTypeID: blueprintTypeID,
-        productName: node.name,
-        kind: .formula,
-        amount: 0,
-        source: "Explicit standard: owned reaction formula"
-      )
-    }
-    return allocations
-  }
-}
-
 public enum ProductionTreeBlueprintAction: String, CaseIterable, Sendable {
   case useOwnedBPC
   case useOwnedBPO

@@ -111,16 +111,13 @@ struct RuntimeFeatureStateTests {
     #expect(
       !NavigationSection.allCases.map(\.rawValue).contains("marketBrowser")
     )
-    #expect(NavigationSection.establishedCases.contains(.planner))
     #expect(
-      NavigationSection.establishedCases.contains(
-        .recursiveProductionCalculation
+      !NavigationSection.allCases.map(\.rawValue).contains(
+        "recursiveProductionCalculation"
       )
     )
+    #expect(NavigationSection.establishedCases.contains(.planner))
     #expect(NavigationSection.allCases.contains(.planner))
-    #expect(
-      NavigationSection.allCases.contains(.recursiveProductionCalculation)
-    )
     #expect(
       NavigationSection.establishedCases.contains(.mineralPurchaseAnalysis)
     )

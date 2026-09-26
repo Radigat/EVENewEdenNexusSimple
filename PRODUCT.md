@@ -127,7 +127,6 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Industry Jobs | gespeicherte Charakter-Jobs mit Aktivität, Status, Zeitpunkt und expliziten Quellenlücken |
 | Planner | Produktionsgraph, Build/Buy/Warehouse-Auswahl, Installation, Logistik, Gebühren, Erlös, Profit und ROI |
 | Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen und festen Capital-Routen im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
-| Rekursive Kalkulation | sitzungsgebundene Nachkalkulation nicht erfasster Produktion aus EVE-Itemzeilen, mit vollständigem Baugraph, Blueprintquelle/-kosten je Stufe und wählbarer Main→Home- oder Main→Home→Main-Logistik |
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Bauen** übergibt die konkrete Charge an den Planner |
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
 | Reactions | veröffentlichte Reaktionsrezepte, vollständige Batch-Kosten, Logistik und Make-or-Buy-Vergleich |
@@ -145,6 +144,13 @@ Der eigenständige regionsübergreifende Market Browser ist kein sichtbarer
 Navigationsbereich mehr. Die von Planner, Main-Hub-Chancen sowie Moon- und
 Mineralien-Kaufanalyse benötigten Markt-, Struktur- und Preisroutinen bleiben
 unverändert in ihren jeweiligen Arbeitsabläufen aktiv.
+
+Die eigenständige Rekursive Produktionskalkulation ist ebenfalls kein
+Navigationsbereich mehr. Planner und Main-Hub-Chancen behalten den gemeinsamen
+Produktionsgraphen sowie die benötigten Blueprint-, ME/TE-, Reaktions-, Lager-,
+Markt- und Logistikfunktionen. Der nur für die separate Nachkalkulation
+bestimmte EVE-Zeilenimport, die erzwungene Vollproduktion und ihre
+Routen-/Produktionsbuchprojektion sind entfernt.
 
 Die Benutzeroberfläche verwendet für sichtbare EVE-Namen die gemeinsame
 Komponente `EVEEntityText` beziehungsweise die passende Label-Variante. Namen
@@ -540,60 +546,6 @@ eingetragene Umlage einer einzelnen Produktion belastet. Bündel, Nullpreise und
 alte Vertragszeilen ohne Runs/ME/TE bleiben ausdrücklich unkalkulierbar. Fehlt
 bei irgendeinem produzierten Knoten eine Blueprintkostenquelle, bleiben
 Gesamtkosten und Gewinn unverfügbar.
-
-Die **Rekursive Kalkulation** rekonstruiert eine im Spiel nicht vollständig
-erfasste Produktion aus einfachen `Gegenstand Menge`-Zeilen oder
-tabulatorgetrennten EVE-Zeilen. Verbindlich übernommen
-werden Gegenstandsname und positive Ganzzahlmenge; Gruppe, Volumen und der im
-EVE-Export angezeigte ungefähre ISK-Wert bleiben sichtbare Referenz und ersetzen
-weder SDE-Rezept noch Marktquote. Deutsche EVE-Zahlen mit Punkt als
-Tausender- und Komma als Dezimaltrennzeichen werden erkannt. Jede importierte
-Zeile wird in den bestehenden `Produkt Bedarf ME TE`-Vertrag überführt. Die
-erste Auflösung verwendet nur interne Startwerte; anschließend werden ME und TE
-anhand der von der SDE gelieferten EVE-Kategorie und -Gruppe gesammelt gesetzt.
-Jeder normale Blueprint-Bauschritt kann diese Gruppenvorgabe einzeln
-überschreiben. Die Werte gehen produktbezogen in die erneute rekursive Planung
-ein und werden nicht aus dem ungefähren Exportwert geraten.
-
-Der Nachkalkulationslauf erzwingt für alle herstellbaren Zwischenprodukte den
-rekursiven Baupfad, verwendet aber weiterhin faktischen Warehouse-Bestand,
-Schutzmengen und Reservierungen. Nach der ersten Auflösung muss für jeden
-produzierten Blueprinttyp eine Quelle gewählt werden. Oberhalb der Einzelzeilen
-kann die übliche Quelle gruppenweise als BPO oder BPC gesetzt werden. Reaktionen
-verwenden Formeln und keine erforschbaren BPO/BPC-Werte; die standardmäßig
-aktivierte, ausdrücklich sichtbare Annahme **alle Reaktionsformeln vorhanden**
-ordnet ihnen 0 ISK Formelkosten zu und lässt ME/TE nicht anwendbar. Sie kann
-abgeschaltet und jede Formel einzeln auf ungeklärt gesetzt werden. Diese
-Annahme ist keine aus Assets abgeleitete Besitzbehauptung. Verbrauchte BPC-,
-Kopier-, Erfindungs- und LP-BPC-Kosten werden als vollständiger Betrag
-eingetragen; bei einer BPO ist nur eine ausdrückliche Umlage auf diese Produktion
-kostenwirksam. Ein eindeutig zurechenbarer Main-Hub-BPC-Vertrag kann seinen
-belegten Preis übernehmen. Fehlende Blueprint-, Markt-, Volumen-, Tarif- oder
-Installationswerte halten die Gesamtsumme unverfügbar.
-
-Die Route **Main Hub → Home Hub** enthält Materialtransport und Produktion; die
-Route **Main Hub → Home Hub → Main Hub** addiert den Rücktransport der fertigen
-Endprodukte. Beide verwenden die im Profil konfigurierten exakten Orte und
-dieselben Vertragsaufteilungs-, Kollateral- und Rundungsregeln wie der Planner.
-Die Kalkulation erzeugt keinen aktiven `StoredPlan`. Nach einer aktuellen
-Berechnung zeigt sie jedoch eine ausdrückliche Vorschau für das Produktionsbuch
-und kann nach Bestätigung je importiertem Endprodukt genau eine
-Produktionsübersichtszeile anlegen. Material- und gemeinsame Blueprint-,
-Installations- sowie Logistikkosten werden proportional zum bekannten
-Materialwert verteilt; fehlt für alle Produkte ein positiver Materialwert,
-erfolgt die Verteilung gleichmäßig. Dadurch wird die gemeinsame rekursive
-Gesamtsumme nicht mehrfach angesetzt. Bei Main → Home stammen Verkaufsquote,
-Verkaufssteuer und Brokergebühr aus dem Home-Hub-Szenario; bei Main → Home →
-Main aus dem Main-Hub-Szenario, und die Rücklogistik wird den Produktionskosten
-zugerechnet. Unbekannte Werte bleiben auch im Produktionsbuch unbekannt.
-
-Diese Übernahme ist ausdrücklich eine **Rekonstruktion zum aktuellen
-Marktstand**. Der gespeicherte unveränderliche Snapshot enthält SDE-Build,
-ESI-Kompatibilitätsdatum, Preiszeitpunkt, Regelversion, Route und die aktuell
-berechneten Gebühren. Er behauptet weder historische Einkaufspreise noch
-damalige Systemindizes, Steuern oder Logistiktarife. Die Vorschau, ein zweiter
-Bestätigungsdialog und eine Sperre gegen erneutes Speichern desselben
-Sitzungslaufs schützen vor versehentlichen Doppeleinträgen.
 
 Der öffentliche Vertragsindex übernimmt für Blueprintpositionen die von ESI
 gelieferten Werte **Runs**, **ME**, **TE** und **BPC/BPO**. Neue

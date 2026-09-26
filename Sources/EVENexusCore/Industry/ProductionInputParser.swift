@@ -365,186 +365,12 @@ public enum ProductionInputFormattingError: Error, Equatable, Sendable {
   case invalidSelection
 }
 
-public enum RecursiveProductionLogisticsRoute: String, CaseIterable, Codable,
-  Identifiable, Sendable
-{
-  case mainToHome
-  case mainToHomeToMain
-
-  public var id: Self { self }
-
-  public var includesFinishedProductReturn: Bool {
-    self == .mainToHomeToMain
-  }
-}
-
-public struct RecursiveProductionImportLine: Identifiable, Equatable, Sendable {
-  public let id: UUID
-  public let lineNumber: Int
-  public let itemName: String
-  public let quantity: Int
-  public let groupName: String?
-  public let volumeM3: Double?
-  public let estimatedValueISK: Double?
-
-  public init(
-    id: UUID = UUID(),
-    lineNumber: Int,
-    itemName: String,
-    quantity: Int,
-    groupName: String? = nil,
-    volumeM3: Double? = nil,
-    estimatedValueISK: Double? = nil
-  ) {
-    self.id = id
-    self.lineNumber = lineNumber
-    self.itemName = itemName
-    self.quantity = quantity
-    self.groupName = groupName
-    self.volumeM3 = volumeM3
-    self.estimatedValueISK = estimatedValueISK
-  }
-
-  public func plannerRequest(
-    materialEfficiency: Int,
-    timeEfficiency: Int
-  ) -> ProductionRequestLine {
-    ProductionRequestLine(
-      lineNumber: lineNumber,
-      productName: itemName,
-      wantedQuantity: quantity,
-      materialEfficiency: materialEfficiency,
-      timeEfficiency: timeEfficiency
-    )
-  }
-}
-
-public struct RecursiveProductionImportResult: Equatable, Sendable {
-  public let lines: [RecursiveProductionImportLine]
-  public let errors: [ProductionInputError]
-
-  public var isValid: Bool { !lines.isEmpty && errors.isEmpty }
-
-  public var estimatedValueISK: Double? {
-    guard !lines.isEmpty,
-      lines.allSatisfy({ $0.estimatedValueISK != nil })
-    else { return nil }
-    return lines.compactMap(\.estimatedValueISK).reduce(0, +)
-  }
-}
-
-/// Parses the tab-separated item rows copied from the EVE client. Extra
-/// columns such as slot are retained only as ignored display metadata; recipe,
-/// volume and price calculations continue to use the application's SDE and
-/// market snapshots.
-public enum RecursiveProductionImportParser {
-  public static func parse(_ text: String) -> RecursiveProductionImportResult {
-    guard text.utf8.count <= ProductionInputParser.maximumInputBytes else {
-      return RecursiveProductionImportResult(
-        lines: [],
-        errors: [
-          ProductionInputError(
-            lineNumber: 1,
-            input: "",
-            message:
-              "The production input is too large. Use at most \(ProductionInputParser.maximumInputBytes) UTF-8 bytes."
-          )
-        ]
-      )
-    }
-
-    var lines: [RecursiveProductionImportLine] = []
-    var errors: [ProductionInputError] = []
-    for (offset, rawLine) in text.components(separatedBy: .newlines).enumerated() {
-      let lineNumber = offset + 1
-      let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-      guard !trimmed.isEmpty else { continue }
-      guard lines.count < ProductionInputParser.maximumJobCount else {
-        errors.append(
-          ProductionInputError(
-            lineNumber: lineNumber,
-            input: "",
-            message:
-              "At most \(ProductionInputParser.maximumJobCount) production items are accepted at once."
-          )
-        )
-        break
-      }
-
-      let tabFields = rawLine.components(separatedBy: "\t")
-      let itemName: String
-      let quantityText: String
-      if tabFields.count >= 2 {
-        itemName = tabFields[0].trimmingCharacters(in: .whitespacesAndNewlines)
-        quantityText = tabFields[1].trimmingCharacters(
-          in: .whitespacesAndNewlines
-        )
-      } else {
-        let fields = trimmed.split(whereSeparator: \.isWhitespace)
-        guard fields.count >= 2 else {
-          errors.append(
-            error(
-              lineNumber: lineNumber,
-              input: rawLine,
-              message:
-                "Expected item name followed by quantity, or a tab-separated EVE item row."
-            )
-          )
-          continue
-        }
-        itemName = fields.dropLast().joined(separator: " ")
-        quantityText = String(fields.last!)
-      }
-      guard !itemName.isEmpty,
-        itemName.utf8.count <= ProductionInputParser.maximumProductNameBytes,
-        let quantity = parseInteger(quantityText),
-        (1...ProductionInputParser.maximumWantedQuantity).contains(quantity)
-      else {
-        errors.append(
-          error(
-            lineNumber: lineNumber,
-            input: rawLine,
-            message:
-              "Item is required and quantity must be a positive whole number within the Planner limit."
-          )
-        )
-        continue
-      }
-
-      let group = tabFields.dropFirst(2).first.map {
-        $0.trimmingCharacters(in: .whitespacesAndNewlines)
-      }.flatMap { $0.isEmpty ? nil : $0 }
-      let volume = tabFields.first(where: {
-        containsUnit($0, unit: "m3")
-          || containsUnit($0, unit: "m³")
-      }).flatMap(parseNumberFromField)
-      let value = tabFields.first(where: { containsUnit($0, unit: "isk") })
-        .flatMap(parseNumberFromField)
-      lines.append(
-        RecursiveProductionImportLine(
-          lineNumber: lineNumber,
-          itemName: itemName,
-          quantity: quantity,
-          groupName: group,
-          volumeM3: volume,
-          estimatedValueISK: value
-        )
-      )
-    }
-
-    if lines.isEmpty && errors.isEmpty {
-      errors.append(
-        ProductionInputError(
-          lineNumber: 1,
-          input: "",
-          message: "Paste at least one EVE item row."
-        )
-      )
-    }
-    return RecursiveProductionImportResult(lines: lines, errors: errors)
-  }
-
-  public static func parseLocalizedNumber(_ text: String) -> Double? {
+/// Parses a nonnegative number copied from a localized UI. This stays in the
+/// shared core because the Planner's parameter editor accepts both German and
+/// English decimal and thousands separators.
+public enum LocalizedNumberParser {
+  public static func parseNonnegative(_ text: String) -> Double? {
+    guard !text.contains("-") else { return nil }
     let filtered = text.filter { $0.isNumber || $0 == "." || $0 == "," }
     guard !filtered.isEmpty else { return nil }
     let lastDot = filtered.lastIndex(of: ".")
@@ -570,27 +396,6 @@ public enum RecursiveProductionImportParser {
     return value
   }
 
-  private static func parseInteger(_ text: String) -> Int? {
-    guard let value = parseLocalizedNumber(text),
-      value.rounded() == value,
-      value <= Double(Int.max)
-    else { return nil }
-    return Int(value)
-  }
-
-  private static func containsUnit(_ text: String, unit: String) -> Bool {
-    text.localizedCaseInsensitiveContains(unit)
-  }
-
-  private static func parseNumberFromField(_ text: String) -> Double? {
-    let withoutUnit =
-      text
-      .replacingOccurrences(of: "ISK", with: "", options: .caseInsensitive)
-      .replacingOccurrences(of: "m3", with: "", options: .caseInsensitive)
-      .replacingOccurrences(of: "m³", with: "", options: .caseInsensitive)
-    return parseLocalizedNumber(withoutUnit)
-  }
-
   private static func normalizeSingleSeparator(
     _ text: String,
     separator: Character
@@ -601,17 +406,5 @@ public enum RecursiveProductionImportParser {
       return parts.joined()
     }
     return parts.joined(separator: ".")
-  }
-
-  private static func error(
-    lineNumber: Int,
-    input: String,
-    message: String
-  ) -> ProductionInputError {
-    ProductionInputError(
-      lineNumber: lineNumber,
-      input: String(input.prefix(512)),
-      message: message
-    )
   }
 }

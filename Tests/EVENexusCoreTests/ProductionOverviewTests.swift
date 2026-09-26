@@ -379,31 +379,6 @@ struct ProductionOverviewTests {
     #expect(projection.salesTaxRate == 0.05)
     #expect(projection.brokerFeeRate == 0.01)
     #expect(projection.suggestedSalePricePerUnit == 2_000)
-
-    let homePlan = ProductionOverviewProjector.reconstructedPlan(
-      plan,
-      route: .mainToHome
-    )
-    let homeProjection = try #require(
-      ProductionOverviewProjector.projection(for: requestID, in: homePlan)
-    )
-    #expect(homeProjection.logisticsCost == 300)
-    #expect(homeProjection.salesTaxRate == 0.10)
-    #expect(homeProjection.brokerFeeRate == 0.05)
-    #expect(homeProjection.suggestedSalePricePerUnit == 1_500)
-    #expect(homePlan.costBreakdown?.totalProductionCost == 1_550)
-
-    let returnPlan = ProductionOverviewProjector.reconstructedPlan(
-      plan,
-      route: .mainToHomeToMain
-    )
-    let returnProjection = try #require(
-      ProductionOverviewProjector.projection(for: requestID, in: returnPlan)
-    )
-    #expect(returnProjection.logisticsCost == 700)
-    #expect(returnProjection.salesTaxRate == 0.05)
-    #expect(returnProjection.brokerFeeRate == 0.01)
-    #expect(returnPlan.costBreakdown?.totalProductionCost == 1_950)
   }
 
   @Test

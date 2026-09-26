@@ -5357,7 +5357,7 @@ struct PlannerView: View {
 
   private var parsedPlannerBlueprintCosts: [Int64: Double] {
     blueprintCostTexts.reduce(into: [:]) { values, entry in
-      if let value = RecursiveProductionImportParser.parseLocalizedNumber(
+      if let value = LocalizedNumberParser.parseNonnegative(
         entry.value
       ), value >= 0 {
         values[entry.key] = value
@@ -5658,8 +5658,6 @@ struct PlannerView: View {
           productionEfficiencies: requestedProductionEfficiencies,
           preferredBlueprintSources: preferredBlueprintSources,
           loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
-          authorizations: preparedInputs.2,
-          clientID: EVEConstants.ssoClientID,
           plannerInputOverride: plannerInput,
           requiresCompleteBlueprintCostsInSelectedPlan: false,
           availableStockOverride: projectStock
@@ -5708,11 +5706,9 @@ struct PlannerView: View {
             productionEfficiencies: selectedProductionEfficiencies,
             preferredBlueprintSources: preferredBlueprintSources,
             loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
-            authorizations: preparedInputs.2,
-            clientID: EVEConstants.ssoClientID,
             plannerInputOverride: plannerInput,
             requiresCompleteBlueprintCostsInSelectedPlan: false,
-          availableStockOverride: projectStock
+            availableStockOverride: projectStock
           )
         } catch is CancellationError {
           return

@@ -1161,27 +1161,12 @@ validating facility, fresh blueprint/skill sources, costs, licensed runs and per
 Science durations are counted once and conservatively precede manufacturing; incomplete jobs remain blocked. Tech-III reverse
 engineering is explicitly unsupported.
 
-The established **Recursive calculation** entry is a session-only reconstruction
-composition over the same tree contract. `RecursiveProductionImportParser`
-accepts simple item-plus-quantity lines or tab-separated EVE item rows and maps
-only item name plus positive whole quantity into standard `ProductionRequestLine`
-values. Group, displayed volume
-and approximate ISK value remain presentation metadata and never override SDE
-or market inputs. The Runtime submits all imported requests as one planner input
-so shared intermediates, Warehouse allocation and logistics are calculated as
-one scenario rather than as independent per-row estimates. Every producible
-intermediate is forced to `produce` for this reconstruction; factual stock is
-still consumed first. The first projection exposes every Blueprint type, and a
-second calculation applies the explicit BPC acquisition/activity amount or BPO
-batch allocation. Each produced node also retains its SDE category/group.
-`IndustryProductionEfficiency` overrides are keyed by product type, so one UI
-group change supplies real ME/TE inputs to every matching recursive
-manufacturing step while individual type overrides remain possible. Reaction
-groups never receive ME/TE. The explicit, user-visible owned-formula standard
-adds a zero-ISK `FORMULA` allocation for reaction nodes; it is not inferred from
-Assets and can be overridden as unresolved. One-way uses inbound Main-to-Home cost; round-trip adds the
-existing finished-product Home-to-Main leg. No plan or production-book record is
-persisted.
+The former standalone **Recursive calculation** workspace is removed from the
+navigation and build target. Its EVE-row import, force-produce projection,
+special route projection and dedicated Runtime entry point are removed. The
+shared recursive production graph remains owned by Planner and Main-Hub
+opportunities, including factual Warehouse allocation, Blueprint source and
+ME/TE selection, reactions, market depth, installation cost and logistics.
 
 Loyalty Store item classification is a separate manually refreshed, atomically
 saved snapshot. One refresh reads the public NPC-corporation list and each

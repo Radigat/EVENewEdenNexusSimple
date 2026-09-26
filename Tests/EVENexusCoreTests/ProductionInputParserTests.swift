@@ -174,141 +174,17 @@ struct ProductionInputParserTests {
   }
 
   @Test
-  func parsesTabSeparatedEVEItemRowsWithGermanNumbers() throws {
-    let input = """
-      Arazu\t8\tForce Recon Ship\t\t\t80.000 m3\t1.167.920.630,64 ISK
-      Cruise Missile Launcher II\t20\tMissile Launcher Cruise\t\tHigh\t400 m3\t51.487.319,60 ISK
-      """
-
-    let result = RecursiveProductionImportParser.parse(input)
-
-    #expect(result.errors.isEmpty)
-    #expect(result.lines.count == 2)
-    let arazu = try #require(result.lines.first)
-    #expect(arazu.itemName == "Arazu")
-    #expect(arazu.quantity == 8)
-    #expect(arazu.groupName == "Force Recon Ship")
-    #expect(arazu.volumeM3 == 80_000)
-    #expect(arazu.estimatedValueISK == 1_167_920_630.64)
-    #expect(result.lines[1].volumeM3 == 400)
-    #expect(result.estimatedValueISK == 1_219_407_950.24)
-  }
-
-  @Test
-  func importedRowsBecomeStandardPlannerRequestsWithoutInventedBlueprintCost() {
-    let result = RecursiveProductionImportParser.parse(
-      "Ark\t1\tJump Freighter\t\t\t1.300.000 m3\t6.617.598.930,48 ISK"
-    )
-    let requests = result.lines.map {
-      $0.plannerRequest(materialEfficiency: 10, timeEfficiency: 20)
-    }
-
-    #expect(requests.count == 1)
-    #expect(requests[0].productName == "Ark")
-    #expect(requests[0].wantedQuantity == 1)
-    #expect(requests[0].materialEfficiency == 10)
-    #expect(requests[0].timeEfficiency == 20)
-    #expect(requests[0].blueprintKind == nil)
-    #expect(requests[0].blueprintCostISK == nil)
-  }
-
-  @Test
-  func acceptsSimpleRowsAndRejectsInvalidQuantitiesWithoutDroppingValidRows() {
-    let result = RecursiveProductionImportParser.parse(
-      "Arazu 8\nArk\t0\tJump Freighter\nInvalid\nBasilisk\t4\tLogistics"
-    )
-
-    #expect(result.lines.map(\.itemName) == ["Arazu", "Basilisk"])
-    #expect(result.errors.map(\.lineNumber) == [2, 3])
-  }
-
-  @Test
-  func distinguishesOneWayAndRoundTripLogisticsRoutes() {
+  func parsesLocalizedPlannerNumbersWithoutFeatureSpecificImportCode() {
     #expect(
-      !RecursiveProductionLogisticsRoute.mainToHome
-        .includesFinishedProductReturn
+      LocalizedNumberParser.parseNonnegative("1.167.920.630,64")
+        == 1_167_920_630.64
     )
     #expect(
-      RecursiveProductionLogisticsRoute.mainToHomeToMain
-        .includesFinishedProductReturn
+      LocalizedNumberParser.parseNonnegative("1,167,920,630.64")
+        == 1_167_920_630.64
     )
-  }
-
-  @Test
-  func recursiveReconstructionForcesEveryProducibleTypeToBuild() {
-    let existing = [
-      Int64(10): MaterialProcurementPreference(
-        supplyMode: .buy,
-        purchaseLocation: .amarr,
-        usesAvailableStockFirst: false
-      ),
-      Int64(99): MaterialProcurementPreference(
-        supplyMode: .warehouse,
-        purchaseLocation: .amarr,
-        usesAvailableStockFirst: true
-      ),
-    ]
-
-    let projected = RecursiveProductionPreferenceProjector.forceProduction(
-      typeIDs: [10, 20],
-      existing: existing,
-      mainHub: .jita
-    )
-
-    #expect(projected[10]?.supplyMode == .produce)
-    #expect(projected[10]?.purchaseLocation == .jita)
-    #expect(projected[10]?.usesAvailableStockFirst == true)
-    #expect(projected[20]?.supplyMode == .produce)
-    #expect(projected[99]?.supplyMode == .warehouse)
-  }
-
-  @Test
-  func ownedReactionFormulaDefaultIsExplicitAndRespectsOverrides() {
-    let reaction = PlanNode(
-      id: UUID(),
-      typeID: 20,
-      name: "Fixture Reaction",
-      requiredQuantity: 10,
-      action: .produce,
-      activity: .reaction,
-      runs: 5,
-      materialEfficiency: nil,
-      timeEfficiency: nil,
-      blueprintTypeID: 200,
-      children: [],
-      topLevelRequestID: UUID()
-    )
-    let manufacturing = PlanNode(
-      id: UUID(),
-      typeID: 30,
-      name: "Fixture Module",
-      requiredQuantity: 1,
-      action: .produce,
-      activity: .manufacturing,
-      runs: 1,
-      materialEfficiency: 5,
-      timeEfficiency: 10,
-      blueprintTypeID: 300,
-      children: [],
-      topLevelRequestID: UUID()
-    )
-
-    let projected =
-      RecursiveProductionBlueprintCostProjector
-      .ownedReactionFormulaAllocations(
-        nodes: [reaction, manufacturing],
-        explicitActions: [:]
-      )
-    #expect(projected[200]?.kind == .formula)
-    #expect(projected[200]?.amount == 0)
-    #expect(projected[300] == nil)
-
-    let overridden =
-      RecursiveProductionBlueprintCostProjector
-      .ownedReactionFormulaAllocations(
-        nodes: [reaction],
-        explicitActions: [200: .unresolved]
-      )
-    #expect(overridden.isEmpty)
+    #expect(LocalizedNumberParser.parseNonnegative("400") == 400)
+    #expect(LocalizedNumberParser.parseNonnegative("-1") == nil)
+    #expect(LocalizedNumberParser.parseNonnegative("not a number") == nil)
   }
 }

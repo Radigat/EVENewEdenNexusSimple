@@ -27,7 +27,6 @@
 		019FD0410000000000000012 /* AppOperatorConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000002 /* AppOperatorConfiguration.swift */; };
 		019FD0410000000000000013 /* PersistenceSchemaV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000003 /* PersistenceSchemaV1.swift */; };
 		019FD0410000000000000014 /* PersistenceRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000004 /* PersistenceRecovery.swift */; };
-		019FE1000000000000000011 /* RecursiveProductionCalculationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FE1000000000000000001 /* RecursiveProductionCalculationView.swift */; };
 		01A09B090000000000000012 /* LoyaltyStoreCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */; };
 		01A09C090000000000000012 /* UniverseTypeVolumeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09C090000000000000002 /* UniverseTypeVolumeService.swift */; };
 		01A09D090000000000000012 /* PackagedVolumeSnapshotCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */; };
@@ -223,7 +222,6 @@
 		019FD0410000000000000002 /* AppOperatorConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOperatorConfiguration.swift; sourceTree = "<group>"; };
 		019FD0410000000000000003 /* PersistenceSchemaV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceSchemaV1.swift; sourceTree = "<group>"; };
 		019FD0410000000000000004 /* PersistenceRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceRecovery.swift; sourceTree = "<group>"; };
-		019FE1000000000000000001 /* RecursiveProductionCalculationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecursiveProductionCalculationView.swift; sourceTree = "<group>"; };
 		01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyStoreCatalog.swift; sourceTree = "<group>"; };
 		01A09C090000000000000002 /* UniverseTypeVolumeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseTypeVolumeService.swift; sourceTree = "<group>"; };
 		01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackagedVolumeSnapshotCatalog.swift; sourceTree = "<group>"; };
@@ -566,7 +564,6 @@
 				019FD0410000000000000004 /* PersistenceRecovery.swift */,
 				019FD0410000000000000003 /* PersistenceSchemaV1.swift */,
 				5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */,
-				019FE1000000000000000001 /* RecursiveProductionCalculationView.swift */,
 				F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */,
 				653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */,
 				E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */,
@@ -857,7 +854,6 @@
 				019FD0410000000000000014 /* PersistenceRecovery.swift in Sources */,
 				019FD0410000000000000013 /* PersistenceSchemaV1.swift in Sources */,
 				A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */,
-				019FE1000000000000000011 /* RecursiveProductionCalculationView.swift in Sources */,
 				B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */,
 				FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */,
 				29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */,

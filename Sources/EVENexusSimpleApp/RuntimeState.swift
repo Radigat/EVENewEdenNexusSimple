@@ -1737,13 +1737,8 @@ final class RuntimeState: ObservableObject {
     blueprintManualCosts: [Int64: Double] = [:],
     productionEfficiencies: [Int64: IndustryProductionEfficiency] = [:],
     preferredBlueprintSources: [Int64: [BlueprintSourceReference]] = [:],
-    assumesOwnedReactionFormulas: Bool = false,
     loyaltyStoreBlueprintTypeIDs: Set<Int64> = [],
-    authorizations: [AuthorizationSnapshot] = [],
-    clientID: String = "",
-    includesHomeSaleScenarios: Bool = false,
     plannerInputOverride: String? = nil,
-    forceRecursiveProduction: Bool = false,
     requiresCompleteBlueprintCostsInSelectedPlan: Bool = true,
     availableStockOverride: [Int64: Int64]? = nil
   ) async throws -> ManufacturingProductionTreeSnapshot {
@@ -1796,9 +1791,6 @@ final class RuntimeState: ObservableObject {
     let preparation = preparedInput.preparation
     let typeIDs = preparation.marketTypeIDs
     let marketService = TradeHubMarketService(esi: esi)
-    let configuredHomeHub =
-      includesHomeSaleScenarios
-      ? productionBasis.homeTradingLocation : nil
     async let marketValue = marketService.orderSnapshot(
       typeIDs: typeIDs,
       regionID: mainRegionID,
@@ -1809,53 +1801,13 @@ final class RuntimeState: ObservableObject {
     async let packagedVolumeValue = universeTypeVolumeService.volumes(
       for: typeIDs
     )
-    async let homeMarketLoadValue: PlannerSecondaryMarketLoad =
-      includesHomeSaleScenarios
-      ? plannerSecondaryMarketLoad(
-        typeIDs: typeIDs,
-        mainHub: configuredMainHub,
-        targetHub: configuredHomeHub,
-        authorizations: authorizations,
-        clientID: clientID
-      ) : .notConfigured
-    let (market, adjusted, systems, homeMarketLoad, packagedVolumeSnapshot) =
+    let (market, adjusted, systems, packagedVolumeSnapshot) =
       try await (
         marketValue,
         adjustedValue,
         systemsValue,
-        homeMarketLoadValue,
         packagedVolumeValue
       )
-    var homeMarket: MarketOrderSnapshot?
-    var homeMarketWarnings: [DomainWarning] = []
-    if includesHomeSaleScenarios {
-      switch homeMarketLoad {
-      case .reuseMain:
-        homeMarket = market
-      case .loaded(let snapshot):
-        homeMarket = snapshot
-      case .unavailable:
-        homeMarketWarnings.append(
-          DomainWarning(
-            code: "guided-production.home-market-unavailable",
-            message:
-              "The Home Hub market could not be loaded. Home Hub sale scenarios remain unavailable; the Main Hub scenarios were preserved.",
-            severity: .warning
-          )
-        )
-      case .notConfigured:
-        homeMarketWarnings.append(
-          DomainWarning(
-            code: "guided-production.home-hub-not-configured",
-            message:
-              "No Home Hub is configured. Home Hub sale scenarios remain unavailable.",
-            severity: .warning
-          )
-        )
-      case .cancelled:
-        throw CancellationError()
-      }
-    }
 
     var allocatableStock: [Int64: Int64] = [:]
     var snapshotIDs: [UUID] = [
@@ -1911,11 +1863,9 @@ final class RuntimeState: ObservableObject {
 
     var calculatorBasis = productionBasis
     calculatorBasis.logistics.isEnabled = true
-    if !includesHomeSaleScenarios {
-      calculatorBasis.logistics.homeTradeHub = configuredMainHub.location
-      calculatorBasis.logistics.marketLocationName =
-        configuredMainHub.location.name
-    }
+    calculatorBasis.logistics.homeTradeHub = configuredMainHub.location
+    calculatorBasis.logistics.marketLocationName =
+      configuredMainHub.location.name
     calculatorBasis.logistics.includeInboundMaterials = true
     calculatorBasis.logistics.includeOutboundProducts = true
     let configuredReaction =
@@ -1941,7 +1891,6 @@ final class RuntimeState: ObservableObject {
         productionBasis: calculatorBasis,
         catalog: calculationCatalog,
         market: market,
-        homeMarket: homeMarket,
         adjustedPrices: adjusted,
         systemIndices: systems,
         availableStock: availableStock,
@@ -1951,13 +1900,8 @@ final class RuntimeState: ObservableObject {
         sdeBuild: active.buildNumber,
         snapshotIDs: snapshotIDs,
         inputWarnings: warnings,
-        homeMarketWarnings: homeMarketWarnings,
         salesTaxRate: configuredMainHub.marketTaxes.effectiveSalesTaxRate,
         brokerFeeRate: configuredMainHub.marketTaxes.effectiveBrokerFeeRate,
-        homeSalesTaxRate:
-          configuredHomeHub?.marketTaxes.effectiveSalesTaxRate,
-        homeBrokerFeeRate:
-          configuredHomeHub?.marketTaxes.effectiveBrokerFeeRate,
         blueprintCostAllocations: blueprintCosts,
         requiresCompleteBlueprintCosts: requiresCompleteBlueprintCosts,
         productionEfficiencies: productionEfficiencies,
@@ -1980,17 +1924,6 @@ final class RuntimeState: ObservableObject {
       mainHub: configuredMainHub.location
     )
     var selectedPreferences = recommendations.preferences
-    if forceRecursiveProduction {
-      selectedPreferences =
-        RecursiveProductionPreferenceProjector
-        .forceProduction(
-          typeIDs: Set(
-            referencePlan.materials.filter(\.canProduce).map(\.typeID)
-          ),
-          existing: selectedPreferences,
-          mainHub: configuredMainHub.location
-        )
-    }
     for typeID in typeIDs {
       var preference =
         procurementPreferences[typeID]
@@ -2103,14 +2036,6 @@ final class RuntimeState: ObservableObject {
       preferredSources: preferredBlueprintSources
     )
     var blueprintCosts: [Int64: IndustryBlueprintCostAllocation] = [:]
-    if assumesOwnedReactionFormulas {
-      blueprintCosts =
-        RecursiveProductionBlueprintCostProjector
-        .ownedReactionFormulaAllocations(
-          nodes: referencePlan.nodes,
-          explicitActions: blueprintActions
-        )
-    }
     for (blueprintTypeID, action) in blueprintActions {
       let productName =
         productNameByBlueprintTypeID[blueprintTypeID]
@@ -2204,84 +2129,6 @@ final class RuntimeState: ObservableObject {
       inventionDefinitions: inventionDefinitions,
       productionScope: calculatorBasis.productionWarehouseScope
     )
-  }
-
-  /// Calculates a session-only recursive reconstruction for several finished
-  /// products. The imported EVE value and volume columns never replace SDE or
-  /// market inputs; they remain presentation-only context in the caller.
-  func recursiveProductionTree(
-    requests: [ProductionRequestLine],
-    assetWarehouse: AssetWarehouse,
-    warehouseHasSnapshot: Bool,
-    stockTargets: [Int64: Int64] = [:],
-    existingReservations: [StockAllocation] = [],
-    existingBlueprintReservations: [BlueprintRunReservation] = [],
-    procurementPreferences: [Int64: MaterialProcurementPreference] = [:],
-    blueprintInventories: [OwnedBlueprintInventory] = [],
-    blueprintActions: [Int64: ProductionTreeBlueprintAction] = [:],
-    blueprintManualCosts: [Int64: Double] = [:],
-    productionEfficiencies: [Int64: IndustryProductionEfficiency] = [:],
-    preferredBlueprintSources: [Int64: [BlueprintSourceReference]] = [:],
-    assumesOwnedReactionFormulas: Bool = true,
-    loyaltyStoreBlueprintTypeIDs: Set<Int64> = [],
-    authorizations: [AuthorizationSnapshot] = [],
-    clientID: String = ""
-  ) async throws -> ManufacturingProductionTreeSnapshot {
-    let input = ProductionInputFormatter.format(requests)
-    let parsed = ProductionInputParser.parse(input)
-    guard parsed.isValid, let first = parsed.requests.first else {
-      throw ManufacturingOpportunityError.invalidSettings
-    }
-    guard productionBasis.homeTradingLocation != nil else {
-      throw ESIError.notFound
-    }
-    let targetQuantity = parsed.requests.reduce(into: Int64(0)) {
-      $0 = AssetWarehouse.saturatedAdd($0, Int64($1.wantedQuantity))
-    }
-    plannerCalculationGeneration &+= 1
-    let calculationGeneration = plannerCalculationGeneration
-    beginInteractivePlannerCalculation(id: calculationGeneration)
-    defer {
-      finishInteractivePlannerCalculation(id: calculationGeneration)
-    }
-
-    do {
-      let tree = try await ESIRequestContext.withPriority(.interactive) {
-        try await manufacturingProductionTree(
-          productName: first.productName,
-          targetQuantity: targetQuantity,
-          materialEfficiency: first.materialEfficiency,
-          timeEfficiency: first.timeEfficiency,
-          assetWarehouse: assetWarehouse,
-          warehouseHasSnapshot: warehouseHasSnapshot,
-          stockTargets: stockTargets,
-          existingReservations: existingReservations,
-          existingBlueprintReservations: existingBlueprintReservations,
-          procurementPreferences: procurementPreferences,
-          blueprintInventories: blueprintInventories,
-          blueprintActions: blueprintActions,
-          blueprintManualCosts: blueprintManualCosts,
-          productionEfficiencies: productionEfficiencies,
-          preferredBlueprintSources: preferredBlueprintSources,
-          assumesOwnedReactionFormulas: assumesOwnedReactionFormulas,
-          loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
-          authorizations: authorizations,
-          clientID: clientID,
-          includesHomeSaleScenarios: true,
-          plannerInputOverride: input,
-          forceRecursiveProduction: true
-        )
-      }
-      await esi.trimCachedResponses(
-        toMaximumBytes: Self.plannerESICacheRetainedBytes
-      )
-      return tree
-    } catch {
-      await esi.trimCachedResponses(
-        toMaximumBytes: Self.plannerESICacheRetainedBytes
-      )
-      throw error
-    }
   }
 
   func analyzeReactions(
