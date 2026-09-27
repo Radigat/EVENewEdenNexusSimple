@@ -4616,3 +4616,31 @@ Real-SDE-Skips. Der native unsignierte Xcode-Debug-Build endet mit
 `BUILD SUCCEEDED`; die einzige fachfremde Compiler-Warnung bleibt die bereits
 bekannte TaskLocal-Abkündigung im ESI-Client. Keine Live-ESI-, installierte-App-
 oder visuelle Nutzerabnahme behauptet.
+
+
+## 27.09.2026 – Wallet in das Dashboard integriert
+
+Auf Nutzerauftrag den eigenständigen Wallet-Eintrag aus der Hauptnavigation und
+die separate Wallet-Ansicht entfernt. Die Finanzsektion des Dashboards zeigt
+weiterhin den verfügbaren Gesamtsaldo und jetzt zusätzlich je Charakter den
+Quellzustand, den letzten Aktualisierungszeitpunkt, eine gezielte
+Wallet-Aktualisierung und den unmittelbar zugehörigen Fehlerzustand. Der
+Dashboard-Gesamtsync bleibt der gemeinsame Weg zur Aktualisierung aller
+privaten Finanz-, Bestands- und Jobdaten.
+
+Die bestehenden Wallet-Verträge und Routinen bleiben erhalten:
+`WalletPortfolioSnapshot` summiert ausschließlich verfügbare Werte,
+`CharacterWalletService` führt den gezielten ESI-Abruf aus, der letzte bekannte
+Wert wird bei einem fehlgeschlagenen Abruf bewahrt und Snapshot-Metadaten werden
+weiterhin zusammen mit dem Charakterstand gespeichert. Eine
+Navigationsregression sichert ab, dass Wallet nicht erneut als eigenständiger
+Bereich erscheint. Die laufende beziehungsweise installierte DEV-App wurde in
+diesem Schritt nicht ersetzt.
+
+Der vollständige isolierte SwiftPM-Lauf besteht mit 450 Tests. Das separate
+`EVEStaticDataKit` besteht mit 8 Tests einschließlich des vorgesehenen opt-in
+Real-SDE-Skips. Beide Lokalisierungskataloge sind gültig. Der native
+unsignierte Xcode-Debug-Build endet mit `BUILD SUCCEEDED`; die einzige
+fachfremde Compiler-Warnung bleibt die bereits bekannte TaskLocal-Abkündigung
+im ESI-Client. Keine Live-ESI-, installierte-App- oder visuelle Nutzerabnahme
+behauptet.

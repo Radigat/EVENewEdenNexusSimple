@@ -119,6 +119,7 @@ struct RuntimeFeatureStateTests {
     #expect(
       !NavigationSection.allCases.map(\.rawValue).contains("industryJobs")
     )
+    #expect(!NavigationSection.allCases.map(\.rawValue).contains("wallet"))
     #expect(NavigationSection.establishedCases.contains(.planner))
     #expect(NavigationSection.allCases.contains(.planner))
     #expect(

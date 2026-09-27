@@ -127,7 +127,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 
 | Bereich | Zweck und wesentliche Grenze |
 | --- | --- |
-| Dashboard | verdichteter Überblick über Jobs, Finanzen, Markt und Automatisierungszustände; beim ersten Dashboard-Aufruf eines App-Laufs werden die verbundenen Charaktere einmal synchronisiert |
+| Dashboard | verdichteter Überblick über Jobs, persönliche Wallet-Salden, Finanzen, Markt und Automatisierungszustände; beim ersten Dashboard-Aufruf eines App-Laufs werden die verbundenen Charaktere einmal synchronisiert |
 | Planner | Produktionsgraph, Build/Buy/Warehouse-Auswahl, Installation, Logistik, Gebühren, Erlös, Profit und ROI |
 | Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen und festen Capital-Routen im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Bauen** übergibt die konkrete Charge an den Planner |
@@ -139,7 +139,6 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Warehouse | nur planungsfähiger Bestand an exakt konfigurierten Produktionsorten, abzüglich Schutzbeständen und Reservierungen |
 | Blueprints | persönliche BPO/BPC-Instanzen, Runs, ME/TE und belegte Forschungskostenschätzung |
 | Production Overview | gespeicherte Produktionshistorie mit editierbaren Verkaufsdaten und explizit unbekannten Kosten |
-| Wallet | persönliche Wallet-Salden je verbundenem Charakter |
 | Net Worth | tägliche lokale Bewertung von Wallet, Assets, laufender Produktion, Orders, Contracts und zugänglichen Corporation-Anteilen |
 | Data & Settings | allgemeine Darstellung, SDE, ESI, Industrie- und Marktkonfiguration |
 
@@ -161,6 +160,13 @@ Dashboard integriert daraus Slot-Auslastung, Aktivitätskapazitäten, bereite
 und bevorstehende Jobs; der Nettowert verwendet aktive Fertigungs- und
 Reaktionsjobs weiterhin für die ausdrücklich geschätzte laufende Produktion.
 Die Tabellenfilter und die separate Standort-/Jobliste entfallen.
+
+Wallet ist kein eigenständiger Navigationsbereich mehr. Das Dashboard zeigt
+Gesamtsaldo, Quellzustand und letzten Aktualisierungszeitpunkt je verbundenem
+Charakter. Die vollständige Dashboard-Aktualisierung synchronisiert weiterhin
+alle Wallets; einzelne Wallets können zusätzlich unmittelbar in der
+Dashboard-Karte aktualisiert werden. Letzte bekannte Werte, explizite
+Fehlerzustände und ESI-Snapshot-Metadaten bleiben dabei erhalten.
 
 Die Benutzeroberfläche verwendet für sichtbare EVE-Namen die gemeinsame
 Komponente `EVEEntityText` beziehungsweise die passende Label-Variante. Namen
@@ -213,7 +219,8 @@ Charakter-Sync. Dazu gehören insbesondere Wallet, Assets, Industriejobdaten,
 Orders, private Contracts sowie zugängliche Corporation-Wallets und -Assets.
 Einzelne Fehler behalten den letzten bekannten Quellstand und werden als
 partiell gemeldet; sie ersetzen ihn nicht durch null. Die Wallet-Karte bietet
-denselben Ablauf zusätzlich als sichtbare manuelle Aktualisierung an.
+denselben Ablauf zusätzlich als sichtbare manuelle Aktualisierung an und kann
+den Saldo eines einzelnen Charakters gezielt aktualisieren.
 
 Nach einer erfolgreichen Aktualisierung der öffentlichen Referenzpreise wird
 höchstens ein Vermögenspunkt pro lokalem Kalendertag gespeichert. Eine

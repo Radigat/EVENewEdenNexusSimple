@@ -16,7 +16,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case warehouse
   case blueprints
   case productionBook
-  case wallet
   case netWorth
   case data
 
@@ -39,7 +38,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .warehouse: "Warehouse"
     case .blueprints: "Blueprints"
     case .productionBook: "Production Overview"
-    case .wallet: "Wallet"
     case .netWorth: "Net Worth"
     case .data: "Data & Settings"
     }
@@ -58,7 +56,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .warehouse: "shippingbox.fill"
     case .blueprints: "doc.on.doc.fill"
     case .productionBook: "books.vertical.fill"
-    case .wallet: "creditcard.fill"
     case .netWorth: "chart.line.uptrend.xyaxis"
     case .data: "externaldrive.fill"
     }
@@ -311,8 +308,6 @@ struct ContentView: View {
             ProductionBookView(
               onOpenHistoricalPlan: openHistoricalPlan
             )
-          case .wallet:
-            WalletView()
           case .netWorth:
             NetWorthView()
           case .data:
@@ -740,6 +735,8 @@ struct DashboardView: View {
   @State private var dashboardDataRefreshMessage: String?
   @State private var dashboardDataRefreshError: String?
   @State private var hasFinishedDashboardStartupRefresh = false
+  @State private var refreshingWalletCharacterIDs: Set<Int64> = []
+  @State private var walletRefreshErrors: [Int64: String] = [:]
   @State private var selectedDashboardWealthSeries: DashboardWealthSeries = .total
   @AppStorage(
     "dashboard.reaction-opportunity-groups",
@@ -1229,80 +1226,154 @@ struct DashboardView: View {
 
   private var walletPanel: some View {
     Panel(title: "Wallet", fillsAvailableHeight: true) {
-      HStack(alignment: .firstTextBaseline) {
-        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-          Text(
-            walletPortfolio.includedCharacterCount > 0
-              ? formatISK(walletPortfolio.totalBalance)
-              : AppLocalization.text("Unavailable")
+      if characters.isEmpty {
+        ContentUnavailableView(
+          "No connected characters",
+          systemImage: "creditcard",
+          description: Text(
+            "Add a character under Characters before refreshing wallet balances."
           )
-          .font(.largeTitle.weight(.semibold).monospacedDigit())
-          .foregroundStyle(
-            walletPortfolio.includedCharacterCount > 0
-              ? DesignTokens.highlight : DesignTokens.textSecondary
-          )
-          Text(
-            AppLocalization.format(
-              "%lld of %lld characters included",
-              Int64(walletPortfolio.includedCharacterCount),
-              Int64(walletPortfolio.totalCharacterCount)
+        )
+      } else {
+        HStack(alignment: .firstTextBaseline) {
+          VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+            Text(
+              walletPortfolio.includedCharacterCount > 0
+                ? formatISK(walletPortfolio.totalBalance)
+                : AppLocalization.text("Unavailable")
             )
+            .font(.largeTitle.weight(.semibold).monospacedDigit())
+            .foregroundStyle(
+              walletPortfolio.includedCharacterCount > 0
+                ? DesignTokens.highlight : DesignTokens.textSecondary
+            )
+            Text(
+              AppLocalization.format(
+                "%lld of %lld characters included",
+                Int64(walletPortfolio.includedCharacterCount),
+                Int64(walletPortfolio.totalCharacterCount)
+              )
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+          Spacer()
+          VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
+            freshnessPill(walletPortfolio.freshness)
+            Button {
+              Task { await refreshDashboardData(isStartup: false) }
+            } label: {
+              if isRefreshingDashboardData {
+                ProgressView().controlSize(.small)
+              } else {
+                Label("Refresh dashboard", systemImage: "arrow.clockwise")
+              }
+            }
+            .buttonStyle(.bordered)
+            .disabled(
+              isRefreshingDashboardData
+                || !refreshingWalletCharacterIDs.isEmpty
+                || clientID.isEmpty
+            )
+            .accessibilityIdentifier("dashboard.refresh")
+          }
+        }
+        Divider()
+        ForEach(walletPortfolio.balances) { row in
+          dashboardWalletRow(row)
+        }
+        if clientID.isEmpty {
+          Label(
+            "Save the EVE application client ID in Data & Settings before refreshing.",
+            systemImage: "exclamationmark.triangle"
           )
           .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
+          .foregroundStyle(DesignTokens.caution)
         }
-        Spacer()
-        VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
-          freshnessPill(walletPortfolio.freshness)
-          Button {
-            Task { await refreshDashboardData(isStartup: false) }
-          } label: {
-            if isRefreshingDashboardData {
-              ProgressView().controlSize(.small)
-            } else {
-              Label("Refresh dashboard", systemImage: "arrow.clockwise")
-            }
-          }
-          .buttonStyle(.bordered)
-          .disabled(isRefreshingDashboardData || characters.isEmpty)
-          .accessibilityIdentifier("dashboard.refresh")
+        if walletPortfolio.includedCharacterCount < walletPortfolio.totalCharacterCount {
+          Text("Missing or forbidden balances are not treated as zero.")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+        if let dashboardDataRefreshMessage {
+          Label(dashboardDataRefreshMessage, systemImage: "checkmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.positive)
+        }
+        if let dashboardDataRefreshError {
+          Label(dashboardDataRefreshError, systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.caution)
         }
       }
-      Divider()
-      ForEach(walletPortfolio.balances) { row in
-        HStack {
+    }
+  }
+
+  private func dashboardWalletRow(
+    _ row: CharacterWalletBalance
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           EVEEntityText(
             value: row.character.name,
             font: .callout.weight(.semibold)
           )
-          Spacer()
+          if let updatedAt = lastWalletSync(for: row.id) {
+            Text("Updated \(updatedAt.formatted())")
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text("Not synchronized")
+              .font(.caption)
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+        Spacer()
+        VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
           Text(
             row.balance.value.map(formatISK)
               ?? AppLocalization.text("Unavailable")
           )
-          .font(.callout.monospacedDigit())
+          .font(.callout.weight(.semibold).monospacedDigit())
           .foregroundStyle(
             row.balance.value == nil
               ? DesignTokens.textSecondary : DesignTokens.textPrimary
           )
+          freshnessPill(row.balance.state)
         }
+        Button {
+          guard
+            let character = characters.first(
+              where: { $0.characterID == row.id }
+            )
+          else { return }
+          Task { await refreshWallet(for: character) }
+        } label: {
+          if refreshingWalletCharacterIDs.contains(row.id) {
+            ProgressView().controlSize(.small)
+          } else {
+            Image(systemName: "arrow.clockwise")
+          }
+        }
+        .buttonStyle(.bordered)
+        .disabled(
+          clientID.isEmpty
+            || isRefreshingDashboardData
+            || refreshingWalletCharacterIDs.contains(row.id)
+        )
+        .help("Refresh \(row.character.name)'s wallet")
+        .accessibilityLabel("Refresh \(row.character.name)'s wallet")
+        .accessibilityIdentifier("dashboard.wallet.refresh.\(row.id)")
       }
-      if walletPortfolio.includedCharacterCount < walletPortfolio.totalCharacterCount {
-        Text("Missing or forbidden balances are not treated as zero.")
+      if let message = walletRefreshErrors[row.id] {
+        Label(message, systemImage: "xmark.octagon.fill")
           .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-      }
-      if let dashboardDataRefreshMessage {
-        Label(dashboardDataRefreshMessage, systemImage: "checkmark.circle.fill")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.positive)
-      }
-      if let dashboardDataRefreshError {
-        Label(dashboardDataRefreshError, systemImage: "exclamationmark.triangle.fill")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.caution)
+          .foregroundStyle(DesignTokens.negative)
       }
     }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("dashboard.wallet.character.\(row.id)")
   }
 
   private func readyJobsPanel(now: Date) -> some View {
@@ -1784,6 +1855,15 @@ struct DashboardView: View {
     )
   }
 
+  private var clientID: String {
+    EVEConstants.ssoClientID
+  }
+
+  private func lastWalletSync(for characterID: Int64) -> Date? {
+    characters.first(where: { $0.characterID == characterID })?
+      .walletLastSyncAt
+  }
+
   private var wealthInputs: [DashboardWealthCharacterInput] {
     characters.map { character in
       DashboardWealthCharacterInput(
@@ -1968,6 +2048,46 @@ struct DashboardView: View {
         Int64(orderedCharacters.count),
         failures.joined(separator: ", ")
       )
+    }
+  }
+
+  @MainActor
+  private func refreshWallet(for character: StoredCharacter) async {
+    walletRefreshErrors[character.characterID] = nil
+    refreshingWalletCharacterIDs.insert(character.characterID)
+    defer { refreshingWalletCharacterIDs.remove(character.characterID) }
+    do {
+      let authorization = try JSONDecoder().decode(
+        AuthorizationSnapshot.self,
+        from: character.authorizationSnapshot
+      )
+      let balance = try await runtime.syncWallet(
+        authorization: authorization,
+        clientID: clientID
+      )
+      let previous = character.walletBalanceSnapshot.flatMap {
+        try? JSONDecoder().decode(Sourced<Double>.self, from: $0)
+      }
+      let retained = balance.retainingLastKnownValue(from: previous)
+      character.walletBalanceSnapshot = try JSONEncoder().encode(retained)
+      if balance.value != nil {
+        character.walletLastSyncAt = balance.source.capturedAt
+      }
+      try modelContext.upsertESISnapshotMetadata(
+        characterID: character.characterID,
+        domain: "wallet-balance",
+        freshness: balance.state.rawValue,
+        provider: balance.source.provider,
+        sourceVersion: balance.source.version,
+        sourceSnapshotID: balance.source.snapshotID,
+        capturedAt: balance.source.capturedAt,
+        diagnostics: balance.diagnostics
+      )
+      try modelContext.save()
+    } catch {
+      modelContext.rollback()
+      walletRefreshErrors[character.characterID] =
+        "\(character.characterName): \(String(describing: error))"
     }
   }
 
