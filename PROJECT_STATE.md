@@ -11,9 +11,10 @@ Fertigungsprojekte, manuelle Lager/CSV, dauerhafte Reservierungen, Preisprofile/
 konkrete Wissenschaftsaufträge, Kosten-/Verkaufsbelege und lokale Sicherung/Wiederherstellung.
 Die heutige Oberfläche und aktuelle Berechnungen bleiben Grundlage. V3 ergänzt die Datenhaltung;
 bestehende Modelle, Nummern, historische Werte und technische Kennungen werden erhalten.
-Preisprofile sind in die Markteinstellungen, Sicherung/Wiederherstellung in die allgemeinen
-Einstellungen integriert; der frühere gemeinsame Toolbar-Einstieg und seine beiden Bereiche in
-der Projektverwaltung sind entfernt.
+Projektwahl und -einstellungen, Reservierungen sowie Einkaufsbudget und -fortschritt sind in die
+passenden Planner-Abschnitte integriert. Preisprofile sind in die Markteinstellungen,
+Sicherung/Wiederherstellung in die allgemeinen Einstellungen integriert. Die früheren gemeinsamen
+Toolbar-Einstiege und der bereichsumschaltende Projektverwaltungsdialog sind entfernt.
 
 Maßgeblich: [Funktionsvertrag](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md),
 [Feature-Zuordnung](Documentation/Consolidation/FEATURE_COVERAGE.md) und

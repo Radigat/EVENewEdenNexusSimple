@@ -4590,3 +4590,29 @@ Real-SDE-Skips. Der native unsignierte Xcode-Debug-Build endet mit
 `BUILD SUCCEEDED`; die einzige fachfremde Compiler-Warnung bleibt die bereits
 bekannte TaskLocal-Abkündigung im ESI-Client. Keine Live-ESI-, installierte-App-
 oder visuelle Nutzerabnahme behauptet.
+
+
+## 27.09.2026 – Projektverwaltung in Planner-Abläufe integriert
+
+Auf Nutzerauftrag den Toolbar-Einstieg „Projekte & Einkauf“ und den gemeinsamen,
+bereichsumschaltenden Dialog „Projektverwaltung“ entfernt. Projektwahl und
+-einstellungen sind jetzt unmittelbar im Planner sichtbar beziehungsweise
+einklappbar. Nach einer Berechnung erscheinen Reservierungen bei der
+Lagerverwendung sowie Einkaufsbudget und -fortschritt direkt nach der
+Einkaufsliste. Manuelle Lager, Wissenschaftsaufträge und Verkaufsbelege bleiben
+ausschließlich über ihre fachlich passenden Arbeitsbereiche erreichbar.
+
+Die Fachmodelle und Funktionen bleiben erhalten: Projektlebenszyklus,
+Lagerfreigaben, Preisprofilzuweisung, Kostenersatzwerte, persistente
+Reservierungen, Konfliktauflösung, Budget, Teilkäufe und Exporte verwenden
+weiterhin denselben `ConsolidationWorkspace`. Der Planner aktualisiert den für
+Reservierungen erforderlichen ESI-Bestand weiterhin über seinen vorhandenen
+Bestandsablauf. Eine Regression sichert ab, dass Projekte, Reservierungen und
+Einkauf nicht erneut als Bereiche des gemeinsamen Dialogs erscheinen.
+
+Der vollständige isolierte SwiftPM-Lauf besteht mit 450 Tests. Das separate
+`EVEStaticDataKit` besteht mit 8 Tests einschließlich des vorgesehenen opt-in
+Real-SDE-Skips. Der native unsignierte Xcode-Debug-Build endet mit
+`BUILD SUCCEEDED`; die einzige fachfremde Compiler-Warnung bleibt die bereits
+bekannte TaskLocal-Abkündigung im ESI-Client. Keine Live-ESI-, installierte-App-
+oder visuelle Nutzerabnahme behauptet.

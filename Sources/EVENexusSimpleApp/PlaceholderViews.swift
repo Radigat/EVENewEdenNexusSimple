@@ -60,7 +60,6 @@ private enum PlannerCalculationPhase: Equatable {
 
 struct PlannerView: View {
   @EnvironmentObject private var consolidation: ConsolidationController
-  @State private var showsProjectWorkspace = false
   @Binding var historicalPlannerRequest: HistoricalPlannerRequest?
   @Binding var launchRequest: PlannerLaunchRequest?
   let runtime: RuntimeState
@@ -256,9 +255,11 @@ struct PlannerView: View {
           )
         )
         .foregroundStyle(DesignTokens.textSecondary)
+        ConsolidationChangeStatusView()
         if let historicalPlan {
           historicalPlanPanel(historicalPlan)
         } else if historicalPlannerRequest == nil {
+          ConsolidationPlannerProjectsView()
           Panel(title: "Produce") {
             if let launchRequest {
               plannerLaunchChoice(launchRequest)
@@ -426,12 +427,10 @@ struct PlannerView: View {
       .padding(DesignTokens.spacingLG)
     }
     .navigationTitle(AppLocalization.text("Planner"))
-    .toolbar {
-      Button("Projekte & Einkauf") { persistDraft(); showsProjectWorkspace = true }
-    }
-    .sheet(isPresented: $showsProjectWorkspace) { ConsolidationWorkbenchView(area: .projects) }
     .onChange(of: consolidation.workspace.selectedProjectID) { restoreSelectedProject() }
-    .onChange(of: consolidation.workspace.selectedProject?.blueprintSupplyData) { loadProjectScience() }
+    .onChange(of: consolidation.workspace.selectedProject?.blueprintSupplyData) {
+      loadProjectScience()
+    }
 
     .onAppear {
       restoreStateIfNeeded()
@@ -442,6 +441,8 @@ struct PlannerView: View {
     .onDisappear {
       calculationTask?.cancel()
       persistDraft(reportErrors: false)
+      consolidation.error = nil
+      consolidation.preview = nil
     }
     .onChange(of: input) {
       parseResult = ProductionInputParser.parse(input)
@@ -1081,7 +1082,13 @@ struct PlannerView: View {
     }
     productionJobListPanel(plan)
     warehouseReplenishmentPanel(plan)
+    if !isHistorical {
+      ConsolidationPlannerReservationsView()
+    }
     shoppingListPanel(plan)
+    if !isHistorical {
+      ConsolidationPlannerPurchasingView()
+    }
     Panel(title: "Jobs") {
       LabeledContent("Jobs", value: "\(plan.jobs.count)")
       ExplainedPlannerMetricRow(

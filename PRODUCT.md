@@ -8,11 +8,13 @@ Aktueller Konsolidierungsstand: 25. September 2026
 
 ## Zusammengeführte vorhandene Fachabläufe
 
-Der Planner enthält **Projekte & Einkauf**; Warehouse öffnet **Manuelle Lager**, Blueprints
-**Wissenschaftsaufträge** und die Produktionsübersicht **Verkaufsbelege**. Der frühere
-gemeinsame Einstieg **Preisprofile & Sicherung** ist entfernt: Preisprofile sind direkt in
-**Daten & Einstellungen → Markteinstellungen**, Sicherung, Wiederherstellung und Diagnose in
-**Daten & Einstellungen → Allgemein** integriert. Alle Einstiege verwenden denselben lokalen
+Der Planner enthält Projektwahl und Projekteinstellungen direkt. Reservierungen liegen bei der
+Lagerverwendung des berechneten Plans; Einkaufsbudget und -fortschritt folgen unmittelbar auf die
+Einkaufsliste. Warehouse öffnet **Manuelle Lager**, Blueprints **Wissenschaftsaufträge** und die
+Produktionsübersicht **Verkaufsbelege**. Die früheren gemeinsamen Einstiege **Projekte & Einkauf**
+und **Preisprofile & Sicherung** samt Projektverwaltungsdialog sind entfernt: Preisprofile sind
+direkt in **Daten & Einstellungen → Markteinstellungen**, Sicherung, Wiederherstellung und Diagnose
+in **Daten & Einstellungen → Allgemein** integriert. Alle Arbeitsbereiche verwenden denselben lokalen
 Datenbestand. Fertigungsprojekte sind getrennte Planungsdatensätze innerhalb der einen aktiven App.
 
 Projektstatus, eigene Entwürfe, Lagerfreigaben, Prioritäten, persistente Reservierungen,

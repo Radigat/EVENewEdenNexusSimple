@@ -33,10 +33,10 @@ Quelle: archivierte Feature-Matrix; Status gegen vorhandenen Quellcode und die a
 | DAT-009 | Updateprotokoll, Einstellungen und Automatisierung | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | DAT-010 | Skill-, Dogma-, Meta- und weitere Daten bedarfsgesteuert ergänzen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | CMP-001 | CCP-DLA, Drittanbieterkennzeichnung, Eigentumshinweis und Owner-Aufgaben | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
-| PRJ-001 | Zielprodukt und Menge erfassen | Übernommen: stabile Fertigungsprojekte, eigene Entwürfe, Status und reversibles Archiv. |
-| PRJ-002 | Projekt lokal speichern/listen | Übernommen: stabile Fertigungsprojekte, eigene Entwürfe, Status und reversibles Archiv. |
-| PRJ-003 | Projektstatus verwalten | Übernommen: stabile Fertigungsprojekte, eigene Entwürfe, Status und reversibles Archiv. |
-| PRJ-004 | Duplizieren und archivieren | Übernommen: stabile Fertigungsprojekte, eigene Entwürfe, Status und reversibles Archiv. |
+| PRJ-001 | Zielprodukt und Menge erfassen | Im Planner integriert: stabile Fertigungsprojekte, eigene Entwürfe, Status und reversibles Archiv. |
+| PRJ-002 | Projekt lokal speichern/listen | Im Planner integriert: stabile Fertigungsprojekte, eigene Entwürfe, Status und reversibles Archiv. |
+| PRJ-003 | Projektstatus verwalten | Im Planner integriert: stabile Fertigungsprojekte, eigene Entwürfe, Status und reversibles Archiv. |
+| PRJ-004 | Duplizieren und archivieren | Im Planner integriert: stabile Fertigungsprojekte, eigene Entwürfe, Status und reversibles Archiv. |
 | CAL-001 | Produktionsgraph erzeugen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | CAL-002 | Runs und Ausgabemengen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | CAL-003 | Material Efficiency | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
@@ -49,8 +49,8 @@ Quelle: archivierte Feature-Matrix; Status gegen vorhandenen Quellcode und die a
 | INV-002 | CSV-Bestandsimport | Übernommen: manuelle Lager, kontrollierter CSV-Import und projektbezogene Verfügbarkeit. |
 | INV-003 | Verfügbarkeit und Ausschlüsse | Übernommen: manuelle Lager, kontrollierter CSV-Import und projektbezogene Verfügbarkeit. |
 | SAF-001 | Mindest-, Ziel- und Warnbestand | Zusammengeführt: aktuelle Schutzformel und Zielmenge erhalten; unabhängige Warnschwellen ergänzt. |
-| RES-001 | Materialien für Projekte reservieren | Übernommen: persistente Herkunftsreservierungen, Lebenszyklus, Prioritätsvorschau und Konflikte. |
-| RES-002 | Konkurrenz und Schutzmengen erkennen | Übernommen: persistente Herkunftsreservierungen, Lebenszyklus, Prioritätsvorschau und Konflikte. |
+| RES-001 | Materialien für Projekte reservieren | Bei der Planner-Lagerverwendung integriert: persistente Herkunftsreservierungen, Lebenszyklus, Prioritätsvorschau und Konflikte. |
+| RES-002 | Konkurrenz und Schutzmengen erkennen | Bei der Planner-Lagerverwendung integriert: persistente Herkunftsreservierungen, Lebenszyklus, Prioritätsvorschau und Konflikte. |
 | BOB-001 | Bestand verwenden und Zwischenstufen bauen/kaufen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | PRC-001 | Manuelle Preise und Profile | In Markteinstellungen integriert: exakte manuelle Preisprofile, Gültigkeit und CSV-Vorschau; aktive Marktpreise bleiben Standard. |
 | PRC-002 | CSV-Preisimport | In Markteinstellungen integriert: exakte manuelle Preisprofile, Gültigkeit und CSV-Vorschau; aktive Marktpreise bleiben Standard. |
@@ -62,8 +62,8 @@ Quelle: archivierte Feature-Matrix; Status gegen vorhandenen Quellcode und die a
 | FIN-006 | Verkaufsmengen, bestätigte Walletbelege, Durchschnittspreis und Realgewinn | Übernommen: bestätigte Teilverkäufe aus manuellen, Wallet- und Journalbelegen; aktuelle Gebühren-/Gewinnformeln erhalten. |
 | FIN-007 | Produktions-/Verkaufsstatistik, Diagramme und Gesamtwallet | Kein zusätzlicher Legacy-Ausbau: nur geplant, zurückgestellt oder nicht freigegeben. Bereits vorhandene aktuelle Teilfunktionen bleiben erhalten. |
 | IND-001 | Mondzusammensetzung, Output, Fuel, Miete, Gewinn und Break-even | Kein zusätzlicher Legacy-Ausbau: nur geplant, zurückgestellt oder nicht freigegeben. Bereits vorhandene aktuelle Teilfunktionen bleiben erhalten. |
-| BUY-001 | Fehlmengen aggregieren | Übernommen: projektspezifische und aggregierte Einkaufspositionen, Zielabweichungen, Teilkäufe und Export. |
-| BUY-002 | Bearbeiten, gekauft, CSV, Text | Übernommen: projektspezifische und aggregierte Einkaufspositionen, Zielabweichungen, Teilkäufe und Export. |
+| BUY-001 | Fehlmengen aggregieren | Bei der Planner-Einkaufsliste integriert: projektspezifische und aggregierte Einkaufspositionen, Zielabweichungen, Teilkäufe und Export. |
+| BUY-002 | Bearbeiten, gekauft, CSV, Text | Bei der Planner-Einkaufsliste integriert: projektspezifische und aggregierte Einkaufspositionen, Zielabweichungen, Teilkäufe und Export. |
 | UI-001 | Integrierter Produktions-/Inventionsworkspace mit Lager | Aktuelle UI/Rechner bleiben Grundlage; konkrete Copying-, Forschungs- und Invention-Aufträge sind angebunden. |
 | SSO-001 | EVE SSO PKCE und Keychain | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | ESI-001 | Öffentliche Charakterdaten und persönliche Assets/Blueprints/Jobs | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |

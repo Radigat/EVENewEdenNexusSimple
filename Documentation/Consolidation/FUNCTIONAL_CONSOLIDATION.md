@@ -23,10 +23,12 @@ ursprüngliche Patches bleiben unter `_archive/` bzw. diesem Dokumentverzeichnis
 ## Bedienung und Übernahmen
 
 **Fertigungsprojekte sind Datensätze in derselben App, keine weiteren Projektordner.**
-Der Planner öffnet über **Projekte & Einkauf** die gemeinsame Verwaltung. Warehouse, Blueprints,
-und Produktionsübersicht öffnen denselben Dialog im passenden Bereich. Preisprofile sind direkt
-in den Markteinstellungen integriert; lokale Sicherung, Wiederherstellung und Diagnose liegen in
-den allgemeinen Einstellungen. Der frühere gemeinsame Einstellungsdialog ist entfernt.
+Projektwahl und -einstellungen sind direkt in den Planner eingebettet. Nach einer Berechnung liegen
+Reservierungen bei der Lagerverwendung sowie Einkaufsbudget und -fortschritt bei der Einkaufsliste.
+Warehouse, Blueprints und Produktionsübersicht öffnen nur ihre jeweils passenden Fachdialoge für
+manuelle Lager, Wissenschaftsaufträge beziehungsweise Verkaufsbelege. Preisprofile sind direkt in
+den Markteinstellungen integriert; lokale Sicherung, Wiederherstellung und Diagnose liegen in den
+allgemeinen Einstellungen. Der frühere bereichsumschaltende Projektverwaltungsdialog ist entfernt.
 
 - Projekte: stabile UUID, getrennte Eingaben/Handbestände/Blueprint-Versorgung, Status, Duplizieren,
   Archivieren/Wiederherstellen, Priorität, Lagerfreigaben, Ausschlüsse, Gesamtmengenlimits und Preisprofil.

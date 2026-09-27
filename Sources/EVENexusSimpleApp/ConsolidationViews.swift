@@ -5,91 +5,42 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum ConsolidationArea: String, CaseIterable, Identifiable {
-  case projects = "Projekte"
   case warehouses = "Manuelle Lager"
-  case reservations = "Reservierungen"
-  case purchasing = "Einkauf"
-  case science = "Wissenschaft"
+  case science = "Wissenschaftsaufträge"
   case sales = "Verkaufsbelege"
   var id: Self { self }
 }
 
 struct ConsolidationWorkbenchView: View {
   @EnvironmentObject private var controller: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
   @Environment(\.dismiss) private var dismiss
-  @State var area: ConsolidationArea
-  @Query private var characters: [StoredCharacter]
-  @Query private var stockTargets: [StoredStockTarget]
-  @AppStorage("asset.inventory.include-corporation-hangars", store: AppDefaults.store) private
-    var includeCorporationHangars = false
-  private var inventoryIdentity: String {
-    characters.map { "\($0.characterID):\($0.lastSyncAt?.timeIntervalSince1970 ?? 0)" }.joined(
-      separator: "|")
-      + stockTargets.map { "\($0.typeID):\($0.targetQuantity)" }.joined(separator: "|")
-      + String(includeCorporationHangars)
-  }
+  let area: ConsolidationArea
+
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Text("Projektverwaltung").font(.title2.bold())
+        Text(area.rawValue).font(.title2.bold())
         Spacer()
         Button("Schließen") {
+          controller.error = nil
           controller.preview = nil
           dismiss()
         }.keyboardShortcut(.cancelAction)
       }
-      Picker("Bereich", selection: $area) {
-        ForEach(ConsolidationArea.allCases) { Text($0.rawValue).tag($0) }
-      }
       ConsolidationChangeStatusView()
       Group {
         switch area {
-        case .projects: ConsolidationProjectsView()
         case .warehouses: ConsolidationWarehousesView()
-        case .reservations: ConsolidationReservationsView()
-        case .purchasing: ConsolidationPurchasingView()
         case .science: ConsolidationScienceView()
         case .sales: ConsolidationSalesView()
         }
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .padding(20).frame(minWidth: 660, idealWidth: 920, minHeight: 560, idealHeight: 760)
-    .task(id: inventoryIdentity) {
-      controller.stockRevision = UUID()
-      var payloads = characters.compactMap { character in
-        character.assetSnapshot.map {
-          StoredAssetSnapshotPayload(
-            ownerID: character.characterID, ownerName: character.characterName,
-            ownerKind: .character, encodedSnapshot: $0)
-        }
-      }
-      if includeCorporationHangars {
-        payloads += characters.compactMap { character in
-          guard let id = character.corporationID, let data = character.corporationAssetSnapshot
-          else { return nil }
-          return StoredAssetSnapshotPayload(
-            ownerID: id, ownerName: character.corporationName ?? "Name nicht aufgelöst",
-            ownerKind: .corporation, encodedSnapshot: data)
-        }
-      }
-      let prepared = await runtime.prepareAssetWarehouse(
-        identity: "workbench:" + inventoryIdentity, payloads: payloads)
-      let projection = await runtime.prepareProductionWarehouse(from: prepared)
-      let targets = Dictionary(
-        uniqueKeysWithValues: stockTargets.map { ($0.typeID, max(0, $0.targetQuantity)) })
-      controller.updateESIStock(
-        projection.warehouse.availability(targetQuantities: targets).allocatableQuantities,
-        known: !projection.warehouse.snapshotIDs.isEmpty
-          && projection.warehouse.sourceStates.allSatisfy { $0 == .fresh })
-    }
-    .onChange(of: area) {
+    .onDisappear {
       controller.error = nil
       controller.preview = nil
     }
-    .onChange(of: runtime.activeSDEContentSHA256) { controller.stockRevision = UUID() }
-    .onChange(of: runtime.productionBasis) { controller.stockRevision = UUID() }
-
   }
 }
 
@@ -160,6 +111,7 @@ struct ConsolidationProjectPicker: View {
           }
         })
     ) {
+      Text("Kein Projekt ausgewählt").tag(Optional<UUID>.none)
       ForEach(controller.workspace.projects.filter { $0.status != .archived }) {
         Text($0.name).tag(Optional($0.id))
       }
@@ -167,8 +119,10 @@ struct ConsolidationProjectPicker: View {
   }
 }
 
-private struct ConsolidationProjectsView: View {
+struct ConsolidationPlannerProjectsView: View {
   @EnvironmentObject private var controller: ConsolidationController
+  @AppStorage("planner.disclosure.project-settings", store: AppDefaults.store)
+  private var isExpanded = false
   @State private var name = ""
   @State private var excluded = ""
   @State private var caps = ""
@@ -179,71 +133,114 @@ private struct ConsolidationProjectsView: View {
   @State private var selectedArchivedID: UUID?
   @State private var logistics = ""
   @State private var production = ""
+
   var body: some View {
-    Form {
+    Panel(title: "Produktionsprojekt") {
       ConsolidationProjectPicker()
-      TextField("Projektname", text: $name)
-      HStack {
-        Button("Neu") { perform { try $0.createProject(name: name) } }
-        Button("Duplizieren") {
-          perform { try $0.createProject(name: name, duplicate: $0.selectedProjectID) }
-        }
-      }
-      Picker("Status", selection: $status) {
-        ForEach(ProductionProjectStatus.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-      }
-      Stepper("Priorität: \(priority) (1 zuerst)", value: $priority, in: 1...3)
-      Section("Zusätzliche, unabhängige manuelle Bestände") {
-        Text(
-          "Nur auswählen, wenn diese Mengen nicht bereits im ESI-Bestand enthalten sind. Planner-Handeingaben behalten Vorrang und werden nicht addiert."
-        ).font(.caption)
-        ForEach(controller.workspace.warehouses.filter { !$0.archived }) { w in
-          Toggle(
-            w.name,
-            isOn: Binding(
-              get: { selectedWarehouses.contains(w.id) },
-              set: { value in
-                if value {
-                  selectedWarehouses.insert(w.id)
-                } else {
-                  selectedWarehouses.remove(w.id)
-                }
-              }))
-        }
-      }
-      TextField("Ausgeschlossene Typ-IDs (Komma)", text: $excluded)
-      TextField("Mengengrenzen (Typ-ID=Menge, …)", text: $caps)
-      Picker("Preise für Einkaufsbudget", selection: $profileID) {
-        Text("Aktuelle Planpreise").tag(Optional<UUID>.none)
-        ForEach(controller.workspace.priceProfiles) { Text($0.name).tag(Optional($0.id)) }
-      }
-      TextField("Logistik ersetzen (ISK, leer = Planwert)", text: $logistics)
-      TextField("Installationskosten ersetzen (ISK, leer = Planwert)", text: $production)
-      Button("Projektänderungen prüfen") { save() }
-      Section("Archiv") {
-        Picker("Archiviertes Projekt", selection: $selectedArchivedID) {
-          Text("Auswählen").tag(Optional<UUID>.none)
-          ForEach(controller.workspace.projects.filter { $0.status == .archived }) {
-            Text($0.name).tag(Optional($0.id))
+      FullWidthDisclosure(isExpanded: $isExpanded) {
+        HStack {
+          Label("Projekteinstellungen", systemImage: "folder.badge.gearshape")
+            .font(.headline)
+          Spacer()
+          if let project = controller.workspace.selectedProject {
+            Text(project.status.rawValue)
+              .font(.caption)
+              .foregroundStyle(DesignTokens.textSecondary)
           }
         }
-        Button("Wiederherstellen") {
-          perform { w in
-            guard var p = w.projects.first(where: { $0.id == selectedArchivedID }) else {
-              throw ConsolidationError.invalid("Ein archiviertes Projekt auswählen.")
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          Divider()
+          TextField("Projektname", text: $name)
+          HStack {
+            Button("Neu") { perform { try $0.createProject(name: name) } }
+            Button("Duplizieren") {
+              perform { try $0.createProject(name: name, duplicate: $0.selectedProjectID) }
             }
-            p.status = p.previousStatus == .archived ? .planning : p.previousStatus
-            try w.updateProject(p)
-            w.selectedProjectID = p.id
+          }
+          Picker("Status", selection: $status) {
+            ForEach(ProductionProjectStatus.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+          }
+          Stepper("Priorität: \(priority) (1 zuerst)", value: $priority, in: 1...3)
+
+          Text("Zusätzliche, unabhängige manuelle Bestände")
+            .font(.headline)
+          Text(
+            "Nur auswählen, wenn diese Mengen nicht bereits im ESI-Bestand enthalten sind. Planner-Handeingaben behalten Vorrang und werden nicht addiert."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          ForEach(controller.workspace.warehouses.filter { !$0.archived }) { warehouse in
+            Toggle(
+              warehouse.name,
+              isOn: Binding(
+                get: { selectedWarehouses.contains(warehouse.id) },
+                set: { value in
+                  if value {
+                    selectedWarehouses.insert(warehouse.id)
+                  } else {
+                    selectedWarehouses.remove(warehouse.id)
+                  }
+                }
+              )
+            )
+          }
+          TextField("Ausgeschlossene Typ-IDs (Komma)", text: $excluded)
+          TextField("Mengengrenzen (Typ-ID=Menge, …)", text: $caps)
+          Picker("Preise für Einkaufsbudget", selection: $profileID) {
+            Text("Aktuelle Planpreise").tag(Optional<UUID>.none)
+            ForEach(controller.workspace.priceProfiles) { Text($0.name).tag(Optional($0.id)) }
+          }
+          TextField("Logistik ersetzen (ISK, leer = Planwert)", text: $logistics)
+          TextField("Installationskosten ersetzen (ISK, leer = Planwert)", text: $production)
+          Button("Projektänderungen prüfen") { save() }
+            .buttonStyle(.borderedProminent)
+
+          Divider()
+          Text("Archiv")
+            .font(.headline)
+          Picker("Archiviertes Projekt", selection: $selectedArchivedID) {
+            Text("Auswählen").tag(Optional<UUID>.none)
+            ForEach(controller.workspace.projects.filter { $0.status == .archived }) {
+              Text($0.name).tag(Optional($0.id))
+            }
+          }
+          Button("Wiederherstellen") {
+            perform { workspace in
+              guard
+                var project = workspace.projects.first(where: {
+                  $0.id == selectedArchivedID
+                })
+              else {
+                throw ConsolidationError.invalid("Ein archiviertes Projekt auswählen.")
+              }
+              project.status =
+                project.previousStatus == .archived ? .planning : project.previousStatus
+              try workspace.updateProject(project)
+              workspace.selectedProjectID = project.id
+            }
           }
         }
       }
-    }.formStyle(.grouped).onAppear(perform: load).onChange(
-      of: controller.workspace.selectedProjectID
-    ) { load() }
+    }
+    .accessibilityIdentifier("planner.project-settings")
+    .onAppear(perform: load)
+    .onChange(of: controller.workspace.selectedProjectID) { load() }
   }
+
   private func load() {
-    guard let p = controller.workspace.selectedProject else { return }
+    guard let p = controller.workspace.selectedProject else {
+      name = ""
+      status = .planning
+      priority = 2
+      selectedWarehouses = []
+      profileID = nil
+      excluded = ""
+      caps = ""
+      logistics = ""
+      production = ""
+      return
+    }
     name = p.name
     status = p.status
     priority = p.priority
@@ -255,6 +252,7 @@ private struct ConsolidationProjectsView: View {
     logistics = p.logisticsOverrideCents.map { String(format: "%.2f", Double($0) / 100) } ?? ""
     production = p.productionOverrideCents.map { String(format: "%.2f", Double($0) / 100) } ?? ""
   }
+
   private func perform(_ change: (inout ConsolidationWorkspace) throws -> Void) {
     do {
       try controller.edit(change)
@@ -262,6 +260,7 @@ private struct ConsolidationProjectsView: View {
       controller.error = nil
     } catch { controller.error = error.localizedDescription }
   }
+
   private func save() {
     controller.propose([
       "Projekt \(name): Status \(status.rawValue), Priorität \(priority).",
@@ -671,92 +670,103 @@ struct ConsolidationPricesView: View {
   }
 }
 
-private struct ConsolidationReservationsView: View {
+struct ConsolidationPlannerReservationsView: View {
   @EnvironmentObject private var controller: ConsolidationController
+  @AppStorage("planner.disclosure.project-reservations", store: AppDefaults.store)
+  private var isExpanded = false
   @State private var id: UUID?
   @State private var quantity = ""
   @State private var hasExpiry = false
   @State private var expires = Date().addingTimeInterval(86400)
-  var body: some View {
-    Form {
-      ConsolidationProjectPicker()
-      Text(
-        "Reservierungen verändern den physischen Bestand nicht. Ablaufdaten sind Hinweise; sie geben Mengen nicht automatisch frei."
-      )
-      Toggle("Ablaufhinweis", isOn: $hasExpiry)
-      if hasExpiry { DatePicker("Termin", selection: $expires) }
-      Button("Lagerbedarf des gespeicherten Plans reservieren – Vorschau") {
-        controller.propose([
-          "Aktive Reservierungen dieses Projekts durch dessen aktuellen Lagerbedarf ersetzen."
-        ]) { w in
-          guard let p = w.selectedProject, let data = p.planSnapshot else {
-            throw ConsolidationError.invalid("Zuerst das Projekt berechnen.")
-          }
-          guard p.manualStockInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ConsolidationError.invalid(
-              "Planner-Handeingaben sind keine gemeinsamen Lager und werden nicht projektübergreifend reserviert."
-            )
-          }
-          let plan = try JSONDecoder().decode(IndustryPlanSnapshot.self, from: data)
-          let quantities = Dictionary(
-            uniqueKeysWithValues: plan.materials.map { ($0.typeID, $0.fromStock) })
-          // A plan calculated with ESI disabled uses only explicitly selected manual warehouses.
-          // Preserve that source choice instead of reallocating its demand to ESI at confirmation.
-          let usesESI = plan.stockAllocations.contains { $0.source.kind != .manual }
-          if usesESI && !controller.esiAvailable {
-            throw ConsolidationError.unavailable(
-              "Für diese Reservierung werden frische ESI-Bestände benötigt. Bitte zuerst synchronisieren."
-            )
-          }
-          try w.reserve(
-            projectID: p.id, quantities: quantities, esi: usesESI ? controller.esiStock : [:],
-            expires: hasExpiry ? expires : nil)
-        }
-      }
-      Picker("Reservierung", selection: $id) {
-        Text("Auswählen").tag(Optional<UUID>.none)
-        ForEach(controller.workspace.reservations.filter { $0.remaining > 0 }) { r in
-          Text(
-            "\(controller.workspace.projects.first { $0.id == r.projectID }?.name ?? "Projekt") · Typ \(r.typeID) · \(r.remaining) · \(r.source == "esi" ? "ESI" : "manuelles Lager")"
-          ).tag(Optional(r.id))
-        }
-      }
-      TextField("Menge", text: $quantity)
-      HStack {
-        Button("Verbrauch prüfen") { change(consume: true) }
-        Button("Freigabe prüfen") { change(consume: false) }
-      }
-      Button("Bestandskonflikte nach Priorität prüfen") {
-        do {
-          if !controller.esiAvailable
-            && controller.workspace.reservations.contains(where: {
-              $0.source == "esi" && $0.remaining > 0
-            })
-          {
-            throw ConsolidationError.unavailable(
-              "ESI-Bestand ist nicht frisch verfügbar. Fehlende Daten werden nicht als leeres Lager behandelt."
-            )
-          }
-          var proposed = controller.workspace
-          let report = try proposed.resolveStockConflicts(esi: controller.esiStock)
-          guard !report.isEmpty else {
-            controller.error = "Keine Bestandskonflikte erkannt."
-            return
-          }
-          controller.propose(report) { $0 = proposed }
-        } catch { controller.error = error.localizedDescription }
-      }
-      ForEach(
-        controller.workspace.reservations.filter {
-          $0.projectID == controller.workspace.selectedProjectID
-        }
-      ) { r in
-        Text(
-          "Typ \(r.typeID): \(r.remaining) aktiv, \(r.consumed) verbraucht, \(r.released) freigegeben · \(r.status)\(r.expiresAt.map { $0 < .now ? " · Termin überschritten" : "" } ?? "")"
-        ).font(.caption)
-      }
-    }.formStyle(.grouped)
+
+  private var currentReservations: [ProjectStockReservation] {
+    controller.workspace.reservations.filter {
+      $0.projectID == controller.workspace.selectedProjectID
+    }
   }
+
+  var body: some View {
+    Panel(title: "Lagerreservierungen") {
+      FullWidthDisclosure(isExpanded: $isExpanded) {
+        Label(
+          "\(currentReservations.filter { $0.remaining > 0 }.count) aktive Reservierungen",
+          systemImage: "shippingbox.and.arrow.backward"
+        )
+        .font(.headline)
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          Divider()
+          Text(
+            "Reservierungen verändern den physischen Bestand nicht. Ablaufdaten sind Hinweise; sie geben Mengen nicht automatisch frei."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          Toggle("Ablaufhinweis", isOn: $hasExpiry)
+          if hasExpiry { DatePicker("Termin", selection: $expires) }
+          Button("Lagerbedarf dieses Plans reservieren – Vorschau") {
+            controller.propose([
+              "Aktive Reservierungen dieses Projekts durch dessen aktuellen Lagerbedarf ersetzen."
+            ]) { workspace in
+              guard let project = workspace.selectedProject,
+                let data = project.planSnapshot
+              else {
+                throw ConsolidationError.invalid("Zuerst das Projekt berechnen.")
+              }
+              guard
+                project.manualStockInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              else {
+                throw ConsolidationError.invalid(
+                  "Planner-Handeingaben sind keine gemeinsamen Lager und werden nicht projektübergreifend reserviert."
+                )
+              }
+              let plan = try JSONDecoder().decode(IndustryPlanSnapshot.self, from: data)
+              let quantities = Dictionary(
+                uniqueKeysWithValues: plan.materials.map { ($0.typeID, $0.fromStock) })
+              // A plan calculated with ESI disabled uses only explicitly selected manual warehouses.
+              // Preserve that source choice instead of reallocating its demand to ESI at confirmation.
+              let usesESI = plan.stockAllocations.contains { $0.source.kind != .manual }
+              if usesESI && !controller.esiAvailable {
+                throw ConsolidationError.unavailable(
+                  "Für diese Reservierung werden frische ESI-Bestände benötigt. Bitte zuerst synchronisieren."
+                )
+              }
+              try workspace.reserve(
+                projectID: project.id,
+                quantities: quantities,
+                esi: usesESI ? controller.esiStock : [:],
+                expires: hasExpiry ? expires : nil
+              )
+            }
+          }
+          Picker("Reservierung", selection: $id) {
+            Text("Auswählen").tag(Optional<UUID>.none)
+            ForEach(currentReservations.filter { $0.remaining > 0 }) { reservation in
+              Text(
+                "Typ \(reservation.typeID) · \(reservation.remaining) · \(reservation.source == "esi" ? "ESI" : "manuelles Lager")"
+              )
+              .tag(Optional(reservation.id))
+            }
+          }
+          TextField("Menge", text: $quantity)
+          HStack {
+            Button("Verbrauch prüfen") { change(consume: true) }
+            Button("Freigabe prüfen") { change(consume: false) }
+          }
+          Button("Bestandskonflikte nach Priorität prüfen") {
+            checkConflicts()
+          }
+          ForEach(currentReservations) { reservation in
+            Text(
+              "Typ \(reservation.typeID): \(reservation.remaining) aktiv, \(reservation.consumed) verbraucht, \(reservation.released) freigegeben · \(reservation.status)\(reservation.expiresAt.map { $0 < .now ? " · Termin überschritten" : "" } ?? "")"
+            )
+            .font(.caption)
+          }
+        }
+      }
+    }
+    .accessibilityIdentifier("planner.project-reservations")
+  }
+
   private func change(consume: Bool) {
     controller.propose([
       "\(quantity) Einheiten \(consume ? "als verbraucht markieren" : "freigeben"). Der Lagerbestand bleibt unverändert."
@@ -767,10 +777,35 @@ private struct ConsolidationReservationsView: View {
       try w.changeReservation(id: id, quantity: quantity, consume: consume)
     }
   }
+
+  private func checkConflicts() {
+    do {
+      if !controller.esiAvailable
+        && controller.workspace.reservations.contains(where: {
+          $0.source == "esi" && $0.remaining > 0
+        })
+      {
+        throw ConsolidationError.unavailable(
+          "ESI-Bestand ist nicht frisch verfügbar. Fehlende Daten werden nicht als leeres Lager behandelt."
+        )
+      }
+      var proposed = controller.workspace
+      let report = try proposed.resolveStockConflicts(esi: controller.esiStock)
+      guard !report.isEmpty else {
+        controller.error = "Keine Bestandskonflikte erkannt."
+        return
+      }
+      controller.propose(report) { $0 = proposed }
+    } catch {
+      controller.error = error.localizedDescription
+    }
+  }
 }
 
-private struct ConsolidationPurchasingView: View {
+struct ConsolidationPlannerPurchasingView: View {
   @EnvironmentObject private var controller: ConsolidationController
+  @AppStorage("planner.disclosure.project-purchasing", store: AppDefaults.store)
+  private var isExpanded = false
   @State private var type: Int64?
   @State private var target = ""
   @State private var purchased = ""
@@ -778,66 +813,93 @@ private struct ConsolidationPurchasingView: View {
   var rows: [ProjectPurchase] {
     controller.workspace.purchases.filter { $0.projectID == controller.workspace.selectedProjectID }
   }
+
   var body: some View {
-    VStack {
-      Form {
-        ConsolidationProjectPicker()
-        if let p = controller.workspace.selectedProject, let data = p.planSnapshot,
-          let plan = try? JSONDecoder().decode(IndustryPlanSnapshot.self, from: data),
-          let budget = try? controller.workspace.budget(
-            projectID: p.id,
-            logistics: plan.costBreakdown?.effectiveLogisticsCost,
-            production: plan.costBreakdown?.installationCost)
-        {
-          LabeledContent("Offener Einkaufsbedarf", value: money(budget.materialPurchases))
-          LabeledContent("Logistik", value: money(budget.logistics))
-          LabeledContent("Installation", value: money(budget.production))
-          LabeledContent("Budget gesamt", value: money(budget.total))
-          if !budget.missingPrices.isEmpty {
-            Text(
-              "Fehlende oder ungültige Preise: \(budget.missingPrices.map(String.init).joined(separator: ", "))"
-            ).foregroundStyle(.orange)
-          }
-        }
-        Picker("Material", selection: $type) {
-          Text("Auswählen").tag(Optional<Int64>.none)
-          ForEach(rows) { Text($0.name).tag(Optional($0.typeID)) }
-        }
-        TextField("Zielmenge ersetzen (leer = Planbedarf)", text: $target)
-        TextField("Bereits gekauft", text: $purchased)
-        Button("Einkaufsänderung prüfen") {
-          controller.propose(["Einkaufsfortschritt aktualisieren; kein Zugang zum Lagerbestand."]) {
-            w in
-            guard let id = w.selectedProjectID, let type, let qty = Int64(purchased),
-              target.isEmpty || Int64(target) != nil
-            else {
-              throw ConsolidationError.invalid("Projekt, Material und gültige Mengen auswählen.")
+    Panel(title: "Einkaufsbudget & Fortschritt") {
+      FullWidthDisclosure(isExpanded: $isExpanded) {
+        Label(
+          "\(rows.filter { $0.remaining > 0 }.count) offene Einkaufspositionen",
+          systemImage: "cart"
+        )
+        .font(.headline)
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          Divider()
+          if let project = controller.workspace.selectedProject,
+            let data = project.planSnapshot,
+            let plan = try? JSONDecoder().decode(IndustryPlanSnapshot.self, from: data),
+            let budget = try? controller.workspace.budget(
+              projectID: project.id,
+              logistics: plan.costBreakdown?.effectiveLogisticsCost,
+              production: plan.costBreakdown?.installationCost
+            )
+          {
+            LabeledContent("Offener Einkaufsbedarf", value: money(budget.materialPurchases))
+            LabeledContent("Logistik", value: money(budget.logistics))
+            LabeledContent("Installation", value: money(budget.production))
+            LabeledContent("Budget gesamt", value: money(budget.total))
+            if !budget.missingPrices.isEmpty {
+              Text(
+                "Fehlende oder ungültige Preise: \(budget.missingPrices.map(String.init).joined(separator: ", "))"
+              )
+              .foregroundStyle(DesignTokens.caution)
             }
-            try w.updatePurchase(
-              projectID: id, typeID: type, override: target.isEmpty ? nil : Int64(target),
-              purchased: qty)
           }
+          Picker("Material", selection: $type) {
+            Text("Auswählen").tag(Optional<Int64>.none)
+            ForEach(rows) { Text($0.name).tag(Optional($0.typeID)) }
+          }
+          TextField("Zielmenge ersetzen (leer = Planbedarf)", text: $target)
+          TextField("Bereits gekauft", text: $purchased)
+          Button("Einkaufsänderung prüfen") {
+            controller.propose([
+              "Einkaufsfortschritt aktualisieren; kein Zugang zum Lagerbestand."
+            ]) { workspace in
+              guard let id = workspace.selectedProjectID, let type,
+                let quantity = Int64(purchased),
+                target.isEmpty || Int64(target) != nil
+              else {
+                throw ConsolidationError.invalid("Projekt, Material und gültige Mengen auswählen.")
+              }
+              try workspace.updatePurchase(
+                projectID: id,
+                typeID: type,
+                override: target.isEmpty ? nil : Int64(target),
+                purchased: quantity
+              )
+            }
+          }
+          Toggle("Alle aktiven Projekte exportieren", isOn: $allProjects)
+          HStack {
+            Button("CSV speichern") { export(copy: false) }
+            Button("Einkaufsliste kopieren") { export(copy: true) }
+          }
+          ConsolidationQuantityTable(
+            rows: rows.map {
+              .init(
+                id: $0.id.uuidString,
+                name: $0.name,
+                quantity: $0.remaining,
+                typeID: $0.typeID
+              )
+            }
+          )
         }
-        Toggle("Alle aktiven Projekte exportieren", isOn: $allProjects)
-        HStack {
-          Button("CSV speichern") { export(copy: false) }
-          Button("Einkaufsliste kopieren") { export(copy: true) }
-        }
-      }.formStyle(.grouped)
-      ConsolidationQuantityTable(
-        rows: rows.map {
-          .init(id: $0.id.uuidString, name: $0.name, quantity: $0.remaining, typeID: $0.typeID)
-        })
-    }.onChange(of: type) {
+      }
+    }
+    .accessibilityIdentifier("planner.project-purchasing")
+    .onChange(of: type) {
       if let row = rows.first(where: { $0.typeID == type }) {
         target = row.override.map(String.init) ?? ""
         purchased = String(row.purchased)
       }
     }
   }
+
   private func money(_ value: Double?) -> String {
     value.map { String(format: "%.2f ISK", $0) } ?? "Nicht verfügbar"
   }
+
   private func export(copy: Bool) {
     do {
       let text = try controller.workspace.purchasingCSV(

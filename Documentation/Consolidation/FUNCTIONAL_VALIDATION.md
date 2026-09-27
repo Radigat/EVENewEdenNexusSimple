@@ -65,7 +65,7 @@ eigener Preferences-Suite und `EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1` geöffne
 Kein produktiver Store wurde migriert oder als Testbestand genutzt; die installierte Alt-App blieb erhalten.
 Geprüft wurden:
 
-- bestehende Navigation und Planner-Einstieg **Projekte & Einkauf**;
+- damalige Navigation und Planner-Einstieg **Projekte & Einkauf**;
 - Anlegen eines Testprojekts und manuellen Lagers sowie deren Erhalt nach Neustart;
 - konkrete Vorschau mit Lagerauswahl, Mengenlimit und 120,50 ISK Kostenersatz, Bestätigung und Rückkehr;
 - blockierte Bestandserfassung ohne installierten SDE-Katalog und blockierter Wissenschaftsauftrag ohne Voraussetzungen;
@@ -73,9 +73,11 @@ Geprüft wurden:
 - Sicherungsdialog: Testbestand als `.nexusbackup` erstellt und vollständig geprüft;
 - kompakte Dialogdarstellung, scrollbare Formulare und vorhandene sortierbare Tabellenköpfe.
 
-Die Prüfung des damaligen Sicherungsdialogs ist historische Evidenz für die Funktion. Der aktuelle
-Bedienpfad liegt unter **Daten & Einstellungen → Allgemein**; Preisprofile liegen unter
-**Daten & Einstellungen → Markteinstellungen**. Für diese Verlagerung wird keine erneute visuelle
+Die Prüfung des damaligen Sicherungsdialogs und des Einstiegs **Projekte & Einkauf** ist historische
+Evidenz für die Funktionen. Der aktuelle Planner enthält Projektwahl und -einstellungen direkt,
+Reservierungen bei der Lagerverwendung sowie Einkaufsbudget und -fortschritt bei der Einkaufsliste.
+Sicherung liegt unter **Daten & Einstellungen → Allgemein**, Preisprofile unter
+**Daten & Einstellungen → Markteinstellungen**. Für diese Verlagerungen wird keine erneute visuelle
 Eigentümerabnahme behauptet.
 
 Beim Sichttest gefundene zu allgemeine Vorschautexte und die technische Meldung bei fehlendem Katalog wurden

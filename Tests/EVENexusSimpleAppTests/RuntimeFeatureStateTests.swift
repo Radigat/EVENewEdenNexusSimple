@@ -107,7 +107,7 @@ struct RuntimeFeatureStateTests {
   }
 
   @Test
-  func primaryNavigationKeepsPlannerAndMovesLogisticsIntoSettings() {
+  func primaryNavigationKeepsPlannerAndIntegratesSupportingTools() {
     #expect(
       !NavigationSection.allCases.map(\.rawValue).contains("marketBrowser")
     )
@@ -129,6 +129,10 @@ struct RuntimeFeatureStateTests {
     #expect(DataSettingsSection.allCases.contains(.marketSettings))
     #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Preisprofile"))
     #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Sicherung"))
+    #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Projekte"))
+    #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Reservierungen"))
+    #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Einkauf"))
+    #expect(ConsolidationArea.allCases == [.warehouses, .science, .sales])
   }
 
   @Test
