@@ -191,9 +191,11 @@ innerhalb des Fensters; bei kleiner Höhe scrollt die Navigationsliste.
 
 Die Bereichsauswahl unter „Daten & Einstellungen“ belegt einen eigenen Bereich
 unterhalb der nativen Titelleiste. Ihre Höhe folgt den Bedienelementen und bleibt
-von der Fensterhöhe und dem gewählten Seiteninhalt unabhängig. Der Seiteninhalt
-scrollt darunter. Bei ausreichender Breite erscheinen Reiter; bei wenig Platz
-bleibt die bestehende kompakte Menüauswahl verfügbar.
+von der Fensterhöhe und dem gewählten Seiteninhalt unabhängig. Auch ein breiter
+Seiteninhalt verändert weder ihre horizontale Position noch ihre Breite; die
+Auswahl bleibt vollständig innerhalb der Detailspalte. Der Seiteninhalt scrollt
+darunter. Bei ausreichender Breite erscheinen Reiter; bei wenig Platz bleibt die
+bestehende kompakte Menüauswahl verfügbar.
 
 Aufgelöste EVE-Items mit positiver Type-ID verwenden zusätzlich die gemeinsame
 Darstellung `EVEItemText`: Ein kleines, vom offiziellen EVE-Bilddienst geladenes

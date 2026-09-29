@@ -61,6 +61,62 @@ struct RuntimeFeatureStateTests {
   }
 
   @Test
+  func settingsNavigationWidthDoesNotFollowOversizedPageContent() {
+    for windowSize in [
+      NSSize(width: 900, height: 540),
+      NSSize(width: 2_555, height: 1_300),
+    ] {
+      var navigationFrames: [NSRect] = []
+
+      for pageWidth: CGFloat in [320, 4_000] {
+        let marker = NSView()
+        let controller = NSHostingController(
+          rootView: NavigationSplitView {
+            Text("Navigation").navigationSplitViewColumnWidth(220)
+          } detail: {
+            SettingsWorkspaceLayout {
+              DataSettingsNavigationBar(selection: .constant(.esi))
+                .background(SettingsNavigationFrameProbe(view: marker))
+            } content: {
+              ScrollView {
+                Color.clear
+                  .frame(width: pageWidth, height: 1_000)
+              }
+            }
+          }
+          .toolbar { Button("Settings action") {} }
+          .environment(\.locale, Locale(identifier: "de"))
+        )
+        let window = NSWindow(
+          contentRect: NSRect(origin: .zero, size: windowSize),
+          styleMask: [.titled, .resizable, .fullSizeContentView],
+          backing: .buffered,
+          defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        window.toolbarStyle = .unified
+        window.setContentSize(windowSize)
+        defer { window.close() }
+
+        controller.view.layoutSubtreeIfNeeded()
+        drainMainRunLoop()
+        controller.view.layoutSubtreeIfNeeded()
+
+        let navigationFrame = marker.convert(marker.bounds, to: nil)
+        navigationFrames.append(navigationFrame)
+        #expect(marker.window === window)
+        #expect(navigationFrame.minX >= 219)
+        #expect(navigationFrame.maxX <= window.contentLayoutRect.maxX + 1)
+      }
+
+      #expect(navigationFrames.count == 2)
+      #expect(abs(navigationFrames[0].minX - navigationFrames[1].minX) <= 1)
+      #expect(abs(navigationFrames[0].width - navigationFrames[1].width) <= 1)
+    }
+  }
+
+  @Test
   func settingsNavigationStaysBelowNativeToolbar() {
     let marker = NSView()
     let controller = NSHostingController(

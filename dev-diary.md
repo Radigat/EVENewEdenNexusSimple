@@ -4644,3 +4644,34 @@ unsignierte Xcode-Debug-Build endet mit `BUILD SUCCEEDED`; die einzige
 fachfremde Compiler-Warnung bleibt die bereits bekannte TaskLocal-Abkündigung
 im ESI-Client. Keine Live-ESI-, installierte-App- oder visuelle Nutzerabnahme
 behauptet.
+
+
+## 29.09.2026 – Horizontales Einstellungsmenü stabilisiert
+
+Das horizontale Menü unter „Daten & Einstellungen“ ist nun ausschließlich an
+die verfügbare Breite der Detailspalte gebunden. Zuvor konnte insbesondere der
+intrinsisch breite ESI-Inhalt die Vermessung des oberen `safeAreaInset`
+verbreitern und die Navigation unter die Sidebar verschieben. Ein
+`GeometryReader` begrenzt jetzt sowohl den Seiteninhalt als auch den
+Inset-Inhalt auf den realen Detailspaltenrahmen; überbreiter Inhalt wird an
+dieser Grenze abgeschnitten, ohne Auswahlzustand, Navigationstitel oder
+Datenlogik zu verändern. Bei ausreichender Breite bleibt der segmentierte
+Picker zentriert, bei wenig Platz greift weiterhin die kompakte Menüauswahl.
+
+Ein neuer Geometrietest vergleicht normale und absichtlich 4.000 Punkte breite
+Seiteninhalte bei 900 × 540 und 2.555 × 1.300 Punkten. Er sichert ab, dass die
+Navigation in beiden Fällen dieselben horizontalen Grenzen besitzt und nicht
+aus der Detailspalte herausragt. Der vollständige isolierte SwiftPM-Lauf
+besteht mit 451 Tests. Das separate `EVEStaticDataKit` besteht mit 8 Tests
+einschließlich des vorgesehenen opt-in Real-SDE-Skips. Der native unsignierte
+Xcode-Debug-Build endet mit `BUILD SUCCEEDED`; die native Xcode-Testaktion
+besteht mit 412 Tests und `TEST SUCCEEDED`. Die bekannte fachfremde
+TaskLocal-Abkündigung im ESI-Client bleibt unverändert.
+
+Für die Sichtprüfung wurde eine isolierte, frisch gebaute Debug-App mit
+getrenntem Datenverzeichnis verwendet. Alle sechs Einstellungsbereiche wurden
+mehrfach gewechselt. Zusätzlich wurde die Sidebar ein- und ausgeblendet sowie
+von 220 über 480 bis auf 1.600 Punkte verbreitert. Das Menü blieb jeweils in
+der Detailspalte; bei der extrem schmalen Detailspalte erschien wie vorgesehen
+die kompakte Auswahl. Die installierte DEV-App und reale ESI-Nutzerdaten wurden
+nicht verändert.

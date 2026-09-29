@@ -2662,7 +2662,9 @@ private struct DataSettingsWorkspace: View {
 }
 
 /// Reserve the navigation bar inside the native safe area. A sibling VStack
-/// can let an inner scroll view consume the title-bar inset on its own.
+/// can let an inner scroll view consume the title-bar inset on its own. The
+/// geometry proxy also prevents an intrinsically wide page from widening the
+/// inset beyond the NavigationSplitView detail column.
 struct SettingsWorkspaceLayout<Navigation: View, Content: View>: View {
   let navigation: Navigation
   let content: Content
@@ -2676,14 +2678,19 @@ struct SettingsWorkspaceLayout<Navigation: View, Content: View>: View {
   }
 
   var body: some View {
-    content
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .safeAreaInset(edge: .top, spacing: 0) {
-        VStack(spacing: 0) {
-          navigation
-          Divider()
+    GeometryReader { geometry in
+      content
+        .frame(width: geometry.size.width, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
+        .safeAreaInset(edge: .top, spacing: 0) {
+          VStack(spacing: 0) {
+            navigation
+            Divider()
+          }
+          .frame(width: geometry.size.width)
         }
-      }
+    }
   }
 }
 
