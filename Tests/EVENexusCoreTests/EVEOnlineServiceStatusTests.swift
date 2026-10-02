@@ -24,6 +24,7 @@ struct EVEOnlineServiceStatusTests {
     #expect(!status.hasLoginIssue)
     #expect(!status.hasESIIssue)
     #expect(status.fetchedAt == fetchedAt)
+    #expect(status.pageUpdatedAt != nil)
   }
 
   @Test
@@ -53,13 +54,29 @@ struct EVEOnlineServiceStatusTests {
     #expect(status.login == .unknown)
     #expect(!status.hasLoginIssue)
   }
+
+  @Test
+  func officialSummaryAlsoAcceptsWholeSecondTimestamps() async throws {
+    let status = try await EVEOnlineStatusClient(
+      transport: StatusSummaryTransport(
+        pageUpdatedAt: "2026-07-31T11:00:54Z"
+      )
+    ).fetch()
+
+    #expect(status.pageUpdatedAt != nil)
+  }
 }
 
 private struct StatusSummaryTransport: EVEOnlineStatusTransporting {
   let loginStatus: String
+  let pageUpdatedAt: String
 
-  init(loginStatus: String = "operational") {
+  init(
+    loginStatus: String = "operational",
+    pageUpdatedAt: String = "2026-07-31T11:00:54.322Z"
+  ) {
     self.loginStatus = loginStatus
+    self.pageUpdatedAt = pageUpdatedAt
   }
 
   func data(for request: URLRequest) async throws
@@ -68,7 +85,7 @@ private struct StatusSummaryTransport: EVEOnlineStatusTransporting {
     let body = """
       {
         "page": {
-          "updated_at": "2026-07-31T11:00:54.322Z"
+          "updated_at": "\(pageUpdatedAt)"
         },
         "components": [
           {

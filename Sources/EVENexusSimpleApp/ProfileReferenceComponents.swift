@@ -13,7 +13,7 @@ struct IndustryIndexSummary: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-      Text("Current ESI industry cost indices")
+      Text("Current industry cost indices")
         .font(.caption.bold())
       if solarSystemID <= 0 {
         Text("Select a solar system to load its indices.")

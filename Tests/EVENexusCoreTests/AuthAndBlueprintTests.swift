@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 
 @testable import EVENexusCore
@@ -17,6 +18,10 @@ struct AuthAndBlueprintTests {
 
   @Test
   func simpleAppUsesItsOwnRegisteredLoopbackCallback() {
+    #expect(
+      EVEConstants.ssoClientID
+        == "34c9c1fc6ae94f518e4edf4c5a98eb8c"
+    )
     #expect(
       EVEConstants.callbackURL.absoluteString
         == "http://localhost:52722/callback"
@@ -46,6 +51,49 @@ struct AuthAndBlueprintTests {
   }
 
   @Test
+  func authorizationRequestContainsEveryDisplayedScope() async throws {
+    let service = EVESSOService(
+      configuration: SSOConfiguration(clientID: "fixture-client"),
+      tokenStore: CountingRefreshTokenStore(token: nil),
+      exchange: SuccessfulTokenExchange(),
+      identityVerifier: FixtureIdentityVerifier()
+    )
+
+    let pending = try await service.beginAuthorization()
+    let components = try #require(
+      URLComponents(
+        url: pending.authorizationURL,
+        resolvingAgainstBaseURL: false
+      )
+    )
+    let scopeValue = try #require(
+      components.queryItems?.first(where: { $0.name == "scope" })?.value
+    )
+
+    #expect(
+      Set(scopeValue.split(separator: " ").map(String.init))
+        == EVEScope.versionOne
+    )
+  }
+
+  @Test
+  func authorizationRequestsNetWorthCorporationAndContractScopes() {
+    #expect(
+      CorporationAssetSyncService.requiredScopes.isSubset(
+        of: EVEScope.versionOne
+      )
+    )
+    #expect(
+      CorporationWalletSyncService.requiredScopes.isSubset(
+        of: EVEScope.versionOne
+      )
+    )
+    #expect(
+      EVEScope.versionOne.contains(PrivateContractSyncService.requiredScope)
+    )
+  }
+
+  @Test
   func reusableSSOSessionDoesNotReloadKeychainForUsableLease() async throws {
     let store = CountingRefreshTokenStore(token: "refresh-token")
     let exchange = CountingTokenExchange()
@@ -64,6 +112,41 @@ struct AuthAndBlueprintTests {
     #expect(second.accessToken == first.accessToken)
     #expect(store.loadCount == 1)
     #expect(refreshCount == 1)
+  }
+
+  @Test
+  func legacyKeychainDuplicateFromPriorAdHocBuildIsReplaced() throws {
+    let client = ScriptedKeychainSecItemClient(
+      updateStatuses: [errSecMissingEntitlement, errSecItemNotFound],
+      addStatuses: [errSecDuplicateItem, errSecSuccess],
+      deleteStatuses: [errSecSuccess]
+    )
+    let store = KeychainRefreshTokenStore(client: client)
+
+    try store.save("fresh-refresh-token", characterID: 42)
+
+    #expect(client.addCount == 2)
+    #expect(client.deletedAccounts == ["42"])
+  }
+
+  @Test
+  func legacyKeychainFailureDoesNotDeleteAnythingUnlessItIsADuplicate() {
+    let client = ScriptedKeychainSecItemClient(
+      updateStatuses: [errSecMissingEntitlement, errSecItemNotFound],
+      addStatuses: [errSecAuthFailed],
+      deleteStatuses: []
+    )
+    let store = KeychainRefreshTokenStore(client: client)
+
+    #expect(
+      throws: AuthError.keychainFallback(
+        protected: errSecMissingEntitlement,
+        legacy: errSecAuthFailed
+      )
+    ) {
+      try store.save("fresh-refresh-token", characterID: 42)
+    }
+    #expect(client.deletedAccounts.isEmpty)
   }
 
   @Test
@@ -86,6 +169,32 @@ struct AuthAndBlueprintTests {
     #expect(result.0.characterID == 42)
     #expect(result.0.characterName == "Fixture Pilot")
     #expect(store.savedCharacterIDs == [42])
+  }
+
+  @Test
+  func characterSpecificReauthorizationReplacesOnlyMatchingIdentity()
+    async throws
+  {
+    let store = CountingRefreshTokenStore(token: "old-refresh-token")
+    let service = EVESSOService(
+      configuration: SSOConfiguration(clientID: "fixture-client"),
+      tokenStore: store,
+      exchange: SuccessfulTokenExchange(),
+      identityVerifier: FixtureIdentityVerifier()
+    )
+    let pending = try await service.beginAuthorization()
+    let callback = callbackURL(for: pending)
+
+    let result = try await service.completeAuthorization(
+      callbackURL: callback,
+      pending: pending,
+      expectedCharacterID: 42
+    )
+
+    #expect(result.0.characterID == 42)
+    #expect(result.0.scopes == EVEScope.versionOne)
+    #expect(store.savedCharacterIDs == [42])
+    #expect(store.saveCount == 1)
   }
 
   @Test
@@ -669,6 +778,68 @@ private actor CountingTokenExchange: TokenExchanging {
       expiresIn: 3_600,
       refreshToken: "rotated-refresh-token"
     )
+  }
+}
+
+private final class ScriptedKeychainSecItemClient:
+  KeychainSecItemOperating, @unchecked Sendable
+{
+  private let lock = NSLock()
+  private var updateStatuses: [OSStatus]
+  private var addStatuses: [OSStatus]
+  private var deleteStatuses: [OSStatus]
+  private var recordedAddCount = 0
+  private var recordedDeletedAccounts: [String] = []
+
+  init(
+    updateStatuses: [OSStatus],
+    addStatuses: [OSStatus],
+    deleteStatuses: [OSStatus]
+  ) {
+    self.updateStatuses = updateStatuses
+    self.addStatuses = addStatuses
+    self.deleteStatuses = deleteStatuses
+  }
+
+  var addCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return recordedAddCount
+  }
+
+  var deletedAccounts: [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return recordedDeletedAccounts
+  }
+
+  func update(
+    query: [String: Any],
+    attributes: [String: Any]
+  ) -> OSStatus {
+    lock.lock()
+    defer { lock.unlock() }
+    return updateStatuses.removeFirst()
+  }
+
+  func add(attributes: [String: Any]) -> OSStatus {
+    lock.lock()
+    defer { lock.unlock() }
+    recordedAddCount += 1
+    return addStatuses.removeFirst()
+  }
+
+  func copy(query: [String: Any]) -> (OSStatus, Data?) {
+    (errSecItemNotFound, nil)
+  }
+
+  func delete(query: [String: Any]) -> OSStatus {
+    lock.lock()
+    defer { lock.unlock() }
+    recordedDeletedAccounts.append(
+      query[kSecAttrAccount as String] as? String ?? ""
+    )
+    return deleteStatuses.removeFirst()
   }
 }
 

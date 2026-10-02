@@ -18,17 +18,34 @@ struct BlueprintsView: View {
   @State private var selectedBlueprintID: Int64?
   @State private var filter: BlueprintListFilter = .all
   @State private var searchText = ""
+  @State private var portfolio = BlueprintPortfolio(inventories: [])
+  @State private var entriesByID: [Int64: BlueprintPortfolioEntry] = [:]
+  @State private var sortedEntries: [BlueprintPortfolioEntry] = []
+  @State private var visibleEntries: [BlueprintPortfolioEntry] = []
+  @State private var visibleEntryLimit = Self.entryPageSize
   @State private var typeNames: [Int64: String] = [:]
   @State private var locationNames: [Int64: String] = [:]
   @State private var quote: BlueprintResearchCostQuote?
   @State private var quoteError: String?
   @State private var isLoadingQuote = false
+  @State private var isPreparingPortfolio = true
   @State private var isResolvingNames = false
+  @State private var storedSourceCount = 0
+  @State private var unreadableSourceCount = 0
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
       header
-      if inventories.isEmpty {
+      if isPreparingPortfolio {
+        ContentUnavailableView {
+          Label("Preparing blueprints…", systemImage: "doc.on.doc")
+        } description: {
+          Text(
+            "Stored blueprint snapshots are being prepared outside the user interface."
+          )
+        }
+        .overlay { ProgressView() }
+      } else if storedSourceCount == 0 {
         ContentUnavailableView {
           Label("No stored blueprints", systemImage: "doc.on.doc")
         } description: {
@@ -38,28 +55,49 @@ struct BlueprintsView: View {
         }
       } else {
         sourceNotice
-        HSplitView {
-          blueprintList
-            .frame(minWidth: 330, idealWidth: 390, maxWidth: 470)
-          detail
-            .frame(minWidth: 650, maxWidth: .infinity)
+        GeometryReader { geometry in
+          if geometry.size.width >= 860 {
+            horizontalBlueprintLayout
+          } else {
+            verticalBlueprintLayout
+          }
         }
       }
     }
     .padding(DesignTokens.spacingLG)
     .navigationTitle(AppLocalization.text("Blueprints"))
-    .task(id: portfolioIdentity) {
-      await resolveNames()
-      selectFirstVisibleBlueprintIfNeeded()
+    .task(id: storedPortfolioIdentity) {
+      await preparePortfolio()
     }
     .task(id: quoteIdentity) {
       await loadQuote()
     }
     .onChange(of: filter) {
+      rebuildVisibleEntries()
       selectFirstVisibleBlueprintIfNeeded()
     }
     .onChange(of: searchText) {
+      rebuildVisibleEntries()
       selectFirstVisibleBlueprintIfNeeded()
+    }
+  }
+
+  private var horizontalBlueprintLayout: some View {
+    HSplitView {
+      blueprintList
+        .frame(minWidth: 280, idealWidth: 360, maxWidth: 470)
+      detail
+        .frame(minWidth: 520, maxWidth: .infinity)
+    }
+  }
+
+  private var verticalBlueprintLayout: some View {
+    VStack(spacing: DesignTokens.spacingMD) {
+      blueprintList
+        .frame(minHeight: 220, idealHeight: 280, maxHeight: 340)
+      Divider()
+      detail
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 
@@ -86,6 +124,17 @@ struct BlueprintsView: View {
 
   @ViewBuilder
   private var sourceNotice: some View {
+    if unreadableSourceCount > 0 {
+      Label(
+        AppLocalization.format(
+          "%d stored blueprint snapshot(s) could not be read. Synchronize the affected character again; other readable snapshots remain available.",
+          unreadableSourceCount
+        ),
+        systemImage: "exclamationmark.octagon.fill"
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.negative)
+    }
     if portfolio.sourceStates.contains(where: { $0 != .fresh }) {
       Label(
         "At least one character's blueprint source is partial, stale, forbidden or unavailable. Source state remains visible per blueprint.",
@@ -117,13 +166,34 @@ struct BlueprintsView: View {
             "The stored character snapshots are available, but they do not contain any owned blueprints."
           )
         }
-      } else if filteredEntries.isEmpty {
+      } else if visibleEntries.isEmpty {
         ContentUnavailableView.search(text: searchText)
       } else {
-        List(filteredEntries, selection: $selectedBlueprintID) { entry in
-          blueprintRow(entry)
-            .tag(entry.id)
-            .accessibilityIdentifier("blueprints.row.\(entry.id)")
+        List(selection: $selectedBlueprintID) {
+          ForEach(visibleEntries.prefix(visibleEntryLimit)) { entry in
+            blueprintRow(entry)
+              .tag(entry.id)
+              .accessibilityIdentifier("blueprints.row.\(entry.id)")
+          }
+          if visibleEntries.count > visibleEntryLimit {
+            Button {
+              visibleEntryLimit += Self.entryPageSize
+            } label: {
+              Label(
+                AppLocalization.format(
+                  "Show %d more blueprints",
+                  min(
+                    Self.entryPageSize,
+                    visibleEntries.count - visibleEntryLimit
+                  )
+                ),
+                systemImage: "chevron.down.circle"
+              )
+              .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("blueprints.load-more")
+          }
         }
         .listStyle(.inset)
       }
@@ -133,19 +203,18 @@ struct BlueprintsView: View {
   private func blueprintRow(_ entry: BlueprintPortfolioEntry) -> some View {
     VStack(alignment: .leading, spacing: 5) {
       HStack {
-        Text(typeName(entry.instance.blueprintTypeID))
-          .font(.headline)
-          .lineLimit(1)
+        EVEEntityText(
+          value: typeName(entry.instance.blueprintTypeID),
+          lineLimit: 1
+        )
         Spacer()
         kindBadge(entry.instance.kind)
         freshnessBadge(entry.sourceState)
       }
       HStack(spacing: DesignTokens.spacingMD) {
         Label(entry.ownerName, systemImage: "person.fill")
-        Label(
-          locationName(entry.instance.locationID),
-          systemImage: "mappin.and.ellipse"
-        )
+        Image(systemName: "mappin.and.ellipse")
+        EVEEntityText(value: locationName(entry.instance.locationID))
       }
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -197,29 +266,20 @@ struct BlueprintsView: View {
     Panel(title: "Blueprint") {
       HStack(alignment: .top) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-          Text(typeName(entry.instance.blueprintTypeID))
-            .font(.title2.bold())
-          Text(
-            "\(entry.ownerName) · \(locationName(entry.instance.locationID))"
+          EVEEntityText(
+            value: typeName(entry.instance.blueprintTypeID),
+            font: .title2.bold()
           )
-          .foregroundStyle(DesignTokens.textSecondary)
+          HStack(spacing: DesignTokens.spacingXS) {
+            Text(verbatim: entry.ownerName)
+              .foregroundStyle(DesignTokens.textSecondary)
+            Text(verbatim: "·")
+              .foregroundStyle(DesignTokens.textSecondary)
+            EVEEntityText(value: locationName(entry.instance.locationID))
+          }
         }
         Spacer()
         kindBadge(entry.instance.kind)
-      }
-      Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
-        GridRow {
-          technicalValue("Item ID", value: entry.instance.id.formatted())
-          technicalValue(
-            "Type ID",
-            value: entry.instance.blueprintTypeID.formatted()
-          )
-          technicalValue(
-            "Source",
-            value:
-              "\(entry.instance.source.provider) \(entry.instance.source.version)"
-          )
-        }
       }
     }
   }
@@ -370,9 +430,12 @@ struct BlueprintsView: View {
           }
         }
         Text(
-          "Rule \(quote.ruleVersion) · SDE \(quote.definitionSource.version) · adjusted prices \(quote.adjustedPriceSource.capturedAt.formatted())"
+          AppLocalization.format(
+            "Prices updated %@",
+            quote.adjustedPriceSource.capturedAt.formatted()
+          )
         )
-        .font(.caption.monospaced())
+        .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -436,16 +499,6 @@ struct BlueprintsView: View {
             "\(activityName) \(target) percent included in current value"
           )
       }
-    }
-  }
-
-  private func technicalValue(_ title: String, value: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(LocalizedStringKey(title))
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-      Text(value)
-        .font(.caption.monospaced())
     }
   }
 
@@ -525,31 +578,11 @@ struct BlueprintsView: View {
     }
   }
 
-  private var inventories: [OwnedBlueprintInventory] {
-    characters.compactMap { character in
-      guard let data = character.blueprintSnapshot,
-        let blueprints = try? JSONDecoder().decode(
-          Sourced<[OwnedBlueprintInstance]>.self,
-          from: data
-        )
-      else { return nil }
-      return OwnedBlueprintInventory(
-        ownerID: character.characterID,
-        ownerName: character.characterName,
-        blueprints: blueprints
-      )
-    }
-  }
-
-  private var portfolio: BlueprintPortfolio {
-    BlueprintPortfolio(inventories: inventories)
-  }
-
-  private var filteredEntries: [BlueprintPortfolioEntry] {
+  private func rebuildVisibleEntries() {
     let acceptedSearch = searchText.trimmingCharacters(
       in: .whitespacesAndNewlines
     )
-    return portfolio.entries.filter { entry in
+    visibleEntries = sortedEntries.filter { entry in
       let kindMatches: Bool
       switch filter {
       case .all:
@@ -565,33 +598,18 @@ struct BlueprintsView: View {
         .localizedCaseInsensitiveContains(acceptedSearch)
         || entry.ownerName.localizedCaseInsensitiveContains(acceptedSearch)
     }
-    .sorted {
-      let nameComparison = typeName($0.instance.blueprintTypeID)
-        .localizedCaseInsensitiveCompare(
-          typeName($1.instance.blueprintTypeID)
-        )
-      if nameComparison != .orderedSame {
-        return nameComparison == .orderedAscending
-      }
-      if $0.ownerName != $1.ownerName {
-        return $0.ownerName.localizedCaseInsensitiveCompare($1.ownerName)
-          == .orderedAscending
-      }
-      return $0.id < $1.id
-    }
+    visibleEntryLimit = Self.entryPageSize
   }
 
   private var selectedEntry: BlueprintPortfolioEntry? {
     guard let selectedBlueprintID else { return nil }
-    return portfolio.entries.first { $0.id == selectedBlueprintID }
+    return entriesByID[selectedBlueprintID]
   }
 
-  private var portfolioIdentity: String {
-    portfolio.snapshotIDs.map(\.uuidString).sorted().joined(separator: ",")
-      + "|"
-      + characters.map {
-        "\($0.characterID):\($0.characterName):\($0.lastSyncAt?.timeIntervalSince1970 ?? 0)"
-      }.joined(separator: ",")
+  private var storedPortfolioIdentity: String {
+    characters.map {
+      "\($0.characterID):\($0.characterName):\($0.lastSyncAt?.timeIntervalSince1970 ?? 0)"
+    }.joined(separator: ",")
   }
 
   private var quoteIdentity: String {
@@ -628,21 +646,81 @@ struct BlueprintsView: View {
     ].joined(separator: ":")
   }
 
-  private func resolveNames() async {
-    isResolvingNames = true
-    defer { isResolvingNames = false }
-    let typeIDs = Set(portfolio.entries.map(\.instance.blueprintTypeID))
+  private func preparePortfolio() async {
+    isPreparingPortfolio = true
+    isResolvingNames = false
+    quote = nil
+    quoteError = nil
+
+    let snapshots = characters.compactMap { character in
+      character.blueprintSnapshot.map {
+        StoredBlueprintSnapshot(
+          ownerID: character.characterID,
+          ownerName: character.characterName,
+          data: $0
+        )
+      }
+    }
+    let prepared = await Task.detached(priority: .userInitiated) {
+      PreparedBlueprintPortfolio(snapshots: snapshots)
+    }.value
+    guard !Task.isCancelled else { return }
+
+    portfolio = prepared.portfolio
+    entriesByID = prepared.entriesByID
+    storedSourceCount = snapshots.count
+    unreadableSourceCount = prepared.unreadableSourceCount
+    isPreparingPortfolio = false
+    isResolvingNames = !prepared.portfolio.entries.isEmpty
+    guard !prepared.portfolio.entries.isEmpty else {
+      sortedEntries = []
+      visibleEntries = []
+      selectedBlueprintID = nil
+      return
+    }
+
+    let typeIDs = prepared.typeIDs
     let locationIDs = Set(
-      portfolio.entries.lazy
-        .map(\.instance.locationID)
+      prepared.portfolio.entries.lazy.map(\.instance.locationID)
         .filter { $0 < 1_000_000_000_000 }
     )
     async let resolvedTypes = runtime.resolveAssetTypeNames(typeIDs)
     async let resolvedLocations = runtime.resolveAssetLocationNames(
       locationIDs
     )
-    typeNames = await resolvedTypes
-    locationNames = await resolvedLocations.value ?? [:]
+    let names = await resolvedTypes
+    let locations = await resolvedLocations.value ?? [:]
+    guard !Task.isCancelled else { return }
+
+    let unknownItem = "Unknown item".localizedUI
+    let orderedEntries = await Task.detached(priority: .userInitiated) {
+      prepared.portfolio.entries.sorted { left, right in
+        let leftName =
+          names[left.instance.blueprintTypeID] ?? unknownItem
+        let rightName =
+          names[right.instance.blueprintTypeID] ?? unknownItem
+        let nameComparison = leftName.localizedCaseInsensitiveCompare(
+          rightName
+        )
+        if nameComparison != .orderedSame {
+          return nameComparison == .orderedAscending
+        }
+        if left.ownerName != right.ownerName {
+          return left.ownerName.localizedCaseInsensitiveCompare(
+            right.ownerName
+          ) == .orderedAscending
+        }
+        return left.id < right.id
+      }
+    }.value
+    guard !Task.isCancelled else { return }
+
+    typeNames = names
+    locationNames = locations
+    sortedEntries = orderedEntries
+    isResolvingNames = false
+    rebuildVisibleEntries()
+    selectFirstVisibleBlueprintIfNeeded()
   }
 
   private func loadQuote() async {
@@ -678,15 +756,17 @@ struct BlueprintsView: View {
 
   private func selectFirstVisibleBlueprintIfNeeded() {
     if let selectedBlueprintID,
-      filteredEntries.contains(where: { $0.id == selectedBlueprintID })
+      visibleEntries.prefix(visibleEntryLimit).contains(where: {
+        $0.id == selectedBlueprintID
+      })
     {
       return
     }
-    selectedBlueprintID = filteredEntries.first?.id
+    selectedBlueprintID = visibleEntries.first?.id
   }
 
   private func typeName(_ typeID: Int64) -> String {
-    typeNames[typeID] ?? "Type \(typeID)"
+    typeNames[typeID] ?? "Unknown item".localizedUI
   }
 
   private func locationName(_ locationID: Int64) -> String {
@@ -695,7 +775,7 @@ struct BlueprintsView: View {
     }) {
       return configured.displayName
     }
-    return locationNames[locationID] ?? "Location \(locationID)"
+    return locationNames[locationID] ?? "Unknown location".localizedUI
   }
 
   private func isk(_ value: Double?) -> String {
@@ -705,5 +785,54 @@ struct BlueprintsView: View {
         .number.grouping(.automatic).precision(.fractionLength(0))
       )
       + " ISK"
+  }
+
+  private static let entryPageSize = 300
+}
+
+private struct StoredBlueprintSnapshot: Sendable {
+  let ownerID: Int64
+  let ownerName: String
+  let data: Data
+}
+
+private struct PreparedBlueprintPortfolio: Sendable {
+  let portfolio: BlueprintPortfolio
+  let entriesByID: [Int64: BlueprintPortfolioEntry]
+  let typeIDs: Set<Int64>
+  let unreadableSourceCount: Int
+
+  init(snapshots: [StoredBlueprintSnapshot]) {
+    var inventories: [OwnedBlueprintInventory] = []
+    var unreadableSourceCount = 0
+    inventories.reserveCapacity(snapshots.count)
+
+    for snapshot in snapshots {
+      guard
+        let blueprints = try? JSONDecoder().decode(
+          Sourced<[OwnedBlueprintInstance]>.self,
+          from: snapshot.data
+        )
+      else {
+        unreadableSourceCount += 1
+        continue
+      }
+      inventories.append(
+        OwnedBlueprintInventory(
+          ownerID: snapshot.ownerID,
+          ownerName: snapshot.ownerName,
+          blueprints: blueprints
+        )
+      )
+    }
+
+    let portfolio = BlueprintPortfolio(inventories: inventories)
+    self.portfolio = portfolio
+    entriesByID = Dictionary(
+      portfolio.entries.map { ($0.id, $0) },
+      uniquingKeysWith: { current, _ in current }
+    )
+    typeIDs = Set(portfolio.entries.map(\.instance.blueprintTypeID))
+    self.unreadableSourceCount = unreadableSourceCount
   }
 }

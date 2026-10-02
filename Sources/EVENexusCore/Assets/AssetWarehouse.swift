@@ -1,17 +1,25 @@
 import Foundation
 
+public enum AssetOwnerKind: String, Codable, Hashable, Sendable {
+  case character
+  case corporation
+}
+
 public struct AssetOwnerInventory: Codable, Sendable {
   public let ownerID: Int64
   public let ownerName: String
+  public let ownerKind: AssetOwnerKind
   public let assets: Sourced<AssetSnapshot>
 
   public init(
     ownerID: Int64,
     ownerName: String,
+    ownerKind: AssetOwnerKind = .character,
     assets: Sourced<AssetSnapshot>
   ) {
     self.ownerID = ownerID
     self.ownerName = ownerName
+    self.ownerKind = ownerKind
     self.assets = assets
   }
 }
@@ -22,19 +30,164 @@ public struct AssetWarehouseItem: Identifiable, Codable, Hashable, Sendable {
   public let quantity: Int64
   public let locationFlag: String
   public let singleton: Bool
+  public let ancestorTypeIDs: [Int64]
 
   public init(
     id: Int64,
     typeID: Int64,
     quantity: Int64,
     locationFlag: String,
-    singleton: Bool
+    singleton: Bool,
+    ancestorTypeIDs: [Int64] = []
   ) {
     self.id = id
     self.typeID = typeID
     self.quantity = quantity
     self.locationFlag = locationFlag
     self.singleton = singleton
+    self.ancestorTypeIDs = ancestorTypeIDs
+  }
+}
+
+public struct AssetWarehouseOwnerContentKey: Hashable, Sendable {
+  public let locationID: Int64
+  public let ownerID: Int64
+
+  public init(locationID: Int64, ownerID: Int64) {
+    self.locationID = locationID
+    self.ownerID = ownerID
+  }
+}
+
+public struct AssetWarehouseOwnerContentLine: Identifiable, Equatable,
+  Sendable
+{
+  public var id: String { "\(typeID)|\(locationFlag)" }
+  public let typeID: Int64
+  public let locationFlag: String
+  public let quantity: Int64
+
+  public init(typeID: Int64, locationFlag: String, quantity: Int64) {
+    self.typeID = typeID
+    self.locationFlag = locationFlag
+    self.quantity = quantity
+  }
+}
+
+public enum AssetInventoryOrganization: String, Codable, CaseIterable,
+  Identifiable, Sendable
+{
+  case alphabetical
+  case group
+  case mainGroup
+
+  public var id: Self { self }
+}
+
+public struct AssetTypeGroupingMetadata: Equatable, Sendable {
+  public let typeID: Int64
+  public let typeName: String
+  public let categoryName: String?
+  public let groupName: String?
+
+  public init(
+    typeID: Int64,
+    typeName: String,
+    categoryName: String?,
+    groupName: String?
+  ) {
+    self.typeID = typeID
+    self.typeName = typeName
+    self.categoryName = categoryName
+    self.groupName = groupName
+  }
+}
+
+public struct AssetWarehouseOwnerContentSection: Identifiable, Equatable,
+  Sendable
+{
+  public var id: String { title ?? "all" }
+  public let title: String?
+  public let rows: [AssetWarehouseOwnerContentLine]
+
+  public init(
+    title: String?,
+    rows: [AssetWarehouseOwnerContentLine]
+  ) {
+    self.title = title
+    self.rows = rows
+  }
+}
+
+public enum AssetWarehouseContentOrganizer {
+  public static let unclassifiedTitle = "Unclassified"
+
+  public static func sections(
+    rows: [AssetWarehouseOwnerContentLine],
+    metadata: [Int64: AssetTypeGroupingMetadata],
+    organization: AssetInventoryOrganization
+  ) -> [AssetWarehouseOwnerContentSection] {
+    let sortedRows = rows.sorted {
+      compareRows($0, $1, metadata: metadata)
+    }
+    guard organization != .alphabetical else {
+      return [
+        AssetWarehouseOwnerContentSection(
+          title: nil,
+          rows: sortedRows
+        )
+      ]
+    }
+
+    let grouped = Dictionary(grouping: sortedRows) { row in
+      let value: String?
+      switch organization {
+      case .alphabetical:
+        value = nil
+      case .group:
+        value = metadata[row.typeID]?.groupName
+      case .mainGroup:
+        value = metadata[row.typeID]?.categoryName
+      }
+      let accepted = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let accepted, !accepted.isEmpty else {
+        return unclassifiedTitle
+      }
+      return accepted
+    }
+    return grouped.map { title, rows in
+      AssetWarehouseOwnerContentSection(title: title, rows: rows)
+    }
+    .sorted { lhs, rhs in
+      if lhs.title == unclassifiedTitle {
+        return false
+      }
+      if rhs.title == unclassifiedTitle {
+        return true
+      }
+      return (lhs.title ?? "").localizedCaseInsensitiveCompare(
+        rhs.title ?? ""
+      ) == .orderedAscending
+    }
+  }
+
+  private static func compareRows(
+    _ lhs: AssetWarehouseOwnerContentLine,
+    _ rhs: AssetWarehouseOwnerContentLine,
+    metadata: [Int64: AssetTypeGroupingMetadata]
+  ) -> Bool {
+    let lhsName = metadata[lhs.typeID]?.typeName ?? "Type \(lhs.typeID)"
+    let rhsName = metadata[rhs.typeID]?.typeName ?? "Type \(rhs.typeID)"
+    let comparison = lhsName.localizedCaseInsensitiveCompare(rhsName)
+    if comparison == .orderedSame {
+      if lhs.typeID != rhs.typeID {
+        return lhs.typeID < rhs.typeID
+      }
+      return lhs.locationFlag.localizedCaseInsensitiveCompare(
+        rhs.locationFlag
+      ) == .orderedAscending
+    }
+    return comparison == .orderedAscending
   }
 }
 
@@ -42,6 +195,8 @@ public struct AssetWarehouseOwner: Identifiable, Codable, Sendable {
   public var id: Int64 { ownerID }
   public let ownerID: Int64
   public let ownerName: String
+  public let ownerKind: AssetOwnerKind
+  public let corporationDivisionNames: [Int: String]
   public let state: DataFreshness
   public let capturedAt: Date
   public let snapshotID: UUID
@@ -50,6 +205,8 @@ public struct AssetWarehouseOwner: Identifiable, Codable, Sendable {
   public init(
     ownerID: Int64,
     ownerName: String,
+    ownerKind: AssetOwnerKind = .character,
+    corporationDivisionNames: [Int: String] = [:],
     state: DataFreshness,
     capturedAt: Date,
     snapshotID: UUID,
@@ -57,6 +214,8 @@ public struct AssetWarehouseOwner: Identifiable, Codable, Sendable {
   ) {
     self.ownerID = ownerID
     self.ownerName = ownerName
+    self.ownerKind = ownerKind
+    self.corporationDivisionNames = corporationDivisionNames
     self.state = state
     self.capturedAt = capturedAt
     self.snapshotID = snapshotID
@@ -147,6 +306,7 @@ public struct WarehouseAvailability: Codable, Equatable, Sendable {
       }
     )
   }
+
 }
 
 public struct AssetWarehouse: Codable, Sendable {
@@ -157,14 +317,27 @@ public struct AssetWarehouse: Codable, Sendable {
 
   public init(inventories: [AssetOwnerInventory]) {
     var grouped: [AssetRootLocation: [Int64: [AssetWarehouseItem]]] = [:]
-    var ownerDetails: [Int64: (name: String, state: DataFreshness, date: Date, id: UUID)] = [:]
+    var ownerDetails:
+      [Int64: (
+        name: String,
+        kind: AssetOwnerKind,
+        divisionNames: [Int: String],
+        state: DataFreshness,
+        date: Date,
+        id: UUID
+      )] = [:]
     var snapshotIDs: [UUID] = []
     var sourceStates: [DataFreshness] = []
     var unresolved = Set<Int64>()
     var resolvedLocationNames: [Int64: (name: String, capturedAt: Date)] = [:]
     var resolvedStructureTypeIDs: [Int64: (typeID: Int64, capturedAt: Date)] = [:]
 
-    for inventory in inventories.sorted(by: { $0.ownerID < $1.ownerID }) {
+    let selectedInventories = Dictionary(grouping: inventories) {
+      "\($0.ownerKind.rawValue):\($0.ownerID)"
+    }.compactMap { _, candidates in
+      candidates.max(by: Self.isLessPreferred)
+    }
+    for inventory in selectedInventories.sorted(by: { $0.ownerID < $1.ownerID }) {
       sourceStates.append(inventory.assets.state)
       guard let snapshot = inventory.assets.value else { continue }
       snapshotIDs.append(snapshot.id)
@@ -188,11 +361,15 @@ public struct AssetWarehouse: Codable, Sendable {
       }
       ownerDetails[inventory.ownerID] = (
         inventory.ownerName,
+        inventory.ownerKind,
+        snapshot.corporationDivisionNames ?? [:],
         inventory.assets.state,
         snapshot.capturedAt,
         snapshot.id
       )
-      for (item, resolvedLocation) in snapshot.itemsWithRootLocations() {
+      for context in snapshot.itemsWithWarehouseContexts() {
+        let item = context.item
+        let resolvedLocation = context.location
         guard let location = resolvedLocation else {
           unresolved.insert(item.locationID)
           continue
@@ -206,7 +383,8 @@ public struct AssetWarehouse: Codable, Sendable {
             typeID: item.typeID,
             quantity: item.quantity,
             locationFlag: item.locationFlag,
-            singleton: item.singleton
+            singleton: item.singleton,
+            ancestorTypeIDs: context.ancestorTypeIDs
           )
         )
       }
@@ -220,6 +398,8 @@ public struct AssetWarehouse: Codable, Sendable {
           return AssetWarehouseOwner(
             ownerID: ownerID,
             ownerName: detail.name,
+            ownerKind: detail.kind,
+            corporationDivisionNames: detail.divisionNames,
             state: detail.state,
             capturedAt: detail.date,
             snapshotID: detail.id,
@@ -251,6 +431,64 @@ public struct AssetWarehouse: Codable, Sendable {
     self.unresolvedLocationIDs = unresolved
   }
 
+  private init(
+    locations: [AssetWarehouseLocation],
+    snapshotIDs: [UUID],
+    sourceStates: [DataFreshness],
+    unresolvedLocationIDs: Set<Int64>
+  ) {
+    self.locations = locations
+    self.snapshotIDs = snapshotIDs
+    self.sourceStates = sourceStates
+    self.unresolvedLocationIDs = unresolvedLocationIDs
+  }
+
+  /// Returns a provenance-preserving view of the warehouse for exact asset
+  /// locations. Excluded types are removed without changing the source state
+  /// of the snapshots that supplied the remaining inventory.
+  public func filtered(
+    locationIDs: Set<Int64>,
+    excludingTypeIDs: Set<Int64> = [],
+    excludingContentsOfTypeIDs: Set<Int64> = []
+  ) -> AssetWarehouse {
+    let acceptedLocations = locations.compactMap { location -> AssetWarehouseLocation? in
+      guard locationIDs.contains(location.id) else { return nil }
+      let owners = location.owners.compactMap { owner -> AssetWarehouseOwner? in
+        let items = owner.items.filter {
+          !excludingTypeIDs.contains($0.typeID)
+            && $0.ancestorTypeIDs.allSatisfy {
+              !excludingContentsOfTypeIDs.contains($0)
+            }
+        }
+        guard !items.isEmpty else { return nil }
+        return AssetWarehouseOwner(
+          ownerID: owner.ownerID,
+          ownerName: owner.ownerName,
+          ownerKind: owner.ownerKind,
+          corporationDivisionNames: owner.corporationDivisionNames,
+          state: owner.state,
+          capturedAt: owner.capturedAt,
+          snapshotID: owner.snapshotID,
+          items: items
+        )
+      }
+      guard !owners.isEmpty else { return nil }
+      return AssetWarehouseLocation(
+        id: location.id,
+        kind: location.kind,
+        resolvedName: location.resolvedName,
+        resolvedTypeID: location.resolvedTypeID,
+        owners: owners
+      )
+    }
+    return AssetWarehouse(
+      locations: acceptedLocations,
+      snapshotIDs: snapshotIDs,
+      sourceStates: sourceStates,
+      unresolvedLocationIDs: unresolvedLocationIDs
+    )
+  }
+
   public var factualQuantities: [Int64: Int64] {
     locations
       .flatMap(\.owners)
@@ -261,6 +499,45 @@ public struct AssetWarehouse: Codable, Sendable {
           item.quantity
         )
       }
+  }
+
+  public func groupedOwnerContents()
+    -> [AssetWarehouseOwnerContentKey: [AssetWarehouseOwnerContentLine]]
+  {
+    struct GroupKey: Hashable {
+      let typeID: Int64
+      let flag: String
+    }
+    var result: [AssetWarehouseOwnerContentKey: [AssetWarehouseOwnerContentLine]] = [:]
+    for location in locations {
+      for owner in location.owners {
+        let grouped = Dictionary(
+          grouping: owner.items,
+          by: { GroupKey(typeID: $0.typeID, flag: $0.locationFlag) }
+        )
+        result[
+          AssetWarehouseOwnerContentKey(
+            locationID: location.id,
+            ownerID: owner.ownerID
+          )
+        ] = grouped.map { key, items in
+          AssetWarehouseOwnerContentLine(
+            typeID: key.typeID,
+            locationFlag: key.flag,
+            quantity: items.reduce(0) {
+              Self.saturatedAdd($0, $1.quantity)
+            }
+          )
+        }
+        .sorted {
+          if $0.typeID == $1.typeID {
+            return $0.locationFlag < $1.locationFlag
+          }
+          return $0.typeID < $1.typeID
+        }
+      }
+    }
+    return result
   }
 
   public func availability(
@@ -283,6 +560,28 @@ public struct AssetWarehouse: Codable, Sendable {
     let (result, overflow) = lhs.addingReportingOverflow(rhs)
     if overflow { return rhs >= 0 ? Int64.max : Int64.min }
     return result
+  }
+
+  private static func isLessPreferred(
+    _ lhs: AssetOwnerInventory,
+    _ rhs: AssetOwnerInventory
+  ) -> Bool {
+    let lhsRank = sourceRank(lhs.assets)
+    let rhsRank = sourceRank(rhs.assets)
+    if lhsRank != rhsRank { return lhsRank < rhsRank }
+    return lhs.assets.source.capturedAt < rhs.assets.source.capturedAt
+  }
+
+  private static func sourceRank(
+    _ sourced: Sourced<AssetSnapshot>
+  ) -> Int {
+    guard sourced.value != nil else { return 0 }
+    return switch sourced.state {
+    case .fresh: 4
+    case .partial: 3
+    case .stale: 2
+    case .forbidden, .unavailable: 1
+    }
   }
 
   private static func locationSortOrder(_ kind: AssetLocationKind) -> Int {

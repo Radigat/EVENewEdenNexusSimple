@@ -3,7 +3,25 @@ import EVENexusCore
 import SwiftData
 import SwiftUI
 
+private struct HistoricalPlanPresentation {
+  let sequenceNumber: Int
+  let recordedAt: Date
+  let productName: String
+  let runs: Int64
+  let materialEfficiency: Int
+  let timeEfficiency: Int
+  let systemName: String
+  let units: Int64
+  let plan: IndustryPlanSnapshot
+}
+
+private enum PlannerSaleHub: String {
+  case main
+  case home
+}
+
 struct PlannerView: View {
+  @Binding var historicalPlannerRequest: HistoricalPlannerRequest?
   @EnvironmentObject private var runtime: RuntimeState
   @Environment(\.modelContext) private var modelContext
   @Query(filter: #Predicate<StoredPlan> { $0.isActive })
@@ -23,8 +41,11 @@ struct PlannerView: View {
   private var stockTargets: [StoredStockTarget]
   @State private var input = ""
   @State private var manualStockInput = ""
+  @AppStorage("planner.disclosure.manual-stock", store: AppDefaults.store)
+  private var isManualStockExpanded = false
   @State private var parseResult = ProductionInputParser.parse("")
-  @State private var areWarningsExpanded = false
+  @AppStorage("planner.disclosure.warnings", store: AppDefaults.store)
+  private var areWarningsExpanded = false
   @State private var hasRestoredState = false
   @State private var persistenceMessage: String?
   @State private var persistenceError: String?
@@ -32,9 +53,84 @@ struct PlannerView: View {
   @State private var assetWarehouse = AssetWarehouse(inventories: [])
   @State private var warehouseFactualQuantities: [Int64: Int64] = [:]
   @State private var isPreparingAssetWarehouse = false
+  @AppStorage(
+    "asset.inventory.include-corporation-hangars",
+    store: AppDefaults.store
+  )
+  private var includeCorporationHangars = false
   @State private var calculationTask: Task<Void, Never>?
-  @State private var isImmediateSaleDetailsExpanded = false
-  @State private var isListedSaleDetailsExpanded = false
+  @AppStorage("planner.disclosure.sale.immediate", store: AppDefaults.store)
+  private var isImmediateSaleDetailsExpanded = false
+  @AppStorage("planner.disclosure.sale.listed", store: AppDefaults.store)
+  private var isListedSaleDetailsExpanded = false
+  @AppStorage(
+    "planner.disclosure.sale.home-immediate",
+    store: AppDefaults.store
+  )
+  private var isHomeImmediateSaleDetailsExpanded = false
+  @AppStorage(
+    "planner.disclosure.sale.home-listed",
+    store: AppDefaults.store
+  )
+  private var isHomeListedSaleDetailsExpanded = false
+  @AppStorage("planner.disclosure.logistics", store: AppDefaults.store)
+  private var expandedLogisticsDisclosureIDs = "[]"
+  @AppStorage("planner.disclosure.blueprints", store: AppDefaults.store)
+  private var expandedBlueprintDisclosureIDs = "[]"
+  @AppStorage(
+    "planner.disclosure.material-groups",
+    store: AppDefaults.store
+  )
+  private var expandedMaterialDisclosureIDs = "[]"
+  @AppStorage(
+    "planner.disclosure.shopping-list-markets",
+    store: AppDefaults.store
+  )
+  private var expandedShoppingListMarketDisclosureIDs = "[]"
+  @AppStorage(
+    "planner.disclosure.production-job-list",
+    store: AppDefaults.store
+  )
+  private var isProductionJobListExpanded = false
+  @AppStorage(
+    "planner.disclosure.warehouse-replenishment-list",
+    store: AppDefaults.store
+  )
+  private var isWarehouseReplenishmentListExpanded = false
+  @AppStorage(
+    "planner.disclosure.shopping-list",
+    store: AppDefaults.store
+  )
+  private var isShoppingListExpanded = false
+  @State private var procurementPreferences: [Int64: MaterialProcurementPreference] = [:]
+  @State private var recommendationApplicationMessage: String?
+  @State private var historicalPlan: HistoricalPlanPresentation?
+  @State private var historicalLoadError: String?
+  @State private var plannerMaterialSort = AppTableSortDescriptor(
+    column: PlannerMaterialSortColumn.item,
+    direction: .ascending
+  )
+  @State private var shoppingListSort = AppTableSortDescriptor(
+    column: ShoppingListSortColumn.item,
+    direction: .ascending
+  )
+  @State private var replenishmentSort = AppTableSortDescriptor(
+    column: ReplenishmentSortColumn.item,
+    direction: .ascending
+  )
+
+  private var configuredMainHubLocation: ProcurementLocation {
+    runtime.productionBasis.mainTradingLocation?.location ?? .jita
+  }
+
+  private var plannerAuthorizationSnapshots: [AuthorizationSnapshot] {
+    storedCharacters.compactMap {
+      try? JSONDecoder().decode(
+        AuthorizationSnapshot.self,
+        from: $0.authorizationSnapshot
+      )
+    }
+  }
 
   var body: some View {
     ScrollView {
@@ -42,100 +138,97 @@ struct PlannerView: View {
         Text("Production Planner")
           .font(.largeTitle.bold())
         Text(
-          "One job per line: Product Want ME TE [BPC|BPO BlueprintCostISK]"
+          AppLocalization.text(
+            historicalPlannerRequest == nil
+              ? "One job per line: Product Want ME TE [BPC|BPO BlueprintCostISK]"
+              : "Historical values from the saved production snapshot"
+          )
         )
         .foregroundStyle(DesignTokens.textSecondary)
-        Panel(title: "Produce") {
-          TextEditor(text: $input)
-            .font(.body.monospaced())
-            .scrollContentBackground(.hidden)
-            .frame(minHeight: DesignTokens.plannerInputMinimumHeight)
-            .padding(DesignTokens.spacingSM)
-            .background(DesignTokens.elevated)
-            .clipShape(
-              RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
-            )
-            .accessibilityLabel("Production jobs")
-            .accessibilityIdentifier("planner.input")
-          HStack {
-            Button("Calculate") {
-              calculationTask = Task { @MainActor in
-                defer { calculationTask = nil }
-                guard runtime.isPlannerConfigurationReady else { return }
-                persistDraft()
-                await runtime.calculate(
-                  input: input,
-                  manualStockInput: manualStockInput,
-                  existingReservations: activeReservations,
-                  assetWarehouse: assetWarehouse,
-                  stockTargets: targetQuantities
-                )
-                guard !Task.isCancelled else { return }
-                guard runtime.errorMessage == nil, let plan = runtime.plan
-                else { return }
-                saveActivePlan(plan)
-              }
-            }
-            .keyboardShortcut(.return, modifiers: [.command])
-            .buttonStyle(.borderedProminent)
-            .disabled(
-              !parseResult.isValid || runtime.isWorking
-                || isPreparingAssetWarehouse
-                || !runtime.isPlannerConfigurationReady
-            )
-            Spacer()
-            if runtime.isWorking {
-              ProgressView().controlSize(.small)
-              Button("Cancel") {
-                calculationTask?.cancel()
-              }
-              .buttonStyle(.bordered)
-              .accessibilityIdentifier("planner.cancel")
-            }
-            Label(
-              "\(parseResult.requests.count) valid products",
-              systemImage:
-                parseResult.errors.isEmpty
-                ? "checkmark.circle" : "exclamationmark.triangle"
-            )
-            .font(.callout.monospacedDigit())
-            .help("The input is checked automatically while typing.")
-          }
-          Toggle(
-            "Use combined warehouse from all synchronized characters",
-            isOn: $runtime.warehouseStockEnabled
-          )
-          .help(
-            "Uses every stored character asset snapshot. Configured target quantities remain protected. Used warehouse materials remain included in total production cost at their current Jita replacement value."
-          )
-          if isPreparingAssetWarehouse {
-            Label(
-              "Preparing the combined warehouse once…",
-              systemImage: "shippingbox.and.arrow.backward"
-            )
-            .font(.caption)
-            .foregroundStyle(DesignTokens.textSecondary)
-          }
-          DisclosureGroup("Manual stock") {
-            TextEditor(text: $manualStockInput)
+        if let historicalPlan {
+          historicalPlanPanel(historicalPlan)
+        } else if historicalPlannerRequest == nil {
+          Panel(title: "Produce") {
+            TextEditor(text: $input)
               .font(.body.monospaced())
-              .frame(minHeight: DesignTokens.stockInputMinimumHeight)
+              .scrollContentBackground(.hidden)
+              .frame(minHeight: DesignTokens.plannerInputMinimumHeight)
               .padding(DesignTokens.spacingSM)
               .background(DesignTokens.elevated)
               .clipShape(
                 RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
               )
-            Text(
-              "One line per source-marked quantity: Item name | Quantity. Manual stock takes precedence over the combined warehouse."
+              .accessibilityLabel("Production jobs")
+              .accessibilityIdentifier("planner.input")
+            HStack {
+              Button("Calculate") {
+                calculatePlan()
+              }
+              .keyboardShortcut(.return, modifiers: [.command])
+              .buttonStyle(.borderedProminent)
+              .disabled(
+                !parseResult.isValid || runtime.isWorking
+                  || isPreparingAssetWarehouse
+                  || !runtime.isPlannerConfigurationReady
+              )
+              Spacer()
+              if runtime.isWorking {
+                ProgressView().controlSize(.small)
+                Button("Cancel") {
+                  calculationTask?.cancel()
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("planner.cancel")
+              }
+              Label(
+                "\(parseResult.requests.count) valid products",
+                systemImage:
+                  parseResult.errors.isEmpty
+                  ? "checkmark.circle" : "exclamationmark.triangle"
+              )
+              .font(.callout.monospacedDigit())
+              .help("The input is checked automatically while typing.")
+            }
+            Toggle(
+              "Use combined warehouse from all synchronized characters",
+              isOn: $runtime.warehouseStockEnabled
             )
-            .font(.caption)
-            .foregroundStyle(DesignTokens.textSecondary)
+            .help(
+              "Makes protected, unreserved warehouse quantities available. Stock is consumed only for raw materials that you explicitly set to Use warehouse."
+            )
+            if isPreparingAssetWarehouse {
+              Label(
+                "Preparing the combined warehouse once…",
+                systemImage: "shippingbox.and.arrow.backward"
+              )
+              .font(.caption)
+              .foregroundStyle(DesignTokens.textSecondary)
+            }
+            FullWidthDisclosure(isExpanded: $isManualStockExpanded) {
+              Text("Manual stock")
+            } content: {
+              TextEditor(text: $manualStockInput)
+                .font(.body.monospaced())
+                .frame(minHeight: DesignTokens.stockInputMinimumHeight)
+                .padding(DesignTokens.spacingSM)
+                .background(DesignTokens.elevated)
+                .clipShape(
+                  RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+                )
+              Text(
+                "One line per source-marked quantity: Item name | Quantity. Manual stock takes precedence over the combined warehouse."
+              )
+              .font(.caption)
+              .foregroundStyle(DesignTokens.textSecondary)
+              .padding(.top, DesignTokens.spacingSM)
+            }
           }
         }
         RecentProductionsView(
-          rows: Array(productionOverviewRows.prefix(5))
+          rows: Array(productionOverviewRows.prefix(5)),
+          onOpenHistoricalPlan: requestHistoricalPlan
         )
-        if !parseResult.errors.isEmpty {
+        if historicalPlannerRequest == nil, !parseResult.errors.isEmpty {
           Panel(title: "Input errors") {
             ForEach(parseResult.errors) { error in
               Label(
@@ -146,7 +239,7 @@ struct PlannerView: View {
             }
           }
         }
-        if let error = runtime.errorMessage {
+        if historicalPlannerRequest == nil, let error = runtime.errorMessage {
           Panel(title: "Calculation stopped") {
             Label(error, systemImage: "xmark.octagon.fill")
               .foregroundStyle(DesignTokens.negative)
@@ -158,14 +251,29 @@ struct PlannerView: View {
               .foregroundStyle(DesignTokens.negative)
           }
         }
-        if let persistenceMessage {
+        if let historicalLoadError {
+          Panel(title: "Historical plan unavailable") {
+            Label(
+              historicalLoadError,
+              systemImage: "clock.badge.exclamationmark"
+            )
+            .foregroundStyle(DesignTokens.negative)
+            Button("Back to current plan") {
+              closeHistoricalPlan()
+            }
+            .buttonStyle(.borderedProminent)
+          }
+        }
+        if historicalPlannerRequest == nil, let persistenceMessage {
           Label(persistenceMessage, systemImage: "checkmark.circle.fill")
             .font(.callout)
             .foregroundStyle(DesignTokens.positive)
         }
-        if let plan = runtime.plan {
-          resultView(plan)
-        } else {
+        if let historicalPlan {
+          resultView(historicalPlan.plan, isHistorical: true)
+        } else if historicalPlannerRequest == nil, let plan = runtime.plan {
+          resultView(plan, isHistorical: false)
+        } else if historicalPlannerRequest == nil {
           Panel(title: "Plan readiness") {
             Label(
               runtime.isPlannerConfigurationReady
@@ -184,6 +292,7 @@ struct PlannerView: View {
     .navigationTitle(AppLocalization.text("Planner"))
     .onAppear {
       restoreStateIfNeeded()
+      openRequestedHistoricalPlanIfNeeded()
       parseResult = ProductionInputParser.parse(input)
     }
     .onDisappear {
@@ -194,6 +303,10 @@ struct PlannerView: View {
       parseResult = ProductionInputParser.parse(input)
       persistenceMessage = nil
       shoppingListCopyStatus = nil
+      recommendationApplicationMessage = nil
+    }
+    .onChange(of: historicalPlannerRequest?.id) {
+      openRequestedHistoricalPlanIfNeeded()
     }
     .task(id: assetProjectionIdentity) {
       await prepareAssetWarehouse()
@@ -201,82 +314,80 @@ struct PlannerView: View {
   }
 
   @ViewBuilder
-  private func resultView(_ plan: IndustryPlanSnapshot) -> some View {
+  private func resultView(
+    _ plan: IndustryPlanSnapshot,
+    isHistorical: Bool
+  ) -> some View {
+    let homeLocation = runtime.productionBasis.homeTradingLocation?.location
+    let homeImmediateSale =
+      plan.homeImmediateSale
+      ?? unavailableSaleResult(
+        scenario: .immediateSale,
+        location: homeLocation
+      )
+    let homeListedSale =
+      plan.homeListedSale
+      ?? unavailableSaleResult(
+        scenario: .listedSale,
+        location: homeLocation
+      )
     LazyVGrid(
       columns: [
         GridItem(
-          .adaptive(minimum: 270),
+          .adaptive(minimum: 320, maximum: 480),
           alignment: .top
         )
       ],
       alignment: .leading,
       spacing: DesignTokens.spacingMD
     ) {
-      Panel(title: "Costs") {
-        metric("Materials (total)", plan.materialCost)
-        metric(
-          "Materials to buy",
-          plan.costBreakdown?.purchasedMaterialCost
-        )
-        metric(
-          stockCostLabel(for: plan),
-          plan.costBreakdown?.stockMaterialCost
-        )
-        metric(
-          "BPC/BPO",
-          plan.costBreakdown?.blueprintCosts?.total
-        )
-        metric(
-          "System cost index",
-          plan.costBreakdown?.systemIndexCost
-        )
-        metric("Installation", plan.installationCost)
-        metric(
-          "Logistics",
-          plan.costBreakdown.flatMap {
-            $0.logistics?.total
-              ?? ($0.totalProductionCost == nil ? nil : 0)
-          }
-        )
-        Divider()
-        metric(
-          "Total",
-          plan.costBreakdown?.totalProductionCost
-            ?? plan.materialCost.flatMap { materialCost in
-              plan.installationCost.map { materialCost + $0 }
-            }
-        )
-        Text(
-          "Warehouse and manual-stock materials remain included at current Jita replacement value. System-index cost is part of Installation. Sales taxes and broker fees reduce revenue and are shown separately."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-      }
-      Panel(title: "Taxes & fees") {
-        metric("Facility tax", plan.costBreakdown?.facilityTax)
-        metric("SCC surcharge", plan.costBreakdown?.sccSurcharge)
-        metric("Alpha surcharge", plan.costBreakdown?.alphaSurcharge)
-        Divider()
-        metric("Immediate sales tax", plan.immediateSale.salesTax)
-        metric("Immediate broker fee", plan.immediateSale.brokerFee)
-        metric("Listed sales tax", plan.listedSale.salesTax)
-        metric("Listed broker fee", plan.listedSale.brokerFee)
+      plannerCostsPanel(plan)
+      VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+        warehouseConsumptionPanel(plan)
+        taxesAndFeesPanel(plan)
       }
       saleScenarioPanel(
-        title: "Immediate sale",
+        title: "Immediate sale · Main Hub",
         result: plan.immediateSale,
-        totalCost: plan.costBreakdown?.totalProductionCost,
-        plan: plan
+        totalCost:
+          plan.immediateSale.totalCost
+          ?? plan.costBreakdown?.totalProductionCost,
+        plan: plan,
+        hub: .main
       )
       saleScenarioPanel(
-        title: "Listed sale",
+        title: "Listed sale · Main Hub",
         result: plan.listedSale,
-        totalCost: plan.costBreakdown?.totalProductionCost,
-        plan: plan
+        totalCost:
+          plan.listedSale.totalCost
+          ?? plan.costBreakdown?.totalProductionCost,
+        plan: plan,
+        hub: .main
+      )
+      saleScenarioPanel(
+        title: "Immediate sale · Home Hub",
+        result: homeImmediateSale,
+        totalCost:
+          homeImmediateSale.totalCost
+          ?? plan.costBreakdown?.totalProductionCost,
+        plan: plan,
+        hub: .home
+      )
+      saleScenarioPanel(
+        title: "Listed sale · Home Hub",
+        result: homeListedSale,
+        totalCost:
+          homeListedSale.totalCost
+          ?? plan.costBreakdown?.totalProductionCost,
+        plan: plan,
+        hub: .home
       )
     }
     if let logistics = plan.costBreakdown?.logistics {
-      logisticsPanel(logistics)
+      logisticsPanel(logistics, title: "Inbound logistics · Main Hub → Home Hub")
+    }
+    if let logistics = plan.immediateSale.outboundLogistics {
+      logisticsPanel(logistics, title: "Outbound logistics · Home Hub → Main Hub")
     }
     if let blueprintCosts = plan.costBreakdown?.blueprintCosts {
       blueprintCostPanel(blueprintCosts, requests: plan.requests)
@@ -284,52 +395,68 @@ struct PlannerView: View {
     materialPanel(
       title: "Raw materials",
       description:
-        "Only non-producible inputs are shown here, grouped by their SDE source category.",
+        "Choose Buy or Use warehouse for every raw input. Every purchase is assigned to the Profile Main Hub.",
       sections: materialSections(
         for: plan.materials.filter { !$0.isProducedMaterial },
         fallback: "Other raw materials"
-      )
+      ),
+      allowsProcurement: true
     )
     materialPanel(
       title: "Produced materials & intermediates",
       description:
-        "Items with a manufacturing or reaction recipe are kept separate from raw materials.",
+        "Every component and reaction intermediate compares building with buying the complete required quantity at the Profile Main Hub, including logistics. You can still override the recommended source.",
       sections: materialSections(
         for: plan.materials.filter(\.isProducedMaterial),
         fallback: "Other produced materials"
-      )
+      ),
+      allowsProcurement: true
     )
+    if !isHistorical {
+      makeOrBuyRecommendationPanel(plan)
+    }
+    productionJobListPanel(plan)
+    warehouseReplenishmentPanel(plan)
     shoppingListPanel(plan)
-    Panel(title: "Jobs and provenance") {
+    Panel(title: "Jobs") {
       LabeledContent("Jobs", value: "\(plan.jobs.count)")
-      LabeledContent(
-        "Total job time",
-        value: Duration.seconds(plan.totalJobSeconds).formatted()
+      ExplainedPlannerMetricRow(
+        label: "Estimated job time",
+        value: formatJobDuration(plan.makespanSeconds),
+        explanation: AppLocalization.text(
+          "Estimated elapsed time uses the configured manufacturing and reaction slot counts. Manufacturing and reaction work can run in parallel; within each activity, jobs are distributed across the available slots."
+        ),
+        highlightsValue: true
       )
-      LabeledContent(
-        "SDE build",
-        value: String(plan.provenance.sdeBuild)
+      ExplainedPlannerMetricRow(
+        label: "Total job workload",
+        value: formatJobDuration(plan.totalJobSeconds),
+        explanation: AppLocalization.text(
+          "Total workload adds the effective duration of every selected job. Each duration uses SDE base time, runs, the selected facility time multiplier and manufacturing TE; reactions do not use TE."
+        ),
+        highlightsValue: false
       )
-      LabeledContent(
-        "ESI compatibility",
-        value: plan.provenance.esiCompatibilityDate
-      )
-      LabeledContent("Rule version", value: plan.provenance.ruleVersion)
       Text(
         "Every successful calculation is saved automatically as the last active plan."
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
-      Button {
-        recordProduction(plan)
-      } label: {
-        Label("Record production", systemImage: "book.closed.fill")
+      if !isHistorical {
+        Button {
+          recordProduction(plan)
+        } label: {
+          Label("Record production", systemImage: "book.closed.fill")
+        }
+        .buttonStyle(.borderedProminent)
       }
-      .buttonStyle(.borderedProminent)
     }
     if !plan.warnings.isEmpty {
       Panel(title: "Warnings") {
-        DisclosureGroup(isExpanded: $areWarningsExpanded) {
+        FullWidthDisclosure(isExpanded: $areWarningsExpanded) {
+          Text(
+            "\(plan.warnings.count) \(plan.warnings.count == 1 ? "warning" : "warnings")"
+          )
+        } content: {
           VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
             ForEach(plan.warnings) { warning in
               Label(warning.message, systemImage: "exclamationmark.triangle")
@@ -341,39 +468,252 @@ struct PlannerView: View {
             }
           }
           .padding(.top, DesignTokens.spacingSM)
-        } label: {
-          Text(
-            "\(plan.warnings.count) \(plan.warnings.count == 1 ? "warning" : "warnings")"
-          )
         }
         .accessibilityIdentifier("planner.warnings.disclosure")
       }
     }
   }
 
+  private func plannerCostsPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    Panel(title: "Costs") {
+      costMetric(
+        "Material replacement (Main Hub)",
+        plan.materialCost,
+        explanation:
+          "Values every input that is not produced inside this plan at the current weighted Main Hub price for the full required quantity. Purchased and warehouse quantities are valued together so market depth is not reused."
+      )
+      costMetric(
+        "BPC/BPO",
+        plan.costBreakdown?.blueprintCosts?.total,
+        explanation:
+          "Adds the entered acquisition cost of consumed BPCs and the owner-entered cost allocation for reusable BPOs. Missing blueprint costs remain excluded and are reported separately."
+      )
+      costMetric(
+        "Installation",
+        plan.installationCost,
+        explanation:
+          "The sum of system-index cost, facility tax, SCC surcharge and any clone surcharge for every job selected for production in this plan."
+      )
+      Text(installationCostEquation(plan))
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      costMetric(
+        "Logistics",
+        plan.costBreakdown?.effectiveLogisticsCost,
+        explanation:
+          "The sum of the generated courier contracts. Each contract uses the higher of volume charge or collateral charge and is then rounded up according to the saved logistics rule."
+      )
+      Divider()
+      costMetric(
+        "Total",
+        plan.costBreakdown?.totalProductionCost,
+        explanation:
+          "Material replacement plus BPC/BPO allocation, installation and logistics. The separately displayed warehouse-consumption value and installation components are already included and are not added twice."
+      )
+      Text(totalCostEquation(plan))
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Text(
+        "Material replacement covers every input that is not produced inside this plan at its current full-requirement Main Hub value. Installation contains its system-index, facility-tax, SCC and clone-surcharge components. Logistics is included whenever the saved logistics rule is enabled and complete."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func warehouseConsumptionPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    Panel(title: "Warehouse consumption") {
+      costMetric(
+        "Main Hub value of warehouse consumption",
+        plan.warehouseConsumptionValue,
+        explanation:
+          "The current weighted Main Hub replacement value of materials consumed from the combined warehouse. It is already included in material replacement and is shown separately for information, so it is not added again."
+      )
+    }
+  }
+
+  private func taxesAndFeesPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    Panel(title: "Taxes & fees") {
+      Text(
+        "Installation components below are already included in Installation. Market fees reduce sale revenue and are not production costs."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      explainedMetric(
+        "System cost index",
+        plan.costBreakdown?.systemIndexCost,
+        explanation:
+          "The EIV of each selected production job multiplied by its system cost index and applicable job-cost modifier. This amount is already part of Installation."
+      )
+      explainedMetric(
+        "Facility tax",
+        plan.costBreakdown?.facilityTax,
+        explanation:
+          "The estimated item value of each selected production job multiplied by the configured facility tax. It is already part of Installation."
+      )
+      explainedMetric(
+        "SCC surcharge",
+        plan.costBreakdown?.sccSurcharge,
+        explanation:
+          "The estimated item value multiplied by the applicable SCC surcharge for each selected production job. It is already part of Installation."
+      )
+      explainedMetric(
+        "Alpha surcharge",
+        plan.costBreakdown?.alphaSurcharge,
+        explanation:
+          "The clone surcharge applied to eligible production jobs when the configured clone state is Alpha. It is already part of Installation."
+      )
+      Divider()
+      explainedMetric(
+        "Immediate sales tax · Main Hub",
+        plan.immediateSale.salesTax,
+        explanation:
+          "Sales tax deducted from the gross immediate-sale value. It reduces revenue and is not added to production cost."
+      )
+      explainedMetric(
+        "Immediate broker fee · Main Hub",
+        plan.immediateSale.brokerFee,
+        explanation:
+          "An immediate sale normally uses existing buy orders and therefore has no listing broker fee. Any calculated value is deducted from revenue, not added to production cost."
+      )
+      explainedMetric(
+        "Listed sales tax · Main Hub",
+        plan.listedSale.salesTax,
+        explanation:
+          "Sales tax deducted from the gross listed-sale value. It reduces revenue and is not added to production cost."
+      )
+      explainedMetric(
+        "Listed broker fee · Main Hub",
+        plan.listedSale.brokerFee,
+        explanation:
+          "Broker fee for placing the listed sell order. It reduces listed-sale revenue and is not added to production cost."
+      )
+      Divider()
+      explainedMetric(
+        "Immediate sales tax · Home Hub",
+        plan.homeImmediateSale?.salesTax,
+        explanation:
+          "Sales tax deducted from the gross immediate-sale value at the Home Hub. It reduces revenue and is not added to production cost."
+      )
+      explainedMetric(
+        "Immediate broker fee · Home Hub",
+        plan.homeImmediateSale?.brokerFee,
+        explanation:
+          "An immediate sale at the Home Hub uses existing buy orders and therefore has no listing broker fee."
+      )
+      explainedMetric(
+        "Listed sales tax · Home Hub",
+        plan.homeListedSale?.salesTax,
+        explanation:
+          "Sales tax deducted from the gross listed-sale value at the Home Hub. It reduces revenue and is not added to production cost."
+      )
+      explainedMetric(
+        "Listed broker fee · Home Hub",
+        plan.homeListedSale?.brokerFee,
+        explanation:
+          "Broker fee for placing the listed sell order at the Home Hub. It reduces listed-sale revenue and is not added to production cost."
+      )
+    }
+  }
+
+  private func totalCostEquation(_ plan: IndustryPlanSnapshot) -> String {
+    AppLocalization.format(
+      "%@ material replacement + %@ BPC/BPO + %@ installation + %@ logistics = %@ total production cost.",
+      formatISK(plan.materialCost),
+      formatISK(plan.costBreakdown?.blueprintCosts?.total),
+      formatISK(plan.installationCost),
+      formatISK(
+        plan.costBreakdown?.effectiveLogisticsCost
+      ),
+      formatISK(plan.costBreakdown?.totalProductionCost)
+    )
+  }
+
+  private func installationCostEquation(
+    _ plan: IndustryPlanSnapshot
+  ) -> String {
+    AppLocalization.format(
+      "%@ system cost index + %@ facility tax + %@ SCC surcharge + %@ Alpha surcharge = %@ installation.",
+      formatISK(plan.costBreakdown?.systemIndexCost),
+      formatISK(plan.costBreakdown?.facilityTax),
+      formatISK(plan.costBreakdown?.sccSurcharge),
+      formatISK(plan.costBreakdown?.alphaSurcharge),
+      formatISK(plan.installationCost)
+    )
+  }
+
   private func metric(_ label: String, _ value: Double?) -> some View {
-    LabeledContent(label) {
+    LabeledContent {
       Text(formatISK(value))
         .font(.body.monospacedDigit())
         .foregroundStyle(DesignTokens.highlight)
+    } label: {
+      Text(LocalizedStringKey(label))
     }
+  }
+
+  private func costMetric(
+    _ label: String,
+    _ value: Double?,
+    explanation: String
+  ) -> some View {
+    ExplainedPlannerMetricRow(
+      label: label,
+      value: formatISK(value),
+      explanation: AppLocalization.text(explanation),
+      highlightsValue: true
+    )
   }
 
   private func saleScenarioPanel(
     title: String,
     result: SaleScenarioResult,
     totalCost: Double?,
-    plan: IndustryPlanSnapshot
+    plan: IndustryPlanSnapshot,
+    hub: PlannerSaleHub
   ) -> some View {
     Panel(title: LocalizedStringKey(title)) {
-      Text(scenarioSummary(result.scenario))
+      Text(scenarioSummary(result.scenario, result: result, hub: hub))
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
 
       explainedMetric(
+        "Production cost per unit",
+        plan.productionCostPerOutputUnit,
+        explanation:
+          "Total production cost divided by the actual top-level output units produced by this plan. When several different products are planned together, this is an aggregate average across their units. Missing total cost or output quantity remains unavailable."
+      )
+      explainedMetric(
+        "Finished-product logistics",
+        result.outboundLogisticsCost,
+        explanation:
+          hub == .home
+          ? "The finished product is sold at the Home Hub, so no return transport is charged."
+          : "Transport of the finished product from the Home Hub to the Main Hub. The exact configured locations are compared first; identical locations contribute 0 ISK."
+      )
+      explainedMetric(
+        "Scenario total cost",
+        totalCost,
+        explanation:
+          "Production cost including material transport to the Home Hub, plus the finished-product transport required by this sale location. Home Hub sales have no return transport."
+      )
+      Divider()
+      explainedMetric(
         "Gross revenue",
         result.grossRevenue,
-        explanation: grossRevenueExplanation(for: result.scenario)
+        explanation: grossRevenueExplanation(
+          for: result.scenario,
+          result: result,
+          hub: hub
+        )
       )
       explainedMetric(
         "Net revenue",
@@ -385,7 +725,7 @@ struct PlannerView: View {
         "Profit",
         result.profit,
         explanation:
-          "Net revenue minus all production costs shown in the Costs panel. A negative value means the plan would make a loss."
+          "Net revenue minus the scenario total cost, including any finished-product transport to the sale location. A negative value means the plan would make a loss."
       )
       explainedPercent(
         "Margin",
@@ -397,46 +737,37 @@ struct PlannerView: View {
         "ROI",
         result.roi,
         explanation:
-          "Profit divided by total production cost. It shows the estimated return on the ISK invested in this production plan."
+          "Profit divided by the scenario total cost. It shows the estimated return after the transport required by this sale location."
       )
 
-      Button {
-        toggleSaleDetails(for: result.scenario)
-      } label: {
-        HStack {
-          Text(
-            isSaleDetailsExpanded(result.scenario)
-              ? "Hide calculation details"
-              : "Show calculation details"
-          )
-          Spacer()
-          Image(
-            systemName:
-              isSaleDetailsExpanded(result.scenario)
-              ? "chevron.down" : "chevron.right"
-          )
-          .accessibilityHidden(true)
-        }
-        .contentShape(Rectangle())
+      FullWidthDisclosureButton(
+        isExpanded: isSaleDetailsExpanded(result.scenario, hub: hub),
+        action: { toggleSaleDetails(for: result.scenario, hub: hub) }
+      ) {
+        Text(
+          isSaleDetailsExpanded(result.scenario, hub: hub)
+            ? "Hide calculation details"
+            : "Show calculation details"
+        )
       }
-      .buttonStyle(.plain)
       .accessibilityLabel(
-        isSaleDetailsExpanded(result.scenario)
+        isSaleDetailsExpanded(result.scenario, hub: hub)
           ? "Hide calculation details"
           : "Show calculation details"
       )
       .accessibilityValue(
-        isSaleDetailsExpanded(result.scenario) ? "Expanded" : "Collapsed"
+        isSaleDetailsExpanded(result.scenario, hub: hub)
+          ? "Expanded" : "Collapsed"
       )
       .accessibilityIdentifier(
-        "planner.sale.\(result.scenario.rawValue).details"
+        "planner.sale.\(hub.rawValue).\(result.scenario.rawValue).details"
       )
 
-      if isSaleDetailsExpanded(result.scenario) {
+      if isSaleDetailsExpanded(result.scenario, hub: hub) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           calculationDetail(
             title: "Market valuation",
-            text: marketValuationDetail(for: result)
+            text: marketValuationDetail(for: result, hub: hub)
           )
           calculationDetail(
             title: "Net revenue",
@@ -491,7 +822,7 @@ struct PlannerView: View {
     ExplainedPlannerMetricRow(
       label: label,
       value: formatISK(value),
-      explanation: explanation,
+      explanation: AppLocalization.text(explanation),
       highlightsValue: true
     )
   }
@@ -504,29 +835,38 @@ struct PlannerView: View {
     ExplainedPlannerMetricRow(
       label: label,
       value: formatPercent(value),
-      explanation: explanation,
+      explanation: AppLocalization.text(explanation),
       highlightsValue: false
     )
   }
 
-  private func isSaleDetailsExpanded(_ scenario: PriceScenario) -> Bool {
-    switch scenario {
-    case .immediateSale:
-      isImmediateSaleDetailsExpanded
-    case .listedSale:
-      isListedSaleDetailsExpanded
-    case .materialBuy:
-      false
+  private func isSaleDetailsExpanded(
+    _ scenario: PriceScenario,
+    hub: PlannerSaleHub
+  ) -> Bool {
+    switch (hub, scenario) {
+    case (.main, .immediateSale): isImmediateSaleDetailsExpanded
+    case (.main, .listedSale): isListedSaleDetailsExpanded
+    case (.home, .immediateSale): isHomeImmediateSaleDetailsExpanded
+    case (.home, .listedSale): isHomeListedSaleDetailsExpanded
+    case (_, .materialBuy): false
     }
   }
 
-  private func toggleSaleDetails(for scenario: PriceScenario) {
-    switch scenario {
-    case .immediateSale:
+  private func toggleSaleDetails(
+    for scenario: PriceScenario,
+    hub: PlannerSaleHub
+  ) {
+    switch (hub, scenario) {
+    case (.main, .immediateSale):
       isImmediateSaleDetailsExpanded.toggle()
-    case .listedSale:
+    case (.main, .listedSale):
       isListedSaleDetailsExpanded.toggle()
-    case .materialBuy:
+    case (.home, .immediateSale):
+      isHomeImmediateSaleDetailsExpanded.toggle()
+    case (.home, .listedSale):
+      isHomeListedSaleDetailsExpanded.toggle()
+    case (_, .materialBuy):
       break
     }
   }
@@ -552,8 +892,7 @@ struct PlannerView: View {
     productName: String
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-      Text(productName)
-        .font(.caption.bold())
+      EVEEntityText(value: productName)
       Text(quoteDetail(quote, scenario: scenario, result: result))
         .font(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
@@ -562,33 +901,61 @@ struct PlannerView: View {
     .padding(.vertical, DesignTokens.spacingXS)
   }
 
-  private func scenarioSummary(_ scenario: PriceScenario) -> String {
-    switch scenario {
+  private func scenarioSummary(
+    _ scenario: PriceScenario,
+    result: SaleScenarioResult,
+    hub: PlannerSaleHub
+  ) -> String {
+    let marketName = saleMarketName(result: result, hub: hub)
+    return switch scenario {
     case .immediateSale:
-      "Sells the planned output into current Jita IV-4 buy orders, starting with the highest price. The full requested quantity must be covered."
+      AppLocalization.format(
+        "Sells the planned output into current %@ buy orders, starting with the highest price. The full requested quantity must be covered.",
+        marketName
+      )
     case .listedSale:
-      "Estimates a sell order at the current lowest Jita IV-4 sell price. It assumes the full quantity sells at that price; competition, price changes, relisting, and time to sale are not simulated."
+      AppLocalization.format(
+        "Estimates a sell order at the current lowest %@ sell price. It assumes the full quantity sells at that price; competition, price changes, relisting, and time to sale are not simulated.",
+        marketName
+      )
     case .materialBuy:
-      "Uses current Jita IV-4 sell orders to estimate a material purchase."
+      AppLocalization.format(
+        "Uses current %@ sell orders to estimate a material purchase.",
+        marketName
+      )
     }
   }
 
   private func grossRevenueExplanation(
-    for scenario: PriceScenario
+    for scenario: PriceScenario,
+    result: SaleScenarioResult,
+    hub: PlannerSaleHub
   ) -> String {
-    switch scenario {
+    let marketName = saleMarketName(result: result, hub: hub)
+    return switch scenario {
     case .immediateSale:
-      "The sum of planned product quantities multiplied by the current Jita IV-4 buy orders that can fill them, from highest price downward."
+      AppLocalization.format(
+        "The sum of planned product quantities multiplied by the current %@ buy orders that can fill them, from highest price downward.",
+        marketName
+      )
     case .listedSale:
-      "The planned product quantities multiplied by the current lowest Jita IV-4 sell-order price for each product."
+      AppLocalization.format(
+        "The planned product quantities multiplied by the current lowest %@ sell-order price for each product.",
+        marketName
+      )
     case .materialBuy:
-      "The material quantity multiplied by the current Jita IV-4 sell-order prices needed to fill it."
+      AppLocalization.format(
+        "The material quantity multiplied by the current %@ sell-order prices needed to fill it.",
+        marketName
+      )
     }
   }
 
   private func marketValuationDetail(
-    for result: SaleScenarioResult
+    for result: SaleScenarioResult,
+    hub: PlannerSaleHub
   ) -> String {
+    let marketName = saleMarketName(result: result, hub: hub)
     let quotedProducts = result.quotes.count
     let quotedUnits = result.quotes.reduce(Int64(0)) {
       safeAdd($0, $1.quantity)
@@ -596,19 +963,66 @@ struct PlannerView: View {
     let filledUnits = result.quotes.reduce(Int64(0)) {
       safeAdd($0, $1.filledQuantity)
     }
-    let productText =
-      "\(quotedProducts) \(quotedProducts == 1 ? "product" : "products")"
+    let productText = AppLocalization.format(
+      quotedProducts == 1 ? "%lld product" : "%lld products",
+      Int64(quotedProducts)
+    )
     switch result.scenario {
     case .immediateSale:
-      return
-        "\(productText), \(quotedUnits.formatted()) planned units, \(filledUnits.formatted()) units matched against Jita IV-4 buy orders. Gross revenue: \(formatISK(result.grossRevenue))."
+      return AppLocalization.format(
+        "%@, %@ planned units, %@ units matched against %@ buy orders. Gross revenue: %@.",
+        productText,
+        quotedUnits.formatted(),
+        filledUnits.formatted(),
+        marketName,
+        formatISK(result.grossRevenue)
+      )
     case .listedSale:
-      return
-        "\(productText), \(quotedUnits.formatted()) planned units, valued at the current lowest Jita IV-4 sell-order price. Gross revenue: \(formatISK(result.grossRevenue))."
+      return AppLocalization.format(
+        "%@, %@ planned units, valued at the current lowest %@ sell-order price. Gross revenue: %@.",
+        productText,
+        quotedUnits.formatted(),
+        marketName,
+        formatISK(result.grossRevenue)
+      )
     case .materialBuy:
-      return
-        "\(productText), \(quotedUnits.formatted()) units valued against Jita IV-4 sell orders."
+      return AppLocalization.format(
+        "%@, %@ units valued against %@ sell orders.",
+        productText,
+        quotedUnits.formatted(),
+        marketName
+      )
     }
+  }
+
+  private func saleMarketName(
+    result: SaleScenarioResult,
+    hub: PlannerSaleHub
+  ) -> String {
+    if let name = result.marketLocation?.name { return name }
+    switch hub {
+    case .main:
+      return configuredMainHubLocation.name
+    case .home:
+      return runtime.productionBasis.homeTradingLocation?.location.name
+        ?? AppLocalization.text("Home Hub not configured")
+    }
+  }
+
+  private func unavailableSaleResult(
+    scenario: PriceScenario,
+    location: ProcurementLocation?
+  ) -> SaleScenarioResult {
+    SaleScenarioResult(
+      scenario: scenario,
+      marketLocation: location,
+      outboundLogisticsCost: location == nil ? nil : 0,
+      grossOrNetRevenue: nil,
+      profit: nil,
+      margin: nil,
+      roi: nil,
+      quotes: []
+    )
   }
 
   private func netRevenueEquation(_ result: SaleScenarioResult) -> String {
@@ -617,12 +1031,21 @@ struct PlannerView: View {
       let brokerFee = result.brokerFee,
       let net = result.grossOrNetRevenue
     else {
-      return "Unavailable because at least one market or fee input is missing."
+      return AppLocalization.text(
+        "Unavailable because at least one market or fee input is missing."
+      )
     }
     let salesTaxRate = rate(amount: salesTax, base: gross)
     let brokerFeeRate = rate(amount: brokerFee, base: gross)
-    return
-      "\(formatISK(gross)) gross − \(formatISK(salesTax)) sales tax (\(formatPercent(salesTaxRate))) − \(formatISK(brokerFee)) broker fee (\(formatPercent(brokerFeeRate))) = \(formatISK(net)) net revenue."
+    return AppLocalization.format(
+      "%@ gross − %@ sales tax (%@) − %@ broker fee (%@) = %@ net revenue.",
+      formatISK(gross),
+      formatISK(salesTax),
+      formatPercent(salesTaxRate),
+      formatISK(brokerFee),
+      formatPercent(brokerFeeRate),
+      formatISK(net)
+    )
   }
 
   private func profitEquation(
@@ -633,10 +1056,16 @@ struct PlannerView: View {
       let totalCost,
       let profit = result.profit
     else {
-      return "Unavailable because net revenue or total production cost is missing."
+      return AppLocalization.text(
+        "Unavailable because net revenue or total production cost is missing."
+      )
     }
-    return
-      "\(formatISK(net)) net revenue − \(formatISK(totalCost)) total production cost = \(formatISK(profit)) profit."
+    return AppLocalization.format(
+      "%@ net revenue − %@ total production cost = %@ profit.",
+      formatISK(net),
+      formatISK(totalCost),
+      formatISK(profit)
+    )
   }
 
   private func percentageEquation(
@@ -645,10 +1074,16 @@ struct PlannerView: View {
     result: Double?
   ) -> String {
     guard let numerator, let denominator, let result else {
-      return "Unavailable because one of the required values is missing or zero."
+      return AppLocalization.text(
+        "Unavailable because one of the required values is missing or zero."
+      )
     }
-    return
-      "\(formatISK(numerator)) ÷ \(formatISK(denominator)) × 100 = \(formatPercent(result))."
+    return AppLocalization.format(
+      "%@ ÷ %@ × 100 = %@.",
+      formatISK(numerator),
+      formatISK(denominator),
+      formatPercent(result)
+    )
   }
 
   private func quoteDetail(
@@ -661,20 +1096,34 @@ struct PlannerView: View {
       time: .shortened
     )
     guard quote.isComplete else {
-      return
-        "\(quote.filledQuantity.formatted()) of \(quote.quantity.formatted()) units covered · quote incomplete · market snapshot \(capturedAt)."
+      return AppLocalization.format(
+        "%@ of %@ units covered · quote incomplete · market snapshot %@.",
+        quote.filledQuantity.formatted(),
+        quote.quantity.formatted(),
+        capturedAt
+      )
     }
     switch scenario {
     case .immediateSale, .materialBuy:
-      return
-        "\(quote.quantity.formatted()) units × \(formatISK(quote.weightedUnitPrice)) weighted market price = \(formatISK(quote.total)) · snapshot \(capturedAt)."
+      return AppLocalization.format(
+        "%@ units × %@ weighted market price = %@ · snapshot %@.",
+        quote.quantity.formatted(),
+        formatISK(quote.weightedUnitPrice),
+        formatISK(quote.total),
+        capturedAt
+      )
     case .listedSale:
       let grossUnitPrice = listedGrossUnitPrice(
         quote: quote,
         result: result
       )
-      return
-        "\(quote.quantity.formatted()) units × \(formatISK(grossUnitPrice)) lowest sell-order price = \(formatISK(grossUnitPrice.map { $0 * Double(quote.quantity) })) gross · snapshot \(capturedAt)."
+      return AppLocalization.format(
+        "%@ units × %@ lowest sell-order price = %@ gross · snapshot %@.",
+        quote.quantity.formatted(),
+        formatISK(grossUnitPrice),
+        formatISK(grossUnitPrice.map { $0 * Double(quote.quantity) }),
+        capturedAt
+      )
     }
   }
 
@@ -700,7 +1149,7 @@ struct PlannerView: View {
     plan.nodes.first {
       $0.typeID == typeID && $0.action == .produce
         && $0.topLevelRequestID != nil
-    }?.name ?? "Type \(typeID)"
+    }?.name ?? "Unknown item".localizedUI
   }
 
   private func rate(amount: Double, base: Double) -> Double? {
@@ -717,47 +1166,81 @@ struct PlannerView: View {
   private func formatPercent(_ value: Double?) -> String {
     value.map {
       $0.formatted(.percent.precision(.fractionLength(2)))
-    } ?? "Unavailable"
+    } ?? AppLocalization.text("Unavailable")
   }
 
   private func logisticsPanel(
-    _ logistics: LogisticsCostBreakdown
+    _ logistics: LogisticsCostBreakdown,
+    title: String
   ) -> some View {
-    Panel(title: "Logistics breakdown") {
+    Panel(title: LocalizedStringKey(title)) {
       ForEach(logistics.legs) { leg in
-        VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-          Text(
-            "\(leg.kind.displayName) · Contract \(leg.contractNumber ?? 1) of \(leg.contractCount ?? 1)"
+        FullWidthDisclosure(
+          isExpanded: disclosureBinding(
+            id: logisticsDisclosureID(leg),
+            encodedIDs: $expandedLogisticsDisclosureIDs
           )
-          .font(.headline)
-          Text("\(leg.origin) → \(leg.destination)")
-            .font(.caption)
-            .foregroundStyle(DesignTokens.textSecondary)
-          LabeledContent("Cargo volume") {
-            Text(
-              leg.cargoVolumeM3.formatted(
-                .number.precision(.fractionLength(0...2))
-              ) + " m³"
-            )
-            .font(.body.monospacedDigit())
+        ) {
+          HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
+            VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+              Text(
+                AppLocalization.format(
+                  "%@ · Contract %lld of %lld",
+                  AppLocalization.text(leg.kind.displayName),
+                  Int64(leg.contractNumber ?? 1),
+                  Int64(leg.contractCount ?? 1)
+                )
+              )
+              .font(.headline)
+              Text("\(leg.origin) → \(leg.destination)")
+                .font(.caption)
+                .foregroundStyle(DesignTokens.textSecondary)
+            }
+            Spacer(minLength: DesignTokens.spacingMD)
+            Text(formatISK(leg.roundedCharge))
+              .font(.headline.monospacedDigit())
+              .foregroundStyle(DesignTokens.highlight)
           }
-          metric("Accurate collateral", leg.collateral)
-          metric("Volume charge", leg.volumeCharge)
-          metric("0.5% collateral charge", leg.collateralCharge)
-          LabeledContent("Charged by") {
-            Text(
-              leg.chargedBy == .volume ? "Cargo volume" : "Collateral"
-            )
+        } content: {
+          VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+            LabeledContent {
+              Text(
+                leg.cargoVolumeM3.formatted(
+                  .number.precision(.fractionLength(0...2))
+                ) + " m³"
+              )
+              .font(.body.monospacedDigit())
+            } label: {
+              Text("Cargo volume")
+            }
+            metric("Accurate collateral", leg.collateral)
+            metric("Volume charge", leg.volumeCharge)
+            metric("0.5% collateral charge", leg.collateralCharge)
+            LabeledContent {
+              Text(
+                LocalizedStringKey(
+                  leg.chargedBy == .volume ? "Cargo volume" : "Collateral"
+                )
+              )
+            } label: {
+              Text("Charged by")
+            }
+            metric("Before rounding", leg.unroundedCharge)
+            metric("Rounded contract", leg.roundedCharge)
           }
-          metric("Before rounding", leg.unroundedCharge)
-          metric("Rounded contract", leg.roundedCharge)
+          .padding(.top, DesignTokens.spacingMD)
         }
-        .padding(.vertical, DesignTokens.spacingSM)
-        Divider()
+        .padding(DesignTokens.spacingSM)
+        .background(DesignTokens.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
       }
       metric("Total logistics", logistics.total)
       Text(
-        "Maximum \(logistics.maximumContractVolumeM3.formatted()) m³ per contract · oversized routes are split automatically · each contract is rounded up in \(formatISK(logistics.roundingIncrement)) steps · \(logistics.ruleVersion)"
+        AppLocalization.format(
+          "Maximum %@ m³ per contract · oversized routes are split automatically · each contract is rounded up in %@ steps",
+          logistics.maximumContractVolumeM3.formatted(),
+          formatISK(logistics.roundingIncrement)
+        )
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -770,22 +1253,33 @@ struct PlannerView: View {
   ) -> some View {
     Panel(title: "BPC/BPO costs") {
       ForEach(blueprintCosts.entries) { entry in
-        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-          HStack {
-            Text(entry.productName)
-              .font(.headline)
-            Spacer()
-            Text(LocalizedStringKey(entry.kind.rawValue))
-              .font(.caption.bold())
+        FullWidthDisclosure(
+          isExpanded: disclosureBinding(
+            id: blueprintDisclosureID(entry),
+            encodedIDs: $expandedBlueprintDisclosureIDs
+          )
+        ) {
+          HStack(spacing: DesignTokens.spacingMD) {
+            VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+              EVEEntityLabel(value: entry.productName)
+              Text(LocalizedStringKey(entry.kind.rawValue))
+                .font(.caption.bold())
+                .foregroundStyle(DesignTokens.highlight)
+            }
+            Spacer(minLength: DesignTokens.spacingMD)
+            Text(formatISK(entry.amount))
+              .font(.headline.monospacedDigit())
               .foregroundStyle(DesignTokens.highlight)
           }
-          metric("Entered cost", entry.amount)
-          Text(entry.treatment)
+        } content: {
+          Text(LocalizedStringKey(entry.treatment))
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
+            .padding(.top, DesignTokens.spacingSM)
         }
-        .padding(.vertical, DesignTokens.spacingXS)
-        Divider()
+        .padding(DesignTokens.spacingSM)
+        .background(DesignTokens.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
       }
       if !blueprintCosts.requestsWithoutEnteredCost.isEmpty {
         let names =
@@ -796,7 +1290,10 @@ struct PlannerView: View {
           .map(\.productName)
           .joined(separator: ", ")
         Label(
-          "No blueprint cost entered for: \(names). These costs are not included.",
+          AppLocalization.format(
+            "No blueprint cost entered for: %@. These costs are not included.",
+            names
+          ),
           systemImage: "info.circle"
         )
         .font(.caption)
@@ -820,71 +1317,378 @@ struct PlannerView: View {
   private func materialPanel(
     title: String,
     description: String,
-    sections: [PlannerMaterialSection]
+    sections: [PlannerMaterialSection],
+    allowsProcurement: Bool = false
   ) -> some View {
     if !sections.isEmpty {
       Panel(title: LocalizedStringKey(title)) {
-        Text(description)
+        Text(AppLocalization.text(description))
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         ForEach(sections) { section in
-          VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-            Text(section.name)
-              .font(.headline)
-            materialGrid(section.materials)
+          FullWidthDisclosure(
+            isExpanded: disclosureBinding(
+              id: "\(title):\(section.id)",
+              encodedIDs: $expandedMaterialDisclosureIDs
+            )
+          ) {
+            HStack(spacing: DesignTokens.spacingSM) {
+              EVEEntityLabel(value: section.name)
+              Text(
+                AppLocalization.format(
+                  "%lld items",
+                  Int64(section.materials.count)
+                )
+              )
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+            }
+          } content: {
+            materialGrid(
+              section.materials,
+              allowsProcurement: allowsProcurement
+            )
+            .padding(.top, DesignTokens.spacingMD)
           }
-          .padding(.top, DesignTokens.spacingSM)
+          .padding(DesignTokens.spacingSM)
+          .background(DesignTokens.elevated)
+          .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
         }
       }
     }
   }
 
+  @ViewBuilder
   private func materialGrid(
-    _ materials: [MaterialRequirement]
+    _ materials: [MaterialRequirement],
+    allowsProcurement: Bool
   ) -> some View {
-    let factualQuantities = warehouseFactualQuantities
-    let targets = targetQuantities
-    return Grid(
-      alignment: .leading,
-      horizontalSpacing: 18,
-      verticalSpacing: 8
-    ) {
-      GridRow {
-        Text("Item")
-        Text("Required")
-        Text("Warehouse")
-        Text("Target")
-        Text("Used")
-        Text("Still needed")
-        Text("Produce")
-        Text("Buy")
-        Text("Cost split")
-      }
-      .font(.caption.bold())
-      .foregroundStyle(DesignTokens.textSecondary)
-      Divider()
-      ForEach(materials) { material in
-        GridRow {
-          Text(material.name)
-          number(material.required)
-          number(factualQuantities[material.typeID, default: 0])
-          number(targets[material.typeID, default: 0])
-          number(material.fromStock)
-          number(max(0, material.required - material.fromStock))
-          number(material.toProduce)
-          number(material.toBuy)
-          VStack(alignment: .trailing, spacing: 2) {
-            Text(
-              "Buy: \(formatISK(materialCost(for: material.toBuy, quote: material.quote)))"
-            )
-            Text(
-              "Stock: \(formatISK(materialCost(for: material.fromStock, quote: material.stockQuote)))"
-            )
+    if allowsProcurement {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        ForEach(materials) { material in
+          VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+            HStack {
+              EVEEntityText(value: material.name)
+              Spacer()
+              Text("Required \(material.required.formatted())")
+                .font(.body.monospacedDigit())
+            }
+            HStack(spacing: DesignTokens.spacingMD) {
+              if historicalPlan == nil {
+                procurementQuantity(
+                  "Warehouse",
+                  warehouseFactualQuantities[material.typeID, default: 0]
+                )
+                procurementQuantity(
+                  "Protected",
+                  targetQuantities[material.typeID, default: 0]
+                )
+              }
+              procurementQuantity("Used", material.fromStock)
+              procurementQuantity("To buy", material.toBuy)
+              if material.canProduce {
+                procurementQuantity("To produce", material.toProduce)
+              }
+              Spacer()
+              VStack(alignment: .trailing, spacing: 1) {
+                Text("Full replacement")
+                Text(formatISK(material.replacementQuote?.total))
+                  .font(.caption.monospacedDigit())
+              }
+              .foregroundStyle(DesignTokens.highlight)
+            }
+            HStack(spacing: DesignTokens.spacingSM) {
+              if historicalPlan != nil {
+                if let procurement = material.procurement {
+                  Label(
+                    LocalizedStringKey(procurement.supplyMode.displayName),
+                    systemImage: "archivebox"
+                  )
+                  Spacer()
+                  Label(
+                    procurement.purchaseLocation.name,
+                    systemImage: "building.columns"
+                  )
+                  .font(.caption)
+                  .foregroundStyle(DesignTokens.textSecondary)
+                } else {
+                  Label(
+                    "Saved material source unavailable",
+                    systemImage: "questionmark.diamond"
+                  )
+                  .foregroundStyle(DesignTokens.caution)
+                }
+              } else {
+                Picker(
+                  "Source",
+                  selection: supplyModeBinding(for: material)
+                ) {
+                  ForEach(supplyModes(for: material), id: \.self) { mode in
+                    Text(LocalizedStringKey(mode.displayName)).tag(mode)
+                  }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: material.canProduce ? 315 : 210)
+                .disabled(runtime.isWorking)
+                Label(
+                  preference(for: material).purchaseLocation.name,
+                  systemImage: "building.columns"
+                )
+                .font(.caption)
+                .foregroundStyle(DesignTokens.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+              }
+            }
+            if let analysis = material.makeOrBuyAnalysis {
+              makeOrBuyAnalysisView(analysis)
+            }
           }
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(DesignTokens.highlight)
+          Divider()
+        }
+        Label(
+          AppLocalization.text(
+            historicalPlan == nil
+              ? "Changing a source immediately recalculates materials, costs, production jobs, Main Hub shopping lists and transport."
+              : "The saved material sources are read-only in historical view."
+          ),
+          systemImage:
+            historicalPlan == nil
+            ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+    } else {
+      Grid(
+        alignment: .leading,
+        horizontalSpacing: 24,
+        verticalSpacing: 8
+      ) {
+        GridRow {
+          plannerMaterialHeader("Item", column: .item)
+          plannerMaterialHeader("Required", column: .required)
+          plannerMaterialHeader("Produced", column: .produced)
+          plannerMaterialHeader("Activity", column: .activity)
+        }
+        .font(.caption.bold())
+        .foregroundStyle(DesignTokens.textSecondary)
+        Divider()
+        ForEach(sortedPlannerMaterials(materials)) { material in
+          GridRow {
+            EVEEntityText(value: material.name)
+            number(material.required)
+            number(material.toProduce)
+            Text(material.productionActivity?.rawValue ?? "—")
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
         }
       }
+    }
+  }
+
+  private func procurementQuantity(_ label: String, _ value: Int64)
+    -> some View
+  {
+    VStack(alignment: .leading, spacing: 1) {
+      Text(AppLocalization.text(label))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      number(value)
+    }
+  }
+
+  private func makeOrBuyRecommendationPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    let application = MakeOrBuyRecommendationApplication(
+      materials: plan.materials,
+      existingPreferences: procurementPreferences,
+      mainHub: configuredMainHubLocation
+    )
+
+    return Panel(title: "Apply make-or-buy analysis") {
+      Text(
+        "Applies every available build or buy recommendation, recalculates all costs, and then creates the matching production jobs and Main Hub shopping list. Raw-material and unavailable choices remain unchanged."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      if application.hasApplicableRecommendations {
+        Text(
+          AppLocalization.format(
+            "Recommendations: %lld total · %lld build · %lld buy · %lld unavailable. Unavailable choices remain unchanged.",
+            Int64(application.appliedCount),
+            Int64(application.produceCount),
+            Int64(application.buyCount),
+            Int64(application.unavailableCount)
+          )
+        )
+        .font(.callout.monospacedDigit())
+      } else {
+        Label(
+          "No usable recommendation is available. Calculate the plan first or resolve its warnings.",
+          systemImage: "exclamationmark.triangle"
+        )
+        .font(.callout)
+        .foregroundStyle(DesignTokens.caution)
+      }
+
+      Button {
+        applyMakeOrBuyRecommendations(application)
+      } label: {
+        Label(
+          "Apply recommendations and calculate",
+          systemImage: "wand.and.stars"
+        )
+      }
+      .buttonStyle(.borderedProminent)
+      .disabled(
+        !application.hasApplicableRecommendations
+          || runtime.isWorking
+          || historicalPlan != nil
+          || !parseResult.isValid
+          || isPreparingAssetWarehouse
+          || !runtime.isPlannerConfigurationReady
+      )
+      .accessibilityIdentifier("planner.make-or-buy.apply")
+
+      if let recommendationApplicationMessage {
+        Label(
+          recommendationApplicationMessage,
+          systemImage: "checkmark.circle.fill"
+        )
+        .font(.callout)
+        .foregroundStyle(DesignTokens.positive)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func makeOrBuyAnalysisView(
+    _ analysis: MaterialMakeOrBuyAnalysis
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        Label(
+          makeOrBuyRecommendationText(analysis.recommendation),
+          systemImage: makeOrBuyRecommendationIcon(analysis.recommendation)
+        )
+        .font(.headline)
+        .foregroundStyle(makeOrBuyRecommendationColor(analysis.recommendation))
+        Spacer()
+        if let savings = analysis.savings {
+          Text(
+            AppLocalization.format(
+              "Save %@ with the recommended option",
+              formatISK(savings)
+            )
+          )
+          .font(.headline.monospacedDigit())
+          .foregroundStyle(DesignTokens.positive)
+        }
+      }
+
+      Text(
+        AppLocalization.format(
+          "Main Hub: %@ · available %lld of %lld",
+          analysis.mainHub.name,
+          analysis.purchaseQuote.filledQuantity,
+          analysis.requiredQuantity
+        )
+      )
+      .font(.caption)
+      .foregroundStyle(
+        analysis.purchaseQuote.isComplete
+          ? DesignTokens.textSecondary : DesignTokens.caution
+      )
+
+      Grid(
+        alignment: .leading,
+        horizontalSpacing: DesignTokens.spacingLG,
+        verticalSpacing: DesignTokens.spacingXS
+      ) {
+        GridRow {
+          Text("")
+          Text("Buy at Main Hub")
+          Text("Build")
+        }
+        .font(.caption.bold())
+        .foregroundStyle(DesignTokens.textSecondary)
+        GridRow {
+          Text("Market / inputs")
+          Text(formatISK(analysis.purchaseQuote.total))
+          Text(formatISK(analysis.buildMaterialCost))
+        }
+        GridRow {
+          Text("Installation")
+          Text(formatISK(0))
+          Text(formatISK(analysis.buildInstallationCost))
+        }
+        GridRow {
+          Text("Logistics")
+          Text(formatISK(analysis.purchaseLogisticsCost))
+          Text(formatISK(analysis.buildLogisticsCost))
+        }
+        GridRow {
+          Text("Total")
+            .font(.body.bold())
+          Text(formatISK(analysis.purchaseTotalCost))
+          Text(formatISK(analysis.buildTotalCost))
+        }
+        .font(.body.monospacedDigit())
+      }
+
+      Text(
+        AppLocalization.format(
+          "Build quantity: %lld from %lld runs for %lld required units.",
+          analysis.producedQuantity,
+          Int64(analysis.productionRuns),
+          analysis.requiredQuantity
+        )
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      ForEach(analysis.warnings.filter { $0.severity != .information }) {
+        warning in
+        Label(warning.message, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
+      }
+    }
+    .padding(DesignTokens.spacingSM)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+  }
+
+  private func makeOrBuyRecommendationText(
+    _ recommendation: MakeOrBuyRecommendation
+  ) -> String {
+    switch recommendation {
+    case .produce: AppLocalization.text("Recommendation: Build")
+    case .buy: AppLocalization.text("Recommendation: Buy")
+    case .unavailable: AppLocalization.text("Recommendation unavailable")
+    }
+  }
+
+  private func makeOrBuyRecommendationIcon(
+    _ recommendation: MakeOrBuyRecommendation
+  ) -> String {
+    switch recommendation {
+    case .produce: "hammer.fill"
+    case .buy: "cart.fill"
+    case .unavailable: "questionmark.diamond.fill"
+    }
+  }
+
+  private func makeOrBuyRecommendationColor(
+    _ recommendation: MakeOrBuyRecommendation
+  ) -> Color {
+    switch recommendation {
+    case .produce: DesignTokens.positive
+    case .buy: DesignTokens.highlight
+    case .unavailable: DesignTokens.caution
     }
   }
 
@@ -917,42 +1721,604 @@ struct PlannerView: View {
   private func shoppingListPanel(
     _ plan: IndustryPlanSnapshot
   ) -> some View {
-    let export = EVEMultibuyExport.make(from: plan.materials)
-    return Panel(title: "EVE shopping list") {
-      if export.itemCount == 0 {
-        Label(
-          "This plan has no materials to buy.",
-          systemImage: "checkmark.circle"
-        )
-        .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        Text(
-          "Copies \(export.itemCount) \(export.itemCount == 1 ? "item" : "items") in EVE Multibuy format. In EVE, open Multibuy and choose Import from Clipboard."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-        Button {
-          copyShoppingList(export)
-        } label: {
-          Label("Copy for EVE Multibuy", systemImage: "doc.on.doc")
-        }
-        .buttonStyle(.borderedProminent)
-        .accessibilityIdentifier("planner.shopping-list.copy")
-      }
-      if let shoppingListCopyStatus {
-        Label(
-          shoppingListCopyStatus.message,
-          systemImage:
-            shoppingListCopyStatus.isFailure
-            ? "xmark.octagon.fill" : "checkmark.circle.fill"
-        )
-        .font(.callout)
-        .foregroundStyle(
-          shoppingListCopyStatus.isFailure
-            ? DesignTokens.negative : DesignTokens.positive
-        )
-      }
+    let groups = Dictionary(
+      grouping: plan.materials.filter { $0.toBuy > 0 }
+    ) {
+      $0.procurement?.purchaseLocation ?? .jita
     }
+    .map { (location: $0.key, materials: $0.value) }
+    .sorted { $0.location.name < $1.location.name }
+    let purchasedMaterials = groups.flatMap(\.materials)
+    let totalQuantity = purchasedMaterials.reduce(Int64(0)) {
+      safeAdd($0, $1.toBuy)
+    }
+    return Panel(title: "EVE shopping list") {
+      FullWidthDisclosure(isExpanded: $isShoppingListExpanded) {
+        Label {
+          Text(
+            AppLocalization.format(
+              "%lld items · %lld units to buy",
+              Int64(purchasedMaterials.count),
+              totalQuantity
+            )
+          )
+          .font(.headline.monospacedDigit())
+        } icon: {
+          Image(systemName: "cart")
+        }
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          if groups.isEmpty {
+            Label(
+              "This plan has no materials to buy.",
+              systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text(
+              "The EVE Multibuy list contains the complete uncovered quantity to buy at the Profile Main Hub."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+            ForEach(groups, id: \.location.id) { group in
+              let shoppingList = EVEShoppingList.make(from: group.materials)
+              let export = EVEMultibuyExport.make(from: group.materials)
+              VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+                FullWidthDisclosure(
+                  isExpanded: disclosureBinding(
+                    id: group.location.id,
+                    encodedIDs: $expandedShoppingListMarketDisclosureIDs
+                  )
+                ) {
+                  HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
+                    Label("Market", systemImage: "cart")
+                      .font(.headline)
+                    VStack(alignment: .leading, spacing: 2) {
+                      EVEEntityLabel(value: group.location.name)
+                      Text(
+                        AppLocalization.format(
+                          "%lld items · %lld units to buy",
+                          Int64(shoppingList.items.count),
+                          shoppingList.totalQuantity
+                        )
+                      )
+                      .font(.caption.monospacedDigit())
+                      .foregroundStyle(DesignTokens.textSecondary)
+                    }
+                  }
+                } content: {
+                  shoppingListDetails(shoppingList)
+                    .padding(.top, DesignTokens.spacingMD)
+                }
+                .accessibilityIdentifier(
+                  "planner.shopping-list.market.\(group.location.id)"
+                )
+                HStack {
+                  Text(
+                    "Open Market to review every item before exporting it to EVE."
+                  )
+                  .font(.caption)
+                  .foregroundStyle(DesignTokens.textSecondary)
+                  Spacer()
+                  Button {
+                    copyShoppingList(export)
+                  } label: {
+                    Label("Copy Multibuy", systemImage: "doc.on.doc")
+                  }
+                  .buttonStyle(.borderedProminent)
+                  .accessibilityIdentifier("planner.shopping-list.copy")
+                }
+              }
+              .padding(DesignTokens.spacingMD)
+              .background(DesignTokens.elevated)
+              .clipShape(
+                RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+              )
+            }
+          }
+          if let shoppingListCopyStatus {
+            Label(
+              shoppingListCopyStatus.message,
+              systemImage:
+                shoppingListCopyStatus.isFailure
+                ? "xmark.octagon.fill" : "checkmark.circle.fill"
+            )
+            .font(.callout)
+            .foregroundStyle(
+              shoppingListCopyStatus.isFailure
+                ? DesignTokens.negative : DesignTokens.positive
+            )
+          }
+        }
+        .padding(.top, DesignTokens.spacingMD)
+      }
+      .accessibilityIdentifier("planner.shopping-list.disclosure")
+    }
+  }
+
+  private func shoppingListDetails(
+    _ shoppingList: EVEShoppingList
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Grid(
+        alignment: .leading,
+        horizontalSpacing: DesignTokens.spacingLG,
+        verticalSpacing: DesignTokens.spacingSM
+      ) {
+        GridRow {
+          shoppingListHeader("Item", column: .item)
+          shoppingListHeader("Quantity", column: .quantity)
+          shoppingListHeader("Unit price", column: .unitPrice)
+          shoppingListHeader("Total", column: .total)
+          shoppingListHeader("Market coverage", column: .coverage)
+        }
+        .font(.caption.bold())
+        .foregroundStyle(DesignTokens.textSecondary)
+        Divider()
+        ForEach(sortedShoppingListItems(shoppingList.items)) { item in
+          let quote = item.hasCompleteMarketCoverage ? item.marketQuote : nil
+          GridRow {
+            EVEEntityText(value: item.name)
+            Text(item.quantity.formatted())
+              .monospacedDigit()
+            Text(formatISK(quote?.weightedUnitPrice))
+              .monospacedDigit()
+            Text(formatISK(quote?.total))
+              .monospacedDigit()
+            Text(marketCoverageText(for: item))
+              .foregroundStyle(
+                item.hasCompleteMarketCoverage
+                  ? DesignTokens.positive : DesignTokens.caution
+              )
+          }
+        }
+        Divider()
+        GridRow {
+          Text("Market purchase total")
+            .fontWeight(.semibold)
+          Text(shoppingList.totalQuantity.formatted())
+            .fontWeight(.semibold)
+            .monospacedDigit()
+          Text("—")
+            .foregroundStyle(DesignTokens.textSecondary)
+          Text(formatISK(shoppingList.purchaseTotal))
+            .fontWeight(.semibold)
+            .monospacedDigit()
+          Text(
+            AppLocalization.text(
+              shoppingList.purchaseTotal == nil
+                ? "Incomplete market data" : "Complete"
+            )
+          )
+          .foregroundStyle(
+            shoppingList.purchaseTotal == nil
+              ? DesignTokens.caution : DesignTokens.positive
+          )
+        }
+      }
+      Text(
+        "Prices and totals are shown only when sell orders cover the complete quantity at the Profile Main Hub. Logistics remains separate in the logistics breakdown."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func plannerMaterialHeader(
+    _ title: LocalizedStringKey,
+    column: PlannerMaterialSortColumn
+  ) -> some View {
+    SortableTableHeader(
+      title: title,
+      column: column,
+      sort: $plannerMaterialSort
+    )
+  }
+
+  private func sortedPlannerMaterials(
+    _ materials: [MaterialRequirement]
+  ) -> [MaterialRequirement] {
+    materials.sorted { lhs, rhs in
+      let ordered: Bool?
+      switch plannerMaterialSort.column {
+      case .item:
+        ordered = comparePlannerMaterial(lhs.name, rhs.name)
+      case .required:
+        ordered = comparePlannerMaterial(lhs.required, rhs.required)
+      case .produced:
+        ordered = comparePlannerMaterial(lhs.toProduce, rhs.toProduce)
+      case .activity:
+        ordered = comparePlannerMaterial(
+          lhs.productionActivity?.rawValue ?? "",
+          rhs.productionActivity?.rawValue ?? ""
+        )
+      }
+      return ordered ?? (lhs.typeID < rhs.typeID)
+    }
+  }
+
+  private func comparePlannerMaterial<Value: Comparable>(
+    _ lhs: Value,
+    _ rhs: Value
+  ) -> Bool? {
+    guard lhs != rhs else { return nil }
+    return plannerMaterialSort.direction.orders(lhs, before: rhs)
+  }
+
+  private func shoppingListHeader(
+    _ title: LocalizedStringKey,
+    column: ShoppingListSortColumn
+  ) -> some View {
+    SortableTableHeader(
+      title: title,
+      column: column,
+      sort: $shoppingListSort
+    )
+  }
+
+  private func sortedShoppingListItems(
+    _ items: [EVEShoppingListItem]
+  ) -> [EVEShoppingListItem] {
+    items.sorted { lhs, rhs in
+      let ordered: Bool?
+      switch shoppingListSort.column {
+      case .item:
+        ordered = compareShoppingList(lhs.name, rhs.name)
+      case .quantity:
+        ordered = compareShoppingList(lhs.quantity, rhs.quantity)
+      case .unitPrice:
+        ordered = compareOptionalShoppingList(
+          lhs.hasCompleteMarketCoverage ? lhs.marketQuote?.weightedUnitPrice : nil,
+          rhs.hasCompleteMarketCoverage ? rhs.marketQuote?.weightedUnitPrice : nil
+        )
+      case .total:
+        ordered = compareOptionalShoppingList(
+          lhs.hasCompleteMarketCoverage ? lhs.marketQuote?.total : nil,
+          rhs.hasCompleteMarketCoverage ? rhs.marketQuote?.total : nil
+        )
+      case .coverage:
+        ordered = compareShoppingList(
+          lhs.hasCompleteMarketCoverage ? 0 : 1,
+          rhs.hasCompleteMarketCoverage ? 0 : 1
+        )
+      }
+      return ordered ?? (lhs.typeID < rhs.typeID)
+    }
+  }
+
+  private func compareShoppingList<Value: Comparable>(
+    _ lhs: Value,
+    _ rhs: Value
+  ) -> Bool? {
+    guard lhs != rhs else { return nil }
+    return shoppingListSort.direction.orders(lhs, before: rhs)
+  }
+
+  private func compareOptionalShoppingList<Value: Comparable>(
+    _ lhs: Value?,
+    _ rhs: Value?
+  ) -> Bool? {
+    switch (lhs, rhs) {
+    case (let lhs?, let rhs?): return compareShoppingList(lhs, rhs)
+    case (nil, nil): return nil
+    case (nil, _): return shoppingListSort.direction == .descending
+    case (_, nil): return shoppingListSort.direction == .ascending
+    }
+  }
+
+  private func marketCoverageText(
+    for item: EVEShoppingListItem
+  ) -> String {
+    guard let quote = item.marketQuote else {
+      return AppLocalization.text("Unavailable")
+    }
+    guard item.hasCompleteMarketCoverage else {
+      return AppLocalization.format(
+        "%lld of %lld units",
+        quote.filledQuantity,
+        item.quantity
+      )
+    }
+    return AppLocalization.text("Complete")
+  }
+
+  private func productionJobListPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    let jobs = plan.jobs.sorted { lhs, rhs in
+      if lhs.isTopLevel != rhs.isTopLevel {
+        return lhs.isTopLevel == true
+      }
+      return (lhs.productName ?? "Unknown item".localizedUI)
+        .localizedCaseInsensitiveCompare(
+          rhs.productName ?? "Unknown item".localizedUI
+        ) == .orderedAscending
+    }
+
+    return Panel(title: "Production job list") {
+      FullWidthDisclosure(isExpanded: $isProductionJobListExpanded) {
+        Label {
+          Text(
+            AppLocalization.format(
+              "%lld production jobs",
+              Int64(jobs.count)
+            )
+          )
+          .font(.headline.monospacedDigit())
+        } icon: {
+          Image(systemName: "hammer.fill")
+        }
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          if jobs.isEmpty {
+            Label(
+              "This plan has no production jobs.",
+              systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text(
+              "These are the production jobs from the recalculated plan. Purchased items are excluded and appear in the Main Hub shopping list instead."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            ForEach(jobs) { job in
+              VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+                HStack(alignment: .firstTextBaseline) {
+                  EVEEntityText(
+                    value: job.productName ?? "Unknown item".localizedUI
+                  )
+                  Text(
+                    LocalizedStringKey(
+                      job.isTopLevel == true
+                        ? "Final product" : "Intermediate"
+                    )
+                  )
+                  .font(.caption.bold())
+                  .foregroundStyle(
+                    job.isTopLevel == true
+                      ? DesignTokens.highlight : DesignTokens.textSecondary
+                  )
+                  Spacer()
+                  VStack(alignment: .trailing, spacing: 1) {
+                    Text("Installation")
+                      .font(.caption)
+                      .foregroundStyle(DesignTokens.textSecondary)
+                    Text(formatISK(job.total))
+                      .font(.body.monospacedDigit())
+                      .foregroundStyle(DesignTokens.highlight)
+                  }
+                }
+
+                HStack(spacing: DesignTokens.spacingLG) {
+                  Label {
+                    Text(LocalizedStringKey(job.activity.rawValue.capitalized))
+                  } icon: {
+                    Image(
+                      systemName:
+                        job.activity == .reaction ? "atom" : "hammer.fill"
+                    )
+                  }
+                  if let runs = job.runs,
+                    let outputQuantity = job.outputQuantity
+                  {
+                    Text(
+                      AppLocalization.format(
+                        "%lld runs · %lld output units",
+                        Int64(runs),
+                        outputQuantity
+                      )
+                    )
+                    .font(.body.monospacedDigit())
+                  } else {
+                    Text("Recalculate to resolve runs and output quantity.")
+                      .foregroundStyle(DesignTokens.caution)
+                  }
+                  if let materialEfficiency = job.materialEfficiency,
+                    let timeEfficiency = job.timeEfficiency
+                  {
+                    Text("ME \(materialEfficiency) · TE \(timeEfficiency)")
+                      .font(.body.monospacedDigit())
+                  }
+                  Spacer()
+                }
+                .font(.callout)
+
+                if let facilityName = job.facilityName?.nonEmpty {
+                  Label(facilityName, systemImage: "building.2")
+                    .font(.caption)
+                    .foregroundStyle(DesignTokens.textSecondary)
+                }
+              }
+              .padding(.vertical, DesignTokens.spacingXS)
+              Divider()
+            }
+          }
+        }
+        .padding(.top, DesignTokens.spacingMD)
+      }
+      .accessibilityIdentifier("planner.production-job-list.disclosure")
+    }
+  }
+
+  private func warehouseReplenishmentPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    let groups = warehouseReplenishmentGroups(plan.materials)
+    let replenishmentMaterials = groups.flatMap(\.materials)
+    let totalQuantity = replenishmentMaterials.reduce(Int64(0)) {
+      safeAdd($0, $1.fromStock)
+    }
+
+    return Panel(title: "Warehouse replenishment list") {
+      FullWidthDisclosure(isExpanded: $isWarehouseReplenishmentListExpanded) {
+        Label {
+          Text(
+            AppLocalization.format(
+              "%lld items · %lld units to replenish",
+              Int64(replenishmentMaterials.count),
+              totalQuantity
+            )
+          )
+          .font(.headline.monospacedDigit())
+        } icon: {
+          Image(systemName: "shippingbox.and.arrow.backward")
+        }
+      } content: {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          if groups.isEmpty {
+            Label(
+              "This plan consumes no warehouse materials.",
+              systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else {
+            Text(
+              "These quantities were consumed from warehouse stock and must be bought back to restore it. This is a separate future replenishment list; it is not added to the immediate shopping list or charged twice. Unit prices and values use the current Main Hub replacement quote."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+
+            ForEach(groups, id: \.location.id) { group in
+              let export = EVEMultibuyExport.makeWarehouseReplenishment(
+                from: group.materials
+              )
+              HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                  EVEEntityText(value: group.location.name)
+                  Text("Planned replacement hub")
+                    .font(.caption)
+                    .foregroundStyle(DesignTokens.textSecondary)
+                }
+                Spacer()
+                Button {
+                  copyShoppingList(export)
+                } label: {
+                  Label(
+                    "Copy replenishment Multibuy",
+                    systemImage: "doc.on.doc"
+                  )
+                }
+                .buttonStyle(.bordered)
+              }
+
+              Grid(
+                alignment: .leading,
+                horizontalSpacing: 20,
+                verticalSpacing: 7
+              ) {
+                GridRow {
+                  replenishmentHeader("Item", column: .item)
+                  replenishmentHeader("Quantity", column: .quantity)
+                  replenishmentHeader("Main Hub unit price", column: .unitPrice)
+                  replenishmentHeader("Replacement value", column: .value)
+                }
+                .font(.caption.bold())
+                .foregroundStyle(DesignTokens.textSecondary)
+                Divider()
+                ForEach(sortedReplenishmentMaterials(group.materials)) { material in
+                  GridRow {
+                    EVEEntityText(value: material.name)
+                    Text(material.fromStock.formatted())
+                      .font(.body.monospacedDigit())
+                    Text(
+                      formatISK(
+                        material.replacementQuote?.weightedUnitPrice
+                      )
+                    )
+                    .font(.body.monospacedDigit())
+                    Text(formatISK(material.warehouseConsumptionValue))
+                      .font(.body.monospacedDigit())
+                      .foregroundStyle(DesignTokens.highlight)
+                  }
+                }
+              }
+            }
+          }
+        }
+        .padding(.top, DesignTokens.spacingMD)
+      }
+      .accessibilityIdentifier(
+        "planner.warehouse-replenishment-list.disclosure"
+      )
+    }
+  }
+
+  private func replenishmentHeader(
+    _ title: LocalizedStringKey,
+    column: ReplenishmentSortColumn
+  ) -> some View {
+    SortableTableHeader(
+      title: title,
+      column: column,
+      sort: $replenishmentSort
+    )
+  }
+
+  private func sortedReplenishmentMaterials(
+    _ materials: [MaterialRequirement]
+  ) -> [MaterialRequirement] {
+    materials.sorted { lhs, rhs in
+      let ordered: Bool?
+      switch replenishmentSort.column {
+      case .item:
+        ordered = compareReplenishment(lhs.name, rhs.name)
+      case .quantity:
+        ordered = compareReplenishment(lhs.fromStock, rhs.fromStock)
+      case .unitPrice:
+        ordered = compareOptionalReplenishment(
+          lhs.replacementQuote?.weightedUnitPrice,
+          rhs.replacementQuote?.weightedUnitPrice
+        )
+      case .value:
+        ordered = compareOptionalReplenishment(
+          lhs.warehouseConsumptionValue,
+          rhs.warehouseConsumptionValue
+        )
+      }
+      return ordered ?? (lhs.typeID < rhs.typeID)
+    }
+  }
+
+  private func compareReplenishment<Value: Comparable>(
+    _ lhs: Value,
+    _ rhs: Value
+  ) -> Bool? {
+    guard lhs != rhs else { return nil }
+    return replenishmentSort.direction.orders(lhs, before: rhs)
+  }
+
+  private func compareOptionalReplenishment<Value: Comparable>(
+    _ lhs: Value?,
+    _ rhs: Value?
+  ) -> Bool? {
+    switch (lhs, rhs) {
+    case (let lhs?, let rhs?): return compareReplenishment(lhs, rhs)
+    case (nil, nil): return nil
+    case (nil, _): return replenishmentSort.direction == .descending
+    case (_, nil): return replenishmentSort.direction == .ascending
+    }
+  }
+
+  private func warehouseReplenishmentGroups(
+    _ materials: [MaterialRequirement]
+  ) -> [PlannerWarehouseReplenishmentGroup] {
+    let consumed = materials.filter { $0.fromStock > 0 }
+    let grouped: [ProcurementLocation: [MaterialRequirement]] = Dictionary(
+      grouping: consumed,
+      by: { $0.procurement?.purchaseLocation ?? .jita }
+    )
+    return grouped.map { location, groupedMaterials in
+      PlannerWarehouseReplenishmentGroup(
+        location: location,
+        materials: groupedMaterials.sorted {
+          $0.name.localizedCaseInsensitiveCompare($1.name)
+            == .orderedAscending
+        }
+      )
+    }
+    .sorted { $0.location.name < $1.location.name }
   }
 
   private func copyShoppingList(_ export: EVEMultibuyExport) {
@@ -966,10 +2332,62 @@ struct PlannerView: View {
   }
 
   private func formatISK(_ value: Double?) -> String {
-    guard let value else { return "Unavailable" }
+    guard let value else { return AppLocalization.text("Unavailable") }
     return value.formatted(
       .currency(code: "ISK").precision(.fractionLength(0))
     )
+  }
+
+  private func formatJobDuration(_ seconds: Int64) -> String {
+    guard seconds >= 0, seconds < Int64.max else {
+      return AppLocalization.text("Unavailable")
+    }
+    let wholeMinutes = seconds / 60
+    let roundedMinutes = wholeMinutes + (seconds % 60 == 0 ? 0 : 1)
+    let days = roundedMinutes / (24 * 60)
+    let hours = (roundedMinutes % (24 * 60)) / 60
+    let minutes = roundedMinutes % 60
+    if days > 0 {
+      return AppLocalization.format(
+        "%lld d %lld h %lld min",
+        days,
+        hours,
+        minutes
+      )
+    }
+    if hours > 0 {
+      return AppLocalization.format("%lld h %lld min", hours, minutes)
+    }
+    return AppLocalization.format("%lld min", minutes)
+  }
+
+  private func disclosureBinding(
+    id: String,
+    encodedIDs: Binding<String>
+  ) -> Binding<Bool> {
+    Binding(
+      get: { PlannerDisclosureStorage.contains(id, in: encodedIDs.wrappedValue) },
+      set: { isExpanded in
+        encodedIDs.wrappedValue = PlannerDisclosureStorage.updating(
+          encodedIDs.wrappedValue,
+          id: id,
+          isExpanded: isExpanded
+        )
+      }
+    )
+  }
+
+  private func logisticsDisclosureID(_ leg: LogisticsCostLeg) -> String {
+    [
+      leg.kind.rawValue,
+      leg.origin,
+      leg.destination,
+      String(leg.contractNumber ?? 1),
+    ].joined(separator: "|")
+  }
+
+  private func blueprintDisclosureID(_ entry: BlueprintCostEntry) -> String {
+    "\(entry.productName)|\(entry.kind.rawValue)"
   }
 
   private func materialCost(
@@ -979,15 +2397,141 @@ struct PlannerView: View {
     quantity == 0 ? 0 : quote?.total
   }
 
-  private func stockCostLabel(for plan: IndustryPlanSnapshot) -> String {
-    switch plan.stockAllocations.first?.source.kind {
-    case .manual:
-      "Materials from manual stock"
-    case .warehouse, .assetSnapshot:
-      "Materials from warehouse"
-    case nil:
-      "Materials from stock"
+  private func historicalPlanPanel(
+    _ presentation: HistoricalPlanPresentation
+  ) -> some View {
+    Panel(title: "Historical production") {
+      HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
+        Label(
+          "Saved historical snapshot",
+          systemImage: "clock.arrow.circlepath"
+        )
+        .font(.headline)
+        .foregroundStyle(DesignTokens.highlight)
+        Spacer()
+        Button("Back to current plan") {
+          closeHistoricalPlan()
+        }
+        .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("planner.history.close")
+      }
+
+      EVEEntityText(value: presentation.productName, font: .title3.bold())
+
+      Grid(alignment: .leading, horizontalSpacing: DesignTokens.spacingLG) {
+        GridRow {
+          LabeledContent(
+            "Recorded",
+            value: presentation.recordedAt.formatted(
+              date: .abbreviated,
+              time: .shortened
+            )
+          )
+          LabeledContent(
+            "Production number",
+            value: presentation.sequenceNumber.formatted()
+          )
+        }
+        GridRow {
+          LabeledContent("Runs", value: presentation.runs.formatted())
+          LabeledContent("Units", value: presentation.units.formatted())
+        }
+        GridRow {
+          LabeledContent(
+            "ME / TE",
+            value:
+              "\(presentation.materialEfficiency) / \(presentation.timeEfficiency)"
+          )
+          LabeledContent("System", value: presentation.systemName)
+        }
+      }
+
+      Text("Saved production input")
+        .font(.caption.bold())
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(ProductionInputFormatter.format(presentation.plan.requests))
+        .font(.body.monospaced())
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(DesignTokens.spacingSM)
+        .background(DesignTokens.elevated)
+        .clipShape(
+          RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+        )
+
+      if presentation.plan.requests.count > 1 {
+        Label(
+          AppLocalization.format(
+            "This production was recorded as part of a plan with %lld products. The complete saved plan is shown below.",
+            Int64(presentation.plan.requests.count)
+          ),
+          systemImage: "square.stack.3d.up"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+
+      Text(
+        "The values below come from the saved snapshot and are not recalculated with current SDE, ESI, market, warehouse or profile data. Your current draft and active plan remain unchanged."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
     }
+  }
+
+  private func requestHistoricalPlan(_ row: StoredProductionOverviewRow) {
+    historicalPlannerRequest = HistoricalPlannerRequest(
+      productionOverviewRowID: row.id
+    )
+    openHistoricalPlan(row)
+  }
+
+  private func openRequestedHistoricalPlanIfNeeded() {
+    guard let request = historicalPlannerRequest else { return }
+    guard
+      let row = productionOverviewRows.first(where: {
+        $0.id == request.productionOverviewRowID
+      })
+    else {
+      historicalPlan = nil
+      historicalLoadError = AppLocalization.text(
+        "The selected production entry no longer exists. It may have been deleted."
+      )
+      return
+    }
+    openHistoricalPlan(row)
+  }
+
+  private func openHistoricalPlan(_ row: StoredProductionOverviewRow) {
+    guard let plan = PlannerPersistenceController.decodePlan(row) else {
+      historicalPlan = nil
+      historicalLoadError = AppLocalization.format(
+        "The saved plan snapshot for %@ could not be read. No current values were substituted.",
+        row.productName
+      )
+      return
+    }
+    historicalPlan = HistoricalPlanPresentation(
+      sequenceNumber: row.sequenceNumber,
+      recordedAt: row.recordedAt,
+      productName: row.productName,
+      runs: row.runs,
+      materialEfficiency: row.materialEfficiency,
+      timeEfficiency: row.timeEfficiency,
+      systemName: row.systemName,
+      units: row.units,
+      plan: plan
+    )
+    historicalLoadError = nil
+    persistenceMessage = nil
+    shoppingListCopyStatus = nil
+    recommendationApplicationMessage = nil
+  }
+
+  private func closeHistoricalPlan() {
+    historicalPlan = nil
+    historicalLoadError = nil
+    historicalPlannerRequest = nil
   }
 
   private func restoreStateIfNeeded() {
@@ -1002,6 +2546,125 @@ struct PlannerView: View {
     manualStockInput = restored.manualStockInput
     if runtime.plan == nil {
       runtime.plan = restored.plan
+    }
+    if let plan = restored.plan {
+      procurementPreferences = Dictionary(
+        uniqueKeysWithValues: plan.materials.compactMap { material in
+          material.procurement.map { (material.typeID, $0) }
+        }
+      )
+    }
+  }
+
+  private var procurementLocations: [ProcurementLocation] {
+    let locations = runtime.productionBasis.configuredProcurementLocations
+    return (locations.isEmpty ? [.jita] : locations)
+      .sorted { $0.name < $1.name }
+  }
+
+  private func preference(for material: MaterialRequirement)
+    -> MaterialProcurementPreference
+  {
+    var candidate =
+      (historicalPlan == nil ? procurementPreferences[material.typeID] : nil)
+      ?? material.procurement
+      ?? MaterialProcurementPreference(
+        supplyMode:
+          material.canProduce && material.toProduce > 0 ? .produce : .buy
+      )
+    if candidate.supplyMode == .produce, !material.canProduce {
+      candidate.supplyMode = .buy
+    }
+    if historicalPlan == nil {
+      candidate.purchaseLocation = configuredMainHubLocation
+    }
+    return candidate
+  }
+
+  private func supplyModeBinding(for material: MaterialRequirement)
+    -> Binding<MaterialSupplyMode>
+  {
+    Binding(
+      get: { preference(for: material).supplyMode },
+      set: { value in
+        var updated = preference(for: material)
+        guard updated.supplyMode != value else { return }
+        updated.supplyMode = value
+        var requestedPreferences = procurementPreferences
+        requestedPreferences[material.typeID] = updated
+        procurementPreferences = requestedPreferences
+        recommendationApplicationMessage = nil
+        calculatePlan(preferences: requestedPreferences)
+      }
+    )
+  }
+
+  private func supplyModes(for material: MaterialRequirement)
+    -> [MaterialSupplyMode]
+  {
+    material.canProduce ? [.produce, .buy, .warehouse] : [.buy, .warehouse]
+  }
+
+  private func purchaseLocationBinding(for material: MaterialRequirement)
+    -> Binding<ProcurementLocation>
+  {
+    Binding(
+      get: { preference(for: material).purchaseLocation },
+      set: { value in
+        var updated = preference(for: material)
+        updated.purchaseLocation = value
+        procurementPreferences[material.typeID] = updated
+      }
+    )
+  }
+
+  private func applyMakeOrBuyRecommendations(
+    _ application: MakeOrBuyRecommendationApplication
+  ) {
+    guard application.hasApplicableRecommendations else { return }
+    procurementPreferences = application.preferences
+    recommendationApplicationMessage = nil
+    let successMessage = AppLocalization.format(
+      "Applied %lld recommendations (%lld build, %lld buy). Costs, production jobs and the Main Hub shopping list were recalculated. Unavailable choices left unchanged: %lld.",
+      Int64(application.appliedCount),
+      Int64(application.produceCount),
+      Int64(application.buyCount),
+      Int64(application.unavailableCount)
+    )
+    calculatePlan(
+      preferences: application.preferences,
+      recommendationSuccessMessage: successMessage
+    )
+  }
+
+  private func calculatePlan(
+    preferences: [Int64: MaterialProcurementPreference]? = nil,
+    recommendationSuccessMessage: String? = nil
+  ) {
+    let requestedPreferences = preferences ?? procurementPreferences
+    calculationTask = Task { @MainActor in
+      defer { calculationTask = nil }
+      guard runtime.isPlannerConfigurationReady else { return }
+      persistDraft()
+      await runtime.calculate(
+        input: input,
+        manualStockInput: manualStockInput,
+        existingReservations: activeReservations,
+        assetWarehouse: assetWarehouse,
+        stockTargets: targetQuantities,
+        procurementPreferences: requestedPreferences,
+        authorizations: plannerAuthorizationSnapshots,
+        clientID: EVEConstants.ssoClientID
+      )
+      guard !Task.isCancelled else { return }
+      guard runtime.errorMessage == nil, let plan = runtime.plan else { return }
+      procurementPreferences = Dictionary(
+        uniqueKeysWithValues: plan.materials.compactMap { material in
+          material.procurement.map { (material.typeID, $0) }
+        }
+      )
+      saveActivePlan(plan)
+      recommendationApplicationMessage = recommendationSuccessMessage
     }
   }
 
@@ -1070,36 +2733,98 @@ struct PlannerView: View {
   }
 
   private var assetProjectionIdentity: String {
-    storedCharacters.map { character in
-      [
+    let characterPart = storedCharacters.map { character -> String in
+      let components: [String] = [
         String(character.characterID),
         character.characterName,
         String(character.assetSnapshot?.count ?? 0),
+        String(character.corporationID ?? 0),
+        String(character.corporationAssetSnapshot?.count ?? 0),
         String(character.lastSyncAt?.timeIntervalSince1970 ?? 0),
-      ].joined(separator: ":")
+      ]
+      return components.joined(separator: ":")
     }
     .joined(separator: "|")
+    let productionPart = runtime.productionBasis.structures.map {
+      "\($0.id.uuidString):\($0.structureID ?? 0)"
+    }.sorted().joined(separator: "|")
+    return characterPart + "|corp:\(includeCorporationHangars)|production:" + productionPart
   }
 
   private func prepareAssetWarehouse() async {
     isPreparingAssetWarehouse = true
     defer { isPreparingAssetWarehouse = false }
-    let payloads = storedCharacters.compactMap { character in
+    var payloads = storedCharacters.compactMap { character in
       character.assetSnapshot.map {
         StoredAssetSnapshotPayload(
           ownerID: character.characterID,
           ownerName: character.characterName,
+          ownerKind: .character,
           encodedSnapshot: $0
         )
       }
+    }
+    if includeCorporationHangars {
+      payloads.append(
+        contentsOf: storedCharacters.compactMap { character in
+          guard let corporationID = character.corporationID,
+            let encodedSnapshot = character.corporationAssetSnapshot
+          else { return nil }
+          return StoredAssetSnapshotPayload(
+            ownerID: corporationID,
+            ownerName: character.corporationName
+              ?? "Unknown corporation".localizedUI,
+            ownerKind: .corporation,
+            encodedSnapshot: encodedSnapshot
+          )
+        })
     }
     let prepared = await runtime.prepareAssetWarehouse(
       identity: assetProjectionIdentity,
       payloads: payloads
     )
     guard !Task.isCancelled else { return }
-    assetWarehouse = prepared.warehouse
-    warehouseFactualQuantities = prepared.factualQuantities
+    let productionWarehouse = await runtime.prepareProductionWarehouse(
+      from: prepared
+    )
+    guard !Task.isCancelled else { return }
+    assetWarehouse = productionWarehouse.warehouse
+    warehouseFactualQuantities = productionWarehouse.factualQuantities
+  }
+}
+
+private enum PlannerDisclosureStorage {
+  static func contains(_ id: String, in encodedIDs: String) -> Bool {
+    decoded(encodedIDs).contains(id)
+  }
+
+  static func updating(
+    _ encodedIDs: String,
+    id: String,
+    isExpanded: Bool
+  ) -> String {
+    var ids = decoded(encodedIDs)
+    if isExpanded {
+      ids.insert(id)
+    } else {
+      ids.remove(id)
+    }
+    guard
+      let data = try? JSONEncoder().encode(ids.sorted()),
+      let encoded = String(data: data, encoding: .utf8)
+    else {
+      return encodedIDs
+    }
+    return encoded
+  }
+
+  private static func decoded(_ encodedIDs: String) -> Set<String> {
+    guard let data = encodedIDs.data(using: .utf8),
+      let ids = try? JSONDecoder().decode([String].self, from: data)
+    else {
+      return []
+    }
+    return Set(ids)
   }
 }
 
@@ -1112,31 +2837,40 @@ private struct ExplainedPlannerMetricRow: View {
   @State private var isExplanationPresented = false
 
   var body: some View {
+    let localizedLabel = AppLocalization.text(label)
     Button {
       isExplanationPresented.toggle()
     } label: {
-      LabeledContent {
-        Text(value)
-          .font(.body.monospacedDigit())
-          .foregroundStyle(
-            highlightsValue
-              ? DesignTokens.highlight : DesignTokens.textPrimary
-          )
-      } label: {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         HStack(spacing: DesignTokens.spacingXS) {
           Text(LocalizedStringKey(label))
           Image(systemName: "info.circle")
             .font(.caption)
             .foregroundStyle(DesignTokens.information)
             .accessibilityHidden(true)
+          Spacer(minLength: DesignTokens.spacingSM)
         }
+        Text(value)
+          .font(.body.monospacedDigit())
+          .foregroundStyle(
+            highlightsValue
+              ? DesignTokens.highlight : DesignTokens.textPrimary
+          )
+          .lineLimit(1)
+          .fixedSize(horizontal: true, vertical: false)
+          .frame(maxWidth: .infinity, alignment: .trailing)
       }
-      .frame(maxWidth: .infinity)
+      .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .contentShape(Rectangle())
-    .help("Click for an explanation of \(label).")
+    .help(
+      AppLocalization.format(
+        "Click for an explanation of %@.",
+        localizedLabel
+      )
+    )
     .popover(
       isPresented: $isExplanationPresented,
       attachmentAnchor: .rect(.bounds),
@@ -1161,17 +2895,737 @@ private struct ExplainedPlannerMetricRow: View {
           .textSelection(.enabled)
       }
       .padding(DesignTokens.spacingMD)
-      .frame(width: 360)
+      .frame(width: 460)
     }
-    .accessibilityLabel("\(label), \(value)")
-    .accessibilityHint("Shows an explanation of this value.")
+    .accessibilityLabel("\(localizedLabel), \(value)")
+    .accessibilityHint(
+      AppLocalization.text("Shows an explanation of this value.")
+    )
   }
+}
+
+private enum PlannerMaterialSortColumn: Hashable {
+  case item
+  case required
+  case produced
+  case activity
+}
+
+private enum ShoppingListSortColumn: Hashable {
+  case item
+  case quantity
+  case unitPrice
+  case total
+  case coverage
+}
+
+private enum ReplenishmentSortColumn: Hashable {
+  case item
+  case quantity
+  case unitPrice
+  case value
 }
 
 private struct PlannerMaterialSection: Identifiable {
   var id: String { name }
   let name: String
   let materials: [MaterialRequirement]
+}
+
+private struct PlannerWarehouseReplenishmentGroup: Identifiable {
+  var id: String { location.id }
+  let location: ProcurementLocation
+  let materials: [MaterialRequirement]
+}
+
+struct ReactionsView: View {
+  @EnvironmentObject private var runtime: RuntimeState
+  @Query private var characters: [StoredCharacter]
+  @AppStorage("reactions.analysis-runs", store: AppDefaults.store)
+  private var runs = 100
+  @AppStorage("reactions.market-hub-id", store: AppDefaults.store)
+  private var marketHubID = ""
+  @State private var searchText = ""
+  @State private var valueFilter = ReactionValueFilter.all
+  @State private var selectedGroup = ReactionGroupFilter.all
+  @State private var sortOrder = ReactionAnalysisSortOrder.valueCreationDescending
+  @State private var expandedReactionIDs = Set<Int64>()
+  @State private var analysisTask: Task<Void, Never>?
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingLG) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Text("Reaction profitability")
+            .font(.largeTitle.bold())
+          Text(
+            "Compares every complete published SDE reaction against live order depth at the selected trade hub. Inputs are bought from sell orders; outputs are valued both as a replacement purchase and as an immediate sale to buy orders."
+          )
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
+
+        controls
+
+        if runtime.isAnalyzingReactions {
+          Panel(title: "Market analysis") {
+            HStack(spacing: DesignTokens.spacingMD) {
+              ProgressView()
+              VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+                Text("Analyzing all reactions…")
+                  .font(.headline)
+                Text(
+                  "The app is loading every required input and output order book. The previous complete result remains visible while prices refresh."
+                )
+                .font(.caption)
+                .foregroundStyle(DesignTokens.textSecondary)
+              }
+            }
+          }
+        }
+
+        if let error = runtime.reactionAnalysisError {
+          Panel(title: "Analysis unavailable") {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+              .foregroundStyle(DesignTokens.negative)
+            Button("Try again") { startAnalysis() }
+              .buttonStyle(.borderedProminent)
+          }
+        }
+
+        if let snapshot = runtime.reactionAnalysis {
+          basisPanel(snapshot)
+          summary(snapshot)
+          results(snapshot)
+        } else if !runtime.isAnalyzingReactions,
+          runtime.reactionAnalysisError == nil
+        {
+          Panel(title: "No analysis yet") {
+            Text(
+              "Start the analysis to evaluate all reactions from the active SDE catalog."
+            )
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+      }
+      .padding(DesignTokens.spacingLG)
+      .frame(maxWidth: 1_500, alignment: .leading)
+    }
+    .searchable(text: $searchText, prompt: "Search reactions or materials")
+    .task(id: runtime.isPlannerConfigurationReady) {
+      guard runtime.isPlannerConfigurationReady,
+        runtime.reactionAnalysis == nil,
+        !runtime.isAnalyzingReactions
+      else { return }
+      runs = sanitizedRuns
+      await runtime.analyzeReactions(
+        runs: sanitizedRuns,
+        marketHub: selectedMarketHub,
+        authorizations: authorizationSnapshots,
+        clientID: clientID
+      )
+    }
+    .onDisappear {
+      analysisTask?.cancel()
+    }
+  }
+
+  private var controls: some View {
+    Panel(title: "Calculation settings") {
+      HStack(alignment: .bottom, spacing: DesignTokens.spacingMD) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Text("Trade hub")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          Picker("Trade hub", selection: $marketHubID) {
+            ForEach(runtime.productionBasis.marketHubSnapshots) { hub in
+              Text(hub.location.name).tag(hub.id.uuidString)
+            }
+          }
+          .labelsHidden()
+          .frame(minWidth: 330)
+          .accessibilityIdentifier("reactions.market-hub")
+        }
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Text("Runs")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          HStack(spacing: DesignTokens.spacingSM) {
+            TextField("Runs", value: $runs, format: .number)
+              .frame(width: 110)
+              .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("reactions.runs")
+            Stepper("", value: $runs, in: 1...maximumSelectableRuns)
+              .labelsHidden()
+          }
+        }
+        Button {
+          startAnalysis()
+        } label: {
+          Label("Analyze all reactions", systemImage: "arrow.clockwise")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(runtime.isAnalyzingReactions)
+        .accessibilityIdentifier("reactions.analyze")
+        Spacer()
+      }
+      VStack(alignment: .leading, spacing: 2) {
+        Text(
+          "100 runs are preconfigured. CCP does not define one global reaction-run maximum: the 30-day job limit is calculated per formula from its SDE duration and the current time basis. If one run already exceeds 30 days, that single run remains allowed."
+        )
+        HStack(spacing: 3) {
+          Text("Current analysis range")
+          Text(verbatim: "1–\(maximumSelectableRuns.formatted())")
+          Text("runs")
+          Text(
+            "The per-formula job limit and required job count are shown in every result."
+          )
+        }
+      }
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      if let snapshot = runtime.reactionAnalysis,
+        snapshot.runs != sanitizedRuns
+          || snapshot.marketLocation.id != selectedMarketHub.location.id
+      {
+        Label(
+          "Settings changed. Analyze again to replace the displayed snapshot.",
+          systemImage: "arrow.triangle.2.circlepath"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
+    }
+  }
+
+  private func basisPanel(_ snapshot: ReactionAnalysisSnapshot) -> some View {
+    Panel(title: "Calculation basis") {
+      HStack(alignment: .firstTextBaseline) {
+        Label(
+          snapshot.basis == .configuredFacility
+            ? "Configured reaction facility"
+            : "SDE material baseline",
+          systemImage:
+            snapshot.basis == .configuredFacility
+            ? "building.2.fill" : "doc.text.magnifyingglass"
+        )
+        .font(.headline)
+        Spacer()
+        if snapshot.basis == .configuredFacility {
+          Text(verbatim: snapshot.basisName)
+            .foregroundStyle(DesignTokens.highlight)
+        }
+      }
+      if snapshot.basis == .configuredFacility {
+        Text(
+          "Material multipliers, reaction time, system cost index, facility tax, SCC surcharge and clone surcharge are included from the verified Profile configuration."
+        )
+      } else {
+        Text(
+          "Value creation and make-or-buy use unmodified SDE material quantities only. Installation, structure, rig and clone costs are unavailable and are not treated as zero. Configure a valid reaction refinery and system in Profile for a complete facility comparison."
+        )
+      }
+      Text(
+        "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the evaluated reaction cost, including transport of its inputs. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      ForEach(snapshot.warnings) { warning in
+        Label(
+          localizedWarning(warning),
+          systemImage: warning.severity == .blocking
+            ? "xmark.octagon.fill" : "exclamationmark.triangle.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(
+          warning.severity == .blocking
+            ? DesignTokens.negative : DesignTokens.caution
+        )
+      }
+      Divider()
+      HStack {
+        Text("Market")
+        EVEEntityText(value: snapshot.marketLocation.name)
+        Text("•")
+        Text(
+          AppLocalization.format(
+            "Updated %@",
+            snapshot.marketSource.capturedAt.formatted(
+              date: .abbreviated,
+              time: .shortened
+            )
+          )
+        )
+      }
+      .font(.caption.monospacedDigit())
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func summary(_ snapshot: ReactionAnalysisSnapshot) -> some View {
+    let rows = snapshot.rows
+    let positive = rows.filter { $0.valueStatus == .positive }.count
+    let negative = rows.filter { $0.valueStatus == .negative }.count
+    let unavailable = rows.filter { $0.valueStatus == .unavailable }.count
+    let cheaperToMake = rows.filter { $0.makeIsCheaperThanBuy == true }.count
+    return LazyVGrid(
+      columns: [GridItem(.adaptive(minimum: 180, maximum: 280))],
+      alignment: .leading,
+      spacing: DesignTokens.spacingMD
+    ) {
+      summaryCard("All reactions", rows.count, DesignTokens.information)
+      summaryCard("Positive value", positive, DesignTokens.positive)
+      summaryCard("Negative value", negative, DesignTokens.negative)
+      summaryCard("Cheaper to make", cheaperToMake, DesignTokens.highlight)
+      if unavailable > 0 {
+        summaryCard("Price unavailable", unavailable, DesignTokens.caution)
+      }
+    }
+  }
+
+  private func summaryCard(
+    _ title: String,
+    _ value: Int,
+    _ color: Color
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Text(LocalizedStringKey(title))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(value.formatted())
+        .font(.title2.bold().monospacedDigit())
+        .foregroundStyle(color)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(DesignTokens.spacingMD)
+    .background(DesignTokens.panel)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+        .stroke(DesignTokens.border)
+    }
+  }
+
+  private func results(_ snapshot: ReactionAnalysisSnapshot) -> some View {
+    let rows = filteredRows(snapshot.rows)
+    return Panel(title: "All reaction results") {
+      HStack(spacing: DesignTokens.spacingMD) {
+        Picker("Value", selection: $valueFilter) {
+          ForEach(ReactionValueFilter.allCases) { filter in
+            Text(filter.title).tag(filter)
+          }
+        }
+        .frame(width: 180)
+        Picker("Reaction type", selection: $selectedGroup) {
+          Text("All reaction types").tag(ReactionGroupFilter.all)
+          ForEach(groupNames(snapshot.rows), id: \.self) { group in
+            Text(group).tag(ReactionGroupFilter.named(group))
+          }
+        }
+        .frame(minWidth: 260)
+        Picker("Sort", selection: $sortOrder) {
+          ForEach(ReactionAnalysisSortOrder.allCases, id: \.self) { order in
+            Text(order.title).tag(order)
+          }
+        }
+        .frame(width: 220)
+        Spacer()
+        Text("\(rows.count) / \(snapshot.rows.count)")
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      if rows.isEmpty {
+        Text("No reactions match the current filters.")
+          .foregroundStyle(DesignTokens.textSecondary)
+          .padding(.vertical, DesignTokens.spacingLG)
+      } else {
+        LazyVStack(spacing: DesignTokens.spacingSM) {
+          ForEach(rows) { row in
+            reactionRow(row)
+          }
+        }
+      }
+    }
+  }
+
+  private func reactionRow(_ row: ReactionAnalysisRow) -> some View {
+    FullWidthDisclosure(isExpanded: reactionExpansionBinding(row.id)) {
+      HStack(spacing: DesignTokens.spacingMD) {
+        VStack(alignment: .leading, spacing: 2) {
+          EVEEntityLabel(value: row.productName)
+          Text(row.groupName)
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+        Spacer()
+        VStack(alignment: .trailing, spacing: 2) {
+          Text("Value creation")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          Text(formatSignedISK(row.valueCreation))
+            .font(.body.bold().monospacedDigit())
+            .foregroundStyle(statusColor(row.valueStatus))
+        }
+        .frame(minWidth: 145, alignment: .trailing)
+        VStack(alignment: .trailing, spacing: 2) {
+          Text("Value margin")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          Text(formatPercent(row.valueCreationMargin))
+            .font(.body.bold().monospacedDigit())
+            .foregroundStyle(statusColor(row.valueStatus))
+        }
+        .frame(minWidth: 105, alignment: .trailing)
+        VStack(alignment: .trailing, spacing: 2) {
+          Text("Make or buy")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          Text(makeOrBuyLabel(row))
+            .font(.body.weight(.semibold))
+            .foregroundStyle(
+              row.makeIsCheaperThanBuy == nil
+                ? DesignTokens.textDisabled
+                : row.makeIsCheaperThanBuy == true
+                  ? DesignTokens.positive : DesignTokens.negative
+            )
+        }
+        .frame(minWidth: 130, alignment: .trailing)
+      }
+      .padding(DesignTokens.spacingMD)
+    } content: {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+        LazyVGrid(
+          columns: [GridItem(.adaptive(minimum: 180, maximum: 280))],
+          alignment: .leading,
+          spacing: DesignTokens.spacingSM
+        ) {
+          reactionMetric("Input purchase", row.materialCost)
+          reactionMetric("Input logistics", row.inputLogisticsCost)
+          reactionMetric("Installation", row.installationCost)
+          reactionMetric("Evaluated reaction cost", row.evaluatedCost)
+          reactionMetric("Buy produced output", row.outputBuyCost)
+          reactionMetric(
+            "Direct-purchase logistics",
+            row.outputPurchaseLogisticsCost
+          )
+          reactionMetric(
+            "Direct-purchase total",
+            row.outputPurchaseTotalCost
+          )
+          reactionMetric("Immediate-sale revenue", row.immediateSaleRevenue)
+          reactionMetric("Immediate-sale spread", row.immediateSaleSpread)
+          reactionMetric("Make-or-buy savings", row.makeOrBuySavings)
+          reactionMetric("Value creation", row.valueCreation)
+          reactionMetricPercent("Value margin", row.valueCreationMargin)
+        }
+        Divider()
+        HStack(alignment: .top, spacing: DesignTokens.spacingLG) {
+          materialList("Inputs", row.inputs)
+          materialList("Outputs", row.outputs)
+        }
+        HStack {
+          Label("\(row.runs.formatted()) runs", systemImage: "repeat")
+          Label(formatDuration(row.durationSeconds), systemImage: "clock")
+          Label(
+            "Max. \(row.maximumRunsPerJob.formatted()) runs per job",
+            systemImage: "calendar.badge.clock"
+          )
+          if row.requiredJobCount > 1 {
+            Label(
+              "\(row.requiredJobCount.formatted()) jobs required",
+              systemImage: "square.stack.3d.up"
+            )
+          }
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+        if !row.warnings.isEmpty {
+          Divider()
+          ForEach(row.warnings) { warning in
+            Label(
+              localizedWarning(warning),
+              systemImage: "exclamationmark.triangle"
+            )
+            .font(.caption)
+            .foregroundStyle(
+              warning.severity == .blocking
+                ? DesignTokens.negative : DesignTokens.caution
+            )
+          }
+        }
+      }
+      .padding(.horizontal, DesignTokens.spacingMD)
+      .padding(.bottom, DesignTokens.spacingMD)
+    }
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+        .stroke(DesignTokens.border)
+    }
+    .overlay(alignment: .topLeading) {
+      EVEEntityText(
+        value: row.productName,
+        showsTransparentLabel: true,
+        accessibilityIdentifier: "reactions.copy-name.\(row.id)"
+      )
+      .padding(.horizontal, 2)
+      .padding(.vertical, 1)
+      .padding(.leading, DesignTokens.spacingMD - 2)
+      .padding(.top, DesignTokens.spacingMD - 1)
+    }
+  }
+
+  private func reactionMetric(_ title: String, _ value: Double?) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(LocalizedStringKey(title))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(formatISK(value))
+        .font(.body.monospacedDigit())
+        .foregroundStyle(DesignTokens.highlight)
+    }
+  }
+
+  private func reactionMetricPercent(
+    _ title: String,
+    _ value: Double?
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(LocalizedStringKey(title))
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(value?.formatted(.percent.precision(.fractionLength(1))) ?? "—")
+        .font(.body.monospacedDigit())
+        .foregroundStyle(DesignTokens.highlight)
+    }
+  }
+
+  private func materialList(
+    _ title: String,
+    _ materials: [ReactionMaterialValuation]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text(LocalizedStringKey(title)).font(.headline)
+      ForEach(materials) { material in
+        HStack {
+          VStack(alignment: .leading, spacing: 1) {
+            EVEEntityText(value: material.name)
+            HStack(spacing: 3) {
+              Text(material.quantity.formatted())
+              Text("units")
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+          Spacer()
+          Text(formatISK(material.quote.total))
+            .font(.body.monospacedDigit())
+            .foregroundStyle(DesignTokens.highlight)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func filteredRows(
+    _ rows: [ReactionAnalysisRow]
+  ) -> [ReactionAnalysisRow] {
+    let needle = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let filtered = rows.filter { row in
+      let matchesSearch =
+        needle.isEmpty
+        || row.productName.localizedCaseInsensitiveContains(needle)
+        || row.groupName.localizedCaseInsensitiveContains(needle)
+        || row.inputs.contains {
+          $0.name.localizedCaseInsensitiveContains(needle)
+        }
+        || row.outputs.contains {
+          $0.name.localizedCaseInsensitiveContains(needle)
+        }
+      let matchesValue = valueFilter.matches(row.valueStatus)
+      let matchesGroup: Bool
+      switch selectedGroup {
+      case .all: matchesGroup = true
+      case .named(let group): matchesGroup = row.groupName == group
+      }
+      return matchesSearch && matchesValue && matchesGroup
+    }
+    return sortOrder.sorted(filtered)
+  }
+
+  private func groupNames(_ rows: [ReactionAnalysisRow]) -> [String] {
+    Array(Set(rows.map(\.groupName))).sorted {
+      $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+    }
+  }
+
+  private var selectedMarketHub: MarketHubConfigurationSnapshot {
+    let hubs = runtime.productionBasis.marketHubSnapshots
+    return hubs.first { $0.id.uuidString == marketHubID }
+      ?? hubs.first { $0.roles.contains(.main) }
+      ?? MarketHubConfigurationSnapshot(
+        id: UUID(),
+        location: .jita,
+        roles: [.main]
+      )
+  }
+
+  private var clientID: String {
+    EVEConstants.ssoClientID
+  }
+
+  private var authorizationSnapshots: [AuthorizationSnapshot] {
+    characters.compactMap {
+      try? JSONDecoder().decode(
+        AuthorizationSnapshot.self,
+        from: $0.authorizationSnapshot
+      )
+    }
+  }
+
+  private var sanitizedRuns: Int {
+    min(max(1, runs), maximumSelectableRuns)
+  }
+
+  private var maximumSelectableRuns: Int {
+    max(
+      1,
+      runtime.reactionAnalysis?.maximumSelectableRuns
+        ?? ReactionJobRules.neutralMaximumSelectableRuns
+    )
+  }
+
+  private func reactionExpansionBinding(_ id: Int64) -> Binding<Bool> {
+    Binding(
+      get: { expandedReactionIDs.contains(id) },
+      set: { isExpanded in
+        if isExpanded {
+          expandedReactionIDs.insert(id)
+        } else {
+          expandedReactionIDs.remove(id)
+        }
+      }
+    )
+  }
+
+  private func startAnalysis() {
+    runs = sanitizedRuns
+    analysisTask?.cancel()
+    analysisTask = Task { @MainActor in
+      defer { analysisTask = nil }
+      await runtime.analyzeReactions(
+        runs: sanitizedRuns,
+        marketHub: selectedMarketHub,
+        authorizations: authorizationSnapshots,
+        clientID: clientID
+      )
+    }
+  }
+
+  private func makeOrBuyLabel(
+    _ row: ReactionAnalysisRow
+  ) -> LocalizedStringKey {
+    guard let make = row.makeIsCheaperThanBuy else { return "Unavailable" }
+    return make ? "Make" : "Buy"
+  }
+
+  private func statusColor(_ status: ReactionValueStatus) -> Color {
+    switch status {
+    case .positive: DesignTokens.positive
+    case .negative: DesignTokens.negative
+    case .neutral: DesignTokens.textSecondary
+    case .unavailable: DesignTokens.caution
+    }
+  }
+
+  private func localizedWarning(
+    _ warning: DomainWarning
+  ) -> LocalizedStringKey {
+    switch warning.code {
+    case "market.insufficient-depth":
+      "The selected trade hub does not have enough order-book depth for the configured runs."
+    default:
+      LocalizedStringKey(warning.message)
+    }
+  }
+
+  private func formatISK(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "—" }
+    return value.formatted(
+      .currency(code: "ISK")
+        .precision(.fractionLength(0))
+    )
+  }
+
+  private func formatSignedISK(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "—" }
+    let formatted = abs(value).formatted(
+      .currency(code: "ISK").precision(.fractionLength(0))
+    )
+    if value > 0 { return "+\(formatted)" }
+    if value < 0 { return "−\(formatted)" }
+    return formatted
+  }
+
+  private func formatPercent(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "—" }
+    return value.formatted(.percent.precision(.fractionLength(1)))
+  }
+
+  private func formatDuration(_ seconds: Int64) -> String {
+    guard seconds < Int64.max else { return "—" }
+    return Duration.seconds(seconds).formatted(
+      .units(allowed: [.days, .hours, .minutes], width: .abbreviated)
+    )
+  }
+}
+
+private enum ReactionValueFilter: String, CaseIterable, Identifiable {
+  case all
+  case positive
+  case negative
+  case neutral
+  case unavailable
+
+  var id: Self { self }
+
+  var title: LocalizedStringKey {
+    switch self {
+    case .all: "All values"
+    case .positive: "Positive"
+    case .negative: "Negative"
+    case .neutral: "Neutral"
+    case .unavailable: "Unavailable"
+    }
+  }
+
+  func matches(_ status: ReactionValueStatus) -> Bool {
+    switch self {
+    case .all: true
+    case .positive: status == .positive
+    case .negative: status == .negative
+    case .neutral: status == .neutral
+    case .unavailable: status == .unavailable
+    }
+  }
+}
+
+private enum ReactionGroupFilter: Hashable {
+  case all
+  case named(String)
+}
+
+extension ReactionAnalysisSortOrder {
+  fileprivate var title: LocalizedStringKey {
+    switch self {
+    case .valueCreationDescending: "Value creation (highest first)"
+    case .valueCreationAscending: "Value creation (lowest first)"
+    case .makeSavingsDescending: "Make savings (highest first)"
+    case .marginDescending: "Margin (highest first)"
+    case .nameAscending: "Name"
+    }
+  }
 }
 
 private enum ShoppingListCopyStatus {
@@ -1412,90 +3866,32 @@ struct CharactersView: View {
   @Environment(\.modelContext) private var modelContext
   @Query private var characters: [StoredCharacter]
   @Query private var settings: [AppSetting]
+  @Query private var esiSnapshotMetadata: [StoredESISnapshotMetadata]
   @State private var isConnecting = false
   @State private var isSyncingAll = false
   @State private var selectedScopeCharacterID: Int64?
   @State private var disconnectCharacterID: Int64?
+  @State private var isShowingRequestedPermissions = false
   @State private var batchMessage: String?
   @State private var localError: String?
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-        Text("Characters").font(.largeTitle.bold())
+        Text("ESI").font(.largeTitle.bold())
+        esiConfiguration
         Panel(title: "EVE SSO") {
           if characters.isEmpty {
             ContentUnavailableView(
               "No characters",
               systemImage: "person.crop.circle.badge.plus",
               description: Text(
-                "Configure the EVE client ID, then authorize each personal character with PKCE."
+                "Authorize each personal character with the configured EVE SSO registration."
               )
             )
           } else {
             ForEach(characters) { character in
-              VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-                HStack {
-                  Button {
-                    toggleScopeDetails(for: character)
-                  } label: {
-                    HStack(spacing: DesignTokens.spacingSM) {
-                      Image(
-                        systemName:
-                          selectedScopeCharacterID == character.characterID
-                          ? "chevron.down" : "chevron.right"
-                      )
-                      .font(.caption.bold())
-                      .frame(width: 12)
-                      Image(systemName: "person.crop.circle.fill")
-                      VStack(alignment: .leading, spacing: 2) {
-                        Text(character.characterName)
-                        Text(scopeStatus(for: character))
-                          .font(.caption)
-                          .foregroundStyle(
-                            missingScopeCount(for: character) == 0
-                              ? DesignTokens.positive
-                              : DesignTokens.caution
-                          )
-                      }
-                    }
-                  }
-                  .buttonStyle(.plain)
-                  .contentShape(Rectangle())
-                  .accessibilityLabel(
-                    "Show loaded scopes for \(character.characterName)"
-                  )
-                  .accessibilityValue(
-                    selectedScopeCharacterID == character.characterID
-                      ? "Expanded" : "Collapsed"
-                  )
-                  Spacer()
-                  Text(character.lastSyncAt?.formatted() ?? "Never synced")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(DesignTokens.textSecondary)
-                  Button("Sync") {
-                    Task {
-                      await sync(character)
-                    }
-                  }
-                  .disabled(clientID.isEmpty || isBusy)
-                  Button(role: .destructive) {
-                    disconnectCharacterID = character.characterID
-                  } label: {
-                    Label("Disconnect", systemImage: "person.crop.circle.badge.minus")
-                      .labelStyle(.iconOnly)
-                  }
-                  .disabled(clientID.isEmpty || isBusy)
-                  .help(
-                    "Delete this character's refresh token and locally stored character snapshots."
-                  )
-                }
-                if selectedScopeCharacterID == character.characterID {
-                  scopeDetails(for: character)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-              }
-              .padding(.vertical, DesignTokens.spacingXS)
+              characterRow(character)
               Divider()
             }
           }
@@ -1506,7 +3902,7 @@ struct CharactersView: View {
             }
             .disabled(clientID.isEmpty || isBusy)
             .help(
-              "Select any EVE character. The verified character ID automatically updates an existing character or adds a new one."
+              "Select any EVE character. The verified EVE identity automatically updates an existing character or adds a new one."
             )
             if !characters.isEmpty {
               Button {
@@ -1522,37 +3918,71 @@ struct CharactersView: View {
                 .foregroundStyle(DesignTokens.textSecondary)
             }
           }
+          Button {
+            isShowingRequestedPermissions = true
+          } label: {
+            Label(
+              AppLocalization.format(
+                "Show %lld requested ESI permissions and their modules",
+                Int64(EVEScope.versionOne.count)
+              ),
+              systemImage: "info.circle"
+            )
+          }
+          .buttonStyle(.link)
+          .help(
+            "Shows which ESI permissions EVE Nexus requests, why they are needed, and which modules use them."
+          )
+          .accessibilityIdentifier("characters.authorization.show-permissions")
           if let batchMessage {
             Text(batchMessage)
               .font(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
-          }
-          if clientID.isEmpty {
-            Label(
-              "Save the EVE application client ID in Data & Settings first.",
-              systemImage: "exclamationmark.triangle"
-            )
-            .foregroundStyle(DesignTokens.caution)
           }
           if let localError {
             Text(localError).foregroundStyle(DesignTokens.negative)
           }
         }
         if let sync = runtime.lastCharacterSync {
-          Panel(title: "Latest domain states") {
-            sourceState("Skills", sync.capabilities.skills.state)
-            sourceState("Standings", sync.capabilities.standings.state)
-            sourceState("Blueprints", sync.blueprints.state)
-            sourceState("Assets", sync.assets.state)
-            sourceState("Industry jobs", sync.jobs.state)
-            sourceState("Orders", sync.openOrders.state)
-            sourceState("Wallet", sync.walletBalance.state)
+          let latestTitle: LocalizedStringKey =
+            "Latest synchronization: \(sync.authorization.characterName)"
+          Panel(title: latestTitle) {
+            Text(
+              "Scope grants, corporation roles, and data completeness are separate checks. Corporation data is only applicable to a character with the required EVE role."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+            sourceState("Skills", "skills", sync.capabilities.skills)
+            sourceState("Standings", "standings", sync.capabilities.standings)
+            sourceState("Blueprints", "blueprints", sync.blueprints)
+            sourceState("Assets", "assets", sync.assets)
+            sourceState(
+              "Corporation assets",
+              "corporation-assets",
+              sync.corporationAssets
+            )
+            sourceState(
+              "Private contracts",
+              "private-contracts",
+              sync.privateContracts
+            )
+            sourceState(
+              "Corporation wallet",
+              "corporation-wallet",
+              sync.corporationWallet
+            )
+            sourceState("Industry jobs", "industry-jobs", sync.jobs)
+            sourceState("Orders", "open-orders", sync.openOrders)
+            sourceState("Wallet", "wallet-balance", sync.walletBalance)
           }
         }
       }
       .padding(DesignTokens.spacingLG)
     }
-    .navigationTitle(AppLocalization.text("Characters"))
+    .navigationTitle(AppLocalization.text("ESI"))
+    .sheet(isPresented: $isShowingRequestedPermissions) {
+      requestedPermissionsView
+    }
     .confirmationDialog(
       disconnectDialogTitle,
       isPresented: Binding(
@@ -1576,8 +4006,36 @@ struct CharactersView: View {
     }
   }
 
+  private var esiConfiguration: some View {
+    Panel(title: "ESI Configuration") {
+      LabeledContent("EVE application client ID") {
+        Text(verbatim: EVEConstants.ssoClientID)
+          .font(.body.monospaced())
+          .textSelection(.enabled)
+      }
+      LabeledContent(
+        "Callback",
+        value: EVEConstants.callbackURL.absoluteString
+      )
+      LabeledContent(
+        "Compatibility date",
+        value: EVEConstants.esiCompatibilityDate
+      )
+      Label(
+        "The EVE application client ID is built into this app.",
+        systemImage: "checkmark.shield.fill"
+      )
+      .foregroundStyle(DesignTokens.positive)
+      Text(
+        "EVE authorizations are stored securely in the macOS Keychain, not in the app database or plain files."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
   private var clientID: String {
-    settings.first(where: { $0.key == "eve.clientID" })?.value ?? ""
+    EVEConstants.ssoClientID
   }
 
   private var isBusy: Bool {
@@ -1615,11 +4073,82 @@ struct CharactersView: View {
   }
 
   @ViewBuilder
+  private func characterRow(_ character: StoredCharacter) -> some View {
+    let dataSummary = dataStatusSummary(for: character)
+    let hasDataIssues = !actionableMetadata(for: character).isEmpty
+    let lastSyncText =
+      character.lastSyncAt?.formatted()
+      ?? AppLocalization.text("Never synced")
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack {
+        FullWidthDisclosureButton(
+          isExpanded: selectedScopeCharacterID == character.characterID,
+          action: { toggleScopeDetails(for: character) }
+        ) {
+          HStack(spacing: DesignTokens.spacingSM) {
+            Image(systemName: "person.crop.circle.fill")
+            VStack(alignment: .leading, spacing: 2) {
+              Text(character.characterName)
+              Text(scopeStatus(for: character))
+                .font(.caption)
+                .foregroundStyle(
+                  missingScopeCount(for: character) == 0
+                    ? DesignTokens.positive
+                    : DesignTokens.caution
+                )
+              if let dataSummary {
+                Text(dataSummary)
+                  .font(.caption)
+                  .foregroundStyle(
+                    hasDataIssues
+                      ? DesignTokens.caution
+                      : DesignTokens.textSecondary
+                  )
+              }
+            }
+            Spacer()
+            Text(lastSyncText)
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+        .accessibilityLabel(
+          "Show loaded permissions for \(character.characterName)"
+        )
+        .accessibilityValue(
+          selectedScopeCharacterID == character.characterID
+            ? "Expanded" : "Collapsed"
+        )
+        Button("Sync") {
+          Task { await sync(character) }
+        }
+        .disabled(clientID.isEmpty || isBusy)
+        Button(role: .destructive) {
+          disconnectCharacterID = character.characterID
+        } label: {
+          Label("Disconnect", systemImage: "person.crop.circle.badge.minus")
+            .labelStyle(.iconOnly)
+        }
+        .disabled(clientID.isEmpty || isBusy)
+        .help(
+          "Delete this character's refresh token and locally stored character snapshots."
+        )
+      }
+      if selectedScopeCharacterID == character.characterID {
+        scopeDetails(for: character)
+        dataDetails(for: character)
+          .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+    }
+    .padding(.vertical, DesignTokens.spacingXS)
+  }
+
+  @ViewBuilder
   private func scopeDetails(for character: StoredCharacter) -> some View {
     if let authorization = authorization(for: character) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         HStack {
-          Text("Loaded scopes")
+          Text("Loaded permissions")
             .font(.subheadline.bold())
           Spacer()
           Text("\(authorization.sortedScopes.count)")
@@ -1628,7 +4157,7 @@ struct CharactersView: View {
         }
         if authorization.sortedScopes.isEmpty {
           Label(
-            "No scopes are stored for this character.",
+            "No permissions are stored for this character.",
             systemImage: "exclamationmark.triangle"
           )
           .font(.caption)
@@ -1636,9 +4165,8 @@ struct CharactersView: View {
         } else {
           ForEach(authorization.sortedScopes, id: \.self) { scope in
             Label {
-              Text(scope)
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
+              Text(requestedScopePurpose(scope))
+                .font(.caption)
             } icon: {
               Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(DesignTokens.positive)
@@ -1650,6 +4178,19 @@ struct CharactersView: View {
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
+        Button {
+          Task { await connect(expectedCharacterID: character.characterID) }
+        } label: {
+          Label("Update permissions", systemImage: "key.horizontal")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(clientID.isEmpty || isBusy)
+        .help(
+          "Open EVE SSO again for this character and replace its stored authorization with the currently required permissions. Selecting another character is rejected without replacing the existing authorization."
+        )
+        .accessibilityIdentifier(
+          "characters.update-permissions.\(character.characterID)"
+        )
       }
       .padding(DesignTokens.spacingSM)
       .background(DesignTokens.elevated)
@@ -1658,7 +4199,7 @@ struct CharactersView: View {
       )
       .accessibilityElement(children: .contain)
       .accessibilityLabel(
-        "Loaded scopes for \(character.characterName)"
+        "Loaded permissions for \(character.characterName)"
       )
     } else {
       Label(
@@ -1670,6 +4211,174 @@ struct CharactersView: View {
     }
   }
 
+  @ViewBuilder
+  private func dataDetails(for character: StoredCharacter) -> some View {
+    let metadata = metadata(for: character)
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Text("Last ESI data status for this character")
+        .font(.subheadline.bold())
+      if metadata.isEmpty {
+        Text("No synchronization result is stored for this character yet.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        ForEach(metadata) { item in
+          storedSourceState(item)
+        }
+      }
+    }
+    .padding(DesignTokens.spacingSM)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+  }
+
+  private var requestedPermissionsView: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+      Label(
+        "Requested ESI permissions",
+        systemImage: "checklist"
+      )
+      .font(.title2.bold())
+
+      Text(
+        "This overview explains which permissions EVE Nexus requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain."
+      )
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      ScrollView {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+          ForEach(EVEScope.versionOne.sorted(), id: \.self) { scope in
+            VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+              Text(scope)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+              Text(requestedScopePurpose(scope))
+                .font(.body)
+              Label(
+                AppLocalization.format(
+                  "Used by: %@",
+                  requestedScopeModules(scope)
+                ),
+                systemImage: "square.grid.2x2"
+              )
+              .font(.caption)
+              .foregroundStyle(DesignTokens.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(DesignTokens.spacingSM)
+            .background(DesignTokens.elevated)
+            .clipShape(
+              RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+            )
+          }
+        }
+      }
+
+      HStack {
+        Spacer()
+        Button("Close") {
+          isShowingRequestedPermissions = false
+        }
+        .buttonStyle(.borderedProminent)
+        .keyboardShortcut(.defaultAction)
+        .accessibilityIdentifier("characters.authorization.close-permissions")
+      }
+    }
+    .padding(DesignTokens.spacingLG)
+    .frame(minWidth: 680, minHeight: 620)
+  }
+
+  private func requestedScopePurpose(_ scope: String) -> String {
+    switch scope {
+    case "esi-assets.read_assets.v1":
+      AppLocalization.text("Read the character's personal assets.")
+    case CorporationAssetSyncService.assetScope:
+      AppLocalization.text(
+        "Read corporation assets when this character has the Director role."
+      )
+    case CorporationAssetSyncService.rolesScope:
+      AppLocalization.text(
+        "Check Director access for corporation assets and Accountant access for corporation wallets."
+      )
+    case CorporationAssetSyncService.divisionsScope:
+      AppLocalization.text(
+        "Read the names of the corporation's hangar divisions."
+      )
+    case PrivateContractSyncService.requiredScope:
+      AppLocalization.text(
+        "Read the character's own private item, auction and courier contracts for net-worth valuation."
+      )
+    case CorporationWalletSyncService.walletScope:
+      AppLocalization.text(
+        "Read corporation wallet balances when this character has an Accountant role."
+      )
+    case "esi-characters.read_blueprints.v1":
+      AppLocalization.text("Read owned blueprint originals and copies.")
+    case "esi-characters.read_standings.v1":
+      AppLocalization.text("Read standings used for market fees.")
+    case "esi-industry.read_character_jobs.v1":
+      AppLocalization.text("Read the character's industry jobs.")
+    case "esi-markets.read_character_orders.v1":
+      AppLocalization.text("Read the character's active market orders.")
+    case TradeHubMarketService.structureMarketScope:
+      AppLocalization.text(
+        "Read market orders in Player Structures accessible to this character."
+      )
+    case "esi-search.search_structures.v1":
+      AppLocalization.text("Search structures accessible to the character.")
+    case "esi-skills.read_skills.v1":
+      AppLocalization.text("Read trained skills used for planning.")
+    case "esi-universe.read_structures.v1":
+      AppLocalization.text("Read details of accessible player structures.")
+    case "esi-wallet.read_character_wallet.v1":
+      AppLocalization.text("Read the character's wallet balance.")
+    default:
+      AppLocalization.text("Required by a current EVE Nexus feature.")
+    }
+  }
+
+  private func requestedScopeModules(_ scope: String) -> String {
+    let moduleKeys: [String] =
+      switch scope {
+      case "esi-assets.read_assets.v1":
+        ["Assets & Warehouse", "Production Planner", "Net Worth", "Profile"]
+      case CorporationAssetSyncService.assetScope:
+        ["Assets & Warehouse", "Production Planner", "Net Worth"]
+      case CorporationAssetSyncService.rolesScope:
+        ["Assets & Warehouse", "Net Worth"]
+      case CorporationAssetSyncService.divisionsScope:
+        ["Assets & Warehouse"]
+      case PrivateContractSyncService.requiredScope:
+        ["Net Worth"]
+      case CorporationWalletSyncService.walletScope:
+        ["Net Worth"]
+      case "esi-characters.read_blueprints.v1":
+        ["Blueprints", "Production Planner", "Market Browser"]
+      case "esi-characters.read_standings.v1":
+        ["Profile", "Production Planner", "Market Browser"]
+      case "esi-industry.read_character_jobs.v1":
+        ["Industry Jobs", "Dashboard", "Profile"]
+      case "esi-markets.read_character_orders.v1":
+        ["Net Worth", "Profile"]
+      case TradeHubMarketService.structureMarketScope:
+        ["Market Browser", "Production Planner", "Moon material purchase analysis"]
+      case "esi-search.search_structures.v1":
+        ["Profile"]
+      case "esi-skills.read_skills.v1":
+        ["Profile", "Production Planner", "Market Browser"]
+      case "esi-universe.read_structures.v1":
+        [
+          "Profile", "Assets & Warehouse", "Market Browser",
+          "Moon material purchase analysis",
+        ]
+      case "esi-wallet.read_character_wallet.v1":
+        ["Wallet", "Net Worth"]
+      default:
+        ["EVE Nexus"]
+      }
+    return moduleKeys.map { AppLocalization.text($0) }.joined(separator: ", ")
+  }
+
   private func authorization(
     for character: StoredCharacter
   ) -> AuthorizationSnapshot? {
@@ -1679,13 +4388,14 @@ struct CharactersView: View {
     )
   }
 
-  private func connect() async {
+  private func connect(expectedCharacterID: Int64? = nil) async {
     isConnecting = true
     localError = nil
     defer { isConnecting = false }
     do {
       let authorization = try await runtime.connectCharacter(
-        clientID: clientID
+        clientID: clientID,
+        expectedCharacterID: expectedCharacterID
       )
       let wasStored = characters.contains {
         $0.characterID == authorization.characterID
@@ -1696,7 +4406,13 @@ struct CharactersView: View {
         ? "\(authorization.characterName) was reauthorized."
         : "\(authorization.characterName) was added."
     } catch {
-      localError = userMessage(for: error)
+      if case AuthError.keychain(_) = error {
+        localError = keychainSaveMessage(for: error)
+      } else if case AuthError.keychainFallback = error {
+        localError = keychainSaveMessage(for: error)
+      } else {
+        localError = userMessage(for: error)
+      }
     }
   }
 
@@ -1726,6 +4442,18 @@ struct CharactersView: View {
         clientID: clientID
       )
       try modelContext.deleteESISnapshotMetadata(characterID: characterID)
+      try modelContext.deleteAppSetting(
+        key: AppSettingKey.industryJobs(characterID: characterID)
+      )
+      try modelContext.deleteAppSetting(
+        key: AppSettingKey.openOrders(characterID: characterID)
+      )
+      try modelContext.deleteAppSetting(
+        key: AppSettingKey.privateContracts(characterID: characterID)
+      )
+      try modelContext.deleteAppSetting(
+        key: AppSettingKey.corporationWallet(characterID: characterID)
+      )
       modelContext.delete(character)
       try modelContext.save()
       if selectedScopeCharacterID == characterID {
@@ -1821,22 +4549,175 @@ struct CharactersView: View {
   }
 
   private func applyLatestSync(to character: StoredCharacter) throws {
-    character.capabilitySnapshot = try runtime.lastCharacterSync.map {
-      try JSONEncoder().encode($0.capabilities)
+    guard let latest = runtime.lastCharacterSync else { return }
+    let previousCapabilities = character.capabilitySnapshot.flatMap {
+      try? JSONDecoder().decode(CharacterCapabilitySnapshot.self, from: $0)
     }
-    character.assetSnapshot = try runtime.lastCharacterSync.map {
-      try JSONEncoder().encode($0.assets)
-    }
-    character.blueprintSnapshot = try runtime.lastCharacterSync.map {
-      try JSONEncoder().encode($0.blueprints)
-    }
-    character.walletBalanceSnapshot = try runtime.lastCharacterSync.map {
-      try JSONEncoder().encode($0.walletBalance)
-    }
+    let retainedCapabilities = CharacterCapabilitySnapshot(
+      id: latest.capabilities.id,
+      character: latest.capabilities.character,
+      cloneState: latest.capabilities.cloneState,
+      skills: latest.capabilities.skills.retainingLastKnownValue(
+        from: previousCapabilities?.skills
+      ),
+      standings: latest.capabilities.standings.retainingLastKnownValue(
+        from: previousCapabilities?.standings
+      )
+    )
+    character.capabilitySnapshot = try JSONEncoder().encode(
+      retainedCapabilities
+    )
+    character.assetSnapshot = try retainedSnapshotData(
+      latest.assets,
+      previousData: character.assetSnapshot
+    )
+    let previousCorporationID = character.corporationID
+    let latestCorporationID = latest.capabilities.character.corporationID
+    let canRetainCorporationSnapshot =
+      previousCorporationID == latestCorporationID
+    character.corporationID = latestCorporationID
+    character.corporationName =
+      latest.corporationAssets.value?.corporationName
+      ?? (canRetainCorporationSnapshot ? character.corporationName : nil)
+    character.corporationAssetSnapshot = try retainedSnapshotData(
+      latest.corporationAssets,
+      previousData: canRetainCorporationSnapshot
+        ? character.corporationAssetSnapshot : nil
+    )
+    character.blueprintSnapshot = try retainedSnapshotData(
+      latest.blueprints,
+      previousData: character.blueprintSnapshot
+    )
+    try persistIndustryJobs(
+      latest.jobs,
+      characterID: character.characterID
+    )
+    try persistOpenOrders(
+      latest.openOrders,
+      characterID: character.characterID
+    )
+    try persistPrivateContracts(
+      latest.privateContracts,
+      characterID: character.characterID
+    )
+    try persistCorporationWallet(
+      latest.corporationWallet,
+      characterID: character.characterID,
+      corporationID: latestCorporationID,
+      canRetainPrevious: canRetainCorporationSnapshot
+    )
+    character.walletBalanceSnapshot = try retainedSnapshotData(
+      latest.walletBalance,
+      previousData: character.walletBalanceSnapshot
+    )
     character.lastSyncAt = .now
-    character.walletLastSyncAt =
-      runtime.lastCharacterSync?.walletBalance.value == nil ? nil : .now
+    if latest.walletBalance.value != nil {
+      character.walletLastSyncAt = latest.walletBalance.source.capturedAt
+    }
     try persistLatestSnapshotMetadata()
+  }
+
+  private func retainedSnapshotData<Value: Codable & Sendable>(
+    _ latest: Sourced<Value>,
+    previousData: Data?
+  ) throws -> Data {
+    let previous = previousData.flatMap {
+      try? JSONDecoder().decode(Sourced<Value>.self, from: $0)
+    }
+    return try JSONEncoder().encode(
+      latest.retainingLastKnownValue(from: previous)
+    )
+  }
+
+  private func persistIndustryJobs(
+    _ latest: Sourced<[ESIIndustryJobDTO]>,
+    characterID: Int64
+  ) throws {
+    let key = AppSettingKey.industryJobs(characterID: characterID)
+    let previous = try modelContext.appSettingValue(for: key).flatMap {
+      Data(base64Encoded: $0)
+    }.flatMap {
+      try? JSONDecoder().decode(
+        Sourced<[ESIIndustryJobDTO]>.self,
+        from: $0
+      )
+    }
+    let retained = latest.retainingLastKnownValue(from: previous)
+    let encoded = try JSONEncoder().encode(retained)
+    try modelContext.upsertAppSetting(
+      key: key,
+      value: encoded.base64EncodedString()
+    )
+  }
+
+  private func persistOpenOrders(
+    _ latest: Sourced<[ESICharacterOrderDTO]>,
+    characterID: Int64
+  ) throws {
+    let key = AppSettingKey.openOrders(characterID: characterID)
+    let previous = try modelContext.appSettingValue(for: key).flatMap {
+      Data(base64Encoded: $0)
+    }.flatMap {
+      try? JSONDecoder().decode(
+        Sourced<[ESICharacterOrderDTO]>.self,
+        from: $0
+      )
+    }
+    let retained = latest.retainingLastKnownValue(from: previous)
+    let encoded = try JSONEncoder().encode(retained)
+    try modelContext.upsertAppSetting(
+      key: key,
+      value: encoded.base64EncodedString()
+    )
+  }
+
+  private func persistPrivateContracts(
+    _ latest: Sourced<PrivateContractSnapshot>,
+    characterID: Int64
+  ) throws {
+    let key = AppSettingKey.privateContracts(characterID: characterID)
+    let previous = try modelContext.appSettingValue(for: key).flatMap {
+      Data(base64Encoded: $0)
+    }.flatMap {
+      try? JSONDecoder().decode(
+        Sourced<PrivateContractSnapshot>.self,
+        from: $0
+      )
+    }
+    let retained = latest.retainingLastKnownValue(from: previous)
+    let encoded = try JSONEncoder().encode(retained)
+    try modelContext.upsertAppSetting(
+      key: key,
+      value: encoded.base64EncodedString()
+    )
+  }
+
+  private func persistCorporationWallet(
+    _ latest: Sourced<CorporationWalletSnapshot>,
+    characterID: Int64,
+    corporationID: Int64?,
+    canRetainPrevious: Bool
+  ) throws {
+    let key = AppSettingKey.corporationWallet(characterID: characterID)
+    let storedPrevious = try modelContext.appSettingValue(for: key).flatMap {
+      Data(base64Encoded: $0)
+    }.flatMap {
+      try? JSONDecoder().decode(
+        Sourced<CorporationWalletSnapshot>.self,
+        from: $0
+      )
+    }
+    let previous =
+      canRetainPrevious
+        && storedPrevious?.value?.corporationID == corporationID
+      ? storedPrevious
+      : nil
+    let retained = latest.retainingLastKnownValue(from: previous)
+    let encoded = try JSONEncoder().encode(retained)
+    try modelContext.upsertAppSetting(
+      key: key,
+      value: encoded.base64EncodedString()
+    )
   }
 
   private func missingScopeCount(for character: StoredCharacter) -> Int {
@@ -1847,9 +4728,16 @@ struct CharactersView: View {
 
   private func scopeStatus(for character: StoredCharacter) -> String {
     let missing = missingScopeCount(for: character)
-    return missing == 0
-      ? "Permissions current"
-      : "\(missing) permission\(missing == 1 ? "" : "s") missing"
+    if missing == 0 {
+      return AppLocalization.text("Permissions current")
+    }
+    if missing == 1 {
+      return AppLocalization.text("1 permission missing")
+    }
+    return AppLocalization.format(
+      "%lld permissions missing",
+      Int64(missing)
+    )
   }
 
   private func userMessage(for error: Error) -> String {
@@ -1877,9 +4765,9 @@ struct CharactersView: View {
           ),
           Int64(status)
         )
-      case .keychain(_):
+      case .keychain(_), .keychainFallback:
         return AppLocalization.text(
-          "The EVE refresh token could not be read from the macOS Keychain."
+          "The EVE refresh token could not be read from the macOS Keychain. Use Update permissions for this character; Sync and Sync all cannot replace a missing or inaccessible token."
         )
       case .callbackDenied(_):
         return AppLocalization.text(
@@ -1937,21 +4825,29 @@ struct CharactersView: View {
     )
   }
 
+  private func keychainSaveMessage(for error: Error) -> String {
+    switch error {
+    case AuthError.keychainFallback(let protected, let legacy):
+      return AppLocalization.format(
+        "This build has no stable code-signing identity, so the protected macOS Keychain rejected it (status %lld). The fallback login Keychain also failed (status %lld). In Xcode, select an Apple Development or Personal Team identity instead of Sign to Run Locally, rebuild, and authorize again. No token content was logged.",
+        Int64(protected),
+        Int64(legacy)
+      )
+    case AuthError.keychain(let status):
+      return AppLocalization.format(
+        "The new EVE authorization could not be saved in the macOS Keychain (status %lld). No token content was logged.",
+        Int64(status)
+      )
+    default:
+      return AppLocalization.text(
+        "The new EVE authorization could not be saved in the macOS Keychain."
+      )
+    }
+  }
+
   private var latestIncompleteDomainCount: Int {
     guard let sync = runtime.lastCharacterSync else { return 0 }
-    let states = [
-      sync.capabilities.skills.state,
-      sync.capabilities.standings.state,
-      sync.assets.state,
-      sync.blueprints.state,
-      sync.jobs.state,
-      sync.openOrders.state,
-      sync.orderHistory.state,
-      sync.walletBalance.state,
-      sync.walletJournal.state,
-      sync.walletTransactions.state,
-    ]
-    return states.filter { $0 != .fresh }.count
+    return CharacterSyncStatusAssessment.actionableIssueCount(in: sync)
   }
 
   private func completionMessage(for characterName: String) -> String {
@@ -2015,6 +4911,11 @@ struct CharactersView: View {
       sourced: snapshot.assets
     )
     try insertMetadata(
+      domain: "corporation-assets",
+      characterID: snapshot.authorization.characterID,
+      sourced: snapshot.corporationAssets
+    )
+    try insertMetadata(
       domain: "industry-jobs",
       characterID: snapshot.authorization.characterID,
       sourced: snapshot.jobs
@@ -2030,6 +4931,11 @@ struct CharactersView: View {
       sourced: snapshot.orderHistory
     )
     try insertMetadata(
+      domain: "private-contracts",
+      characterID: snapshot.authorization.characterID,
+      sourced: snapshot.privateContracts
+    )
+    try insertMetadata(
       domain: "wallet-balance",
       characterID: snapshot.authorization.characterID,
       sourced: snapshot.walletBalance
@@ -2043,6 +4949,11 @@ struct CharactersView: View {
       domain: "wallet-transactions",
       characterID: snapshot.authorization.characterID,
       sourced: snapshot.walletTransactions
+    )
+    try insertMetadata(
+      domain: "corporation-wallet",
+      characterID: snapshot.authorization.characterID,
+      sourced: snapshot.corporationWallet
     )
   }
 
@@ -2063,20 +4974,209 @@ struct CharactersView: View {
     )
   }
 
-  private func sourceState(
+  private func sourceState<Value: Codable & Sendable>(
     _ title: String,
-    _ state: DataFreshness
+    _ domain: String,
+    _ sourced: Sourced<Value>
   ) -> some View {
-    LabeledContent(title) {
-      Text(LocalizedStringKey(state.rawValue.uppercased()))
+    statusRow(
+      title: title,
+      domain: domain,
+      state: sourced.state,
+      diagnostics: sourced.diagnostics
+    )
+  }
+
+  private func storedSourceState(
+    _ metadata: StoredESISnapshotMetadata
+  ) -> some View {
+    statusRow(
+      title: domainTitle(metadata.domain),
+      domain: metadata.domain,
+      state: DataFreshness(rawValue: metadata.freshness) ?? .unavailable,
+      diagnostics: metadata.diagnostics
+    )
+  }
+
+  private func statusRow(
+    title: String,
+    domain: String,
+    state: DataFreshness,
+    diagnostics: [String]
+  ) -> some View {
+    let notApplicable = CharacterSyncStatusAssessment.isRoleNotApplicable(
+      domain: domain,
+      diagnostics: diagnostics
+    )
+    return VStack(alignment: .leading, spacing: 2) {
+      LabeledContent(title) {
+        Text(
+          notApplicable
+            ? AppLocalization.text("NOT APPLICABLE")
+            : AppLocalization.text(state.rawValue.uppercased())
+        )
         .font(.caption.bold())
         .foregroundStyle(
-          state == .fresh
-            ? DesignTokens.positive
-            : state == .partial || state == .stale
-              ? DesignTokens.caution
-              : DesignTokens.negative
+          notApplicable
+            ? DesignTokens.textSecondary
+            : state == .fresh
+              ? DesignTokens.positive
+              : state == .partial || state == .stale
+                ? DesignTokens.caution
+                : DesignTokens.negative
         )
+      }
+      if let explanation = statusExplanation(
+        domain: domain,
+        state: state,
+        diagnostics: diagnostics
+      ) {
+        Text(explanation)
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+  }
+
+  private func metadata(
+    for character: StoredCharacter
+  ) -> [StoredESISnapshotMetadata] {
+    let order = Dictionary(
+      uniqueKeysWithValues: domainOrder.enumerated().map { ($1, $0) }
+    )
+    return
+      esiSnapshotMetadata
+      .filter { $0.characterID == character.characterID }
+      .sorted {
+        (order[$0.domain] ?? Int.max, $0.domain)
+          < (order[$1.domain] ?? Int.max, $1.domain)
+      }
+  }
+
+  private func actionableMetadata(
+    for character: StoredCharacter
+  ) -> [StoredESISnapshotMetadata] {
+    metadata(for: character).filter {
+      $0.freshness != DataFreshness.fresh.rawValue
+        && !CharacterSyncStatusAssessment.isRoleNotApplicable(
+          domain: $0.domain,
+          diagnostics: $0.diagnostics
+        )
+    }
+  }
+
+  private func dataStatusSummary(for character: StoredCharacter) -> String? {
+    let metadata = metadata(for: character)
+    guard !metadata.isEmpty else { return nil }
+    let issues = actionableMetadata(for: character)
+    if issues.isEmpty {
+      return AppLocalization.text("Personal ESI data current")
+    }
+    if issues.count == 1 {
+      return AppLocalization.format(
+        "1 data area needs attention: %@",
+        domainTitle(issues[0].domain)
+      )
+    }
+    return AppLocalization.format(
+      "%lld data areas need attention",
+      Int64(issues.count)
+    )
+  }
+
+  private var domainOrder: [String] {
+    [
+      "skills", "standings", "blueprints", "assets",
+      "private-contracts", "industry-jobs", "open-orders",
+      "wallet-balance", "corporation-assets", "corporation-wallet",
+      "order-history", "wallet-journal", "wallet-transactions",
+    ]
+  }
+
+  private func domainTitle(_ domain: String) -> String {
+    switch domain {
+    case "skills": AppLocalization.text("Skills")
+    case "standings": AppLocalization.text("Standings")
+    case "blueprints": AppLocalization.text("Blueprints")
+    case "assets": AppLocalization.text("Assets")
+    case "corporation-assets": AppLocalization.text("Corporation assets")
+    case "private-contracts": AppLocalization.text("Private contracts")
+    case "corporation-wallet": AppLocalization.text("Corporation wallet")
+    case "industry-jobs": AppLocalization.text("Industry jobs")
+    case "open-orders", "order-history": AppLocalization.text("Orders")
+    case "wallet-balance", "wallet-journal", "wallet-transactions":
+      AppLocalization.text("Wallet")
+    default: domain
+    }
+  }
+
+  private func statusExplanation(
+    domain: String,
+    state: DataFreshness,
+    diagnostics: [String]
+  ) -> String? {
+    if diagnostics.contains("esi.corporation-assets.director-required") {
+      return AppLocalization.text(
+        "Not applicable to this character: ESI does not report the Director role required for Corporation assets."
+      )
+    }
+    if diagnostics.contains("esi.corporation-wallet.accountant-required") {
+      return AppLocalization.text(
+        "Not applicable to this character: ESI does not report an Accountant or Junior Accountant role required for the Corporation wallet."
+      )
+    }
+    if let count = diagnosticCount(
+      prefix: "esi.character-assets.unresolved-structure-names:",
+      diagnostics: diagnostics
+    ) {
+      return AppLocalization.format(
+        "The personal Assets scope is granted, but %lld Player Structure location names could not be resolved. The assets themselves remain stored.",
+        Int64(count)
+      )
+    }
+    if let count = diagnosticCount(
+      prefix: "esi.structure-resolution.inaccessible:",
+      diagnostics: diagnostics
+    ) {
+      return AppLocalization.format(
+        "%lld Player Structure locations are no longer visible to this character or deny detail access. The assets themselves remain stored.",
+        Int64(count)
+      )
+    }
+    if diagnostics.contains(where: { $0.contains("scope-missing:") }) {
+      return AppLocalization.text(
+        "A required SSO permission is missing. Expand this character's permissions and use Update permissions."
+      )
+    }
+    if state == .stale {
+      return AppLocalization.text(
+        "The last known data is retained because the newest refresh did not complete."
+      )
+    }
+    if state == .partial {
+      return AppLocalization.text(
+        "Some ESI data or supporting names could not be loaded; available data was retained."
+      )
+    }
+    if state == .forbidden {
+      return AppLocalization.text(
+        "EVE ESI denied this request. Check this character's permission and corporation role details."
+      )
+    }
+    if state == .unavailable {
+      return AppLocalization.text(
+        "This ESI data was temporarily unavailable during the last synchronization."
+      )
+    }
+    return nil
+  }
+
+  private func diagnosticCount(
+    prefix: String,
+    diagnostics: [String]
+  ) -> Int? {
+    diagnostics.first { $0.hasPrefix(prefix) }.flatMap {
+      Int($0.dropFirst(prefix.count))
     }
   }
 }
@@ -2086,7 +5186,6 @@ struct WalletView: View {
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
-  @Query private var settings: [AppSetting]
   @State private var refreshingCharacterIDs: Set<Int64> = []
   @State private var refreshErrors: [Int64: String] = [:]
 
@@ -2146,7 +5245,8 @@ struct WalletView: View {
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           Text(totalText)
-            .font(.system(size: 32, weight: .semibold, design: .rounded))
+            .font(.largeTitle.weight(.semibold))
+            .fontDesign(.rounded)
             .monospacedDigit()
             .foregroundStyle(DesignTokens.highlight)
             .accessibilityIdentifier("wallet.total")
@@ -2254,7 +5354,7 @@ struct WalletView: View {
   }
 
   private var clientID: String {
-    settings.first(where: { $0.key == "eve.clientID" })?.value ?? ""
+    EVEConstants.ssoClientID
   }
 
   private var portfolio: WalletPortfolioSnapshot {
@@ -2326,8 +5426,14 @@ struct WalletView: View {
         authorization: authorization,
         clientID: clientID
       )
-      character.walletBalanceSnapshot = try JSONEncoder().encode(balance)
-      character.walletLastSyncAt = balance.source.capturedAt
+      let previous = character.walletBalanceSnapshot.flatMap {
+        try? JSONDecoder().decode(Sourced<Double>.self, from: $0)
+      }
+      let retained = balance.retainingLastKnownValue(from: previous)
+      character.walletBalanceSnapshot = try JSONEncoder().encode(retained)
+      if balance.value != nil {
+        character.walletLastSyncAt = balance.source.capturedAt
+      }
       try modelContext.upsertESISnapshotMetadata(
         characterID: character.characterID,
         domain: "wallet-balance",
@@ -2376,65 +5482,31 @@ struct WalletView: View {
 
 struct DataSettingsView: View {
   @EnvironmentObject private var runtime: RuntimeState
-  @Query private var settings: [AppSetting]
   @Query private var activationPointers: [StoredSDEActivationPointer]
   @Environment(\.modelContext) private var modelContext
-  @State private var clientID = ""
-  @State private var ownerContact = ""
   @State private var showInstallConfirmation = false
   @State private var schemaReviewConfirmed = false
-  @State private var ownerContactMessage: String?
-  @State private var settingsMessage: String?
   @State private var settingsError: String?
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-        Text("Data & Settings").font(.largeTitle.bold())
+        Text("SDE").font(.largeTitle.bold())
         Panel(title: "Static Data Export") {
           LabeledContent(
             "Active catalog",
-            value: runtime.activeSDEBuild.map {
-              "Build \($0)"
-            } ?? "Not installed"
+            value: runtime.activeSDEBuild == nil ? "Not installed" : "Installed"
           )
-          LabeledContent(
-            "Lifecycle", value: "Preview → Confirm → Backup → Stage → Validate → Activate")
-          TextField(
-            "Owner contact for CCP User-Agent",
-            text: $ownerContact
-          )
-          .textFieldStyle(.roundedBorder)
-          .onSubmit {
-            _ = saveOwnerContact()
-          }
-          .onChange(of: ownerContact) {
-            ownerContactMessage = nil
-          }
-          Text(
-            "This contact is saved locally on this Mac and sent to CCP only as part of SDE requests."
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
           HStack {
-            Button("Save contact") {
-              _ = saveOwnerContact()
-            }
-            .disabled(normalizedOwnerContact.isEmpty || runtime.isWorking)
             Button("Check for SDE update") {
               checkSDEUpdate()
             }
-            .disabled(normalizedOwnerContact.isEmpty || runtime.isWorking)
+            .disabled(runtime.isWorking)
             if runtime.isWorking {
               ProgressView().controlSize(.small)
               Text(runtime.installationPhase ?? runtime.statusMessage)
                 .font(.caption.monospaced())
             }
-          }
-          if let ownerContactMessage {
-            Text(ownerContactMessage)
-              .font(.caption)
-              .foregroundStyle(DesignTokens.positive)
           }
           if let preview = runtime.updatePreview {
             Divider()
@@ -2445,20 +5517,8 @@ struct DataSettingsView: View {
               )
             }
             LabeledContent(
-              "Official build",
-              value: String(preview.officialBuild)
-            )
-            LabeledContent(
               "Released",
               value: preview.releasedAt.formatted()
-            )
-            LabeledContent(
-              "Schema entries",
-              value: String(preview.schemaEntryCount)
-            )
-            LabeledContent(
-              "Latest CCP schema boundary",
-              value: String(preview.schemaHighestAfterBuild)
             )
             Label(
               updateAvailabilityMessage(preview),
@@ -2469,7 +5529,7 @@ struct DataSettingsView: View {
             Label(
               preview.requiresSchemaReview
                 ? "Schema review confirmation is required."
-                : "No schema boundary newer than the installed build was reported by CCP.",
+                : "No additional schema review is required for this update.",
               systemImage: preview.requiresSchemaReview
                 ? "exclamationmark.shield"
                 : "checkmark.shield"
@@ -2483,7 +5543,7 @@ struct DataSettingsView: View {
                 )!
               )
               Toggle(
-                "I reviewed the CCP schema changelog through build \(preview.officialBuild).",
+                "I reviewed the CCP schema changelog for this update.",
                 isOn: $schemaReviewConfirmed
               )
             }
@@ -2503,69 +5563,15 @@ struct DataSettingsView: View {
             Text(settingsError).foregroundStyle(DesignTokens.negative)
           }
         }
-        Panel(title: "ESI") {
-          TextField("EVE application client ID", text: $clientID)
-            .textFieldStyle(.roundedBorder)
-          LabeledContent(
-            "Callback",
-            value: EVEConstants.callbackURL.absoluteString
-          )
-          LabeledContent(
-            "Compatibility date",
-            value: EVEConstants.esiCompatibilityDate
-          )
-          Button("Save client ID") {
-            saveClientID()
-          }
-          .disabled(clientID.trimmingCharacters(in: .whitespaces).isEmpty)
-          if let settingsMessage {
-            Text(settingsMessage)
-              .font(.caption)
-              .foregroundStyle(DesignTokens.positive)
-          }
-          Divider()
-          LabeledContent(
-            "Refresh-token storage",
-            value: "macOS Keychain"
-          )
-          LabeledContent(
-            "Runtime access",
-            value: "Cached per character"
-          )
-          Text(
-            "The app never stores EVE refresh tokens in SwiftData or plain files. It uses the modern Data Protection Keychain when the app has a stable signing identity and otherwise keeps the legacy Keychain compatibility path. Tokens are read once and reused during the running app session."
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-        }
-        Panel(title: "Fixed market") {
-          LabeledContent("Region", value: "The Forge • 10000002")
-          LabeledContent("System", value: "Jita • 30000142")
-          LabeledContent("Station", value: "Jita IV-4 • 60003760")
-          Text(
-            "Adjusted prices are used only for EIV and job fees, never as market quotes."
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-        }
       }
       .padding(DesignTokens.spacingLG)
     }
-    .navigationTitle(AppLocalization.text("Data & Settings"))
+    .navigationTitle(AppLocalization.text("SDE"))
     .onAppear {
-      clientID =
-        settings.first(where: { $0.key == "eve.clientID" })?
-        .value ?? ""
-      ownerContact =
-        settings.first(
-          where: { $0.key == "sde.ownerContact" }
-        )?.value ?? ""
-    }
-    .onDisappear {
-      persistOwnerContactOnExit()
+      Task { await reconcileSDEActivationPointer() }
     }
     .confirmationDialog(
-      "Install current SDE build?",
+      "Install static data update?",
       isPresented: $showInstallConfirmation,
       titleVisibility: .visible
     ) {
@@ -2580,91 +5586,9 @@ struct DataSettingsView: View {
     }
   }
 
-  private func saveClientID() {
-    let normalized = clientID.trimmingCharacters(
-      in: .whitespacesAndNewlines
-    )
-    guard !normalized.isEmpty,
-      normalized.utf8.count <= 1_024,
-      normalized.unicodeScalars.allSatisfy({
-        $0.value >= 0x21 && $0.value <= 0x7e
-      })
-    else {
-      settingsMessage = nil
-      settingsError =
-        "The EVE client ID must contain only visible ASCII characters and be no longer than 1,024 bytes."
-      return
-    }
-    do {
-      try saveSetting(key: "eve.clientID", value: normalized)
-      clientID = normalized
-      settingsError = nil
-      settingsMessage = "The EVE client ID was saved locally."
-    } catch {
-      settingsMessage = nil
-      settingsError =
-        "The EVE client ID could not be saved. The previous value remains active."
-    }
-  }
-
-  private var normalizedOwnerContact: String {
-    ownerContact.trimmingCharacters(in: .whitespacesAndNewlines)
-  }
-
-  private var isOwnerContactValid: Bool {
-    let normalized = normalizedOwnerContact
-    return !normalized.isEmpty
-      && normalized.utf8.count <= 512
-      && normalized.unicodeScalars.allSatisfy {
-        $0.value >= 32 && $0.value <= 126
-          && $0 != "(" && $0 != ")"
-      }
-  }
-
-  @discardableResult
-  private func saveOwnerContact(showMessage: Bool = true) -> Bool {
-    let normalized = normalizedOwnerContact
-    guard isOwnerContactValid else {
-      if showMessage {
-        ownerContactMessage = nil
-        settingsError =
-          "The CCP User-Agent contact must use visible ASCII characters, must not contain parentheses, and must be no longer than 512 bytes."
-      }
-      return false
-    }
-    do {
-      try saveSetting(key: "sde.ownerContact", value: normalized)
-      ownerContact = normalized
-      settingsError = nil
-      if showMessage {
-        ownerContactMessage =
-          "The CCP User-Agent contact was saved locally."
-      }
-      return true
-    } catch {
-      if showMessage {
-        ownerContactMessage = nil
-        settingsError =
-          "The CCP User-Agent contact could not be saved. The previous value remains active."
-      }
-      return false
-    }
-  }
-
-  private func persistOwnerContactOnExit() {
-    let stored =
-      settings.first(where: { $0.key == "sde.ownerContact" })?
-      .value ?? ""
-    guard !normalizedOwnerContact.isEmpty,
-      normalizedOwnerContact != stored
-    else { return }
-    _ = saveOwnerContact(showMessage: false)
-  }
-
   private func checkSDEUpdate() {
-    guard saveOwnerContact() else { return }
     schemaReviewConfirmed = false
-    Task { await runtime.checkSDE(ownerContact: ownerContact) }
+    Task { await runtime.checkSDE() }
   }
 
   private func updateAvailabilityMessage(
@@ -2674,27 +5598,21 @@ struct DataSettingsView: View {
     case .notInstalled:
       "No SDE catalog is installed yet."
     case .updateAvailable:
-      "A newer official SDE build is available."
+      "A newer official static data update is available."
     case .current:
-      "The installed SDE catalog matches the current official build."
+      "The installed static data catalog is current."
     case .localBuildAhead:
-      "The installed build is newer than the official metadata response. No downgrade will be offered."
+      "The installed static data is newer than the official response. No downgrade will be offered."
     }
   }
 
   private func beginSDEInstallation() {
-    guard saveOwnerContact(showMessage: false) else {
-      settingsError =
-        "The owner contact could not be saved, so the SDE installation was not started."
-      return
-    }
     settingsError = nil
     Task { await installSDEAndRecordActivation() }
   }
 
   private func installSDEAndRecordActivation() async {
     await runtime.installSDE(
-      ownerContact: ownerContact,
       schemaReviewConfirmed: schemaReviewConfirmed
     )
     guard runtime.errorMessage == nil,
@@ -2722,17 +5640,32 @@ struct DataSettingsView: View {
     }
   }
 
-  private func saveSetting(key: String, value: String) throws {
-    if let existing = settings.first(where: { $0.key == key }) {
-      existing.value = value
+  private func reconcileSDEActivationPointer() async {
+    await runtime.refreshActiveBuild()
+    guard let build = runtime.activeSDEBuild,
+      let hash = runtime.activeSDEContentSHA256
+    else { return }
+    if let pointer = activationPointers.first(where: { $0.key == "active" }) {
+      guard pointer.buildNumber != build || pointer.contentSHA256 != hash else {
+        return
+      }
+      pointer.buildNumber = build
+      pointer.contentSHA256 = hash
+      pointer.activatedAt = .now
     } else {
-      modelContext.insert(AppSetting(key: key, value: value))
+      modelContext.insert(
+        StoredSDEActivationPointer(
+          buildNumber: build,
+          contentSHA256: hash
+        )
+      )
     }
     do {
       try modelContext.save()
     } catch {
       modelContext.rollback()
-      throw error
+      settingsError =
+        "The active SDE catalog was found, but its local database pointer could not be reconciled. The catalog files were not changed."
     }
   }
 }

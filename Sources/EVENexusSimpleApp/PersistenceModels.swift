@@ -1,5 +1,97 @@
+import EVENexusCore
 import Foundation
 import SwiftData
+
+enum AppSettingKey {
+  static let ccpUserAgentOwnerContact = "sde.ownerContact"
+  static let industryJobsPrefix = "dashboard.industry-jobs."
+  static let openOrdersPrefix = "net-worth.open-orders."
+  static let privateContractsPrefix = "net-worth.private-contracts."
+  static let corporationWalletPrefix = "net-worth.corporation-wallet."
+  static let dashboardWealthHistory = "dashboard.wealth-history.v1"
+
+  static func industryJobs(characterID: Int64) -> String {
+    "\(industryJobsPrefix)\(characterID)"
+  }
+
+  static func openOrders(characterID: Int64) -> String {
+    "\(openOrdersPrefix)\(characterID)"
+  }
+
+  static func privateContracts(characterID: Int64) -> String {
+    "\(privateContractsPrefix)\(characterID)"
+  }
+
+  static func corporationWallet(characterID: Int64) -> String {
+    "\(corporationWalletPrefix)\(characterID)"
+  }
+}
+
+enum EVENexusSchemaV2: VersionedSchema {
+  static var versionIdentifier: Schema.Version {
+    Schema.Version(2, 0, 0)
+  }
+  static let models: [any PersistentModel.Type] = [
+    StoredProductionBasis.self,
+    StoredManufacturingProfile.self,
+    StoredReactionProfile.self,
+    StoredCharacter.self,
+    StoredStockTarget.self,
+    StoredPlan.self,
+    StoredPlannerDraft.self,
+    StoredProductionRecord.self,
+    StoredProductionOverviewRow.self,
+    StoredSDEActivationPointer.self,
+    StoredESISnapshotMetadata.self,
+    AppSetting.self,
+  ]
+}
+
+enum EVENexusMigrationPlan: SchemaMigrationPlan {
+  static let schemas: [any VersionedSchema.Type] = [
+    EVENexusSchemaV1.self,
+    EVENexusSchemaV2.self,
+  ]
+  static var stages: [MigrationStage] {
+    [
+      .lightweight(
+        fromVersion: EVENexusSchemaV1.self,
+        toVersion: EVENexusSchemaV2.self
+      )
+    ]
+  }
+}
+
+@MainActor
+enum AppPersistence {
+  static let schemaVersion = 2
+
+  static func open(paths: AppDataPaths) throws -> ModelContainer {
+    try paths.prepareDirectories()
+    _ = try PersistenceStoreSeeder.seedCanonicalStoreIfNeeded(paths: paths)
+    _ = try PersistenceSafetyBackup.createIfNeeded(
+      paths: paths,
+      schemaVersion: schemaVersion
+    )
+    let schema = Schema(versionedSchema: EVENexusSchemaV2.self)
+    let configuration = ModelConfiguration(
+      "EVENexusSimple",
+      schema: schema,
+      url: paths.swiftDataStoreURL,
+      cloudKitDatabase: .none
+    )
+    let container = try ModelContainer(
+      for: schema,
+      migrationPlan: EVENexusMigrationPlan.self,
+      configurations: [configuration]
+    )
+    try PersistenceRecovery.mergeIfPending(
+      into: container,
+      dataRoot: paths.dataRoot
+    )
+    return container
+  }
+}
 
 @Model
 final class StoredProductionBasis {
@@ -53,6 +145,9 @@ final class StoredCharacter {
   var authorizationSnapshot: Data
   var capabilitySnapshot: Data?
   var assetSnapshot: Data?
+  var corporationID: Int64?
+  var corporationName: String?
+  var corporationAssetSnapshot: Data?
   var blueprintSnapshot: Data?
   var walletBalanceSnapshot: Data?
   var lastSyncAt: Date?
@@ -64,6 +159,9 @@ final class StoredCharacter {
     authorizationSnapshot: Data,
     capabilitySnapshot: Data? = nil,
     assetSnapshot: Data? = nil,
+    corporationID: Int64? = nil,
+    corporationName: String? = nil,
+    corporationAssetSnapshot: Data? = nil,
     blueprintSnapshot: Data? = nil,
     walletBalanceSnapshot: Data? = nil,
     lastSyncAt: Date? = nil,
@@ -74,6 +172,9 @@ final class StoredCharacter {
     self.authorizationSnapshot = authorizationSnapshot
     self.capabilitySnapshot = capabilitySnapshot
     self.assetSnapshot = assetSnapshot
+    self.corporationID = corporationID
+    self.corporationName = corporationName
+    self.corporationAssetSnapshot = corporationAssetSnapshot
     self.blueprintSnapshot = blueprintSnapshot
     self.walletBalanceSnapshot = walletBalanceSnapshot
     self.lastSyncAt = lastSyncAt
@@ -338,6 +439,37 @@ final class AppSetting {
 }
 
 extension ModelContext {
+  func appSettingValue(for key: String) throws -> String? {
+    let descriptor = FetchDescriptor<AppSetting>(
+      predicate: #Predicate { $0.key == key }
+    )
+    return try fetch(descriptor).first?.value
+  }
+
+  func upsertAppSetting(key: String, value: String) throws {
+    let descriptor = FetchDescriptor<AppSetting>(
+      predicate: #Predicate { $0.key == key }
+    )
+    let matches = try fetch(descriptor)
+    if let setting = matches.first {
+      setting.value = value
+      for duplicate in matches.dropFirst() {
+        delete(duplicate)
+      }
+    } else {
+      insert(AppSetting(key: key, value: value))
+    }
+  }
+
+  func deleteAppSetting(key: String) throws {
+    let descriptor = FetchDescriptor<AppSetting>(
+      predicate: #Predicate { $0.key == key }
+    )
+    for setting in try fetch(descriptor) {
+      delete(setting)
+    }
+  }
+
   func upsertESISnapshotMetadata(
     characterID: Int64,
     domain: String,

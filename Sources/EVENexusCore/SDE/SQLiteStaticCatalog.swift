@@ -9,7 +9,18 @@ public enum StaticCatalogError: Error, Equatable, Sendable {
   case invalidPointer
 }
 
+public struct ItemTypeSearchResult: Identifiable, Equatable, Sendable {
+  public let id: Int64
+  public let name: String
+
+  public init(id: Int64, name: String) {
+    self.id = id
+    self.name = name
+  }
+}
+
 public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
+  MoonMaterialCatalogQuerying,
   StaticDataCatalogStoring, StaticDataCatalogStaging,
   StaticDataCatalogStreamingStaging, StaticDataCatalogStreamingStoring,
   ActiveSDEVersionReading, StaticDataCatalogRollingBack,
@@ -304,6 +315,81 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     )
   }
 
+  public func searchItemTypes(
+    matching query: String,
+    limit: Int = 30
+  ) async throws -> [ItemTypeSearchResult] {
+    let accepted = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard accepted.count >= 3 else { return [] }
+    let boundedLimit = min(max(1, limit), 100)
+    let escaped =
+      accepted
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "%", with: "\\%")
+      .replacingOccurrences(of: "_", with: "\\_")
+    let containsPattern = "%\(escaped)%"
+    let prefixPattern = "\(escaped)%"
+    let database = try activeDatabase()
+    let rows = try database.rows(
+      """
+      SELECT id, name
+      FROM item_types
+      WHERE published = 1
+        AND name LIKE \(sql(containsPattern)) ESCAPE '\\'
+      ORDER BY
+        CASE
+          WHEN name = \(sql(accepted)) COLLATE NOCASE THEN 0
+          WHEN name LIKE \(sql(prefixPattern)) ESCAPE '\\' THEN 1
+          ELSE 2
+        END,
+        length(name),
+        name COLLATE NOCASE
+      LIMIT \(boundedLimit)
+      """
+    )
+    return rows.compactMap { row in
+      guard row.count == 2,
+        let id = Int64(row[0] ?? ""),
+        let name = row[1]
+      else { return nil }
+      return ItemTypeSearchResult(id: id, name: name)
+    }
+  }
+
+  public func moonMaterials() async throws -> MoonMaterialCatalogSnapshot {
+    guard let pointer = try loadPointer() else {
+      throw StaticCatalogError.noActiveCatalog
+    }
+    let database = try activeDatabase()
+    let rows = try database.rows(
+      """
+      SELECT t.id, t.name
+      FROM item_types t
+      JOIN groups_table g ON g.id = t.group_id
+      WHERE g.name = 'Moon Materials'
+        AND t.published = 1
+      ORDER BY t.name COLLATE NOCASE
+      """
+    )
+    let materials: [MoonMaterial] = rows.compactMap { row in
+      guard row.count == 2,
+        let typeID = Int64(row[0] ?? ""),
+        let name = row[1]
+      else { return nil }
+      return MoonMaterial(id: typeID, name: name)
+    }
+    guard !materials.isEmpty else {
+      throw StaticCatalogError.database("missing-moon-materials")
+    }
+    return MoonMaterialCatalogSnapshot(
+      materials: materials,
+      source: SourceIdentity(
+        provider: "CCP SDE",
+        version: String(pointer.buildNumber)
+      )
+    )
+  }
+
   public func reactionRuleProfile() async throws -> ReactionRuleProfile? {
     let database = try activeDatabase()
     guard
@@ -356,6 +442,91 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     return result
   }
 
+  public func publicContractItemMetadata(
+    typeIDs: Set<Int64>
+  ) async throws -> [Int64: PublicContractItemTypeMetadata] {
+    guard !typeIDs.isEmpty else { return [:] }
+    let database = try activeDatabase()
+    var result: [Int64: PublicContractItemTypeMetadata] = [:]
+    let sortedTypeIDs = typeIDs.sorted()
+    for start in stride(from: 0, to: sortedTypeIDs.count, by: 500) {
+      let end = min(start + 500, sortedTypeIDs.count)
+      let chunk = sortedTypeIDs[start..<end]
+      let acceptedIDs = chunk.map(String.init).joined(separator: ",")
+      let rows = try database.rows(
+        """
+        SELECT t.id, t.name, g.id, g.name, c.id, c.name
+        FROM item_types t
+        JOIN groups_table g ON g.id = t.group_id
+        JOIN categories c ON c.id = t.category_id
+        WHERE t.id IN (\(acceptedIDs))
+          AND t.published = 1
+        """
+      )
+      for row in rows {
+        guard row.count == 6,
+          let typeID = Int64(row[0] ?? ""),
+          let typeName = row[1],
+          let groupID = Int64(row[2] ?? ""),
+          let groupName = row[3],
+          let categoryID = Int64(row[4] ?? ""),
+          let categoryName = row[5]
+        else { continue }
+        result[typeID] = PublicContractItemTypeMetadata(
+          typeID: typeID,
+          typeName: typeName,
+          groupID: groupID,
+          groupName: groupName,
+          categoryID: categoryID,
+          categoryName: categoryName
+        )
+      }
+    }
+    return result
+  }
+
+  public func industryClassifications(
+    typeIDs: Set<Int64>
+  ) async throws -> [Int64: IndustryItemClassification] {
+    let orderedIDs = typeIDs.filter { $0 > 0 }.sorted()
+    guard !orderedIDs.isEmpty else { return [:] }
+    let database = try activeDatabase()
+    var result: [Int64: IndustryItemClassification] = [:]
+    result.reserveCapacity(orderedIDs.count)
+    for start in stride(from: 0, to: orderedIDs.count, by: 500) {
+      try Task.checkCancellation()
+      let end = min(start + 500, orderedIDs.count)
+      let acceptedIDs = orderedIDs[start..<end]
+        .map(String.init)
+        .joined(separator: ",")
+      let rows = try database.rows(
+        """
+        SELECT t.id, c.name, g.name
+        FROM item_types t
+        JOIN groups_table g ON g.id = t.group_id
+        JOIN categories c ON c.id = t.category_id
+        WHERE t.id IN (\(acceptedIDs))
+        """
+      )
+      for row in rows {
+        guard row.count == 3,
+          let typeID = Int64(row[0] ?? ""),
+          let categoryName = row[1],
+          let groupName = row[2]
+        else { continue }
+        result[typeID] = IndustryItemClassification(
+          categoryName: categoryName,
+          groupName: groupName,
+          manufacturingCategory: Self.manufacturingCategory(
+            categoryName: categoryName,
+            groupName: groupName
+          )
+        )
+      }
+    }
+    return result
+  }
+
   public func packagedVolume(typeID: Int64) async throws -> Double? {
     let database = try activeDatabase()
     let row = try database.singleRow(
@@ -372,6 +543,28 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       volume >= 0
     else { return nil }
     return volume
+  }
+
+  public func packagedVolumes(typeIDs: Set<Int64>) async throws
+    -> [Int64: Double]
+  {
+    let accepted = typeIDs.filter { $0 > 0 }.sorted()
+    guard !accepted.isEmpty else { return [:] }
+    let database = try activeDatabase()
+    var result: [Int64: Double] = [:]
+    for start in stride(from: 0, to: accepted.count, by: 500) {
+      let ids = accepted[start..<min(start + 500, accepted.count)]
+        .map(String.init).joined(separator: ",")
+      for row in try database.rows(
+        "SELECT id, COALESCE(packaged_volume, volume) FROM item_types WHERE published = 1 AND id IN (\(ids))"
+      ) {
+        guard row.count == 2, let id = Int64(row[0] ?? ""),
+          let volume = Double(row[1] ?? ""), volume.isFinite, volume >= 0
+        else { continue }
+        result[id] = volume
+      }
+    }
+    return result
   }
 
   public func scienceSkills() async throws -> [ScienceSkillDefinition] {
@@ -857,6 +1050,16 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   public func productionDefinition(productTypeID: Int64) async throws
     -> BlueprintDefinition?
   {
+    try await productionDefinition(
+      productTypeID: productTypeID,
+      requiredActivity: nil
+    )
+  }
+
+  private func productionDefinition(
+    productTypeID: Int64,
+    requiredActivity: BlueprintActivityDefinition.Kind?
+  ) async throws -> BlueprintDefinition? {
     let database = try activeDatabase()
     let rows = try database.rows(
       """
@@ -877,6 +1080,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         AND blueprint_type.published = 1
         AND product_type.published = 1
         AND a.activity IN ('manufacturing','reaction','invention')
+        AND \(requiredActivity.map { "a.activity = \(sql($0.rawValue))" } ?? "1 = 1")
         AND NOT EXISTS (
           SELECT 1
           FROM blueprint_materials unresolved_material
@@ -953,6 +1157,69 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         version: String(active?.buildNumber ?? 0)
       )
     )
+  }
+
+  public func reactionDefinitions() async throws -> [BlueprintDefinition] {
+    try await completeDefinitions(activity: .reaction)
+  }
+
+  public func manufacturingDefinitions() async throws -> [BlueprintDefinition] {
+    try await completeDefinitions(activity: .manufacturing)
+  }
+
+  private func completeDefinitions(
+    activity: BlueprintActivityDefinition.Kind
+  ) async throws -> [BlueprintDefinition] {
+    let database = try activeDatabase()
+    let productRows = try database.rows(
+      """
+      SELECT p.item_type_id
+      FROM blueprint_activities a
+      JOIN blueprints b
+        ON b.blueprint_type_id = a.blueprint_type_id
+      JOIN blueprint_products p
+        ON p.blueprint_type_id = a.blueprint_type_id
+       AND p.activity = a.activity
+      JOIN item_types blueprint_type
+        ON blueprint_type.id = b.blueprint_type_id
+      JOIN item_types product_type
+        ON product_type.id = p.item_type_id
+      WHERE a.activity = \(sql(activity.rawValue))
+        AND p.resolved = 1
+        AND blueprint_type.published = 1
+        AND product_type.published = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM blueprint_materials unresolved_material
+          WHERE unresolved_material.blueprint_type_id = b.blueprint_type_id
+            AND unresolved_material.activity = a.activity
+            AND unresolved_material.resolved = 0
+        )
+      GROUP BY p.item_type_id
+      ORDER BY product_type.name COLLATE NOCASE
+      """
+    )
+    var productTypeIDs: [Int64] = []
+    productTypeIDs.reserveCapacity(productRows.count)
+    for row in productRows {
+      guard let raw = row.first ?? nil else { continue }
+      guard let productTypeID = Int64(raw) else { continue }
+      productTypeIDs.append(productTypeID)
+    }
+    var definitions: [BlueprintDefinition] = []
+    definitions.reserveCapacity(productTypeIDs.count)
+    for productTypeID in productTypeIDs {
+      try Task.checkCancellation()
+      guard
+        let definition = try await productionDefinition(
+          productTypeID: productTypeID,
+          requiredActivity: activity
+        ),
+        definition.activity.kind == activity
+      else { continue }
+      definitions.append(definition)
+    }
+    return definitions
   }
 
   private var catalogsURL: URL {

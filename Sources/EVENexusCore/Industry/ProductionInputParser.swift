@@ -292,3 +292,25 @@ public enum ProductionInputParser {
     String(value.prefix(512))
   }
 }
+
+public enum ProductionInputFormatter {
+  public static func format(_ requests: [ProductionRequestLine]) -> String {
+    requests.map(format).joined(separator: "\n")
+  }
+
+  private static func format(_ request: ProductionRequestLine) -> String {
+    var fields = [
+      request.productName,
+      String(request.wantedQuantity),
+      String(request.materialEfficiency),
+      String(request.timeEfficiency),
+    ]
+    if let kind = request.blueprintKind,
+      let cost = request.blueprintCostISK
+    {
+      fields.append(kind.rawValue)
+      fields.append(String(cost))
+    }
+    return fields.joined(separator: " ")
+  }
+}

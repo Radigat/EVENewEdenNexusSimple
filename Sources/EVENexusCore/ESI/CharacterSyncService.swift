@@ -1,17 +1,127 @@
 import Foundation
 
+public struct PrivateContractItems: Codable, Sendable {
+  public let contract: ESIPrivateContractDTO
+  public let items: [ESIPrivateContractItemDTO]
+
+  public init(
+    contract: ESIPrivateContractDTO,
+    items: [ESIPrivateContractItemDTO]
+  ) {
+    self.contract = contract
+    self.items = items
+  }
+}
+
+public struct PrivateContractSnapshot: Codable, Sendable {
+  public let characterID: Int64
+  public let itemContracts: [PrivateContractItems]
+  public let inTransitCouriers: [ESIPrivateContractDTO]
+  public let failedItemContractIDs: [Int64]
+  public let omittedItemContractCount: Int
+
+  public init(
+    characterID: Int64,
+    itemContracts: [PrivateContractItems],
+    inTransitCouriers: [ESIPrivateContractDTO],
+    failedItemContractIDs: [Int64] = [],
+    omittedItemContractCount: Int = 0
+  ) {
+    self.characterID = characterID
+    self.itemContracts = itemContracts
+    self.inTransitCouriers = inTransitCouriers
+    self.failedItemContractIDs = failedItemContractIDs
+    self.omittedItemContractCount = omittedItemContractCount
+  }
+}
+
+public struct CorporationWalletSnapshot: Codable, Sendable {
+  public let actingCharacterID: Int64
+  public let corporationID: Int64
+  public let divisions: [ESICorporationWalletDTO]
+
+  public init(
+    actingCharacterID: Int64,
+    corporationID: Int64,
+    divisions: [ESICorporationWalletDTO]
+  ) {
+    self.actingCharacterID = actingCharacterID
+    self.corporationID = corporationID
+    self.divisions = divisions
+  }
+}
+
 public struct CharacterSyncSnapshot: Identifiable, Sendable {
   public let id: UUID
   public let authorization: AuthorizationSnapshot
   public let capabilities: CharacterCapabilitySnapshot
   public let assets: Sourced<AssetSnapshot>
+  public let corporationAssets: Sourced<AssetSnapshot>
   public let blueprints: Sourced<[OwnedBlueprintInstance]>
   public let jobs: Sourced<[ESIIndustryJobDTO]>
   public let openOrders: Sourced<[ESICharacterOrderDTO]>
   public let orderHistory: Sourced<[ESICharacterOrderDTO]>
+  public let privateContracts: Sourced<PrivateContractSnapshot>
   public let walletBalance: Sourced<Double>
   public let walletJournal: Sourced<[ESIWalletJournalDTO]>
   public let walletTransactions: Sourced<[ESIWalletTransactionDTO]>
+  public let corporationWallet: Sourced<CorporationWalletSnapshot>
+}
+
+public enum CharacterSyncStatusAssessment {
+  public static func isRoleNotApplicable(
+    domain: String,
+    diagnostics: [String]
+  ) -> Bool {
+    switch domain {
+    case "corporation-assets":
+      diagnostics.contains("esi.corporation-assets.director-required")
+    case "corporation-wallet":
+      diagnostics.contains("esi.corporation-wallet.accountant-required")
+    default:
+      false
+    }
+  }
+
+  public static func actionableIssueCount(
+    in snapshot: CharacterSyncSnapshot
+  ) -> Int {
+    let personalStates = [
+      snapshot.capabilities.skills.state,
+      snapshot.capabilities.standings.state,
+      snapshot.assets.state,
+      snapshot.blueprints.state,
+      snapshot.jobs.state,
+      snapshot.openOrders.state,
+      snapshot.orderHistory.state,
+      snapshot.privateContracts.state,
+      snapshot.walletBalance.state,
+      snapshot.walletJournal.state,
+      snapshot.walletTransactions.state,
+    ]
+    var count = personalStates.filter { $0 != .fresh }.count
+    let corporationDomains = [
+      (
+        "corporation-assets",
+        snapshot.corporationAssets.state,
+        snapshot.corporationAssets.diagnostics
+      ),
+      (
+        "corporation-wallet",
+        snapshot.corporationWallet.state,
+        snapshot.corporationWallet.diagnostics
+      ),
+    ]
+    count +=
+      corporationDomains.filter { domain, state, diagnostics in
+        state != .fresh
+          && !isRoleNotApplicable(
+            domain: domain,
+            diagnostics: diagnostics
+          )
+      }.count
+    return count
+  }
 }
 
 public struct CharacterSyncService: Sendable {
@@ -191,6 +301,11 @@ public struct CharacterSyncService: Sendable {
         lease: lease
       )
     }
+    async let privateContractValue = PrivateContractSyncService(esi: esi)
+      .synchronize(
+        authorization: authorization,
+        lease: lease
+      )
 
     let publicResponse = await publicResult
     let skillsResponse = await skillsResult
@@ -235,6 +350,18 @@ public struct CharacterSyncService: Sendable {
       skills: skills,
       standings: standings
     )
+    async let corporationAssetValue = CorporationAssetSyncService(esi: esi)
+      .synchronize(
+        corporationID: publicDTO?.corporationID,
+        authorization: authorization,
+        lease: lease
+      )
+    async let corporationWalletValue = CorporationWalletSyncService(esi: esi)
+      .synchronize(
+        corporationID: publicDTO?.corporationID,
+        authorization: authorization,
+        lease: lease
+      )
 
     let assetsRaw = await assetsResult
     let assetValue: Sourced<AssetSnapshot>
@@ -279,6 +406,12 @@ public struct CharacterSyncService: Sendable {
       let unresolvedNameIDs = structureIDs.subtracting(resolvedNames.keys)
       let assetState: DataFreshness =
         unresolvedNameIDs.isEmpty ? .fresh : .partial
+      var assetDiagnostics = resolvedStructures.diagnostics
+      if !unresolvedNameIDs.isEmpty {
+        assetDiagnostics.append(
+          "esi.character-assets.unresolved-structure-names:\(unresolvedNameIDs.count)"
+        )
+      }
       assetValue = Sourced(
         state: assetState,
         value: AssetSnapshot(
@@ -290,7 +423,7 @@ public struct CharacterSyncService: Sendable {
           resolvedStructureTypeIDs: resolvedTypeIDs
         ),
         source: assetResponse.source,
-        diagnostics: resolvedStructures.diagnostics
+        diagnostics: assetDiagnostics
       )
     } else {
       assetValue = sourceValue(
@@ -325,19 +458,28 @@ public struct CharacterSyncService: Sendable {
       fallbackSource: source
     )
 
+    let resolvedJobs = await resolvedIndustryJobs(
+      await jobsResult,
+      lease: lease,
+      fallbackSource: source
+    )
+
     return CharacterSyncSnapshot(
       id: UUID(),
       authorization: authorization,
       capabilities: capability,
       assets: assetValue,
+      corporationAssets: await corporationAssetValue,
       blueprints: blueprintValue,
-      jobs: sourceValue(await jobsResult, transform: { $0 }, fallbackSource: source),
+      jobs: resolvedJobs,
       openOrders: sourceValue(await openOrdersResult, transform: { $0 }, fallbackSource: source),
       orderHistory: sourceValue(await historyResult, transform: { $0 }, fallbackSource: source),
+      privateContracts: await privateContractValue,
       walletBalance: sourceValue(await balanceResult, transform: { $0 }, fallbackSource: source),
       walletJournal: sourceValue(await journalResult, transform: { $0 }, fallbackSource: source),
       walletTransactions: sourceValue(
-        await transactionsResult, transform: { $0 }, fallbackSource: source)
+        await transactionsResult, transform: { $0 }, fallbackSource: source),
+      corporationWallet: await corporationWalletValue
     )
   }
 
@@ -366,6 +508,58 @@ public struct CharacterSyncService: Sendable {
       path: "/characters/\(characterID)/\(suffix)/",
       requiresAuthorization: true,
       requiredScope: scope
+    )
+  }
+
+  private func resolvedIndustryJobs(
+    _ result: CapturedESI<[ESIIndustryJobDTO]>,
+    lease: AccessTokenLease,
+    fallbackSource: SourceIdentity
+  ) async -> Sourced<[ESIIndustryJobDTO]> {
+    guard let response = result.value else {
+      return sourceValue(result, transform: { $0 }, fallbackSource: fallbackSource)
+    }
+    let structureIDs = Set(
+      response.value.compactMap { job in
+        job.facilityID >= AssetLocationKind.minimumPlayerStructureID
+          ? job.facilityID : nil
+      }
+    )
+    let stationIDs = Set(
+      response.value.compactMap { job in
+        if let stationID = job.stationID,
+          stationID < AssetLocationKind.minimumPlayerStructureID
+        {
+          return stationID
+        }
+        return job.facilityID < AssetLocationKind.minimumPlayerStructureID
+          ? job.facilityID : nil
+      }
+    )
+    async let structures = PlayerStructureSearchService(esi: esi)
+      .resolveKnownStructures(structureIDs: structureIDs, lease: lease)
+    async let stations = UniverseNameService(esi: esi).names(for: stationIDs)
+    let (structureSnapshot, stationSnapshot) = await (structures, stations)
+    var names = stationSnapshot.value ?? [:]
+    for structure in structureSnapshot.value ?? [] {
+      names[structure.id] = structure.name
+    }
+    let jobs = response.value.map { job in
+      job.withFacilityName(
+        names[job.facilityID]
+          ?? job.stationID.flatMap { names[$0] }
+      )
+    }
+    let unresolved = jobs.filter { $0.facilityName == nil }.count
+    var diagnostics = structureSnapshot.diagnostics + stationSnapshot.diagnostics
+    if unresolved > 0 {
+      diagnostics.append("esi.character-industry-jobs.unresolved-facilities:\(unresolved)")
+    }
+    return Sourced(
+      state: diagnostics.isEmpty ? .fresh : .partial,
+      value: jobs,
+      source: response.source,
+      diagnostics: diagnostics
     )
   }
 
@@ -413,6 +607,507 @@ public struct CharacterSyncService: Sendable {
       pages: nil,
       errorLimitRemain: firstResponse.errorLimitRemain
     )
+  }
+}
+
+public struct PrivateContractSyncService: Sendable {
+  public static let requiredScope =
+    "esi-contracts.read_character_contracts.v1"
+  public static let maximumValuedItemContracts = 500
+
+  private let esi: ESIClient
+
+  public init(esi: ESIClient) {
+    self.esi = esi
+  }
+
+  public func synchronize(
+    authorization: AuthorizationSnapshot,
+    lease: AccessTokenLease,
+    now: Date = .now
+  ) async -> Sourced<PrivateContractSnapshot> {
+    let source = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate
+    )
+    guard authorization.characterID == lease.characterID else {
+      return unavailable(
+        state: .forbidden,
+        source: source,
+        diagnostic: "esi.private-contracts.authorization-character-mismatch"
+      )
+    }
+    guard lease.scopes.contains(Self.requiredScope) else {
+      return unavailable(
+        state: .forbidden,
+        source: source,
+        diagnostic: "esi.private-contracts.scope-missing:\(Self.requiredScope)"
+      )
+    }
+
+    let contracts = await capture {
+      try await esi.getAllPages(
+        [ESIPrivateContractDTO].self,
+        endpoint: ESIEndpoint(
+          path: "/characters/\(authorization.characterID)/contracts/",
+          requiresAuthorization: true,
+          requiredScope: Self.requiredScope
+        ),
+        lease: lease
+      )
+    }
+    guard let contractResponse = contracts.value else {
+      return unavailable(
+        state: sourceState(for: contracts.error),
+        source: source,
+        diagnostic: "esi.private-contracts.list:\(String(describing: contracts.error))"
+      )
+    }
+
+    let ownContracts = contractResponse.value.filter {
+      $0.issuerID == authorization.characterID && !$0.forCorporation
+    }
+    let activeItemContracts = ownContracts.filter {
+      ["item_exchange", "auction"].contains($0.type)
+        && $0.status == "outstanding"
+        && $0.dateExpired > now
+    }.sorted { $0.contractID < $1.contractID }
+    let valuedContracts = Array(
+      activeItemContracts.prefix(Self.maximumValuedItemContracts)
+    )
+    let couriers = ownContracts.filter {
+      $0.type == "courier" && $0.status == "in_progress"
+    }.sorted { $0.contractID < $1.contractID }
+    let omittedCount = max(0, activeItemContracts.count - valuedContracts.count)
+    var itemContracts: [PrivateContractItems] = []
+    var failedItemContractIDs: [Int64] = []
+
+    for contract in valuedContracts {
+      guard !Task.isCancelled else {
+        return Sourced(
+          state: .partial,
+          value: PrivateContractSnapshot(
+            characterID: authorization.characterID,
+            itemContracts: itemContracts,
+            inTransitCouriers: couriers,
+            failedItemContractIDs: failedItemContractIDs,
+            omittedItemContractCount: omittedCount
+          ),
+          source: contractResponse.source,
+          diagnostics: ["esi.private-contracts.cancelled"]
+        )
+      }
+      let items = await capture {
+        try await esi.get(
+          [ESIPrivateContractItemDTO].self,
+          endpoint: ESIEndpoint(
+            path:
+              "/characters/\(authorization.characterID)/contracts/\(contract.contractID)/items/",
+            requiresAuthorization: true,
+            requiredScope: Self.requiredScope
+          ),
+          lease: lease
+        )
+      }
+      if let response = items.value {
+        itemContracts.append(
+          PrivateContractItems(contract: contract, items: response.value)
+        )
+      } else {
+        failedItemContractIDs.append(contract.contractID)
+      }
+    }
+
+    var diagnostics: [String] = []
+    if !failedItemContractIDs.isEmpty {
+      diagnostics.append(
+        "esi.private-contracts.items-unavailable:\(failedItemContractIDs.count)"
+      )
+    }
+    if omittedCount > 0 {
+      diagnostics.append("esi.private-contracts.limit:\(omittedCount)")
+    }
+    return Sourced(
+      state: diagnostics.isEmpty ? .fresh : .partial,
+      value: PrivateContractSnapshot(
+        characterID: authorization.characterID,
+        itemContracts: itemContracts,
+        inTransitCouriers: couriers,
+        failedItemContractIDs: failedItemContractIDs,
+        omittedItemContractCount: omittedCount
+      ),
+      source: contractResponse.source,
+      diagnostics: diagnostics
+    )
+  }
+
+  private func unavailable(
+    state: DataFreshness,
+    source: SourceIdentity,
+    diagnostic: String
+  ) -> Sourced<PrivateContractSnapshot> {
+    Sourced(
+      state: state,
+      value: nil,
+      source: source,
+      diagnostics: [diagnostic]
+    )
+  }
+
+  private func sourceState(for error: ESIError?) -> DataFreshness {
+    switch error {
+    case .forbidden, .missingScope:
+      .forbidden
+    default:
+      .unavailable
+    }
+  }
+}
+
+public struct CorporationWalletSyncService: Sendable {
+  public static let walletScope =
+    "esi-wallet.read_corporation_wallets.v1"
+  public static let rolesScope =
+    "esi-characters.read_corporation_roles.v1"
+  public static let requiredScopes: Set<String> = [walletScope, rolesScope]
+  private static let permittedRoles: Set<String> = [
+    "Accountant", "Junior_Accountant",
+  ]
+
+  private let esi: ESIClient
+
+  public init(esi: ESIClient) {
+    self.esi = esi
+  }
+
+  public func synchronize(
+    corporationID: Int64?,
+    authorization: AuthorizationSnapshot,
+    lease: AccessTokenLease
+  ) async -> Sourced<CorporationWalletSnapshot> {
+    let source = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate
+    )
+    guard authorization.characterID == lease.characterID else {
+      return unavailable(
+        state: .forbidden,
+        source: source,
+        diagnostic: "esi.corporation-wallet.authorization-character-mismatch"
+      )
+    }
+    guard let corporationID else {
+      return unavailable(
+        state: .unavailable,
+        source: source,
+        diagnostic: "esi.corporation-wallet.corporation-identity-unavailable"
+      )
+    }
+    for scope in Self.requiredScopes where !lease.scopes.contains(scope) {
+      return unavailable(
+        state: .forbidden,
+        source: source,
+        diagnostic: "esi.corporation-wallet.scope-missing:\(scope)"
+      )
+    }
+
+    let roles = await capture {
+      try await esi.get(
+        ESICharacterRolesDTO.self,
+        endpoint: ESIEndpoint(
+          path: "/characters/\(authorization.characterID)/roles",
+          requiresAuthorization: true,
+          requiredScope: Self.rolesScope
+        ),
+        lease: lease
+      )
+    }
+    guard let roleResponse = roles.value else {
+      return unavailable(
+        state: sourceState(for: roles.error),
+        source: source,
+        diagnostic: "esi.corporation-wallet.roles:\(String(describing: roles.error))"
+      )
+    }
+    let observedRoles = Set(roleResponse.value.roles ?? [])
+    guard !observedRoles.isDisjoint(with: Self.permittedRoles) else {
+      return unavailable(
+        state: .forbidden,
+        source: roleResponse.source,
+        diagnostic: "esi.corporation-wallet.accountant-required"
+      )
+    }
+
+    let wallets = await capture {
+      try await esi.get(
+        [ESICorporationWalletDTO].self,
+        endpoint: ESIEndpoint(
+          path: "/corporations/\(corporationID)/wallets/",
+          requiresAuthorization: true,
+          requiredScope: Self.walletScope
+        ),
+        lease: lease
+      )
+    }
+    guard let walletResponse = wallets.value else {
+      return unavailable(
+        state: sourceState(for: wallets.error),
+        source: source,
+        diagnostic: "esi.corporation-wallet.wallets:\(String(describing: wallets.error))"
+      )
+    }
+    return Sourced(
+      state: .fresh,
+      value: CorporationWalletSnapshot(
+        actingCharacterID: authorization.characterID,
+        corporationID: corporationID,
+        divisions: walletResponse.value
+      ),
+      source: walletResponse.source
+    )
+  }
+
+  private func unavailable(
+    state: DataFreshness,
+    source: SourceIdentity,
+    diagnostic: String
+  ) -> Sourced<CorporationWalletSnapshot> {
+    Sourced(
+      state: state,
+      value: nil,
+      source: source,
+      diagnostics: [diagnostic]
+    )
+  }
+
+  private func sourceState(for error: ESIError?) -> DataFreshness {
+    switch error {
+    case .forbidden, .missingScope:
+      .forbidden
+    default:
+      .unavailable
+    }
+  }
+}
+
+public struct CorporationAssetSyncService: Sendable {
+  public static let assetScope =
+    "esi-assets.read_corporation_assets.v1"
+  public static let rolesScope =
+    "esi-characters.read_corporation_roles.v1"
+  public static let divisionsScope =
+    "esi-corporations.read_divisions.v1"
+  public static let requiredScopes: Set<String> = [
+    assetScope,
+    rolesScope,
+    divisionsScope,
+  ]
+
+  private let esi: ESIClient
+
+  public init(esi: ESIClient) {
+    self.esi = esi
+  }
+
+  public func synchronize(
+    corporationID: Int64?,
+    authorization: AuthorizationSnapshot,
+    lease: AccessTokenLease
+  ) async -> Sourced<AssetSnapshot> {
+    let source = SourceIdentity(
+      provider: "ESI",
+      version: EVEConstants.esiCompatibilityDate
+    )
+    guard authorization.characterID == lease.characterID else {
+      return unavailable(
+        state: .forbidden,
+        source: source,
+        diagnostic: "esi.corporation-assets.authorization-character-mismatch"
+      )
+    }
+    guard let corporationID else {
+      return unavailable(
+        state: .unavailable,
+        source: source,
+        diagnostic: "esi.corporation-assets.corporation-identity-unavailable"
+      )
+    }
+    for scope in [Self.assetScope, Self.rolesScope]
+    where !lease.scopes.contains(scope) {
+      return unavailable(
+        state: .forbidden,
+        source: source,
+        diagnostic: "esi.corporation-assets.scope-missing:\(scope)"
+      )
+    }
+
+    let roles = await capture {
+      try await esi.get(
+        ESICharacterRolesDTO.self,
+        endpoint: ESIEndpoint(
+          path: "/characters/\(authorization.characterID)/roles",
+          requiresAuthorization: true,
+          requiredScope: Self.rolesScope
+        ),
+        lease: lease
+      )
+    }
+    guard let roleResponse = roles.value else {
+      return unavailable(
+        state: sourceState(for: roles.error),
+        source: source,
+        diagnostic: "esi.corporation-assets.roles:\(String(describing: roles.error))"
+      )
+    }
+    guard roleResponse.value.roles?.contains("Director") == true else {
+      return unavailable(
+        state: .forbidden,
+        source: roleResponse.source,
+        diagnostic: "esi.corporation-assets.director-required"
+      )
+    }
+
+    async let assetsResult = capture {
+      try await esi.getAllPages(
+        [ESIAssetDTO].self,
+        endpoint: ESIEndpoint(
+          path: "/corporations/\(corporationID)/assets",
+          requiresAuthorization: true,
+          requiredScope: Self.assetScope
+        ),
+        lease: lease
+      )
+    }
+    async let publicResult = capture {
+      try await esi.get(
+        ESICorporationPublicDTO.self,
+        endpoint: ESIEndpoint(
+          path: "/corporations/\(corporationID)"
+        )
+      )
+    }
+    let hasDivisionScope = lease.scopes.contains(Self.divisionsScope)
+    async let divisionsResult: CapturedESI<ESICorporationDivisionsDTO> =
+      hasDivisionScope
+      ? capture {
+        try await esi.get(
+          ESICorporationDivisionsDTO.self,
+          endpoint: ESIEndpoint(
+            path: "/corporations/\(corporationID)/divisions",
+            requiresAuthorization: true,
+            requiredScope: Self.divisionsScope
+          ),
+          lease: lease
+        )
+      }
+      : CapturedESI(value: nil, error: .missingScope(Self.divisionsScope))
+
+    let assets = await assetsResult
+    guard let assetResponse = assets.value else {
+      return unavailable(
+        state: sourceState(for: assets.error),
+        source: source,
+        diagnostic: "esi.corporation-assets.assets:\(String(describing: assets.error))"
+      )
+    }
+    let corporation = await publicResult
+    let divisions = await divisionsResult
+    let rawItems = assetResponse.value.map {
+      AssetItem(
+        id: $0.itemID,
+        typeID: $0.typeID,
+        quantity: $0.quantity,
+        locationID: $0.locationID,
+        locationKind: AssetLocationKind(
+          esiValue: $0.locationType,
+          locationID: $0.locationID
+        ),
+        locationFlag: $0.locationFlag,
+        singleton: $0.singleton
+      )
+    }
+    let structureIDs = AssetLocationClassifier.structureCandidateIDs(
+      in: rawItems
+    )
+    let items = AssetLocationClassifier.applyingStructureRoots(
+      to: rawItems,
+      candidateIDs: structureIDs
+    )
+    let resolvedStructures = await PlayerStructureSearchService(esi: esi)
+      .resolveKnownStructures(
+        structureIDs: structureIDs,
+        lease: lease
+      )
+    let resolvedNames = Dictionary(
+      uniqueKeysWithValues: (resolvedStructures.value ?? []).map {
+        ($0.id, $0.name)
+      }
+    )
+    let resolvedTypeIDs = Dictionary(
+      uniqueKeysWithValues: (resolvedStructures.value ?? [])
+        .compactMap { structure in
+          structure.typeID.map { (structure.id, $0) }
+        }
+    )
+    let unresolvedNameIDs = structureIDs.subtracting(resolvedNames.keys)
+    let divisionNamePairs: [(Int, String)] =
+      (divisions.value?.value.hangar ?? []).compactMap {
+        guard let division = $0.division,
+          let name = $0.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !name.isEmpty
+        else { return nil }
+        return (division, name)
+      }
+    let divisionNames = Dictionary(uniqueKeysWithValues: divisionNamePairs)
+    var diagnostics = resolvedStructures.diagnostics
+    if corporation.value == nil {
+      diagnostics.append("esi.corporation-assets.name-unavailable")
+    }
+    if divisions.value == nil {
+      diagnostics.append(
+        "esi.corporation-assets.divisions:\(String(describing: divisions.error))"
+      )
+    }
+    let state: DataFreshness =
+      unresolvedNameIDs.isEmpty && diagnostics.isEmpty ? .fresh : .partial
+    return Sourced(
+      state: state,
+      value: AssetSnapshot(
+        characterID: authorization.characterID,
+        corporationID: corporationID,
+        corporationName: corporation.value?.value.name,
+        corporationDivisionNames: divisionNames,
+        state: state,
+        items: items,
+        resolvedLocationNames: resolvedNames,
+        unresolvedLocationNameIDs: unresolvedNameIDs,
+        resolvedStructureTypeIDs: resolvedTypeIDs
+      ),
+      source: assetResponse.source,
+      diagnostics: diagnostics
+    )
+  }
+
+  private func unavailable(
+    state: DataFreshness,
+    source: SourceIdentity,
+    diagnostic: String
+  ) -> Sourced<AssetSnapshot> {
+    Sourced(
+      state: state,
+      value: nil,
+      source: source,
+      diagnostics: [diagnostic]
+    )
+  }
+
+  private func sourceState(for error: ESIError?) -> DataFreshness {
+    switch error {
+    case .forbidden, .missingScope:
+      .forbidden
+    default:
+      .unavailable
+    }
   }
 }
 

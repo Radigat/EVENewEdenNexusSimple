@@ -44,11 +44,17 @@ public enum EVEScope {
   public static let versionOne: Set<String> = [
     "esi-skills.read_skills.v1",
     "esi-characters.read_standings.v1",
+    "esi-characters.read_corporation_roles.v1",
     "esi-characters.read_blueprints.v1",
+    "esi-contracts.read_character_contracts.v1",
     "esi-assets.read_assets.v1",
+    "esi-assets.read_corporation_assets.v1",
+    "esi-corporations.read_divisions.v1",
     "esi-industry.read_character_jobs.v1",
     "esi-markets.read_character_orders.v1",
+    "esi-markets.structure_markets.v1",
     "esi-wallet.read_character_wallet.v1",
+    "esi-wallet.read_corporation_wallets.v1",
     "esi-search.search_structures.v1",
     "esi-universe.read_structures.v1",
   ]
@@ -83,5 +89,6 @@ public enum AuthError: Error, Equatable, Sendable {
   case invalidIdentityToken
   case unexpectedCharacter(expected: Int64, received: Int64)
   case keychain(Int32)
+  case keychainFallback(protected: Int32, legacy: Int32)
   case noStoredAuthorization
 }
