@@ -15,7 +15,7 @@ enum EVENexusApplicationEntry {
         FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
       } else {
         let alert = NSAlert()
-        alert.messageText = "EVE New Eden Nexus – DEV"
+        alert.messageText = "EVE New Eden Nexus - Assets, Industry, Markets – DEV"
         alert.informativeText = error.localizedDescription
         alert.runModal()
       }
