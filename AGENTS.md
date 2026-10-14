@@ -2,7 +2,7 @@
 
 Projekt: EVE New Eden Nexus - Assets, Industry, Markets
 
-Standardmodell: Astra Medium
+Standardmodell: GPT-5.6 Sol High
 
 Aktuelle Regel: Es gibt nur einen aktiven Projektstand.
 
@@ -37,8 +37,10 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 - Git nur in dieser eigenen Repository-Wurzel verwenden, niemals im
   übergeordneten Home-Repository. Der Benutzerauftrag autorisiert den lokalen
   Konsolidierungs-Checkpoint. Kein Push, Force-Push oder Umschreiben der Historie.
-- `MODEL_POLICY.md` ist die verbindliche Modellvorgabe; keine automatische
-  Eskalation auf andere Modelle oder selbstständige Folgearbeit.
+- `MODEL_POLICY.md` ist die verbindliche Modellvorgabe. Kein automatischer
+  Wechsel des Modells oder der Reasoning-Stufe: Reicht GPT-5.6 Sol High nicht
+  aus, vor einem Wechsel nachfragen und zwei oder drei konkrete Vorschläge mit
+  exaktem Modell, Reasoning-Stufe, Empfehlung und kurzem Trade-off geben.
 
 ## Erhaltene Interaktionsregeln
 

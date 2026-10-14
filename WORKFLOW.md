@@ -1,6 +1,6 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Workflow
 
-Einzige Arbeitswurzel: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`. Standardmodell: Astra Medium.
+Einzige Arbeitswurzel: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`. Standardmodell: GPT-5.6 Sol High.
 Vor jedem Eingriff Status und Diff lesen. Bestehende lokale Änderungen erhalten.
 Die ursprünglichen Arbeitsbäume und Git-Indizes werden als Legacy archiviert.
 

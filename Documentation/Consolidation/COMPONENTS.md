@@ -1,6 +1,6 @@
 # Kanonischer Komponentenvergleich
 
-Projekt: EVE New Eden Nexus - Assets, Industry, Markets. Standardmodell: Astra Medium.
+Projekt: EVE New Eden Nexus - Assets, Industry, Markets. Standardmodell: GPT-5.6 Sol High.
 
 Der organisatorische Ausgangsstand ist in Git-Checkpoint `182f1a9` erhalten. Die anschließende,
 ausdrücklich autorisierte fachliche Integration ist in [FUNCTIONAL_CONSOLIDATION.md](FUNCTIONAL_CONSOLIDATION.md)

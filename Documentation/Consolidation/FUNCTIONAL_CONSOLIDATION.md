@@ -1,6 +1,6 @@
 # Fachliche Konsolidierung – 25.09.2026
 
-Projekt: **EVE New Eden Nexus - Assets, Industry, Markets**. Standardmodell: **Astra Medium**.
+Projekt: **EVE New Eden Nexus - Assets, Industry, Markets**. Standardmodell: **GPT-5.6 Sol High**.
 Es gibt nur einen aktiven Projektstand. Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
 
 ## Grundlage und Herkunft

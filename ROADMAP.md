@@ -1,6 +1,6 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Arbeitsstand
 
-Standardmodell: Astra Medium. Es gibt nur einen aktiven Projektstand.
+Standardmodell: GPT-5.6 Sol High. Es gibt nur einen aktiven Projektstand.
 Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
 
 Die ausdrücklich beauftragte fachliche Zusammenführung ist umgesetzt. Ihr Umfang,

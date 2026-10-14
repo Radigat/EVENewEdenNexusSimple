@@ -1,7 +1,7 @@
 # EVE New Eden Nexus - Assets, Industry, Markets
 
 Native lokale macOS-App für Assets, Industrieplanung und Märkte in EVE Online.
-Einziger aktiver Projektstand: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`. Standardmodell: **Astra Medium**.
+Einziger aktiver Projektstand: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`. Standardmodell: **GPT-5.6 Sol High**.
 
 Der zuletzt verwendete lokale App-Stand einschließlich aller vorhandenen Änderungen,
 Tests und `EVEStaticDataKit` ist die aktive Codebasis. Andere Entwicklungslinien
@@ -18,7 +18,7 @@ Prüfnachweise: [Aktuelle Verifikation](Documentation/Consolidation/FUNCTIONAL_V
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Komponenten und Fachverträge |
 | [AGENTS.md](AGENTS.md) | Arbeitsregeln und ein aktiver Stand |
 | [WORKFLOW.md](WORKFLOW.md) | Build, Tests und Git |
-| [MODEL_POLICY.md](MODEL_POLICY.md) | Astra Medium |
+| [MODEL_POLICY.md](MODEL_POLICY.md) | GPT-5.6 Sol High und freigabepflichtige Eskalation |
 | [ROADMAP.md](ROADMAP.md) | Ende der Konsolidierungsphase; keine Folgefeatures |
 | [Konsolidierung](Documentation/Consolidation/DECISIONS.md) | Herkunft, Auswahl und Konflikte |
 | [Archiv](_archive/README.md) | gesicherte Altstände und Wiederherstellung |
