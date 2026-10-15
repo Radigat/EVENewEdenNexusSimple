@@ -3329,10 +3329,9 @@ struct IndustryPlannerTests {
       oreProcessingLevel: 5,
       implantYieldBonusPercent: 4
     )
-    #expect(
-      abs((yield ?? 0) - (0.5 * 1.15 * 1.10 * 1.10 * 1.04))
-        < 0.000_001
-    )
+    let expectedYield: Double = 0.5 * 1.15 * 1.10 * 1.10 * 1.04
+    let actualYield = yield ?? 0
+    #expect(abs(actualYield - expectedYield) < 0.000_001)
     #expect(
       ReprocessingYieldCalculator.outputQuantity(
         baseQuantity: 100,
