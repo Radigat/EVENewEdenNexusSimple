@@ -125,6 +125,9 @@
 		D1C3A78E6F72CC9F6174896C /* ConsolidationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */; };
 		5E6D9BCA1E56982470D7E62E /* ConsolidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B5940BF552F364923C5845 /* ConsolidationTests.swift */; };
 		4D7D5F7AD1EA49AB1C7CECE6 /* ConsolidationCSVParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 287FAE8A73B5F74C31A78479 /* ConsolidationCSVParserTests.swift */; };
+		F66E6E33B78C4D9C8A9DE56E /* StoreFullRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E058E1D97984F438DA68ADF /* StoreFullRestore.swift */; };
+		BA8EC9716A3A49338CFB49F2 /* FullStoreRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E5863ADAD5470097811E6C /* FullStoreRecovery.swift */; };
+		5650EAAFC86D4E5E98CF4DF3 /* StoreFullRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDAD6F6302CE4E77A9BCE718 /* StoreFullRestoreTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -316,6 +319,9 @@
 		7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationViews.swift; sourceTree = "<group>"; };
 		45B5940BF552F364923C5845 /* ConsolidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationTests.swift; sourceTree = "<group>"; };
 		287FAE8A73B5F74C31A78479 /* ConsolidationCSVParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationCSVParserTests.swift; sourceTree = "<group>"; };
+		6E058E1D97984F438DA68ADF /* StoreFullRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreFullRestore.swift; sourceTree = "<group>"; };
+		68E5863ADAD5470097811E6C /* FullStoreRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullStoreRecovery.swift; sourceTree = "<group>"; };
+		BDAD6F6302CE4E77A9BCE718 /* StoreFullRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreFullRestoreTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -508,6 +514,7 @@
 		8C00666658917EAC29B7853B /* Persistence */ = {
 			isa = PBXGroup;
 			children = (
+				6E058E1D97984F438DA68ADF /* StoreFullRestore.swift */,
 				06AC99CCF87D838E4211AD71 /* AppDataPaths.swift */,
 			);
 			path = Persistence;
@@ -543,6 +550,7 @@
 		C95F62BB297D5C07BCE53145 /* EVENexusSimpleApp */ = {
 			isa = PBXGroup;
 			children = (
+				68E5863ADAD5470097811E6C /* FullStoreRecovery.swift */,
 				7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */,
 				DFC843DF084E747C25AA50FA /* ConsolidationScienceView.swift */,
 				9646D9B42C8D2BB01C851515 /* ConsolidationPersistence.swift */,
@@ -577,6 +585,7 @@
 		CF66EE833DB5E2A7CB2DCC5C /* EVENexusCoreTests */ = {
 			isa = PBXGroup;
 			children = (
+				BDAD6F6302CE4E77A9BCE718 /* StoreFullRestoreTests.swift */,
 				287FAE8A73B5F74C31A78479 /* ConsolidationCSVParserTests.swift */,
 				45B5940BF552F364923C5845 /* ConsolidationTests.swift */,
 				EE347DEDC4E3894E787D864C /* AssetWarehouseTests.swift */,
@@ -794,6 +803,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5650EAAFC86D4E5E98CF4DF3 /* StoreFullRestoreTests.swift in Sources */,
 				4D7D5F7AD1EA49AB1C7CECE6 /* ConsolidationCSVParserTests.swift in Sources */,
 				5E6D9BCA1E56982470D7E62E /* ConsolidationTests.swift in Sources */,
 				33C2EA30560570E2B46B970C /* AssetWarehouseTests.swift in Sources */,
@@ -832,6 +842,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BA8EC9716A3A49338CFB49F2 /* FullStoreRecovery.swift in Sources */,
 				D1C3A78E6F72CC9F6174896C /* ConsolidationViews.swift in Sources */,
 				045606C176F5692C1B14889A /* ConsolidationScienceView.swift in Sources */,
 				58DFD988B13B7E2DA8D93872 /* ConsolidationPersistence.swift in Sources */,
@@ -864,6 +875,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F66E6E33B78C4D9C8A9DE56E /* StoreFullRestore.swift in Sources */,
 				48D8A9FA0DFF27BEF7490EF0 /* ConsolidationWorkspace.swift in Sources */,
 				4B404AA11BD0B65D40F4C9FA /* ConsolidationScience.swift in Sources */,
 				F4152ED0B5881AE736E55C74 /* ConsolidationMoney.swift in Sources */,

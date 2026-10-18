@@ -943,10 +943,25 @@ public struct IndustryPlanner: Sendable {
       )
       replacementQuotes[typeID] = quote
       warnings.append(contentsOf: quote.warnings)
-      if let total = quote.total,
-        (replacementMaterialCost + total).isFinite
+      // The full-demand quote supplies one replacement unit value for bought
+      // and stocked inputs. Produced units are charged through their inputs.
+      guard quote.isComplete,
+        let total = quote.total, total.isFinite, total >= 0,
+        let unitPrice = quote.weightedUnitPrice,
+        unitPrice.isFinite, unitPrice >= 0
+      else {
+        materialCostComplete = false
+        continue
+      }
+      let valuedQuantity =
+        Double(state.toBuy[typeID, default: 0])
+        + Double(state.stockUsed[typeID, default: 0])
+      let contribution = valuedQuantity * unitPrice
+      let updatedCost = replacementMaterialCost + contribution
+      if contribution.isFinite, contribution >= 0,
+        updatedCost.isFinite, updatedCost >= 0
       {
-        replacementMaterialCost += total
+        replacementMaterialCost = updatedCost
       } else {
         materialCostComplete = false
       }

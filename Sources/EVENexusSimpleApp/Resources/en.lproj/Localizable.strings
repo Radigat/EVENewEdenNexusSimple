@@ -1,4 +1,36 @@
 /* Source text that previously existed only in German. */
+/* Compact dashboard */
+"Show all" = "Show all";
+"Show less" = "Show less";
+"Expanded" = "Expanded";
+"Collapsed" = "Collapsed";
+"Character balances" = "Character balances";
+"Character net worth" = "Character net worth";
+"Valuation details" = "Valuation details";
+"Top 5 by material value" = "Top 5 by material value";
+"Some character job data is incomplete; ranking may omit jobs." = "Some character job data is incomplete; ranking may omit jobs.";
+"Product name unavailable" = "Product name unavailable";
+"Running" = "Running";
+"Incomplete ranking · %lld jobs without full material valuation" = "Incomplete ranking · %lld jobs without full material valuation";
+"No open production jobs." = "No open production jobs.";
+"Estimated material value · ESI average / adjusted prices" = "Estimated material value · ESI average / adjusted prices";
+"Reactions with negative value creation" = "Reactions with negative value creation";
+"Open reactions" = "Open reactions";
+"No reactions have negative value creation." = "No reactions have negative value creation.";
+"Purchase market" = "Purchase market";
+"Production destination unavailable" = "Production destination unavailable";
+"%lld runs · %@" = "%lld runs · %@";
+"Open purchase analysis" = "Open purchase analysis";
+"Recommended purchase locations" = "Recommended purchase locations";
+"Cheapest configured market" = "Cheapest configured market";
+"Cheapest available market" = "Cheapest available market";
+"Some configured markets are unavailable or stale; the comparison is incomplete." = "Some configured markets are unavailable or stale; the comparison is incomplete.";
+"No fresh sell offer available" = "No fresh sell offer available";
+"Settings changed. Refresh to update purchase locations." = "Settings changed. Refresh to update purchase locations.";
+"Settings changed. Refresh to update reactions." = "Settings changed. Refresh to update reactions.";
+"No configured purchase market is available." = "No configured purchase market is available.";
+"Purchase prices from the mineral analysis" = "Purchase prices from the mineral analysis";
+"No current mineral purchase analysis is available." = "No current mineral purchase analysis is available.";
 "Physical solar system" = "Physical solar system";
 "Linked ESI structure" = "Linked ESI structure";
 "This entry defines a structure type and solar system, but it is not yet linked to an exact EVE station or Player Structure. Link the matching ESI result above so Warehouse can match asset locations." = "This entry defines a structure type and solar system, but it is not yet linked to an exact EVE station or Player Structure. Link the matching ESI result above so Warehouse can match asset locations.";
@@ -1675,3 +1707,49 @@
 "The planned product quantities multiplied by the lowest comparable public Item Exchange contract unit price observed so far for each exact product. The incomplete index makes this value provisional." = "The planned product quantities multiplied by the lowest comparable public Item Exchange contract unit price observed so far for each exact product. The incomplete index makes this value provisional.";
 "%@, %@ planned units, provisionally valued at the lowest comparable public single-type Item Exchange contract unit price observed so far. Gross contract revenue: %@." = "%@, %@ planned units, provisionally valued at the lowest comparable public single-type Item Exchange contract unit price observed so far. Gross contract revenue: %@.";
 "%@ units × %@ lowest public contract unit price observed so far = %@ provisional gross contract-sale value · contract snapshot %@." = "%@ units × %@ lowest public contract unit price observed so far = %@ provisional gross contract-sale value · contract snapshot %@.";
+
+// Blueprint asset valuation coverage
+"Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Known blueprint copies are excluded. Assets with unknown blueprint status remain unvalued until an asset refresh or SDE classification resolves them." = "Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Known blueprint copies are excluded. Assets with unknown blueprint status remain unvalued until an asset refresh or SDE classification resolves them.";
+"%lld asset stacks unvalued: blueprint status unknown" = "%lld asset stacks unvalued: blueprint status unknown";
+"%lld corporation asset stacks unvalued: blueprint status unknown" = "%lld corporation asset stacks unvalued: blueprint status unknown";
+
+// Full-store recovery
+"Data recovery" = "Data recovery";
+"Fully restore earlier data…" = "Fully restore earlier data…";
+"Full restoration paused" = "Full restoration paused";
+"The data could not be prepared for restoration." = "The data could not be prepared for restoration.";
+"Reopen the app to try again, or cancel the request." = "Reopen the app to try again, or cancel the request.";
+"Quit and retry later" = "Quit and retry later";
+"Cancel request" = "Cancel request";
+"Fully restore the earlier data?" = "Fully restore the earlier data?";
+"Source: %@" = "Source: %@";
+"Backup of current and earlier data: %@" = "Backup of current and earlier data: %@";
+"All application records will be replaced by the earlier data. Newer records remain only in the backup. No records will be merged. Keep this backup. Keychain, app preferences, SDE, and additional databases are retained." = "All application records will be replaced by the earlier data. Newer records remain only in the backup. No records will be merged. Keep this backup. Keychain, app preferences, SDE, and additional databases are retained.";
+"Before restoring, quit every older version of this app. Older versions do not prevent simultaneous access to this data folder." = "Before restoring, quit every older version of this app. Older versions do not prevent simultaneous access to this data folder.";
+"The current data is backed up only as an unchanged raw copy because a readable SQLite backup could not be created. Keep that raw backup for recovery." = "The current data is backed up only as an unchanged raw copy because a readable SQLite backup could not be created. Keep that raw backup for recovery.";
+"Cancel" = "Cancel";
+"Restore all data" = "Restore all data";
+"Full restoration could not be completed. Keep the backup and reopen the app to retry recovery." = "Full restoration could not be completed. Keep the backup and reopen the app to retry recovery.";
+"Data restored" = "Data restored";
+"Reopen the app. The previous data remains backed up at:\n%@" = "Reopen the app. The previous data remains backed up at:\n%@";
+"Quit" = "Quit";
+"The data folder is unavailable." = "The data folder is unavailable.";
+"Check earlier data" = "Check earlier data";
+"The app will save pending changes and quit. On the next launch, the current and earlier data will be backed up and checked. You will then explicitly confirm full restoration without merging." = "The app will save pending changes and quit. On the next launch, the current and earlier data will be backed up and checked. You will then explicitly confirm full restoration without merging.";
+"Save and quit" = "Save and quit";
+"Restoration could not be scheduled" = "Restoration could not be scheduled";
+"The app could not save the changes or schedule restoration. It will remain open." = "The app could not save the changes or schedule restoration. It will remain open.";
+"OK" = "OK";
+"Production bases" = "Production bases";
+"Manufacturing profiles" = "Manufacturing profiles";
+"Reaction profiles" = "Reaction profiles";
+"Characters" = "Characters";
+"Stock targets" = "Stock targets";
+"Plans" = "Plans";
+"Planner drafts" = "Planner drafts";
+"Production records" = "Production records";
+"Production overview rows" = "Production overview rows";
+"SDE pointers" = "SDE pointers";
+"ESI metadata" = "ESI metadata";
+"App settings" = "App settings";
+"Consolidation workspaces" = "Consolidation workspaces";

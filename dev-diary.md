@@ -1,5 +1,23 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 29. September 2026 – Projektweite Modellvorgabe
+
+Ziel: Alle neuen Codex-Aufgaben des Projekts standardmäßig mit GPT-5.6 Sol und
+Reasoning-Stufe High ausführen, sofern der Benutzer für eine Aufgabe nichts
+anderes vorgibt.
+
+Änderung: Die lokale Projektkonfiguration setzt `model = "gpt-5.6-sol"` und
+`model_reasoning_effort = "high"`. AGENTS, MODEL_POLICY und die aktiven
+Steuerdokumente nennen denselben Standard. Ein automatischer Modellwechsel ist
+ausgeschlossen. Wenn der Standard nicht ausreicht, muss der Agent vor einem
+Wechsel zwei oder drei konkrete Optionen mit exaktem Modell, Reasoning-Stufe,
+Empfehlung und kurzem Trade-off zur Auswahl vorlegen.
+
+Ergebnis und Prüfung: Die TOML-Konfiguration ist syntaktisch geprüft; die aktiven
+Steuerdateien enthalten keine widersprechende Standardmodell-Angabe. Bereits
+laufende Sitzungen können ihre Startkonfiguration beibehalten; globale
+App-Einstellungen wurden nicht verändert.
+
 ## 25. September 2026 – Projektkonsolidierung
 
 Ein aktiver Projektstamm; Astra Medium als Standardmodell. Vollständiger lokaler
@@ -4675,3 +4693,210 @@ von 220 über 480 bis auf 1.600 Punkte verbreitert. Das Menü blieb jeweils in
 der Detailspalte; bei der extrem schmalen Detailspalte erschien wie vorgesehen
 die kompakte Auswahl. Die installierte DEV-App und reale ESI-Nutzerdaten wurden
 nicht verändert.
+
+## 02.10.2026 – Review-Fehler korrigiert und vollständige Wiederherstellung ergänzt
+
+Auf Nutzerauftrag drei konkret reproduzierte Fehler im aktiven Projekt korrigiert:
+Die Legacy-Übernahme veröffentlicht erst einen vollständigen WAL-bewussten
+SQLite-Snapshot. Der Planner berechnet Zwischenprodukte nur für gekaufte und
+aus dem Lager verbrauchte Mengen, wodurch der Teilbestandsfall 23 statt 38 ISK
+ergibt und mit Übersicht sowie neuer Historie übereinstimmt. Das ESI-Kennzeichen
+für Blueprint-Kopien bleibt durch Synchronisierung und Speicherung erhalten;
+Kopien werden ausgeschlossen, unbekannte ältere Werte bleiben sichtbar unvollständig.
+
+Die zusätzlich freigegebene vollständige Wiederherstellung aktiviert nach Neustart
+und ausdrücklicher Bestätigung ausschließlich den gewählten früheren SwiftData-Bestand.
+Beide Stände bleiben gesichert; es wird nicht zusammengeführt. Datensperre,
+Unterprozess-Sperrerhalt, Modell-/Nutzdatenprüfung und ein dauerhaftes
+Austauschprotokoll mit geprüfter Rücknahme schützen den Vorgang. Die aktuelle
+V3-Kette wurde statt der veralteten Planannahme V2 verwendet. Vorhandene lokale
+Dokumentations- und Konfigurationsänderungen wurden erhalten; kein Commit oder
+Push durchgeführt.
+
+Der vollständige isolierte SwiftPM-Lauf besteht mit 477 Fällen: 476 bestanden,
+ein vorgesehener Real-SDE-Skip. Das separate Kit besteht mit 7 von 8 Fällen
+plus einem Skip. Der native unsignierte Debug-/Testlauf endet mit
+`TEST SUCCEEDED` (430 bestanden, ein Skip). Isolierter nativer Start und
+separater V3-Prüfprozess sind erfolgreich. Quellen, gezielte Abbruch-/WAL-/
+Migrations-/Bewertungsregressionen und verbleibende Grenzen stehen im
+[Prüfnachweis](Documentation/REVIEW_FIXES_2026-10-02.md).
+
+GPT-6.1 Sol High übernahm Kosten, Blueprint-Datenfluss, UI/Lokalisierung,
+Regressionen und native Dateizuordnung; GPT-Astra High übernahm die komplexe
+Wiederherstellung und ihre unabhängige Prüfung. Dabei entdeckte Lücken beim
+Sperrerhalt des Prüfprozesses und bei bekannten JSON-Einstellungssnapshots wurden
+vor dem erfolgreichen Abschluss korrigiert. Fremde gültige SQLite-Dateien werden
+vor SwiftData zurückgewiesen. Live-, visuelle, vollständige VoiceOver- und
+Eigentümerabnahmen bleiben offen; produktive Daten und installierte Apps wurden
+nicht als Fixtures verwendet.
+
+## 17.10.2026 – Kompaktes Dashboard mit gemeinsamen Analyseergebnissen
+
+Der freigegebene Dashboardplan ist lokal umgesetzt. Unter der Kapazität stehen
+abholbereite Jobs, die nächsten 48 Stunden und die fünf offenen Produktionsjobs
+mit dem höchsten Rohstoffwert. Die ersten beiden Listen zeigen fünf Einträge
+und lassen sich vollständig öffnen. Wallet- und Nettowertdetails sind zunächst
+zugeklappt; das Finanzlayout verteilt die Breite 1:2 zugunsten des 280 Punkte
+hohen Graphen. Schmale Fenster stapeln die Karten. Zeit- und Wertbeschriftungen
+haben eigenen Platz; auch ein einzelner Nullwert wird auf seiner Wertachse
+korrekt positioniert.
+
+Die bestehende Produktionsbewertung liefert Einzeljobwerte an Top 5 und
+Vermögenssumme. Fehlende Preise bleiben außerhalb der Rangfolge und sichtbar
+unvollständig. Die Reaktionskarte verwendet alle negativen Ergebnisse des
+gemeinsamen Snapshots mit dessen Markt, Runs und tatsächlichem Transportziel.
+Ihr Detailknopf übergibt einen einmaligen Negativfilter. Die beiden
+Einkaufsanalysen bereiten je Material eine gemeinsame Kaufempfehlung vor;
+Dashboard, Detailansicht und Mineralienticker konsumieren diese Ergebnisse.
+Der separate Tageshistorienabruf des Tickers ist entfernt. Identische laufende
+Aktualisierungen werden geteilt, geänderte Kontexte nacheinander abgearbeitet
+und Ergebnisse innerhalb von fünf Minuten wiederverwendet. Konfigurationsfremde
+Ergebnisse werden nicht als aktuelle Empfehlungen dargestellt.
+
+Abschließende Prüfung des fertigen Quellstands:
+
+- Vollständiges SwiftPM: 39 App-Tests und 427 Core-Tests erfolgreich.
+- Separates `EVEStaticDataKit`: 8 Tests erfolgreich.
+- Nativer macOS-arm64-Debug-Build und Xcode-Tests erfolgreich; Ergebnisbericht
+  meldet 434 bestandene Tests, keine Fehler und einen übersprungenen opt-in
+  Test für ein echtes öffentliches SDE-Paket. Dynamische Parameter ergeben
+  zusätzliche Einzelausführungen; die Zahl 434 folgt der Berichtszusammenfassung.
+- Synthetische Komponentenansichten mit 0, 5 und 50 Einträgen bei 600, 1000
+  und 1440 Punkten Breite gerendert und visuell geprüft; lange Namen, große
+  ISK-Beträge, zugeklappte Charakterdetails und Graphbeschriftungen passen.
+  Ein anfänglich zu knapp bemessener Testgrenzwert für drei gestapelte
+  Aufklappknöpfe wurde korrigiert; der abschließende Lauf ist erfolgreich.
+- `git diff --check` und beide Lokalisierungsdateien fehlerfrei geprüft.
+
+Lokale Nachweise: `/private/tmp/eve-dashboard-20261017/swift-final-tests.log`,
+`kit-tests.log`, `native-verified-tests.log` und
+`native-verified-tests.xcresult` im selben Ordner. Die neun synthetischen
+Renderbilder liegen im temporären Systemordner unter
+`eve-dashboard-20261017/visual-checks/`.
+
+Bestehende lokale Änderungen wurden erhalten. Das vorhandene Xcode-Projekt
+wurde verwendet; diese Dashboardänderung benötigt keine zusätzlichen
+Dateizuordnungen oder persistierten Schemas. Produktbeschreibung und Architektur
+sind aktualisiert. Keine Veröffentlichung, Installation oder Prüfung mit
+produktiven Charakterdaten; echte ESI-/SSO-, vollständige UI-/VoiceOver- und
+Eigentümerabnahme bleiben offen. Die native Prüfung verwendete
+`CODE_SIGNING_ALLOWED=NO` und ist keine notarierte Release-Auslieferung.
+
+## 17.10.2026 – Aktualisierte Dashboard-App zum Ausprobieren bereitgestellt
+
+Auf ausdrücklichen Wunsch wurde der aktuelle lokale Arbeitsstand als Release
+mit dem vorhandenen `EVENexusSimple.xcodeproj` gebaut und separat nach
+`/Users/svenstolze/Downloads/EVE New Eden Nexus - Assets, Industry, Markets-Dashboard-2026-10-17.app`
+übertragen. Die ältere App vom 15.10.2026 wurde nicht überschrieben. Der Build
+enthält HEAD `44d85b4d0bb44b5348e8944f7bd617ec0f7ba7d9` einschließlich der
+vorhandenen lokalen Änderungen und des Dashboardumbaus; er stellt keinen
+unveränderten Git-Release dar. Keine Codeänderung, kein Commit oder Push im
+Rahmen dieses Build-Auftrags.
+
+Der Release-Build endete mit Exit 0. Beide Architekturen `x86_64 arm64`, die
+kanonische Bundle-ID, die neuen deutschen Dashboardressourcen sowie die lokale
+Ad-hoc-Signatur einschließlich beider eingebetteter Frameworks wurden geprüft.
+Ein Start mit separatem leerem Application-Support-Ordner, eigener
+Test-Einstellungsdomäne, deaktivierten Hintergrunddiensten und automatischem
+Beenden nach dem Öffnen des Test-Stores endete mit Exit 0. Nach dem Übertragen
+nach Downloads wurde die vollständige Signatur nochmals erfolgreich geprüft;
+der Finder zeigt die neue Datei. Die normale App wurde nicht mit produktiven
+Daten gestartet. Beim späteren Nutzerstart verwendet sie die unveränderte
+kanonische Datenidentität und damit den vorhandenen Datenstand.
+
+Quelleninventar und erneuter Prüfsummenvergleich belegen unveränderte
+Build-Eingaben während der Erstellung. Nachweise liegen unter
+`/private/tmp/eve-dashboard-release-20261017.OgLPkU/`: `release-build.log`,
+`source-manifest.sha256`, `source-verification.log`, `startup-smoke.log`,
+`signature-verification.log` und `app-binary.sha256`.
+Xcode gab neben bestehenden Swift-/Simulatorwarnungen eine widersprüchliche
+Diagnose über einen Compile-Aufruf mit Exit 0 aus; der Gesamtbuild, die
+Paketprüfung und der isolierte Start waren erfolgreich. Die vollständigen
+automatischen Tests des Dashboardumbaus wurden im vorigen Schritt bestanden
+und bei diesem unveränderten Build-Auftrag nicht erneut ausgeführt.
+Die Ausgabe ist lokal signiert, nicht notarisiert; Live-Dashboard- und
+Eigentümerabnahme erfolgen durch den Nutzer.
+
+## 17.10.2026 – Drei Marktübersichten direkt nebeneinander
+
+Auf Wunsch stehen negative Reaktionen, Mondmaterialkaufanalyse und
+Mineralienkaufanalyse jetzt unter dem Mineralienticker in einer gemeinsamen
+Zeile mit drei gleich breiten, oben ausgerichteten Karten. Das vorhandene
+responsive Kartenlayout stapelt sie nur bei zu geringer Fensterbreite.
+Berechnungen, gemeinsame Datenquellen, Aufklappverhalten und Kopieraktionen
+bleiben erhalten. Produktbeschreibung ist aktualisiert; bestehende lokale
+Änderungen wurden erhalten.
+
+Die vollständigen SwiftPM-Prüfungen sind erfolgreich (39 App- und 427
+Core-Tests), ebenso das separate StaticDataKit (8 Tests) und der native
+macOS-Debug-Build mit Tests (434 bestanden, ein opt-in Echt-SDE-Test
+übersprungen). Die vorhandenen Layoutprüfungen für das verwendete
+Dreispaltenlayout sind enthalten. Nachweise:
+`/private/tmp/eve-dashboard-20261017/swift-market-layout-tests.log`,
+`kit-market-layout-tests.log`, `native-market-layout-tests.log` und
+`native-market-layout-tests.xcresult` im selben Ordner.
+
+Zusätzlich wurde die Universal-Release-App neu gebaut, lokal ad-hoc-signiert
+und mit isolierten leeren Testdaten und deaktivierten Hintergrunddiensten
+erfolgreich bis zum Öffnen des Stores gestartet. Sie liegt separat als
+`/Users/svenstolze/Downloads/EVE New Eden Nexus - Assets, Industry, Markets-Dashboard-2026-10-17-v2.app`
+bereit und wurde im Finder angezeigt. Frühere App-Dateien bleiben erhalten.
+Build-, Quellen-, Signatur- und Startnachweise liegen unter
+`/private/tmp/eve-dashboard-market-layout-20261017.VpHSj3/`.
+`git diff --check` ist erfolgreich. Kein Commit, Push oder produktiver
+Teststart; die App ist nicht notarisiert. Nutzerabnahme der neuen Anordnung
+bleibt offen.
+
+## 19.10.2026 – Übergabe an Claude, neuer Projektordner, Feature-Sperre aufgehoben
+
+Auf Wunsch des Nutzers wird das bisher mit Codex entwickelte Projekt mit Claude
+weitergeführt. Anlass für den Umzug: Im iCloud-synchronisierten Ordner
+`~/Documents/EVE New Eden Nexus - Assets, Industry, Markets` waren nahezu alle
+Quell-, Test- und `.git`-Dateien ausgelagert („nur in iCloud“). Der Nutzer hat
+das Projekt nach `/Users/svenstolze/Developer/EVE New Eden Nexus - Assets, Industry, Markets`
+kopiert; das ist der neue einzige Arbeitsstand.
+
+Änderungen (nur Steuerdokumente, kein Code): neuer Pfad in AGENTS, README,
+WORKFLOW und PROJECT_STATE; neue `CLAUDE.md`, die `AGENTS.md` einbindet;
+MODEL_POLICY nach Werkzeug getrennt (Codex-Vorgabe unverändert, für Claude keine
+feste Vorgabe); die Sperre gegen neue Funktionen in AGENTS, WORKFLOW, ROADMAP und
+PROJECT_STATE ist aufgehoben – Weiterentwicklung nur auf ausdrücklichen Auftrag.
+Datierte Nachweise unter `Documentation/` nennen weiterhin den alten Pfad und
+bleiben als historische Belege unverändert.
+
+Prüfung: Im neuen Ordner sind alle 367 Projektdateien lesbar; Git erkennt Branch
+`consolidation/2026-09-25-single-source`, HEAD `44d85b4`. Die uncommitteten
+Codex-Änderungen (29 geänderte, 4 neue Dateien) sind unverändert erhalten.
+Kein Build/Test ausgeführt (Bearbeitung ohne Xcode-Umgebung), kein Commit, kein Push.
+Offen: uncommittete Änderungen auf dem Mac prüfen, testen und committen; alte
+Kopie unter `~/Documents` umbenennen oder entfernen.
+
+## 19.10.2026 – Uncommittete Codex-Änderungen im neuen Ordner verifiziert
+
+Auftrag: den uncommitteten Stand auf `consolidation/2026-09-25-single-source`
+(HEAD `44d85b4`) sichten, Zustand bewerten und das Begonnene abschließen.
+Umfang: Review-Fehlerkorrekturen und vollständige Wiederherstellung (02.10.),
+kompaktes Dashboard und Marktübersichten (17.10.), Steuerdokumente (19.10.).
+Ergebnis: Die Arbeit war inhaltlich abgeschlossen; offen war nur die erneute
+Prüfung nach dem Ordnerumzug. Keine Codeänderung nötig.
+
+Prüfung (Claude, Xcode 27.1, Swift 6.4, isolierte Pfade unter
+`/private/tmp/eve-claude-verify-20261019/`, eigener Application-Support-Root,
+eigene Preferences-Suite, `EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1`):
+
+- SwiftPM `swift test --disable-sandbox`: 427 Core- und 39 App-Swift-Testing-Fälle
+  sowie 19 XCTest-Fälle bestanden, ein vorgesehener Real-SDE-Skip; Exit 0
+  (`swift-tests.log`).
+- `Packages/EVEStaticDataKit`: 8 Fälle, 7 bestanden, ein Real-SDE-Skip
+  (`kit-tests.log`).
+- Natives `xcodebuild` Scheme `EVENexusSimple`, Debug, macOS arm64,
+  `CODE_SIGNING_ALLOWED=NO build test`: `BUILD SUCCEEDED`, `TEST SUCCEEDED`,
+  434 bestanden, ein Skip (`native-tests.log`, `native-tests.xcresult`).
+- Neue Dateien `StoreFullRestore.swift`, `FullStoreRecovery.swift` und
+  `StoreFullRestoreTests.swift` sind in SwiftPM und in den Xcode-Build-Phasen
+  enthalten; `git diff --check` fehlerfrei; DE-/EN-Kataloge mit `plutil -lint`
+  gültig, ohne doppelte Schlüssel und ohne neue Abdeckungslücken gegenüber HEAD.
+
+Offen: lokaler Commit (nur auf ausdrücklichen Auftrag), Live-ESI-/SSO-,
+visuelle, VoiceOver- und Eigentümerabnahme; alte Kopie unter `~/Documents`
+umbenennen oder entfernen (durch den Nutzer). Kein Commit, kein Push.

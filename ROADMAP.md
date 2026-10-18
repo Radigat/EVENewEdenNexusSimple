@@ -1,13 +1,25 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Arbeitsstand
 
-Standardmodell: GPT-5.6 Sol High. Es gibt nur einen aktiven Projektstand.
-Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
+Es gibt nur einen aktiven Projektstand. Legacy-Projekte dienen ausschließlich
+als Quelle für die Konsolidierung. Modellvorgaben: [MODEL_POLICY.md](MODEL_POLICY.md).
+
+## Abgeschlossen: Konsolidierung
 
 Die ausdrücklich beauftragte fachliche Zusammenführung ist umgesetzt. Ihr Umfang,
 bewusste Ausschlüsse und Nachweise stehen im [Funktionsvertrag](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md)
 und im [Prüfbericht](Documentation/Consolidation/FUNCTIONAL_VALIDATION.md).
 
-Dieser Auftrag endet mit Prüfung, lokalem Konsolidierungs-Checkpoint und Abschlussbericht.
-Es gibt keine automatisch anschließende Entwicklung. Historische Roadmaps, Projektbuch,
-P00–P61 und nur spezifizierte Vorhaben bleiben unveränderte Quellen im Archiv.
-Live-/Eigentümerabnahmen sind separat auszuweisen und keine neue Funktionsplanung.
+## Aktuell: Weiterentwicklung (seit 19.10.2026)
+
+Neue Funktionen, Fehlerkorrekturen und Verbesserungen sind freigegeben und werden
+auf ausdrücklichen Benutzerauftrag umgesetzt. Es gibt keine automatisch
+anschließende Entwicklung und keine ungefragten Folgefeatures.
+
+Historische Roadmaps, Projektbuch, P00–P61 und nur spezifizierte Vorhaben bleiben
+unveränderte Quellen im Archiv. Sie können als Ideenquelle dienen, werden aber
+erst durch einen ausdrücklichen Auftrag zu aktiver Arbeit. Live-/Eigentümerabnahmen
+sind weiterhin separat auszuweisen.
+
+## Geplant
+
+Noch keine Vorhaben festgelegt.

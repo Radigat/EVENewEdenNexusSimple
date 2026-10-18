@@ -1,7 +1,7 @@
 # EVE New Eden Nexus - Assets, Industry, Markets
 
 Native lokale macOS-App für Assets, Industrieplanung und Märkte in EVE Online.
-Einziger aktiver Projektstand: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`. Standardmodell: **GPT-5.6 Sol High**.
+Einziger aktiver Projektstand: `/Users/svenstolze/Developer/EVE New Eden Nexus - Assets, Industry, Markets`. Entwicklung mit Codex und Claude; Modellvorgaben je Werkzeug in [MODEL_POLICY.md](MODEL_POLICY.md).
 
 Der zuletzt verwendete lokale App-Stand einschließlich aller vorhandenen Änderungen,
 Tests und `EVEStaticDataKit` ist die aktive Codebasis. Andere Entwicklungslinien
@@ -16,10 +16,10 @@ Prüfnachweise: [Aktuelle Verifikation](Documentation/Consolidation/FUNCTIONAL_V
 | [PROJECT_STATE.md](PROJECT_STATE.md) | Ist-Stand, Verifikation und offene Grenzen |
 | [PRODUCT.md](PRODUCT.md) | vollständig erhaltene aktuelle Funktionsbeschreibung |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Komponenten und Fachverträge |
-| [AGENTS.md](AGENTS.md) | Arbeitsregeln und ein aktiver Stand |
+| [AGENTS.md](AGENTS.md) | Arbeitsregeln und ein aktiver Stand (für Claude über [CLAUDE.md](CLAUDE.md) eingebunden) |
 | [WORKFLOW.md](WORKFLOW.md) | Build, Tests und Git |
-| [MODEL_POLICY.md](MODEL_POLICY.md) | GPT-5.6 Sol High und freigabepflichtige Eskalation |
-| [ROADMAP.md](ROADMAP.md) | Ende der Konsolidierungsphase; keine Folgefeatures |
+| [MODEL_POLICY.md](MODEL_POLICY.md) | Modellvorgaben je Werkzeug und freigabepflichtige Eskalation |
+| [ROADMAP.md](ROADMAP.md) | Konsolidierung abgeschlossen; Weiterentwicklung auf Auftrag |
 | [Konsolidierung](Documentation/Consolidation/DECISIONS.md) | Herkunft, Auswahl und Konflikte |
 | [Archiv](_archive/README.md) | gesicherte Altstände und Wiederherstellung |
 

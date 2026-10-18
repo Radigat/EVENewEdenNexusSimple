@@ -1,6 +1,6 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Workflow
 
-Einzige Arbeitswurzel: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`. Standardmodell: GPT-5.6 Sol High.
+Einzige Arbeitswurzel: `/Users/svenstolze/Developer/EVE New Eden Nexus - Assets, Industry, Markets`. Modellvorgaben: [MODEL_POLICY.md](MODEL_POLICY.md).
 Vor jedem Eingriff Status und Diff lesen. Bestehende lokale Änderungen erhalten.
 Die ursprünglichen Arbeitsbäume und Git-Indizes werden als Legacy archiviert.
 
@@ -30,8 +30,7 @@ Reale SDE-/SSO-/ESI-Abnahmen bleiben opt-in und werden nicht durch Unit-Tests er
 
 Basis ist die vorhandene Simple-Git-Historie. Konsolidierungsbranch:
 `consolidation/2026-09-25-single-source`.
-Der Benutzerauftrag erlaubt einen lokalen Commit für den vollständigen übernommenen
-Arbeitsstand einschließlich zuvor uncommitteter Dateien und Konsolidierung.
+Lokale Commits nur auf ausdrücklichen Benutzerauftrag.
 Vorherige HEADs, Indizes, Arbeitsbaum-Diffs und Hashinventare sind dokumentiert.
 Kein Push, kein Merge fremder Historien und keine Änderung des Home-Repositories.
 Historischer Remote-Repositoryname bleibt als technischer Herkunftsverweis erhalten.
@@ -41,7 +40,7 @@ Historischer Remote-Repositoryname bleibt als technischer Herkunftsverweis erhal
 Status in PROJECT_STATE, Produktbeschreibung in PRODUCT, Architektur in ARCHITECTURE;
 datierte Nachweise in Documentation und dev-diary. Kompatibilitätsdateien sind keine
 zweiten Quellen. Legacy-Prompts nicht automatisch ausführen.
-Nach Checkpoint und Abschlussbericht stoppen; keine neuen Features planen.
+Nach Prüfung und Abschlussbericht des jeweiligen Auftrags stoppen; keine ungefragten Folgefeatures.
 
 ## Additive Datenprüfung
 

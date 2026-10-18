@@ -162,10 +162,11 @@ Reaktionsjobs weiterhin für die ausdrücklich geschätzte laufende Produktion.
 Die Tabellenfilter und die separate Standort-/Jobliste entfallen.
 
 Wallet ist kein eigenständiger Navigationsbereich mehr. Das Dashboard zeigt
-Gesamtsaldo, Quellzustand und letzten Aktualisierungszeitpunkt je verbundenem
-Charakter. Die vollständige Dashboard-Aktualisierung synchronisiert weiterhin
-alle Wallets; einzelne Wallets können zusätzlich unmittelbar in der
-Dashboard-Karte aktualisiert werden. Letzte bekannte Werte, explizite
+zunächst Gesamtsaldo, Charakteranzahl und Quellzustand. Einzelbeträge, letzte
+Aktualisierungszeitpunkte und Aktualisierungsaktionen stehen im aufklappbaren
+Charakterbereich. Die vollständige Dashboard-Aktualisierung synchronisiert
+weiterhin alle Wallets; einzelne Wallets lassen sich dort gezielt aktualisieren.
+Letzte bekannte Werte, explizite
 Fehlerzustände und ESI-Snapshot-Metadaten bleiben dabei erhalten.
 
 Die Benutzeroberfläche verwendet für sichtbare EVE-Namen die gemeinsame
@@ -215,6 +216,51 @@ Type-ID des sichtbaren Blueprints.
 
 ### Dashboard und Vermögensverlauf
 
+Unter der Kapazitätsübersicht stehen drei Jobkarten: abholbereit, Abschluss in
+den nächsten 48 Stunden und die fünf offenen Produktionsjobs mit dem höchsten
+gesamten Rohstoffwert. Abholbereite und bevorstehende Jobs beginnen mit fünf
+Einträgen und Gesamtzahl; „Alle anzeigen“ öffnet die vollständige Liste.
+Abholbereite Jobs sind nach ältestem Fertigstellungsdatum, kommende Jobs nach
+nächstem Abschluss sortiert, jeweils mit stabiler Jobidentität bei Gleichstand.
+Die Top 5 enthalten offene Manufacturing- und Reaction-Jobs einschließlich
+abholbereiter Jobs. Ihre Bewertung entsteht aus denselben Einzeljobwerten wie
+**In Produktion**. Fehlende Materialpreise schließen den Job aus der Rangfolge
+aus und machen die Abdeckung ausdrücklich unvollständig; die übrigen Werte
+bleiben als Schätzung gekennzeichnet.
+
+Wallet und Nettowert stehen im Breitenverhältnis 1:2 nebeneinander. Die
+Charakterdetails sind zunächst zugeklappt. Der Hauptgraph ist 280 Punkte hoch
+und reserviert Innenraum für Zeit- und Wertbeschriftungen; die Serienauswahl
+wechselt bei Platzmangel von Segmenten auf ein Menü. Job- und Finanzkarten
+stehen bei schmalen Fenstern untereinander.
+
+Der Marktbereich zeigt alle Reaktionen mit negativer Wertschöpfung aus dem
+gemeinsamen Reaktionssnapshot, zunächst fünf und aufklappbar vollständig.
+Negative Reaktionen, Mondmaterialkaufanalyse und Mineralienkaufanalyse stehen
+unter dem Ticker in drei gleich breiten, oben ausgerichteten Karten direkt
+nebeneinander. Reicht die Fensterbreite nicht aus, stehen die Karten untereinander.
+Markt, Run-Zahl, Transportziel und Kostenbasis stammen aus derselben Analyse
+wie im Reaktionsbereich. Der Detailknopf öffnet diesen mit einmalig aktivem
+Negativfilter. Ein früher gespeicherter Dashboard-Gruppenfilter begrenzt die
+Treffer nicht mehr. Nach Konfigurationsänderungen werden unpassende
+Empfehlungen bis zur gemeinsamen Aktualisierung ausdrücklich zurückgehalten.
+
+Mondmaterialien und Mineralien erhalten je eine kompakte Einkaufsliste mit
+Material, günstigstem konfiguriertem Kaufort und Stückpreis, ebenfalls mit
+Fünfer-Vorschau und vollständiger Aufklappansicht. Die Fachansichten zeigen
+dieselbe vorbereitete Empfehlung zusätzlich zu ihren vorhandenen
+Vergleichstabellen. Nur frische, standortpassende Märkte mit gültigen
+Verkaufsangeboten sind Kandidaten; Preisgleichstände folgen der Reihenfolge der
+konfigurierten Märkte. Fehlen Vergleichsmärkte, lautet die Angabe
+„Günstigster verfügbarer Markt“ mit sichtbarer Einschränkung. Ein Material ohne
+frisches Angebot bleibt ausdrücklich ohne Kaufort und Preis.
+
+Der Mineralienticker übernimmt Mineral, Stückpreis und Kaufort direkt aus
+derselben Mineralien-Einkaufsanalyse. Regionale Tagesdurchschnittspreise und
+Tagesänderungen gehören nicht mehr zu diesem Ticker. Ansichtenwechsel teilen
+laufende Aktualisierungen und nutzen passende vorhandene Ergebnisse innerhalb
+des fünfminütigen Wiederverwendungsfensters. Aufklappen startet keine Analyse.
+
 Beim ersten Dashboard-Aufruf eines laufenden App-Prozesses synchronisiert die
 App jeden verbundenen Charakter genau einmal über den bestehenden vollständigen
 Charakter-Sync. Dazu gehören insbesondere Wallet, Assets, Industriejobdaten,
@@ -233,6 +279,15 @@ an, damit kleine Aenderungen nicht durch einen erzwungenen Nullpunkt
 verschwinden. Gesamtwert, Wallet, Assets und **In Produktion** können getrennt
 betrachtet werden; auf der Net-Worth-Seite sind Komponenten einzeln ein- und
 ausblendbar.
+
+Persönliche und Corporation-Assets erhalten das ESI-Kennzeichen
+`is_blueprint_copy` durch Synchronisierung und Speicherung hindurch. Bekannte
+Blueprint-Kopien werden nicht zum Originalpreis bewertet. Bei älteren Daten
+ohne Kennzeichen bleiben unbekannte Blueprint- oder SDE-Klassifikationszustände
+ausdrücklich unbewertet und sichtbar unvollständig. Eine normale Aktualisierung
+ergänzt die verfügbaren Quelldaten. Historische Vermögenssummen behalten ihren
+ursprünglichen Regelstand; neue Aufzeichnungen verwenden die korrigierte
+Bewertungsrichtlinie. Details: [Fehlerkorrekturen und Wiederherstellung](Documentation/REVIEW_FIXES_2026-10-02.md).
 
 **In Produktion** bewertet die bereits verbrauchten SDE-Materialmengen aktiver,
 pausierter oder abholbereiter Manufacturing- und Reaction-Jobs mit ESI Average
@@ -767,6 +822,13 @@ Verträge enthalten die konkreten Gegenstände und Mengen. Der
 wird nicht ein zweites Mal addiert. Systemindex, Facility Tax, SCC- und
 Alpha-Zuschlag bleiben über die Installationsgleichung nachvollziehbar.
 
+Bei teilweise gelagerten Zwischenprodukten werden nur die gekauften und aus
+dem Lager verbrauchten Einheiten mit dem gewichteten Stückpreis der vollständigen
+Bedarfsquote bewertet. Die zusätzlich hergestellte Menge verursacht ihre
+rekursiven Zutatenkosten und keinen zweiten Zwischenproduktwert. Plan,
+Produktionsübersicht und neue Produktionsaufzeichnungen verwenden denselben
+Materialkostenbeitrag; bestehende historische Werte werden nicht umgerechnet.
+
 Vor der endgültigen Berechnung löst die Planner-Fläche **BPO/BPC** jeden
 tatsächlich gebauten Blueprinttyp gegen persönliche Besitz-Snapshots, den
 exakten Produktionsort und eindeutig zurechenbare Main-Hub-Verträge auf. Eine
@@ -1121,8 +1183,20 @@ Der ausführliche Produktionsvertrag steht in
 - Die primäre SwiftData-Datenbank besitzt einen stabilen Pfad unter der
   Anwendungskennung. Schemaänderungen werden versioniert migriert.
 - Vor einer Migration wird eine Sicherheitskopie angelegt. Ein Legacy-Store
-  wird nur dann kopiert, wenn noch kein kanonischer Store existiert, und nicht
-  automatisch gelöscht.
+  wird nur übernommen, wenn noch kein kanonischer Store existiert. Ein geprüfter,
+  konsistenter SQLite-Snapshot einschließlich festgeschriebener WAL-Daten wird
+  zuerst vollständig vorbereitet und erst dann atomar veröffentlicht. Der alte
+  Stand wird nicht gelöscht; vorhandene Zieldaten oder Begleitdateien werden
+  nicht automatisch überschrieben.
+- Für bereits unvollständig übernommene Daten gibt es eine ausdrücklich gewählte
+  vollständige Wiederherstellung im App-Menü und auf dem Fehlerbildschirm. Nach
+  Beenden und erneutem Öffnen werden beide Datenstände gesichert und die alte
+  Arbeitskopie mit der aktuellen Migrationskette geprüft. Die bestätigte alte
+  Datenbank ersetzt ausschließlich den SwiftData-Bestand. Neuere Datensätze
+  bleiben in der Sicherung und werden nicht zusammengeführt. Eine exklusive
+  Datensperre und ein Vorgangsprotokoll schützen Austausch und Rücknahme; ein
+  mehrdeutiger Zustand verhindert den normalen Start. Die genaue Grenze und
+  die Sicherungsregeln stehen im [Wiederherstellungsvertrag](Documentation/REVIEW_FIXES_2026-10-02.md).
 - Ein gültiger SQLite-Integritätstest allein belegt keinen EVE-Datenbestand.
   Vor einer Wiederherstellung müssen auch die Modellzugehörigkeit und die
   enthaltenen EVE-Entitäten geprüft werden. Der bisherige Legacy-Import prüft
@@ -1326,18 +1400,26 @@ mit kurzen, wiederverwendbaren Prompts steht in
 - Ein Sprachwechsel aktualisiert weiterhin die Locale und die lokalisierten
   Inhalte, ersetzt aber nicht mehr synchron den gesamten sichtbaren Detailbaum
   während der segmentierten Accessibility-Aktion.
-- Der Mineralpreisticker des Dashboards baut seine unveränderte doppelte
+- Der Mineralpreisticker des Dashboards baut seine doppelte
   Zeilenfolge einmal in einer `NSHostingView` auf. Eine lineare Core Animation
   verschiebt anschließend ausschließlich deren Layer, statt den vollständigen
   SwiftUI-/AppKit-Layoutbaum pro Frame neu zu berechnen. Bei inaktiver App wird
   die Animation entfernt. **Bewegung reduzieren** verwendet weiterhin eine
-  statisch horizontal scrollbare einfache Zeilenfolge. Preise, Reihenfolge,
-  32-Sekunden-Umlauf, Farben und zugängliche Beschriftungen bleiben gleich.
+  statisch horizontal scrollbare einfache Zeilenfolge. Der Umlauf dauert
+  weiterhin 32 Sekunden. Die Inhalte verwenden die gemeinsame
+  Mineralien-Kaufempfehlung und direkt kopierbare Material- und Ortsnamen.
 
 ## Installation und Entwicklung
 
 Die fertigen lokalen Release-Apps liegen unter `~/Downloads/` (Apple Silicon, macOS 14+,
 lokale Ad-hoc-Signatur). Build-Nachweise liegen unter `dist/`.
+Die aktualisierte Dashboard-App liegt zusätzlich als
+`EVE New Eden Nexus - Assets, Industry, Markets-Dashboard-2026-10-17-v2.app`
+in Downloads. Sie enthält Apple-Silicon- und Intel-Code, ist lokal ad-hoc-signiert
+und verwendet als normale App den vorhandenen Datenstand. Vor dem Start eine
+bereits laufende normale App beenden. Frühere App-Dateien bleiben erhalten.
+Diese lokale Ausgabe ist nicht notarisiert; aktuelle Build- und Startnachweise
+liegen unter `/private/tmp/eve-dashboard-market-layout-20261017.VpHSj3/`.
 Die separat benannte `EVE New Eden Nexus - Assets, Industry, Markets-DEV.app` enthält eine
 geprüfte Kopie der lokalen Daten, Kataloge und Einstellungen zum Exportzeitpunkt. Beim ersten
 Start wird sie atomar nach `~/Library/Application Support/com.local.EVENexusSimple.DEV/`
@@ -1469,6 +1551,11 @@ Implementierung, Fehlerbehebung, Migration, Konfigurations- oder wesentliche
 Verhaltensänderung aktualisiert sie im selben Arbeitsschritt. Historische oder
 ersetzte Aussagen werden nicht als aktuelles Verhalten stehen gelassen, sondern
 im [Entwicklungstagebuch](dev-diary.md) eingeordnet.
+
+Für agentische Projektarbeit gilt [MODEL_POLICY.md](MODEL_POLICY.md): GPT-5.6 Sol
+mit Reasoning-Stufe High ist der Standard. Ein anderes Modell oder eine andere
+Reasoning-Stufe erfordert eine ausdrückliche Benutzeranweisung oder – falls der
+Standard nicht ausreicht – eine vorherige Auswahl aus konkreten Vorschlägen.
 
 Ein Diary-Eintrag nennt Datum, Ziel, Änderung, Ergebnis, konkrete Prüfung und
 offene Arbeit. Prüfergebnisse werden zusätzlich in

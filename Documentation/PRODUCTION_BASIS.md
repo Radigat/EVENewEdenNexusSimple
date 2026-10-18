@@ -438,8 +438,17 @@ and inbound material logistics. The visible Costs subtotal contains material,
 Blueprint allocation and installation only; logistics remains frozen in the
 domain breakdown for scenario accounting but is displayed per route instead of
 inside that subtotal. Warehouse consumption is an informational Main-Hub
-replacement-value subset of material cost and is never added twice. Every sale
-card exposes Route 1 from Main to production and Route 2 from production to the
+replacement-value subset of material cost and is never added twice. For each
+bought or stocked material, the planner retains a complete Main-Hub quote for
+the full required quantity and values only the bought plus consumed-stock
+quantity at that quote's weighted unit price. A stock-first intermediate's
+produced shortfall contributes its recursive input costs instead of another
+replacement charge for the produced units. Missing full-demand market depth
+keeps material and total production costs unavailable, even when the stock
+quantity alone could be quoted. Actual purchase cash cost and warehouse
+replacement value remain separate. New production-history records retain the
+same request-level leaf valuation; existing frozen history is not recalculated.
+Every sale card exposes Route 1 from Main to production and Route 2 from production to the
 selected sale location. Main sale scenarios require the return route, Home
 normally short-circuits Route 2 when production and sale locations are
 identical, and Coalition scenarios use the distinct production-to-Coalition

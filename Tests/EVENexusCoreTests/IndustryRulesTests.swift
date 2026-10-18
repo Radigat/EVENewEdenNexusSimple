@@ -115,6 +115,45 @@ struct IndustryRulesTests {
   }
 
   @Test
+  func jobMaterialRankingIncludesReadyJobsAndExcludesIncompleteOrClosedJobs() {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    func job(_ id: Int64, runs: Int, status: String = "active", product: Int64 = 500, activity: Int = 1) -> ESIIndustryJobDTO {
+      ESIIndustryJobDTO(activityID: activity, blueprintID: 700, blueprintTypeID: 701,
+        endDate: .distantPast, facilityID: 800, jobID: id, productTypeID: product, runs: runs, status: status)
+    }
+    let jobs = [job(1, runs: 2), job(2, runs: 10, status: "ready"),
+      job(3, runs: 4), job(4, runs: 3), job(5, runs: 1), job(6, runs: 5),
+      job(7, runs: 100, status: "delivered"), job(8, runs: 100, status: "cancelled"),
+      job(9, runs: 100, product: 501), job(10, runs: 100, status: "reverted"),
+      job(11, runs: 2, product: 502, activity: 9)]
+    let input = DashboardWealthCharacterInput(
+      character: CharacterIdentity(id: 7, name: "Fixture"),
+      wallet: Sourced(state: .fresh, value: 0, source: source),
+      assets: Sourced(state: .fresh, value: AssetSnapshot(characterID: 7, state: .fresh, items: []), source: source),
+      industryJobs: Sourced(state: .fresh, value: jobs, source: source))
+    func definition(_ product: Int64, material: Int64, activity: BlueprintActivityDefinition.Kind = .manufacturing) -> BlueprintDefinition {
+      BlueprintDefinition(blueprintTypeID: 701, productTypeID: product, maxProductionLimit: 100,
+        activity: BlueprintActivityDefinition(kind: activity, durationSeconds: 60,
+          materials: [BlueprintMaterial(typeID: material, quantity: 10)],
+          products: [BlueprintProduct(typeID: product, quantity: 1, probability: nil)]), source: source)
+    }
+    let prices = [Int64(34): AdjustedPrice(typeID: 34, adjustedPrice: 2, averagePrice: nil)]
+    let definitions = [Int64(500): definition(500, material: 34), 501: definition(501, material: 35), 502: definition(502, material: 34, activity: .reaction)]
+    let values = DashboardInProgressIndustryProjector.projectJobs(inputs: [input], prices: prices, definitionsByProductTypeID: definitions)
+    let ranked = DashboardInProgressIndustryProjector.rankedJobs(values)
+    #expect(values.count == 8)
+    #expect(ranked.prefix(5).map { $0.ownedJob.job.jobID } == [2, 6, 3, 4, 1])
+    #expect(ranked.first?.materialValue == 200)
+    #expect(values.first { $0.ownedJob.job.jobID == 9 }?.materialValue == nil)
+    #expect(values.first { $0.ownedJob.job.jobID == 11 }?.materialValue == 40)
+    let aggregate = DashboardInProgressIndustryProjector.project(inputs: [input], prices: prices, definitionsByProductTypeID: definitions, jobValues: values)
+    #expect(aggregate[7]?.value == ranked.compactMap(\.materialValue).reduce(0, +))
+    #expect(aggregate[7]?.unvaluedMaterialTypeCount == 1)
+    #expect(aggregate[7]?.estimatedJobCount == 8)
+    #expect(aggregate[7]?.isComplete == false)
+  }
+
+  @Test
   func reservationsCannotDoubleSpendStock() async throws {
     let ledger = ReservationLedger()
     let first = UUID()

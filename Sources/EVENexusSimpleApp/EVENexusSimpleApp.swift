@@ -7,8 +7,16 @@ import SwiftUI
 @main
 @MainActor
 enum EVENexusApplicationEntry {
+  private static var persistenceLock: PersistenceProcessLock?
   static func main() {
+    if FullStoreRecovery.handleValidatorInvocation() { return }
     do {
+      try DevelopmentAppBootstrap.configurePaths()
+      let paths = try AppDataPaths.live()
+      persistenceLock = try PersistenceProcessLock(paths: paths)
+      FullStoreRecovery.processLock = persistenceLock
+      try StoreFullRestore.recoverInterrupted(paths: paths)
+      if try FullStoreRecovery.runPending(paths: paths) { exit(0) }
       try DevelopmentAppBootstrap.prepare()
     } catch {
       if ProcessInfo.processInfo.environment["EVE_NEXUS_PERSISTENCE_ACCEPTANCE_EXIT"] == "1" {
@@ -122,6 +130,11 @@ struct EVENexusSimpleApp: App {
     .defaultSize(width: 1_180, height: 760)
     .commands {
       TextSizeCommands()
+      CommandMenu(AppLocalization.text("Data recovery")) {
+        Button(AppLocalization.text("Fully restore earlier data…")) {
+          FullStoreRecovery.requestAndQuit(paths: try? AppDataPaths.live(), context: modelContainer?.mainContext)
+        }
+      }
     }
   }
 }
@@ -198,6 +211,9 @@ private struct PersistenceUnavailableView: View {
         "The app did not create an empty replacement database and did not delete existing data. Quit the app and back up the data folder before attempting a repair or migration."
       )
       .fixedSize(horizontal: false, vertical: true)
+      Button(AppLocalization.text("Fully restore earlier data…")) {
+        FullStoreRecovery.requestAndQuit(paths: try? AppDataPaths.live(), context: nil)
+      }
       if let folderURL {
         Text(folderURL.path)
           .font(.caption.monospaced())

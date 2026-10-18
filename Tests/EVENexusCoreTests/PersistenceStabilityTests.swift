@@ -51,8 +51,11 @@ struct PersistenceStabilityTests {
       withIntermediateDirectories: true
     )
     let legacy = root.appendingPathComponent("default.store")
-    let source = Data("legacy-store".utf8)
-    try source.write(to: legacy)
+    var db: OpaquePointer?
+    #expect(sqlite3_open(legacy.path, &db) == SQLITE_OK)
+    #expect(sqlite3_exec(db, "CREATE TABLE fixture(value INTEGER); INSERT INTO fixture VALUES(42);", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+    let source = try Data(contentsOf: legacy)
     let paths = AppDataPaths.resolve(
       applicationSupportRoot: root,
       fileExists: FileManager.default.fileExists(atPath:)
@@ -62,7 +65,7 @@ struct PersistenceStabilityTests {
       try PersistenceStoreSeeder.seedCanonicalStoreIfNeeded(paths: paths)
     )
     #expect(try Data(contentsOf: legacy) == source)
-    #expect(try Data(contentsOf: paths.swiftDataStoreURL) == source)
+    #expect(FileManager.default.fileExists(atPath: paths.swiftDataStoreURL.path))
     #expect(
       try !PersistenceStoreSeeder.seedCanonicalStoreIfNeeded(paths: paths)
     )

@@ -95,6 +95,51 @@ struct MineralPurchaseAnalysisView: View {
   }
 }
 
+struct MaterialPurchaseRecommendationRow: View {
+  let recommendation: MaterialPurchaseRecommendation
+
+  var body: some View {
+    HStack(alignment: .top, spacing: DesignTokens.spacingSM) {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+        EVEItemText(value: recommendation.material.name,
+          typeID: recommendation.material.id, font: .callout.weight(.semibold))
+        if let location = recommendation.location {
+          EVEEntityText(value: location.name, font: .caption, lineLimit: 2)
+        } else {
+          Text("No fresh sell offer available").font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+      }
+      Spacer(minLength: DesignTokens.spacingXS)
+      Text(recommendation.unitPrice.map {
+        $0.formatted(.currency(code: "ISK").precision(.fractionLength(2)))
+      } ?? AppLocalization.text("Unavailable"))
+        .font(.callout.monospacedDigit())
+        .fixedSize(horizontal: true, vertical: false)
+    }
+    .accessibilityElement(children: .contain)
+  }
+}
+
+struct MaterialPurchaseRecommendationContent: View {
+  let recommendations: [MaterialPurchaseRecommendation]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text(recommendations.allSatisfy(\.hasCompleteMarketCoverage)
+        ? "Cheapest configured market".localizedUI : "Cheapest available market".localizedUI)
+        .font(.caption.weight(.semibold))
+      if recommendations.contains(where: { !$0.hasCompleteMarketCoverage }) {
+        Text("Some configured markets are unavailable or stale; the comparison is incomplete.")
+          .font(.caption).foregroundStyle(DesignTokens.caution)
+      }
+      DashboardPreviewList(rows: recommendations) { row in
+        MaterialPurchaseRecommendationRow(recommendation: row)
+      }
+    }
+  }
+}
+
 private struct MaterialPurchaseAnalysisView: View {
   let kind: MaterialPurchaseAnalysisKind
   @EnvironmentObject private var runtime: RuntimeState
@@ -149,6 +194,15 @@ private struct MaterialPurchaseAnalysisView: View {
       if let analysis {
         configurationWarnings(analysis)
         sourceStatus(analysis)
+        Panel(title: "Recommended purchase locations") {
+          if kind == .moonMaterials ? runtime.hasCurrentMoonMaterialAnalysis : runtime.hasCurrentMineralPurchaseAnalysis {
+            MaterialPurchaseRecommendationContent(recommendations:
+              kind == .moonMaterials ? runtime.moonMaterialRecommendations : runtime.mineralPurchaseRecommendations)
+          } else {
+            Text("Settings changed. Refresh to update purchase locations.")
+              .foregroundStyle(DesignTokens.caution)
+          }
+        }
         analysisGrid(analysis)
       } else if isRefreshing {
         Spacer()
@@ -692,6 +746,7 @@ private struct MaterialPurchaseAnalysisView: View {
     }.sorted().joined(separator: "|")
     return [
       kind.accessibilityPrefix,
+      runtime.marketAnalysisContextIdentity,
       profile.mainTradingLocationID?.uuidString ?? "none",
       profile.homeTradingLocationID?.uuidString ?? "none",
       profile.coalitionTradingLocationID?.uuidString ?? "none",

@@ -64,6 +64,38 @@ struct ESIClientTests {
 
     #expect(asset.singleton)
     #expect(asset.quantity == 3)
+    #expect(asset.isBlueprintCopy == nil)
+  }
+
+  @Test(arguments: [true, false])
+  func assetSchemaRetainsExplicitBlueprintCopyFlag(flag: Bool) throws {
+    let fixture = Data(
+      """
+      {"item_id":11,"location_flag":"Hangar","location_id":22,
+       "location_type":"station","quantity":1,"is_singleton":true,
+       "type_id":900,"is_blueprint_copy":\(flag)}
+      """.utf8)
+    let decoded = try JSONDecoder().decode(ESIAssetDTO.self, from: fixture)
+    #expect(decoded.isBlueprintCopy == flag)
+    let roundTrip = try JSONDecoder().decode(ESIAssetDTO.self, from: JSONEncoder().encode(decoded))
+    #expect(roundTrip.isBlueprintCopy == flag)
+  }
+
+  @Test
+  func personalAssetSyncPreservesCopyFlagThroughStructureReclassification() async {
+    let scopes: Set<String> = ["esi-assets.read_assets.v1"]
+    let snapshot = await CharacterSyncService(
+      esi: ESIClient(transport: BlueprintPersonalAssetTransport())
+    ).synchronize(
+      authorization: corporationAuthorization(scopes: scopes),
+      lease: corporationLease(scopes: scopes)
+    )
+    let items = snapshot.assets.value?.items
+    #expect(items?.count == 3)
+    #expect(items?.first(where: { $0.id == 11 })?.isBlueprintCopy == true)
+    #expect(items?.first(where: { $0.id == 12 })?.isBlueprintCopy == false)
+    #expect(items?.first(where: { $0.id == 13 })?.isBlueprintCopy == nil)
+    #expect(items?.allSatisfy { $0.locationKind == .structure } == true)
   }
 
   @Test
@@ -1175,6 +1207,8 @@ struct ESIClientTests {
 
     #expect(result.state == .fresh)
     #expect(result.value?.corporationID == 98_000_001)
+    #expect(result.value?.items.first(where: { $0.id == 11 })?.isBlueprintCopy == true)
+    #expect(result.value?.items.first(where: { $0.id == 12 })?.isBlueprintCopy == false)
     #expect(result.value?.corporationName == "Example Industries")
     #expect(result.value?.corporationDivisionNames?[1] == "Minerals")
     #expect(
@@ -1690,10 +1724,17 @@ struct DashboardProjectionTests {
       ],
       source: source
     )
+    let jobValues = DashboardInProgressIndustryProjector.projectJobs(
+      inputs: [input], prices: prices.prices,
+      definitionsByProductTypeID: [500: definition]
+    )
+    #expect(jobValues.count == 1)
+    #expect(jobValues.first?.materialValue == 90)
     let industryValues = DashboardInProgressIndustryProjector.project(
       inputs: [input],
       prices: prices.prices,
-      definitionsByProductTypeID: [500: definition]
+      definitionsByProductTypeID: [500: definition],
+      jobValues: jobValues
     )
     let snapshot = DashboardWealthProjector.project(
       inputs: [input],
@@ -1755,7 +1796,8 @@ struct DashboardProjectionTests {
     let snapshot = DashboardWealthProjector.project(
       inputs: [input],
       prices: prices,
-      typeNames: [999: "Unpriced Fixture"]
+      typeNames: [999: "Unpriced Fixture"],
+      assetClassifications: [34: ordinaryAssetClassification, 999: ordinaryAssetClassification]
     )
 
     #expect(snapshot.knownTotalValue == 150)
@@ -1855,7 +1897,8 @@ struct DashboardProjectionTests {
 
     let snapshot = DashboardWealthProjector.project(
       inputs: [input],
-      prices: prices
+      prices: prices,
+      assetClassifications: [34: ordinaryAssetClassification]
     )
 
     #expect(snapshot.knownTotalValue == 215)
@@ -2085,7 +2128,8 @@ struct DashboardProjectionTests {
           34: AdjustedPrice(typeID: 34, adjustedPrice: 4, averagePrice: 5)
         ],
         source: source
-      )
+      ),
+      assetClassifications: [34: ordinaryAssetClassification]
     )
 
     #expect(snapshot.corporationAssetTotal == 50)
@@ -2205,6 +2249,7 @@ struct DashboardProjectionTests {
     )
 
     #expect(decoded.ordersValue == nil)
+    #expect(decoded.unknownBlueprintStatusCount == 0)
     #expect(decoded.excludedBlueprintCopyCount == 0)
     #expect(decoded.unvaluedOrderCount == 0)
     #expect(decoded.missingEscrowOrderCount == 0)
@@ -2217,6 +2262,174 @@ struct DashboardProjectionTests {
     #expect(decoded.unvaluedAssetTypes.isEmpty)
     #expect(decoded.unvaluedContractItemTypes.isEmpty)
   }
+  private var ordinaryAssetClassification: IndustryItemClassification {
+    IndustryItemClassification(
+      categoryName: "Material", groupName: "Mineral", manufacturingCategory: .module)
+  }
+
+  private func blueprintAsset(
+    id: Int64, typeID: Int64 = 900, quantity: Int64 = 1, flag: Bool? = nil
+  ) -> AssetItem {
+    AssetItem(
+      id: id, typeID: typeID, quantity: quantity,
+      locationID: 60_003_760, locationKind: .station,
+      locationFlag: "Hangar", singleton: true, isBlueprintCopy: flag)
+  }
+
+  private func blueprintWealthInput(
+    characterID: Int64, items: [AssetItem], corporationItems: [AssetItem]
+  ) -> DashboardWealthCharacterInput {
+    DashboardWealthCharacterInput(
+      character: CharacterIdentity(id: characterID, name: "Fixture", corporationID: 98_000_001),
+      wallet: Sourced(state: .fresh, value: 0, source: source),
+      assets: Sourced(
+        state: .fresh, value: AssetSnapshot(characterID: characterID, state: .fresh, items: items),
+        source: source),
+      openOrders: Sourced(state: .fresh, value: [], source: source),
+      privateContracts: Sourced(
+        state: .fresh,
+        value: PrivateContractSnapshot(
+          characterID: characterID, itemContracts: [], inTransitCouriers: []), source: source),
+      corporationAssets: Sourced(
+        state: .fresh,
+        value: AssetSnapshot(
+          characterID: characterID, corporationID: 98_000_001, state: .fresh,
+          items: corporationItems), source: source)
+    )
+  }
+
+  private var blueprintReferencePrices: ReferencePriceSnapshot {
+    ReferencePriceSnapshot(
+      capturedAt: source.capturedAt,
+      prices: [
+        900: AdjustedPrice(typeID: 900, adjustedPrice: 900, averagePrice: 1_000),
+        34: AdjustedPrice(typeID: 34, adjustedPrice: 4, averagePrice: 5),
+        888: AdjustedPrice(typeID: 888, adjustedPrice: 100, averagePrice: 200),
+      ], source: source)
+  }
+
+  @Test
+  func personalAndDeduplicatedCorporationAssetsUseExplicitFlagsAndLegacySignals() throws {
+    let items = [
+      blueprintAsset(id: 1, flag: true),
+      blueprintAsset(id: 2, flag: false),
+      blueprintAsset(id: 3, quantity: -2),
+      blueprintAsset(id: 4, quantity: -1),
+      blueprintAsset(id: 5, typeID: 34, quantity: 2),
+    ]
+    let input = blueprintWealthInput(characterID: 7, items: items, corporationItems: items)
+    let second = blueprintWealthInput(characterID: 8, items: [], corporationItems: items)
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [input, second], prices: blueprintReferencePrices,
+      assetClassifications: [34: ordinaryAssetClassification]
+    )
+    #expect(snapshot.assetTotal == 2_010)
+    #expect(snapshot.corporationAssetTotal == 2_010)
+    #expect(snapshot.knownTotalValue == 4_020)
+    #expect(
+      snapshot.characters.first(where: { $0.characterID == 7 })?.excludedBlueprintCopyCount == 2)
+    #expect(snapshot.corporationAssetCoverage?.excludedBlueprintCopyCount == 2)
+    #expect(snapshot.corporationAssetCoverage?.corporationCount == 1)
+    #expect(snapshot.isComplete)
+    #expect(snapshot.corporationAssetFreshness == .fresh)
+    #expect(snapshot.valuationPolicy.hasSuffix("v3"))
+    let decoded = try JSONDecoder().decode(
+      DashboardWealthSnapshot.self, from: JSONEncoder().encode(snapshot))
+    #expect(decoded == snapshot)
+  }
+
+  @Test(arguments: [true, false])
+  func unknownBlueprintStatusIsIncompleteAndSeparateFromUnpricedTypes(hasClassification: Bool) {
+    let items = [blueprintAsset(id: 1), blueprintAsset(id: 2, typeID: 888)]
+    let input = blueprintWealthInput(characterID: 7, items: items, corporationItems: items)
+    let classifications: [Int64: IndustryItemClassification] =
+      hasClassification
+      ? [
+        900: IndustryItemClassification(
+          categoryName: "Blueprint", groupName: "Ship Blueprint", manufacturingCategory: .module)
+      ] : [:]
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [input], prices: blueprintReferencePrices, assetClassifications: classifications
+    )
+    #expect(snapshot.assetTotal == 0)
+    #expect(snapshot.corporationAssetTotal == 0)
+    #expect(snapshot.characters.first?.unknownBlueprintStatusCount == 2)
+    #expect(snapshot.characters.first?.excludedBlueprintCopyCount == 0)
+    #expect(snapshot.characters.first?.unvaluedAssetTypeCount == 0)
+    #expect(snapshot.characters.first?.unvaluedAssetTypes.isEmpty == true)
+    #expect(snapshot.corporationAssetCoverage?.unknownBlueprintStatusCount == 2)
+    #expect(snapshot.corporationAssetCoverage?.unvaluedAssetTypeCount == 0)
+    #expect(snapshot.corporationAssetFreshness == .partial)
+    #expect(snapshot.freshness == .partial)
+    #expect(!snapshot.isComplete)
+  }
+
+  @Test
+  func blueprintStatusOverridesLegacyQuantitiesAndDoesNotRequireSDEForExplicitFlags() {
+    let items = [
+      blueprintAsset(id: 1, quantity: -1, flag: true),
+      blueprintAsset(id: 2, quantity: -2, flag: false),
+    ]
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [blueprintWealthInput(characterID: 7, items: items, corporationItems: items)],
+      prices: blueprintReferencePrices
+    )
+    #expect(snapshot.assetTotal == 1_000)
+    #expect(snapshot.corporationAssetTotal == 1_000)
+    #expect(snapshot.characters.first?.excludedBlueprintCopyCount == 1)
+    #expect(snapshot.characters.first?.unknownBlueprintStatusCount == 0)
+    #expect(snapshot.isComplete)
+  }
+
+  @Test
+  func assetSnapshotsDecodeOldPayloadAndRoundTripAllBlueprintStates() throws {
+    let items = [
+      blueprintAsset(id: 1, flag: true), blueprintAsset(id: 2, flag: false), blueprintAsset(id: 3),
+    ]
+    let snapshot = AssetSnapshot(characterID: 7, state: .fresh, items: items)
+    let data = try JSONEncoder().encode(snapshot)
+    let restored = try JSONDecoder().decode(AssetSnapshot.self, from: data)
+    #expect(restored.items == items)
+    var json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    var oldItems = try #require(json["items"] as? [[String: Any]])
+    for index in oldItems.indices { oldItems[index].removeValue(forKey: "isBlueprintCopy") }
+    json["items"] = oldItems
+    let legacy = try JSONDecoder().decode(
+      AssetSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+    #expect(legacy.items.allSatisfy { $0.isBlueprintCopy == nil })
+    #expect(legacy.items.map(\.quantity) == items.map(\.quantity))
+  }
+
+  @Test
+  func legacyAggregateHistoryKeepsValuesAndPolicyAndDefaultsBlueprintCounters() throws {
+    let snapshot = DashboardWealthProjector.project(
+      inputs: [blueprintWealthInput(characterID: 7, items: [], corporationItems: [])],
+      prices: blueprintReferencePrices
+    )
+    var json = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as? [String: Any])
+    json["valuationPolicy"] = "esi-average-then-adjusted-plus-sde-job-materials-v2"
+    json["knownTotalValue"] = 123_456.0
+    json["corporationAssetTotal"] = 98_765.0
+    var coverage = try #require(json["corporationAssetCoverage"] as? [String: Any])
+    coverage.removeValue(forKey: "unknownBlueprintStatusCount")
+    coverage.removeValue(forKey: "excludedBlueprintCopyCount")
+    json["corporationAssetCoverage"] = coverage
+    var characters = try #require(json["characters"] as? [[String: Any]])
+    for index in characters.indices {
+      characters[index].removeValue(forKey: "unknownBlueprintStatusCount")
+    }
+    json["characters"] = characters
+    let history = try JSONDecoder().decode(
+      [DashboardWealthSnapshot].self, from: JSONSerialization.data(withJSONObject: [json]))
+    #expect(history.first?.knownTotalValue == 123_456)
+    #expect(history.first?.corporationAssetTotal == 98_765)
+    #expect(history.first?.valuationPolicy == "esi-average-then-adjusted-plus-sde-job-materials-v2")
+    #expect(history.first?.corporationAssetCoverage?.unknownBlueprintStatusCount == 0)
+    #expect(history.first?.corporationAssetCoverage?.excludedBlueprintCopyCount == 0)
+    #expect(history.first?.characters.first?.unknownBlueprintStatusCount == 0)
+  }
+
 }
 
 @Suite("Character wallet contract")
@@ -3216,6 +3429,7 @@ private actor CorporationAssetTransport: ESIHTTPTransporting {
           "location_type":"station",
           "quantity":7,
           "is_singleton":false,
+          "is_blueprint_copy":false,
           "type_id":35
         }]
         """
@@ -3227,6 +3441,7 @@ private actor CorporationAssetTransport: ESIHTTPTransporting {
           "location_type":"station",
           "quantity":5,
           "is_singleton":false,
+          "is_blueprint_copy":true,
           "type_id":34
         }]
         """
@@ -3404,6 +3619,35 @@ private actor CorporationWalletTransport: ESIHTTPTransporting {
         httpVersion: "HTTP/1.1",
         headerFields: [:]
       )!
+    )
+  }
+}
+
+private actor BlueprintPersonalAssetTransport: ESIHTTPTransporting {
+  func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    let path = request.url?.path ?? ""
+    let body: String
+    let status: Int
+    if path == "/characters/99/assets" {
+      body = """
+        [
+          {"item_id":11,"location_flag":"Hangar","location_id":1000000000001,"location_type":"item","quantity":1,"is_singleton":true,"type_id":900,"is_blueprint_copy":true},
+          {"item_id":12,"location_flag":"Hangar","location_id":1000000000001,"location_type":"item","quantity":1,"is_singleton":true,"type_id":900,"is_blueprint_copy":false},
+          {"item_id":13,"location_flag":"Hangar","location_id":1000000000001,"location_type":"item","quantity":1,"is_singleton":true,"type_id":34}
+        ]
+        """
+      status = 200
+    } else if path == "/characters/99" {
+      body = #"{"name":"Fixture","corporation_id":98000001}"#
+      status = 200
+    } else {
+      body = #"{"error":"Fixture endpoint unavailable"}"#
+      status = 404
+    }
+    return (
+      Data(body.utf8),
+      HTTPURLResponse(
+        url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: [:])!
     )
   }
 }

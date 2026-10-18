@@ -8,6 +8,85 @@ import Testing
 @MainActor
 struct RuntimeFeatureStateTests {
   @Test
+  func dashboardCardWidthsKeepRatiosAndStackOnNarrowWindows() {
+    let finance = DashboardCardLayout(weights: [1, 2], minimumWidths: [280, 560])
+    let wide = finance.widths(for: 1200)
+    #expect(abs(wide[1] - 2 * wide[0]) < 0.01)
+    #expect(finance.widths(for: 600) == [600, 600])
+    let jobs = DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340])
+    #expect(jobs.widths(for: 900) == [900, 900, 900])
+    let three = jobs.widths(for: 1440)
+    #expect(three.count == 3)
+    #expect(three.allSatisfy { $0 >= 340 })
+  }
+
+  @Test
+  func sharedAnalysisRefreshJoinsIdenticalRequestsAndSerializesChangedContexts() async {
+    let refresh = SharedAnalysisRefresh()
+    let gate = AnalysisRefreshTestGate()
+    var calls: [String] = []
+    let first = Task {
+      await refresh.run(identity: "first") {
+        calls.append("first")
+        await gate.wait()
+      }
+    }
+    while !gate.isWaiting { await Task.yield() }
+    let same = Task { await refresh.run(identity: "first") { calls.append("duplicate") } }
+    let changed = Task { await refresh.run(identity: "changed") { calls.append("changed") } }
+    for _ in 0..<10 { await Task.yield() }
+    #expect(calls == ["first"])
+    gate.release()
+    await first.value
+    await same.value
+    await changed.value
+    #expect(calls == ["first", "changed"])
+  }
+
+  @Test
+  func marketConfigurationIdentityIsStableAndChangesWithTheProfile() {
+    let runtime = RuntimeState(startBackgroundServices: false)
+    let original = runtime.marketAnalysisContextIdentity
+    for _ in 0..<20 { #expect(runtime.marketAnalysisContextIdentity == original) }
+    runtime.productionBasis.cloneState = runtime.productionBasis.cloneState == .alpha ? .omega : .alpha
+    #expect(runtime.marketAnalysisContextIdentity != original)
+  }
+
+  @Test
+  func dashboardComponentsRenderWithEmptyShortAndLongLists() throws {
+    let output = FileManager.default.temporaryDirectory.appendingPathComponent("eve-dashboard-20261017/visual-checks")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    for width: CGFloat in [600, 1000, 1440] {
+      var shortHeight: CGFloat = 0
+      for count in [0, 5, 50] {
+        let controller = NSHostingController(rootView:
+          DashboardRenderingFixture(count: count)
+            .environment(\.locale, Locale(identifier: "de"))
+            .frame(width: width))
+        let size = controller.sizeThatFits(in: CGSize(width: width, height: 8000))
+        #expect(size.width <= width + 1)
+        #expect(size.height.isFinite && size.height > 280 && size.height < 4000)
+        if count == 5 { shortHeight = size.height }
+        // At narrow widths all three cards add their own disclosure control.
+        if count == 50 { #expect(size.height <= shortHeight + 96) }
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+          styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        controller.view.frame = NSRect(origin: .zero, size: size)
+        controller.view.layoutSubtreeIfNeeded()
+        drainMainRunLoop()
+        let view = controller.view
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let data = try #require(bitmap.representation(using: .png, properties: [:]))
+        try data.write(to: output.appendingPathComponent("dashboard-\(Int(width))-\(count).png"))
+        window.close()
+      }
+    }
+  }
+
+  @Test
   func initialWindowMaximizationUsesVisibleScreenAreaOnlyOnce() {
     let initialFrame = NSRect(x: 40, y: 50, width: 600, height: 420)
     let visibleFrame = NSRect(x: 0, y: 25, width: 1_440, height: 875)
@@ -418,6 +497,19 @@ private final class RenderCounter {
   }
 }
 
+@MainActor
+private final class AnalysisRefreshTestGate {
+  private var continuation: CheckedContinuation<Void, Never>?
+  var isWaiting: Bool { continuation != nil }
+  func wait() async {
+    await withCheckedContinuation { continuation = $0 }
+  }
+  func release() {
+    continuation?.resume()
+    continuation = nil
+  }
+}
+
 private struct PlannerObservationProbe: View {
   let runtime: RuntimeState
   let counter: RenderCounter
@@ -439,4 +531,58 @@ private struct SettingsNavigationFrameProbe: NSViewRepresentable {
   let view: NSView
   func makeNSView(context: Context) -> NSView { view }
   func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private struct DashboardRenderRow: Identifiable {
+  let id: Int
+}
+
+private struct DashboardRenderingFixture: View {
+  let count: Int
+  private var rows: [DashboardRenderRow] { (0..<count).map { DashboardRenderRow(id: $0) } }
+  private var samples: [DashboardWealthChartSample] {
+    if count == 0 {
+      return [DashboardWealthChartSample(date: Date(timeIntervalSince1970: 1_780_000_000), value: 0)]
+    }
+    return (0..<8).map {
+      DashboardWealthChartSample(date: Date(timeIntervalSince1970: 1_780_000_000 + Double($0) * 86_400),
+        value: 987_000_000_000 + Double($0 % 3) * 2_000_000_000)
+    }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+      DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340]) {
+        jobs(title: "Ready for delivery")
+        jobs(title: "Next 48 hours")
+        jobs(title: "Top 5 by material value")
+      }
+      DashboardCardLayout(weights: [1, 2], minimumWidths: [280, 560]) {
+        Panel(title: "Wallet") {
+          Text("987.654.321.098 ISK").font(.title).lineLimit(1).minimumScaleFactor(0.6)
+          Text("3 Charaktere").font(.caption)
+          DisclosureGroup("Character balances") { Text("Synthetic details") }
+        }
+        Panel(title: "Net worth over time") {
+          Text("987.654.321.098 ISK").font(.title2)
+          DashboardWealthChart(samples: samples, color: DesignTokens.accent, showsAxes: true)
+            .frame(height: 280)
+          DisclosureGroup("Character net worth") { Text("Synthetic details") }
+        }
+      }
+    }
+    .padding(DesignTokens.spacingLG)
+    .background(DesignTokens.canvas)
+  }
+
+  private func jobs(title: LocalizedStringKey) -> some View {
+    Panel(title: title) {
+      DashboardPreviewList(rows: rows) { row in
+        VStack(alignment: .leading) {
+          EVEEntityText(value: "Synthetischer langer Produktname mit mehreren Bestandteilen \(row.id + 1)", font: .callout, lineLimit: 2)
+          Text("987.654.321.098 ISK · 3 Charaktere").font(.caption).monospacedDigit()
+        }
+      }
+    }
+  }
 }

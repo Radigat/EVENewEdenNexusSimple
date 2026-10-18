@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 public struct AppDataPaths: Equatable, Sendable {
@@ -95,9 +96,8 @@ public struct AppDataPaths: Equatable, Sendable {
 }
 
 public enum PersistenceStoreSeeder {
-  /// Copies the legacy global SwiftData store into the app-owned location
-  /// without changing or removing the source. WAL and shared-memory companions
-  /// keep their names so SQLite can recover a consistent snapshot on open.
+  /// Publish a closed standalone snapshot in one no-overwrite filesystem operation.
+  /// An interrupted preparation never leaves a canonical main file behind.
   public static func seedCanonicalStoreIfNeeded(
     paths: AppDataPaths,
     fileManager: FileManager = .default
@@ -105,21 +105,28 @@ public enum PersistenceStoreSeeder {
     guard !fileManager.fileExists(atPath: paths.swiftDataStoreURL.path),
       fileManager.fileExists(atPath: paths.legacySwiftDataStoreURL.path)
     else { return false }
-
     try paths.prepareDirectories(fileManager: fileManager)
-    for suffix in ["", "-wal", "-shm"] {
-      let source = URL(
-        fileURLWithPath: paths.legacySwiftDataStoreURL.path + suffix
-      )
-      guard fileManager.fileExists(atPath: source.path) else { continue }
-      let destination = URL(
-        fileURLWithPath: paths.swiftDataStoreURL.path + suffix
-      )
-      guard !fileManager.fileExists(atPath: destination.path) else {
-        throw PersistenceStoreSeederError.destinationAlreadyExists
+    func checkCompanions() throws {
+      for suffix in ["-wal", "-shm", "-journal"] {
+        guard !fileManager.fileExists(atPath: paths.swiftDataStoreURL.path + suffix) else {
+          throw PersistenceStoreSeederError.destinationAlreadyExists
+        }
       }
-      try fileManager.copyItem(at: source, to: destination)
     }
+    try checkCompanions()
+    let staged = paths.swiftDataStoreURL.deletingLastPathComponent()
+      .appendingPathComponent(".seed-\(UUID()).store")
+    defer {
+      for suffix in ["", "-wal", "-shm", "-journal"] {
+        try? fileManager.removeItem(atPath: staged.path + suffix)
+      }
+    }
+    try ConsolidationBackup.snapshotSQLite(source: paths.legacySwiftDataStoreURL, destination: staged)
+    try checkCompanions()
+    guard link(staged.path, paths.swiftDataStoreURL.path) == 0 else {
+      throw PersistenceStoreSeederError.destinationAlreadyExists
+    }
+    try PersistenceDurability.syncDirectory(paths.swiftDataStoreURL.deletingLastPathComponent())
     return true
   }
 }
@@ -277,6 +284,24 @@ public enum DevelopmentAppBootstrap {
       throw LaunchError.invalid("In der DEV-Datenkopie fehlen Dateien.")
     }
     return manifest
+  }
+
+  /// Resolve DEV isolation before acquiring the persistence lock or doing any disk mutation.
+  public static func configurePaths() throws {
+    let environment = ProcessInfo.processInfo.environment
+    let identifier = Bundle.main.bundleIdentifier ?? ""
+    let acceptance = environment["EVE_NEXUS_PERSISTENCE_ACCEPTANCE_EXIT"] == "1"
+    guard identifier == "com.local.EVENexusSimple.DEV"
+      || (acceptance && identifier.hasPrefix("com.local.EVENexusSimple.DEV.fixture.")) else { return }
+    guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+      throw AppDataPathError.applicationSupportUnavailable
+    }
+    let override = acceptance ? environment["EVE_NEXUS_DEV_ACCEPTANCE_ROOT"] : nil
+    let root = override.map { URL(fileURLWithPath: $0, isDirectory: true) }
+      ?? support.appendingPathComponent(identifier, isDirectory: true)
+    let preferencesDomain = override == nil ? identifier : identifier + ".smoke." + root.lastPathComponent
+    setenv("EVE_NEXUS_APPLICATION_SUPPORT_ROOT", root.path, 1)
+    setenv("EVE_NEXUS_USER_DEFAULTS_SUITE", preferencesDomain, 1)
   }
 
   public static func prepare() throws {

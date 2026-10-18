@@ -103,6 +103,25 @@ final class RuntimeFeatureState: ObservableObject {
   }
 }
 
+/// A caller leaving a screen does not cancel an analysis shared by other screens.
+@MainActor
+final class SharedAnalysisRefresh {
+  private var inFlight: (identity: String, token: UUID, task: Task<Void, Never>)?
+
+  func run(identity: String, operation: @escaping @MainActor () async -> Void) async {
+    while let pending = inFlight {
+      await pending.task.value
+      if inFlight?.token == pending.token { inFlight = nil }
+      if pending.identity == identity { return }
+    }
+    let task = Task { await operation() }
+    let token = UUID()
+    inFlight = (identity, token, task)
+    await task.value
+    if inFlight?.token == token { inFlight = nil }
+  }
+}
+
 @MainActor
 final class RuntimeState: ObservableObject {
   let plannerFeatureState = RuntimeFeatureState()
@@ -118,10 +137,36 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var reactionAnalysis: ReactionAnalysisSnapshot?
   @Published private(set) var isAnalyzingReactions = false
   @Published private(set) var reactionAnalysisError: String?
-  @Published private(set) var moonMaterialAnalysis: MoonMaterialPurchaseAnalysisSnapshot?
+  @Published private(set) var reactionAnalysisDestinationName: String?
+  @Published private(set) var moonMaterialAnalysis: MoonMaterialPurchaseAnalysisSnapshot? {
+    didSet {
+      moonMaterialRecommendations = moonMaterialAnalysis.map(MaterialPurchaseRecommendationProjector.project) ?? []
+    }
+  }
+  @Published private(set) var moonMaterialRecommendations: [MaterialPurchaseRecommendation] = []
   @Published private(set) var isRefreshingMoonMaterialAnalysis = false
   @Published private(set) var moonMaterialAnalysisError: String?
-  @Published private(set) var mineralPurchaseAnalysis: MaterialPurchaseAnalysisSnapshot?
+  @Published private(set) var mineralPurchaseAnalysis: MaterialPurchaseAnalysisSnapshot? {
+    didSet {
+      mineralPurchaseRecommendations = mineralPurchaseAnalysis.map(MaterialPurchaseRecommendationProjector.project) ?? []
+    }
+  }
+  @Published private(set) var mineralPurchaseRecommendations: [MaterialPurchaseRecommendation] = []
+  private let sharedMoonRefresh = SharedAnalysisRefresh()
+  private let sharedMineralRefresh = SharedAnalysisRefresh()
+  private let sharedReactionRefresh = SharedAnalysisRefresh()
+  private var reactionRefreshIdentity: String?
+  private var reactionResultContext: String?
+  private var moonMaterialResultContext: String?
+  private var mineralPurchaseResultContext: String?
+
+  var hasCurrentMoonMaterialAnalysis: Bool {
+    moonMaterialAnalysis != nil && moonMaterialResultContext == marketAnalysisContextIdentity
+  }
+
+  var hasCurrentMineralPurchaseAnalysis: Bool {
+    mineralPurchaseAnalysis != nil && mineralPurchaseResultContext == marketAnalysisContextIdentity
+  }
   @Published private(set) var isRefreshingMineralPurchaseAnalysis = false
   @Published private(set) var mineralPurchaseAnalysisError: String?
   @Published private(set) var marketBrowserState: Sourced<MarketBrowserSnapshot>?
@@ -131,10 +176,10 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var mainHubMarketAutomaticUpdatesEnabled = true
   @Published private(set) var mainHubMarketNextAutomaticRunAt: Date?
   @Published private(set) var isAutomaticallyRefreshingMainHubMarket = false
-  @Published private(set) var mineralPriceTickerState: Sourced<[MineralPriceTrend]>?
-  @Published private(set) var isRefreshingMineralPrices = false
   @Published private(set) var dashboardWealthSnapshot: DashboardWealthSnapshot?
   @Published private(set) var dashboardWealthError: String?
+  @Published private(set) var dashboardIndustryJobValues: [DashboardIndustryJobValue] = []
+  @Published private(set) var dashboardIndustryProductNames: [Int64: String] = [:]
   @Published private(set) var isRefreshingDashboardWealth = false
   private var hasReservedDashboardStartupRefresh = false
   @Published private(set) var manufacturingOpportunityAnalysis: ManufacturingOpportunitySnapshot?
@@ -2131,7 +2176,81 @@ final class RuntimeState: ObservableObject {
     )
   }
 
+  var marketAnalysisContextIdentity: String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let basis = (try? encoder.encode(productionBasis)) ?? Data()
+    return "\(activeSDEBuild ?? -1):\(basis.base64EncodedString())"
+  }
+
+  var configuredReactionMarketHub: MarketHubConfigurationSnapshot? {
+    let saved = AppDefaults.store.string(forKey: "reactions.market-hub-id") ?? ""
+    let hubs = productionBasis.marketHubSnapshots
+    return hubs.first { $0.id.uuidString == saved }
+      ?? hubs.first { $0.roles.contains(.main) }
+      ?? hubs.first
+  }
+
+  var configuredReactionRuns: Int {
+    let saved = AppDefaults.store.integer(forKey: "reactions.analysis-runs")
+    return min(max(1, saved == 0 ? 100 : saved),
+      reactionAnalysis?.maximumSelectableRuns ?? ReactionJobRules.neutralMaximumSelectableRuns)
+  }
+
+  var isReactionAnalysisCurrent: Bool {
+    guard let analysis = reactionAnalysis,
+      let hub = configuredReactionMarketHub
+    else { return false }
+    return reactionResultContext == marketAnalysisContextIdentity
+      && analysis.marketLocation.id == hub.location.id
+      && analysis.runs == configuredReactionRuns
+  }
+
+  func refreshConfiguredReactions(
+    authorizations: [AuthorizationSnapshot], clientID: String
+  ) async {
+    guard let hub = configuredReactionMarketHub else {
+      reactionAnalysisError = "No configured purchase market is available."
+      return
+    }
+    await analyzeReactions(
+      runs: configuredReactionRuns, marketHub: hub,
+      authorizations: authorizations, clientID: clientID
+    )
+  }
+
   func analyzeReactions(
+    runs requestedRuns: Int,
+    marketHub: MarketHubConfigurationSnapshot,
+    authorizations: [AuthorizationSnapshot] = [],
+    clientID: String = "",
+    forceRefresh: Bool = false
+  ) async {
+    let identity = materialPurchaseAnalysisRefreshIdentity(
+      kind: .moonMaterials, hubs: [marketHub],
+      authorizations: authorizations, clientID: clientID
+    ) + "#\(requestedRuns)#" + marketAnalysisContextIdentity
+    await sharedReactionRefresh.run(identity: identity) { [self] in
+      if !forceRefresh, reactionRefreshIdentity == identity,
+        let analysis = reactionAnalysis,
+        (0..<Self.materialPurchaseMinimumRefreshInterval).contains(Date().timeIntervalSince(analysis.createdAt))
+      { return }
+      let previousID = reactionAnalysis?.id
+      let context = marketAnalysisContextIdentity
+      await performReactionAnalysis(
+        runs: requestedRuns, marketHub: marketHub,
+        authorizations: authorizations, clientID: clientID
+      )
+      if context == marketAnalysisContextIdentity,
+        reactionAnalysis?.id != previousID, reactionAnalysisError == nil
+      {
+        reactionRefreshIdentity = identity
+        reactionResultContext = context
+      }
+    }
+  }
+
+  private func performReactionAnalysis(
     runs requestedRuns: Int,
     marketHub: MarketHubConfigurationSnapshot,
     authorizations: [AuthorizationSnapshot] = [],
@@ -2142,6 +2261,7 @@ final class RuntimeState: ObservableObject {
       ?? ReactionJobRules.neutralMaximumSelectableRuns
     let runs = min(max(1, requestedRuns), maximumRuns)
     isAnalyzingReactions = true
+    let configurationContext = marketAnalysisContextIdentity
     reactionAnalysisError = nil
     defer { isAnalyzingReactions = false }
     do {
@@ -2228,7 +2348,11 @@ final class RuntimeState: ObservableObject {
       )
       try Task.checkCancellation()
       let facility = reactionFacilityCostContext(systemIndices: systems)
-      reactionAnalysis = try ReactionProfitabilityAnalyzer.analyze(
+      let logistics = reactionLogisticsCostContext(
+        origin: marketHub.location,
+        packagedVolumes: packagedVolumeSnapshot.value ?? [:]
+      )
+      let analysis = try ReactionProfitabilityAnalyzer.analyze(
         definitions: definitions,
         typeNames: names,
         classifications: classifications,
@@ -2237,11 +2361,11 @@ final class RuntimeState: ObservableObject {
         market: marketValue,
         adjustedPrices: adjusted,
         facility: facility,
-        logistics: reactionLogisticsCostContext(
-          origin: marketHub.location,
-          packagedVolumes: packagedVolumeSnapshot.value ?? [:]
-        )
+        logistics: logistics
       )
+      guard configurationContext == marketAnalysisContextIdentity else { return }
+      reactionAnalysis = analysis
+      reactionAnalysisDestinationName = logistics.destinationName
     } catch is CancellationError {
       return
     } catch StaticCatalogError.noActiveCatalog {
@@ -2470,8 +2594,21 @@ final class RuntimeState: ObservableObject {
     authorizations: [AuthorizationSnapshot] = [],
     clientID: String = ""
   ) async {
+    let identity = materialPurchaseAnalysisRefreshIdentity(
+      kind: .moonMaterials, hubs: productionBasis.marketHubSnapshots,
+      authorizations: authorizations, clientID: clientID
+    )
+    await sharedMoonRefresh.run(identity: identity) { [self] in
+      await performMoonMaterialRefresh(authorizations: authorizations, clientID: clientID)
+    }
+  }
+
+  private func performMoonMaterialRefresh(
+    authorizations: [AuthorizationSnapshot], clientID: String
+  ) async {
     guard !isRefreshingMoonMaterialAnalysis else { return }
     let hubs = productionBasis.marketHubSnapshots
+    let context = marketAnalysisContextIdentity
     let refreshIdentity = materialPurchaseAnalysisRefreshIdentity(
       kind: .moonMaterials,
       hubs: hubs,
@@ -2495,13 +2632,20 @@ final class RuntimeState: ObservableObject {
       let materialCatalog = try await catalog.materialPurchaseCatalog(
         for: .moonMaterials
       )
-      moonMaterialAnalysis = try await loadMaterialPurchaseAnalysis(
+      let analysis = try await loadMaterialPurchaseAnalysis(
         materialCatalog: materialCatalog,
         hubs: hubs,
         authorizations: authorizations,
         clientID: clientID,
         previous: moonMaterialAnalysis
       )
+      guard refreshIdentity == materialPurchaseAnalysisRefreshIdentity(
+        kind: .moonMaterials, hubs: productionBasis.marketHubSnapshots,
+        authorizations: authorizations, clientID: clientID
+      ) else { return }
+      guard context == marketAnalysisContextIdentity else { return }
+      moonMaterialAnalysis = analysis
+      moonMaterialResultContext = context
       moonMaterialRefreshIdentity = refreshIdentity
     } catch is CancellationError {
       return
@@ -2518,8 +2662,21 @@ final class RuntimeState: ObservableObject {
     authorizations: [AuthorizationSnapshot] = [],
     clientID: String = ""
   ) async {
+    let identity = materialPurchaseAnalysisRefreshIdentity(
+      kind: .minerals, hubs: productionBasis.marketHubSnapshots,
+      authorizations: authorizations, clientID: clientID
+    )
+    await sharedMineralRefresh.run(identity: identity) { [self] in
+      await performMineralPurchaseRefresh(authorizations: authorizations, clientID: clientID)
+    }
+  }
+
+  private func performMineralPurchaseRefresh(
+    authorizations: [AuthorizationSnapshot], clientID: String
+  ) async {
     guard !isRefreshingMineralPurchaseAnalysis else { return }
     let hubs = productionBasis.marketHubSnapshots
+    let context = marketAnalysisContextIdentity
     let refreshIdentity = materialPurchaseAnalysisRefreshIdentity(
       kind: .minerals,
       hubs: hubs,
@@ -2543,13 +2700,20 @@ final class RuntimeState: ObservableObject {
       let materialCatalog = try await catalog.materialPurchaseCatalog(
         for: .minerals
       )
-      mineralPurchaseAnalysis = try await loadMaterialPurchaseAnalysis(
+      let analysis = try await loadMaterialPurchaseAnalysis(
         materialCatalog: materialCatalog,
         hubs: hubs,
         authorizations: authorizations,
         clientID: clientID,
         previous: mineralPurchaseAnalysis
       )
+      guard refreshIdentity == materialPurchaseAnalysisRefreshIdentity(
+        kind: .minerals, hubs: productionBasis.marketHubSnapshots,
+        authorizations: authorizations, clientID: clientID
+      ) else { return }
+      guard context == marketAnalysisContextIdentity else { return }
+      mineralPurchaseAnalysis = analysis
+      mineralPurchaseResultContext = context
       mineralPurchaseRefreshIdentity = refreshIdentity
     } catch is CancellationError {
       return
@@ -2757,6 +2921,7 @@ final class RuntimeState: ObservableObject {
     }.sorted().joined(separator: "|")
     return [
       kind.rawValue,
+      marketAnalysisContextIdentity,
       String(activeSDEBuild ?? -1),
       clientID.trimmingCharacters(in: .whitespacesAndNewlines),
       marketIdentity,
@@ -3105,65 +3270,6 @@ final class RuntimeState: ObservableObject {
     (try? await catalog.typeNames(ids: typeIDs)) ?? [:]
   }
 
-  func refreshMineralPriceTicker() async {
-    guard !isRefreshingMineralPrices else { return }
-    isRefreshingMineralPrices = true
-    defer { isRefreshingMineralPrices = false }
-
-    let previous = mineralPriceTickerState
-    let regionID =
-      productionBasis.mainTradingLocation?.location.regionID
-      ?? EVEConstants.theForgeRegionID
-    var rows: [MineralPriceTrend] = []
-    var diagnostics: [String] = []
-    var source = SourceIdentity(
-      provider: "ESI",
-      version: EVEConstants.esiCompatibilityDate
-    )
-
-    for mineral in MineralPriceTrendProjector.minerals {
-      guard !Task.isCancelled else { return }
-      do {
-        let response = try await esi.get(
-          [ESIMarketHistoryDTO].self,
-          endpoint: ESIEndpoint(
-            path: "/markets/\(regionID)/history/",
-            query: [
-              URLQueryItem(
-                name: "type_id",
-                value: String(mineral.typeID)
-              )
-            ]
-          )
-        )
-        source = response.source
-        if let row = MineralPriceTrendProjector.project(
-          typeID: mineral.typeID,
-          name: mineral.name,
-          history: response.value
-        ) {
-          rows.append(row)
-        } else {
-          diagnostics.append("market.history.empty:\(mineral.typeID)")
-        }
-      } catch {
-        diagnostics.append("market.history.failed:\(mineral.typeID)")
-      }
-    }
-
-    let state: DataFreshness =
-      rows.isEmpty
-      ? .unavailable
-      : diagnostics.isEmpty ? .fresh : .partial
-    let current = Sourced(
-      state: state,
-      value: rows.isEmpty ? nil : rows,
-      source: source,
-      diagnostics: Array(diagnostics.prefix(32))
-    )
-    mineralPriceTickerState = current.retainingLastKnownValue(from: previous)
-  }
-
   func refreshDashboardWealth(
     inputs: [DashboardWealthCharacterInput]
   ) async {
@@ -3186,8 +3292,10 @@ final class RuntimeState: ObservableObject {
           return assetTypeIDs + corporationTypeIDs + contractTypeIDs
         }
       )
-      let typeNames =
-        (try? await catalog.typeNames(ids: typeIDs)) ?? [:]
+      async let typeNamesValue = catalog.typeNames(ids: typeIDs)
+      async let assetClassificationsValue = catalog.industryClassifications(typeIDs: typeIDs)
+      let typeNames = (try? await typeNamesValue) ?? [:]
+      let assetClassifications = (try? await assetClassificationsValue) ?? [:]
       var definitionsByProductTypeID: [Int64: BlueprintDefinition] = [:]
       let inProgressProductTypeIDs = Set(
         inputs.flatMap { input in
@@ -3212,16 +3320,25 @@ final class RuntimeState: ObservableObject {
           definitionsByProductTypeID[productTypeID] = definition
         }
       }
+      let jobValues = DashboardInProgressIndustryProjector.projectJobs(
+        inputs: inputs, prices: prices.prices,
+        definitionsByProductTypeID: definitionsByProductTypeID
+      )
+      let productIDs = Set(jobValues.compactMap { $0.ownedJob.job.productTypeID })
+      dashboardIndustryProductNames = (try? await catalog.typeNames(ids: productIDs)) ?? [:]
+      dashboardIndustryJobValues = jobValues
       let inProgressIndustryValues =
         DashboardInProgressIndustryProjector.project(
           inputs: inputs,
           prices: prices.prices,
-          definitionsByProductTypeID: definitionsByProductTypeID
+          definitionsByProductTypeID: definitionsByProductTypeID,
+          jobValues: jobValues
         )
       dashboardWealthSnapshot = DashboardWealthProjector.project(
         inputs: inputs,
         prices: prices,
         typeNames: typeNames,
+        assetClassifications: assetClassifications,
         inProgressIndustryValues: inProgressIndustryValues
       )
     } catch {

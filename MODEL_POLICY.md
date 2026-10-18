@@ -2,30 +2,32 @@
 
 Projekt: EVE New Eden Nexus - Assets, Industry, Markets
 
-Standardmodell: GPT-5.6 Sol High
+Aktuelle Regel: Es gibt nur einen aktiven Projektstand. Legacy-Projekte dienen
+ausschließlich als Quelle für die Konsolidierung.
 
-Aktuelle Regel: Es gibt nur einen aktiven Projektstand.
+## Codex
 
-Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
+Standardmodell: GPT-5.6 Sol, Reasoning-Stufe High. Die lokale Codex-Vorgabe ist
+in `.codex/config.toml` hinterlegt.
 
-Diese Festlegung gilt für ChatGPT, Work und Codex. GPT-5.6 Sol ist das Modell,
-High die Reasoning-Stufe. Die lokale Codex-Vorgabe ist zusätzlich in
-`.codex/config.toml` hinterlegt. Frühere Modellstrategien in Archivmaterial sind
-außer Kraft. Eine ausdrückliche Benutzeranweisung für die aktuelle Aufgabe hat
-Vorrang.
+## Claude
+
+Seit 19.10.2026 wird das Projekt hauptsächlich mit Claude weiterentwickelt
+(Einstieg über `CLAUDE.md`). Es gilt das in der jeweiligen Sitzung gewählte
+Claude-Modell; eine projektweite feste Vorgabe gibt es derzeit nicht.
+
+## Für alle Werkzeuge
+
+Eine ausdrückliche Benutzeranweisung für die aktuelle Aufgabe hat Vorrang.
+Frühere Modellstrategien in Archivmaterial sind außer Kraft.
 
 Es gibt keinen automatischen Wechsel des Modells oder der Reasoning-Stufe. Falls
-GPT-5.6 Sol High für eine Aufgabe voraussichtlich nicht ausreicht, muss vor jedem
-Wechsel nachgefragt werden, welches Modell verwendet werden darf. Die Nachfrage
-enthält zwei oder drei konkrete, auf die Aufgabe zugeschnittene Optionen mit
-exaktem Modell und exakter Reasoning-Stufe, kennzeichnet die Empfehlung und nennt
-kurz den relevanten Qualitäts-, Latenz- oder Kosten-Trade-off. Erst nach der
-Freigabe wird mit der ausgewählten Option fortgefahren.
+das Standardmodell für eine Aufgabe voraussichtlich nicht ausreicht, muss vor
+jedem Wechsel nachgefragt werden. Die Nachfrage enthält zwei oder drei konkrete,
+auf die Aufgabe zugeschnittene Optionen mit exaktem Modell und exakter
+Reasoning-Stufe, kennzeichnet die Empfehlung und nennt kurz den relevanten
+Qualitäts-, Latenz- oder Kosten-Trade-off. Erst nach der Freigabe wird mit der
+ausgewählten Option fortgefahren.
 
-Die Projektvorgabe ändert keine globalen App-Einstellungen. Eine bereits laufende
-Sitzung kann ihre beim Start gewählte Konfiguration beibehalten; neue Aufgaben im
-vertrauten Projekt verwenden die Projektkonfiguration, sofern sie nicht ausdrücklich
-überschrieben wird. Es gibt keinen automatischen Folgeauftrag.
-
-Die fachliche Zusammenführung verwendet denselben Standard. Legacy-Modellvorgaben
-und dortige Agenten-/Kit-Aufträge werden nicht reaktiviert. Der Abschlussbericht beendet den Auftrag.
+Die Projektvorgabe ändert keine globalen App-Einstellungen. Legacy-Modellvorgaben
+und dortige Agenten-/Kit-Aufträge werden nicht reaktiviert.

@@ -6347,6 +6347,7 @@ private struct PlannerShoppingListGroup: Identifiable {
 }
 
 struct ReactionsView: View {
+  @Binding var initialNegativeFilter: Bool
   @EnvironmentObject private var runtime: RuntimeState
   @Query private var characters: [StoredCharacter]
   @AppStorage("reactions.analysis-runs", store: AppDefaults.store)
@@ -6359,6 +6360,10 @@ struct ReactionsView: View {
   @State private var sortOrder = ReactionAnalysisSortOrder.valueCreationDescending
   @State private var expandedReactionIDs = Set<Int64>()
   @State private var analysisTask: Task<Void, Never>?
+
+  init(initialNegativeFilter: Binding<Bool> = .constant(false)) {
+    _initialNegativeFilter = initialNegativeFilter
+  }
 
   var body: some View {
     ScrollView {
@@ -6419,11 +6424,14 @@ struct ReactionsView: View {
       .frame(maxWidth: 1_500, alignment: .leading)
     }
     .searchable(text: $searchText, prompt: "Search reactions or materials")
-    .task(id: runtime.isPlannerConfigurationReady) {
-      guard runtime.isPlannerConfigurationReady,
-        runtime.reactionAnalysis == nil,
-        !runtime.isAnalyzingReactions
-      else { return }
+    .onAppear {
+      if initialNegativeFilter {
+        valueFilter = .negative
+        initialNegativeFilter = false
+      }
+    }
+    .task(id: runtime.marketAnalysisContextIdentity + String(runtime.isPlannerConfigurationReady)) {
+      guard runtime.isPlannerConfigurationReady else { return }
       runs = sanitizedRuns
       await runtime.analyzeReactions(
         runs: sanitizedRuns,
@@ -6930,7 +6938,8 @@ struct ReactionsView: View {
         runs: sanitizedRuns,
         marketHub: selectedMarketHub,
         authorizations: authorizationSnapshots,
-        clientID: clientID
+        clientID: clientID,
+        forceRefresh: true
       )
     }
   }

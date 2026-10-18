@@ -55,15 +55,14 @@ public enum ConsolidationBackup {
       throw ConsolidationError.unavailable("SQLite-Sicherung nicht verfügbar.")
     }
     var result: Int32 = SQLITE_OK
-    var retries = 0
+    let deadline = ProcessInfo.processInfo.systemUptime + 5
     repeat {
       result = sqlite3_backup_step(backup, 256)
       if result == SQLITE_BUSY || result == SQLITE_LOCKED {
-        retries += 1
         sqlite3_sleep(20)
       }
     } while (result == SQLITE_OK || result == SQLITE_BUSY || result == SQLITE_LOCKED)
-      && retries < 100
+      && ProcessInfo.processInfo.systemUptime < deadline
     let finish = sqlite3_backup_finish(backup)
     guard result == SQLITE_DONE, finish == SQLITE_OK else {
       throw ConsolidationError.unavailable(
@@ -80,10 +79,19 @@ public enum ConsolidationBackup {
     var statement: OpaquePointer?
     guard sqlite3_prepare_v2(targetDB, "PRAGMA quick_check", -1, &statement, nil) == SQLITE_OK
     else { throw ConsolidationError.invalid("Sicherungsprüfung fehlgeschlagen.") }
-    defer { sqlite3_finalize(statement) }
+    defer { if let statement { sqlite3_finalize(statement) } }
     guard sqlite3_step(statement) == SQLITE_ROW, let answer = sqlite3_column_text(statement, 0),
       String(cString: answer) == "ok"
     else { throw ConsolidationError.invalid("SQLite-Sicherung ist nicht konsistent.") }
+    sqlite3_finalize(statement)
+    statement = nil
+    // Closing before syncing also flushes any final SQLite bookkeeping.
+    guard sqlite3_close(targetDB) == SQLITE_OK else {
+      throw ConsolidationError.invalid("Sicherungsdatenbank konnte nicht geschlossen werden.")
+    }
+    targetDB = nil
+    try PersistenceDurability.syncFile(destination)
+
   }
 
   public static func create(dataRoot: URL, destination: URL, defaults: Data, schema: Int) throws {

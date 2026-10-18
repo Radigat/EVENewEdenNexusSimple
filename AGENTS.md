@@ -2,22 +2,27 @@
 
 Projekt: EVE New Eden Nexus - Assets, Industry, Markets
 
-Standardmodell: GPT-5.6 Sol High
+Werkzeuge: Codex liest diese Datei direkt, Claude über `CLAUDE.md`. Modellvorgaben je Werkzeug: [MODEL_POLICY.md](MODEL_POLICY.md).
 
 Aktuelle Regel: Es gibt nur einen aktiven Projektstand.
 
 Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
 
-Einziger aktiver Projektordner: `/Users/svenstolze/Documents/EVE New Eden Nexus - Assets, Industry, Markets`.
+Der Projektordner liegt bewusst außerhalb von iCloud Drive; keine Projektkopie in
+`~/Documents` oder anderen synchronisierten Ordnern weiterbearbeiten.
+
+Einziger aktiver Projektordner: `/Users/svenstolze/Developer/EVE New Eden Nexus - Assets, Industry, Markets`.
 Diese Regeln ersetzen die Projektsteuerung aller Legacy-Stände; historische
 Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 
 ## Verbindliche Arbeitsgrenzen
 
-- Ausschließlich die ausdrücklich autorisierte fachliche Konsolidierung bestehender
-  Funktionen durchführen; notwendige Adapter, UI-Anbindung und additive Migrationen
-  gehören dazu. Bestehende Rechenregeln erhalten. Keine weiteren Funktionen planen
-  oder implementieren. Nach Prüfung, lokalem Checkpoint und Abschlussbericht stoppen.
+- Die Konsolidierungsphase ist abgeschlossen; seit 19.10.2026 ist die
+  Weiterentwicklung freigegeben. Neue Funktionen, Fehlerkorrekturen und
+  Verbesserungen werden auf ausdrücklichen Benutzerauftrag umgesetzt. Bestehende
+  Rechenregeln erhalten, sofern der Auftrag sie nicht ausdrücklich ändert. Nach
+  Prüfung und Abschlussbericht des jeweiligen Auftrags stoppen; keine ungefragten
+  Folgefeatures.
 - Tatsächlicher Quellcode, vorhandener Diff und konkrete Benutzeranweisung haben
   Vorrang vor historischen Planungen. Geplant, implementiert, getestet und vom
   Eigentümer abgenommen getrennt ausweisen.
@@ -35,10 +40,10 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 - Bei Code-/Projektänderungen SwiftPM und natives Xcode-Debug prüfen; das lokale
   `EVEStaticDataKit` separat testen. Live-Abnahmen bleiben opt-in.
 - Git nur in dieser eigenen Repository-Wurzel verwenden, niemals im
-  übergeordneten Home-Repository. Der Benutzerauftrag autorisiert den lokalen
-  Konsolidierungs-Checkpoint. Kein Push, Force-Push oder Umschreiben der Historie.
-- `MODEL_POLICY.md` ist die verbindliche Modellvorgabe. Kein automatischer
-  Wechsel des Modells oder der Reasoning-Stufe: Reicht GPT-5.6 Sol High nicht
+  übergeordneten Home-Repository. Lokale Commits nur auf ausdrücklichen
+  Benutzerauftrag. Kein Push, Force-Push oder Umschreiben der Historie.
+- `MODEL_POLICY.md` ist die verbindliche Modellvorgabe je Werkzeug. Kein automatischer
+  Wechsel des Modells oder der Reasoning-Stufe: Reicht das Standardmodell nicht
   aus, vor einem Wechsel nachfragen und zwei oder drei konkrete Vorschläge mit
   exaktem Modell, Reasoning-Stufe, Empfehlung und kurzem Trade-off geben.
 

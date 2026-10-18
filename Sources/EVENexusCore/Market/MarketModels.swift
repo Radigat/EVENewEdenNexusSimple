@@ -129,22 +129,113 @@ public struct DashboardWealthInProgressIndustryValue: Codable, Equatable,
   }
 }
 
+public struct DashboardIndustryJobValue: Identifiable, Sendable {
+  public let ownedJob: DashboardIndustryOwnedJob
+  public let knownValue: Double?
+  public let unvaluedMaterialTypeIDs: Set<Int64>
+  public let isResolved: Bool
+  public let freshness: DataFreshness
+  public var id: String { ownedJob.id }
+  public var materialValue: Double? {
+    isResolved && unvaluedMaterialTypeIDs.isEmpty ? knownValue : nil
+  }
+}
+
 public enum DashboardInProgressIndustryProjector {
   public static let valuationPolicy = "sde-job-material-reference-v1"
+
+  public static func projectJobs(
+    inputs: [DashboardWealthCharacterInput],
+    prices: [Int64: AdjustedPrice],
+    definitionsByProductTypeID: [Int64: BlueprintDefinition]
+  ) -> [DashboardIndustryJobValue] {
+    inputs.flatMap { input in
+      guard let source = input.industryJobs,
+        let jobs = usableValue(source)
+      else { return [DashboardIndustryJobValue]() }
+      let blueprints = Dictionary(
+        (input.blueprints.flatMap(usableValue) ?? []).map { ($0.id, $0) },
+        uniquingKeysWith: { first, _ in first }
+      )
+      return jobs.filter { job in
+        let activity = job.dashboardActivity
+        return (activity == .manufacturing || activity == .reaction)
+          && !job.isDelivered && !job.isCancelledOrReverted
+      }.map { job in
+        let owned = DashboardIndustryOwnedJob(
+          characterID: input.character.id,
+          characterName: input.character.name,
+          job: job
+        )
+        guard job.runs > 0, let productID = job.productTypeID,
+          let definition = definitionsByProductTypeID[productID]
+        else {
+          return DashboardIndustryJobValue(
+            ownedJob: owned, knownValue: nil, unvaluedMaterialTypeIDs: [],
+            isResolved: false, freshness: source.state
+          )
+        }
+        var total = 0.0
+        var hasValue = definition.activity.materials.isEmpty
+        var missing = Set<Int64>()
+        let blueprintME = blueprints[job.blueprintID]?.materialEfficiency ?? 0
+        for material in definition.activity.materials {
+          let quantity = definition.activity.kind == .reaction
+            ? saturatedMultiply(Int64(job.runs), material.quantity)
+            : IndustryPlanner.manufacturingMaterialQuantity(
+              baseQuantity: material.quantity, runs: job.runs,
+              materialEfficiency: blueprintME, facilityMultiplier: 1
+            )
+          guard quantity > 0, let reference = prices[material.typeID],
+            let price = reference.averagePrice ?? reference.adjustedPrice,
+            price.isFinite, price >= 0,
+            (Double(quantity) * price).isFinite
+          else {
+            missing.insert(material.typeID)
+            continue
+          }
+          total += Double(quantity) * price
+          hasValue = true
+        }
+        return DashboardIndustryJobValue(
+          ownedJob: owned,
+          knownValue: hasValue && total.isFinite ? total : nil,
+          unvaluedMaterialTypeIDs: missing, isResolved: true,
+          freshness: source.state
+        )
+      }
+    }
+  }
+
+  public static func rankedJobs(
+    _ values: [DashboardIndustryJobValue]
+  ) -> [DashboardIndustryJobValue] {
+    values.filter { $0.materialValue != nil }.sorted {
+      if $0.materialValue != $1.materialValue {
+        return ($0.materialValue ?? 0) > ($1.materialValue ?? 0)
+      }
+      return $0.id < $1.id
+    }
+  }
 
   public static func project(
     inputs: [DashboardWealthCharacterInput],
     prices: [Int64: AdjustedPrice],
-    definitionsByProductTypeID: [Int64: BlueprintDefinition]
+    definitionsByProductTypeID: [Int64: BlueprintDefinition],
+    jobValues: [DashboardIndustryJobValue]? = nil
   ) -> [Int64: DashboardWealthInProgressIndustryValue] {
-    Dictionary(
+    let values = jobValues ?? projectJobs(
+      inputs: inputs, prices: prices,
+      definitionsByProductTypeID: definitionsByProductTypeID
+    )
+    let byCharacter = Dictionary(grouping: values, by: { $0.ownedJob.characterID })
+    return Dictionary(
       uniqueKeysWithValues: inputs.map { input in
         (
           input.character.id,
           project(
             input: input,
-            prices: prices,
-            definitionsByProductTypeID: definitionsByProductTypeID
+            values: byCharacter[input.character.id] ?? []
           )
         )
       }
@@ -153,8 +244,7 @@ public enum DashboardInProgressIndustryProjector {
 
   private static func project(
     input: DashboardWealthCharacterInput,
-    prices: [Int64: AdjustedPrice],
-    definitionsByProductTypeID: [Int64: BlueprintDefinition]
+    values: [DashboardIndustryJobValue]
   ) -> DashboardWealthInProgressIndustryValue {
     guard let sourcedJobs = input.industryJobs else {
       return unavailableIndustryValue(characterID: input.character.id)
@@ -178,22 +268,14 @@ public enum DashboardInProgressIndustryProjector {
         && !$0.isDelivered
         && !$0.isCancelledOrReverted
     }
-    let blueprints = input.blueprints.flatMap(usableValue) ?? []
-    let blueprintsByID = Dictionary(
-      blueprints.map { ($0.id, $0) },
-      uniquingKeysWith: { first, _ in first }
-    )
     var knownValue = 0.0
     var hasKnownValue = relevantJobs.isEmpty
     var unresolvedJobCount = 0
     var unvaluedMaterialTypeIDs = Set<Int64>()
     var estimatedJobCount = 0
 
-    for job in relevantJobs {
-      guard job.runs > 0,
-        let productTypeID = job.productTypeID,
-        let definition = definitionsByProductTypeID[productTypeID]
-      else {
+    for row in values {
+      guard row.isResolved else {
         unresolvedJobCount += 1
         continue
       }
@@ -201,34 +283,9 @@ public enum DashboardInProgressIndustryProjector {
       // Use the known Blueprint ME when the installed instance is still present;
       // otherwise retain a visible neutral-ME estimate rather than dropping the
       // consumed materials from net worth entirely.
-      let blueprintME = blueprintsByID[job.blueprintID]?.materialEfficiency ?? 0
       estimatedJobCount += 1
-      for material in definition.activity.materials {
-        let quantity: Int64
-        if definition.activity.kind == .reaction {
-          quantity = saturatedMultiply(Int64(job.runs), material.quantity)
-        } else {
-          quantity = IndustryPlanner.manufacturingMaterialQuantity(
-            baseQuantity: material.quantity,
-            runs: job.runs,
-            materialEfficiency: blueprintME,
-            facilityMultiplier: 1
-          )
-        }
-        guard quantity > 0,
-          let reference = prices[material.typeID],
-          let unitPrice = reference.averagePrice ?? reference.adjustedPrice,
-          unitPrice.isFinite,
-          unitPrice >= 0
-        else {
-          unvaluedMaterialTypeIDs.insert(material.typeID)
-          continue
-        }
-        let value = Double(quantity) * unitPrice
-        guard value.isFinite else {
-          unvaluedMaterialTypeIDs.insert(material.typeID)
-          continue
-        }
+      unvaluedMaterialTypeIDs.formUnion(row.unvaluedMaterialTypeIDs)
+      if let value = row.knownValue {
         hasKnownValue = true
         knownValue += value
       }
@@ -301,19 +358,46 @@ public struct DashboardWealthCorporationCoverage: Codable, Equatable, Sendable {
   public let roleMissingCorporationCount: Int
   public let unavailableCorporationCount: Int
   public let unvaluedAssetTypeCount: Int
+  public let excludedBlueprintCopyCount: Int
+  public let unknownBlueprintStatusCount: Int
+
+  private enum CodingKeys: String, CodingKey {
+    case corporationCount, includedCorporationCount
+    case roleMissingCorporationCount, unavailableCorporationCount
+    case unvaluedAssetTypeCount, excludedBlueprintCopyCount
+    case unknownBlueprintStatusCount
+  }
 
   public init(
     corporationCount: Int,
     includedCorporationCount: Int,
     roleMissingCorporationCount: Int,
     unavailableCorporationCount: Int,
-    unvaluedAssetTypeCount: Int = 0
+    unvaluedAssetTypeCount: Int = 0,
+    excludedBlueprintCopyCount: Int = 0,
+    unknownBlueprintStatusCount: Int = 0
   ) {
     self.corporationCount = corporationCount
     self.includedCorporationCount = includedCorporationCount
     self.roleMissingCorporationCount = roleMissingCorporationCount
     self.unavailableCorporationCount = unavailableCorporationCount
     self.unvaluedAssetTypeCount = unvaluedAssetTypeCount
+    self.excludedBlueprintCopyCount = excludedBlueprintCopyCount
+    self.unknownBlueprintStatusCount = unknownBlueprintStatusCount
+  }
+
+  public init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    corporationCount = try values.decode(Int.self, forKey: .corporationCount)
+    includedCorporationCount = try values.decode(Int.self, forKey: .includedCorporationCount)
+    roleMissingCorporationCount = try values.decode(Int.self, forKey: .roleMissingCorporationCount)
+    unavailableCorporationCount = try values.decode(Int.self, forKey: .unavailableCorporationCount)
+    unvaluedAssetTypeCount =
+      try values.decodeIfPresent(Int.self, forKey: .unvaluedAssetTypeCount) ?? 0
+    excludedBlueprintCopyCount =
+      try values.decodeIfPresent(Int.self, forKey: .excludedBlueprintCopyCount) ?? 0
+    unknownBlueprintStatusCount =
+      try values.decodeIfPresent(Int.self, forKey: .unknownBlueprintStatusCount) ?? 0
   }
 }
 
@@ -334,6 +418,7 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
   public let unvaluedAssetTypeCount: Int
   public let unvaluedAssetTypes: [DashboardWealthUnpricedType]
   public let excludedBlueprintCopyCount: Int
+  public let unknownBlueprintStatusCount: Int
   public let unvaluedOrderCount: Int
   public let missingEscrowOrderCount: Int
   public let unvaluedContractItemTypeCount: Int
@@ -362,6 +447,7 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     case unvaluedAssetTypeCount
     case unvaluedAssetTypes
     case excludedBlueprintCopyCount
+    case unknownBlueprintStatusCount
     case unvaluedOrderCount
     case missingEscrowOrderCount
     case unvaluedContractItemTypeCount
@@ -391,6 +477,7 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     unvaluedAssetTypeCount: Int,
     unvaluedAssetTypes: [DashboardWealthUnpricedType] = [],
     excludedBlueprintCopyCount: Int = 0,
+    unknownBlueprintStatusCount: Int = 0,
     unvaluedOrderCount: Int = 0,
     missingEscrowOrderCount: Int = 0,
     unvaluedContractItemTypeCount: Int = 0,
@@ -418,6 +505,7 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     self.unvaluedAssetTypeCount = unvaluedAssetTypeCount
     self.unvaluedAssetTypes = unvaluedAssetTypes
     self.excludedBlueprintCopyCount = excludedBlueprintCopyCount
+    self.unknownBlueprintStatusCount = unknownBlueprintStatusCount
     self.unvaluedOrderCount = unvaluedOrderCount
     self.missingEscrowOrderCount = missingEscrowOrderCount
     self.unvaluedContractItemTypeCount = unvaluedContractItemTypeCount
@@ -471,6 +559,8 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
         Int.self,
         forKey: .excludedBlueprintCopyCount
       ) ?? 0
+    unknownBlueprintStatusCount =
+      try values.decodeIfPresent(Int.self, forKey: .unknownBlueprintStatusCount) ?? 0
     unvaluedOrderCount =
       try values.decodeIfPresent(
         Int.self,
@@ -614,12 +704,13 @@ public struct DashboardWealthSnapshot: Identifiable, Codable, Equatable,
 
 public enum DashboardWealthProjector {
   public static let valuationPolicy =
-    "esi-average-then-adjusted-plus-sde-job-materials-v2"
+    "esi-average-then-adjusted-plus-sde-job-materials-blueprint-status-v3"
 
   public static func project(
     inputs: [DashboardWealthCharacterInput],
     prices: ReferencePriceSnapshot,
     typeNames: [Int64: String] = [:],
+    assetClassifications: [Int64: IndustryItemClassification] = [:],
     inProgressIndustryValues:
       [Int64: DashboardWealthInProgressIndustryValue] = [:]
   ) -> DashboardWealthSnapshot {
@@ -628,6 +719,7 @@ public enum DashboardWealthProjector {
         input: input,
         prices: prices.prices,
         typeNames: typeNames,
+        assetClassifications: assetClassifications,
         inProgressIndustry: inProgressIndustryValues[input.character.id]
       )
     }.sorted {
@@ -637,7 +729,8 @@ public enum DashboardWealthProjector {
     let knownValues = rows.compactMap(\.knownValue)
     let corporationAssets = corporationAssetProjection(
       inputs: inputs,
-      prices: prices.prices
+      prices: prices.prices,
+      assetClassifications: assetClassifications
     )
     let corporationWallet = corporationWalletProjection(inputs: inputs)
     let corporationValues = [
@@ -693,7 +786,9 @@ public enum DashboardWealthProjector {
       ),
       corporationWalletCoverage: corporationWallet.coverage,
       corporationAssetCoverage: corporationAssets.coverage,
-      isComplete: !rows.isEmpty && rows.allSatisfy(\.isComplete),
+      isComplete: !rows.isEmpty && rows.allSatisfy(\.isComplete)
+        && (corporationAssets.coverage?.unknownBlueprintStatusCount ?? 0) == 0
+        && (corporationAssets.coverage?.unvaluedAssetTypeCount ?? 0) == 0,
       freshness: combinedFreshness(rows.map(\.freshness)),
       priceSource: prices.source
     )
@@ -703,41 +798,20 @@ public enum DashboardWealthProjector {
     input: DashboardWealthCharacterInput,
     prices: [Int64: AdjustedPrice],
     typeNames: [Int64: String],
+    assetClassifications: [Int64: IndustryItemClassification],
     inProgressIndustry: DashboardWealthInProgressIndustryValue?
   ) -> DashboardWealthCharacterValue {
     let walletValue = usableValue(input.wallet)
     let assetSnapshot = usableValue(input.assets)
     let openOrders = input.openOrders.flatMap(usableValue)
     let privateContracts = input.privateContracts.flatMap(usableValue)
-    var assetValue: Double?
-    var unvaluedTypeIDs = Set<Int64>()
-    var excludedBlueprintCopyCount = 0
-    if let assetSnapshot {
-      var total = 0.0
-      for item in assetSnapshot.items {
-        if item.quantity == -2 {
-          excludedBlueprintCopyCount += 1
-          continue
-        }
-        let quantity = item.quantity < 0 ? 1 : item.quantity
-        guard quantity > 0 else { continue }
-        guard let reference = prices[item.typeID],
-          let unitPrice = reference.averagePrice ?? reference.adjustedPrice,
-          unitPrice.isFinite,
-          unitPrice >= 0
-        else {
-          unvaluedTypeIDs.insert(item.typeID)
-          continue
-        }
-        let value = Double(quantity) * unitPrice
-        guard value.isFinite else {
-          unvaluedTypeIDs.insert(item.typeID)
-          continue
-        }
-        total += value
-      }
-      assetValue = total.isFinite ? total : nil
+    let assetProjection = assetSnapshot.map {
+      valueAssets($0.items, prices: prices, classifications: assetClassifications)
     }
+    let assetValue = assetProjection?.value
+    let unvaluedTypeIDs = assetProjection?.unpricedTypeIDs ?? []
+    let excludedBlueprintCopyCount = assetProjection?.excludedCopyCount ?? 0
+    let unknownBlueprintStatusCount = assetProjection?.unknownStatusCount ?? 0
     var ordersValue: Double?
     var escrowValue: Double?
     var unvaluedOrderCount = 0
@@ -843,6 +917,7 @@ public enum DashboardWealthProjector {
         typeNames: typeNames
       ),
       excludedBlueprintCopyCount: excludedBlueprintCopyCount,
+      unknownBlueprintStatusCount: unknownBlueprintStatusCount,
       unvaluedOrderCount: unvaluedOrderCount,
       missingEscrowOrderCount: missingEscrowOrderCount,
       unvaluedContractItemTypeCount: unvaluedContractItemTypeIDs.count,
@@ -862,7 +937,8 @@ public enum DashboardWealthProjector {
       isComplete: walletValue != nil && assetValue != nil
         && ordersValue != nil && escrowValue != nil
         && contractsValue != nil && courierValue != nil
-        && unvaluedTypeIDs.isEmpty && unvaluedOrderCount == 0
+        && unvaluedTypeIDs.isEmpty && unknownBlueprintStatusCount == 0
+        && unvaluedOrderCount == 0
         && missingEscrowOrderCount == 0
         && unvaluedContractItemTypeIDs.isEmpty
         && unavailableContractCount == 0
@@ -871,7 +947,10 @@ public enum DashboardWealthProjector {
       freshness: combinedFreshness(
         [
           input.wallet.state,
-          assetValuationFreshness(input.assets),
+          adjustedFreshness(
+            assetValuationFreshness(input.assets),
+            incomplete: !unvaluedTypeIDs.isEmpty || unknownBlueprintStatusCount > 0
+          ),
           input.openOrders?.state ?? .unavailable,
           input.privateContracts?.state ?? .unavailable,
         ] + (inProgressIndustry.map { [$0.freshness] } ?? []))
@@ -891,7 +970,8 @@ public enum DashboardWealthProjector {
 
   private static func corporationAssetProjection(
     inputs: [DashboardWealthCharacterInput],
-    prices: [Int64: AdjustedPrice]
+    prices: [Int64: AdjustedPrice],
+    assetClassifications: [Int64: IndustryItemClassification]
   ) -> CorporationProjection {
     let selected = selectedCorporationSources(
       inputs: inputs,
@@ -903,33 +983,21 @@ public enum DashboardWealthProjector {
     }
     var total = 0.0
     var hasValue = false
-    var hasIncompleteValuation = false
     var unvaluedTypeIDs = Set<Int64>()
+    var excludedBlueprintCopyCount = 0
+    var unknownBlueprintStatusCount = 0
     for entry in selected {
-      let sourced = entry.sourced
-      guard let snapshot = usableValue(sourced) else { continue }
-      hasValue = true
-      for item in snapshot.items {
-        if item.quantity == -2 { continue }
-        let quantity = item.quantity < 0 ? 1 : item.quantity
-        guard quantity > 0 else { continue }
-        guard let reference = prices[item.typeID],
-          let unitPrice = reference.averagePrice ?? reference.adjustedPrice,
-          unitPrice.isFinite,
-          unitPrice >= 0
-        else {
-          hasIncompleteValuation = true
-          unvaluedTypeIDs.insert(item.typeID)
-          continue
-        }
-        let value = Double(quantity) * unitPrice
-        guard value.isFinite else {
-          hasIncompleteValuation = true
-          unvaluedTypeIDs.insert(item.typeID)
-          continue
-        }
+      guard let snapshot = usableValue(entry.sourced) else { continue }
+      let projection = valueAssets(
+        snapshot.items, prices: prices, classifications: assetClassifications
+      )
+      if let value = projection.value {
+        hasValue = true
         total += value
       }
+      unvaluedTypeIDs.formUnion(projection.unpricedTypeIDs)
+      excludedBlueprintCopyCount += projection.excludedCopyCount
+      unknownBlueprintStatusCount += projection.unknownStatusCount
     }
     return CorporationProjection(
       value: hasValue && total.isFinite ? total : nil,
@@ -938,12 +1006,14 @@ public enum DashboardWealthProjector {
           selected.map {
             assetValuationFreshness($0.sourced)
           }),
-        incomplete: hasIncompleteValuation
+        incomplete: !unvaluedTypeIDs.isEmpty || unknownBlueprintStatusCount > 0
       ),
       coverage: corporationCoverage(
         selected: selected,
         roleDiagnostic: "esi.corporation-assets.director-required",
-        unvaluedAssetTypeCount: unvaluedTypeIDs.count
+        unvaluedAssetTypeCount: unvaluedTypeIDs.count,
+        excludedBlueprintCopyCount: excludedBlueprintCopyCount,
+        unknownBlueprintStatusCount: unknownBlueprintStatusCount
       )
     )
   }
@@ -1025,7 +1095,9 @@ public enum DashboardWealthProjector {
   private static func corporationCoverage<Value: Codable & Sendable>(
     selected: [SelectedCorporationSource<Value>],
     roleDiagnostic: String,
-    unvaluedAssetTypeCount: Int = 0
+    unvaluedAssetTypeCount: Int = 0,
+    excludedBlueprintCopyCount: Int = 0,
+    unknownBlueprintStatusCount: Int = 0
   ) -> DashboardWealthCorporationCoverage {
     DashboardWealthCorporationCoverage(
       corporationCount: selected.count,
@@ -1038,8 +1110,59 @@ public enum DashboardWealthProjector {
       unavailableCorporationCount: selected.filter {
         $0.sourced.state == .unavailable
       }.count,
-      unvaluedAssetTypeCount: unvaluedAssetTypeCount
+      unvaluedAssetTypeCount: unvaluedAssetTypeCount,
+      excludedBlueprintCopyCount: excludedBlueprintCopyCount,
+      unknownBlueprintStatusCount: unknownBlueprintStatusCount
     )
+  }
+
+  private static func valueAssets(
+    _ items: [AssetItem],
+    prices: [Int64: AdjustedPrice],
+    classifications: [Int64: IndustryItemClassification]
+  ) -> (
+    value: Double?, unpricedTypeIDs: Set<Int64>, excludedCopyCount: Int, unknownStatusCount: Int
+  ) {
+    var total = 0.0
+    var unpricedTypeIDs = Set<Int64>()
+    var excludedCopyCount = 0
+    var unknownStatusCount = 0
+    for item in items {
+      // The asset endpoint's flag is authoritative. Negative quantities are
+      // only a compatibility fallback for older imported blueprint records.
+      if item.isBlueprintCopy == true
+        || (item.isBlueprintCopy == nil && item.quantity == -2)
+      {
+        excludedCopyCount += 1
+        continue
+      }
+      let quantity = item.quantity < 0 ? 1 : item.quantity
+      guard quantity > 0 else { continue }
+      if item.isBlueprintCopy == nil && item.quantity != -1 {
+        let category = classifications[item.typeID]?.categoryName
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let category, !category.isEmpty,
+          category.caseInsensitiveCompare("Blueprint") != .orderedSame
+        else {
+          unknownStatusCount += 1
+          continue
+        }
+      }
+      guard let reference = prices[item.typeID],
+        let unitPrice = reference.averagePrice ?? reference.adjustedPrice,
+        unitPrice.isFinite, unitPrice >= 0
+      else {
+        unpricedTypeIDs.insert(item.typeID)
+        continue
+      }
+      let value = Double(quantity) * unitPrice
+      guard value.isFinite else {
+        unpricedTypeIDs.insert(item.typeID)
+        continue
+      }
+      total += value
+    }
+    return (total.isFinite ? total : nil, unpricedTypeIDs, excludedCopyCount, unknownStatusCount)
   }
 
   private static func assetValuationFreshness<Value: Codable & Sendable>(
@@ -1337,6 +1460,48 @@ public struct MaterialPurchaseAnalysisSnapshot: Codable, Sendable {
     self.configuredHubs = configuredHubs
     self.configuredMarkets = configuredMarkets
     self.refreshedAt = refreshedAt
+  }
+}
+
+public struct MaterialPurchaseRecommendation: Identifiable, Equatable, Sendable {
+  public let material: MaterialPurchaseItem
+  public let location: ProcurementLocation?
+  public let unitPrice: Double?
+  public let hasCompleteMarketCoverage: Bool
+  public var id: Int64 { material.id }
+}
+
+public enum MaterialPurchaseRecommendationProjector {
+  public static func project(
+    _ analysis: MaterialPurchaseAnalysisSnapshot
+  ) -> [MaterialPurchaseRecommendation] {
+    let freshMarkets = analysis.configuredHubs.compactMap { hub -> (ProcurementLocation, MarketOrderSnapshot)? in
+      guard let sourced = analysis.configuredMarkets[hub.id],
+        sourced.state == .fresh, let market = sourced.value,
+        market.state == .fresh, market.locationID == hub.location.locationID
+      else { return nil }
+      return (hub.location, market)
+    }
+    let complete = !analysis.configuredHubs.isEmpty
+      && freshMarkets.count == analysis.configuredHubs.count
+    return analysis.materialCatalog.materials.map { material in
+      var best: (location: ProcurementLocation, price: Double)?
+      for (location, market) in freshMarkets {
+        guard let band = MaterialPurchasePriceBandAnalyzer.analyze(
+          typeID: material.id, snapshot: market
+        ) else { continue }
+        if best == nil || band.lowestSellPrice < best!.price {
+          best = (location, band.lowestSellPrice)
+        }
+      }
+      return MaterialPurchaseRecommendation(
+        material: material, location: best?.location, unitPrice: best?.price,
+        hasCompleteMarketCoverage: complete
+      )
+    }.sorted {
+      let order = $0.material.name.localizedCaseInsensitiveCompare($1.material.name)
+      return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
+    }
   }
 }
 

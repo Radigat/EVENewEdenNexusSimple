@@ -46,6 +46,7 @@ public struct ESIAssetDTO: Codable, Sendable {
   public let quantity: Int64
   public let singleton: Bool
   public let typeID: Int64
+  public let isBlueprintCopy: Bool?
 
   enum CodingKeys: String, CodingKey {
     case itemID = "item_id"
@@ -55,6 +56,7 @@ public struct ESIAssetDTO: Codable, Sendable {
     case quantity
     case singleton = "is_singleton"
     case typeID = "type_id"
+    case isBlueprintCopy = "is_blueprint_copy"
   }
 }
 

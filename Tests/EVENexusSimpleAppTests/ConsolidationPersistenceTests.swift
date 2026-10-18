@@ -8,6 +8,128 @@ import Testing
 @MainActor
 @Suite("Additive workspace migration", .serialized)
 struct ConsolidationPersistenceTests {
+  @Test func fullRestoreValidatorMigratesV1WithoutNormalStartupSideEffects() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("v1-restore-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let source = root.appendingPathComponent("source.store")
+    try seedRecoveryV1(source)
+    let candidate = root.appendingPathComponent("candidate.store")
+    try ConsolidationBackup.snapshotSQLite(source: source, destination: candidate)
+    let counts = try FullStoreRecovery.validateDirect(candidate)
+    #expect(counts.count == 13)
+    #expect(counts["Characters"] == 1)
+    #expect(counts["App settings"] == 1)
+    #expect(counts["Consolidation workspaces"] == 0)
+    #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("migration-backups").path))
+  }
+
+  private func seedRecoveryV1(_ store: URL) throws {
+    let schema = Schema(versionedSchema: EVENexusSchemaV1.self)
+    let container = try ModelContainer(for: schema, configurations: [ModelConfiguration("EVENexusSimple", schema: schema, url: store, cloudKitDatabase: .none)])
+    let context = ModelContext(container)
+    context.insert(EVENexusSchemaV1.StoredCharacter(characterID: 42, characterName: "Fixture", authorizationSnapshot: try JSONEncoder().encode(AuthorizationSnapshot(characterID: 42, characterName: "Fixture", scopes: []))))
+    context.insert(EVENexusSchemaV1.AppSetting(key: "fixture", value: "retained"))
+    try context.save()
+  }
+
+  @Test func fullRestoreValidatorMigratesV2AndReadsEveryV3Model() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("all-model-restore-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let paths = AppDataPaths.resolve(applicationSupportRoot: root, fileExists: { _ in false })
+    try paths.prepareDirectories()
+    let bytes = try JSONEncoder().encode(makePlan())
+    try seedV2(paths: paths, bytes: bytes, rowID: UUID())
+    let candidate = root.appendingPathComponent("candidate.store")
+    try ConsolidationBackup.snapshotSQLite(source: paths.swiftDataStoreURL, destination: candidate)
+    let initial = try FullStoreRecovery.validateDirect(candidate)
+    #expect(initial.count == 13)
+    #expect(initial["Plans"] == 2)
+    #expect(initial["Planner drafts"] == 1)
+    #expect(initial["Production overview rows"] == 1)
+    #expect(initial["Consolidation workspaces"] == 0)
+    try populateRemainingRecoveryModels(candidate, bytes: bytes)
+    let all = try FullStoreRecovery.validateDirect(candidate)
+    #expect(all.count == 13)
+    #expect(all.values.allSatisfy { $0 > 0 })
+    let restored = root.appendingPathComponent("restored.store")
+    try ConsolidationBackup.snapshotSQLite(source: candidate, destination: restored)
+    #expect(try FullStoreRecovery.validateDirect(restored) == all)
+  }
+
+  private func populateRemainingRecoveryModels(_ store: URL, bytes: Data) throws {
+    let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
+    let container = try ModelContainer(for: schema, configurations: [ModelConfiguration("EVENexusSimple", schema: schema, url: store, cloudKitDatabase: .none)])
+    let c = ModelContext(container)
+    c.insert(StoredProductionBasis(id: UUID(), name: "Fixture", encodedBasis: try JSONEncoder().encode(ProductionBasis())))
+    c.insert(StoredManufacturingProfile(id: UUID(), name: "Fixture", encodedProfile: try JSONEncoder().encode(ManufacturingProfile())))
+    c.insert(StoredReactionProfile(id: UUID(), name: "Fixture", encodedProfile: try JSONEncoder().encode(ReactionProfile())))
+    c.insert(StoredCharacter(characterID: 42, characterName: "Fixture", authorizationSnapshot: try JSONEncoder().encode(AuthorizationSnapshot(characterID: 42, characterName: "Fixture", scopes: []))))
+    c.insert(StoredStockTarget(typeID: 34, typeName: "Fixture", targetQuantity: 19))
+    c.insert(StoredProductionRecord(planID: UUID(), name: "Fixture", input: "input", manualStockInput: "stock", snapshot: bytes, sdeBuild: 1, esiCompatibilityDate: "fixture", priceTimestamp: .now, ruleVersion: "fixture"))
+    c.insert(StoredSDEActivationPointer(buildNumber: 1, contentSHA256: "fixture"))
+    c.insert(StoredESISnapshotMetadata(characterID: 42, domain: "fixture", freshness: "fresh", provider: "fixture", sourceVersion: "1", sourceSnapshotID: UUID(), capturedAt: .now, diagnostics: []))
+    c.insert(AppSetting(key: "fixture", value: "retained"))
+    c.insert(StoredConsolidationWorkspace(payload: try JSONEncoder().encode(ConsolidationWorkspace()), revision: 0))
+    try c.save()
+  }
+
+  @Test(arguments: ["not base64!", Data("{invalid json".utf8).base64EncodedString()])
+  func restoreValidatorRejectsMalformedKnownSettingPayload(value: String) throws {
+    for key in [AppSettingKey.industryJobs(characterID: 42), AppSettingKey.openOrders(characterID: 42),
+      AppSettingKey.privateContracts(characterID: 42), AppSettingKey.corporationWallet(characterID: 42), AppSettingKey.dashboardWealthHistory] {
+      let root = FileManager.default.temporaryDirectory.appendingPathComponent("setting-restore-\(UUID())")
+      defer { try? FileManager.default.removeItem(at: root) }
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      let source = root.appendingPathComponent("source.store")
+      try seedRecoverySetting(source, key: key, value: value)
+      let candidate = root.appendingPathComponent("candidate.store")
+      try ConsolidationBackup.snapshotSQLite(source: source, destination: candidate)
+      #expect(throws: (any Error).self) { try FullStoreRecovery.validateDirect(candidate) }
+    }
+  }
+
+  private func seedRecoverySetting(_ store: URL, key: String, value: String) throws {
+    let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
+    let container = try ModelContainer(for: schema, configurations: [ModelConfiguration("EVENexusSimple", schema: schema, url: store, cloudKitDatabase: .none)])
+    let context = ModelContext(container)
+    context.insert(AppSetting(key: key, value: value))
+    try context.save()
+  }
+
+  @Test func restoreValidatorAcceptsLegitimateEmptyEVEStore() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("empty-restore-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let source = root.appendingPathComponent("source.store")
+    try seedEmptyRecoveryStore(source)
+    let candidate = root.appendingPathComponent("candidate.store")
+    try ConsolidationBackup.snapshotSQLite(source: source, destination: candidate)
+    let counts = try FullStoreRecovery.validateDirect(candidate)
+    #expect(counts.count == 13)
+    #expect(counts.values.allSatisfy { $0 == 0 })
+  }
+
+  private func seedEmptyRecoveryStore(_ store: URL) throws {
+    let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
+    let container = try ModelContainer(for: schema, configurations: [ModelConfiguration("EVENexusSimple", schema: schema, url: store, cloudKitDatabase: .none)])
+    try ModelContext(container).save()
+  }
+
+  @Test func restoreValidatorRefusesUnrelatedSQLiteDatabase() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("unrelated-restore-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let candidate = root.appendingPathComponent("candidate.store")
+    let sqlite = Process()
+    sqlite.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+    sqlite.arguments = [candidate.path, "CREATE TABLE unrelated(value INTEGER); INSERT INTO unrelated VALUES(42);"]
+    try sqlite.run()
+    sqlite.waitUntilExit()
+    #expect(sqlite.terminationStatus == 0)
+    #expect(throws: (any Error).self) { try FullStoreRecovery.validateDirect(candidate) }
+  }
+
   @Test func v2MigrationPreservesHistoryAndBootstrapIsIdempotent() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "eve-schema-test-\(UUID())")

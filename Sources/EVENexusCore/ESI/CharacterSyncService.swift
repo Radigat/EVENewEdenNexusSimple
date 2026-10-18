@@ -377,7 +377,8 @@ public struct CharacterSyncService: Sendable {
             locationID: $0.locationID
           ),
           locationFlag: $0.locationFlag,
-          singleton: $0.singleton
+          singleton: $0.singleton,
+          isBlueprintCopy: $0.isBlueprintCopy
         )
       }
       let structureIDs = AssetLocationClassifier.structureCandidateIDs(
@@ -1143,7 +1144,8 @@ public struct CorporationAssetSyncService: Sendable {
           locationID: $0.locationID
         ),
         locationFlag: $0.locationFlag,
-        singleton: $0.singleton
+        singleton: $0.singleton,
+        isBlueprintCopy: $0.isBlueprintCopy
       )
     }
     let structureIDs = AssetLocationClassifier.structureCandidateIDs(

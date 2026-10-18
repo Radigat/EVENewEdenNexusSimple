@@ -1,4 +1,34 @@
 /* Language */
+/* Compact dashboard */
+"Show all" = "Alle anzeigen";
+"Show less" = "Weniger anzeigen";
+"Character balances" = "Wallets der Charaktere";
+"Character net worth" = "Nettowerte der Charaktere";
+"Valuation details" = "Details zur Bewertung";
+"Top 5 by material value" = "Top 5 nach Rohstoffwert";
+"Some character job data is incomplete; ranking may omit jobs." = "Jobdaten einiger Charaktere sind unvollständig; die Rangfolge kann Jobs auslassen.";
+"Product name unavailable" = "Produktname nicht verfügbar";
+"Running" = "Laufend";
+"Incomplete ranking · %lld jobs without full material valuation" = "Unvollständige Rangfolge · %lld Jobs ohne vollständige Rohstoffbewertung";
+"No open production jobs." = "Keine offenen Produktionsjobs.";
+"Estimated material value · ESI average / adjusted prices" = "Geschätzter Rohstoffwert · ESI-Durchschnitts- / angepasste Preise";
+"Reactions with negative value creation" = "Reaktionen mit negativer Wertschöpfung";
+"Open reactions" = "Reaktionen öffnen";
+"No reactions have negative value creation." = "Keine Reaktionen mit negativer Wertschöpfung.";
+"Purchase market" = "Kaufmarkt";
+"Production destination unavailable" = "Produktionsziel nicht verfügbar";
+"%lld runs · %@" = "%lld Durchläufe · %@";
+"Open purchase analysis" = "Einkaufsanalyse öffnen";
+"Recommended purchase locations" = "Empfohlene Kauforte";
+"Cheapest configured market" = "Günstigster konfigurierter Markt";
+"Cheapest available market" = "Günstigster verfügbarer Markt";
+"Some configured markets are unavailable or stale; the comparison is incomplete." = "Einige konfigurierte Märkte sind nicht verfügbar oder veraltet; der Vergleich ist unvollständig.";
+"No fresh sell offer available" = "Kein aktuelles Verkaufsangebot verfügbar";
+"Settings changed. Refresh to update purchase locations." = "Einstellungen geändert. Aktualisiere die Kauforte.";
+"Settings changed. Refresh to update reactions." = "Einstellungen geändert. Aktualisiere die Reaktionen.";
+"No configured purchase market is available." = "Kein konfigurierter Kaufmarkt verfügbar.";
+"Purchase prices from the mineral analysis" = "Kaufpreise aus der Mineralien-Einkaufsanalyse";
+"No current mineral purchase analysis is available." = "Keine aktuelle Mineralien-Einkaufsanalyse verfügbar.";
 "Language & Terminology" = "Sprache & Fachbegriffe";
 "Language" = "Sprache";
 "General" = "Allgemein";
@@ -2278,3 +2308,46 @@
 "The planned product quantities multiplied by the lowest comparable public Item Exchange contract unit price observed so far for each exact product. The incomplete index makes this value provisional." = "Die geplanten Produktmengen multipliziert mit dem bisher niedrigsten beobachteten vergleichbaren Stückpreis öffentlicher Gegenstandstauschverträge für jedes exakte Produkt. Der unvollständige Index macht diesen Wert vorläufig.";
 "%@, %@ planned units, provisionally valued at the lowest comparable public single-type Item Exchange contract unit price observed so far. Gross contract revenue: %@." = "%1$@, %2$@ geplante Einheiten, vorläufig bewertet mit dem bisher niedrigsten beobachteten vergleichbaren Stückpreis eines öffentlichen Gegenstandstauschvertrags für genau einen Produkttyp. Brutto-Vertragserlös: %3$@.";
 "%@ units × %@ lowest public contract unit price observed so far = %@ provisional gross contract-sale value · contract snapshot %@." = "%1$@ Einheiten × %2$@ bisher niedrigster beobachteter Stückpreis eines öffentlichen Vertrags = %3$@ vorläufiger Brutto-Vertragshandelswert · Vertrags-Snapshot %4$@.";
+
+// Blueprint asset valuation coverage
+"Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Known blueprint copies are excluded. Assets with unknown blueprint status remain unvalued until an asset refresh or SDE classification resolves them." = "Persönliche und Corporation-Assets verwenden ESI-Durchschnittspreise, ersatzweise angepasste Preise. Bekannte Blaupausenkopien sind ausgeschlossen. Assets mit unbekanntem Blaupausenstatus bleiben unbewertet, bis eine Asset-Aktualisierung oder SDE-Klassifizierung ihn auflöst.";
+"%lld asset stacks unvalued: blueprint status unknown" = "%lld Asset-Stapel unbewertet: Blaupausenstatus unbekannt";
+"%lld corporation asset stacks unvalued: blueprint status unknown" = "%lld Corporation-Asset-Stapel unbewertet: Blaupausenstatus unbekannt";
+
+// Full-store recovery
+"Data recovery" = "Datenwiederherstellung";
+"Fully restore earlier data…" = "Früheren Datenbestand vollständig wiederherstellen …";
+"Full restoration paused" = "Vollständige Wiederherstellung angehalten";
+"The data could not be prepared for restoration." = "Der Datenbestand konnte nicht für die Wiederherstellung vorbereitet werden.";
+"Reopen the app to try again, or cancel the request." = "Öffnen Sie die App erneut, um es nochmals zu versuchen, oder brechen Sie den Auftrag ab.";
+"Quit and retry later" = "Beenden und später erneut versuchen";
+"Cancel request" = "Auftrag abbrechen";
+"Fully restore the earlier data?" = "Früheren Datenbestand vollständig wiederherstellen?";
+"Backup of current and earlier data: %@" = "Sicherung des aktuellen und früheren Bestands: %@";
+"All application records will be replaced by the earlier data. Newer records remain only in the backup. No records will be merged. Keep this backup. Keychain, app preferences, SDE, and additional databases are retained." = "Alle Anwendungsdatensätze werden durch den früheren Bestand ersetzt. Neuere Datensätze bleiben ausschließlich in der Sicherung. Es erfolgt keine Zusammenführung. Bewahren Sie diese Sicherung auf. Keychain, App-Präferenzen, SDE und zusätzliche Datenbanken bleiben erhalten.";
+"Before restoring, quit every older version of this app. Older versions do not prevent simultaneous access to this data folder." = "Beenden Sie vor der Wiederherstellung alle älteren Versionen dieser App. Ältere Versionen verhindern keinen gleichzeitigen Zugriff auf diesen Datenordner.";
+"The current data is backed up only as an unchanged raw copy because a readable SQLite backup could not be created. Keep that raw backup for recovery." = "Der aktuelle Bestand ist ausschließlich als unveränderte Rohkopie gesichert, weil keine lesbare SQLite-Sicherung erstellt werden konnte. Bewahren Sie diese Rohsicherung für eine spätere Datenrettung auf.";
+"Restore all data" = "Vollständig wiederherstellen";
+"Full restoration could not be completed. Keep the backup and reopen the app to retry recovery." = "Die vollständige Wiederherstellung konnte nicht abgeschlossen werden. Bewahren Sie die Sicherung auf und öffnen Sie die App erneut, um die Wiederherstellung nochmals zu versuchen.";
+"Data restored" = "Datenbestand wiederhergestellt";
+"Reopen the app. The previous data remains backed up at:\n%@" = "Öffnen Sie die App erneut. Die bisherigen Daten bleiben gesichert unter:\n%@";
+"Quit" = "Beenden";
+"The data folder is unavailable." = "Der Datenordner ist nicht verfügbar.";
+"Check earlier data" = "Früheren Datenbestand prüfen";
+"The app will save pending changes and quit. On the next launch, the current and earlier data will be backed up and checked. You will then explicitly confirm full restoration without merging." = "Die App speichert offene Änderungen und wird beendet. Beim nächsten Öffnen werden der aktuelle und frühere Bestand gesichert und geprüft. Erst danach bestätigen Sie ausdrücklich die vollständige Wiederherstellung ohne Zusammenführung.";
+"Save and quit" = "Speichern und beenden";
+"Restoration could not be scheduled" = "Wiederherstellung konnte nicht vorgemerkt werden";
+"The app could not save the changes or schedule restoration. It will remain open." = "Die App konnte die Änderungen nicht speichern oder die Wiederherstellung nicht vormerken. Sie bleibt geöffnet.";
+"OK" = "OK";
+"Production bases" = "Produktionsbasen";
+"Manufacturing profiles" = "Fertigungsprofile";
+"Reaction profiles" = "Reaktionsprofile";
+"Stock targets" = "Lagerziele";
+"Plans" = "Pläne";
+"Planner drafts" = "Planerentwürfe";
+"Production records" = "Produktionsdatensätze";
+"Production overview rows" = "Produktionsübersichtszeilen";
+"SDE pointers" = "SDE-Verweise";
+"ESI metadata" = "ESI-Metadaten";
+"App settings" = "App-Einstellungen";
+"Consolidation workspaces" = "Konsolidierungsarbeitsbereiche";

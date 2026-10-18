@@ -62,6 +62,11 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   }
 }
 
+struct DashboardNavigationRequest {
+  let section: NavigationSection
+  var negativeReactionsOnly = false
+}
+
 enum DataSettingsSection: String, CaseIterable, Identifiable {
   case general
   case sde
@@ -227,6 +232,7 @@ struct ContentView: View {
   @Query(sort: \StoredCharacter.characterName)
   private var storedCharacters: [StoredCharacter]
   @State private var selection: NavigationSection? = .dashboard
+  @State private var opensNegativeReactions = false
   @State private var dataSettingsSelection: DataSettingsSection = .general
   @State private var historicalPlannerRequest: HistoricalPlannerRequest?
   @State private var plannerLaunchRequest: PlannerLaunchRequest?
@@ -277,7 +283,10 @@ struct ContentView: View {
         Group {
           switch selection ?? .dashboard {
           case .dashboard:
-            DashboardView()
+            DashboardView { request in
+              opensNegativeReactions = request.negativeReactionsOnly
+              guardedSelection.wrappedValue = request.section
+            }
           case .planner:
             PlannerView(
               historicalPlannerRequest: $historicalPlannerRequest,
@@ -293,7 +302,7 @@ struct ContentView: View {
           case .publicContracts:
             PublicContractsView()
           case .reactions:
-            ReactionsView()
+            ReactionsView(initialNegativeFilter: $opensNegativeReactions)
           case .moonMaterialAnalysis:
             MoonMaterialPurchaseAnalysisView()
           case .mineralPurchaseAnalysis:
@@ -721,7 +730,82 @@ private enum DashboardWealthSeries: String, CaseIterable, Identifiable {
   }
 }
 
+/// Stacks cards when their minimum widths cannot fit; otherwise preserves ratios.
+struct DashboardCardLayout: Layout {
+  let weights: [CGFloat]
+  let minimumWidths: [CGFloat]
+  var spacing: CGFloat = DesignTokens.spacingMD
+
+  func widths(for width: CGFloat) -> [CGFloat] {
+    guard !weights.isEmpty else { return [] }
+    let available = max(0, width - spacing * CGFloat(weights.count - 1))
+    guard width >= minimumWidths.reduce(0, +) + spacing * CGFloat(weights.count - 1)
+    else { return Array(repeating: max(0, width), count: weights.count) }
+    return weights.map { available * $0 / weights.reduce(0, +) }
+  }
+
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let width = max(0, proposal.width ?? minimumWidths.reduce(0, +) + spacing * CGFloat(max(0, weights.count - 1)))
+    let sizes = measured(width: width, subviews: subviews)
+    let stacked = widths(for: width).first == width
+    let height = stacked
+      ? sizes.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, sizes.count - 1))
+      : sizes.map(\.height).max() ?? 0
+    return CGSize(width: width, height: height)
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    let widths = widths(for: bounds.width)
+    let sizes = measured(width: bounds.width, subviews: subviews)
+    let stacked = widths.first == bounds.width
+    var origin = bounds.origin
+    for index in subviews.indices {
+      subviews[index].place(at: origin, anchor: .topLeading,
+        proposal: ProposedViewSize(width: widths[index], height: sizes[index].height))
+      if stacked { origin.y += sizes[index].height + spacing }
+      else { origin.x += widths[index] + spacing }
+    }
+  }
+
+  private func measured(width: CGFloat, subviews: Subviews) -> [CGSize] {
+    let widths = widths(for: width)
+    return subviews.indices.map {
+      subviews[$0].sizeThatFits(ProposedViewSize(width: widths[$0], height: nil))
+    }
+  }
+}
+
+struct DashboardPreviewList<Row: Identifiable, RowContent: View>: View {
+  let rows: [Row]
+  @ViewBuilder var content: (Row) -> RowContent
+  @State private var expanded = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text(AppLocalization.format("%lld items", Int64(rows.count)))
+        .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+      ForEach(Array(rows.prefix(expanded ? rows.count : 5))) { row in
+        content(row)
+      }
+      if rows.count > 5 {
+        Button {
+          expanded.toggle()
+        } label: {
+          Label {
+            Text(expanded ? "Show less".localizedUI : "Show all".localizedUI)
+          } icon: {
+            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+          }
+        }
+        .buttonStyle(.borderless)
+        .accessibilityValue(expanded ? "Expanded".localizedUI : "Collapsed".localizedUI)
+      }
+    }
+  }
+}
+
 struct DashboardView: View {
+  var onNavigate: (DashboardNavigationRequest) -> Void = { _ in }
   @EnvironmentObject private var runtime: RuntimeState
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredCharacter.characterName)
@@ -738,11 +822,10 @@ struct DashboardView: View {
   @State private var refreshingWalletCharacterIDs: Set<Int64> = []
   @State private var walletRefreshErrors: [Int64: String] = [:]
   @State private var selectedDashboardWealthSeries: DashboardWealthSeries = .total
-  @AppStorage(
-    "dashboard.reaction-opportunity-groups",
-    store: AppDefaults.store
-  )
-  private var encodedReactionGroups = "[]"
+  @AppStorage("reactions.analysis-runs", store: AppDefaults.store)
+  private var sharedReactionRuns = 100
+  @AppStorage("reactions.market-hub-id", store: AppDefaults.store)
+  private var sharedReactionHubID = ""
   var body: some View {
     TimelineView(.periodic(from: .now, by: 60)) { context in
       ScrollView {
@@ -753,16 +836,17 @@ struct DashboardView: View {
             systemImage: "hammer.fill"
           ) {
             jobCapacityPanel(now: context.date)
-            dashboardPairedRow {
+            DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340]) {
               readyJobsPanel(now: context.date)
               upcomingJobsPanel(now: context.date)
+              largestJobsPanel(now: context.date)
             }
           }
           dashboardSection(
             title: "Finances",
             systemImage: "creditcard.fill"
           ) {
-            dashboardPairedRow {
+            DashboardCardLayout(weights: [1, 2], minimumWidths: [280, 560]) {
               walletPanel
               netWorthPanel
             }
@@ -772,7 +856,11 @@ struct DashboardView: View {
             systemImage: "chart.line.uptrend.xyaxis"
           ) {
             mineralTickerPanel
-            reactionOpportunityPanel
+            DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340]) {
+              reactionOpportunityPanel
+              purchasePanel(kind: .moonMaterials)
+              purchasePanel(kind: .minerals)
+            }
           }
         }
         .frame(maxWidth: 1_440, alignment: .leading)
@@ -789,9 +877,6 @@ struct DashboardView: View {
       guard !Task.isCancelled else { return }
       industrySnapshot = prepared
       blueprintNames = await runtime.resolveAssetTypeNames(prepared.jobTypeIDs)
-      if runtime.mineralPriceTickerState == nil {
-        await runtime.refreshMineralPriceTicker()
-      }
     }
     .task(id: wealthInputIdentity) {
       guard hasFinishedDashboardStartupRefresh else { return }
@@ -804,6 +889,16 @@ struct DashboardView: View {
     }
     .task(id: mainHubAutomationIdentity) {
       runtime.prepareMainHubMarketAutomation()
+    }
+    .task(id: marketRefreshIdentity) {
+      guard runtime.isPlannerConfigurationReady else { return }
+      async let moon: Void = runtime.refreshMoonMaterialAnalysis(
+        authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID)
+      async let minerals: Void = runtime.refreshMineralPurchaseAnalysis(
+        authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID)
+      async let reactions: Void = runtime.refreshConfiguredReactions(
+        authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID)
+      _ = await (moon, minerals, reactions)
     }
     .task(id: dashboardStartupCharacterIdentity) {
       guard !characters.isEmpty else { return }
@@ -1113,38 +1208,88 @@ struct DashboardView: View {
   private var mineralTickerPanel: some View {
     Panel(title: "Mineral prices") {
       HStack {
-        Text(
-          AppLocalization.format(
-            "Daily regional average · %@",
-            mineralRegionName
-          )
-        )
+        Text("Purchase prices from the mineral analysis")
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         Spacer()
-        if runtime.isRefreshingMineralPrices {
+        if runtime.isRefreshingMineralPurchaseAnalysis {
           ProgressView().controlSize(.small)
         }
         Button {
-          Task { await runtime.refreshMineralPriceTicker() }
+          Task { await runtime.refreshMineralPurchaseAnalysis(
+            authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID) }
         } label: {
           Image(systemName: "arrow.clockwise")
         }
         .buttonStyle(.borderless)
-        .disabled(runtime.isRefreshingMineralPrices)
+        .disabled(runtime.isRefreshingMineralPurchaseAnalysis)
         .help("Refresh mineral prices")
         .accessibilityLabel("Refresh mineral prices")
+        Button("Open purchase analysis") {
+          onNavigate(DashboardNavigationRequest(section: .mineralPurchaseAnalysis))
+        }.buttonStyle(.borderless)
       }
-      if let rows = runtime.mineralPriceTickerState?.value, !rows.isEmpty {
-        DashboardMineralTicker(rows: rows)
-          .frame(height: 46)
-        sourceStateLine(runtime.mineralPriceTickerState?.state)
+      if runtime.hasCurrentMineralPurchaseAnalysis, !runtime.mineralPurchaseRecommendations.isEmpty {
+        DashboardMineralTicker(rows: runtime.mineralPurchaseRecommendations)
+          .frame(height: 62)
+        if runtime.mineralPurchaseRecommendations.contains(where: { !$0.hasCompleteMarketCoverage }) {
+          Text("Some configured markets are unavailable or stale; the comparison is incomplete.")
+            .font(.caption).foregroundStyle(DesignTokens.caution)
+        }
       } else {
         Label(
-          "No mineral market history is available.",
+          "No current mineral purchase analysis is available.",
           systemImage: "chart.line.downtrend.xyaxis"
         )
         .foregroundStyle(DesignTokens.textSecondary)
+      }
+      if let error = runtime.mineralPurchaseAnalysisError {
+        Text(error.localizedUI).font(.caption).foregroundStyle(DesignTokens.caution)
+      }
+    }
+  }
+
+  private var marketRefreshIdentity: String {
+    let authorizations = authorizationSnapshots.map {
+      "\($0.id):\($0.authorizedAt.timeIntervalSince1970):\($0.scopes.sorted().joined(separator: ","))"
+    }.sorted().joined(separator: "|")
+    return runtime.marketAnalysisContextIdentity + "#\(runtime.isPlannerConfigurationReady)#\(sharedReactionRuns)#\(sharedReactionHubID)#" + authorizations
+  }
+
+  private func purchasePanel(kind: MaterialPurchaseAnalysisKind) -> some View {
+    let moon = kind == .moonMaterials
+    let current = moon ? runtime.hasCurrentMoonMaterialAnalysis : runtime.hasCurrentMineralPurchaseAnalysis
+    let rows = moon ? runtime.moonMaterialRecommendations : runtime.mineralPurchaseRecommendations
+    let refreshing = moon ? runtime.isRefreshingMoonMaterialAnalysis : runtime.isRefreshingMineralPurchaseAnalysis
+    let error = moon ? runtime.moonMaterialAnalysisError : runtime.mineralPurchaseAnalysisError
+    return Panel(title: kind.title) {
+      HStack {
+        if refreshing { ProgressView().controlSize(.small) }
+        Spacer()
+        Button("Open purchase analysis") {
+          onNavigate(DashboardNavigationRequest(section: moon ? .moonMaterialAnalysis : .mineralPurchaseAnalysis))
+        }.buttonStyle(.borderless)
+        Button {
+          Task {
+            if moon {
+              await runtime.refreshMoonMaterialAnalysis(authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID)
+            } else {
+              await runtime.refreshMineralPurchaseAnalysis(authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID)
+            }
+          }
+        } label: {
+          Image(systemName: "arrow.clockwise")
+        }.buttonStyle(.borderless).disabled(refreshing)
+          .accessibilityLabel("Refresh")
+      }
+      if current {
+        MaterialPurchaseRecommendationContent(recommendations: rows)
+      } else {
+        Text("Settings changed. Refresh to update purchase locations.")
+          .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+      }
+      if let error {
+        Text(error.localizedUI).font(.caption).foregroundStyle(DesignTokens.caution)
       }
     }
   }
@@ -1243,6 +1388,7 @@ struct DashboardView: View {
                 : AppLocalization.text("Unavailable")
             )
             .font(.largeTitle.weight(.semibold).monospacedDigit())
+            .lineLimit(1).minimumScaleFactor(0.6)
             .foregroundStyle(
               walletPortfolio.includedCharacterCount > 0
                 ? DesignTokens.highlight : DesignTokens.textSecondary
@@ -1260,6 +1406,9 @@ struct DashboardView: View {
           Spacer()
           VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
             freshnessPill(walletPortfolio.freshness)
+          }
+        }
+        DisclosureGroup("Character balances") {
             Button {
               Task { await refreshDashboardData(isStartup: false) }
             } label: {
@@ -1276,11 +1425,9 @@ struct DashboardView: View {
                 || clientID.isEmpty
             )
             .accessibilityIdentifier("dashboard.refresh")
-          }
-        }
-        Divider()
-        ForEach(walletPortfolio.balances) { row in
-          dashboardWalletRow(row)
+            ForEach(walletPortfolio.balances) { row in
+              dashboardWalletRow(row)
+            }
         }
         if clientID.isEmpty {
           Label(
@@ -1381,8 +1528,8 @@ struct DashboardView: View {
       $0.job.isReadyForDelivery(at: now)
     }
     .sorted {
-      $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
-        == .orderedAscending
+      if $0.job.endDate != $1.job.endDate { return $0.job.endDate < $1.job.endDate }
+      return $0.id < $1.id
     }
     return Panel(title: "Ready for delivery", fillsAvailableHeight: true) {
       if isPreparingIndustrySnapshot {
@@ -1399,7 +1546,7 @@ struct DashboardView: View {
         )
         .foregroundStyle(DesignTokens.textSecondary)
       } else {
-        ForEach(ready.prefix(12)) { owned in
+        DashboardPreviewList(rows: ready) { owned in
           dashboardJobRow(owned, trailing: AppLocalization.text("Ready"))
         }
       }
@@ -1410,7 +1557,10 @@ struct DashboardView: View {
     let cutoff = now.addingTimeInterval(48 * 60 * 60)
     let upcoming = industrySnapshot.jobs.filter {
       $0.job.isRunning(at: now) && $0.job.endDate <= cutoff
-    }.sorted { $0.job.endDate < $1.job.endDate }
+    }.sorted {
+      if $0.job.endDate != $1.job.endDate { return $0.job.endDate < $1.job.endDate }
+      return $0.id < $1.id
+    }
     return Panel(title: "Next 48 hours", fillsAvailableHeight: true) {
       if isPreparingIndustrySnapshot {
         Label("Preparing", systemImage: "hourglass")
@@ -1424,7 +1574,7 @@ struct DashboardView: View {
         )
         .foregroundStyle(DesignTokens.textSecondary)
       } else {
-        ForEach(upcoming.prefix(12)) { owned in
+        DashboardPreviewList(rows: upcoming) { owned in
           dashboardJobRow(
             owned,
             trailing: owned.job.endDate.formatted(.relative(presentation: .named))
@@ -1434,45 +1584,124 @@ struct DashboardView: View {
     }
   }
 
+  private func largestJobsPanel(now: Date) -> some View {
+    let currentIDs = Set(industrySnapshot.jobs.filter {
+      !$0.job.isDelivered && !$0.job.isCancelledOrReverted
+        && ($0.job.dashboardActivity == .manufacturing || $0.job.dashboardActivity == .reaction)
+    }.map(\.id))
+    let values = runtime.dashboardIndustryJobValues.filter { currentIDs.contains($0.id) }
+    let ranked = DashboardInProgressIndustryProjector.rankedJobs(values)
+    let missingCount = currentIDs.count - ranked.count
+    return Panel(title: "Top 5 by material value") {
+      if runtime.isRefreshingDashboardWealth {
+        ProgressView().controlSize(.small)
+      }
+      ForEach(Array(ranked.prefix(5))) { row in
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          if let productID = row.ownedJob.job.productTypeID,
+            let name = runtime.dashboardIndustryProductNames[productID]
+          {
+            EVEItemText(value: name, typeID: productID, font: .callout.weight(.semibold))
+          } else {
+            Text("Product name unavailable").foregroundStyle(DesignTokens.textSecondary)
+          }
+          EVEEntityText(value: row.ownedJob.characterName, font: .caption)
+          HStack {
+            Text((row.ownedJob.job.isReadyForDelivery(at: now) ? "Ready" :
+              row.ownedJob.job.isRunning(at: now) ? "Running" : "Paused").localizedUI)
+            Spacer()
+            Text(row.materialValue.map(formatISK) ?? AppLocalization.text("Unavailable"))
+              .monospacedDigit()
+          }.font(.caption)
+          if row.freshness != .fresh { freshnessPill(row.freshness) }
+        }
+      }
+      if missingCount > 0 {
+        Text(AppLocalization.format("Incomplete ranking · %lld jobs without full material valuation", Int64(missingCount)))
+          .font(.caption).foregroundStyle(DesignTokens.caution)
+      } else if ranked.isEmpty {
+        Text(industrySnapshot.hasAnyJobSnapshot
+          ? "No open production jobs.".localizedUI
+          : "Synchronize characters to load industry jobs.".localizedUI)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      if industrySnapshot.incompleteJobSourceCount > 0 {
+        Text("Some character job data is incomplete; ranking may omit jobs.")
+          .font(.caption).foregroundStyle(DesignTokens.caution)
+      }
+      if !ranked.isEmpty {
+        Text("Estimated material value · ESI average / adjusted prices")
+          .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+      }
+      if let error = runtime.dashboardWealthError {
+        Text(error.localizedUI).font(.caption).foregroundStyle(DesignTokens.caution)
+      }
+    }
+  }
+
   private var reactionOpportunityPanel: some View {
-    Panel(title: "Reaction buy opportunities") {
+    Panel(title: "Reactions with negative value creation") {
       HStack {
         Text("Negative value creation means buying is cheaper than reacting.")
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         Spacer()
-        reactionFilterMenu
+        Button("Open reactions") {
+          onNavigate(DashboardNavigationRequest(section: .reactions, negativeReactionsOnly: true))
+        }.buttonStyle(.borderless)
       }
       if runtime.isAnalyzingReactions {
         HStack {
           ProgressView().controlSize(.small)
           Text("Analyzing all reactions…")
         }
-      } else if runtime.reactionAnalysis == nil {
+      }
+      if let error = runtime.reactionAnalysisError {
+        Text(error.localizedUI).font(.caption).foregroundStyle(DesignTokens.caution)
+      }
+      if runtime.reactionAnalysis == nil || !runtime.isReactionAnalysisCurrent {
         Label(
-          "No reaction analysis is loaded.",
+          runtime.reactionAnalysis == nil ? "No reaction analysis is loaded.".localizedUI : "Settings changed. Refresh to update reactions.".localizedUI,
           systemImage: "atom"
         )
         .foregroundStyle(DesignTokens.textSecondary)
         Button("Analyze all reactions") {
           Task {
-            await runtime.analyzeReactions(
-              runs: 100,
-              marketHub: selectedMarketHub,
+            await runtime.refreshConfiguredReactions(
               authorizations: authorizationSnapshots,
               clientID: EVEConstants.ssoClientID
             )
           }
         }
         .buttonStyle(.borderedProminent)
+        .disabled(runtime.isAnalyzingReactions)
       } else if filteredNegativeReactions.isEmpty {
         Label(
-          "No negative reactions match the saved filter.",
+          "No reactions have negative value creation.",
           systemImage: "checkmark.circle"
         )
         .foregroundStyle(DesignTokens.textSecondary)
       } else {
-        ForEach(filteredNegativeReactions.prefix(8)) { row in
+        if let analysis = runtime.reactionAnalysis {
+          HStack {
+            Text("Purchase market")
+            EVEEntityText(value: analysis.marketLocation.name, font: .caption)
+            Image(systemName: "arrow.right")
+            if let destination = runtime.reactionAnalysisDestinationName,
+              !destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+              EVEEntityText(value: destination, font: .caption)
+            } else {
+              Text("Production destination unavailable")
+            }
+          }.font(.caption).foregroundStyle(DesignTokens.textSecondary)
+          Text(AppLocalization.format("%lld runs · %@", Int64(analysis.runs), analysis.createdAt.formatted()))
+            .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+          if analysis.basis == .materialOnlyBaseline {
+            Text("Material-only baseline").font(.caption).foregroundStyle(DesignTokens.caution)
+          }
+        }
+        DashboardPreviewList(rows: filteredNegativeReactions) { row in
           HStack {
             VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
               EVEItemText(
@@ -1490,16 +1719,13 @@ struct DashboardView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(DesignTokens.positive)
               Text(
-                row.valueCreation.map { formatISK(abs($0)) }
+                row.valueCreation.map(formatISK)
                   ?? AppLocalization.text("Unavailable")
               )
               .font(.callout.monospacedDigit())
             }
           }
         }
-        Text("The selected reaction groups are retained after restart.")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
       }
     }
   }
@@ -1521,35 +1747,40 @@ struct DashboardView: View {
           )
         }
       }
-      if wealthHistory.count > 1 {
+      if !wealthHistory.isEmpty {
+        ViewThatFits(in: .horizontal) {
+          wealthSeriesPicker.menuStyle(.borderlessButton).pickerStyle(.segmented).frame(minWidth: 480)
+          wealthSeriesPicker.pickerStyle(.menu)
+        }
+        DashboardWealthChart(
+          samples: wealthHistory.compactMap { snapshot in
+            selectedDashboardWealthSeries.value(in: snapshot).map {
+              DashboardWealthChartSample(date: snapshot.capturedAt, value: $0)
+            }
+          },
+          color: selectedDashboardWealthSeries.color,
+          showsAxes: true
+        )
+        .frame(height: 280)
+        .accessibilityLabel("Total net-worth history")
+      } else {
+        Label("Long-term history starts with the current valuation.", systemImage: "clock.arrow.circlepath")
+          .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+      }
+      netWorthDetails
+    }
+  }
+
+  private var wealthSeriesPicker: some View {
         Picker("Displayed history", selection: $selectedDashboardWealthSeries) {
           ForEach(DashboardWealthSeries.allCases) { series in
             Text(series.title).tag(series)
           }
         }
-        .pickerStyle(.segmented)
         .accessibilityIdentifier("dashboard.wealth-series")
-        DashboardWealthChart(
-          samples: wealthHistory.compactMap { snapshot in
-            selectedDashboardWealthSeries.value(in: snapshot).map {
-              DashboardWealthChartSample(
-                date: snapshot.capturedAt,
-                value: $0
-              )
-            }
-          },
-          color: selectedDashboardWealthSeries.color
-        )
-        .frame(height: 112)
-        .accessibilityLabel("Total net-worth history")
-      } else {
-        Label(
-          "Long-term history starts with the current valuation.",
-          systemImage: "clock.arrow.circlepath"
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-      }
+  }
+
+  @ViewBuilder private var netWorthDetails: some View {
       if let snapshot = runtime.dashboardWealthSnapshot {
         LazyVGrid(
           columns: [GridItem(.adaptive(minimum: 128))],
@@ -1572,7 +1803,7 @@ struct DashboardView: View {
             color: DesignTokens.caution
           )
         }
-        Divider()
+        DisclosureGroup("Character net worth") {
         ForEach(snapshot.characters) { character in
           HStack {
             VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
@@ -1638,12 +1869,15 @@ struct DashboardView: View {
               .frame(minWidth: 128, alignment: .trailing)
           }
         }
+        }
+        DisclosureGroup("Valuation details") {
         Text(
           "Assets and own outstanding contract items use ESI average prices with adjusted prices as the visible fallback. Consumed Manufacturing and Reaction materials remain under In production until delivery; missing facility or rig modifiers make that component an explicit estimate. Blueprint copies are excluded; courier collateral is an estimate. Missing personal or accessible corporation values remain partial and are never treated as zero."
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
+        }
         if let error = runtime.dashboardWealthError {
           Label {
             Text(
@@ -1674,30 +1908,6 @@ struct DashboardView: View {
           .font(.caption)
           .foregroundStyle(DesignTokens.negative)
       }
-    }
-  }
-
-  private var reactionFilterMenu: some View {
-    Menu {
-      Button("All reaction groups") {
-        saveReactionGroups([])
-      }
-      Divider()
-      ForEach(reactionGroups, id: \.self) { group in
-        Button {
-          toggleReactionGroup(group)
-        } label: {
-          Label(
-            group,
-            systemImage: selectedReactionGroups.contains(group)
-              ? "checkmark" : "circle"
-          )
-        }
-      }
-    } label: {
-      Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
-    }
-    .menuStyle(.borderlessButton)
   }
 
   private func dashboardWealthComponent(
@@ -2230,45 +2440,17 @@ struct DashboardView: View {
 
   private var filteredNegativeReactions: [ReactionAnalysisRow] {
     guard let rows = runtime.reactionAnalysis?.rows else { return [] }
-    let selected = selectedReactionGroups
     return rows.filter {
       guard let value = $0.valueCreation, value.isFinite, value < 0 else {
         return false
       }
-      return selected.isEmpty || selected.contains($0.groupName)
+      return true
     }.sorted {
-      ($0.valueCreation ?? 0) < ($1.valueCreation ?? 0)
+      if $0.valueCreation != $1.valueCreation {
+        return ($0.valueCreation ?? 0) < ($1.valueCreation ?? 0)
+      }
+      return $0.id < $1.id
     }
-  }
-
-  private var reactionGroups: [String] {
-    Array(Set(runtime.reactionAnalysis?.rows.map(\.groupName) ?? []))
-      .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-  }
-
-  private var selectedReactionGroups: Set<String> {
-    guard let data = encodedReactionGroups.data(using: .utf8),
-      let values = try? JSONDecoder().decode([String].self, from: data)
-    else { return [] }
-    return Set(values)
-  }
-
-  private func toggleReactionGroup(_ group: String) {
-    var selected = selectedReactionGroups
-    if selected.contains(group) {
-      selected.remove(group)
-    } else {
-      selected.insert(group)
-    }
-    saveReactionGroups(selected)
-  }
-
-  private func saveReactionGroups(_ groups: Set<String>) {
-    let values = groups.sorted()
-    guard let data = try? JSONEncoder().encode(values),
-      let encoded = String(data: data, encoding: .utf8)
-    else { return }
-    encodedReactionGroups = encoded
   }
 
   private var authorizationSnapshots: [AuthorizationSnapshot] {
@@ -2278,22 +2460,6 @@ struct DashboardView: View {
         from: $0.authorizationSnapshot
       )
     }
-  }
-
-  private var selectedMarketHub: MarketHubConfigurationSnapshot {
-    runtime.productionBasis.marketHubSnapshots.first {
-      $0.roles.contains(.main)
-    }
-      ?? MarketHubConfigurationSnapshot(
-        id: UUID(),
-        location: .jita,
-        roles: [.main]
-      )
-  }
-
-  private var mineralRegionName: String {
-    runtime.productionBasis.mainTradingLocation?.location.name
-      ?? ProcurementLocation.jita.name
   }
 
   private func activityTitle(
@@ -2358,40 +2524,44 @@ struct DashboardView: View {
   }
 }
 
-private struct DashboardWealthChartSample {
+struct DashboardWealthChartSample {
   let date: Date
   let value: Double
 }
 
-private struct DashboardWealthChart: View {
+struct DashboardWealthChart: View {
   let samples: [DashboardWealthChartSample]
   let color: Color
+  var showsAxes = false
 
   var body: some View {
     GeometryReader { proxy in
       let valid = samples.filter { $0.value.isFinite }.sorted {
         $0.date < $1.date
       }
-      if valid.count > 1 {
+      if !valid.isEmpty {
         let values = valid.map(\.value)
         let minimum = values.min() ?? 0
         let maximum = values.max() ?? minimum
         let rawRange = maximum - minimum
         let padding = max(rawRange * 0.12, max(abs(maximum) * 0.005, 1))
-        let lower = max(0, minimum - padding)
+        let lower = minimum < 0 ? minimum - padding : max(0, minimum - padding)
         let upper = max(lower + 1, maximum + padding)
         let range = upper - lower
         let firstDate = valid[0].date
         let lastDate = valid[valid.count - 1].date
         let duration = max(lastDate.timeIntervalSince(firstDate), 1)
+        let plot = CGRect(x: showsAxes ? 66 : 3, y: 8,
+          width: max(1, proxy.size.width - (showsAxes ? 80 : 6)),
+          height: max(1, proxy.size.height - (showsAxes ? 42 : 24)))
         ZStack(alignment: .bottom) {
           Path { path in
             for (index, sample) in valid.enumerated() {
               let x =
-                proxy.size.width
+                plot.minX + plot.width
                 * CGFloat(sample.date.timeIntervalSince(firstDate) / duration)
               let normalized = (sample.value - lower) / range
-              let y = (proxy.size.height - 18) * (1 - CGFloat(normalized))
+              let y = plot.minY + plot.height * (1 - CGFloat(normalized))
               if index == 0 {
                 path.move(to: CGPoint(x: x, y: y))
               } else {
@@ -2407,6 +2577,21 @@ private struct DashboardWealthChart: View {
               lineJoin: .round
             )
           )
+          if valid.count == 1 {
+            Circle().fill(color).frame(width: 6, height: 6)
+              .position(x: plot.minX,
+                y: plot.minY + plot.height * (1 - CGFloat((valid[0].value - lower) / range)))
+          }
+          if showsAxes {
+            ForEach(0..<3) { step in
+              let fraction = Double(step) / 2
+              Text((upper - range * fraction).formatted(.number.notation(.compactName).precision(.fractionLength(1))))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(DesignTokens.textSecondary)
+                .frame(width: 58, alignment: .trailing)
+                .position(x: 29, y: plot.minY + plot.height * CGFloat(fraction))
+            }
+          }
           HStack {
             Text(firstDate.formatted(date: .abbreviated, time: .omitted))
             Spacer()
@@ -2414,12 +2599,9 @@ private struct DashboardWealthChart: View {
           }
           .font(.caption2)
           .foregroundStyle(DesignTokens.textSecondary)
+          .padding(.leading, plot.minX)
+          .padding(.trailing, 10)
         }
-      } else if !valid.isEmpty {
-        Circle()
-          .fill(color)
-          .frame(width: 6, height: 6)
-          .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
       } else {
         Rectangle().fill(Color.clear)
       }
@@ -2428,11 +2610,11 @@ private struct DashboardWealthChart: View {
 }
 
 private struct DashboardMineralTicker: View {
-  let rows: [MineralPriceTrend]
+  let rows: [MaterialPurchaseRecommendation]
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
 
-  private let itemWidth: CGFloat = 190
+  private let itemWidth: CGFloat = 340
   private let animationDuration: TimeInterval = 32
 
   var body: some View {
@@ -2458,7 +2640,7 @@ private struct DashboardMineralTicker: View {
 }
 
 private struct DashboardMineralTickerMarquee: NSViewRepresentable {
-  let rows: [MineralPriceTrend]
+  let rows: [MaterialPurchaseRecommendation]
   let itemWidth: CGFloat
   let animationDuration: TimeInterval
   let isActive: Bool
@@ -2490,8 +2672,8 @@ private struct DashboardMineralTickerMarquee: NSViewRepresentable {
 @MainActor
 private final class DashboardMineralTickerMarqueeView: NSView {
   private var hostingView: NSHostingView<DashboardMineralTickerContent>?
-  private var rows: [MineralPriceTrend] = []
-  private var itemWidth: CGFloat = 190
+  private var rows: [MaterialPurchaseRecommendation] = []
+  private var itemWidth: CGFloat = 340
   private var animationDuration: TimeInterval = 32
   private var isAnimationActive = false
   private var lastLayoutSize: CGSize = .zero
@@ -2507,7 +2689,7 @@ private final class DashboardMineralTickerMarqueeView: NSView {
   }
 
   func update(
-    rows: [MineralPriceTrend],
+    rows: [MaterialPurchaseRecommendation],
     itemWidth: CGFloat,
     animationDuration: TimeInterval,
     isActive: Bool
@@ -2578,7 +2760,7 @@ private final class DashboardMineralTickerMarqueeView: NSView {
 }
 
 private struct DashboardMineralTickerContent: View {
-  let rows: [MineralPriceTrend]
+  let rows: [MaterialPurchaseRecommendation]
   let repetitions: Int
   let itemWidth: CGFloat
 
@@ -2586,18 +2768,23 @@ private struct DashboardMineralTickerContent: View {
     HStack(spacing: 0) {
       ForEach(0..<(rows.count * repetitions), id: \.self) { index in
         let row = rows[index % rows.count]
-        HStack(spacing: DesignTokens.spacingSM) {
-          EVEItemText(value: row.name, typeID: row.typeID, iconSize: 20)
-            .font(.callout.weight(.semibold))
-          Text(row.averagePrice.formatted(.number.precision(.fractionLength(2))))
-            .font(.callout.monospacedDigit())
-          trend(row.changeFraction)
+        VStack(alignment: .leading, spacing: 3) {
+          HStack(spacing: DesignTokens.spacingSM) {
+            EVEItemText(value: row.material.name, typeID: row.material.id, iconSize: 20)
+              .font(.callout.weight(.semibold))
+            Text(row.unitPrice.map {
+              $0.formatted(.currency(code: "ISK").precision(.fractionLength(2)))
+            } ?? AppLocalization.text("Unavailable"))
+              .font(.callout.monospacedDigit())
+          }
+          if let location = row.location {
+            EVEEntityText(value: location.name, font: .caption, lineLimit: 1)
+          } else {
+            Text("No fresh sell offer available").font(.caption)
+          }
         }
         .frame(width: itemWidth, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-          "\(row.name), \(row.averagePrice), \(trendAccessibility(row.changeFraction))"
-        )
+        .accessibilityElement(children: .contain)
       }
     }
   }

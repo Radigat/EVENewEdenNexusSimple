@@ -9,6 +9,35 @@ import Testing
 @Suite("Planner persistence limits")
 struct PlannerPersistencePerformanceTests {
   @Test
+  func recoveryConfirmationUsesSelectedLanguageAndDescribesReplacement() {
+    let source = URL(fileURLWithPath: "/fixture/earlier.store")
+    let backup = URL(fileURLWithPath: "/fixture/backup")
+    let counts = ["Characters": 2, "Production overview rows": 7]
+    let replacementKey = "All application records will be replaced by the earlier data. Newer records remain only in the backup. No records will be merged. Keep this backup. Keychain, app preferences, SDE, and additional databases are retained."
+    let prerequisiteKey = "Before restoring, quit every older version of this app. Older versions do not prevent simultaneous access to this data folder."
+    let rawCopyKey = "The current data is backed up only as an unchanged raw copy because a readable SQLite backup could not be created. Keep that raw backup for recovery."
+    for language in [AppLanguage.english, .german] {
+      for readableBackup in [true, false] {
+        let text = FullStoreRecovery.confirmationText(
+          source: source, backupDirectory: backup, modelCounts: counts,
+          currentSnapshotAvailable: readableBackup, language: language
+        )
+        #expect(text.contains(source.path))
+        #expect(text.contains(backup.path))
+        #expect(text.contains("\(language.localized("Characters")): 2"))
+        #expect(text.contains("\(language.localized("Production overview rows")): 7"))
+        #expect(text.contains(language.localized(replacementKey)))
+        #expect(text.contains(language.localized(prerequisiteKey)))
+        #expect(text.contains(language.localized(rawCopyKey)) == !readableBackup)
+      }
+    }
+    #expect(AppLanguage.german.localized(replacementKey) != replacementKey)
+    #expect(AppLanguage.german.localized(prerequisiteKey) != prerequisiteKey)
+    #expect(AppLanguage.german.localized("Characters") == "Charaktere")
+    #expect(AppLanguage.english.localized("Characters") == "Characters")
+  }
+
+  @Test
   func latestLegacyFallbackAndRequestedHistoryAreFetchedDirectly() throws {
     let container = try makeContainer()
     let context = ModelContext(container)
@@ -140,6 +169,48 @@ struct PlannerPersistencePerformanceTests {
     #expect(recorded[0].blueprintCost == 25)
   }
 
+  @Test(arguments: [false, true])
+  func recordingStockFirstPlanPreservesPlannerAndRequestCosts(
+    multipleRequests: Bool
+  ) async throws {
+    let container = try makeContainer()
+    let context = ModelContext(container)
+    let existing = makeOverviewRow(sequenceNumber: 1)
+    let existingSnapshot = existing.sourceSnapshot
+    context.insert(existing)
+    try context.save()
+
+    let plan = try await makeStockFirstPlan(multipleRequests: multipleRequests)
+    let expectedCosts = multipleRequests ? [25.5, 16.0] : [23.0]
+    #expect(plan.materialCost == expectedCosts.reduce(0, +))
+    let recorded = try PlannerPersistenceController.recordProductionOverview(
+      plan, productionBasis: ProductionBasis(), in: context
+    )
+    #expect(recorded.count == expectedCosts.count)
+    for (row, expectedCost) in zip(recorded, expectedCosts) {
+      #expect(row.materialCost == expectedCost)
+      let restored = try #require(PlannerPersistenceController.decodePlan(row))
+      #expect(restored.materialCost == plan.materialCost)
+      #expect(restored.costBreakdown?.materialCost == plan.materialCost)
+      #expect(restored.costBreakdown?.purchasedMaterialCost
+        == plan.costBreakdown?.purchasedMaterialCost)
+      #expect(restored.costBreakdown?.stockMaterialCost
+        == plan.costBreakdown?.stockMaterialCost)
+      #expect(
+        ProductionOverviewProjector.projection(for: row.requestID, in: restored)?
+          .materialCost == row.materialCost
+      )
+    }
+    #expect(recorded.compactMap(\.materialCost).reduce(0, +) == plan.materialCost)
+    let untouched = try #require(
+      try PlannerPersistenceController.fetchProductionOverviewRow(
+        id: existing.id, in: ModelContext(container)
+      )
+    )
+    #expect(untouched.materialCost == 100)
+    #expect(untouched.sourceSnapshot == existingSnapshot)
+  }
+
   @Test
   func pagedHistorySummaryKeepsCompleteTotalsAndUnavailableSemantics()
     async throws
@@ -210,6 +281,73 @@ struct PlannerPersistencePerformanceTests {
     #expect(plan.topLevelProductNode(for: requestID)?.typeID == 100)
     #expect(cache.productTypeID(for: row) == 100)
     #expect(draft.productTypeID == 100)
+  }
+
+  private func makeStockFirstPlan(multipleRequests: Bool) async throws
+    -> IndustryPlanSnapshot
+  {
+    let source = SourceIdentity(provider: "fixture", version: "stock-first")
+    func blueprint(productTypeID: Int64, inputTypeID: Int64, quantity: Int64)
+      -> BlueprintDefinition
+    {
+      BlueprintDefinition(
+        blueprintTypeID: productTypeID + 700,
+        productTypeID: productTypeID,
+        maxProductionLimit: nil,
+        activity: BlueprintActivityDefinition(
+          kind: .manufacturing,
+          durationSeconds: 10,
+          materials: [BlueprintMaterial(typeID: inputTypeID, quantity: quantity)],
+          products: [BlueprintProduct(typeID: productTypeID, quantity: 1, probability: nil)]
+        ),
+        source: source
+      )
+    }
+    func order(id: Int64, typeID: Int64, price: Double, quantity: Int64) -> MarketOrder {
+      MarketOrder(
+        id: id, typeID: typeID,
+        locationID: EVEConstants.jitaIV4StationID,
+        systemID: EVEConstants.jitaSystemID,
+        side: .sell, price: price, volumeRemaining: quantity,
+        minimumVolume: 1, issued: Date(timeIntervalSince1970: 100)
+      )
+    }
+    let catalog = StockFirstHistoryCatalog(definitions: [
+      81: blueprint(productTypeID: 81, inputTypeID: 82, quantity: 2),
+      82: blueprint(productTypeID: 82, inputTypeID: 83, quantity: 4),
+    ])
+    let planningContext = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      catalog: catalog,
+      market: MarketOrderSnapshot(
+        id: UUID(), regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: Date(timeIntervalSince1970: 100), state: .fresh,
+        ordersByType: [
+          81: [order(id: 8101, typeID: 81, price: 100, quantity: 100)],
+          82: [
+            order(id: 8201, typeID: 82, price: 10, quantity: 1),
+            order(id: 8202, typeID: 82, price: 20, quantity: 100),
+          ],
+          83: [order(id: 8301, typeID: 83, price: 2, quantity: 100)],
+        ], source: source
+      ),
+      adjustedPrices: [
+        82: AdjustedPrice(typeID: 82, adjustedPrice: 5, averagePrice: 5),
+        83: AdjustedPrice(typeID: 83, adjustedPrice: 1, averagePrice: 1),
+      ],
+      systemIndices: [IndustrySystemIndex(
+        solarSystemID: EVEConstants.jitaSystemID, activity: .manufacturing, costIndex: 0
+      )],
+      availableStock: [82: 1],
+      procurementPreferences: [82: MaterialProcurementPreference(
+        supplyMode: .produce, purchaseLocation: .jita, usesAvailableStockFirst: true
+      )],
+      sdeBuild: 1
+    )
+    let input = multipleRequests
+      ? "Choice Product 1 0 0\nChoice Product 1 0 0" : "Choice Product 1 0 0"
+    return try await IndustryPlanner().plan(input: input, context: planningContext)
   }
 
   private func makeContainer() throws -> ModelContainer {
@@ -398,5 +536,24 @@ struct PlannerPersistencePerformanceTests {
         ruleVersion: "fixture"
       )
     )
+  }
+}
+
+private struct StockFirstHistoryCatalog: IndustryCatalogQuerying {
+  let definitions: [Int64: BlueprintDefinition]
+  private let names: [Int64: String] = [
+    81: "Choice Product", 82: "Choice Intermediate", 83: "Choice Raw"
+  ]
+
+  func typeID(named name: String) async throws -> Int64? {
+    names.first { $0.value == name }?.key
+  }
+
+  func typeName(id: Int64) async throws -> String? {
+    names[id]
+  }
+
+  func productionDefinition(productTypeID: Int64) async throws -> BlueprintDefinition? {
+    definitions[productTypeID]
   }
 }

@@ -39,6 +39,7 @@ public struct AssetItem: Identifiable, Codable, Hashable, Sendable {
   public let locationKind: AssetLocationKind
   public let locationFlag: String
   public let singleton: Bool
+  public let isBlueprintCopy: Bool?
 
   public init(
     id: Int64,
@@ -47,7 +48,8 @@ public struct AssetItem: Identifiable, Codable, Hashable, Sendable {
     locationID: Int64,
     locationKind: AssetLocationKind,
     locationFlag: String,
-    singleton: Bool
+    singleton: Bool,
+    isBlueprintCopy: Bool? = nil
   ) {
     self.id = id
     self.typeID = typeID
@@ -56,6 +58,7 @@ public struct AssetItem: Identifiable, Codable, Hashable, Sendable {
     self.locationKind = locationKind
     self.locationFlag = locationFlag
     self.singleton = singleton
+    self.isBlueprintCopy = isBlueprintCopy
   }
 }
 
@@ -98,7 +101,8 @@ public enum AssetLocationClassifier {
         locationID: item.locationID,
         locationKind: .structure,
         locationFlag: item.locationFlag,
-        singleton: item.singleton
+        singleton: item.singleton,
+        isBlueprintCopy: item.isBlueprintCopy
       )
     }
   }

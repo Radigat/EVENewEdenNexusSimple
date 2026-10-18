@@ -6,6 +6,69 @@ import Testing
 @Suite("Jita depth pricing")
 struct MarketPricingTests {
   @Test
+  func purchaseRecommendationsChooseCheapestConfiguredMarketAndStableTies() {
+    let first = MarketHubConfigurationSnapshot(id: UUID(), location: .jita, roles: [.main])
+    let second = MarketHubConfigurationSnapshot(id: UUID(), location: MarketTradeHub.amarr.procurementLocation, roles: [.comparison])
+    func analysis(secondPrice: Double) -> MaterialPurchaseAnalysisSnapshot {
+      MaterialPurchaseAnalysisSnapshot(
+        materialCatalog: MaterialPurchaseCatalogSnapshot(
+          materials: [MaterialPurchaseItem(id: 34, name: "Tritanium"), MaterialPurchaseItem(id: 35, name: "Pyerite")],
+          source: SourceIdentity(provider: "fixture", version: "1")
+        ),
+        configuredHubs: [first, second],
+        configuredMarkets: [
+          first.id: Sourced(state: .fresh, value: makeMoonSnapshot(locationID: first.location.locationID!, systemID: 1, price: 10), source: SourceIdentity(provider: "fixture", version: "1")),
+          second.id: Sourced(state: .fresh, value: makeMoonSnapshot(locationID: second.location.locationID!, systemID: 2, price: secondPrice), source: SourceIdentity(provider: "fixture", version: "1")),
+        ], refreshedAt: .now
+      )
+    }
+    let cheapest = MaterialPurchaseRecommendationProjector.project(analysis(secondPrice: 8))
+    let row = cheapest.first { $0.id == 34 }
+    #expect(row?.unitPrice == 8)
+    #expect(row?.location == second.location)
+    #expect(row?.hasCompleteMarketCoverage == true)
+    #expect(cheapest.first { $0.id == 35 }?.unitPrice == nil)
+    let tied = MaterialPurchaseRecommendationProjector.project(analysis(secondPrice: 10))
+    #expect(tied.first { $0.id == 34 }?.location == first.location)
+  }
+
+  @Test(arguments: [DataFreshness.stale, .forbidden, .unavailable, .partial])
+  func purchaseRecommendationsExcludeUnusableMarkets(state: DataFreshness) {
+    let first = MarketHubConfigurationSnapshot(id: UUID(), location: .jita, roles: [.main])
+    let second = MarketHubConfigurationSnapshot(id: UUID(), location: MarketTradeHub.amarr.procurementLocation, roles: [.comparison])
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let analysis = MaterialPurchaseAnalysisSnapshot(
+      materialCatalog: MaterialPurchaseCatalogSnapshot(materials: [MaterialPurchaseItem(id: 34, name: "Tritanium")], source: source),
+      configuredHubs: [first, second],
+      configuredMarkets: [
+        first.id: Sourced(state: .fresh, value: makeSnapshot(orders: [order(id: 1, side: .sell, price: 10, volume: 5)]), source: source),
+        second.id: Sourced(state: state, value: makeMoonSnapshot(locationID: second.location.locationID!, systemID: 2, price: 1), source: source),
+      ], refreshedAt: .now
+    )
+    let result = MaterialPurchaseRecommendationProjector.project(analysis)
+    #expect(result.first?.location == first.location)
+    #expect(result.first?.unitPrice == 10)
+    #expect(result.first?.hasCompleteMarketCoverage == false)
+  }
+
+  @Test
+  func purchaseRecommendationsRejectWrongLocationsAndBuyOnlyBooks() {
+    let hub = MarketHubConfigurationSnapshot(id: UUID(), location: .jita, roles: [.main])
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    for snapshot in [
+      makeSnapshot(orders: [order(id: 1, side: .buy, price: 10, volume: 5)]),
+      makeMoonSnapshot(locationID: MarketTradeHub.amarr.stationID, systemID: 1, price: 1),
+    ] {
+      let analysis = MaterialPurchaseAnalysisSnapshot(
+        materialCatalog: MaterialPurchaseCatalogSnapshot(materials: [MaterialPurchaseItem(id: 34, name: "Tritanium")], source: source),
+        configuredHubs: [hub], configuredMarkets: [hub.id: Sourced(state: .fresh, value: snapshot, source: source)], refreshedAt: .now)
+      let result = MaterialPurchaseRecommendationProjector.project(analysis)
+      #expect(result.first?.unitPrice == nil)
+      #expect(result.first?.location == nil)
+    }
+  }
+
+  @Test
   func consumesCheapestSellDepth() {
     let snapshot = makeSnapshot(
       orders: [

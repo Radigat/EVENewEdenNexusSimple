@@ -27,6 +27,15 @@ Dialogen für manuelle Lager, Wissenschaftsaufträge und Verkaufsbelege.
 Automatische Migrations- und SDE-Sicherungen bleiben im Kern und im
 App-Lebenszyklus unabhängig von diesen Bedienflächen aktiv.
 
+Der eng begrenzte vollständige SwiftData-Restore ergänzt diese Sicherung:
+`StoreFullRestore` besitzt Snapshot, Datensperre, Vorgangsprotokoll und
+Dateiaustausch; `FullStoreRecovery` besitzt die bewusste Auswahl und isolierte
+SwiftData-Prüfung. Die Prüfung läuft ohne normale Startimporte in einem
+kurzlebigen Prozess. Die normale App öffnet den kanonischen Store erst nach
+der Prüfung ausstehender Vorgänge. Schlüsselbund, Preferences, SDE und separate
+Markt-/Vertragsspeicher gehören nicht zum Austausch. Vertrag und Nachweise:
+[Review-Korrekturen](Documentation/REVIEW_FIXES_2026-10-02.md).
+
 | Module | Owning skill | Input | Output |
 | --- | --- | --- | --- |
 | Governance | `eve-documentation-kit` | decisions and evidence | ADRs, contracts, handoffs |
@@ -507,6 +516,17 @@ projections; Net Worth consumes active Manufacturing and Reaction jobs for its
 explicitly estimated in-production component. Missing, stale, partial or
 forbidden job sources retain their prior source-state semantics and never
 become an empty authoritative list.
+
+`DashboardInProgressIndustryProjector.projectJobs` supplies the same per-job
+material values to the open-job ranking and the in-production aggregate.
+`MaterialPurchaseRecommendationProjector` selects one fresh configured purchase
+market per material. `RuntimeState` prepares these recommendations once per
+analysis snapshot for Dashboard, the purchase views and the mineral ticker.
+`SharedAnalysisRefresh` joins identical in-flight refreshes and serializes changed
+contexts; configuration identity and the five-minute reuse window prevent
+screen-local duplicate analyses. Dashboard consumes the shared reaction snapshot
+with its original runs, market and logistics destination. Navigation passes a
+one-use negative-reaction filter without introducing persisted routing state.
 
 Personal wallet balances use the authenticated
 `/characters/{character_id}/wallet/` ESI route and the

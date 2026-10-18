@@ -385,6 +385,17 @@ struct NetWorthView: View {
           complete ? DesignTokens.textSecondary : DesignTokens.caution
         )
         .lineLimit(2)
+      if component == .assets || component == .corporationAssets {
+        let excluded =
+          component == .assets
+          ? snapshot.characters.reduce(0) { $0 + $1.excludedBlueprintCopyCount }
+          : snapshot.corporationAssetCoverage?.excludedBlueprintCopyCount ?? 0
+        if excluded > 0 {
+          Text(AppLocalization.format("%lld BPC stacks excluded", Int64(excluded)))
+            .font(.caption2)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+      }
     }
     .padding(DesignTokens.spacingSM)
     .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
@@ -827,7 +838,7 @@ struct NetWorthView: View {
     Panel(title: "Calculation basis") {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
         Label(
-          "Assets use ESI average prices, with adjusted prices only as the declared fallback. Blueprint copies are excluded.",
+          "Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Known blueprint copies are excluded. Assets with unknown blueprint status remain unvalued until an asset refresh or SDE classification resolves them.",
           systemImage: "chart.line.uptrend.xyaxis"
         )
         Label(
@@ -1199,6 +1210,7 @@ struct NetWorthView: View {
     case .assets:
       return snapshot.characters.allSatisfy {
         $0.assetValue != nil && $0.unvaluedAssetTypeCount == 0
+          && $0.unknownBlueprintStatusCount == 0
       }
     case .orders:
       return snapshot.characters.allSatisfy {
@@ -1228,6 +1240,13 @@ struct NetWorthView: View {
     _ component: NetWorthComponent,
     snapshot: DashboardWealthSnapshot
   ) -> String {
+    if component == .assets {
+      let unknown = snapshot.characters.reduce(0) { $0 + $1.unknownBlueprintStatusCount }
+      if unknown > 0 {
+        return AppLocalization.format(
+          "%lld asset stacks unvalued: blueprint status unknown", Int64(unknown))
+      }
+    }
     if componentIsComplete(component, snapshot: snapshot) {
       if component == .corporationWallet || component == .corporationAssets {
         return AppLocalization.text("Accessible corporations included")
@@ -1330,6 +1349,14 @@ struct NetWorthView: View {
         )
       )
     }
+    if character.unknownBlueprintStatusCount > 0 {
+      warnings.append(
+        AppLocalization.format(
+          "%lld asset stacks unvalued: blueprint status unknown",
+          Int64(character.unknownBlueprintStatusCount)
+        )
+      )
+    }
     if character.excludedBlueprintCopyCount > 0 {
       warnings.append(
         AppLocalization.format(
@@ -1408,6 +1435,12 @@ struct NetWorthView: View {
         Int64(coverage.corporationCount),
         AppLocalization.text(requiredRole),
         Int64(coverage.roleMissingCorporationCount)
+      )
+    }
+    if coverage.unknownBlueprintStatusCount > 0 {
+      return AppLocalization.format(
+        "%lld corporation asset stacks unvalued: blueprint status unknown",
+        Int64(coverage.unknownBlueprintStatusCount)
       )
     }
     if coverage.unvaluedAssetTypeCount > 0 {

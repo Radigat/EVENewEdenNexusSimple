@@ -283,7 +283,28 @@ struct IndustryPlannerTests {
     #expect(intermediate.fromStock == 1)
     #expect(intermediate.toProduce == 1)
     #expect(intermediate.toBuy == 0)
+    #expect(intermediate.replacementQuote?.quantity == 2)
+    #expect(intermediate.replacementQuote?.total == 30)
+    #expect(intermediate.replacementQuote?.weightedUnitPrice == 15)
+    #expect(intermediate.warehouseConsumptionValue == 15)
     #expect(plan.materials.first { $0.typeID == 83 }?.required == 4)
+    #expect(plan.costBreakdown?.purchasedMaterialCost == 8)
+    #expect(plan.costBreakdown?.stockMaterialCost == 15)
+    #expect(plan.materialCost == 23)
+    #expect(plan.costBreakdown?.materialCost == 23)
+    let request = try #require(plan.requests.first)
+    #expect(
+      ProductionOverviewProjector.projection(for: request.id, in: plan)?
+        .materialCost == 23
+    )
+    let restored = try JSONDecoder().decode(
+      IndustryPlanSnapshot.self, from: JSONEncoder().encode(plan)
+    )
+    #expect(restored.materialCost == 23)
+    #expect(
+      ProductionOverviewProjector.projection(for: request.id, in: restored)?
+        .materialCost == 23
+    )
     #expect(
       plan.nodes.contains {
         $0.typeID == 82 && $0.action == .useStock
@@ -294,6 +315,111 @@ struct IndustryPlannerTests {
         $0.typeID == 82 && $0.action == .produce
           && $0.requestedQuantity == 1
       })
+  }
+
+  @Test(arguments: [Int64(0), 1, 2])
+  func stockFirstCostsOnlyStockAndRecursiveInputs(availableStock: Int64)
+    async throws
+  {
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: intermediateChoiceContext(
+        preference: MaterialProcurementPreference(
+          supplyMode: .produce,
+          purchaseLocation: .jita,
+          usesAvailableStockFirst: true
+        ),
+        availableStock: availableStock
+      )
+    )
+    let intermediate = try #require(plan.materials.first { $0.typeID == 82 })
+    let stockCost = Double(availableStock) * 15
+    let rawCost = Double(2 - availableStock) * 8
+    #expect(intermediate.fromStock == availableStock)
+    #expect(intermediate.toProduce == 2 - availableStock)
+    #expect(plan.materialCost == stockCost + rawCost)
+    #expect(plan.costBreakdown?.purchasedMaterialCost == rawCost)
+    #expect(plan.costBreakdown?.stockMaterialCost == stockCost)
+    if availableStock == 0 {
+      #expect(intermediate.replacementQuote == nil)
+    } else {
+      #expect(intermediate.replacementQuote?.total == 30)
+      #expect(intermediate.replacementQuote?.weightedUnitPrice == 15)
+    }
+    if availableStock == 2 {
+      #expect(!plan.materials.contains { $0.typeID == 83 })
+      #expect(!plan.nodes.contains { $0.typeID == 82 && $0.action == .produce })
+    }
+    let request = try #require(plan.requests.first)
+    #expect(
+      ProductionOverviewProjector.projection(for: request.id, in: plan)?
+        .materialCost == plan.materialCost
+    )
+  }
+
+  @Test
+  func stockFirstSharedDemandAgreesWithEveryRequestProjection() async throws {
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0\nChoice Product 1 0 0",
+      context: intermediateChoiceContext(
+        preference: MaterialProcurementPreference(
+          supplyMode: .produce,
+          purchaseLocation: .jita,
+          usesAvailableStockFirst: true
+        ),
+        availableStock: 1
+      )
+    )
+    let intermediate = try #require(plan.materials.first { $0.typeID == 82 })
+    #expect(intermediate.required == 4)
+    #expect(intermediate.fromStock == 1)
+    #expect(intermediate.toProduce == 3)
+    #expect(intermediate.replacementQuote?.total == 70)
+    #expect(intermediate.replacementQuote?.weightedUnitPrice == 17.5)
+    #expect(plan.costBreakdown?.purchasedMaterialCost == 24)
+    #expect(plan.costBreakdown?.stockMaterialCost == 17.5)
+    #expect(plan.materialCost == 41.5)
+    let costs = try plan.requests.map { request in
+      try #require(
+        ProductionOverviewProjector.projection(for: request.id, in: plan)?
+          .materialCost
+      )
+    }
+    #expect(costs == [25.5, 16])
+    #expect(costs.reduce(0, +) == plan.materialCost)
+  }
+
+  @Test
+  func stockFirstStillRequiresMarketDepthForTheFullIntermediateDemand()
+    async throws
+  {
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: intermediateChoiceContext(
+        preference: MaterialProcurementPreference(
+          supplyMode: .produce,
+          purchaseLocation: .jita,
+          usesAvailableStockFirst: true
+        ),
+        availableStock: 1,
+        intermediateSecondDepth: 0
+      )
+    )
+    let intermediate = try #require(plan.materials.first { $0.typeID == 82 })
+    #expect(intermediate.stockQuote?.total == 10)
+    #expect(intermediate.replacementQuote?.quantity == 2)
+    #expect(intermediate.replacementQuote?.filledQuantity == 1)
+    #expect(intermediate.replacementQuote?.total == nil)
+    #expect(intermediate.replacementQuote?.weightedUnitPrice == nil)
+    #expect(plan.materialCost == nil)
+    #expect(plan.costBreakdown?.materialCost == nil)
+    #expect(plan.costBreakdown?.stockMaterialCost == nil)
+    #expect(plan.costBreakdown?.purchasedMaterialCost == 8)
+    #expect(plan.costBreakdown?.totalProductionCost == nil)
+    #expect(plan.immediateSale.profit == nil)
+    #expect(plan.warnings.contains {
+      $0.code == "market.insufficient-depth" && $0.severity == .blocking
+    })
   }
 
   @Test
@@ -2901,6 +3027,7 @@ struct IndustryPlannerTests {
   private func intermediateChoiceContext(
     preference: MaterialProcurementPreference,
     availableStock: Int64 = 0,
+    intermediateSecondDepth: Int64 = 100,
     intermediateActivity: BlueprintActivityDefinition.Kind = .manufacturing,
     directRawQuantity: Int64 = 0,
     blueprintCostAllocations: [Int64: IndustryBlueprintCostAllocation] = [:],
@@ -2960,7 +3087,7 @@ struct IndustryPlannerTests {
       systemID: EVEConstants.jitaSystemID,
       side: .sell,
       price: 20,
-      volumeRemaining: 100,
+      volumeRemaining: intermediateSecondDepth,
       minimumVolume: 1,
       issued: .now
     )
