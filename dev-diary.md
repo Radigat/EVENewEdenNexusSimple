@@ -4902,3 +4902,26 @@ visuelle, VoiceOver- und Eigentümerabnahme. Kein Push. Anschließend auf
 Nutzerauftrag lokal als `90b4cc4` committet. Die alte Kopie hat der Nutzer in
 `~/Documents/EVE New Eden Nexus - Assets, Industry, Markets - Alt` umbenannt;
 sie ist kein Arbeitsstand.
+
+## 19.10.2026 – Übernahmeprüfung durch Claude auf HEAD `81d258b`
+
+Auftrag: nach der Übernahme von Codex alle Prüfungen isoliert ausführen und den
+Arbeitsstand committen. Vorgefunden: Arbeitsbaum sauber, HEAD `81d258b`; die
+erwarteten rund 39 uncommitteten Änderungen waren bereits als `90b4cc4`
+committet. Keine Codeänderung.
+
+Prüfung (Xcode 27.1, Swift 6.4, macOS arm64; Daten, Preferences-Suite
+`com.local.EVENexusSimple.claude-handover-20261019`, Modulcaches, TMPDIR und
+DerivedData unter `/private/tmp/eve-nexus-claude-handover-20261019/`,
+`EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1`):
+
+- `swift test --disable-sandbox`: 427 Core- und 39 App-Swift-Testing-Fälle sowie
+  19 XCTest-Fälle bestanden, ein Real-SDE-Skip; Exit 0 (`swift-tests.log`).
+- `Packages/EVEStaticDataKit`: 8 Fälle, ein Real-SDE-Skip; Exit 0 (`kit-tests.log`).
+- `xcodebuild` Scheme `EVENexusSimple`, Debug, `platform=macOS,arch=arm64`,
+  `CODE_SIGNING_ALLOWED=NO`: `BUILD SUCCEEDED` (`native-build.log`),
+  `TEST SUCCEEDED` mit 434 bestanden, ein Skip (`native-tests.log`,
+  `native-tests.xcresult`).
+- `git diff --check` fehlerfrei (`diff-check.log`).
+
+Offen: Live-ESI-/SSO-, visuelle, VoiceOver- und Eigentümerabnahme. Kein Push.

@@ -62,10 +62,12 @@ Der Projektordner wurde aus dem iCloud-synchronisierten `~/Documents` nach
 verschoben, weil iCloud Quell- und `.git`-Dateien ausgelagert hatte. Die
 Entwicklung wird mit Claude fortgesetzt (Einstieg `CLAUDE.md`, bindet
 `AGENTS.md` ein); Codex bleibt mit seiner Konfiguration nutzbar. Die Sperre
-gegen neue Funktionen ist aufgehoben. Der Arbeitsbaum enthält weiterhin die
-uncommitteten Codex-Änderungen vom 02.–17.10.2026 (29 geänderte, 4 neue
-Dateien); sie sind unverändert erhalten. Am 19.10.2026 wurden sie im neuen
-Ordner erneut automatisch verifiziert: SwiftPM 485 Fälle (427 Core-, 39 App-
-Swift-Testing-, 19 XCTest-Fälle; ein Real-SDE-Skip), separates Kit 8 Fälle (ein
-Skip), nativer unsignierter Debug-Build und Tests `TEST SUCCEEDED` (434 bestanden,
-ein Skip). Noch nicht committet; Live-ESI-/SSO- und Eigentümerabnahme bleiben offen.
+gegen neue Funktionen ist aufgehoben. Die Codex-Änderungen vom 02.–17.10.2026
+und die Übergabe-Dokumente sind lokal als `90b4cc4` committet (dev-diary-Nachtrag
+`81d258b`). Auf HEAD `81d258b` wurden sie am 19.10.2026 erneut isoliert
+automatisch verifiziert: SwiftPM 485 Fälle (427 Core-, 39 App-Swift-Testing-,
+19 XCTest-Fälle; ein Real-SDE-Skip), separates Kit 8 Fälle (ein Skip), nativer
+unsignierter Debug-Build `BUILD SUCCEEDED` und Tests `TEST SUCCEEDED` (434
+bestanden, ein Skip), `git diff --check` fehlerfrei. Logs:
+`/private/tmp/eve-nexus-claude-handover-20261019/`. Kein Push; Live-ESI-/SSO-,
+visuelle und Eigentümerabnahme bleiben offen.
