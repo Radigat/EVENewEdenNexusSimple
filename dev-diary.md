@@ -4898,5 +4898,7 @@ eigene Preferences-Suite, `EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1`):
   gültig, ohne doppelte Schlüssel und ohne neue Abdeckungslücken gegenüber HEAD.
 
 Offen: lokaler Commit (nur auf ausdrücklichen Auftrag), Live-ESI-/SSO-,
-visuelle, VoiceOver- und Eigentümerabnahme; alte Kopie unter `~/Documents`
-umbenennen oder entfernen (durch den Nutzer). Kein Commit, kein Push.
+visuelle, VoiceOver- und Eigentümerabnahme. Kein Push. Anschließend auf
+Nutzerauftrag lokal als `90b4cc4` committet. Die alte Kopie hat der Nutzer in
+`~/Documents/EVE New Eden Nexus - Assets, Industry, Markets - Alt` umbenannt;
+sie ist kein Arbeitsstand.
