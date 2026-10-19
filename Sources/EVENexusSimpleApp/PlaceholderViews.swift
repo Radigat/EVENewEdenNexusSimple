@@ -983,7 +983,11 @@ struct PlannerView: View {
     financeOverviewPanel(plan)
     if let refiningPlan = plan.compressedOreRefining {
       compressedOreRefiningPanel(refiningPlan, plan: plan)
-    } else if runtime.productionBasis.compressedOreRefining.isEnabled {
+    } else if runtime.productionBasis.compressedOreRefining.isEnabled
+      || plan.warnings.contains(where: {
+        $0.code == "refining.comparison-disabled"
+      })
+    {
       compressedOreRefiningStatusPanel(plan)
     }
     Panel(title: "Sale scenario overview") {
@@ -1657,10 +1661,9 @@ struct PlannerView: View {
       } content: {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           Text(
-            reason
-              ?? AppLocalization.text(
-                "The comparison was not used for this calculation."
-              )
+            AppLocalization.text(
+              reason ?? "The comparison was not used for this calculation."
+            )
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)

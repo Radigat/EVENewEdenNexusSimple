@@ -2493,6 +2493,7 @@ struct IndustryPlannerTests {
           kind: .custom,
           manufacturingSystemID: manufacturingSystem.id,
           securityBand: .highSecurity,
+          facilityTaxRate: 0,
           serviceModules: [manufacturingService],
           source: .manual
         )
@@ -3500,6 +3501,230 @@ struct IndustryPlannerTests {
     #expect(
       EVEShoppingList.make(from: directPlan.materials).items.contains {
         $0.typeID == mineralTypeID
+      }
+    )
+  }
+
+  /// Main Hub → Home Hub fixture with one mineral, one bulky purchased
+  /// material that is shipped either way, and one compressed ore.
+  private func compressedOreRouteContext(
+    comparisonEnabled: Bool = true,
+    oreUnitPrice: Double,
+    oreVolumeRemaining: Int64 = 1_000_000
+  ) -> IndustryPlanningContext {
+    let source = SourceIdentity(provider: "fixture", version: "refining-route")
+    let oreSkillTypeID: Int64 = 12_104
+    let mineralTypeID: Int64 = 34
+    let fillerTypeID: Int64 = 9_100
+    let oreTypeID: Int64 = 28_417
+    let product = BlueprintDefinition(
+      blueprintTypeID: 9_001,
+      productTypeID: 9_000,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [
+          BlueprintMaterial(typeID: mineralTypeID, quantity: 1_000),
+          BlueprintMaterial(typeID: fillerTypeID, quantity: 1),
+        ],
+        products: [
+          BlueprintProduct(typeID: 9_000, quantity: 1, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    let compressedOre = CompressedOreOption(
+      typeID: oreTypeID,
+      name: "Compressed Veldspar",
+      portionSize: 1,
+      packagedVolume: 0.15,
+      reprocessingSkillTypeID: oreSkillTypeID,
+      kind: .asteroidOre,
+      outputs: [
+        ReprocessingMaterialOutput(typeID: mineralTypeID, quantity: 100)
+      ],
+      source: source
+    )
+    let volumes: [Int64: Double] = [
+      mineralTypeID: 1,
+      fillerTypeID: 1_900,
+      oreTypeID: 0.15,
+    ]
+    let catalog = PackagedVolumeSnapshotCatalog(
+      base: FixtureCatalog(
+        names: [
+          9_000: "Refining Route Product",
+          mineralTypeID: "Tritanium",
+          fillerTypeID: "Fixture Bulky Material",
+          oreTypeID: "Compressed Veldspar",
+        ],
+        definitions: [9_000: product],
+        packagedVolumes: volumes,
+        compressedOre: [compressedOre]
+      ),
+      packagedVolumes: volumes
+    )
+    var service = IndustryServiceModuleConfiguration()
+    service.name = "Standup Reprocessing Facility I"
+    service.activities = [.reprocessing]
+    service.normalOreYieldMultiplier = 0.5
+    service.source = .staticData
+    let facility = ConfiguredIndustryStructure(
+      name: "Darfnor Refining Tatara",
+      kind: .tatara,
+      solarSystemID: 30_045_364,
+      solarSystemName: "Darfnor",
+      securityBand: .lowSecurity,
+      reprocessingTaxRate: 0.01,
+      serviceModules: [service]
+    )
+    let basis = ProductionBasis(
+      logistics: LogisticsConfiguration(
+        isEnabled: true,
+        includeInboundMaterials: true,
+        productionLocationName: "Darfnor",
+        marketLocationName: "Jita IV - Moon 4",
+        iskPerCubicMeter: 1_000
+      ),
+      compressedOreRefining: CompressedOreRefiningConfiguration(
+        isEnabled: comparisonEnabled
+      ),
+      structures: [facility]
+    )
+    let skills = [
+      ReprocessingYieldCalculator.reprocessingSkillTypeID,
+      ReprocessingYieldCalculator.reprocessingEfficiencySkillTypeID,
+      oreSkillTypeID,
+    ].map {
+      TrainedSkill(skillID: $0, trainedLevel: 5, activeLevel: 5, skillpoints: 0)
+    }
+    let refiner = CharacterCapabilitySnapshot(
+      character: CharacterIdentity(id: 1, name: "Fixture Refiner"),
+      cloneState: .omega,
+      skills: Sourced(state: .fresh, value: skills, source: source),
+      standings: Sourced(state: .unavailable, value: nil, source: source)
+    )
+    func sellOrder(
+      typeID: Int64,
+      price: Double,
+      volume: Int64 = 1_000_000
+    ) -> MarketOrder {
+      MarketOrder(
+        id: Int64.random(in: 1...Int64.max),
+        typeID: typeID,
+        locationID: EVEConstants.jitaIV4StationID,
+        systemID: EVEConstants.jitaSystemID,
+        side: .sell,
+        price: price,
+        volumeRemaining: volume,
+        minimumVolume: 1,
+        issued: .now
+      )
+    }
+    return IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: catalog,
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          mineralTypeID: [sellOrder(typeID: mineralTypeID, price: 10)],
+          fillerTypeID: [sellOrder(typeID: fillerTypeID, price: 100)],
+          oreTypeID: [
+            sellOrder(
+              typeID: oreTypeID,
+              price: oreUnitPrice,
+              volume: oreVolumeRemaining
+            )
+          ],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        mineralTypeID: AdjustedPrice(
+          typeID: mineralTypeID,
+          adjustedPrice: 5,
+          averagePrice: 5
+        )
+      ],
+      systemIndices: [],
+      sdeBuild: 1,
+      characterCapabilities: [refiner]
+    )
+  }
+
+  @Test
+  func compressedOreIsValuedInsideTheSharedInboundCourierCargo()
+    async throws
+  {
+    // Standalone, the 1,000 m³ of Tritanium and the ore each cost one
+    // rounded million. Inside the shared cargo, removing the minerals drops
+    // the inbound shipment from 2,900 m³ (3 M ISK) to about 1,902 m³
+    // (2 M ISK), which outweighs the 480,000 ISK ore premium.
+    let plan = try await IndustryPlanner().plan(
+      input: "Refining Route Product 1 0 0",
+      context: compressedOreRouteContext(oreUnitPrice: 35_000)
+    )
+
+    let refining = try #require(plan.compressedOreRefining)
+    let purchase = try #require(refining.purchases.first)
+    #expect(purchase.oreTypeID == 28_417)
+    #expect(purchase.quantity == 14)
+    #expect(refining.coveredMinerals[34] == 1_000)
+    #expect(refining.savings > 0)
+    let logistics = try #require(plan.costBreakdown?.logistics)
+    #expect(logistics.total == 2_000_000)
+    #expect(
+      plan.warnings.contains { $0.code == "refining.compressed-ore-selected" }
+    )
+  }
+
+  @Test
+  func compressedOreUsesAvailableDepthAndKeepsTheRestDirect() async throws {
+    let plan = try await IndustryPlanner().plan(
+      input: "Refining Route Product 1 0 0",
+      context: compressedOreRouteContext(
+        oreUnitPrice: 100,
+        oreVolumeRemaining: 5
+      )
+    )
+
+    let refining = try #require(plan.compressedOreRefining)
+    let purchase = try #require(refining.purchases.first)
+    #expect(purchase.quantity == 5)
+    #expect(purchase.batches == 5)
+    let covered = try #require(refining.coveredMinerals[34])
+    #expect(covered > 0 && covered < 1_000)
+    #expect(refining.remainingDirectMinerals[34] == 1_000 - covered)
+    #expect(
+      plan.warnings.contains { $0.code == "refining.ore-depth-limited" }
+    )
+  }
+
+  @Test
+  func disabledCompressedOreComparisonIsReportedForShippedMinerals()
+    async throws
+  {
+    let plan = try await IndustryPlanner().plan(
+      input: "Refining Route Product 1 0 0",
+      context: compressedOreRouteContext(
+        comparisonEnabled: false,
+        oreUnitPrice: 100
+      )
+    )
+
+    #expect(plan.compressedOreRefining == nil)
+    #expect(
+      plan.warnings.contains { $0.code == "refining.comparison-disabled" }
+    )
+    #expect(
+      EVEShoppingList.make(from: plan.materials).items.contains {
+        $0.typeID == 34
       }
     )
   }

@@ -24,19 +24,21 @@ struct ProductionBasisTests {
   @Test
   func reprocessingReadinessExplainsEveryMissingInput() {
     let unresolved = ConfiguredIndustryStructure(
-      name: "Fixture Tatara",
-      kind: .tatara,
+      name: "Fixture Athanor",
+      kind: .athanor,
       serviceModules: []
     )
+    // The tax falls back to the 1 % structure standard; service and yield
+    // stay explicitly missing.
     #expect(
       unresolved.reprocessingReadinessIssues
-        == [.missingService, .missingOreYield, .unconfirmedTax]
+        == [.missingService, .missingOreYield]
     )
     #expect(!unresolved.isReprocessingCapable)
 
     let feeMissing = ConfiguredIndustryStructure(
-      name: "Fixture Tatara",
-      kind: .tatara,
+      name: "Fixture NPC Station",
+      kind: .npcStation,
       reprocessingTaxRate: nil,
       serviceModules: [
         IndustryServiceModuleConfiguration(
@@ -58,6 +60,108 @@ struct ProductionBasisTests {
     ready.reprocessingTaxRate = 0
     #expect(ready.reprocessingReadinessIssues.isEmpty)
     #expect(ready.isReprocessingCapable)
+  }
+
+  @Test
+  func playerStructuresUseTheOnePercentStandardUntilATaxIsEntered() {
+    var tatara = ConfiguredIndustryStructure(
+      name: "Fixture Tatara",
+      kind: .tatara,
+      reprocessingTaxRate: nil,
+      serviceModules: [
+        IndustryServiceModuleConfiguration(
+          definition: IndustryServiceModuleDefinition(
+            typeID: 100,
+            name: "Fixture Reprocessing Service",
+            activities: [.reprocessing],
+            normalOreYieldMultiplier: 0.5,
+            moonOreYieldMultiplier: 0.5,
+            source: SourceIdentity(provider: "fixture", version: "1")
+          )
+        )
+      ]
+    )
+    #expect(tatara.reprocessingTaxRate == nil)
+    #expect(tatara.effectiveReprocessingTaxRate == 0.01)
+    #expect(tatara.reprocessingReadinessIssues.isEmpty)
+    #expect(tatara.isReprocessingCapable)
+
+    tatara.reprocessingTaxRate = 0
+    #expect(tatara.effectiveReprocessingTaxRate == 0)
+    tatara.reprocessingTaxRate = 0.025
+    #expect(tatara.effectiveReprocessingTaxRate == 0.025)
+
+    for kind in IndustryStructureKind.allCases where kind != .npcStation {
+      #expect(kind.defaultReprocessingTaxRate == 0.01)
+    }
+    let npcStation = ConfiguredIndustryStructure(
+      name: "Fixture NPC Station",
+      kind: .npcStation
+    )
+    #expect(npcStation.effectiveReprocessingTaxRate == nil)
+  }
+
+  @Test
+  func playerStructuresUseTheOnePercentJobFacilityTaxUntilATaxIsEntered()
+    throws
+  {
+    var raitaru = ConfiguredIndustryStructure(
+      name: "Fixture Raitaru",
+      kind: .raitaru
+    )
+    #expect(raitaru.enteredFacilityTaxRate == nil)
+    #expect(raitaru.facilityTaxRate == 0.01)
+
+    raitaru.enteredFacilityTaxRate = 0
+    #expect(raitaru.facilityTaxRate == 0)
+    let confirmedZero = try JSONDecoder().decode(
+      ConfiguredIndustryStructure.self,
+      from: JSONEncoder().encode(raitaru)
+    )
+    #expect(confirmedZero.enteredFacilityTaxRate == 0)
+    #expect(confirmedZero.facilityTaxRate == 0)
+
+    raitaru.enteredFacilityTaxRate = nil
+    #expect(raitaru.facilityTaxRate == 0.01)
+
+    let npcStation = ConfiguredIndustryStructure(
+      name: "Fixture NPC Station",
+      kind: .npcStation
+    )
+    #expect(npcStation.facilityTaxRate == 0)
+    for kind in IndustryStructureKind.allCases where kind != .npcStation {
+      #expect(kind.defaultFacilityTaxRate == 0.01)
+    }
+  }
+
+  @Test
+  func legacyStructureZeroFacilityTaxBecomesTheStandard() throws {
+    let structure = ConfiguredIndustryStructure(
+      name: "Fixture Azbel",
+      kind: .azbel,
+      facilityTaxRate: 0.05
+    )
+    var legacy = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(structure))
+        as? [String: Any]
+    )
+    legacy.removeValue(forKey: "facilityTaxRateIsEntered")
+
+    legacy["facilityTaxRate"] = 0
+    let formerDefault = try JSONDecoder().decode(
+      ConfiguredIndustryStructure.self,
+      from: JSONSerialization.data(withJSONObject: legacy)
+    )
+    #expect(formerDefault.enteredFacilityTaxRate == nil)
+    #expect(formerDefault.facilityTaxRate == 0.01)
+
+    legacy["facilityTaxRate"] = 0.05
+    let entered = try JSONDecoder().decode(
+      ConfiguredIndustryStructure.self,
+      from: JSONSerialization.data(withJSONObject: legacy)
+    )
+    #expect(entered.enteredFacilityTaxRate == 0.05)
+    #expect(entered.facilityTaxRate == 0.05)
   }
 
   @Test

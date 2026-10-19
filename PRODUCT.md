@@ -475,8 +475,11 @@ Optional kann in **Data & Settings → Industrie** der Vergleich mit
 komprimierten Erzen aktiviert werden. Dafür lassen sich mehrere Refining-
 Strukturen in unterschiedlichen Systemen hinterlegen. Jede verwendbare Anlage
 benötigt einen aufgelösten Refining-Service, eine vom aktiven SDE abgeleitete
-Erzausbeute und eine bestätigte Refining-Gebühr. Ein leeres Gebührenfeld
-bedeutet unbekannt; 0 % gilt nur als ausdrücklich bestätigte gebührenfreie
+Erzausbeute und eine bestätigte Refining-Gebühr. Für alle Spielerstrukturen
+(Upwell-Strukturen und eigene Strukturtypen) gilt ein leeres Gebührenfeld als
+Standard-Servicegebühr von 1 %. Das Feld zeigt dann „Standard 1 %“, und ein
+eingetragener Wert hat immer Vorrang. Nur bei NPC-Stationen bedeutet ein leeres
+Gebührenfeld unbekannt. 0 % gilt nur als ausdrücklich bestätigte gebührenfreie
 Anlage. Pro Anlage kann ein Charakter fest zugeordnet werden. Ohne feste
 Zuordnung verwendet der Planner für jedes Erz den verbundenen Charakter mit
 der höchsten vollständigen Ausbeute aus **Reprocessing**, **Reprocessing
@@ -497,9 +500,9 @@ beibehaltene teilweise oder veraltete Snapshots bleiben sichtbar.
 
 Die Industrieeinstellungen zeigen für jede grundsätzlich relevante Refining-
 Anlage getrennt, ob Refining-Service, Erzausbeute oder bestätigte Gebühr fehlen.
-Damit ist insbesondere eine vorhandene Tatara mit Reprocessing-Service und
-bekannter Ausbeute, aber leerem Gebührenfeld ausdrücklich **unvollständig** und
-nicht scheinbar unberücksichtigt. Änderungen an Anlage, Charakter oder Gebühr
+Damit ist insbesondere eine NPC-Station mit bekannter Ausbeute, aber leerem
+Gebührenfeld ausdrücklich **unvollständig** und nicht scheinbar
+unberücksichtigt. Änderungen an Anlage, Charakter oder Gebühr
 werden bei der nächsten Planner-Berechnung verwendet; ein bereits angezeigter
 Plan wird nicht still im Hintergrund umgeschrieben.
 
@@ -530,10 +533,23 @@ dessen ungedeckten Einkauf prüft er veröffentlichte komprimierte Erze aus dem
 aktiven SDE-`typeMaterials`-Katalog gegen die vollständige Markttiefe am Main
 Hub. Verglichen werden der direkte Mineraleinkauf und -transport mit
 Erzeinkauf, Transport zur gewählten Refining-Anlage, skillabhängiger
-Mineralausbeute und bestätigter Refining-Gebühr. Anschließend werden beide
-vollständigen Wege nochmals mit der tatsächlichen Kurieraufteilung und
+Mineralausbeute und bestätigter Refining-Gebühr. Den Transport bewertet der
+Planner bereits bei der Auswahl jedes Erzes am gemeinsamen Lieferpaket
+Main Hub → Home Hub: Maßgeblich ist, wie sich die Kurierkosten aller
+verbleibenden Direktkäufe zusammen mit den bereits gewählten Erzen nach
+Vertragsaufteilung und Millionenrundung ändern. Ein separat gerundeter
+Einzeltransport je Erz wird nicht mehr angesetzt. Reicht die Markttiefe am
+Main Hub für eine vollständige Deckung durch ein Erz nicht aus, kauft der
+Planner die dort tatsächlich angebotenen ganzen Chargen. Den Rest decken
+weitere Erze oder der direkte Mineralkauf. Der Hinweis
+`refining.ore-depth-limited` nennt die betroffenen Erze. Anschließend werden
+beide vollständigen Wege nochmals mit der tatsächlichen Kurieraufteilung und
 Millionenrundung bewertet. Nur ein positiver vollständiger Kostenvorteil
-ersetzt Mineralien durch Erz. Andernfalls bleiben Mineralmenge, Logistik und
+ersetzt Mineralien durch Erz. Ist der Vergleich in **Data & Settings →
+Industrie** ausgeschaltet, kommt aber ein komprimiertes Erz für die gelieferten
+Mineralien in Frage, zeigt der Planner den Bereich **Compressed-Ore-Vergleich**
+mit dem Hinweis, dass der Vergleich ausgeschaltet ist und die Mineralien direkt
+geliefert werden (`refining.comparison-disabled`). Andernfalls bleiben Mineralmenge, Logistik und
 Multibuy unverändert. Der Ergebnis-Snapshot weist Erz, Chargen, Anlage,
 Sonnensystem, Refining-Charakter, Skillzustand, Ausbeute, Mineralausgabe,
 Implantat, Gebühr, beide Gesamtwege und Ersparnis getrennt aus. Der
@@ -876,6 +892,17 @@ Verträge enthalten die konkreten Gegenstände und Mengen. Der
 **Lagerverbrauch** steht als informativer Teilwert in einer eigenen Karte und
 wird nicht ein zweites Mal addiert. Systemindex, Facility Tax, SCC- und
 Alpha-Zuschlag bleiben über die Installationsgleichung nachvollziehbar.
+
+Die Facility Tax (Anlagensteuer) für Fertigung, Reaktionen und Forschung
+beträgt bei allen Spielerstrukturen standardmäßig 1 %, solange in den
+Struktureinstellungen kein eigener Wert eingetragen ist. Das leere Feld zeigt
+„Standard 1 %“. Ein eingetragener Wert hat Vorrang, auch ausdrücklich 0 %.
+NPC-Stationen haben keinen solchen Standard und verwenden ihren gespeicherten
+Wert. Gespeicherte Strukturen aus der Zeit vor diesem Standard enthalten den
+früheren Vorgabewert 0 %. Eine solche gespeicherte 0 % wird als nicht
+eingetragen gelesen und verwendet deshalb 1 %. Andere gespeicherte Werte gelten
+als eingetragen. Eine wirklich gebührenfreie Struktur braucht daher einmal
+ausdrücklich 0 %.
 
 Bei teilweise gelagerten Zwischenprodukten werden nur die gekauften und aus
 dem Lager verbrauchten Einheiten mit dem gewichteten Stückpreis der vollständigen

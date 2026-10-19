@@ -1438,6 +1438,7 @@
 "Compressed ore comparison" = "Compressed ore comparison";
 "Direct mineral route retained" = "Direct mineral route retained";
 "The comparison was not used for this calculation." = "The comparison was not used for this calculation.";
+"Compressed ore was not compared because the comparison is disabled in Data & Settings → Industry. Minerals are shipped directly from the Main Hub." = "Compressed ore was not compared because the comparison is disabled in Data & Settings → Industry. Minerals are shipped directly from the Main Hub.";
 "This plan was calculated on %@. Recalculate after changing logistics or Refining settings." = "This plan was calculated on %1$@. Recalculate after changing logistics or Refining settings.";
 "Compressed ore refining" = "Compressed ore refining";
 "%lld selected compressed ores" = "%1$lld selected compressed ores";
@@ -1474,6 +1475,9 @@
 "unavailable" = "unavailable";
 "Reprocessing tax" = "Reprocessing tax";
 "Enter the tax shown by EVE. Leave it empty when unknown; enter 0% only for a confirmed fee-free facility." = "Enter the tax shown by EVE. Leave it empty when unknown; enter 0% only for a confirmed fee-free facility.";
+"Standard %@" = "Standard %@";
+"Leave the facility tax empty to use the structure standard of 1% for Manufacturing, Reactions and Science." = "Leave the facility tax empty to use the structure standard of 1% for Manufacturing, Reactions and Science.";
+"Enter the tax shown by EVE. Leave it empty to use the structure standard of 1%; enter 0% only for a confirmed fee-free facility." = "Enter the tax shown by EVE. Leave it empty to use the structure standard of 1%; enter 0% only for a confirmed fee-free facility.";
 "Reprocessing character" = "Reprocessing character";
 "Automatic best character per ore" = "Automatic best character per ore";
 "Select %@ for Reprocessing" = "Select %@ for Reprocessing";

@@ -179,7 +179,9 @@ private struct OreRefiningOptimizationResult {
 private struct OreRefiningProposal {
   let purchase: OreRefiningPurchase
   let covered: [Int64: Int64]
+  let cargo: LogisticsCargoItem
   let estimatedSavings: Double
+  let isDepthLimited: Bool
 }
 
 public struct IndustryPlannerInputPreparation: Sendable {
@@ -3489,10 +3491,35 @@ public struct IndustryPlanner: Sendable {
     marketBook: PreparedMarketOrderBook,
     homeHub: ProcurementLocation
   ) async throws -> OreRefiningOptimizationResult? {
-    guard context.productionBasis?.compressedOreRefining.isEnabled == true,
-      !requirements.isEmpty
+    guard !requirements.isEmpty,
+      let basis = context.productionBasis
     else { return nil }
-    guard let basis = context.productionBasis else { return nil }
+    guard basis.compressedOreRefining.isEnabled else {
+      // Shipped minerals are bulky compared with compressed ore. Make the
+      // disabled comparison visible whenever it could have changed the
+      // inbound Main Hub → Home Hub cargo; the direct route stays unchanged.
+      guard basis.logistics.isEnabled,
+        basis.logistics.includeInboundMaterials,
+        !context.defaultPurchaseLocation.representsSameLocation(as: homeHub),
+        let options = try? await context.catalog.compressedOreOptions(
+          producing: Set(requirements.keys)
+        ),
+        !options.isEmpty
+      else { return nil }
+      return OreRefiningOptimizationResult(
+        purchases: [],
+        coveredMinerals: [:],
+        remainingDirectMinerals: requirements,
+        warnings: [
+          DomainWarning(
+            code: "refining.comparison-disabled",
+            message:
+              "Compressed ore was not compared because the comparison is disabled in Data & Settings → Industry. Minerals are shipped directly from the Main Hub.",
+            severity: .information
+          )
+        ]
+      )
+    }
 
     let options: [CompressedOreOption]
     do {
@@ -3593,7 +3620,45 @@ public struct IndustryPlanner: Sendable {
     var remaining = requirements
     var purchases: [OreRefiningPurchase] = []
     var selectedOreTypeIDs = Set<Int64>()
+    var selectedOreCargo: [LogisticsCargoItem] = []
     var warnings: [DomainWarning] = []
+    var depthLimitedOreNames = Set<String>()
+    // Direct purchases and compressed ore travel in the same courier
+    // contracts. A proposal is therefore valued by the change of that combined
+    // inbound cargo after contract splitting and rounding, not by a separately
+    // rounded ore-only shipment. Purchases without a usable price or packaged
+    // volume stay outside this comparison because they are shipped either way.
+    var directUnitCargo: [Int64: (unitPrice: Double, volume: Double)] = [:]
+    for typeID in requirements.keys {
+      guard let unitPrice = directQuotes[typeID]?.weightedUnitPrice,
+        unitPrice.isFinite, unitPrice >= 0,
+        let volume = directVolumes[typeID], volume.isFinite, volume >= 0
+      else { continue }
+      directUnitCargo[typeID] = (unitPrice, volume)
+    }
+    func inboundCost(
+      direct: [Int64: Int64],
+      ore: [LogisticsCargoItem]
+    ) -> Double? {
+      let directCargo = direct.sorted { $0.key < $1.key }.compactMap {
+        typeID, quantity -> LogisticsCargoItem? in
+        guard quantity > 0, let unit = directUnitCargo[typeID] else {
+          return nil
+        }
+        return LogisticsCargoItem(
+          typeID: typeID,
+          quantity: quantity,
+          collateral: unit.unitPrice * Double(quantity),
+          packagedVolumePerUnit: unit.volume
+        )
+      }
+      return inboundTransportCost(
+        cargo: directCargo + ore,
+        origin: context.defaultPurchaseLocation,
+        homeHub: homeHub,
+        configuration: logistics
+      )
+    }
     let unresolvedOutputTypeIDs = outputTypeIDs.filter {
       outputTypeNames[$0] == nil
     }
@@ -3609,6 +3674,12 @@ public struct IndustryPlanner: Sendable {
     }
 
     for _ in 0..<min(options.count, 64) {
+      guard
+        let currentInbound = inboundCost(
+          direct: remaining,
+          ore: selectedOreCargo
+        )
+      else { break }
       var best: OreRefiningProposal?
       for option in options where !selectedOreTypeIDs.contains(option.typeID) {
         guard let skillTypeID = option.reprocessingSkillTypeID else { continue }
@@ -3620,7 +3691,7 @@ public struct IndustryPlanner: Sendable {
           guard
             let baseYield = facility.effectiveReprocessingYieldMultiplier(
               for: option.kind
-            ), let taxRate = facility.reprocessingTaxRate,
+            ), let taxRate = facility.effectiveReprocessingTaxRate,
             let character = bestReprocessingCharacter(
               capabilities: context.characterCapabilities,
               preferredCharacterID: facility.reprocessingCharacterID,
@@ -3640,21 +3711,42 @@ public struct IndustryPlanner: Sendable {
           else { continue }
           for target in relevantOutputs {
             guard
-              let batches = ReprocessingYieldCalculator.minimumBatches(
+              var batches = ReprocessingYieldCalculator.minimumBatches(
                 requiredQuantity: remaining[target.typeID, default: 0],
                 baseQuantity: target.quantity,
                 yieldMultiplier: yield
               ),
-              let quantity = Self.safeMultiply(
+              var quantity = Self.safeMultiply(
                 batches,
                 option.portionSize
               )
             else { continue }
-            let quote = marketBook.quote(
+            let targetBatches = batches
+            var quote = marketBook.quote(
               typeID: option.typeID,
               quantity: quantity,
               scenario: .materialBuy
             )
+            if quote.total == nil, option.portionSize > 0,
+              quote.filledQuantity >= option.portionSize
+            {
+              // The Main Hub cannot fill the whole target with this ore. Buy
+              // the complete batches it does offer and leave the rest to
+              // other ores or the direct mineral route.
+              batches = min(batches, quote.filledQuantity / option.portionSize)
+              guard
+                let limitedQuantity = Self.safeMultiply(
+                  batches,
+                  option.portionSize
+                )
+              else { continue }
+              quantity = limitedQuantity
+              quote = marketBook.quote(
+                typeID: option.typeID,
+                quantity: quantity,
+                scenario: .materialBuy
+              )
+            }
             guard let purchaseCost = quote.total else { continue }
             var produced: [ReprocessingMaterialOutput] = []
             var covered: [Int64: Int64] = [:]
@@ -3700,49 +3792,35 @@ public struct IndustryPlanner: Sendable {
             else { continue }
             let refiningFee = feeBase * taxRate
             guard refiningFee.isFinite, refiningFee >= 0 else { continue }
-            let oreTransport = refiningTransportCost(
-              typeID: option.typeID,
-              quantity: quantity,
-              packagedVolume: option.packagedVolume,
-              collateral: purchaseCost,
-              origin: context.defaultPurchaseLocation,
-              homeHub: homeHub,
-              configuration: logistics
-            )
-            guard let oreTransport else { continue }
             var avoidedPurchaseCost = 0.0
-            var directCargo: [LogisticsCargoItem] = []
+            var proposedDirect = remaining
             for (mineralTypeID, amount) in covered {
-              guard
-                let unitPrice = directQuotes[mineralTypeID]?
-                  .weightedUnitPrice,
-                let volume = directVolumes[mineralTypeID]
-              else {
+              guard let unit = directUnitCargo[mineralTypeID] else {
                 complete = false
                 break
               }
-              let collateral = unitPrice * Double(amount)
-              avoidedPurchaseCost += collateral
-              directCargo.append(
-                LogisticsCargoItem(
-                  typeID: mineralTypeID,
-                  quantity: amount,
-                  collateral: collateral,
-                  packagedVolumePerUnit: volume
-                )
+              avoidedPurchaseCost += unit.unitPrice * Double(amount)
+              proposedDirect[mineralTypeID] = max(
+                0,
+                proposedDirect[mineralTypeID, default: 0] - amount
               )
             }
             guard complete else { continue }
-            let avoidedTransport = directTransportCost(
-              cargo: directCargo,
-              origin: context.defaultPurchaseLocation,
-              homeHub: homeHub,
-              configuration: logistics
+            let oreCargo = LogisticsCargoItem(
+              typeID: option.typeID,
+              quantity: quantity,
+              collateral: purchaseCost,
+              packagedVolumePerUnit: option.packagedVolume
             )
-            guard let avoidedTransport else { continue }
+            guard
+              let proposedInbound = inboundCost(
+                direct: proposedDirect,
+                ore: selectedOreCargo + [oreCargo]
+              )
+            else { continue }
             let estimatedSavings =
-              avoidedPurchaseCost + avoidedTransport
-              - purchaseCost - refiningFee - oreTransport
+              avoidedPurchaseCost + currentInbound - proposedInbound
+              - purchaseCost - refiningFee
             guard estimatedSavings.isFinite, estimatedSavings > 0 else {
               continue
             }
@@ -3767,7 +3845,9 @@ public struct IndustryPlanner: Sendable {
                 refiningFee: refiningFee
               ),
               covered: covered,
-              estimatedSavings: estimatedSavings
+              cargo: oreCargo,
+              estimatedSavings: estimatedSavings,
+              isDepthLimited: batches < targetBatches
             )
             if isBetterRefiningProposal(proposal, than: best) {
               best = proposal
@@ -3778,6 +3858,10 @@ public struct IndustryPlanner: Sendable {
       guard let best else { break }
       purchases.append(best.purchase)
       selectedOreTypeIDs.insert(best.purchase.oreTypeID)
+      selectedOreCargo.append(best.cargo)
+      if best.isDepthLimited {
+        depthLimitedOreNames.insert(best.purchase.oreName)
+      }
       for (typeID, amount) in best.covered {
         remaining[typeID] = max(0, remaining[typeID, default: 0] - amount)
       }
@@ -3803,6 +3887,16 @@ public struct IndustryPlanner: Sendable {
       result, entry in
       let amount = entry.value - remaining[entry.key, default: 0]
       if amount > 0 { result[entry.key] = amount }
+    }
+    if !depthLimitedOreNames.isEmpty {
+      warnings.append(
+        DomainWarning(
+          code: "refining.ore-depth-limited",
+          message:
+            "The Main Hub order book could not fill the full ore quantity for \(depthLimitedOreNames.sorted().joined(separator: ", ")). The available ore was used and the remaining minerals are covered by other ore or the direct mineral route.",
+          severity: .information
+        )
+      )
     }
     if purchases.contains(where: { $0.character.skillsState != .fresh }) {
       warnings.append(
@@ -3893,42 +3987,7 @@ public struct IndustryPlanner: Sendable {
     }.first?.0
   }
 
-  private func refiningTransportCost(
-    typeID: Int64,
-    quantity: Int64,
-    packagedVolume: Double?,
-    collateral: Double,
-    origin: ProcurementLocation,
-    homeHub: ProcurementLocation,
-    configuration: LogisticsConfiguration
-  ) -> Double? {
-    if origin.representsSameLocation(as: homeHub) {
-      return 0
-    }
-    guard let rate = configuration.effectiveISKPerCubicMeter,
-      let maximum = configuration.effectiveMaximumContractVolumeM3
-    else { return nil }
-    let result = LogisticsCostCalculator.calculateLegs(
-      kind: .inboundMaterials,
-      origin: origin.name,
-      destination: homeHub.name,
-      cargo: [
-        LogisticsCargoItem(
-          typeID: typeID,
-          quantity: quantity,
-          collateral: collateral,
-          packagedVolumePerUnit: packagedVolume
-        )
-      ],
-      iskPerCubicMeter: rate,
-      maximumContractVolumeM3: maximum
-    )
-    guard !result.warnings.contains(where: { $0.severity == .blocking })
-    else { return nil }
-    return result.legs.reduce(0) { $0 + $1.roundedCharge }
-  }
-
-  private func directTransportCost(
+  private func inboundTransportCost(
     cargo: [LogisticsCargoItem],
     origin: ProcurementLocation,
     homeHub: ProcurementLocation,

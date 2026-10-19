@@ -352,6 +352,25 @@ public enum IndustryStructureKind: String, Codable, CaseIterable, Identifiable,
     default: 0
     }
   }
+
+  /// Owner-defined standard job facility tax for every player structure
+  /// while no tax is entered. NPC stations keep their stored value.
+  public var defaultFacilityTaxRate: Double? {
+    switch self {
+    case .npcStation: nil
+    default: 0.01
+    }
+  }
+
+  /// Owner-defined standard Reprocessing service tax for every player
+  /// structure while no tax is entered. NPC stations have no structure
+  /// service fee standard and stay explicitly unknown.
+  public var defaultReprocessingTaxRate: Double? {
+    switch self {
+    case .npcStation: nil
+    default: 0.01
+    }
+  }
 }
 
 public enum IndustryRigKind: String, Codable, CaseIterable, Identifiable,
@@ -745,7 +764,14 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   public var solarSystemID: Int64
   public var solarSystemName: String
   public var securityBand: SecurityBand
-  public var facilityTaxRate: Double
+  /// Persisted job facility tax under the historical `facilityTaxRate` key.
+  /// Use `facilityTaxRate` or `enteredFacilityTaxRate` instead.
+  private var storedFacilityTaxRate: Double
+  /// Whether the owner entered the job facility tax. `nil` on profiles
+  /// written before the structure standard existed: their stored zero was
+  /// the former default and is read as not entered, any other stored value
+  /// as entered.
+  private var facilityTaxRateIsEntered: Bool?
   /// Owner-configured Reprocessing tax. `nil` means unknown, while an
   /// explicitly entered zero is a confirmed fee-free facility.
   public var reprocessingTaxRate: Double?
@@ -776,6 +802,21 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   public var maximumRigSlots: Int?
   public var securityStatus: Double?
 
+  private enum CodingKeys: String, CodingKey {
+    case id, name, kind, manufacturingSystemID, solarSystemID
+    case solarSystemName, securityBand
+    case storedFacilityTaxRate = "facilityTaxRate"
+    case facilityTaxRateIsEntered
+    case reprocessingTaxRate, reprocessingCharacterID
+    case reprocessingImplantsByCharacterID, rigs, serviceModules
+    case activityAssignmentMode, manuallyEnabledActivities
+    case structureMaterialBonusPercent, structureTimeBonusPercent
+    case reprocessingEfficiencyBonusPercent, jobCostMultiplier, source
+    case structureID, eveStructureName, ownerCorporationID
+    case structureTypeID, structureGroupID, rigSize, maximumRigSlots
+    case securityStatus
+  }
+
   public init(
     id: UUID = UUID(),
     name: String = "",
@@ -786,7 +827,7 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     securityBand: SecurityBand? = nil,
     securityStatus: Double? = nil,
     regionID: Int64? = nil,
-    facilityTaxRate: Double = 0,
+    facilityTaxRate: Double? = nil,
     reprocessingTaxRate: Double? = nil,
     reprocessingCharacterID: Int64? = nil,
     reprocessingImplantsByCharacterID: [Int64: OreRefiningImplant]? = nil,
@@ -814,7 +855,9 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
         securityStatus: securityStatus,
         regionID: regionID
       )
-    self.facilityTaxRate = facilityTaxRate
+    let enteredFacilityTaxRate = Self.acceptedRate(facilityTaxRate)
+    self.storedFacilityTaxRate = enteredFacilityTaxRate ?? 0
+    self.facilityTaxRateIsEntered = enteredFacilityTaxRate != nil
     self.reprocessingTaxRate = Self.acceptedRate(reprocessingTaxRate)
     self.reprocessingCharacterID = reprocessingCharacterID
     self.reprocessingImplantsByCharacterID =
@@ -1111,10 +1154,45 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     {
       issues.append(.missingOreYield)
     }
-    if reprocessingTaxRate == nil {
+    if effectiveReprocessingTaxRate == nil {
       issues.append(.unconfirmedTax)
     }
     return issues
+  }
+
+  /// The owner-entered job facility tax, or `nil` when the structure uses
+  /// its standard. Setting `nil` returns to the standard.
+  public var enteredFacilityTaxRate: Double? {
+    get {
+      (facilityTaxRateIsEntered ?? (storedFacilityTaxRate != 0))
+        ? storedFacilityTaxRate : nil
+    }
+    set {
+      if let accepted = Self.acceptedRate(newValue) {
+        storedFacilityTaxRate = accepted
+        facilityTaxRateIsEntered = true
+      } else {
+        storedFacilityTaxRate = 0
+        facilityTaxRateIsEntered = false
+      }
+    }
+  }
+
+  /// Effective job facility tax for Manufacturing, Reactions and Science:
+  /// the entered tax, otherwise the standard of the structure kind.
+  public var facilityTaxRate: Double {
+    get {
+      enteredFacilityTaxRate
+        ?? kind.defaultFacilityTaxRate
+        ?? storedFacilityTaxRate
+    }
+    set { enteredFacilityTaxRate = newValue }
+  }
+
+  /// The entered Reprocessing tax, otherwise the standard of the structure
+  /// kind. `nil` remains an explicitly unknown tax.
+  public var effectiveReprocessingTaxRate: Double? {
+    reprocessingTaxRate ?? kind.defaultReprocessingTaxRate
   }
 
   private static func acceptedRate(_ value: Double?) -> Double? {

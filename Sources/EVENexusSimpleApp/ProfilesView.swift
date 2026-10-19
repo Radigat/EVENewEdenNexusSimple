@@ -2214,12 +2214,26 @@ private struct StructureEditor: View {
           }
           LabeledContent("Facility tax") {
             TextField(
-              "Facility tax",
-              value: $structure.facilityTaxRate,
+              structure.kind.defaultFacilityTaxRate.map {
+                AppLocalization.format(
+                  "Standard %@",
+                  $0.formatted(.percent)
+                )
+              } ?? AppLocalization.text("Facility tax"),
+              value: $structure.enteredFacilityTaxRate,
               format: .percent
             )
             .multilineTextAlignment(.trailing)
             .frame(width: DesignTokens.compactNumberWidth)
+          }
+          if structure.kind.defaultFacilityTaxRate != nil {
+            Text(
+              AppLocalization.text(
+                "Leave the facility tax empty to use the structure standard of 1% for Manufacturing, Reactions and Science."
+              )
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
           }
           if structure.hasReprocessingService {
             LabeledContent("Structure Reprocessing bonus") {
@@ -2234,7 +2248,12 @@ private struct StructureEditor: View {
             }
             LabeledContent("Reprocessing tax") {
               TextField(
-                "Unknown",
+                structure.kind.defaultReprocessingTaxRate.map {
+                  AppLocalization.format(
+                    "Standard %@",
+                    $0.formatted(.percent)
+                  )
+                } ?? AppLocalization.text("Unknown"),
                 value: $structure.reprocessingTaxRate,
                 format: .percent
               )
@@ -2242,7 +2261,11 @@ private struct StructureEditor: View {
               .frame(width: DesignTokens.compactNumberWidth)
             }
             Text(
-              "Enter the tax shown by EVE. Leave it empty when unknown; enter 0% only for a confirmed fee-free facility."
+              AppLocalization.text(
+                structure.kind.defaultReprocessingTaxRate == nil
+                  ? "Enter the tax shown by EVE. Leave it empty when unknown; enter 0% only for a confirmed fee-free facility."
+                  : "Enter the tax shown by EVE. Leave it empty to use the structure standard of 1%; enter 0% only for a confirmed fee-free facility."
+              )
             )
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)

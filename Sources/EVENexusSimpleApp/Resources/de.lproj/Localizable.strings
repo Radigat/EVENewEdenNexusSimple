@@ -2047,6 +2047,7 @@
 "Compressed ore comparison" = "Compressed-Ore-Vergleich";
 "Direct mineral route retained" = "Direkter Mineralweg beibehalten";
 "The comparison was not used for this calculation." = "Der Vergleich wurde für diese Berechnung nicht verwendet.";
+"Compressed ore was not compared because the comparison is disabled in Data & Settings → Industry. Minerals are shipped directly from the Main Hub." = "Komprimierte Erze wurden nicht verglichen, weil der Vergleich unter Daten & Einstellungen → Industrie ausgeschaltet ist. Mineralien werden direkt vom Main Hub geliefert.";
 "This plan was calculated on %@. Recalculate after changing logistics or Refining settings." = "Dieser Plan wurde am %1$@ berechnet. Berechne ihn nach Änderungen an Logistik- oder Refining-Einstellungen neu.";
 "Compressed ore refining" = "Refining komprimierter Erze";
 "%lld selected compressed ores" = "%1$lld gewählte komprimierte Erze";
@@ -2081,6 +2082,9 @@
 "unavailable" = "nicht verfügbar";
 "Reprocessing tax" = "Refining-Gebühr";
 "Enter the tax shown by EVE. Leave it empty when unknown; enter 0% only for a confirmed fee-free facility." = "Trage die in EVE angezeigte Gebühr ein. Lasse das Feld bei unbekannter Gebühr leer; 0 % darf nur für eine bestätigte gebührenfreie Anlage eingetragen werden.";
+"Standard %@" = "Standard %@";
+"Leave the facility tax empty to use the structure standard of 1% for Manufacturing, Reactions and Science." = "Anlagensteuer leer lassen, um den Strukturstandard von 1 % für Fertigung, Reaktionen und Forschung zu verwenden.";
+"Enter the tax shown by EVE. Leave it empty to use the structure standard of 1%; enter 0% only for a confirmed fee-free facility." = "Den in EVE angezeigten Steuersatz eintragen. Leer lassen, um den Strukturstandard von 1 % zu verwenden; 0 % nur für eine bestätigt gebührenfreie Anlage eintragen.";
 "Reprocessing character" = "Refining-Charakter";
 "Automatic best character per ore" = "Automatisch bester Charakter je Erz";
 "Select %@ for Reprocessing" = "%@ für Refining auswählen";

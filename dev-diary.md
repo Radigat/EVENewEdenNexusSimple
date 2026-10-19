@@ -5153,3 +5153,125 @@ Einträge vom 19.10.2026 mit dem Vermerk „Nicht committet“ sind damit commit
 
 Offen: nichts aus diesen Aufträgen. Warnungstexte bleiben englisch (bewusst nicht Teil des
 Auftrags).
+
+## 19.10.2026 – Komprimiertes Erz statt Mineralien im Planner überprüft
+
+Auftrag des Eigentümers: Prüfen, dass der Planner Mineralbedarf lieber als komprimiertes
+Erz am Main Hub kauft und zum Home Hub liefert, weil die Lieferung der Mineralien selbst
+zu teuer ist.
+
+Befund:
+- Die Prüfung existierte bereits (`optimizeCompressedOreRefining`). In der lokalen
+  Production Basis des Eigentümers ist sie jedoch **ausgeschaltet**. Der Planner gab dazu
+  keinen Hinweis. Zusätzlich hat die Tatara „B9E-H6 - GEZ T2 React Reproc“ keine
+  bestätigte Refining-Gebühr; ohne sie gilt die Anlage nicht als Refining-fähig.
+  Die lokalen Daten wurden nur aus einer Kopie gelesen und nicht verändert.
+- Zum Vergleich der letzte Ark-Plan: etwa 21,7 Mio. Mineralieneinheiten, also etwa
+  217.000 m³. Bei 900 ISK/m³ kostet die direkte Lieferung damit etwa 195 Mio. ISK.
+- Schwächen im Code: Ein Erz musste eine Mineralposition allein vollständig decken.
+  Reichte die Markttiefe nicht, fiel es ganz weg. Außerdem wurden Erz- und
+  vermiedener Mineraltransport je Vorschlag getrennt auf Millionen gerundet,
+  nicht im gemeinsamen Lieferpaket bewertet.
+
+Änderung:
+- Jeder Erzvorschlag wird über die Kurierkosten des gemeinsamen Lieferpakets
+  Main Hub → Home Hub bewertet: verbleibende Direktkäufe plus bereits gewählte Erze,
+  vorher und nachher. Grundlage sind dieselbe Vertragsaufteilung und Rundung.
+- Reicht die Markttiefe nicht aus, werden die tatsächlich verfügbaren ganzen Chargen
+  gekauft. Den Rest decken andere Erze oder der Direktkauf. Dazu gibt es den neuen
+  Hinweis `refining.ore-depth-limited`.
+- Ist der Vergleich ausgeschaltet und es existiert ein passendes komprimiertes Erz für
+  gelieferte Mineralien, zeigt der Planner `refining.comparison-disabled` im Bereich
+  **Compressed-Ore-Vergleich** (de/en lokalisiert). Der Grundtext dieses Bereichs wird
+  jetzt über die Lokalisierung ausgegeben.
+- Die abschließende Gesamtprüfung beider Wege und alle übrigen Rechenregeln
+  (Ausbeute, Chargenrundung, Gebühr, Überschuss ohne Wertgutschrift) bleiben
+  unverändert.
+
+Prüfung: Neue Core-Tests `compressedOreIsValuedInsideTheSharedInboundCourierCargo`,
+`compressedOreUsesAvailableDepthAndKeepsTheRestDirect` und
+`disabledCompressedOreComparisonIsReportedForShippedMinerals`. `swift test` bestanden
+(426 Core-Tests, 39 App-Tests), `EVEStaticDataKit` 8 Tests bestanden, `xcodebuild` Debug arm64 `TEST SUCCEEDED`,
+`plutil -lint` für beide `.strings` OK.
+
+Offen: Der Eigentümer muss den Vergleich in **Data & Settings → Industrie**
+einschalten und die Refining-Gebühr der Tatara bestätigen; danach neu berechnen.
+Nicht modelliert ist der Weitertransport der Mineralien von der Refining-Anlage
+(B9E-H6) zum Produktionsort (UALX-3). Nicht committet; keine Eigentümerabnahme.
+
+## 19.10.2026 – Standard-Refining-Gebühr 1 % für Tatara
+
+Auftrag des Eigentümers: Für die Tatara als Standard eine Refining-Gebühr von 1 % einrichten.
+
+Änderung:
+- `IndustryStructureKind.defaultReprocessingTaxRate` ist für `.tatara` 1 %, für alle anderen
+  Anlagen `nil`. `ConfiguredIndustryStructure.effectiveReprocessingTaxRate` verwendet die
+  eingetragene Gebühr, sonst diesen Standard. Readiness-Prüfung und Planner rechnen damit.
+- Die gespeicherte Gebühr bleibt unverändert, ein leeres Feld also `nil`. Ein eingetragener
+  Wert, auch 0 %, hat Vorrang. Es gibt keine Migration und keine Schemaänderung.
+- Das Einstellungsfeld zeigt bei einer Tatara den Platzhalter „Standard 1 %“ und einen
+  angepassten Hinweistext (de/en).
+- Folge für den Eigentümerstand: Die Tatara „B9E-H6 - GEZ T2 React Reproc“ (Gebührenfeld leer)
+  ist damit Refining-fähig. Der Compressed-Ore-Vergleich selbst muss weiterhin in
+  **Daten & Einstellungen → Industrie** eingeschaltet werden.
+
+Prüfung: Test `tataraUsesTheOnePercentStandardUntilATaxIsEntered`. Der Readiness-Test
+verwendet für den Fall „Gebühr unbekannt“ jetzt eine Athanor. `swift test` bestanden
+(427 Core-Tests, 39 App-Tests), `EVEStaticDataKit` 8 Tests bestanden, `xcodebuild` Debug
+arm64 `TEST SUCCEEDED`, `plutil -lint` für beide `.strings` OK.
+
+Offen: Sichtprüfung in der App durch den Eigentümer. Nicht committet.
+
+## 19.10.2026 – Standard-Refining-Gebühr 1 % für alle Spielerstrukturen
+
+Auftrag des Eigentümers: Bei allen Strukturservices soll standardmäßig 1 % Servicegebühr
+anfallen; eine Änderung bleibt in den Einstellungen möglich.
+
+Änderung: `IndustryStructureKind.defaultReprocessingTaxRate` ist jetzt für jeden Strukturtyp außer
+`.npcStation` 1 %, nicht mehr nur für die Tatara. Ein eingetragener Wert (auch 0 %) hat Vorrang;
+gespeicherte Werte bleiben unverändert, ein leeres Feld also `nil`. Das Einstellungsfeld zeigt
+„Standard 1 %“, der Hinweistext spricht vom Strukturstandard (de/en). Die Job-Facility-Tax für
+Fertigung, Reaktionen und Forschung (`facilityTaxRate`) ist von dieser Änderung nicht betroffen.
+
+Prüfung: `playerStructuresUseTheOnePercentStandardUntilATaxIsEntered` prüft alle Strukturtypen
+außer der NPC-Station sowie den Vorrang eingetragener Werte. Der Readiness-Test erwartet für eine
+Athanor ohne Service nur noch die fehlenden Angaben zu Service und Ausbeute. `swift test`
+bestanden (427 Core-Tests, 39 App-Tests), `EVEStaticDataKit` 8 Tests bestanden, `xcodebuild`
+Debug arm64 `TEST SUCCEEDED`, `plutil -lint` OK.
+
+Offen: Ob die Job-Facility-Tax ebenfalls einen Standard von 1 % erhalten soll, ist noch nicht
+entschieden. Sichtprüfung in der App durch den Eigentümer. Nicht committet.
+
+## 19.10.2026 – Standard-Facility-Tax 1 % für Fertigung, Reaktionen und Forschung
+
+Auftrag des Eigentümers: Die Job-Facility-Tax für Fertigung, Reaktionen und Forschung soll
+standardmäßig 1 % betragen, solange er nichts anderes einträgt.
+
+Änderung:
+- `IndustryStructureKind.defaultFacilityTaxRate`: 1 % für alle Strukturtypen außer
+  `.npcStation`.
+- `ConfiguredIndustryStructure.facilityTaxRate` ist jetzt der wirksame Wert: eingetragener
+  Wert, sonst Strukturstandard. Alle bestehenden Kostenrechnungen (Planner, Reaktionen,
+  Forschung, Main-Hub-Chancen) lesen ihn unverändert über diese Eigenschaft.
+  `enteredFacilityTaxRate` ist der optionale Eingabewert; `nil` bedeutet Standard.
+- Persistenz: Der Wert bleibt unter dem bisherigen Schlüssel `facilityTaxRate` gespeichert,
+  neu kommt `facilityTaxRateIsEntered` hinzu (explizite `CodingKeys`, keine Schemaänderung
+  der Store-Tabellen). Altdaten ohne dieses Feld: gespeicherte 0 % war der frühere
+  Vorgabewert und wird als nicht eingetragen gelesen (also 1 %), andere Werte als
+  eingetragen. Eine wirklich gebührenfreie Struktur muss einmal ausdrücklich 0 % erhalten.
+- Einstellungsfeld **Anlagensteuer**: Platzhalter „Standard 1 %“ und Hinweistext (de/en).
+- Die Fallback-Profile ohne konfigurierte Struktur (`ManufacturingProfile`, `ReactionProfile`)
+  bleiben unverändert.
+
+Folge für den Eigentümerstand: Alle gespeicherten Strukturen hatten 0 %; Planner, Reaktionen
+und Forschung rechnen nach dem nächsten Start mit 1 % Anlagensteuer. Installationskosten
+steigen entsprechend.
+
+Prüfung: Tests `playerStructuresUseTheOnePercentJobFacilityTaxUntilATaxIsEntered` und
+`legacyStructureZeroFacilityTaxBecomesTheStandard` (Altdaten 0 → Standard, 0,05 → eingetragen,
+bestätigte 0 % übersteht das Speichern). `recommendsBuildAndShowsSavingsForTheCompleteRequiredQuantity`
+setzt seine Struktur jetzt ausdrücklich auf 0 %, weil seine Erwartungswerte darauf beruhen.
+`swift test` bestanden (429 Core-Tests, 39 App-Tests), `EVEStaticDataKit` 8 Tests bestanden,
+`xcodebuild` Debug arm64 `TEST SUCCEEDED`, `plutil -lint` OK.
+
+Offen: Sichtprüfung in der App durch den Eigentümer. Nicht committet.
