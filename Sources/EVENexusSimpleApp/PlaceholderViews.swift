@@ -8754,14 +8754,15 @@ enum ConcreteBlueprintSourceMenu {
   private static func groupKey(
     _ candidate: ConcreteBlueprintSourceCandidate
   ) -> String {
-    [
-      candidate.source.isOriginal ? "original" : "copy",
-      candidate.isAtProductionLocation ? "exact" : "other",
-      candidate.locationName ?? "",
-      candidate.runs.map(String.init) ?? "unlimited",
-      candidate.materialEfficiency.map(String.init) ?? "?",
-      candidate.timeEfficiency.map(String.init) ?? "?",
-      candidate.priceText ?? "",
-    ].joined(separator: "|")
+    // Typed parts keep the expression cheap for the CI type checker.
+    let kind: String = candidate.source.isOriginal ? "original" : "copy"
+    let place: String = candidate.isAtProductionLocation ? "exact" : "other"
+    let location: String = candidate.locationName ?? ""
+    let runs: String = candidate.runs.map { String($0) } ?? "unlimited"
+    let me: String = candidate.materialEfficiency.map { String($0) } ?? "?"
+    let te: String = candidate.timeEfficiency.map { String($0) } ?? "?"
+    let price: String = candidate.priceText ?? ""
+    let parts: [String] = [kind, place, location, runs, me, te, price]
+    return parts.joined(separator: "|")
   }
 }

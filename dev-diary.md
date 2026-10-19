@@ -5275,3 +5275,15 @@ setzt seine Struktur jetzt ausdrücklich auf 0 %, weil seine Erwartungswerte dar
 `xcodebuild` Debug arm64 `TEST SUCCEEDED`, `plutil -lint` OK.
 
 Offen: Sichtprüfung in der App durch den Eigentümer. Nicht committet.
+
+## 19.10.2026 – CI-Fehler: Typprüfung in `ConcreteBlueprintSourceMenu.groupKey`
+
+Befund: Die GitHub-CI (macos-15, Swift 6.1.2) schlug für `6f2f533` und `d1b089d` fehl. Der Compiler
+konnte den Array-Ausdruck in `groupKey` (`PlaceholderViews.swift`, aus `dcc067e`) nicht in
+angemessener Zeit typprüfen. Lokal mit neuerem Xcode trat das nicht auf.
+
+Änderung: Der Ausdruck ist in einzelne, ausdrücklich als `String` typisierte Teile zerlegt.
+Schlüsselinhalt und Reihenfolge sind unverändert.
+
+Prüfung: lokaler Build mit `-warn-long-expression-type-checking=300` ohne Meldung, `swift test`
+bestanden. Ob die CI wieder grün ist, zeigt erst der nächste Push.
