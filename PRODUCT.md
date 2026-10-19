@@ -258,6 +258,10 @@ Verkaufsangeboten sind Kandidaten; Preisgleichstände folgen der Reihenfolge der
 konfigurierten Märkte. Fehlen Vergleichsmärkte, lautet die Angabe
 „Günstigster verfügbarer Markt“ mit sichtbarer Einschränkung. Ein Material ohne
 frisches Angebot bleibt ausdrücklich ohne Kaufort und Preis.
+In den beiden Fachansichten scrollt die ganze Seite senkrecht; die aufgeklappte
+Einkaufsliste schiebt die Vergleichstabelle nach unten, statt Kopfbereich,
+Berechnungsgrundlage oder Tabelle zu verdrängen. Die Vergleichstabelle scrollt
+bei vielen Märkten nur noch waagerecht.
 
 Der Mineralienticker übernimmt Mineral, Stückpreis und Kaufort direkt aus
 derselben Mineralien-Einkaufsanalyse. Regionale Tagesdurchschnittspreise und

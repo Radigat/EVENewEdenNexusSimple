@@ -5293,3 +5293,20 @@ Nachtrag: Der CI-Lauf für `68ac548` kam an der Typprüfung vorbei, scheiterte a
 `PlannerView.decisiveWarnings` aus einem Test ohne Main Actor nicht. Die reine Filterfunktion ist
 jetzt `nonisolated`. Lokal (Swift 6.4) ist `swift test` bestanden. Eine Swift-6.1-Toolchain steht
 lokal nicht zur Verfügung; den Nachweis liefert die CI.
+
+## 20.10.2026 – Kaufanalysen: „Alle anzeigen“ verdrängte die übrige Ansicht
+
+Befund: In Moon- und Mineralien-Kaufanalyse lag der Inhalt in einem festen,
+nicht scrollbaren `VStack` in Fensterhöhe. Klappte man die Liste „Empfohlene
+Kauforte“ auf (20 Mondmaterialien), wurde der Stapel höher als das Fenster: Die
+Vergleichstabelle schrumpfte auf null Höhe und der Kopfbereich rutschte oben aus
+dem Bild.
+
+Änderung: Die ganze Seite liegt in einer senkrechten `ScrollView`; die
+Vergleichstabelle scrollt nur noch waagerecht und zeigt alle Zeilen in voller
+Höhe. Lade- und Leerzustand erhalten eine Mindesthöhe statt `Spacer`. Rechenregeln,
+Sortierung und Bildexport sind unverändert.
+
+Prüfung: `xcodebuild … build` und `xcodebuild … test` (Debug, arm64) erfolgreich,
+`swift test` mit 429 Tests bestanden. Nicht geprüft: Sichtkontrolle in der laufenden App mit Live-Marktdaten,
+Eigentümerabnahme offen.

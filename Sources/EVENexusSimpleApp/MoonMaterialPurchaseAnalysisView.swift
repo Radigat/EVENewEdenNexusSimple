@@ -177,6 +177,18 @@ private struct MaterialPurchaseAnalysisView: View {
   }
 
   var body: some View {
+    // The page scrolls as a whole so an expanded recommendation list pushes
+    // the comparison table down instead of squeezing the other sections out.
+    ScrollView(.vertical) {
+      content
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .task(id: refreshContextID) {
+      await refresh()
+    }
+  }
+
+  private var content: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingLG) {
       header
       if let imageExportMessage {
@@ -205,24 +217,18 @@ private struct MaterialPurchaseAnalysisView: View {
         }
         analysisGrid(analysis)
       } else if isRefreshing {
-        Spacer()
         ProgressView(kind.loadingTitle)
-          .frame(maxWidth: .infinity)
-        Spacer()
+          .frame(maxWidth: .infinity, minHeight: 240)
       } else {
-        Spacer()
         ContentUnavailableView(
           kind.emptyTitle,
           systemImage: "chart.xyaxis.line",
           description: Text(kind.emptyDescription)
         )
-        Spacer()
+        .frame(maxWidth: .infinity, minHeight: 240)
       }
     }
     .padding(DesignTokens.spacingLG)
-    .task(id: refreshContextID) {
-      await refresh()
-    }
   }
 
   private var header: some View {
@@ -368,8 +374,8 @@ private struct MaterialPurchaseAnalysisView: View {
   private func analysisGrid(
     _ analysis: MaterialPurchaseAnalysisSnapshot
   ) -> some View {
-    ScrollView([.horizontal, .vertical]) {
-      LazyVStack(spacing: 1) {
+    ScrollView(.horizontal) {
+      VStack(spacing: 1) {
         gridHeader(analysis)
         ForEach(sortedMaterials(analysis)) { material in
           let ranks = MaterialPurchaseMarketPriceRankAnalyzer.ranks(
