@@ -1147,7 +1147,7 @@ struct PlannerView: View {
 
   /// Only warnings that change the result or require action: informational notes are hidden,
   /// identical messages from several planner stages appear once, blocking ones come first.
-  static func decisiveWarnings(_ warnings: [DomainWarning]) -> [DomainWarning] {
+  nonisolated static func decisiveWarnings(_ warnings: [DomainWarning]) -> [DomainWarning] {
     var seenMessages: Set<String> = []
     let decisive = warnings.filter {
       $0.severity != .information && seenMessages.insert($0.message).inserted

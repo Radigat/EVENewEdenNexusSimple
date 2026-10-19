@@ -5287,3 +5287,9 @@ Schlüsselinhalt und Reihenfolge sind unverändert.
 
 Prüfung: lokaler Build mit `-warn-long-expression-type-checking=300` ohne Meldung, `swift test`
 bestanden. Ob die CI wieder grün ist, zeigt erst der nächste Push.
+
+Nachtrag: Der CI-Lauf für `68ac548` kam an der Typprüfung vorbei, scheiterte aber am App-Test
+`EVEItemPresentationTests` (aus `dcc067e`). Swift 6.1.2 erlaubt den synchronen Aufruf von
+`PlannerView.decisiveWarnings` aus einem Test ohne Main Actor nicht. Die reine Filterfunktion ist
+jetzt `nonisolated`. Lokal (Swift 6.4) ist `swift test` bestanden. Eine Swift-6.1-Toolchain steht
+lokal nicht zur Verfügung; den Nachweis liefert die CI.
