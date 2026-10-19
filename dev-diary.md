@@ -5141,3 +5141,15 @@ Prüfung: App-Test `testConcreteBlueprintChoicesMergeIdenticalCopiesWithoutItemI
 `xcodebuild` Debug arm64 `TEST SUCCEEDED`, `plutil -lint` für beide `.strings` OK.
 
 Offen: Sichtprüfung in der laufenden App durch den Eigentümer. Nicht committet.
+
+## 19.10.2026 – Eigentümerabnahme für Commit `dcc067e`
+
+Der Eigentümer hat die Änderungen aus Commit `dcc067e` in der laufenden App geprüft und als in
+Ordnung abgenommen: Standardmineralien, Planner-Warnungen, Bauplanauswahl nach Ort/Runs/ME/TE,
+eigene Blueprints mit 0 ISK und Kosten pro Einheit inklusive Lieferung, Kauf-/Bauanalyse für
+nicht transportierbare Items sowie Freighter und Jump Freighter als Large Ships. Die vorherigen
+Einträge vom 19.10.2026 mit dem Vermerk „Nicht committet“ sind damit committet, gepusht
+(`origin/main`) und vom Eigentümer abgenommen.
+
+Offen: nichts aus diesen Aufträgen. Warnungstexte bleiben englisch (bewusst nicht Teil des
+Auftrags).
