@@ -22,44 +22,36 @@ ursprüngliche Patches bleiben unter `_archive/` bzw. diesem Dokumentverzeichnis
 
 ## Bedienung und Übernahmen
 
-**Fertigungsprojekte sind Datensätze in derselben App, keine weiteren Projektordner.**
-Projektwahl und -einstellungen sind direkt in den Planner eingebettet. Nach einer Berechnung liegen
-Reservierungen bei der Lagerverwendung sowie Einkaufsbudget und -fortschritt bei der Einkaufsliste.
-Warehouse, Blueprints und Produktionsübersicht öffnen nur ihre jeweils passenden Fachdialoge für
+**Fertigungsprojekte sind seit 19.10.2026 entfernt (Eigentümerentscheid).** Der Planner rechnet
+direkt aus der eingetragenen Produktion, dem ESI-Bestand nach Schutzmengen und der Planner-Handeingabe.
+Projektwahl, Projekteinstellungen, Reservierungen und Einkaufsbudget/-fortschritt gibt es nicht mehr.
+Begründung und Altdatenbehandlung: [DECISIONS.md](DECISIONS.md). Warehouse, Blueprints und Produktionsübersicht öffnen nur ihre jeweils passenden Fachdialoge für
 manuelle Lager, Wissenschaftsaufträge beziehungsweise Verkaufsbelege. Preisprofile sind direkt in
 den Markteinstellungen integriert; lokale Sicherung, Wiederherstellung und Diagnose liegen in den
 allgemeinen Einstellungen. Der frühere bereichsumschaltende Projektverwaltungsdialog ist entfernt.
 
-- Projekte: stabile UUID, getrennte Eingaben/Handbestände/Blueprint-Versorgung, Status, Duplizieren,
-  Archivieren/Wiederherstellen, Priorität, Lagerfreigaben, Ausschlüsse, Gesamtmengenlimits und Preisprofil.
-  Duplikate übernehmen weder Reservierungen noch alte Ergebnis-Snapshots, Einkaufsabweichungen oder Belege.
-  Aktive Reservierungen verhindern das Archivieren. Ohne aktives Fertigungsprojekt wird nicht gerechnet.
+- Projekte: entfernt. Gespeicherte Projekt-, Reservierungs- und Einkaufsdatensätze bleiben als
+  unveränderte, nicht mehr verwendete Altdaten im Arbeitsdatenverbund und in Sicherungen erhalten.
 - Manuelle Lager: dauerhafte Mengen nach veröffentlichter CCP-Typ-ID, Notizen, Umbenennen und reversibles
   Archivieren. Eine Eingabe ersetzt eine Menge. Namen sind normalisiert und auch über Archive eindeutig.
-  Manuelle Lager werden nur ausdrücklich zugeschaltet; bereits in ESI enthaltene Bestände dürfen nicht
-  nochmals als unabhängiges Lager eingetragen werden. Planner-Handeingaben behalten ihren bisherigen Vorrang.
+  Manuelle Lager fließen nicht in die Planberechnung ein; sie sind eine eigenständige Bestandsverwaltung.
 - CSV: UTF-8/UTF-16-BOM/Windows-1252/Latin-1, Komma/Semikolon/Tabulator, gequotete und mehrzeilige Felder;
   16 MiB, 100.000 Zeilen, 64 Spalten. Spaltennamen sind zuordenbar. Ersetzen/Überspringen ist global und
   je Typ wählbar. Fehler blockieren standardmäßig; ausdrücklich ausgelassene ungültige Zeilen werden
   protokolliert. Bei doppelten Typen werden beide Zeilen abgelehnt bzw. ausgelassen, niemals summiert.
   Vorschau, Übernahme und Bericht gehören zu einer Revision und einem Speichervorgang. Berichte enthalten
   Dateiname, Hash, Format und Zeilenergebnisse, keinen ursprünglichen Dateipfad.
-- Verfügbarkeit: bestehende Schutzmengenberechnung zuerst, bestätigte Reservierungen anderer Projekte danach.
-  Reservierungen sind nach Herkunft getrennt. Ein ohne ESI gerechneter Plan reserviert keine ESI-Mengen. Eine Mengenobergrenze gilt einmal über alle gewählten Quellen.
-  Verbrauch/Freigabe verändert den physischen Bestand nicht. Ablaufdaten sind Hinweise. Konflikte aus
-  Bestandsverlust, reduziertem Bedarf, Ausschlüssen oder entfernten Lagerfreigaben ergeben einen stabilen
-  Prioritätsvorschlag, der ausdrücklich bestätigt werden muss. Fehlende ESI-Daten sind kein leeres Lager.
-- Preise/Einkauf: exakte positive Centbeträge, Gültigkeit mit ausgeschlossenem Endzeitpunkt, CSV und
-  bestätigte Übernahme der gewichteten Preise eines gespeicherten Plans. Profile gelten ausdrücklich für
-  das Einkaufsbudget und werden in den bestehenden Markteinstellungen gepflegt; es werden keine fiktiven
-  Marktorders erzeugt. Offene Mengen, Zielabweichungen und
-  gekaufte Mengen sind getrennt. Einkaufsfortschritt erzeugt keinen Lagerzugang. CSV-/Textausgabe kann alle
-  aktiven Projekte nach Typ zusammenfassen. Logistik-/Installationsbeträge sind ausdrücklich beschriftete
-  Ersatzwerte, keine zusätzlichen Aufschläge. Das Budget ist keine alternative Gewinnrechnung.
+- Verfügbarkeit: bestehende Schutzmengenberechnung des ESI-Bestands plus Planner-Handeingabe. Es gibt
+  keine Projektreservierungen, Ausschlüsse oder Mengenobergrenzen mehr. Fehlende ESI-Daten sind kein leeres Lager.
+- Preise: exakte positive Centbeträge, Gültigkeit mit ausgeschlossenem Endzeitpunkt, CSV und bestätigte
+  Übernahme der gewichteten Preise des aktuell berechneten Plans. Profile werden in den Markteinstellungen
+  gepflegt, sind reine Referenzpreise und fließen in keine Berechnung ein; es werden keine fiktiven
+  Marktorders erzeugt. Einkaufsbudget und -fortschritt sind entfernt.
 - Wissenschaft: vorhandene SDE-Aktivitäten, Skillanforderungen, Decryptoren und Fachrechner werden verwendet.
   Geprüfte Anlage am Blueprint-Standort, frische Charakter-/Blueprintdaten und vollständige Kosten sind
   Voraussetzungen. Copying liefert konkrete Kopien/Runs; Forschung liefert künftig geplantes ME/TE;
-  Invention trennt Erwartung und Konfidenzplan. Input-BPC-Runs werden projektübergreifend berücksichtigt;
+  Invention trennt Erwartung und Konfidenzplan. Wissenschaftsaufträge sind global; Input-BPC-Runs aller
+  nicht archivierten Aufträge werden berücksichtigt, ebenso die Versorgung aller nicht archivierten Aufträge;
   geplante Kopien sind als Invention-Eingang wählbar. Aufträge und ihre Versorgung sind gespeichert und
   kontrolliert archivierbar; abhängige Invention verhindert vorzeitiges Archivieren der Kopie.
   Die Fertigung übernimmt die konkreten Effizienzen und Kosten. Wissenschaftszeiten werden konservativ
@@ -87,8 +79,9 @@ allgemeinen Einstellungen. Der frühere bereichsumschaltende Projektverwaltungsd
 SwiftData V3 ergänzt ausschließlich `StoredConsolidationWorkspace`. Die V1-/V2-Modelle bleiben unverändert.
 Der neue Datensatz enthält einen versionierten, atomar gespeicherten Verbund mit stabilen verknüpften
 Identitäten; die Revision schützt Vorschauen vor zwischenzeitlichen Änderungen. Bestehende Drafts,
-aktive und inaktive Pläne sowie Produktionszeilen werden nicht entfernt. Nur der bisherige Arbeitsentwurf
-und aktive Plan werden dem ersten Fertigungsprojekt zugeordnet. Inaktive Pläne bleiben Historie.
+aktive und inaktive Pläne sowie Produktionszeilen werden nicht entfernt. Seit 19.10.2026 bleiben Entwurf und
+aktiver Plan ausschließlich in `StoredPlannerDraft`/`StoredPlan`; ein neuer Verbund legt kein Projekt an.
+Inaktive Pläne bleiben Historie.
 Die Initialisierung ist wiederholbar ohne Doppelanlage. Originale gespeicherte Snapshot-Bytes bleiben erhalten.
 
 `ConsolidationWorkspace`/`ConsolidationPreview` im bestehenden Kern bilden die neuen Fachgrenzen;

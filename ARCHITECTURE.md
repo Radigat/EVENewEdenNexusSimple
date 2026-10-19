@@ -11,15 +11,15 @@
 ## Additive fachliche Integration
 
 SwiftData V3 ergänzt einen versionierten, revisionsgesicherten Arbeitsdatenverbund.
-V1 und V2 bleiben eingefroren. Projekt-, Lager-, Preis-, Reservierungs-, Einkaufs- und
-Belegdienste leben im bestehenden Kern; die App stellt Persistenz und Bedienung bereit.
+V1 und V2 bleiben eingefroren. Lager-, Preis-, Wissenschafts- und Belegdienste leben im
+bestehenden Kern; Projekt-, Reservierungs- und Einkaufsdatensätze sind seit 19.10.2026 nur noch
+dekodierbare Altdaten ohne Logik; die App stellt Persistenz und Bedienung bereit.
 Die Details zu Schnittstellen, Wissenschaftsversorgung und Sicherung stehen im
 [Funktionsvertrag](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md).
 
-Der gemeinsame Projektverwaltungsdialog ist entfernt. Seine Fachmodelle und
-Sicherheitsgrenzen bleiben unverändert: Projektwahl und -einstellungen sind Teil
-des Planners, Reservierungen Teil seiner Lagerverwendung und Einkaufsbudget sowie
--fortschritt Teil seiner Einkaufsliste. Die Preisprofil-Bedienung ist Teil der
+Fertigungsprojekte samt Projektwahl, Reservierungen und Einkaufsbudget/-fortschritt
+sind entfernt; der Planner hält Eingabe und Plan ausschließlich in
+`StoredPlannerDraft`/`StoredPlan`. Die Preisprofil-Bedienung ist Teil der
 bestehenden Markteinstellungen, die lokale Sicherung/Wiederherstellung und der
 anonymisierte Diagnoseexport sind Teil der allgemeinen Einstellungen. Das
 verbleibende `ConsolidationWorkbenchView` dient nur den fachlich zugeordneten

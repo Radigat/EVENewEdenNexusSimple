@@ -38,9 +38,7 @@ struct ConsolidationScienceView: View {
   var entry: BlueprintPortfolioEntry? { entries.first { $0.instance.id == instanceID } }
   var plannedCopies: [SavedScienceJob] {
     controller.workspace.science.filter { job in
-      guard job.projectID == controller.workspace.selectedProjectID, !job.archived else {
-        return false
-      }
+      guard !job.archived else { return false }
       if case .copying = job.job { return true }
       return false
     }
@@ -54,7 +52,6 @@ struct ConsolidationScienceView: View {
 
   var body: some View {
     Form {
-      ConsolidationProjectPicker()
       Picker("Blueprint-Instanz", selection: $instanceID) {
         Text("Auswählen").tag(Optional<Int64>.none)
         ForEach(entries) { e in
@@ -119,16 +116,14 @@ struct ConsolidationScienceView: View {
         Task { await prepare() }
       }.disabled(loading)
       ForEach(
-        controller.workspace.science.filter {
-          $0.projectID == controller.workspace.selectedProjectID && !$0.archived
-        }
+        controller.workspace.science.filter { !$0.archived }
       ) { job in
         VStack(alignment: .leading) {
           EVEEntityText(value: job.name)
           EVEEntityText(value: job.facilityName, font: .caption)
           Text(scienceDescription(job.job)).font(.caption).textSelection(.enabled)
           if job.supplyPlan != nil {
-            Text("Als konkrete Blueprint-Versorgung im Projekt gespeichert. Planner neu berechnen.")
+            Text("Als konkrete Blueprint-Versorgung gespeichert. Planner neu berechnen.")
               .font(.caption)
           }
           Button("Planungsauftrag archivieren") {
@@ -146,15 +141,10 @@ struct ConsolidationScienceView: View {
               {
                 throw ConsolidationError.invalid("Zuerst abhängige Invention-Aufträge archivieren.")
               }
-              guard let i = w.science.firstIndex(where: { $0.id == job.id }),
-                let p = w.projects.firstIndex(where: { $0.id == job.projectID })
-              else { throw ConsolidationError.stalePreview }
-              w.science[i].archived = true
-              if let data = w.projects[p].blueprintSupplyData {
-                let plans = try JSONDecoder().decode([BlueprintSupplyPlan].self, from: data).filter
-                { $0.id != job.supplyPlan?.id }
-                w.projects[p].blueprintSupplyData = try JSONEncoder().encode(plans)
+              guard let i = w.science.firstIndex(where: { $0.id == job.id }) else {
+                throw ConsolidationError.stalePreview
               }
+              w.science[i].archived = true
             }
           }
 
@@ -192,7 +182,7 @@ struct ConsolidationScienceView: View {
     loading = true
     defer { loading = false }
     do {
-      guard let entry, let project = controller.workspace.selectedProject,
+      guard let entry,
         let character = characters.first(where: { $0.characterID == characterID }),
         let payload = character.capabilitySnapshot,
         let capabilities = try? JSONDecoder().decode(
@@ -202,7 +192,7 @@ struct ConsolidationScienceView: View {
         let definition = activities.first(where: { $0.kind == activity })
       else {
         throw ConsolidationError.invalid(
-          "Frische Blueprint-/Skilldaten, Charakter, Projekt und eine verfügbare SDE-Aktivität auswählen."
+          "Frische Blueprint-/Skilldaten, Charakter und eine verfügbare SDE-Aktivität auswählen."
         )
       }
       for skill in definition.requiredSkills {
@@ -367,7 +357,7 @@ struct ConsolidationScienceView: View {
         sourceRevision == controller.stockRevision
       else { throw ConsolidationError.stalePreview }
       let saved = SavedScienceJob(
-        projectID: project.id, blueprintTypeID: instance.blueprintTypeID,
+        blueprintTypeID: instance.blueprintTypeID,
         name: names[instance.blueprintTypeID] ?? "Name nicht aufgelöst", job: job,
         facilityName: facility.structureName,
         solarSystemID: facility.solarSystemID,
@@ -378,19 +368,8 @@ struct ConsolidationScienceView: View {
           "Nur lokal planen; es wird kein Auftrag in EVE gestartet.",
         ], catalogBuild: build
       ) { w in
+        // The supply lives on the saved job; the planner reads all non-archived jobs.
         w.science.append(saved)
-        if let supply {
-          guard let i = w.projects.firstIndex(where: { $0.id == project.id }) else {
-            throw ConsolidationError.stalePreview
-          }
-          var plans =
-            try w.projects[i].blueprintSupplyData.map {
-              try JSONDecoder().decode([BlueprintSupplyPlan].self, from: $0)
-            } ?? []
-          plans.removeAll { $0.blueprintTypeID == supply.blueprintTypeID }
-          plans.append(supply)
-          w.projects[i].blueprintSupplyData = try JSONEncoder().encode(plans)
-        }
       }
     } catch { controller.error = error.localizedDescription }
   }

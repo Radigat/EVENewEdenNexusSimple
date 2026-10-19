@@ -259,7 +259,6 @@ struct PlannerView: View {
         if let historicalPlan {
           historicalPlanPanel(historicalPlan)
         } else if historicalPlannerRequest == nil {
-          ConsolidationPlannerProjectsView()
           Panel(title: "Produce") {
             if let launchRequest {
               plannerLaunchChoice(launchRequest)
@@ -427,9 +426,8 @@ struct PlannerView: View {
       .padding(DesignTokens.spacingLG)
     }
     .navigationTitle(AppLocalization.text("Planner"))
-    .onChange(of: consolidation.workspace.selectedProjectID) { restoreSelectedProject() }
-    .onChange(of: consolidation.workspace.selectedProject?.blueprintSupplyData) {
-      loadProjectScience()
+    .onChange(of: consolidation.workspace.science.map { "\($0.id):\($0.archived)" }) {
+      loadScienceSupply()
     }
 
     .onAppear {
@@ -1082,13 +1080,7 @@ struct PlannerView: View {
     }
     productionJobListPanel(plan)
     warehouseReplenishmentPanel(plan)
-    if !isHistorical {
-      ConsolidationPlannerReservationsView()
-    }
     shoppingListPanel(plan)
-    if !isHistorical {
-      ConsolidationPlannerPurchasingView()
-    }
     Panel(title: "Jobs") {
       LabeledContent("Jobs", value: "\(plan.jobs.count)")
       ExplainedPlannerMetricRow(
@@ -4705,7 +4697,6 @@ struct PlannerView: View {
     guard !hasRestoredState else { return }
     do { try consolidation.start(container: modelContext.container) } catch { persistenceError = error.localizedDescription; return }
     hasRestoredState = true
-    if !consolidation.workspace.projects.isEmpty { restoreSelectedProject(); return }
     let latestProductionRecord: StoredProductionRecord?
     do {
       latestProductionRecord =
@@ -4752,33 +4743,29 @@ struct PlannerView: View {
         )
       }
     }
+    loadScienceSupply()
   }
 
-  private func restoreSelectedProject() {
-    calculationTask?.cancel()
-    guard let project = consolidation.workspace.selectedProject else { input = ""; manualStockInput = ""; runtime.plan = nil; return }
-    input = project.input; manualStockInput = project.manualStockInput
-    runtime.plan = project.planSnapshot.flatMap { try? JSONDecoder().decode(IndustryPlanSnapshot.self, from: $0) }
-    blueprintTree = nil; blueprintActions = [:]; blueprintCostTexts = [:]; blueprintEfficiencies = [:]
-    preferredBlueprintSources = [:]; handedOffBlueprintSupplyPlans = [:]; handedOffBlueprintSnapshotIDs = []
-    blueprintSupplyDraftData = project.blueprintSupplyData ?? Data()
-    procurementPreferences = Dictionary(uniqueKeysWithValues: (runtime.plan?.materials ?? []).compactMap { material in material.procurement.map { (material.typeID, $0) } })
-    parseResult = ProductionInputParser.parse(input)
-    loadProjectScience()
-  }
-
-  private func loadProjectScience() {
-    guard let data = consolidation.workspace.selectedProject?.blueprintSupplyData,
-      let plans = try? JSONDecoder().decode([BlueprintSupplyPlan].self, from: data) else { return }
-    handedOffBlueprintSupplyPlans = Dictionary(uniqueKeysWithValues: plans.map { ($0.blueprintTypeID, $0) })
-    for plan in plans {
+  /// Science jobs are global: every non-archived job with a concrete blueprint supply feeds the
+  /// planner in addition to the planner's own supply draft.
+  private func loadScienceSupply() {
+    let science = consolidation.workspace.science
+    let archived = Set(science.filter(\.archived).compactMap(\.supplyPlan?.id))
+    let active = science.filter { !$0.archived }.compactMap(\.supplyPlan)
+    let before = handedOffBlueprintSupplyPlans.count
+    handedOffBlueprintSupplyPlans = handedOffBlueprintSupplyPlans.filter {
+      !archived.contains($0.value.id)
+    }
+    guard !active.isEmpty || handedOffBlueprintSupplyPlans.count != before else { return }
+    for plan in active {
+      handedOffBlueprintSupplyPlans[plan.blueprintTypeID] = plan
       if let job = plan.manufacturingJobs.first {
         blueprintEfficiencies[plan.productTypeID] = IndustryProductionEfficiency(materialEfficiency: job.allocation.materialEfficiency, timeEfficiency: job.allocation.timeEfficiency)
         blueprintActions[plan.blueprintTypeID] = plannerAction(for: job.allocation.source)
         preferredBlueprintSources[plan.blueprintTypeID] = plan.manufacturingJobs.map(\.allocation.source)
       }
     }
-    handedOffBlueprintSnapshotIDs = Array(Set(plans.flatMap(\.sourceSnapshotIDs)))
+    handedOffBlueprintSnapshotIDs = Array(Set(handedOffBlueprintSupplyPlans.values.flatMap(\.sourceSnapshotIDs))).sorted { $0.uuidString < $1.uuidString }
     blueprintSelectionNeedsRecalculation = true
   }
 
@@ -5553,7 +5540,6 @@ struct PlannerView: View {
     recommendationSuccessMessage: String? = nil
   ) {
     guard !isPlannerCalculationActive else { return }
-    guard consolidation.workspace.selectedProject?.status != .archived, consolidation.workspace.selectedProjectID != nil else { persistenceError = "Ein aktives Fertigungsprojekt auswählen."; return }
     let requestedCalculationID = UUID()
     calculationID = requestedCalculationID
     calculationPhase = .preparing
@@ -5575,17 +5561,9 @@ struct PlannerView: View {
         )
       }
       let requestedPreferences = preferences ?? procurementPreferences
-      let activePlanSnapshots: [Data] = consolidation.workspace.projects.filter {
-        $0.id != consolidation.workspace.selectedProjectID && $0.status != .archived
-      }.compactMap(\.planSnapshot)
       let authorizationPayloads = storedCharacters.map(\.authorizationSnapshot)
       let capabilityPayloads = storedCharacters.compactMap(\.capabilitySnapshot)
-      let projectID = consolidation.workspace.selectedProjectID
-      let protectedESI = runtime.warehouseStockEnabled ? assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities : [:]
       consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.sourceStates.allSatisfy { $0 == .fresh })
-      let projectStock: [Int64: Int64]?
-      do { projectStock = try projectID.map { try consolidation.workspace.availableStock(projectID: $0, esi: protectedESI) } }
-      catch { persistenceError = error.localizedDescription; return }
       let plannerInput = input
       let plannerManualStockInput = manualStockInput
       let plannerWarehouse = assetWarehouse
@@ -5605,19 +5583,11 @@ struct PlannerView: View {
         runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? []
       )
       persistDraft()
-      let projectRevision = consolidation.workspace.revision
+      let workspaceRevision = consolidation.workspace.revision
+      let previousPlan = runtime.plan
       let scienceReservations = consolidation.workspace.scienceRunReservations()
       let preparedInputs = await Task.detached(priority: .userInitiated) {
-        let decodedPlans = activePlanSnapshots.compactMap { snapshot in
-          try? JSONDecoder().decode(
-            IndustryPlanSnapshot.self,
-            from: snapshot
-          )
-        }
-        let reservations = decodedPlans.flatMap(\.stockAllocations)
-        let blueprintReservations = decodedPlans.flatMap {
-          $0.blueprintSupplyPlans?.flatMap(\.reservations) ?? []
-        }
+        let reservations: [StockAllocation] = []
         let authorizations = authorizationPayloads.compactMap {
           try? JSONDecoder().decode(
             AuthorizationSnapshot.self,
@@ -5632,7 +5602,7 @@ struct PlannerView: View {
         }
         return (
           reservations,
-          blueprintReservations + scienceReservations,
+          scienceReservations,
           authorizations,
           capabilities
         )
@@ -5666,8 +5636,7 @@ struct PlannerView: View {
           preferredBlueprintSources: preferredBlueprintSources,
           loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
           plannerInputOverride: plannerInput,
-          requiresCompleteBlueprintCostsInSelectedPlan: false,
-          availableStockOverride: projectStock
+          requiresCompleteBlueprintCostsInSelectedPlan: false
         )
       } catch is CancellationError {
         return
@@ -5714,8 +5683,7 @@ struct PlannerView: View {
             preferredBlueprintSources: preferredBlueprintSources,
             loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
             plannerInputOverride: plannerInput,
-            requiresCompleteBlueprintCostsInSelectedPlan: false,
-            availableStockOverride: projectStock
+            requiresCompleteBlueprintCostsInSelectedPlan: false
           )
         } catch is CancellationError {
           return
@@ -5752,7 +5720,6 @@ struct PlannerView: View {
       await runtime.calculate(
         input: plannerInput,
         manualStockInput: plannerManualStockInput,
-        availableStockOverride: projectStock,
         existingReservations: preparedInputs.0,
         assetWarehouse: plannerWarehouse,
         stockTargets: targets,
@@ -5769,10 +5736,9 @@ struct PlannerView: View {
         clientID: EVEConstants.ssoClientID
       )
       guard !Task.isCancelled else { return }
-      guard projectID == consolidation.workspace.selectedProjectID,
-        projectRevision == consolidation.workspace.revision else {
-        persistenceError = "Projekt oder Ausgangsdaten wurden während der Berechnung geändert. Bitte erneut berechnen."
-        runtime.plan = consolidation.workspace.selectedProject?.planSnapshot.flatMap { try? JSONDecoder().decode(IndustryPlanSnapshot.self, from: $0) }
+      guard workspaceRevision == consolidation.workspace.revision else {
+        persistenceError = "Wissenschaftsaufträge oder Ausgangsdaten wurden während der Berechnung geändert. Bitte erneut berechnen."
+        runtime.plan = previousPlan
         return
       }
       guard runtime.errorMessage == nil, let plan = runtime.plan else { return }
@@ -5800,7 +5766,6 @@ struct PlannerView: View {
       for (id, supply) in handedOffBlueprintSupplyPlans { byType[id] = supply }
       let plans = byType.values.sorted { $0.blueprintTypeID < $1.blueprintTypeID }
       blueprintSupplyDraftData = try JSONEncoder().encode(plans)
-      try consolidation.saveDraft(input: input, manualStockInput: manualStockInput, supply: blueprintSupplyDraftData)
     } catch {
       if reportErrors {
         persistenceError = error.localizedDescription
@@ -5821,9 +5786,6 @@ struct PlannerView: View {
         activePlans: activePlans,
         in: modelContext
       )
-      if let projectID = consolidation.workspace.selectedProjectID {
-        try consolidation.edit { try $0.synchronizePurchases(projectID: projectID, plan: plan) }
-      }
       persistenceError = nil
       return true
     } catch is CancellationError {

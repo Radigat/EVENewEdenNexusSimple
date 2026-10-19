@@ -47,34 +47,8 @@ final class ConsolidationController: ObservableObject {
       }
       return
     }
-    let draft = try context.fetch(FetchDescriptor<StoredPlannerDraft>()).first {
-      $0.key == "primary"
-    }
-    let active = try context.fetch(FetchDescriptor<StoredPlan>()).filter(\.isActive).max {
-      $0.priceTimestamp < $1.priceTimestamp
-    }
-    let latest = try PlannerPersistenceController.fetchLatestProductionRecord(in: context)
-    let restored = PlannerPersistenceController.restore(
-      draft: draft, activePlans: active.map { [$0] } ?? [], latestProductionRecord: latest)
-    var initial = ConsolidationWorkspace()
-    try initial.createProject(
-      name: active?.name.isEmpty == false ? active!.name : "Bestehende Produktionsplanung")
-    initial.projects[0].input = restored.input
-    initial.projects[0].manualStockInput = restored.manualStockInput
-    initial.projects[0].planSnapshot = active?.snapshot ?? latest?.snapshot
-    initial.projects[0].blueprintSupplyData = AppDefaults.store.data(
-      forKey: "planner.blueprint-supply-draft.v2")
-    if let plan = restored.plan {
-      try initial.synchronizePurchases(projectID: initial.projects[0].id, plan: plan)
-      for allocation in plan.stockAllocations
-      where allocation.quantity > 0 && allocation.source.kind != .manual {
-        initial.reservations.append(
-          ProjectStockReservation(
-            projectID: initial.projects[0].id,
-            typeID: allocation.typeID, source: "esi", quantity: allocation.quantity))
-      }
-    }
-    initial.projects[0].planSnapshot = active?.snapshot ?? latest?.snapshot
+    // Planner input and plans stay in StoredPlannerDraft/StoredPlan; no project is created.
+    let initial = ConsolidationWorkspace()
     let row = StoredConsolidationWorkspace(
       payload: try JSONEncoder().encode(initial), revision: initial.revision)
     context.insert(row)
@@ -90,7 +64,7 @@ final class ConsolidationController: ObservableObject {
 
   func refresh() throws {
     guard let context else {
-      throw ConsolidationError.unavailable("Die Projektdaten sind noch nicht geöffnet.")
+      throw ConsolidationError.unavailable("Die Arbeitsdaten sind noch nicht geöffnet.")
     }
     guard let row = try context.fetch(FetchDescriptor<StoredConsolidationWorkspace>()).first else {
       throw ConsolidationError.stalePreview
@@ -178,22 +152,6 @@ final class ConsolidationController: ObservableObject {
     } catch {
       context.rollback()
       throw error
-    }
-  }
-  func saveDraft(input: String, manualStockInput: String, supply: Data?) throws {
-    guard let id = workspace.selectedProjectID else { return }
-    guard let current = workspace.selectedProject,
-      current.input != input || current.manualStockInput != manualStockInput
-        || current.blueprintSupplyData != supply
-    else { return }
-    try edit { w in
-      guard let i = w.projects.firstIndex(where: { $0.id == id }) else {
-        throw ConsolidationError.stalePreview
-      }
-      w.projects[i].input = input
-      w.projects[i].manualStockInput = manualStockInput
-      w.projects[i].blueprintSupplyData = supply
-      w.projects[i].updatedAt = .now
     }
   }
   func registerProduction(_ row: StoredProductionOverviewRow, plan: IndustryPlanSnapshot) throws {

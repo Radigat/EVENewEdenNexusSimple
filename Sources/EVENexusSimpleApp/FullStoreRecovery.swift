@@ -114,9 +114,6 @@ enum FullStoreRecovery {
       let workspace = try decoder.decode(ConsolidationWorkspace.self, from: stored.payload)
       try workspace.validate()
       guard workspace.revision == stored.revision else { throw ConsolidationError.stalePreview }
-      for project in workspace.projects {
-        if let data = project.planSnapshot { _ = try decoder.decode(IndustryPlanSnapshot.self, from: data) }
-      }
     }
     try context.save()
     return result

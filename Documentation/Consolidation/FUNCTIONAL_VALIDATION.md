@@ -6,6 +6,10 @@ Branch: `consolidation/2026-09-25-single-source`; Ausgangs-HEAD `182f1a936950632
 Dieser Nachweis gehört zum anschließenden lokalen fachlichen Checkpoint. Dessen endgültige ID steht
 im Git-Protokoll und im Abschlussbericht; es wird kein Push und keine Historienumschreibung durchgeführt.
 
+> Hinweis 19.10.2026: Fertigungsprojekte, Reservierungen und Einkaufsbudget/-fortschritt wurden auf
+> Eigentümerentscheid entfernt. Die zugehörigen Nachweise unten sind Historie dieses Checkpoints, kein
+> aktueller Funktionsumfang ([DECISIONS.md](DECISIONS.md)).
+
 ## Prüfergebnis des aktiven Stands
 
 | Prüfung | Ergebnis |

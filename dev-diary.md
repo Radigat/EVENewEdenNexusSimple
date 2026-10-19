@@ -4973,3 +4973,36 @@ Tags nur auf ausdrücklichen Auftrag, weiterhin kein Force-Push und kein
 Umschreiben der Historie. Keine Codeänderung, daher kein Testlauf.
 Diese Steuerdatei-Änderungen auf Auftrag auf `main` committet und nach
 `origin` gepusht.
+
+## 19.10.2026 – Fertigungsprojekte aus dem Planner entfernt
+
+Auftrag des Eigentümers: Den Bereich „Produktionsprojekt“ aus Code, Berechnung und Workflow
+entfernen; nur das Produkt eintragen und rechnen lassen. Entscheidungen: Reservierungen und
+Einkaufsbudget/-fortschritt ganz entfernen, Wissenschaftsaufträge global, manuelle Lager nicht
+einrechnen. Details: `Documentation/Consolidation/DECISIONS.md`.
+
+Umsetzung:
+- **Planner:** Ohne Projektpanel sowie ohne Reservierungs- und Einkaufspanel. Die Sperre „Ein aktives
+  Fertigungsprojekt auswählen“ ist entfernt. Eingabe und Plan kommen ausschließlich aus
+  `StoredPlannerDraft`/`StoredPlan`. Kein projektbezogener Bestandsersatz und keine Reservierungen aus
+  Plänen anderer Projekte mehr. Die Wissenschaftsversorgung kommt aus allen nicht archivierten Aufträgen.
+- **Core:** Projekt-, Reservierungs-, Konflikt-, Einkaufs- und Budgetlogik entfernt. Die Datenfelder
+  bleiben als Altdaten erhalten. `SavedScienceJob.projectID` ist optional. `validate()` prüft keine
+  Projektbezüge mehr.
+- **Wissenschaftsansicht** ohne Projektauswahl. Preisprofile sind Referenzpreise; der Marktimport
+  liest den aktuellen Plan. Diagnoseexport weist Altdaten getrennt aus. Der Erststart legt kein Projekt an.
+- **Tests:** Projekt-, Reservierungs- und Budgettests entfernt. Neu sind Altdaten-Roundtrip, globale
+  Wissenschaftsreservierungen, Lager-Vorschau, Revisions- und Bestandsinvalidierung ohne Projekte sowie
+  Migration ohne Projektanlage.
+
+Prüfung: SwiftPM 422 Core- und 39 App-Swift-Testing- sowie 19 XCTest-Fälle bestanden, ein
+Real-SDE-Skip. Kit 8 Fälle bestanden. `xcodebuild` Debug arm64 `TEST SUCCEEDED`. `git diff --check`
+fehlerfrei. Hinweis: SwiftPM-Builds scheiterten zunächst am Codesign wegen erweiterter Attribute im
+`.build`-Ordner; nach `xattr -cr` auf die Build-Produkte erfolgreich.
+
+Live geprüft: Der Eigentümer hat im Debug-Build aus Xcode eine Ishtar-Berechnung ohne Projekt
+bestätigt; BPO/BPC-Quellen und Reaktionsgruppen funktionieren. Auf Auftrag lokal committet.
+
+Offen: Neustart-Wiederherstellung und Wissenschaftsauftrag mit Versorgung nicht gesondert live
+geprüft. Weitere Hinweise aus der Live-Prüfung (Finanzübersicht, Sofortverkauf, Compressed-Erze,
+belegte BPOs) sind eigene Aufträge.

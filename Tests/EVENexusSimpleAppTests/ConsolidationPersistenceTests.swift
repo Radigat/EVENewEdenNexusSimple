@@ -152,16 +152,18 @@ struct ConsolidationPersistenceTests {
     #expect(rows[0].salePricePerUnit == 5.25)
     let first = ConsolidationController()
     try first.start(container: container)
-    #expect(first.workspace.projects.count == 1)
-    #expect(first.workspace.projects[0].input == "unsaved draft")
-    #expect(first.workspace.projects[0].manualStockInput == "Tritanium | 19")
-    #expect(first.workspace.projects[0].planSnapshot == bytes)
+    // No production project is created; the planner draft and plans stay where they are.
+    #expect(first.workspace.projects.isEmpty)
+    #expect(first.workspace.reservations.isEmpty && first.workspace.purchases.isEmpty)
     #expect(first.workspace.evidence.isEmpty)
     #expect(first.workspace.sales.isEmpty)
+    let draft = try #require(try c.fetch(FetchDescriptor<StoredPlannerDraft>()).first)
+    #expect(draft.input == "unsaved draft")
+    #expect(draft.manualStockInput == "Tritanium | 19")
     let second = ConsolidationController()
     try second.start(container: container)
-    #expect(second.workspace.projects.count == 1)
-    #expect(second.workspace.projects[0].id == first.workspace.projects[0].id)
+    #expect(second.workspace.projects.isEmpty)
+    #expect(try c.fetch(FetchDescriptor<StoredConsolidationWorkspace>()).count == 1)
     let backups = paths.dataRoot.appendingPathComponent("migration-backups/swiftdata")
     #expect(
       FileManager.default.fileExists(
@@ -191,8 +193,8 @@ struct ConsolidationPersistenceTests {
     let recovered = try AppPersistence.open(paths: paths)
     let controller = ConsolidationController()
     try controller.start(container: recovered)
-    #expect(controller.workspace.projects.count == 1)
-    #expect(controller.workspace.projects[0].planSnapshot == bytes)
+    #expect(controller.workspace.projects.isEmpty)
+    #expect(try ModelContext(recovered).fetch(FetchDescriptor<StoredPlan>()).contains { $0.snapshot == bytes })
     let rows = try ModelContext(recovered).fetch(FetchDescriptor<StoredProductionOverviewRow>())
     #expect(rows.count == 1 && rows[0].id == rowID && rows[0].sequenceNumber == 123)
     #expect(rows[0].sourceSnapshot == bytes && rows[0].materialCost == 12.3456789)
@@ -211,40 +213,31 @@ struct ConsolidationPersistenceTests {
     #expect(throws: (any Error).self) { try controller.start(container: container) }
   }
 
-  @Test func switchingProjectsPreservesIndependentDraftsAndRequiresFreshConfirmation() throws {
+  @Test func intermediateWorkspaceEditRequiresFreshConfirmation() throws {
     let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
     let container = try ModelContainer(
       for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
     let controller = ConsolidationController()
     try controller.start(container: container)
-    let a = try #require(controller.workspace.selectedProjectID)
-    try controller.saveDraft(input: "Alpha", manualStockInput: "Stock A", supply: nil)
-    try controller.edit { try $0.createProject(name: "Beta") }
-    try controller.saveDraft(input: "Beta", manualStockInput: "Stock B", supply: nil)
-    try controller.edit { $0.selectedProjectID = a }
-    #expect(controller.workspace.selectedProject?.input == "Alpha")
-    #expect(controller.workspace.selectedProject?.manualStockInput == "Stock A")
+    #expect(controller.workspace.projects.isEmpty)
     controller.propose(["Create warehouse"]) { try $0.createWarehouse(name: "A") }
-    try controller.saveDraft(input: "Changed", manualStockInput: "Stock A", supply: nil)
+    try controller.edit { $0.warningThresholds[34] = 1 }
     controller.confirm(catalogBuild: nil)
     #expect(controller.workspace.warehouses.isEmpty)
     #expect(controller.error != nil)
   }
 
-  @Test func changingStockInvalidatesReservationPreview() throws {
+  @Test func changingStockInvalidatesPreview() throws {
     let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
     let container = try ModelContainer(
       for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
     let controller = ConsolidationController()
     try controller.start(container: container)
-    let id = try #require(controller.workspace.selectedProjectID)
     controller.updateESIStock([34: 10])
-    controller.propose(["Reserve"]) {
-      try $0.reserve(projectID: id, quantities: [34: 5], esi: [34: 10], expires: nil)
-    }
+    controller.propose(["Create warehouse"]) { try $0.createWarehouse(name: "A") }
     controller.updateESIStock([34: 2])
     controller.confirm(catalogBuild: nil)
-    #expect(controller.workspace.reservations.isEmpty)
+    #expect(controller.workspace.warehouses.isEmpty)
     #expect(controller.error != nil)
   }
 

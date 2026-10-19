@@ -8,19 +8,23 @@ Aktueller Konsolidierungsstand: 25. September 2026
 
 ## Zusammengeführte vorhandene Fachabläufe
 
-Der Planner enthält Projektwahl und Projekteinstellungen direkt. Reservierungen liegen bei der
-Lagerverwendung des berechneten Plans; Einkaufsbudget und -fortschritt folgen unmittelbar auf die
-Einkaufsliste. Warehouse öffnet **Manuelle Lager**, Blueprints **Wissenschaftsaufträge** und die
+Der Planner rechnet direkt: Produkt und Menge eintragen, berechnen. Grundlage sind der ESI-Bestand nach
+der bestehenden Schutzmengenberechnung und die Planner-Handeingabe. Eingabe, Handbestand und aktiver Plan
+werden im Planner-Entwurf gespeichert und beim Start wiederhergestellt. Fertigungsprojekte, Projektreservierungen
+sowie Einkaufsbudget und -fortschritt gibt es nicht. Manuelle Lager fließen nicht in die Planberechnung ein.
+Warehouse öffnet **Manuelle Lager**, Blueprints **Wissenschaftsaufträge** und die
 Produktionsübersicht **Verkaufsbelege**. Die früheren gemeinsamen Einstiege **Projekte & Einkauf**
 und **Preisprofile & Sicherung** samt Projektverwaltungsdialog sind entfernt: Preisprofile sind
 direkt in **Daten & Einstellungen → Markteinstellungen**, Sicherung, Wiederherstellung und Diagnose
 in **Daten & Einstellungen → Allgemein** integriert. Alle Arbeitsbereiche verwenden denselben lokalen
-Datenbestand. Fertigungsprojekte sind getrennte Planungsdatensätze innerhalb der einen aktiven App.
+Datenbestand. Früher gespeicherte Projekt-, Reservierungs- und Einkaufsdatensätze bleiben als nicht
+mehr verwendete Altdaten unverändert erhalten ([Entscheidung](Documentation/Consolidation/DECISIONS.md)).
 
-Projektstatus, eigene Entwürfe, Lagerfreigaben, Prioritäten, persistente Reservierungen,
-kontrollierte CSV-Importe, Preisprofile, Einkaufsfortschritt und Exporte sind verbunden.
-Copying, ME-/TE-Forschung und Invention erzeugen konkrete gespeicherte Versorgung und
-übernehmen deren Effizienzen, Kosten und vorgeschaltete Zeiten in die aktuelle Fertigung.
+Manuelle Lager und Preisprofile besitzen kontrollierte CSV-Importe; Preisprofile sind Referenzpreise
+ohne Einfluss auf Berechnungen und können die gewichteten Preise des aktuellen Plans übernehmen.
+Copying, ME-/TE-Forschung und Invention sind global gespeicherte Wissenschaftsaufträge; jeder nicht
+archivierte Auftrag liefert konkrete Versorgung und übernimmt deren Effizienzen, Kosten und
+vorgeschaltete Zeiten in die aktuelle Fertigung.
 Verkaufsbelege besitzen eine kontrollierte Teilzuordnung und ersetzen bei ausdrücklichem
 Wechsel die manuelle Verkaufsschätzung. Kostenstände und ursprüngliche Werte bleiben erhalten.
 Lokale Sicherungen werden geprüft und bei Wiederherstellung erst beim nächsten Start aktiviert.

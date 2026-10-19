@@ -15,6 +15,8 @@ public enum ConsolidationError: Error, LocalizedError, Equatable {
   }
 }
 
+/// Legacy production-project records. Projects were removed from the planner on 2026-10-19;
+/// these types only keep previously stored workspace payloads decodable and unchanged.
 public enum ProductionProjectStatus: String, Codable, CaseIterable, Sendable {
   case planning, procurement, ready, inProduction, completed, archived
 }
@@ -196,7 +198,8 @@ public struct ConsolidationImportReport: Codable, Identifiable, Sendable {
 public struct SavedScienceJob: Codable, Identifiable, Sendable {
   public var id = UUID()
   public var archived = false
-  public var projectID: UUID
+  /// Legacy project assignment; science jobs are global since 2026-10-19 and new jobs store nil.
+  public var projectID: UUID?
   public var blueprintTypeID: Int64
   public var name: String
   public var job: BlueprintScienceJob
@@ -206,7 +209,7 @@ public struct SavedScienceJob: Codable, Identifiable, Sendable {
   public var createdAt = Date()
   public var supplyPlan: BlueprintSupplyPlan?
   public init(
-    projectID: UUID, blueprintTypeID: Int64, name: String, job: BlueprintScienceJob,
+    projectID: UUID? = nil, blueprintTypeID: Int64, name: String, job: BlueprintScienceJob,
     facilityName: String, solarSystemID: Int64, sourceIDs: [UUID], supplyPlan: BlueprintSupplyPlan?
   ) {
     self.projectID = projectID
@@ -223,11 +226,16 @@ public struct SavedScienceJob: Codable, Identifiable, Sendable {
 public struct ConsolidationWorkspace: Codable, Sendable {
   public var formatVersion = 1
   public var revision: Int64 = 0
+  /// Legacy, read-only: production projects were removed on 2026-10-19. Stored values are
+  /// decoded and re-encoded unchanged so existing data and backups stay complete.
   public var selectedProjectID: UUID?
+  /// Legacy, read-only (see `selectedProjectID`).
   public var projects: [ConsolidatedProject] = []
   public var warehouses: [ManualWarehouse] = []
+  /// Legacy, read-only (see `selectedProjectID`).
   public var reservations: [ProjectStockReservation] = []
   public var priceProfiles: [ManualPriceProfile] = []
+  /// Legacy, read-only (see `selectedProjectID`).
   public var purchases: [ProjectPurchase] = []
   public var evidence: [ProductionSaleEvidence] = []
   public var sales: [ProductionSaleAllocation] = []
@@ -236,7 +244,6 @@ public struct ConsolidationWorkspace: Codable, Sendable {
   public var imports: [ConsolidationImportReport] = []
   public var warningThresholds: [Int64: Int64] = [:]
   public init() {}
-  public var selectedProject: ConsolidatedProject? { projects.first { $0.id == selectedProjectID } }
 
   public static func normalized(_ name: String) -> String {
     name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -248,42 +255,6 @@ public struct ConsolidationWorkspace: Codable, Sendable {
     let normalized = Self.normalized(name)
     guard !normalized.isEmpty, !names.contains(where: { Self.normalized($0) == normalized }) else {
       throw ConsolidationError.invalid("Der Name ist leer oder bereits vergeben, auch im Archiv.")
-    }
-  }
-  public mutating func createProject(name: String, duplicate id: UUID? = nil) throws {
-    try uniqueName(name, among: projects.map(\.name))
-    var project =
-      id.flatMap { id in projects.first { $0.id == id } } ?? ConsolidatedProject(name: name)
-    project.id = UUID()
-    project.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    project.status = .planning
-    project.previousStatus = .planning
-    project.updatedAt = .now
-    project.planSnapshot = nil
-    project.blueprintSupplyData = nil
-    // Duplicates never inherit a reservation, shopping override, science job or receipt.
-    project.logisticsOverrideCents = nil
-    project.productionOverrideCents = nil
-    projects.append(project)
-    selectedProjectID = project.id
-  }
-  public mutating func updateProject(_ project: ConsolidatedProject) throws {
-    guard let index = projects.firstIndex(where: { $0.id == project.id }) else {
-      throw ConsolidationError.stalePreview
-    }
-    try uniqueName(project.name, among: projects.filter { $0.id != project.id }.map(\.name))
-    guard (1...3).contains(project.priority), project.quantityCaps.values.allSatisfy({ $0 >= 0 }),
-      project.logisticsOverrideCents.map({ $0 >= 0 }) ?? true,
-      project.productionOverrideCents.map({ $0 >= 0 }) ?? true
-    else { throw ConsolidationError.invalid("Ungültige Projektwerte.") }
-    if project.status == .archived,
-      reservations.contains(where: { $0.projectID == project.id && $0.remaining > 0 })
-    {
-      throw ConsolidationError.invalid("Vor dem Archivieren alle aktiven Reservierungen freigeben.")
-    }
-    projects[index] = project
-    if project.status == .archived && selectedProjectID == project.id {
-      selectedProjectID = projects.first { $0.status != .archived }?.id
     }
   }
   public mutating func createWarehouse(name: String) throws {
@@ -298,11 +269,6 @@ public struct ConsolidationWorkspace: Codable, Sendable {
     guard warehouse.stock.allSatisfy({ $0.key > 0 && $0.value > 0 }) else {
       throw ConsolidationError.invalid("Bestände benötigen positive Typ-IDs und Mengen.")
     }
-    if warehouse.archived,
-      reservations.contains(where: { $0.source == warehouse.id.uuidString && $0.remaining > 0 })
-    {
-      throw ConsolidationError.invalid("Das Lager besitzt aktive Reservierungen.")
-    }
     warehouses[index] = warehouse
   }
   public mutating func createPriceProfile(name: String, from: Date, until: Date?) throws {
@@ -315,160 +281,6 @@ public struct ConsolidationWorkspace: Codable, Sendable {
     priceProfiles.append(p)
   }
 
-  /// Base stock is the existing ESI availability AFTER its established protection calculation.
-  public func stockSources(projectID: UUID, esi: [Int64: Int64]) throws -> [String: [Int64: Int64]]
-  {
-    guard let project = projects.first(where: { $0.id == projectID }) else {
-      throw ConsolidationError.stalePreview
-    }
-    var sources = ["esi": esi]
-    for w in warehouses where !w.archived && project.warehouseIDs.contains(w.id) {
-      sources[w.id.uuidString] = w.stock
-    }
-    for key in sources.keys.sorted() {
-      for reservation in reservations
-      where reservation.projectID != projectID && reservation.source == key {
-        let before = sources[key]?[reservation.typeID] ?? 0
-        sources[key]?[reservation.typeID] = max(0, before - reservation.remaining)
-      }
-      for type in project.excludedTypes { sources[key]?[type] = 0 }
-    }
-    // A cap applies to the total available quantity, not once per warehouse.
-    for (type, cap) in project.quantityCaps {
-      var left = cap
-      for key in sources.keys.sorted() {
-        let accepted = min(left, max(0, sources[key]?[type] ?? 0))
-        sources[key]?[type] = accepted
-        left -= accepted
-      }
-    }
-    return sources
-  }
-  public func availableStock(projectID: UUID, esi: [Int64: Int64]) throws -> [Int64: Int64] {
-    var result: [Int64: Int64] = [:]
-    for stock in try stockSources(projectID: projectID, esi: esi).values {
-      for (type, quantity) in stock {
-        result[type] = try Self.add(result[type, default: 0], quantity)
-      }
-    }
-    return result
-  }
-  public mutating func reserve(
-    projectID: UUID, quantities: [Int64: Int64], esi: [Int64: Int64], expires: Date?
-  ) throws {
-    guard projects.contains(where: { $0.id == projectID && $0.status != .archived }),
-      quantities.allSatisfy({ $0.key > 0 && $0.value >= 0 })
-    else { throw ConsolidationError.invalid("Ungültige Reservierung.") }
-    let sources = try stockSources(projectID: projectID, esi: esi)
-    var replacements: [ProjectStockReservation] = []
-    for (type, quantity) in quantities.sorted(by: { $0.key < $1.key }) {
-      var remaining = quantity
-      for source in sources.keys.sorted() {
-        let amount = min(remaining, max(0, sources[source]?[type] ?? 0))
-        if amount > 0 {
-          replacements.append(
-            ProjectStockReservation(
-              projectID: projectID, typeID: type, source: source, quantity: amount,
-              expiresAt: expires))
-          remaining -= amount
-        }
-      }
-      guard remaining == 0 else {
-        throw ConsolidationError.invalid("Nicht genügend unreservierter Bestand für Typ \(type).")
-      }
-    }
-    for index in reservations.indices where reservations[index].projectID == projectID {
-      reservations[index].released += reservations[index].remaining
-    }
-    reservations.append(contentsOf: replacements)
-  }
-  public mutating func changeReservation(id: UUID, quantity: Int64, consume: Bool) throws {
-    guard let i = reservations.firstIndex(where: { $0.id == id }), quantity > 0,
-      quantity <= reservations[i].remaining
-    else {
-      throw ConsolidationError.invalid("Die Menge überschreitet die aktive Reservierung.")
-    }
-    if consume {
-      reservations[i].consumed += quantity
-    } else {
-      reservations[i].released += quantity
-    }
-  }
-  /// Deterministic proposal only. Callers must preview and explicitly confirm the resulting reductions.
-  public mutating func resolveStockConflicts(esi: [Int64: Int64]) throws -> [String] {
-    var remaining = ["esi": esi]
-    for w in warehouses where !w.archived { remaining[w.id.uuidString] = w.stock }
-    let ordered = reservations.indices.sorted {
-      return reservations[$0].id.uuidString < reservations[$1].id.uuidString
-    }
-    let ranked = ordered.sorted { a, b in
-      let left = projects.first { $0.id == reservations[a].projectID }?.priority ?? 3
-      let right = projects.first { $0.id == reservations[b].projectID }?.priority ?? 3
-      return left == right
-        ? reservations[a].id.uuidString < reservations[b].id.uuidString : left < right
-    }
-    var report: [String] = []
-    var remainingDemand: [String: Int64] = [:]
-    for i in ranked where reservations[i].remaining > 0 {
-      let r = reservations[i]
-      let available = max(0, remaining[r.source]?[r.typeID] ?? 0)
-      let project = projects.first { $0.id == r.projectID }
-      let demandKey = "\(r.projectID):\(r.typeID)"
-      if remainingDemand[demandKey] == nil {
-        var demand = Int64.max
-        if let data = project?.planSnapshot,
-          let plan = try? JSONDecoder().decode(IndustryPlanSnapshot.self, from: data)
-        {
-          demand = try plan.stockAllocations.filter { $0.typeID == r.typeID }.reduce(Int64(0)) {
-            try Self.add($0, $1.quantity)
-          }
-        }
-        if let cap = project?.quantityCaps[r.typeID] { demand = min(demand, cap) }
-        remainingDemand[demandKey] = demand
-      }
-      let eligible =
-        project?.status != .archived && project?.excludedTypes.contains(r.typeID) != true
-        && (r.source == "esi"
-          || project?.warehouseIDs.contains(UUID(uuidString: r.source) ?? UUID()) == true)
-      let kept = eligible ? min(available, r.remaining, remainingDemand[demandKey] ?? 0) : 0
-      remainingDemand[demandKey] = max(0, (remainingDemand[demandKey] ?? 0) - kept)
-      if kept < r.remaining {
-        reservations[i].released += r.remaining - kept
-        report.append("\(r.typeID): \(r.remaining - kept) freigeben (\(r.projectID)).")
-      }
-      remaining[r.source, default: [:]][r.typeID] = available - kept
-    }
-    return report
-  }
-  public mutating func updatePurchase(
-    projectID: UUID, typeID: Int64, override: Int64?, purchased: Int64
-  ) throws {
-    guard let i = purchases.firstIndex(where: { $0.projectID == projectID && $0.typeID == typeID }),
-      purchased >= 0, override.map({ $0 >= 0 }) ?? true
-    else { throw ConsolidationError.invalid("Ungültige Einkaufsmenge.") }
-    purchases[i].override = override
-    purchases[i].purchased = purchased
-  }
-  public func purchasingCSV(projectID: UUID? = nil) throws -> String {
-    let active = Set(projects.filter { $0.status != .archived }.map(\.id))
-    let grouped = Dictionary(
-      grouping: purchases.filter {
-        active.contains($0.projectID) && (projectID == nil || $0.projectID == projectID)
-      }, by: \.typeID)
-    var lines = [
-      "type_id,item_name,target_quantity,purchased_quantity,remaining_quantity,project_count"
-    ]
-    for (type, entries) in grouped.sorted(by: { $0.key < $1.key }) {
-      let target = try entries.reduce(Int64(0)) { try Self.add($0, $1.target) }
-      let bought = try entries.reduce(Int64(0)) { try Self.add($0, $1.purchased) }
-      let remaining = try entries.reduce(Int64(0)) { try Self.add($0, $1.remaining) }
-      let name = (entries.first?.name ?? "").replacingOccurrences(of: "\"", with: "\"\"")
-      lines.append(
-        "\(type),\"\(name)\",\(target),\(bought),\(remaining),\(Set(entries.map(\.projectID)).count)"
-      )
-    }
-    return lines.joined(separator: "\n") + "\n"
-  }
   public mutating func addEvidence(_ receipt: ProductionSaleEvidence) throws {
     guard !receipt.id.isEmpty, receipt.typeID > 0, receipt.quantity > 0 else {
       throw ConsolidationError.invalid("Ungültiger Verkaufsbeleg.")
@@ -517,9 +329,8 @@ public struct ConsolidationWorkspace: Codable, Sendable {
         rowID: rowID, evidenceID: evidenceID, quantity: quantity, grossCents: gross))
   }
   public func scienceRunReservations() -> [BlueprintRunReservation] {
-    let active = Set(projects.filter { $0.status != .archived }.map(\.id))
-    return science.compactMap { saved in
-      guard !saved.archived, active.contains(saved.projectID), case .invention(let job) = saved.job,
+    science.compactMap { saved in
+      guard !saved.archived, case .invention(let job) = saved.job,
         case .ownedBPC(let itemID) = job.inputBPC
       else { return nil }
       return BlueprintRunReservation(
@@ -528,38 +339,17 @@ public struct ConsolidationWorkspace: Codable, Sendable {
   }
 
   public func validate() throws {
-    let projectIDs = Set(projects.map(\.id))
-    let warehouseIDs = Set(warehouses.map(\.id))
-    guard formatVersion == 1, revision >= 0, projectIDs.count == projects.count,
-      warehouseIDs.count == warehouses.count,
+    // Legacy project, reservation and purchase records are kept as stored and not validated.
+    guard formatVersion == 1, revision >= 0,
+      Set(warehouses.map(\.id)).count == warehouses.count,
       Set(priceProfiles.map(\.id)).count == priceProfiles.count,
-      Set(reservations.map(\.id)).count == reservations.count,
       Set(evidence.map(\.id)).count == evidence.count,
-      Set(costs.map(\.id)).count == costs.count, Set(sales.map(\.id)).count == sales.count,
-      Set(purchases.map { "\($0.projectID):\($0.typeID)" }).count == purchases.count,
-      selectedProjectID.map({ projectIDs.contains($0) }) ?? true
-    else { throw ConsolidationError.invalid("Widersprüchliche Identitäten in den Projektdaten.") }
-    for p in projects {
-      guard !Self.normalized(p.name).isEmpty, (1...3).contains(p.priority),
-        p.quantityCaps.values.allSatisfy({ $0 >= 0 }),
-        p.warehouseIDs.isSubset(of: warehouseIDs)
-      else { throw ConsolidationError.invalid("Ungültige Projekteinstellungen.") }
-    }
+      Set(costs.map(\.id)).count == costs.count, Set(sales.map(\.id)).count == sales.count
+    else { throw ConsolidationError.invalid("Widersprüchliche Identitäten in den Arbeitsdaten.") }
     for w in warehouses {
       guard w.stock.allSatisfy({ $0.key > 0 && $0.value > 0 }) else {
         throw ConsolidationError.invalid("Ungültige Lagermengen.")
       }
-    }
-    for r in reservations {
-      guard projectIDs.contains(r.projectID), r.typeID > 0, r.quantity > 0, r.consumed >= 0,
-        r.released >= 0,
-        r.consumed <= r.quantity, r.released <= r.quantity - r.consumed
-      else { throw ConsolidationError.invalid("Ungültige Reservierung.") }
-    }
-    for p in purchases {
-      guard projectIDs.contains(p.projectID), p.typeID > 0, p.planned >= 0, p.purchased >= 0,
-        p.override.map({ $0 >= 0 }) ?? true
-      else { throw ConsolidationError.invalid("Ungültige Einkaufsdaten.") }
     }
     for e in evidence {
       guard e.quantity > 0, try e.amountCents() > 0, e.typeID > 0 else {
@@ -639,32 +429,6 @@ extension ConsolidationPreview {
       guard let cents else { return "Planwert" }
       return "\(cents / 100).\(String(format: "%02lld", cents % 100)) ISK"
     }
-    func projectName(_ id: UUID) -> String {
-      proposed.projects.first { $0.id == id }?.name ?? "Projekt nicht verfügbar"
-    }
-    for p in proposed.projects {
-      let old = base.projects.first { $0.id == p.id }
-      if old?.name != p.name || old?.status != p.status || old?.priority != p.priority
-        || old?.warehouseIDs != p.warehouseIDs || old?.excludedTypes != p.excludedTypes
-        || old?.quantityCaps != p.quantityCaps || old?.priceProfileID != p.priceProfileID
-        || old?.logisticsOverrideCents != p.logisticsOverrideCents
-        || old?.productionOverrideCents != p.productionOverrideCents
-      {
-        lines.append("Projekt \(p.name): Status \(p.status.rawValue), Priorität \(p.priority).")
-        let warehouses = proposed.warehouses.filter { p.warehouseIDs.contains($0.id) }.map(\.name)
-          .sorted()
-        lines.append(
-          "Manuelle Lager: \(warehouses.isEmpty ? "keine" : warehouses.joined(separator: ", ")).")
-        lines.append(
-          "Ausgeschlossene Typen: \(p.excludedTypes.isEmpty ? "keine" : p.excludedTypes.sorted().map(String.init).joined(separator: ", "))."
-        )
-        let caps = p.quantityCaps.sorted { $0.key < $1.key }.map { "Typ \($0.key): \($0.value)" }
-        lines.append("Mengengrenzen: \(caps.isEmpty ? "keine" : caps.joined(separator: ", ")).")
-        lines.append(
-          "Preisprofil: \(proposed.priceProfiles.first { $0.id == p.priceProfileID }?.name ?? "Aktuelle Planpreise"). Logistik: \(money(p.logisticsOverrideCents)); Installation: \(money(p.productionOverrideCents))."
-        )
-      }
-    }
     for warehouse in proposed.warehouses {
       let old = base.warehouses.first { $0.id == warehouse.id }
       if old?.name != warehouse.name || old?.notes != warehouse.notes
@@ -682,21 +446,6 @@ extension ConsolidationPreview {
         }
       }
     }
-    for r in proposed.reservations {
-      let old = base.reservations.first { $0.id == r.id }
-      if old?.quantity != r.quantity || old?.consumed != r.consumed || old?.released != r.released
-        || old?.expiresAt != r.expiresAt
-      {
-        let source =
-          r.source == "esi"
-          ? "ESI"
-          : (proposed.warehouses.first { $0.id.uuidString == r.source }?.name
-            ?? "Lager nicht verfügbar")
-        lines.append(
-          "\(projectName(r.projectID)), Typ \(r.typeID), \(source): reserviert \(old?.remaining ?? 0) → \(r.remaining), verbraucht \(r.consumed), freigegeben \(r.released); Termin \(r.expiresAt?.formatted(.iso8601) ?? "keiner")."
-        )
-      }
-    }
     for profile in proposed.priceProfiles {
       let old = base.priceProfiles.first { $0.id == profile.id }
       if old?.name != profile.name || old?.validFrom != profile.validFrom
@@ -709,14 +458,6 @@ extension ConsolidationPreview {
       for type in profile.prices.keys.sorted() where old?.prices[type] != profile.prices[type] {
         lines.append(
           "Preisprofil \(profile.name), Typ \(type): \(old?.prices[type]?.displayText ?? "fehlend") → \(profile.prices[type]!.displayText) ISK je Einheit."
-        )
-      }
-    }
-    for p in proposed.purchases {
-      let old = base.purchases.first { $0.id == p.id }
-      if old?.planned != p.planned || old?.override != p.override || old?.purchased != p.purchased {
-        lines.append(
-          "\(projectName(p.projectID)), Typ \(p.typeID): Planbedarf \(p.planned), Ziel \(old?.target ?? 0) → \(p.target), gekauft \(old?.purchased ?? 0) → \(p.purchased), offen \(p.remaining). Kein Lagerzugang."
         )
       }
     }

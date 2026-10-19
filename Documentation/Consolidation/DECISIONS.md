@@ -61,3 +61,24 @@ Maschinenlesbare Herkunft: [Inventar](source-inventory.json),
 - Codex-Oberflächenzugriff ist systemseitig gesperrt. Kein verfügbares Projektwerkzeug
   kann die ChatGPT-Projektanzeige umbenennen. Die Sidebar ist deshalb nicht als
   vollständig vereinheitlicht ausgewiesen. Globale Modelleinstellungen unverändert.
+
+## 19.10.2026 – Fertigungsprojekte entfernt
+
+Eigentümerentscheid: Der Planner soll ohne Projektverwaltung arbeiten. Man trägt das Produkt ein und
+lässt rechnen.
+
+- **Entfernt:** Projektwahl, Projekteinstellungen (Status, Priorität, Lagerfreigaben, Ausschlüsse,
+  Mengengrenzen, Preisprofil-Zuweisung, Logistik-/Installations-Ersatzwerte, Duplizieren, Archiv),
+  Projektreservierungen samt Konfliktvorschlag, Einkaufsbudget, Einkaufsfortschritt und Einkaufsexport.
+- **Berechnung:** ESI-Bestand nach der unveränderten Schutzmengenberechnung plus Planner-Handeingabe.
+  Pläne anderer Projekte mindern den Bestand nicht mehr. Manuelle Lager fließen nicht ein, bleiben
+  aber als eigene Verwaltung bestehen. Die übrigen Rechenregeln sind unverändert.
+- **Wissenschaft:** Aufträge sind global. Alle nicht archivierten Aufträge liefern Versorgung und
+  Input-BPC-Reservierungen. Neue Aufträge speichern keine Projekt-ID; alte Projekt-IDs bleiben erhalten.
+  Aufträge, die früher zu archivierten Projekten gehörten, sind dadurch wieder wirksam, bis sie archiviert werden.
+- **Preisprofile:** Sie bleiben pflegbar, sind aber reine Referenzpreise. Der Marktimport liest den
+  aktuell berechneten Plan.
+- **Altdaten:** `projects`, `selectedProjectID`, `reservations` und `purchases` bleiben im
+  `ConsolidationWorkspace` und werden unverändert dekodiert und wieder gespeichert, aber nicht mehr
+  verwendet oder validiert. Format (`formatVersion` 1), SwiftData-Schema und Migrationskette sind
+  unverändert, ebenso Sicherungen. Ein neuer Arbeitsdatenverbund legt kein Projekt mehr an.

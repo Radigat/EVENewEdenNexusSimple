@@ -6,115 +6,72 @@ import Testing
 
 @Suite("Functional consolidation contracts")
 struct ConsolidationTests {
-  private func workspace() throws -> ConsolidationWorkspace {
+  private func workspace() throws -> ConsolidationWorkspace { ConsolidationWorkspace() }
+  @Test func legacyProjectDataDecodesValidatesAndRoundTripsUnchanged() throws {
+    // Payload shape written before production projects were removed (2026-10-19), including a
+    // reservation and purchase whose project no longer resolves.
+    var legacy = ConsolidationWorkspace()
+    var project = ConsolidatedProject(name: "Alpha")
+    project.input = "Rifter 1 0 0"
+    project.planSnapshot = Data([1, 2, 3])
+    project.quantityCaps = [34: 7]
+    legacy.projects = [project]
+    legacy.selectedProjectID = UUID()
+    legacy.reservations = [
+      ProjectStockReservation(projectID: UUID(), typeID: 34, source: "esi", quantity: 5)
+    ]
+    legacy.purchases = [ProjectPurchase(projectID: UUID(), typeID: 34, name: "Tritanium", planned: 3)]
+    let payload = try JSONEncoder().encode(legacy)
+    let decoded = try JSONDecoder().decode(ConsolidationWorkspace.self, from: payload)
+    try decoded.validate()
+    let again = try JSONDecoder().decode(
+      ConsolidationWorkspace.self, from: JSONEncoder().encode(decoded))
+    #expect(again.projects.first?.input == "Rifter 1 0 0")
+    #expect(again.projects.first?.planSnapshot == Data([1, 2, 3]))
+    #expect(again.projects.first?.quantityCaps == [34: 7])
+    #expect(again.selectedProjectID == legacy.selectedProjectID)
+    #expect(again.reservations.first?.remaining == 5)
+    #expect(again.purchases.first?.planned == 3)
+  }
+  @Test func scienceRunReservationsAreGlobalAndSkipArchivedJobs() throws {
+    let activity = BlueprintScienceActivityDefinition(
+      kind: .invention, durationSeconds: 1_000, materials: [],
+      products: [BlueprintProduct(typeID: 200, quantity: 10, probability: 0.4)],
+      requiredSkills: [
+        BlueprintSkillRequirement(typeID: 1, level: 1),
+        BlueprintSkillRequirement(typeID: 2, level: 1),
+        BlueprintSkillRequirement(typeID: 3, level: 1),
+      ], source: SourceIdentity(provider: "fixture", version: "1"))
+    let invention = try BlueprintSciencePlanner.inventionPlan(
+      inputBPC: .ownedBPC(itemID: 88), inputBlueprintTypeID: 100,
+      selectedOutputBlueprintTypeID: 200, activity: activity, characterID: 42,
+      characterName: "Fixture Pilot", trainedSkillLevels: [1: 5, 2: 5, 3: 5],
+      attemptCost: 1_000, requiredSuccesses: 1)
+    func job(legacyProject: UUID?) -> SavedScienceJob {
+      SavedScienceJob(
+        projectID: legacyProject, blueprintTypeID: 100, name: "Fixture", job: .invention(invention),
+        facilityName: "Lab", solarSystemID: 1, sourceIDs: [], supplyPlan: nil)
+    }
     var w = ConsolidationWorkspace()
-    try w.createProject(name: "Alpha")
-    return w
+    let global = job(legacyProject: nil)
+    let legacy = job(legacyProject: UUID())
+    var archived = job(legacyProject: nil)
+    archived.archived = true
+    w.science = [global, legacy, archived]
+    let reservations = w.scienceRunReservations()
+    #expect(Set(reservations.map(\.planID)) == [global.id, legacy.id])
+    #expect(reservations.allSatisfy { $0.blueprintItemID == 88 })
   }
-  @Test func duplicationNeverCopiesReservationsOrSnapshots() throws {
-    var w = try workspace()
-    let original = try #require(w.selectedProjectID)
-    w.projects[0].planSnapshot = Data([1])
-    w.projects[0].logisticsOverrideCents = 100
-    try w.reserve(projectID: original, quantities: [34: 20], esi: [34: 30], expires: nil)
-    try w.createProject(name: "Beta", duplicate: original)
-    #expect(w.selectedProjectID != original)
-    #expect(w.selectedProject?.planSnapshot == nil)
-    #expect(w.selectedProject?.logisticsOverrideCents == nil)
-    #expect(w.reservations.allSatisfy { $0.projectID == original })
-  }
-  @Test func archiveRequiresReleasedReservationsAndNamesRemainUnique() throws {
-    var w = try workspace()
-    let id = try #require(w.selectedProjectID)
-    try w.reserve(projectID: id, quantities: [34: 5], esi: [34: 10], expires: nil)
-    var project = w.projects[0]
-    project.status = .archived
-    #expect(throws: (any Error).self) { try w.updateProject(project) }
-    try w.changeReservation(id: w.reservations[0].id, quantity: 5, consume: false)
-    try w.updateProject(project)
-    #expect(throws: (any Error).self) { try w.createProject(name: " alpha ") }
-  }
-  @Test func sharedReservationsSubtractExactlyOnceAndDoNotMutateInventory() throws {
-    var w = try workspace()
-    let a = try #require(w.selectedProjectID)
-    try w.createWarehouse(name: "Stock")
-    let warehouse = w.warehouses[0].id
-    w.warehouses[0].stock = [34: 10]
-    w.projects[0].warehouseIDs = [warehouse]
-    try w.reserve(projectID: a, quantities: [34: 15], esi: [34: 10], expires: nil)
-    #expect(try w.availableStock(projectID: a, esi: [34: 10])[34] == 20)
-    try w.createProject(name: "Beta")
-    let b = try #require(w.selectedProjectID)
-    w.projects[1].warehouseIDs = [warehouse]
-    #expect(try w.availableStock(projectID: b, esi: [34: 10])[34] == 5)
-    #expect(w.warehouses[0].stock[34] == 10)
-    #expect(throws: (any Error).self) {
-      try w.reserve(projectID: b, quantities: [34: 6], esi: [34: 10], expires: nil)
-    }
-    #expect(w.reservations.allSatisfy { $0.projectID == a })
-  }
-  @Test func limitsAreAppliedOnceAcrossSourcesAndExclusionsWin() throws {
-    var w = try workspace()
-    let id = try #require(w.selectedProjectID)
-    try w.createWarehouse(name: "Stock")
-    w.warehouses[0].stock = [34: 50, 35: 20]
-    w.projects[0].warehouseIDs = [w.warehouses[0].id]
-    w.projects[0].quantityCaps = [34: 7]
-    w.projects[0].excludedTypes = [35]
-    let quantities = try w.availableStock(projectID: id, esi: [34: 100, 35: 100])
-    #expect(quantities[34] == 7)
-    #expect(quantities[35] == 0)
-  }
-  @Test func partialConsumptionAndReleaseRetainAuditAndExpiredReservations() throws {
-    var w = try workspace()
-    let id = try #require(w.selectedProjectID)
-    try w.reserve(projectID: id, quantities: [34: 10], esi: [34: 10], expires: .distantPast)
-    let reservationID = w.reservations[0].id
-    try w.changeReservation(id: reservationID, quantity: 3, consume: true)
-    #expect(w.reservations[0].status == "partiallyConsumed")
-    #expect(w.reservations[0].remaining == 7)
-    try w.changeReservation(id: reservationID, quantity: 7, consume: false)
-    #expect(w.reservations[0].remaining == 0)
-    #expect(w.reservations[0].consumed == 3)
-    #expect(throws: (any Error).self) {
-      try w.changeReservation(id: reservationID, quantity: 1, consume: true)
-    }
-  }
-  @Test func conflictProposalHonorsPriorityAndDoesNotApplyItself() throws {
-    var w = try workspace()
-    let a = try #require(w.selectedProjectID)
-    w.projects[0].priority = 3
-    try w.reserve(projectID: a, quantities: [34: 6], esi: [34: 10], expires: nil)
-    try w.createProject(name: "Beta")
-    let b = try #require(w.selectedProjectID)
-    w.projects[1].priority = 1
-    try w.reserve(projectID: b, quantities: [34: 4], esi: [34: 10], expires: nil)
-    let preview = try ConsolidationPreview(base: w, summary: []) {
-      _ = try $0.resolveStockConflicts(esi: [34: 5])
-    }
-    #expect(w.reservations[0].remaining == 6)
-    let applied = try preview.applying(to: w)
-    #expect(applied.reservations.filter { $0.projectID == b }.reduce(0) { $0 + $1.remaining } == 4)
-    #expect(applied.reservations.filter { $0.projectID == a }.reduce(0) { $0 + $1.remaining } == 1)
-  }
-  @Test func previewShowsFrozenAmountsSourcesAndBudgetOverrides() throws {
+  @Test func previewShowsFrozenWarehouseAmounts() throws {
     var w = try workspace()
     try w.createWarehouse(name: "Manual A")
-    w.warehouses[0].stock = [34: 9]
     let preview = try ConsolidationPreview(base: w, summary: []) { candidate in
-      candidate.projects[0].warehouseIDs = [candidate.warehouses[0].id]
-      candidate.projects[0].logisticsOverrideCents = 12050
-      candidate.projects[0].quantityCaps = [34: 8]
-      try candidate.reserve(
-        projectID: candidate.projects[0].id, quantities: [34: 7], esi: [:], expires: nil)
+      candidate.warehouses[0].stock = [34: 9]
     }
+    w.warehouses[0].stock = [34: 1]
     let text = preview.summary.joined(separator: "\n")
-    #expect(text.contains("120.50 ISK"))
-    #expect(text.contains("Typ 34: 8"))
-    #expect(text.contains("Manual A: reserviert 0 → 7"))
-    w.projects[0].logisticsOverrideCents = 999
-    #expect(preview.summary.joined().contains("120.50 ISK"))
-    #expect(preview.proposed.projects[0].logisticsOverrideCents == 12050)
+    #expect(text.contains("Lager Manual A, Typ 34: 0 → 9 Einheiten."))
+    #expect(preview.proposed.warehouses[0].stock[34] == 9)
   }
   @Test func staleAndReplayedPreviewsAreRejected() throws {
     let w = try workspace()
@@ -182,28 +139,6 @@ struct ConsolidationTests {
     p.prices[34] = try ISKAmount.parse("0.01")
     #expect(p.price(34, at: Date(timeIntervalSince1970: 100)) != nil)
     #expect(p.price(34, at: Date(timeIntervalSince1970: 200)) == nil)
-  }
-  @Test func purchasesNeverCreateStockAndExportsAggregateRemainingPerProject() throws {
-    var w = try workspace()
-    let a = try #require(w.selectedProjectID)
-    w.purchases = [ProjectPurchase(projectID: a, typeID: 34, name: "Tritanium", planned: 10)]
-    try w.updatePurchase(projectID: a, typeID: 34, override: 7, purchased: 9)
-    try w.createProject(name: "Beta")
-    let b = try #require(w.selectedProjectID)
-    w.purchases.append(ProjectPurchase(projectID: b, typeID: 34, name: "Tritanium", planned: 3))
-    #expect(try w.purchasingCSV().contains("34,\"Tritanium\",10,9,3,2"))
-    #expect(w.warehouses.isEmpty)
-  }
-  @Test func budgetMissingPricesStayMissingAndOverridesReplace() throws {
-    var w = try workspace()
-    let id = try #require(w.selectedProjectID)
-    w.purchases = [ProjectPurchase(projectID: id, typeID: 34, name: "Tritanium", planned: 3)]
-    try w.createPriceProfile(name: "P", from: .distantPast, until: nil)
-    w.projects[0].priceProfileID = w.priceProfiles[0].id
-    #expect(try w.budget(projectID: id, logistics: 10, production: 20).total == nil)
-    w.priceProfiles[0].prices[34] = try ISKAmount.parse("0.10")
-    w.projects[0].logisticsOverrideCents = 100
-    #expect(try w.budget(projectID: id, logistics: 10, production: 20).total == 21.3)
   }
   @Test func receiptAllocationPreventsDoubleUseAndOversaleAndKeepsCosts() throws {
     var w = try workspace()

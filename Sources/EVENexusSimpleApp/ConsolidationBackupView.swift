@@ -157,9 +157,9 @@ struct ConsolidationBackupView: View {
       macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
       SDE-Build: \(runtime.activeSDEBuild.map(String.init) ?? "nicht verfügbar")
       Arbeitsdatenformat: \(w.formatVersion), Revision: \(w.revision)
-      Projekte: \(w.projects.count), Lager: \(w.warehouses.count)
-      Reservierungen: \(w.reservations.count), Preisprofile: \(w.priceProfiles.count)
-      Einkaufspositionen: \(w.purchases.count), Belege: \(w.evidence.count)
+      Lager: \(w.warehouses.count), Preisprofile: \(w.priceProfiles.count)
+      Altdaten (nicht mehr verwendet): Projekte \(w.projects.count), Reservierungen \(w.reservations.count), Einkaufspositionen \(w.purchases.count)
+      Belege: \(w.evidence.count)
       Verkaufszuordnungen: \(w.sales.count), Wissenschaftsaufträge: \(w.science.count)
       Keine Namen, Account-IDs, Dateipfade, Belegdaten oder Anmeldeschlüssel enthalten.
       """

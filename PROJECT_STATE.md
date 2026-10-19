@@ -7,12 +7,13 @@ Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
 ## Fachlicher Stand
 
 Die organisatorische Basis `182f1a9` ist um die freigegebenen vorhandenen Fachabläufe ergänzt:
-Fertigungsprojekte, manuelle Lager/CSV, dauerhafte Reservierungen, Preisprofile/Einkauf,
+manuelle Lager/CSV, Preisprofile,
 konkrete Wissenschaftsaufträge, Kosten-/Verkaufsbelege und lokale Sicherung/Wiederherstellung.
 Die heutige Oberfläche und aktuelle Berechnungen bleiben Grundlage. V3 ergänzt die Datenhaltung;
 bestehende Modelle, Nummern, historische Werte und technische Kennungen werden erhalten.
-Projektwahl und -einstellungen, Reservierungen sowie Einkaufsbudget und -fortschritt sind in die
-passenden Planner-Abschnitte integriert. Preisprofile sind in die Markteinstellungen,
+Fertigungsprojekte, Reservierungen sowie Einkaufsbudget und -fortschritt sind seit 19.10.2026 auf
+Eigentümerentscheid entfernt; der Planner rechnet direkt aus Eingabe, ESI-Bestand und Handeingabe.
+Preisprofile sind in die Markteinstellungen,
 Sicherung/Wiederherstellung in die allgemeinen Einstellungen integriert. Die früheren gemeinsamen
 Toolbar-Einstiege und der bereichsumschaltende Projektverwaltungsdialog sind entfernt.
 
