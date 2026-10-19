@@ -40,8 +40,9 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 - Bei Code-/Projektänderungen SwiftPM und natives Xcode-Debug prüfen; das lokale
   `EVEStaticDataKit` separat testen. Live-Abnahmen bleiben opt-in.
 - Git nur in dieser eigenen Repository-Wurzel verwenden, niemals im
-  übergeordneten Home-Repository. Lokale Commits nur auf ausdrücklichen
-  Benutzerauftrag. Kein Push, Force-Push oder Umschreiben der Historie.
+  übergeordneten Home-Repository. Arbeitsbranch ist `main`. Lokale Commits,
+  Push nach `origin` und Sicherungs-Tags nur auf ausdrücklichen
+  Benutzerauftrag. Kein Force-Push und kein Umschreiben der Historie.
 - `MODEL_POLICY.md` ist die verbindliche Modellvorgabe je Werkzeug. Kein automatischer
   Wechsel des Modells oder der Reasoning-Stufe: Reicht das Standardmodell nicht
   aus, vor einem Wechsel nachfragen und zwei oder drei konkrete Vorschläge mit

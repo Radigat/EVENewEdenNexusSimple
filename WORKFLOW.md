@@ -28,11 +28,14 @@ Reale SDE-/SSO-/ESI-Abnahmen bleiben opt-in und werden nicht durch Unit-Tests er
 
 ## Git und Checkpoint
 
-Basis ist die vorhandene Simple-Git-Historie. Konsolidierungsbranch:
-`consolidation/2026-09-25-single-source`.
-Lokale Commits nur auf ausdrücklichen Benutzerauftrag.
+Basis ist die vorhandene Simple-Git-Historie. Arbeitsbranch ist `main`, er
+folgt `origin/main`. Der frühere Konsolidierungsbranch
+`consolidation/2026-09-25-single-source` ist vollständig in `main` enthalten
+und lokal gelöscht. Sicherungspunkt: Tag `stand-2026-10-19` (`ce5eb0b`).
+Lokale Commits, Push nach `origin` und Sicherungs-Tags nur auf ausdrücklichen
+Benutzerauftrag.
 Vorherige HEADs, Indizes, Arbeitsbaum-Diffs und Hashinventare sind dokumentiert.
-Kein Push, kein Merge fremder Historien und keine Änderung des Home-Repositories.
+Kein Force-Push, kein Merge fremder Historien und keine Änderung des Home-Repositories.
 Historischer Remote-Repositoryname bleibt als technischer Herkunftsverweis erhalten.
 
 ## Dokumentation und Abschluss

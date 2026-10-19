@@ -88,3 +88,10 @@ bestanden (ein Skip); Logs `/private/tmp/eve-nexus-claude-bplocations-20261019/`
 Der Eigentümer hat die Korrektur am 19.10.2026 mit dem signierten Build
 `~/Developer/EVE New Eden Nexus Builds/2026-10-19-debug-8961e00-bplocations/`
 live geprüft: Die Standorte werden korrekt angezeigt.
+
+## Git-Stand (19.10.2026)
+
+`main` und `origin/main` stehen auf `ce5eb0b` (Fast-Forward-Push auf Auftrag des
+Eigentümers); Sicherungs-Tag `stand-2026-10-19` liegt auch auf GitHub. Der
+Konsolidierungsbranch ist in `main` aufgegangen und lokal gelöscht; gearbeitet
+wird auf `main`.

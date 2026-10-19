@@ -4960,3 +4960,16 @@ Live geprüft: Mit dem signierten Build
 Blueprint-Standorte bestätigt. Auf Auftrag lokal committet.
 
 Offen: Real-SDE-Tests (opt-in), Tastaturprüfung, Notarisierung. Kein Push.
+
+## 19.10.2026 – Push, Sicherungs-Tag, Arbeitsbranch `main`
+
+Auf Auftrag des Eigentümers: `consolidation/2026-09-25-single-source` per
+Fast-Forward nach `origin/main` gepusht (`44d85b4..ce5eb0b`, vorher Suche nach
+Tokens und Schlüsseln ohne Fund); lokaler `main` von `c50e005` auf `ce5eb0b`
+nachgezogen; annotierter Tag `stand-2026-10-19` auf `ce5eb0b` gesetzt und
+gepusht; Konsolidierungsbranch lokal gelöscht (vollständig in `main`
+enthalten). AGENTS.md und WORKFLOW.md: Arbeitsbranch `main`; Commit, Push und
+Tags nur auf ausdrücklichen Auftrag, weiterhin kein Force-Push und kein
+Umschreiben der Historie. Keine Codeänderung, daher kein Testlauf.
+Diese Steuerdatei-Änderungen auf Auftrag auf `main` committet und nach
+`origin` gepusht.
