@@ -24,8 +24,11 @@ Maßgeblich: [Funktionsvertrag](Documentation/Consolidation/FUNCTIONAL_CONSOLIDA
 
 - Keine Migration alter Nexus-Datenbanken; vorhandene aktuelle Nutzerdaten werden additiv migriert.
 - Zurückgezogene Finanzansichten und nur geplante Vorhaben bleiben ausgeschlossen.
-- Tests verwenden ausschließlich synthetische Bestände. Reale SDE-/ESI-/SSO-Abnahme und
-  vollständige Eigentümer-/VoiceOver-Abnahme werden nicht behauptet.
+- Tests verwenden ausschließlich synthetische Bestände. Reale SDE-Abnahme und
+  vollständige Eigentümerabnahme werden nicht behauptet. SSO und ESI hat der
+  Eigentümer am 19.10.2026 mit dem signierten Debug-Build live geprüft.
+- VoiceOver wird nicht unterstützt und ist kein Abnahmeschritt (Entscheidung des
+  Eigentümers vom 19.10.2026); vorhandene Beschriftungen bleiben im Code.
 - Die bereits installierte Alt-App und die ChatGPT-Projektanzeige sind separate Oberflächen.
   Dieser Auftrag ersetzt keine produktive Installation und ändert keine globalen Modelleinstellungen.
 - Der historisch genannte Production-Tracker-Ordner liegt weiterhin nicht als eigener Quellstand vor.
@@ -71,3 +74,17 @@ unsignierter Debug-Build `BUILD SUCCEEDED` und Tests `TEST SUCCEEDED` (434
 bestanden, ein Skip), `git diff --check` fehlerfrei. Logs:
 `/private/tmp/eve-nexus-claude-handover-20261019/`. Kein Push; Live-ESI-/SSO-,
 visuelle und Eigentümerabnahme bleiben offen.
+
+## Eigentümerprüfung und Blueprint-Standorte (19.10.2026)
+
+Mit dem signierten Debug-Build (Stand `8961e00`) hat der Eigentümer live geprüft:
+SSO und ESI funktionieren; Dashboard, Märkte, Kosten und Blueprint-Kopien sind
+visuell in Ordnung. Gefunden: BPO-/BPC-Standorte erschienen in der
+Blueprint-Übersicht immer als „Unbekannter Ort“. Korrigiert: die
+Übersicht löst Behälter wie Assets und Produktionsplanung über den Asset-Bestand
+zum Wurzelstandort auf. Automatisch verifiziert: SwiftPM 428 Core-, 39 App-,
+19 XCTest-Fälle (ein Skip), Kit 8 (ein Skip), nativ `TEST SUCCEEDED` mit 435
+bestanden (ein Skip); Logs `/private/tmp/eve-nexus-claude-bplocations-20261019/`.
+Der Eigentümer hat die Korrektur am 19.10.2026 mit dem signierten Build
+`~/Developer/EVE New Eden Nexus Builds/2026-10-19-debug-8961e00-bplocations/`
+live geprüft: Die Standorte werden korrekt angezeigt.

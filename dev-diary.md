@@ -4925,3 +4925,38 @@ DerivedData unter `/private/tmp/eve-nexus-claude-handover-20261019/`,
 - `git diff --check` fehlerfrei (`diff-check.log`).
 
 Offen: Live-ESI-/SSO-, visuelle, VoiceOver- und Eigentümerabnahme. Kein Push.
+
+## 19.10.2026 – Eigentümerprüfung, Blueprint-Standorte, VoiceOver
+
+Eigentümerprüfung mit dem signierten Debug-Build
+`~/Developer/EVE New Eden Nexus Builds/2026-10-19-debug-8961e00/` (Apple
+Development, Team `99K5WATB4A`, nicht notarisiert), vorher Datensicherung durch
+den Eigentümer: SSO und ESI funktionieren live; Dashboard, Märkte, Kosten und
+Blueprint-Kopien in Ordnung.
+
+Fehler: In der Blueprint-Übersicht standen BPO und BPC immer bei „Unbekannter
+Ort“. Ursache: `BlueprintsView` nutzte die rohe ESI-`location_id`; bei
+Blueprints in Containern, Schiffen oder Büros ist das die Item-ID des Behälters,
+und alle IDs ab 10¹² (auch nicht eingerichtete Spielerstrukturen) wurden ohne
+Namensquelle verworfen. Korrektur: neue Core-Funktion
+`AssetWarehouse.rootLocationsByItemID()` (auch von `ProductionTree` genutzt,
+fachlich unverändert); die Übersicht ordnet Blueprints damit über den
+Asset-Bestand der Charaktere ihrem Wurzelstandort zu und nimmt den gespeicherten
+Strukturnamen, dann die eingerichtete Struktur, dann den öffentlichen ESI-Namen.
+Nicht auflösbare Orte bleiben ausdrücklich unbekannt. Neuer Test
+`mapsNestedBlueprintItemsToTheirNamedRootStructure` mit synthetischen Daten.
+
+VoiceOver: auf Entscheidung des Eigentümers kein Abnahmeschritt mehr, da es nur
+im Hauptmenü zuverlässig funktioniert; Code und Beschriftungen unverändert.
+
+Prüfung (isoliert, `/private/tmp/eve-nexus-claude-bplocations-20261019/`):
+SwiftPM 428 Core- und 39 App-Swift-Testing- sowie 19 XCTest-Fälle bestanden, ein
+Real-SDE-Skip; Kit 8 Fälle, ein Skip; `xcodebuild` Debug arm64 `BUILD SUCCEEDED`
+und `TEST SUCCEEDED` (435 bestanden, ein Skip); `git diff --check` fehlerfrei.
+
+Live geprüft: Mit dem signierten Build
+`~/Developer/EVE New Eden Nexus Builds/2026-10-19-debug-8961e00-bplocations/`
+(Basis `8961e00` plus diese Korrektur) hat der Eigentümer die korrekten
+Blueprint-Standorte bestätigt. Auf Auftrag lokal committet.
+
+Offen: Real-SDE-Tests (opt-in), Tastaturprüfung, Notarisierung. Kein Push.

@@ -360,6 +360,15 @@ Item- oder Contract-Identität ein eigener Fertigungsjob mit eigenen Runs,
 ME/TE, Materialrundungen und Rest-Runs. Unbekannte Blueprint- oder
 Forschungskosten werden nicht zu null.
 
+Die Blueprint-Übersicht zeigt als Standort die Station, Struktur oder das
+Sonnensystem, in dem der Blueprint tatsächlich liegt. ESI meldet bei Blueprints
+in Containern, Schiffen oder Büros nur den direkten Behälter; dieser wird wie in
+Assets und Produktionsplanung über den gespeicherten Asset-Bestand des
+Charakters bis zum Wurzelstandort aufgelöst. Namensfolge: beim Asset-Sync
+gespeicherter Struktur-/Stationsname, dann eingerichtete Produktionsstruktur,
+dann öffentlicher ESI-Name. Ohne Asset-Snapshot oder bei nicht auflösbarer
+Behälterkette bleibt der Standort ausdrücklich „Unbekannter Ort“.
+
 Die fachliche Abgrenzung folgt den CCP-Verträgen
 [Blaupausen](https://support.eveonline.com/hc/de/articles/203269951-Blaupausen),
 [Kopieren](https://support.eveonline.com/hc/de/articles/203210602-Kopieren) und
@@ -1539,10 +1548,12 @@ Standardsatz getrennt.
 - Öffentliche Marktorders sind keine abgeschlossene Verkaufshistorie.
 - Preis-, Status-, Rollen- und Strukturzugriffe können sich ändern; datierte
   Live-Nachweise sind keine dauerhafte Garantie.
-- Signierung, Notarisierung, Langzeit-RSS/CPU, vollständige Tastatur- und
-  VoiceOver-Prüfung sowie die visuelle Owner-Abnahme bleiben eigenständige
-  Freigabeschritte, sofern die Acceptance-Matrix sie nicht ausdrücklich als
-  abgeschlossen ausweist.
+- Signierung, Notarisierung, Langzeit-RSS/CPU, vollständige Tastaturprüfung
+  sowie die visuelle Owner-Abnahme bleiben eigenständige Freigabeschritte,
+  sofern die Acceptance-Matrix sie nicht ausdrücklich als abgeschlossen ausweist.
+- VoiceOver wird nicht unterstützt und ist auf Entscheidung des Eigentümers
+  (19.10.2026) kein Abnahmeschritt. Vorhandene Barrierefreiheitsbeschriftungen
+  bleiben im Code erhalten; zuverlässig funktioniert VoiceOver nur im Hauptmenü.
 
 ## Pflege dieser Dokumentation
 

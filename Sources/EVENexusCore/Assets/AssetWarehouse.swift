@@ -489,6 +489,20 @@ public struct AssetWarehouse: Codable, Sendable {
     )
   }
 
+  /// Maps every warehouse item, including items nested in containers, ships
+  /// or offices, to the root station, structure or solar system that holds it.
+  /// Items whose container chain could not be resolved are absent.
+  public func rootLocationsByItemID() -> [Int64: AssetWarehouseLocation] {
+    Dictionary(
+      locations.flatMap { location in
+        location.owners.flatMap { owner in
+          owner.items.map { ($0.id, location) }
+        }
+      },
+      uniquingKeysWith: { current, _ in current }
+    )
+  }
+
   public var factualQuantities: [Int64: Int64] {
     locations
       .flatMap(\.owners)

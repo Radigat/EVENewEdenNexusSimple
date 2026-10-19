@@ -1268,16 +1268,9 @@ public enum ManufacturingProductionTreeProjector {
     let selectableEntries = entries.filter {
       usableOwnedStates.contains($0.sourceState)
     }
-    let rootLocationByItemID: [Int64: Int64] = Dictionary(
-      warehouse.locations.flatMap { location in
-        location.owners.flatMap { owner in
-          owner.items.map { ($0.id, location.id) }
-        }
-      },
-      uniquingKeysWith: { current, _ in current }
-    )
+    let rootLocationByItemID = warehouse.rootLocationsByItemID()
     func locationID(for entry: BlueprintPortfolioEntry) -> Int64 {
-      rootLocationByItemID[entry.instance.id]
+      rootLocationByItemID[entry.instance.id]?.id
         ?? entry.instance.locationID
     }
     let exactBPC = selectableEntries.filter {

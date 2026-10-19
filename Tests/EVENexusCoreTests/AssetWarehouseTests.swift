@@ -632,6 +632,70 @@ struct AssetWarehouseTests {
     )
   }
 
+  @Test
+  func mapsNestedBlueprintItemsToTheirNamedRootStructure() {
+    let structureID: Int64 = 1_000_000_000_001
+    let containerID: Int64 = 1_000_000_500_000
+    let blueprintID: Int64 = 1_000_000_500_001
+    let looseBlueprintID: Int64 = 1_000_000_500_002
+    let orphanBlueprintID: Int64 = 1_000_000_500_003
+    let assets = Sourced(
+      state: .fresh,
+      value: AssetSnapshot(
+        characterID: 11,
+        state: .fresh,
+        items: [
+          asset(
+            id: containerID,
+            typeID: 17_366,
+            quantity: 1,
+            locationID: structureID,
+            kind: .structure
+          ),
+          asset(
+            id: blueprintID,
+            typeID: 691,
+            quantity: 1,
+            locationID: containerID,
+            kind: .item,
+            locationFlag: "Unlocked"
+          ),
+          asset(
+            id: looseBlueprintID,
+            typeID: 692,
+            quantity: 1,
+            locationID: 60_003_760,
+            kind: .station
+          ),
+          asset(
+            id: orphanBlueprintID,
+            typeID: 693,
+            quantity: 1,
+            locationID: 1_000_000_999_999,
+            kind: .item
+          ),
+        ],
+        resolvedLocationNames: [structureID: "Low-sec Industry Hub"]
+      ),
+      source: SourceIdentity(provider: "ESI", version: "fixture")
+    )
+    let warehouse = AssetWarehouse(
+      inventories: [
+        AssetOwnerInventory(ownerID: 11, ownerName: "Alpha", assets: assets)
+      ]
+    )
+
+    let roots = warehouse.rootLocationsByItemID()
+
+    #expect(roots[blueprintID]?.id == structureID)
+    #expect(roots[blueprintID]?.kind == .structure)
+    #expect(roots[blueprintID]?.resolvedName == "Low-sec Industry Hub")
+    #expect(roots[looseBlueprintID]?.id == 60_003_760)
+    #expect(roots[looseBlueprintID]?.resolvedName == nil)
+    // An unresolvable container chain stays explicitly unmapped.
+    #expect(roots[orphanBlueprintID] == nil)
+  }
+
   private func sourcedAssets(
     ownerID: Int64,
     items: [AssetItem]

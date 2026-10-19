@@ -25,6 +25,8 @@ struct BlueprintsView: View {
   @State private var visibleEntryLimit = Self.entryPageSize
   @State private var typeNames: [Int64: String] = [:]
   @State private var locationNames: [Int64: String] = [:]
+  @State private var rootLocationsByItemID: [Int64: AssetWarehouseLocation] =
+    [:]
   @State private var quote: BlueprintResearchCostQuote?
   @State private var quoteError: String?
   @State private var isLoadingQuote = false
@@ -216,7 +218,7 @@ struct BlueprintsView: View {
         Image(systemName: "person.fill")
         EVEEntityText(value: entry.ownerName, font: .caption)
         Image(systemName: "mappin.and.ellipse")
-        EVEEntityText(value: locationName(entry.instance.locationID))
+        EVEEntityText(value: locationName(entry))
       }
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -281,7 +283,7 @@ struct BlueprintsView: View {
             .foregroundStyle(DesignTokens.textSecondary)
             Text(verbatim: "·")
               .foregroundStyle(DesignTokens.textSecondary)
-            EVEEntityText(value: locationName(entry.instance.locationID))
+            EVEEntityText(value: locationName(entry))
           }
         }
         Spacer()
@@ -686,9 +688,15 @@ struct BlueprintsView: View {
     }
 
     let typeIDs = prepared.typeIDs
+    // ESI reports the direct container of a blueprint; containers, ships and
+    // offices are resolved to their station or structure via the asset tree.
+    let rootLocations = await blueprintRootLocations()
+    guard !Task.isCancelled else { return }
     let locationIDs = Set(
-      prepared.portfolio.entries.lazy.map(\.instance.locationID)
-        .filter { $0 < 1_000_000_000_000 }
+      prepared.portfolio.entries.lazy.map {
+        rootLocations[$0.instance.id]?.id ?? $0.instance.locationID
+      }
+      .filter { $0 < AssetLocationKind.minimumPlayerStructureID }
     )
     async let resolvedTypes = runtime.resolveAssetTypeNames(typeIDs)
     async let resolvedLocations = runtime.resolveAssetLocationNames(
@@ -723,6 +731,7 @@ struct BlueprintsView: View {
 
     typeNames = names
     locationNames = locations
+    rootLocationsByItemID = rootLocations
     sortedEntries = orderedEntries
     isResolvingNames = false
     rebuildVisibleEntries()
@@ -775,13 +784,47 @@ struct BlueprintsView: View {
     typeNames[typeID] ?? "Unknown item".localizedUI
   }
 
-  private func locationName(_ locationID: Int64) -> String {
+  private func locationName(_ entry: BlueprintPortfolioEntry) -> String {
+    let rootLocation = rootLocationsByItemID[entry.instance.id]
+    if let resolvedName = rootLocation?.resolvedName, !resolvedName.isEmpty {
+      return resolvedName
+    }
+    let locationID = rootLocation?.id ?? entry.instance.locationID
     if let configured = runtime.productionBasis.structures.first(where: {
       $0.structureID == locationID
     }) {
       return configured.displayName
     }
     return locationNames[locationID] ?? "Unknown location".localizedUI
+  }
+
+  private func blueprintRootLocations() async
+    -> [Int64: AssetWarehouseLocation]
+  {
+    let payloads = characters.compactMap { character in
+      character.assetSnapshot.map {
+        StoredAssetSnapshotPayload(
+          ownerID: character.characterID,
+          ownerName: character.characterName,
+          ownerKind: .character,
+          encodedSnapshot: $0
+        )
+      }
+    }
+    guard !payloads.isEmpty else { return [:] }
+    let identity =
+      "blueprint-locations|"
+      + characters.map {
+        "\($0.characterID):\($0.assetSnapshot?.count ?? 0):\($0.lastSyncAt?.timeIntervalSince1970 ?? 0)"
+      }.joined(separator: ",")
+    let prepared = await runtime.prepareAssetWarehouse(
+      identity: identity,
+      payloads: payloads
+    )
+    let warehouse = prepared.warehouse
+    return await Task.detached(priority: .userInitiated) {
+      warehouse.rootLocationsByItemID()
+    }.value
   }
 
   private func isk(_ value: Double?) -> String {
