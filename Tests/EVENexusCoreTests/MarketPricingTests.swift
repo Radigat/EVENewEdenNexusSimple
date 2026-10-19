@@ -32,6 +32,24 @@ struct MarketPricingTests {
     #expect(tied.first { $0.id == 34 }?.location == first.location)
   }
 
+  @Test
+  func moonRecommendationsGroupByRarityClassAndKeepUnknownLast() {
+    func row(_ id: Int64, _ name: String) -> MaterialPurchaseRecommendation {
+      MaterialPurchaseRecommendation(
+        material: MaterialPurchaseItem(id: id, name: name), location: nil,
+        unitPrice: nil, hasCompleteMarketCoverage: true)
+    }
+    let groups = MoonMaterialRecommendationGroup.group([
+      row(16634, "Atmospheric Gases"), row(16643, "Cadmium"), row(16650, "Dysprosium"),
+      row(99999, "Unknown"), row(16640, "Cobalt"), row(16647, "Caesium"), row(16636, "Silicates"),
+    ])
+    #expect(groups.map(\.rarity) == [.r4, .r8, .r16, .r32, .r64, nil])
+    #expect(groups.first?.recommendations.map(\.material.name) == ["Atmospheric Gases", "Silicates"])
+    #expect(groups.last?.recommendations.map(\.id) == [99999])
+    #expect(MoonMaterialRarityClass.of(typeID: 16653) == .r64)
+    #expect(MoonMaterialRarityClass.of(typeID: 34) == nil)
+  }
+
   @Test(arguments: [DataFreshness.stale, .forbidden, .unavailable, .partial])
   func purchaseRecommendationsExcludeUnusableMarkets(state: DataFreshness) {
     let first = MarketHubConfigurationSnapshot(id: UUID(), location: .jita, roles: [.main])

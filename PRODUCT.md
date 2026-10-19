@@ -253,7 +253,13 @@ Mondmaterialien und Mineralien erhalten je eine kompakte Einkaufsliste mit
 Material, günstigstem konfiguriertem Kaufort und Stückpreis, ebenfalls mit
 Fünfer-Vorschau und vollständiger Aufklappansicht. Die Fachansichten zeigen
 dieselbe vorbereitete Empfehlung zusätzlich zu ihren vorhandenen
-Vergleichstabellen. Nur frische, standortpassende Märkte mit gültigen
+Vergleichstabellen, dort jedoch ohne Aufklappen als kompaktes Raster: je
+Material eine kleine Zelle mit Name, Kaufort und Stückpreis untereinander, die
+Zellen fließend nebeneinander. Mineralien stehen alphabetisch; Mondmaterialien
+stehen in je einer Zeile pro Klasse R4, R8, R16, R32 und R64 und darin
+alphabetisch. Die Klasse ergibt sich aus einer festen Zuordnung der 20
+Typ-IDs, weil die SDE-Gruppe `Moon Materials` keine Klasse trägt; ein
+unbekannter Typ erscheint ausdrücklich ohne Klasse am Ende. Nur frische, standortpassende Märkte mit gültigen
 Verkaufsangeboten sind Kandidaten; Preisgleichstände folgen der Reihenfolge der
 konfigurierten Märkte. Fehlen Vergleichsmärkte, lautet die Angabe
 „Günstigster verfügbarer Markt“ mit sichtbarer Einschränkung. Ein Material ohne

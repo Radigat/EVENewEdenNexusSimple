@@ -1521,6 +1521,50 @@ public enum MaterialPurchaseRecommendationProjector {
   }
 }
 
+/// Rarity class of the 20 raw Moon materials (R4 to R64), keyed by SDE type ID.
+/// The SDE group `Moon Materials` carries no class attribute, so the mapping is fixed.
+public enum MoonMaterialRarityClass: Int, CaseIterable, Comparable, Sendable {
+  case r4 = 4, r8 = 8, r16 = 16, r32 = 32, r64 = 64
+
+  public var title: String { "R\(rawValue)" }
+
+  public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+
+  private static let classByTypeID: [Int64: MoonMaterialRarityClass] = [
+    16633: .r4, 16634: .r4, 16635: .r4, 16636: .r4,
+    16637: .r8, 16638: .r8, 16639: .r8, 16640: .r8,
+    16641: .r16, 16642: .r16, 16643: .r16, 16644: .r16,
+    16646: .r32, 16647: .r32, 16648: .r32, 16649: .r32,
+    16650: .r64, 16651: .r64, 16652: .r64, 16653: .r64,
+  ]
+
+  public static func of(typeID: Int64) -> MoonMaterialRarityClass? {
+    classByTypeID[typeID]
+  }
+}
+
+public struct MoonMaterialRecommendationGroup: Identifiable, Equatable, Sendable {
+  /// `nil` collects materials without a known class; such a group is placed last.
+  public let rarity: MoonMaterialRarityClass?
+  public let recommendations: [MaterialPurchaseRecommendation]
+  public var id: Int { rarity?.rawValue ?? Int.max }
+
+  /// Groups recommendations by rarity class in ascending order and keeps the
+  /// incoming (alphabetical) order inside each class.
+  public static func group(
+    _ recommendations: [MaterialPurchaseRecommendation]
+  ) -> [MoonMaterialRecommendationGroup] {
+    let grouped = Dictionary(grouping: recommendations) {
+      MoonMaterialRarityClass.of(typeID: $0.material.id)
+    }
+    let known = MoonMaterialRarityClass.allCases.compactMap { rarity in
+      grouped[rarity].map { MoonMaterialRecommendationGroup(rarity: rarity, recommendations: $0) }
+    }
+    let unknown = grouped[nil].map { [MoonMaterialRecommendationGroup(rarity: nil, recommendations: $0)] } ?? []
+    return known + unknown
+  }
+}
+
 public typealias MoonMaterial = MaterialPurchaseItem
 public typealias MoonMaterialCatalogSnapshot = MaterialPurchaseCatalogSnapshot
 public typealias MoonMaterialPriceBand = MaterialPurchasePriceBand

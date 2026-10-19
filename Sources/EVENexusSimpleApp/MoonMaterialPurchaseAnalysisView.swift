@@ -140,6 +140,89 @@ struct MaterialPurchaseRecommendationContent: View {
   }
 }
 
+/// Compact purchase-location overview for the analysis screens: one small cell
+/// per item (name, location, price), Moon materials grouped by rarity class.
+struct MaterialPurchaseRecommendationGrid: View {
+  let kind: MaterialPurchaseAnalysisKind
+  let recommendations: [MaterialPurchaseRecommendation]
+
+  private let cellMinimumWidth: CGFloat = 210
+  private let classLabelWidth: CGFloat = 40
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        Text(recommendations.allSatisfy(\.hasCompleteMarketCoverage)
+          ? "Cheapest configured market".localizedUI : "Cheapest available market".localizedUI)
+          .font(.caption.weight(.semibold))
+        Text(AppLocalization.format("%lld items", Int64(recommendations.count)))
+          .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+      }
+      if recommendations.contains(where: { !$0.hasCompleteMarketCoverage }) {
+        Text("Some configured markets are unavailable or stale; the comparison is incomplete.")
+          .font(.caption).foregroundStyle(DesignTokens.caution)
+      }
+      switch kind {
+      case .moonMaterials:
+        ForEach(MoonMaterialRecommendationGroup.group(recommendations)) { group in
+          HStack(alignment: .top, spacing: DesignTokens.spacingSM) {
+            Text(verbatim: group.rarity?.title ?? "–")
+              .font(.caption.weight(.bold).monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+              .frame(width: classLabelWidth, alignment: .leading)
+              .padding(.top, DesignTokens.spacingXS)
+              .accessibilityLabel(group.rarity?.title ?? "Unclassified".localizedUI)
+            cells(group.recommendations)
+          }
+        }
+      case .minerals:
+        cells(recommendations)
+      }
+    }
+  }
+
+  private func cells(_ rows: [MaterialPurchaseRecommendation]) -> some View {
+    LazyVGrid(
+      columns: [GridItem(.adaptive(minimum: cellMinimumWidth), spacing: DesignTokens.spacingXS,
+        alignment: .topLeading)],
+      alignment: .leading, spacing: DesignTokens.spacingXS
+    ) {
+      ForEach(rows) { row in
+        MaterialPurchaseRecommendationCell(recommendation: row)
+      }
+    }
+  }
+}
+
+private struct MaterialPurchaseRecommendationCell: View {
+  let recommendation: MaterialPurchaseRecommendation
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      EVEItemText(value: recommendation.material.name,
+        typeID: recommendation.material.id, font: .caption.weight(.semibold))
+      if let location = recommendation.location {
+        EVEEntityText(value: location.name, font: .caption2, lineLimit: 1)
+      } else {
+        Text("No fresh sell offer available").font(.caption2)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      Text(recommendation.unitPrice.map {
+        $0.formatted(.currency(code: "ISK").precision(.fractionLength(2)))
+      } ?? AppLocalization.text("Unavailable"))
+        .font(.caption.monospacedDigit().weight(.medium))
+        .foregroundStyle(recommendation.unitPrice == nil
+          ? DesignTokens.textSecondary : DesignTokens.textPrimary)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, DesignTokens.spacingSM)
+    .padding(.vertical, DesignTokens.spacingXS)
+    .background(DesignTokens.elevated,
+      in: RoundedRectangle(cornerRadius: DesignTokens.cardRadius / 2))
+    .accessibilityElement(children: .contain)
+  }
+}
+
 private struct MaterialPurchaseAnalysisView: View {
   let kind: MaterialPurchaseAnalysisKind
   @EnvironmentObject private var runtime: RuntimeState
@@ -208,7 +291,7 @@ private struct MaterialPurchaseAnalysisView: View {
         sourceStatus(analysis)
         Panel(title: "Recommended purchase locations") {
           if kind == .moonMaterials ? runtime.hasCurrentMoonMaterialAnalysis : runtime.hasCurrentMineralPurchaseAnalysis {
-            MaterialPurchaseRecommendationContent(recommendations:
+            MaterialPurchaseRecommendationGrid(kind: kind, recommendations:
               kind == .moonMaterials ? runtime.moonMaterialRecommendations : runtime.mineralPurchaseRecommendations)
           } else {
             Text("Settings changed. Refresh to update purchase locations.")

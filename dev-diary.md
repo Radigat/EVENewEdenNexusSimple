@@ -5310,3 +5310,19 @@ Sortierung und Bildexport sind unverändert.
 Prüfung: `xcodebuild … build` und `xcodebuild … test` (Debug, arm64) erfolgreich,
 `swift test` mit 429 Tests bestanden. Nicht geprüft: Sichtkontrolle in der laufenden App mit Live-Marktdaten,
 Eigentümerabnahme offen.
+
+## 20.10.2026 – Kompakte Kaufort-Empfehlungen in den Kaufanalysen
+
+Auftrag: Die Karte „Empfohlene Kauforte“ in Moon- und Mineralien-Kaufanalyse
+nahm mit einer Zeile pro Material zu viel Platz ein.
+
+Änderung: Die Fachansichten zeigen die Empfehlungen jetzt als kompaktes Raster
+(Name, Kaufort, Preis untereinander je Zelle, Zellen nebeneinander, ohne
+Aufklappen). Mondmaterialien sind nach den Klassen R4 bis R64 gruppiert, über
+eine feste Zuordnung der 20 Typ-IDs in `MoonMaterialRarityClass` (gegen die
+lokale SDE 3607705 abgeglichen). Mineralien bleiben alphabetisch. Die
+Dashboard-Karten behalten die bisherige Fünfer-Vorschau. Rechenregeln unverändert.
+
+Prüfung: Neuer Core-Test zur Klassengruppierung; `swift test` (430 Tests),
+`xcodebuild … build` und `xcodebuild … test` erfolgreich. Nicht geprüft:
+Sichtkontrolle mit Live-Marktdaten, Eigentümerabnahme offen.
