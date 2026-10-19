@@ -5006,3 +5006,138 @@ bestätigt; BPO/BPC-Quellen und Reaktionsgruppen funktionieren. Auf Auftrag loka
 Offen: Neustart-Wiederherstellung und Wissenschaftsauftrag mit Versorgung nicht gesondert live
 geprüft. Weitere Hinweise aus der Live-Prüfung (Finanzübersicht, Sofortverkauf, Compressed-Erze,
 belegte BPOs) sind eigene Aufträge.
+
+## 19.10.2026 – Freighter und Jump Freighter als Large Ships
+
+Auftrag des Eigentümers aus der Live-Prüfung: Items sollen an den in den Einstellungen je
+Produktklasse festgelegten Stationen gebaut werden; Jump Freighter gehören dabei zu den Large Ships,
+nicht zu den Capitals. Eigentümerentscheid: Freighter und Jump Freighter werden „Large“.
+
+Befund: Die Zuordnung je Produktklasse funktionierte. Die feste Einordnung in
+`SQLiteStaticCatalog.manufacturingCategory` zählte „Freighter“ und „Jump Freighter“ aber zu
+Capital. Dadurch liefen sie an die Capital-Anlage mit Capital-Rig-Boni.
+
+Änderung: Beide Gruppen sind jetzt Large. Die Selbstsprung-Regel (`CapitalSelfJumpPolicy`)
+hing zusätzlich an der Kategorie Capital. Sie entscheidet jetzt nur über die sprungfähige
+Schiffsgruppe, damit ein gebauter Jump Freighter weiterhin selbst springt. Die Highsec-Regel
+für Capitals bleibt im Ergebnis unverändert, weil Frachter dort schon Ausnahmen waren.
+
+Prüfung: Neue Tests zur Einordnung und zum Selbstsprung eines als Large eingeordneten Jump
+Freighters. SwiftPM: 423 Core- und 39 App-Swift-Testing- sowie 19 XCTest-Fälle bestanden, ein
+Real-SDE-Skip. `xcodebuild` Debug arm64 `TEST SUCCEEDED`. `git diff --check` fehlerfrei.
+
+Offen: Live-Prüfung mit einem Jump Freighter im Planner (Anlage, Rig-Boni, Selbstsprung in der
+Logistik). Nicht committet.
+
+## 19.10.2026 – Kein Kauf nicht transportierbarer Items in der Kauf-/Bauanalyse
+
+Auftrag des Eigentümers aus der Live-Prüfung: „Empfehlungen übernehmen“ hat zum Beispiel
+Freighter am Main Hub gekauft statt gebaut. Items, die nicht per Jump Freighter oder Vertrag
+transportiert werden können, müssen an der Produktionsstation gebaut werden.
+
+Ursache: In der Logistikrechnung wurde ein Item, das verpackt größer als das Transportlimit ist
+(bei dir 350.000 m³), nur mit einer Warnung aus der Fracht genommen. Die Kauf-Variante erhielt
+dadurch 0 ISK Transport und wirkte günstiger.
+
+Änderung: In `makeOrBuyAnalysis` gilt ein solcher Kauf als unmöglich. Kaufkosten und
+Kauflogistik sind nicht verfügbar, die Empfehlung lautet „Bauen“ mit der Warnung
+`make-or-buy.purchase-not-transportable`, und die Übernahme setzt das Item auf Bauen. Liegt der
+Main Hub an der Anlage selbst, gibt es keinen Transport, und der Kauf bleibt vergleichbar. Eine
+manuell gewählte Bezugsart „Kaufen“ wird nicht gesperrt; dort bleibt die bestehende
+Logistikwarnung sichtbar.
+
+Prüfung: Der bestehende Kauf-/Bauanalysetest prüft zusätzlich eine 400.000-m³-Komponente
+(Empfehlung Bauen, kein Kaufpreis, Übernahme Bauen). SwiftPM: 423 Core- und 39 App-Tests
+bestanden, XCTest grün. `xcodebuild` Debug arm64 `TEST SUCCEEDED`. `git diff --check` fehlerfrei.
+
+Offen: Live-Prüfung mit einem Jump Freighter (Freighter als Komponente). Nicht committet.
+
+## 19.10.2026 – Eigene Blueprints mit 0 ISK, Kosten pro Einheit inklusive Lieferung
+
+Befund aus der Live-Prüfung: „Produktionskosten inklusive Lieferung“ war im Ark-Plan nicht
+verfügbar, obwohl Zwischensumme (5,25 Mrd. ISK) und Lieferung (348 Mio. ISK) angezeigt wurden.
+Ursache: 26 gebaute Knoten mit eigener BPO/BPC ohne eingetragene Kosten. Nach der bisherigen Regel
+blieb die Gesamtsumme deshalb unverfügbar. Zwischensumme und Kosten pro Einheit zeigten trotzdem
+nur die bekannten Blueprint-Kosten, und „pro Einheit“ rechnete ohne Lieferung, obwohl die Erklärung
+„inklusive Lieferung“ sagte.
+
+Eigentümerentscheide:
+- Eigene BPOs/BPCs ohne Betrag zählen mit 0 ISK.
+- Kosten pro Einheit enthalten die Lieferung.
+
+Änderung:
+- `ProductionTreeBlueprintCostProjector` ordnet `useOwnedBPO`/`useOwnedBPC` ohne Betrag eine
+  0-ISK-Zuordnung zu. Kopieren, Invention und Käufe brauchen weiterhin einen Betrag.
+- Neuer Hinweis `industry.blueprint-owned-counted-zero`.
+- `productionCostPerOutputUnit` basiert auf `totalProductionCost`.
+- Deutsche Übersetzung der Erklärung ergänzt.
+
+Prüfung: Projektor-Test erweitert (eigene BPO/BPC → 0 ISK; Invention, Kopie und fehlender Blueprint
+bleiben ungelöst). Die Kosten-pro-Einheit-Erwartungen in zwei Tests sind auf die neue Regel
+umgestellt. SwiftPM: 423 Core- und 39 App-Tests bestanden. `xcodebuild` Debug arm64 `TEST SUCCEEDED`.
+`git diff --check` fehlerfrei.
+
+Offen: Live-Prüfung im Ark-Plan. Ob alle 26 Knoten eigene Blueprints sind, zeigt erst diese
+Prüfung; ohne Blueprint bleibt die Summe weiter unverfügbar. Nicht committet.
+
+## 19.10.2026 – Nur Standardmineralien, verständliche Planner-Warnungen
+
+Auftrag des Eigentümers aus der Live-Prüfung:
+1. Die Mineralien-Kaufempfehlung zeigte 15 Items, darunter seltene Sondermineralien
+   (Chromodynamic Tricarboxyls, Neo-Jadarite, Eleutrium, Crystalline Raspite/Polycrase/
+   Moissanite/Kangite). Sie spielen im Spiel keine Rolle und sollen verschwinden.
+2. Die Planner-Warnungen waren unverständlich (Typ-IDs statt Namen, Informationshinweise
+   gemischt mit echten Problemen). Nur entscheidende Warnungen mit echten Namen anzeigen.
+
+Änderung:
+- `MaterialPurchaseCatalogKind.includedTypeIDs` beschränkt `.minerals` auf die acht
+  Standardmineralien (34–40, 11399); `SQLiteStaticCatalog.materialPurchaseCatalog` filtert
+  danach. Analyse, Kaufempfehlung und Dashboard-Ticker nutzen denselben Katalog. Erklärtext
+  (de/en) angepasst. Mondmaterialien unverändert.
+- `IndustryWarningText.blueprintRunsShort` als gemeinsame Formulierung für
+  `industry.blueprint-supply-insufficient-runs` in Planner und Produktionsbaum, mit
+  Blueprintnamen statt Typ-ID. Der Planner löst den Namen über den SDE-Katalog auf; ohne
+  Namen bleibt „an unresolved Blueprint (type ID …)“ sichtbar.
+- `logistics.single-item-volume-exceeded` nennt den Itemnamen und sagt, dass das Item
+  manuell transportiert werden muss. `industry.warehouse-source-not-fresh` umformuliert.
+- `PlannerView.decisiveWarnings` blendet `.information` aus, entfernt gleichlautende
+  Meldungen und stellt blockierende Warnungen voran. Codes, Schweregrade und Rechenregeln
+  sind unverändert; nur die Anzeige im Warnungspanel ist gefiltert.
+
+Prüfung: Katalogtest um Crystalline Kangite in Gruppe 18 erweitert (wird ausgeschlossen);
+App-Test für Filter, Deduplizierung, Reihenfolge und Blueprint-Text; Logistiktest prüft den
+neuen Text ohne „Type “-Präfix. SwiftPM: 423 Core-Tests und App-Tests bestanden,
+`EVEStaticDataKit` 8 Tests bestanden. `xcodebuild` Debug arm64 `TEST SUCCEEDED`;
+der Erklärtext in den `.strings`-Dateien wurde danach angepasst und mit `plutil -lint` und
+`swift build` geprüft. `git diff --check` fehlerfrei.
+
+Offen: Meldungstexte bleiben englisch (keine Lokalisierung dynamischer Warnungen).
+Live-Prüfung durch den Eigentümer. Nicht committet.
+
+## 19.10.2026 – Bauplanauswahl nach Ort, Runs, ME und TE
+
+Auftrag des Eigentümers: In der Auswahl des bevorzugten konkreten Bauplans standen
+Item-IDs („Item 1037196637011 · 6 runs · ME 10 · TE 20“). Wichtig sind stattdessen Standort,
+ME, Runs und TE; der Bauplanname steht bereits darüber. Gleiche Baupläne sollen als
+„10× … ME 9 · TE 14“ zusammengefasst werden.
+
+Änderung:
+- Gemeinsame Aufbereitung `ConcreteBlueprintSourceMenu` (in `PlaceholderViews.swift`) für
+  Planner (**Bevorzugter Bauplan**) und Produktionsbaum (**Konkreter Bauplan**). Titel:
+  Anzahl bei mehr als einem Exemplar, Standort (bzw. „Ort ungeklärt“, „(anderer Ort)“),
+  Runs, ME, TE und bei Verträgen/Marktaufträgen der Preis. Keine Item-, Vertrags- oder
+  Auftrags-IDs mehr.
+- Gruppierung nach Original/Kopie, Produktionsort ja/nein, Standortname, Runs, ME, TE und
+  Preis; Reihenfolge bleibt die bisherige (Produktionsort zuerst).
+- Auswahl eines Eintrags speichert alle Instanzen der Gruppe als bevorzugte Quellen; die
+  Zuteilung (`BlueprintSupplyPlanner`, unverändert) ordnet sie entsprechend vor. Jede
+  Instanz bleibt ein eigener Fertigungsjob.
+- Neue Lokalisierungen (de/en) für Ort ungeklärt, anderer Ort, 1 Durchlauf, unbegrenzte
+  Durchläufe und die bisher unübersetzten Picker-Beschriftungen.
+
+Prüfung: App-Test `testConcreteBlueprintChoicesMergeIdenticalCopiesWithoutItemIDs`
+(Gruppierung, Reihenfolge, Titel ohne IDs, Auswahl-Zuordnung). `swift test` bestanden
+(423 Core-Tests, App-Tests inkl. neuem Test), `EVEStaticDataKit` 8 Tests bestanden,
+`xcodebuild` Debug arm64 `TEST SUCCEEDED`, `plutil -lint` für beide `.strings` OK.
+
+Offen: Sichtprüfung in der laufenden App durch den Eigentümer. Nicht committet.

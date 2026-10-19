@@ -467,7 +467,7 @@
 "Hub Roles" = "Hub Roles";
 "Coalition Hub" = "Coalition Hub";
 "The active SDE group Moon Materials defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market." = "The active SDE group Moon Materials defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market.";
-"The active SDE group Mineral defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market." = "The active SDE group Mineral defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market.";
+"The eight standard minerals of the active SDE group Mineral (Tritanium to Megacyte plus Morphite) define the item list; rare special minerals are excluded. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market." = "The eight standard minerals of the active SDE group Mineral (Tritanium to Megacyte plus Morphite) define the item list; rare special minerals are excluded. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market.";
 "One shared market configuration for Planner, Moon and mineral purchase analysis, reactions and every other price comparison. The selected Main, Home and Coalition Hubs plus every selected comparison market are loaded." = "One shared market configuration for Planner, Moon and mineral purchase analysis, reactions and every other price comparison. The selected Main, Home and Coalition Hubs plus every selected comparison market are loaded.";
 "Additional comparison markets" = "Additional comparison markets";
 "Comparison market" = "Comparison market";
@@ -1753,3 +1753,11 @@
 "ESI metadata" = "ESI metadata";
 "App settings" = "App settings";
 "Consolidation workspaces" = "Consolidation workspaces";
+"The landed production cost divided by the actual top-level output units. For mixed products this is an aggregate average." = "The landed production cost divided by the actual top-level output units. For mixed products this is an aggregate average.";
+"Location unresolved" = "Location unresolved";
+"%@ (other location)" = "%@ (other location)";
+"1 run" = "1 run";
+"unlimited runs" = "unlimited runs";
+"Automatic concrete allocation" = "Automatic concrete allocation";
+"Preferred concrete Blueprint" = "Preferred concrete Blueprint";
+"Concrete Blueprint" = "Concrete Blueprint";

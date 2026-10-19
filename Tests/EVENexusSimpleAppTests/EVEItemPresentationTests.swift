@@ -235,4 +235,116 @@ final class EVEItemPresentationTests: XCTestCase {
       )
     }
   }
+
+  func testPlannerShowsOnlyDecisiveWarningsOnceWithBlockingFirst() {
+    let shortRuns = IndustryWarningText.blueprintRunsShort(
+      blueprintName: "Capital Cargo Bay Blueprint",
+      missingRuns: 17
+    )
+    let warnings = [
+      DomainWarning(
+        code: "industry.production-blacklist",
+        message: "Helium Fuel Block cannot be produced and uses the selected purchase or warehouse source.",
+        severity: .information
+      ),
+      DomainWarning(
+        code: "industry.warehouse-source-not-fresh",
+        message: "Some character assets are not up to date.",
+        severity: .warning
+      ),
+      DomainWarning(
+        code: "industry.blueprint-supply-insufficient-runs",
+        message: shortRuns,
+        severity: .blocking
+      ),
+      DomainWarning(
+        code: "industry.blueprint-supply-insufficient-runs",
+        message: shortRuns,
+        severity: .blocking
+      ),
+      DomainWarning(
+        code: "industry.slot-estimated-makespan",
+        message: "Makespan uses the configured slot counts.",
+        severity: .information
+      ),
+    ]
+
+    let visible = PlannerView.decisiveWarnings(warnings)
+
+    XCTAssertEqual(
+      visible.map(\.code),
+      [
+        "industry.blueprint-supply-insufficient-runs",
+        "industry.warehouse-source-not-fresh",
+      ]
+    )
+    XCTAssertEqual(
+      shortRuns,
+      "Not enough Blueprint runs for Capital Cargo Bay Blueprint: 17 required runs are not covered by your Blueprints."
+    )
+  }
+
+  func testConcreteBlueprintChoicesMergeIdenticalCopiesWithoutItemIDs() {
+    func bpc(
+      _ itemID: Int64,
+      location: String?,
+      exact: Bool = true,
+      runs: Int?,
+      me: Int,
+      te: Int
+    ) -> ConcreteBlueprintSourceCandidate {
+      ConcreteBlueprintSourceCandidate(
+        source: .ownedBPC(itemID: itemID),
+        locationName: location,
+        isAtProductionLocation: exact,
+        runs: runs,
+        materialEfficiency: me,
+        timeEfficiency: te,
+        priceText: nil
+      )
+    }
+    let choices = ConcreteBlueprintSourceMenu.choices([
+      bpc(1_037_196_637_011, location: "Fixture Hub", runs: 1, me: 9, te: 14),
+      bpc(1_049_158_211_897, location: "Fixture Hub", runs: 200, me: 10, te: 20),
+      bpc(1_037_196_637_012, location: "Fixture Hub", runs: 1, me: 9, te: 14),
+      bpc(1_037_196_637_013, location: "Fixture Hub", runs: 1, me: 9, te: 14),
+      bpc(1_049_158_211_898, location: "Other Hub", exact: false, runs: 1, me: 9, te: 14),
+      bpc(1_049_158_211_899, location: nil, runs: 1, me: 9, te: 14),
+    ])
+
+    XCTAssertEqual(choices.map(\.count), [3, 1, 1, 1])
+    XCTAssertEqual(
+      choices[0].sources,
+      [
+        .ownedBPC(itemID: 1_037_196_637_011),
+        .ownedBPC(itemID: 1_037_196_637_012),
+        .ownedBPC(itemID: 1_037_196_637_013),
+      ]
+    )
+    XCTAssertTrue(choices[0].title.hasPrefix("3×"))
+    XCTAssertTrue(choices[0].title.contains("Fixture Hub"))
+    XCTAssertTrue(choices[0].title.contains("ME 9 · TE 14"))
+    XCTAssertFalse(choices[1].title.hasPrefix("1×"))
+    XCTAssertTrue(choices[1].title.contains("ME 10 · TE 20"))
+    XCTAssertTrue(choices[2].title.contains("Other Hub"))
+    XCTAssertNotEqual(choices[2].title, choices[0].title.replacingOccurrences(of: "3× · ", with: ""))
+    for choice in choices {
+      XCTAssertFalse(choice.title.contains("1037196637011"))
+      XCTAssertFalse(choice.title.contains("Item"))
+    }
+
+    XCTAssertEqual(
+      ConcreteBlueprintSourceMenu.selectedChoiceID(
+        preferredSources: [.ownedBPC(itemID: 1_037_196_637_012)],
+        in: choices
+      ),
+      choices[0].id
+    )
+    XCTAssertNil(
+      ConcreteBlueprintSourceMenu.selectedChoiceID(
+        preferredSources: [],
+        in: choices
+      )
+    )
+  }
 }

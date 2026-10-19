@@ -679,13 +679,16 @@ struct PlannerView: View {
       if !concreteSources.isEmpty {
         Picker(
           "Preferred concrete Blueprint",
-          selection: plannerConcreteBlueprintSourceBinding(for: step)
+          selection: plannerConcreteBlueprintSourceBinding(
+            for: step,
+            choices: concreteSources
+          )
         ) {
           Text("Automatic concrete allocation").tag(
-            Optional<BlueprintSourceReference>.none
+            Optional<String>.none
           )
-          ForEach(concreteSources, id: \.source) { option in
-            Text(option.title).tag(Optional(option.source))
+          ForEach(concreteSources) { choice in
+            Text(verbatim: choice.title).tag(Optional(choice.id))
           }
         }
         .frame(width: 420)
@@ -1113,15 +1116,16 @@ struct PlannerView: View {
         .buttonStyle(.borderedProminent)
       }
     }
-    if !plan.warnings.isEmpty {
+    let visibleWarnings = Self.decisiveWarnings(plan.warnings)
+    if !visibleWarnings.isEmpty {
       Panel(title: "Warnings") {
         FullWidthDisclosure(isExpanded: $areWarningsExpanded) {
           Text(
-            "\(plan.warnings.count) \(plan.warnings.count == 1 ? "warning" : "warnings")"
+            "\(visibleWarnings.count) \(visibleWarnings.count == 1 ? "warning" : "warnings")"
           )
         } content: {
           VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-            ForEach(plan.warnings) { warning in
+            ForEach(visibleWarnings) { warning in
               Label(warning.message, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(
                   warning.severity == .blocking
@@ -1135,6 +1139,17 @@ struct PlannerView: View {
         .accessibilityIdentifier("planner.warnings.disclosure")
       }
     }
+  }
+
+  /// Only warnings that change the result or require action: informational notes are hidden,
+  /// identical messages from several planner stages appear once, blocking ones come first.
+  static func decisiveWarnings(_ warnings: [DomainWarning]) -> [DomainWarning] {
+    var seenMessages: Set<String> = []
+    let decisive = warnings.filter {
+      $0.severity != .information && seenMessages.insert($0.message).inserted
+    }
+    return decisive.filter { $0.severity == .blocking }
+      + decisive.filter { $0.severity != .blocking }
   }
 
   private func financeOverviewPanel(
@@ -4953,61 +4968,79 @@ struct PlannerView: View {
   private func plannerConcreteBlueprintSources(
     for step: PlannerBlueprintStep,
     action: ProductionTreeBlueprintAction
-  ) -> [(source: BlueprintSourceReference, title: String)] {
+  ) -> [ConcreteBlueprintSourceChoice] {
+    let candidates: [ConcreteBlueprintSourceCandidate]
     switch action {
     case .useOwnedBPC, .useOwnedBPO:
       let kind: BlueprintCopyKind = action == .useOwnedBPC ? .copy : .original
-      return
-        (step.blueprint.exactLocationInstanceOptions
-        + step.blueprint.otherLocationInstanceOptions).filter {
-          $0.kind == kind
-        }.map { option in
-          let runs = option.runs.map { " · \($0) runs" } ?? " · unlimited"
-          return (
-            action == .useOwnedBPC
+      let exact = step.blueprint.exactLocationInstanceOptions.filter { $0.kind == kind }
+      let other = step.blueprint.otherLocationInstanceOptions.filter { $0.kind == kind }
+      candidates =
+        (exact.map { ($0, true) } + other.map { ($0, false) })
+        .map { option, isExact in
+          ConcreteBlueprintSourceCandidate(
+            source: action == .useOwnedBPC
               ? .ownedBPC(itemID: option.itemID)
               : .ownedBPO(itemID: option.itemID),
-            "Item \(option.itemID)\(runs) · ME \(option.materialEfficiency) · TE \(option.timeEfficiency)"
+            locationName: option.locationName,
+            isAtProductionLocation: isExact,
+            runs: option.runs,
+            materialEfficiency: option.materialEfficiency,
+            timeEfficiency: option.timeEfficiency,
+            priceText: nil
           )
         }
     case .buyContractBPC, .buyContractBPO:
       let kind: BlueprintCopyKind =
         action == .buyContractBPC ? .copy : .original
-      return step.blueprint.attributableContractOptions.filter {
+      candidates = step.blueprint.attributableContractOptions.filter {
         $0.kind == kind
       }.map { option in
-        let runs = option.runs.map { " · \($0) runs" } ?? " · unlimited"
-        let quality =
-          option.materialEfficiency.flatMap { me in
-            option.timeEfficiency.map { " · ME \(me) · TE \($0)" }
-          } ?? ""
-        return (
-          action == .buyContractBPC
+        ConcreteBlueprintSourceCandidate(
+          source: action == .buyContractBPC
             ? .contractBPC(recordID: option.recordID)
             : .contractBPO(recordID: option.recordID),
-          "Contract \(option.contractID)\(runs)\(quality)"
+          locationName: option.locationName,
+          isAtProductionLocation: true,
+          runs: option.runs,
+          materialEfficiency: option.materialEfficiency,
+          timeEfficiency: option.timeEfficiency,
+          priceText: formatISK(option.price)
         )
       }
     case .buyMarketBPO:
-      return step.blueprint.marketBPOOptions.map { option in
-        (
-          BlueprintSourceReference.marketBPO(orderID: option.orderID),
-          "Market order \(option.orderID) · \(formatISK(option.price)) · ME 0 · TE 0"
+      candidates = step.blueprint.marketBPOOptions.map { option in
+        ConcreteBlueprintSourceCandidate(
+          source: .marketBPO(orderID: option.orderID),
+          locationName: nil,
+          isAtProductionLocation: true,
+          runs: nil,
+          materialEfficiency: 0,
+          timeEfficiency: 0,
+          priceText: formatISK(option.price)
         )
       }
     default:
-      return []
+      candidates = []
     }
+    return ConcreteBlueprintSourceMenu.choices(candidates)
   }
 
   private func plannerConcreteBlueprintSourceBinding(
-    for step: PlannerBlueprintStep
-  ) -> Binding<BlueprintSourceReference?> {
+    for step: PlannerBlueprintStep,
+    choices: [ConcreteBlueprintSourceChoice]
+  ) -> Binding<String?> {
     let blueprintTypeID = step.blueprint.blueprintTypeID
     return Binding(
-      get: { preferredBlueprintSources[blueprintTypeID]?.first },
-      set: { source in
-        preferredBlueprintSources[blueprintTypeID] = source.map { [$0] } ?? []
+      get: {
+        ConcreteBlueprintSourceMenu.selectedChoiceID(
+          preferredSources: preferredBlueprintSources[blueprintTypeID],
+          in: choices
+        )
+      },
+      set: { choiceID in
+        preferredBlueprintSources[blueprintTypeID] =
+          choices.first { $0.id == choiceID }?.sources ?? []
         handedOffBlueprintSupplyPlans.removeValue(forKey: blueprintTypeID)
         blueprintSelectionNeedsRecalculation = true
       }
@@ -8622,5 +8655,110 @@ struct DataSettingsView: View {
       settingsError =
         "The active SDE catalog was found, but its local database pointer could not be reconciled. The catalog files were not changed."
     }
+  }
+}
+
+/// One concrete Blueprint the user may prefer, described by the facts that
+/// matter for the choice instead of its item, record or contract identifier.
+struct ConcreteBlueprintSourceCandidate: Hashable {
+  let source: BlueprintSourceReference
+  let locationName: String?
+  let isAtProductionLocation: Bool
+  let runs: Int?
+  let materialEfficiency: Int?
+  let timeEfficiency: Int?
+  let priceText: String?
+}
+
+/// Picker entry for one or more interchangeable concrete Blueprints. All
+/// sources of a choice are handed to the allocator as an ordered preference.
+struct ConcreteBlueprintSourceChoice: Identifiable, Hashable {
+  let id: String
+  let sources: [BlueprintSourceReference]
+  let representative: ConcreteBlueprintSourceCandidate
+
+  var count: Int { sources.count }
+
+  var title: String {
+    var parts: [String] = []
+    if count > 1 {
+      parts.append("\(count.formatted())×")
+    }
+    let location =
+      representative.locationName ?? "Location unresolved".localizedUI
+    parts.append(
+      representative.isAtProductionLocation
+        ? location
+        : AppLocalization.format("%@ (other location)", location)
+    )
+    if let runs = representative.runs {
+      parts.append(
+        runs == 1
+          ? "1 run".localizedUI
+          : AppLocalization.format("%@ runs", runs.formatted())
+      )
+    } else {
+      parts.append("unlimited runs".localizedUI)
+    }
+    parts.append(
+      "ME \(representative.materialEfficiency.map(String.init) ?? "?")"
+    )
+    parts.append("TE \(representative.timeEfficiency.map(String.init) ?? "?")")
+    if let priceText = representative.priceText {
+      parts.append(priceText)
+    }
+    return parts.joined(separator: " · ")
+  }
+}
+
+enum ConcreteBlueprintSourceMenu {
+  /// Merges candidates that agree in location, runs, ME, TE and price while
+  /// keeping the incoming order (production location first) deterministic.
+  static func choices(
+    _ candidates: [ConcreteBlueprintSourceCandidate]
+  ) -> [ConcreteBlueprintSourceChoice] {
+    var order: [String] = []
+    var sourcesByKey: [String: [BlueprintSourceReference]] = [:]
+    var representativeByKey: [String: ConcreteBlueprintSourceCandidate] = [:]
+    for candidate in candidates {
+      let key = groupKey(candidate)
+      if sourcesByKey[key] == nil {
+        order.append(key)
+        representativeByKey[key] = candidate
+      }
+      sourcesByKey[key, default: []].append(candidate.source)
+    }
+    return order.compactMap { key in
+      guard let sources = sourcesByKey[key], let first = sources.first,
+        let representative = representativeByKey[key]
+      else { return nil }
+      return ConcreteBlueprintSourceChoice(
+        id: first.stableID,
+        sources: sources,
+        representative: representative
+      )
+    }
+  }
+
+  static func selectedChoiceID(
+    preferredSources: [BlueprintSourceReference]?,
+    in choices: [ConcreteBlueprintSourceChoice]
+  ) -> String? {
+    guard let preferred = preferredSources?.first else { return nil }
+    return choices.first { $0.sources.contains(preferred) }?.id
+  }
+
+  private static func groupKey(
+    _ candidate: ConcreteBlueprintSourceCandidate
+  ) -> String {
+    [
+      candidate.source.isOriginal ? "original" : "copy",
+      candidate.isAtProductionLocation ? "exact" : "other",
+      candidate.locationName ?? "",
+      candidate.runs.map(String.init) ?? "unlimited",
+      candidate.materialEfficiency.map(String.init) ?? "?",
+      candidate.timeEfficiency.map(String.init) ?? "?",
+      candidate.priceText ?? "",
+    ].joined(separator: "|")
   }
 }

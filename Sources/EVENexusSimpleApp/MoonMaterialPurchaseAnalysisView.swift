@@ -50,7 +50,7 @@ enum MaterialPurchaseAnalysisKind: Hashable {
     case .moonMaterials:
       "The active SDE group Moon Materials defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market."
     case .minerals:
-      "The active SDE group Mineral defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market."
+      "The eight standard minerals of the active SDE group Mineral (Tritanium to Megacyte plus Morphite) define the item list; rare special minerals are excluded. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market."
     }
   }
 

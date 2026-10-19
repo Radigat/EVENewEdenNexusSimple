@@ -596,6 +596,18 @@ struct JumpFreighterLogisticsTests {
         classification: freighter
       ) == nil
     )
+    let jumpFreighterAsLargeShip = IndustryItemClassification(
+      categoryName: "Ship",
+      groupName: "Jump Freighter",
+      manufacturingCategory: .large
+    )
+    #expect(
+      CapitalSelfJumpPolicy.product(
+        typeID: 28_850,
+        name: "Ark",
+        classification: jumpFreighterAsLargeShip
+      ) != nil
+    )
     #expect(JumpRouteClass(groupName: "Supercarrier") == .supercarrier)
     #expect(JumpRouteClass(groupName: "Carrier") == .carrier)
     #expect(

@@ -6,6 +6,22 @@ import Testing
 @Suite("Production basis")
 struct ProductionBasisTests {
   @Test
+  func freightersFollowLargeShipsWhileTrueCapitalsStayCapital() {
+    func category(_ group: String) -> ManufacturingCategory {
+      SQLiteStaticCatalog.manufacturingCategory(categoryName: "Ship", groupName: group)
+    }
+    #expect(category("Freighter") == .large)
+    #expect(category("Jump Freighter") == .large)
+    #expect(category("Battleship") == .large)
+    for capital in [
+      "Carrier", "Dreadnought", "Force Auxiliary", "Supercarrier", "Titan", "Capital Industrial Ship",
+    ] {
+      #expect(category(capital) == .capital)
+    }
+    #expect(category("Heavy Assault Cruiser") == .medium)
+  }
+
+  @Test
   func reprocessingReadinessExplainsEveryMissingInput() {
     let unresolved = ConfiguredIndustryStructure(
       name: "Fixture Tatara",

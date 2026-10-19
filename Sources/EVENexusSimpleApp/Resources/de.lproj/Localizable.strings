@@ -1113,7 +1113,7 @@
 "Hub Roles" = "Hub-Rollen";
 "Coalition Hub" = "Koalitions-Hub";
 "The active SDE group Moon Materials defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market." = "Die aktive SDE-Gruppe Moon Materials definiert die Artikelliste. Verglichen werden die in den Markteinstellungen gewählten Main-, Home- und Koalitions-Hubs sowie zusätzliche Vergleichsmärkte. NPC-Stationen verwenden öffentliche Stationsaufträge; Spielerstrukturen verwenden ihren authentifizierten Strukturmarkt. Fehlender Zugriff bleibt ausdrücklich unverfügbar, statt als leerer Markt zu erscheinen.";
-"The active SDE group Mineral defines the item list. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market." = "Die aktive SDE-Gruppe Mineral definiert die Artikelliste. Verglichen werden die in den Markteinstellungen gewählten Main-, Home- und Koalitions-Hubs sowie zusätzliche Vergleichsmärkte. NPC-Stationen verwenden öffentliche Stationsaufträge; Spielerstrukturen verwenden ihren authentifizierten Strukturmarkt. Fehlender Zugriff bleibt ausdrücklich unverfügbar, statt als leerer Markt zu erscheinen.";
+"The eight standard minerals of the active SDE group Mineral (Tritanium to Megacyte plus Morphite) define the item list; rare special minerals are excluded. The selected Main, Home and Coalition Hubs plus additional comparison markets from Market Settings are compared. NPC stations use public station orders; Player Structures use their authenticated structure market. Missing access remains explicitly unavailable instead of becoming an empty market." = "Die acht Standardmineralien der aktiven SDE-Gruppe Mineral (Tritanium bis Megacyte sowie Morphite) bilden die Artikelliste; seltene Sondermineralien sind ausgeschlossen. Verglichen werden die in den Markteinstellungen gewählten Main-, Home- und Koalitions-Hubs sowie zusätzliche Vergleichsmärkte. NPC-Stationen verwenden öffentliche Stationsaufträge; Spielerstrukturen verwenden ihren authentifizierten Strukturmarkt. Fehlender Zugriff bleibt ausdrücklich unverfügbar, statt als leerer Markt zu erscheinen.";
 "One shared market configuration for Planner, Moon and mineral purchase analysis, reactions and every other price comparison. The selected Main, Home and Coalition Hubs plus every selected comparison market are loaded." = "Eine gemeinsame Marktkonfiguration für Planner, Mondmaterial- und Mineralien-Kaufanalyse, Reaktionen und alle weiteren Preisvergleiche. Geladen werden die gewählten Main-, Home- und Koalitions-Hubs sowie alle ausgewählten Vergleichsmärkte.";
 "Additional comparison markets" = "Zusätzliche Vergleichsmärkte";
 "Comparison market" = "Vergleichsmarkt";
@@ -2351,3 +2351,11 @@
 "ESI metadata" = "ESI-Metadaten";
 "App settings" = "App-Einstellungen";
 "Consolidation workspaces" = "Konsolidierungsarbeitsbereiche";
+"The landed production cost divided by the actual top-level output units. For mixed products this is an aggregate average." = "Produktionskosten inklusive Lieferung geteilt durch die tatsächlich erzeugten Endprodukteinheiten. Bei mehreren Produkten ist dies ein zusammengefasster Durchschnitt.";
+"Location unresolved" = "Ort ungeklärt";
+"%@ (other location)" = "%@ (anderer Ort)";
+"1 run" = "1 Durchlauf";
+"unlimited runs" = "unbegrenzte Durchläufe";
+"Automatic concrete allocation" = "Automatische Zuteilung";
+"Preferred concrete Blueprint" = "Bevorzugter Bauplan";
+"Concrete Blueprint" = "Konkreter Bauplan";

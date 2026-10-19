@@ -51,6 +51,12 @@ public struct ProductionTreeBlueprintCostChoice: Sendable {
 }
 
 public enum ProductionTreeBlueprintCostProjector {
+  /// Owner decision 2026-10-19: an owned BPO/BPC without an entered cost is counted as 0 ISK
+  /// instead of keeping the total production cost unavailable. Copies, invention and purchases
+  /// still need an explicit cost.
+  public static let ownedWithoutEnteredCostSource =
+    "Owned blueprint without entered cost (counted as 0 ISK)"
+
   public static func allocations(
     for choices: [ProductionTreeBlueprintCostChoice]
   ) -> [Int64: IndustryBlueprintCostAllocation] {
@@ -72,6 +78,22 @@ public enum ProductionTreeBlueprintCostProjector {
           amount: price,
           source:
             "\(max(0, choice.attributableBPCContractCount)) exact Main Hub single-line BPC Contract(s), \(runs) runs"
+        )
+      case .useOwnedBPC where manualAmount == nil:
+        allocation = IndustryBlueprintCostAllocation(
+          blueprintTypeID: choice.blueprintTypeID,
+          productName: choice.productName,
+          kind: .bpc,
+          amount: 0,
+          source: ownedWithoutEnteredCostSource
+        )
+      case .useOwnedBPO where manualAmount == nil:
+        allocation = IndustryBlueprintCostAllocation(
+          blueprintTypeID: choice.blueprintTypeID,
+          productName: choice.productName,
+          kind: .bpo,
+          amount: 0,
+          source: ownedWithoutEnteredCostSource
         )
       case .useOwnedBPC, .invent, .buyLoyaltyStoreBPC, .manualExternalBPC:
         guard let manualAmount else { return }
@@ -546,7 +568,7 @@ public enum BlueprintSupplyPlanner {
         }
         appendShortfallWarning(
           remainingRuns: remaining,
-          blueprintTypeID: blueprintTypeID,
+          blueprintName: assessment.blueprintName,
           warnings: &warnings
         )
       case .useOwnedBPO:
@@ -599,7 +621,7 @@ public enum BlueprintSupplyPlanner {
         } else {
           appendShortfallWarning(
             remainingRuns: requiredRuns,
-            blueprintTypeID: blueprintTypeID,
+            blueprintName: assessment.blueprintName,
             warnings: &warnings
           )
         }
@@ -654,7 +676,7 @@ public enum BlueprintSupplyPlanner {
         batchAllocationCost = totalCost.isFinite ? totalCost : nil
         appendShortfallWarning(
           remainingRuns: remaining,
-          blueprintTypeID: blueprintTypeID,
+          blueprintName: assessment.blueprintName,
           warnings: &warnings
         )
       case .buyContractBPO:
@@ -730,7 +752,7 @@ public enum BlueprintSupplyPlanner {
         } else {
           appendShortfallWarning(
             remainingRuns: requiredRuns,
-            blueprintTypeID: blueprintTypeID,
+            blueprintName: assessment.blueprintName,
             warnings: &warnings
           )
         }
@@ -767,7 +789,7 @@ public enum BlueprintSupplyPlanner {
       case .unavailable, .unresolved:
         appendShortfallWarning(
           remainingRuns: requiredRuns,
-          blueprintTypeID: blueprintTypeID,
+          blueprintName: assessment.blueprintName,
           warnings: &warnings
         )
       }
@@ -858,15 +880,17 @@ public enum BlueprintSupplyPlanner {
 
   private static func appendShortfallWarning(
     remainingRuns: Int,
-    blueprintTypeID: Int64,
+    blueprintName: String,
     warnings: inout [DomainWarning]
   ) {
     guard remainingRuns > 0 else { return }
     warnings.append(
       DomainWarning(
         code: "industry.blueprint-supply-insufficient-runs",
-        message:
-          "Blueprint type \(blueprintTypeID) is short by \(remainingRuns) concrete runs.",
+        message: IndustryWarningText.blueprintRunsShort(
+          blueprintName: blueprintName,
+          missingRuns: remainingRuns
+        ),
         severity: .blocking
       )
     )

@@ -129,7 +129,7 @@ public enum LogisticsCostCalculator {
           DomainWarning(
             code: "logistics.single-item-volume-exceeded",
             message:
-              "Type \(item.typeID) has a packaged volume of \(unitVolume.formatted()) m³ and cannot fit into the configured \(maximumContractVolumeM3.formatted()) m³ contract limit.",
+              "\(item.name ?? "An unresolved item (type ID \(item.typeID))") is too large for a courier contract: \(unitVolume.formatted()) m³ packaged exceeds the configured \(maximumContractVolumeM3.formatted()) m³ contract limit. Transfer it manually.",
             severity: .warning
           )
         )

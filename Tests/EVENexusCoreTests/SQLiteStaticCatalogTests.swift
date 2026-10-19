@@ -523,7 +523,7 @@ struct SQLiteStaticCatalogTests {
   }
 
   @Test
-  func returnsPublishedMineralsFromTheirSDEGroup() async throws {
+  func returnsPublishedStandardMineralsFromTheirSDEGroup() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "eve-simple-minerals-\(UUID().uuidString)",
       isDirectory: true
@@ -815,6 +815,14 @@ struct SQLiteStaticCatalogTests {
           groupID: 18,
           categoryID: 10,
           name: "Pyerite"
+        )
+      )
+      itemTypes.append(
+        referenceItemType(
+          id: 92_572,
+          groupID: 18,
+          categoryID: 10,
+          name: "Crystalline Kangite"
         )
       )
       itemTypes.append(

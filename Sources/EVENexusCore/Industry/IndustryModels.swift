@@ -652,8 +652,8 @@ public enum HighSecurityCapitalTransferPolicy {
       node.manufacturingCategory == .capital,
       let group = node.sourceGroup?.lowercased()
     else { return false }
-    // Freighters and Jump Freighters are classified as capital production but
-    // are the ordinary high-security transport exceptions.
+    // Freighters and Jump Freighters are produced as large ships; the group check stays as a
+    // safeguard for them as the ordinary high-security transport exceptions.
     return group != "freighter" && group != "jump freighter"
   }
 }
@@ -1215,8 +1215,10 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
     return total > 0 ? total : nil
   }
 
+  /// Landed cost per unit: production cost including Main Hub to Home Hub delivery
+  /// (owner decision 2026-10-19). Unavailable while the landed total is unavailable.
   public var productionCostPerOutputUnit: Double? {
-    guard let totalCost = costBreakdown?.productionCostBeforeLogistics,
+    guard let totalCost = costBreakdown?.totalProductionCost,
       totalCost.isFinite,
       totalCost >= 0,
       let plannedOutputUnits
@@ -1324,5 +1326,16 @@ extension IndustryCatalogQuerying {
     producing materialTypeIDs: Set<Int64>
   ) async throws -> [CompressedOreOption] {
     []
+  }
+}
+
+/// Shared wording for industry warnings that more than one planner stage emits, so the same
+/// condition always reads identically and names the affected EVE type instead of its ID.
+public enum IndustryWarningText {
+  public static func blueprintRunsShort(
+    blueprintName: String,
+    missingRuns: Int
+  ) -> String {
+    "Not enough Blueprint runs for \(blueprintName): \(missingRuns) required \(missingRuns == 1 ? "run is" : "runs are") not covered by your Blueprints."
   }
 }

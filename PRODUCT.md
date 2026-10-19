@@ -138,7 +138,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
 | Reactions | veröffentlichte Reaktionsrezepte, vollständige Batch-Kosten, Logistik und Make-or-Buy-Vergleich |
 | Moon purchase analysis | Mengen- und Preisvergleich ausgewählter Marktrollen für Mondmaterialien; vollständiger Tabellenexport als PNG |
-| Mineral purchase analysis | Mengen- und Preisvergleich der veröffentlichten SDE-Gruppe `Mineral` an allen ausgewählten Märkten; vollständiger Tabellenexport als PNG |
+| Mineral purchase analysis | Mengen- und Preisvergleich der acht Standardmineralien (Tritanium, Pyerite, Mexallon, Isogen, Nocxium, Zydrine, Megacyte, Morphite) aus der veröffentlichten SDE-Gruppe `Mineral` an allen ausgewählten Märkten; seltene Sondermineralien der Gruppe (z. B. Crystalline Kangite, Eleutrium, Chromodynamic Tricarboxyls) sind ausgeschlossen; vollständiger Tabellenexport als PNG |
 | All items | faktische persönliche und optional autorisierte Corporation-Bestände an allen bekannten Orten |
 | Warehouse | nur planungsfähiger Bestand an exakt konfigurierten Produktionsorten, abzüglich Schutzbeständen und Reservierungen |
 | Blueprints | persönliche BPO/BPC-Instanzen, Runs, ME/TE und belegte Forschungskostenschätzung |
@@ -320,6 +320,12 @@ Verkaufslogistik richtet sich nach den exakten konfigurierten Ortskennungen.
 Ein gleicher Start- und Zielort erzeugt keinen Transportweg. Player-Structure-
 Märkte bleiben ohne passende Berechtigung oder Dockingzugriff unverfügbar.
 
+Die Mineralien-Kaufanalyse, ihre Kaufempfehlungen und der Dashboard-Ticker
+umfassen nur die acht Standardmineralien (Typ-IDs 34–40 und 11399). Weitere
+veröffentlichte Typen der SDE-Gruppe `Mineral` sind seltene Sondermineralien ohne
+Rolle in der regulären Produktion und werden bewusst nicht angezeigt
+(Eigentümerentscheid 19.10.2026).
+
 Mondmaterial- und Mineralien-Kaufanalyse verwenden gemeinsam alle ausdrücklich
 gewählten Main-, Home- und Coalition-Hubs sowie zusätzliche Vergleichsmärkte.
 Ein Ort erscheint auch bei mehreren Rollen nur einmal. Für jeden Gegenstand und
@@ -388,6 +394,12 @@ Der Planner friert eine berechnete Planung als unveränderlichen Snapshot ein.
 Ein gekaufter oder aus dem Warehouse verwendeter Zwischenstoff entfernt seinen
 Produktionszweig und den zugehörigen Job. Make-or-Buy vergleicht vollständige
 Bedarfs- und Batchmengen einschließlich belegter Installation und Logistik.
+Passt ein Item verpackt nicht in das konfigurierte Transportlimit je Vertrag
+(zum Beispiel ein Freighter-Rumpf bei 350.000 m³), ist der Kauf am Main Hub nicht
+möglich: Kaufkosten und Kauflogistik bleiben nicht verfügbar, die Empfehlung lautet
+**Bauen** an der Produktionsanlage, und „Empfehlungen übernehmen“ setzt es auf Bauen.
+Liegt der Main Hub an derselben Station wie die Anlage, entfällt der Transport und
+der Kauf bleibt vergleichbar.
 Oberhalb der freien Planereingabe steht eine geführte Produktauswahl. Die Suche
 startet ab drei Zeichen in einem großen Ergebnisfeld und zeigt ausschließlich
 veröffentlichte, vollständig aufgelöste Manufacturing-Produkte des aktiven
@@ -569,7 +581,12 @@ sichere Neuimport desselben SDE-Builds oder die Installation eines neueren
 Builds und anschließend der dokumentierte App-Neustart erforderlich.
 Der Main-Hub-Chancen-Snapshot enthält alle vollständigen veröffentlichten
 Manufacturing-Definitionen und Reaktionsformeln des aktiven SDE. Fertigung
-verwendet die je Produktklasse konfigurierte Fertigungsanlage; Reaktionen
+verwendet die je Produktklasse konfigurierte Fertigungsanlage. Freighter und Jump
+Freighter zählen dabei zu **Large** (Anlage und Rig-Boni wie Battleships); Capital
+sind Carrier, Dreadnought, Force Auxiliary, Supercarrier, Titan und Capital
+Industrial Ship. Ob ein gebautes Schiff selbst springt, entscheidet seine
+Schiffsgruppe, nicht diese Produktklasse; ein gebauter Jump Freighter springt
+weiterhin selbst. Reaktionen
 verwenden ausschließlich die getrennt konfigurierte Reaktionsanlage, deren
 Reaktions-Systemkostenindex sowie die gemeinsame Reaktionsrundung für Material,
 Dauer und Installation. Der Produktfilter **Reaktionen** prüft die tatsächliche
@@ -619,10 +636,22 @@ immer sichtbar. Die sortierbaren Kennzahlen erklären weiterhin ihre Quelle und
 Formel, insbesondere Gesamtkosten, Bruttoerlös, Verkaufssteuer, Brokergebühr,
 Gewinn, tägliches Gewinnpotenzial, ROI, ISK/h und ISK/m³.
 
+Die Warnungsliste des Planners zeigt nur entscheidende Meldungen: blockierende
+Warnungen zuerst, danach Warnungen mit Einfluss auf Ergebnis oder Handlung.
+Reine Informationshinweise (zum Beispiel nicht baubare Fuel Blocks aus der
+Produktionssperrliste, die Makespan-Schätzung aus Slotzahlen oder eigene Blueprints
+mit 0 ISK) werden dort nicht angezeigt; gleichlautende Meldungen mehrerer
+Planungsstufen erscheinen einmal. Meldungen zu fehlenden Blueprint-Runs und zu
+Items, die für einen Kurierauftrag zu groß sind, nennen den Blueprint- bzw.
+Itemnamen statt einer Typ-ID; nur ein nicht auflösbarer Name bleibt ausdrücklich
+als unaufgelöster Typ mit ID sichtbar. Die Meldungstexte sind englisch.
+
 Im Planner ist die Blueprintquelle jedes tatsächlich gebauten Knotens
-kostenwirksam. Eine eigene BPC
-benötigt ihren vollständigen Erwerbs- oder Aktivitätsbetrag, eine vorhandene
-BPO eine ausdrücklich eingetragene Umlage für diesen Plan. Beim Kauf über
+kostenwirksam. Eine eigene BPC oder vorhandene BPO, für die kein Betrag
+eingetragen ist, zählt mit **0 ISK**; ein Hinweis nennt, wie viele Blueprints so
+eingerechnet sind. Ein eingetragener Erwerbs-, Aktivitätsbetrag oder eine Umlage
+ersetzt diese 0 ISK. Kopieren, Invention, Loyalty-Store- und manuell externe BPCs
+sowie gekaufte BPOs benötigen weiterhin einen ausdrücklichen Betrag. Beim Kauf über
 öffentliche Verträge werden nur aktive Item-Exchange-Verträge am exakten Main
 Hub automatisch zugerechnet, wenn Preis, BPC-Kennung, Runs, ME und TE bekannt
 sind und der Vertrag genau eine angebotene Blueprintposition ohne angeforderte
@@ -631,8 +660,11 @@ alle benötigten Runs decken, erzeugen dabei jedoch immer getrennte Jobs. Ein
 BPO-Kaufpreis wird vollständig angezeigt, aber nicht ohne
 eingetragene Umlage einer einzelnen Produktion belastet. Bündel, Nullpreise und
 alte Vertragszeilen ohne Runs/ME/TE bleiben ausdrücklich unkalkulierbar. Fehlt
-bei irgendeinem produzierten Knoten eine Blueprintkostenquelle, bleiben
-Gesamtkosten und Gewinn unverfügbar.
+bei irgendeinem produzierten Knoten eine Blueprintkostenquelle (zum Beispiel
+gar kein Blueprint vorhanden), bleiben Gesamtkosten und Gewinn unverfügbar.
+**Produktionskosten pro Einheit** sind die Produktionskosten inklusive Lieferung
+Main Hub → Home Hub geteilt durch die erzeugten Endprodukteinheiten; sind diese
+Gesamtkosten nicht verfügbar, ist auch der Wert pro Einheit nicht verfügbar.
 
 Der öffentliche Vertragsindex übernimmt für Blueprintpositionen die von ESI
 gelieferten Werte **Runs**, **ME**, **TE** und **BPC/BPO**. Neue
@@ -754,6 +786,16 @@ Quell- oder Zielort blockiert den Plan. Mehrere BPCs gleicher oder
 unterschiedlicher ME-/TE-Qualität dürfen gemeinsam die benötigten Runs
 abdecken; jede konkrete BPC bleibt dabei ein getrennter Fertigungsjob mit
 eigener Rundung und wird nie zu einer fiktiven Kopie zusammengezogen.
+Die Auswahl **Bevorzugter Bauplan** (Planner) bzw. **Konkreter Bauplan**
+(Produktionsbaum) beschreibt jede Quelle über Standort, Runs, ME und TE, bei
+Verträgen und Marktaufträgen zusätzlich über den Preis; Item-, Vertrags- und
+Auftrags-IDs erscheinen dort nicht mehr. Eigene Baupläne außerhalb des
+Produktionsorts tragen den Zusatz „anderer Ort“, ein unaufgelöster Standort
+bleibt als „Ort ungeklärt“ sichtbar. Quellen mit identischem Standort,
+Runs, ME, TE und Preis werden zu einem Eintrag wie „10× · Ort · 1 Durchlauf ·
+ME 9 · TE 14“ zusammengefasst. Die Wahl eines zusammengefassten Eintrags übergibt
+alle enthaltenen Instanzen als bevorzugte Reihenfolge an die Zuteilung; die
+Fertigungsjobs bleiben je Instanz getrennt.
 Enthält ein rekursiver Produktionsbaum denselben Blueprint-Typ an mehreren
 Knoten, darf seine bereits typweit aggregierte Bewertung entsprechend mehrfach
 im Baum erscheinen. Die Versorgungsplanung gruppiert diese Projektionen sicher

@@ -1153,7 +1153,28 @@ struct IndustryPlannerTests {
     let owned = try #require(allocations[901])
     #expect(owned.kind == .bpo)
     #expect(owned.amount == 250_000)
-    #expect(allocations[902] == nil)
+    let ownedBPCWithoutCost = try #require(allocations[902])
+    #expect(ownedBPCWithoutCost.kind == .bpc)
+    #expect(ownedBPCWithoutCost.amount == 0)
+    #expect(
+      ownedBPCWithoutCost.source
+        == ProductionTreeBlueprintCostProjector.ownedWithoutEnteredCostSource)
+    let notOwned = ProductionTreeBlueprintCostProjector.allocations(
+      for: [
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 903, productName: "Owned BPO", action: .useOwnedBPO),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 904, productName: "Invented", action: .invent),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 905, productName: "Copied", action: .copyOwnedBPO),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 906, productName: "Missing", action: .unavailable),
+      ]
+    )
+    #expect(notOwned[903]?.amount == 0 && notOwned[903]?.kind == .bpo)
+    #expect(notOwned[904] == nil)
+    #expect(notOwned[905] == nil)
+    #expect(notOwned[906] == nil)
   }
 
   @Test
@@ -1501,7 +1522,7 @@ struct IndustryPlannerTests {
     #expect(costs.recomputedTotalProductionCost == 8_001_025)
     #expect(costs.hasConsistentTotal)
     #expect(plan.plannedOutputUnits == 1)
-    #expect(plan.productionCostPerOutputUnit == 7_001_025)
+    #expect(plan.productionCostPerOutputUnit == 8_001_025)
     #expect(plan.immediateSale.grossRevenue == 250_000_000)
     #expect(plan.immediateSale.salesTax == 12_500_000)
     #expect(plan.immediateSale.brokerFee == 0)
@@ -1515,15 +1536,15 @@ struct IndustryPlannerTests {
       input: "Finished Product 8 0 0 BPC 7000000",
       context: context
     )
-    let multiUnitProductionSubtotal = try #require(
-      multiUnitPlan.costBreakdown?.productionCostBeforeLogistics
+    let multiUnitLandedTotal = try #require(
+      multiUnitPlan.costBreakdown?.totalProductionCost
     )
     let multiUnitCost = try #require(
       multiUnitPlan.productionCostPerOutputUnit
     )
     #expect(multiUnitPlan.plannedOutputUnits == 8)
     #expect(
-      abs(multiUnitCost - multiUnitProductionSubtotal / 8) < 0.000_001
+      abs(multiUnitCost - multiUnitLandedTotal / 8) < 0.000_001
     )
   }
 
@@ -2623,6 +2644,43 @@ struct IndustryPlannerTests {
     #expect(buyApplication.preferences[92]?.purchaseLocation == .jita)
     #expect(buyApplication.preferences[999]?.supplyMode == .warehouse)
     #expect(buyApplication.preferences[999]?.purchaseLocation == .amarr)
+
+    // The same cheaper purchase is impossible once the packaged item exceeds the 350,000 m³
+    // transport limit (e.g. a freighter hull): the component must be built at the facility.
+    let oversizedContext = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: FixtureCatalog(
+        names: [91: "Product", 92: "Component", 93: "Raw"],
+        definitions: [91: product, 92: component],
+        packagedVolumes: [92: 400_000, 93: 1]
+      ),
+      market: buyContext.market,
+      adjustedPrices: buyContext.adjustedPrices,
+      systemIndices: buyContext.systemIndices,
+      defaultPurchaseLocation: .jita,
+      sdeBuild: 1
+    )
+    let oversizedPlan = try await IndustryPlanner().plan(
+      input: "Product 1 0 0",
+      context: oversizedContext
+    )
+    let oversizedAnalysis = try #require(
+      oversizedPlan.materials.first { $0.typeID == 92 }?.makeOrBuyAnalysis
+    )
+    #expect(oversizedAnalysis.recommendation == .produce)
+    #expect(oversizedAnalysis.purchaseTotalCost == nil)
+    #expect(oversizedAnalysis.purchaseLogisticsCost == nil)
+    #expect(oversizedAnalysis.savings == nil)
+    #expect(oversizedAnalysis.buildTotalCost == 5_500_000.36)
+    #expect(
+      oversizedAnalysis.warnings.contains { $0.code == "make-or-buy.purchase-not-transportable" })
+    let oversizedApplication = MakeOrBuyRecommendationApplication(
+      materials: oversizedPlan.materials,
+      existingPreferences: [:],
+      mainHub: .jita
+    )
+    #expect(oversizedApplication.preferences[92]?.supplyMode == .produce)
   }
 
   @Test
@@ -2977,10 +3035,7 @@ struct IndustryPlannerTests {
 
     #expect(plan.costBreakdown?.logistics == nil)
     #expect(plan.costBreakdown?.totalProductionCost == nil)
-    #expect(
-      plan.productionCostPerOutputUnit
-        == plan.costBreakdown?.productionCostBeforeLogistics
-    )
+    #expect(plan.productionCostPerOutputUnit == nil)
     #expect(
       plan.immediateSale.inboundLogisticsAssessment?.status
         == .manualTransferRequired
@@ -3001,6 +3056,8 @@ struct IndustryPlannerTests {
       plan.warnings.contains {
         $0.code == "logistics.single-item-volume-exceeded"
           && $0.severity == .warning
+          && $0.message.contains("too large for a courier contract")
+          && !$0.message.hasPrefix("Type ")
       }
     )
   }

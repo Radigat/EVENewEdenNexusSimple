@@ -1379,6 +1379,22 @@ public enum MaterialPurchaseCatalogKind: String, Codable, CaseIterable,
     case .minerals: "missing-minerals"
     }
   }
+
+  /// Restricts the SDE group to the types that matter for regular trading. The SDE group
+  /// Mineral also contains rare event and special minerals (for example Crystalline Kangite,
+  /// Eleutrium or Chromodynamic Tricarboxyls) that play no role in normal production
+  /// (owner decision 2026-10-19). `nil` keeps the complete published group.
+  public var includedTypeIDs: Set<Int64>? {
+    switch self {
+    case .moonMaterials: nil
+    case .minerals: Self.standardMineralTypeIDs
+    }
+  }
+
+  /// Tritanium, Pyerite, Mexallon, Isogen, Nocxium, Zydrine, Megacyte and Morphite.
+  public static let standardMineralTypeIDs: Set<Int64> = [
+    34, 35, 36, 37, 38, 39, 40, 11_399,
+  ]
 }
 
 public struct MaterialPurchaseItem: Identifiable, Codable, Equatable,

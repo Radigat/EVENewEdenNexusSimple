@@ -1213,7 +1213,7 @@ final class RuntimeState: ObservableObject {
               DomainWarning(
                 code: "industry.warehouse-source-not-fresh",
                 message:
-                  "The production warehouse contains non-fresh or unavailable character asset sources: \(incompleteStates.map(\.rawValue).sorted().joined(separator: ", ")).",
+                  "Some character assets in the production warehouse are not up to date (\(incompleteStates.map(\.rawValue).sorted().joined(separator: ", "))); stock used from the warehouse may be incomplete.",
                 severity: .warning
               )
             )

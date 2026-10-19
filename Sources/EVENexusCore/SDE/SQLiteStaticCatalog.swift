@@ -537,6 +537,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       throw StaticCatalogError.noActiveCatalog
     }
     let database = try activeDatabase()
+    let typeFilter = kind.includedTypeIDs.map { typeIDs in
+      "AND t.id IN (\(typeIDs.sorted().map(String.init).joined(separator: ",")))"
+    } ?? ""
     let rows = try database.rows(
       """
       SELECT t.id, t.name
@@ -544,6 +547,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       JOIN groups_table g ON g.id = t.group_id
       WHERE g.name = '\(kind.rawValue)'
         AND t.published = 1
+        \(typeFilter)
       ORDER BY t.name COLLATE NOCASE
       """
     )
@@ -1122,7 +1126,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     return columns.contains("meta_group_id") && columns.contains("tech_level")
   }
 
-  private static func manufacturingCategory(
+  static func manufacturingCategory(
     categoryName: String,
     groupName: String
   ) -> ManufacturingCategory {
@@ -1132,12 +1136,14 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       return .structures
     }
     guard category == "ship" else { return .module }
+    // Freighters and jump freighters are capital hulls, but EVE builds and rigs them as large
+    // ships, so they follow the large-ship facility assignment (owner decision 2026-10-19).
     let capitalTerms = [
       "carrier", "dreadnought", "force auxiliary", "supercarrier", "titan",
-      "capital industrial", "freighter", "jump freighter",
+      "capital industrial",
     ]
     if capitalTerms.contains(where: group.contains) { return .capital }
-    let largeTerms = ["battleship", "black ops", "marauder"]
+    let largeTerms = ["battleship", "black ops", "marauder", "freighter"]
     if largeTerms.contains(where: group.contains) { return .large }
     let mediumTerms = [
       "cruiser", "battlecruiser", "industrial command", "logistics",

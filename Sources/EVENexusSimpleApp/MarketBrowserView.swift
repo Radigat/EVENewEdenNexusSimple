@@ -2553,14 +2553,15 @@ struct ManufacturingOpportunitiesView: View {
           "Concrete Blueprint",
           selection: treeConcreteBlueprintSourceBinding(
             blueprint,
-            opportunity: opportunity
+            opportunity: opportunity,
+            choices: concreteSources
           )
         ) {
           Text("Automatic concrete allocation").tag(
-            Optional<BlueprintSourceReference>.none
+            Optional<String>.none
           )
-          ForEach(concreteSources, id: \.source) { option in
-            Text(option.title).tag(Optional(option.source))
+          ForEach(concreteSources) { choice in
+            Text(verbatim: choice.title).tag(Optional(choice.id))
           }
         }
         .pickerStyle(.menu)
@@ -3700,62 +3701,80 @@ struct ManufacturingOpportunitiesView: View {
   private func treeConcreteBlueprintSources(
     _ blueprint: ProductionTreeBlueprintAssessment,
     action: ProductionTreeBlueprintAction
-  ) -> [(source: BlueprintSourceReference, title: String)] {
+  ) -> [ConcreteBlueprintSourceChoice] {
+    let candidates: [ConcreteBlueprintSourceCandidate]
     switch action {
     case .useOwnedBPC, .useOwnedBPO:
       let kind: BlueprintCopyKind = action == .useOwnedBPC ? .copy : .original
-      return
-        (blueprint.exactLocationInstanceOptions
-        + blueprint.otherLocationInstanceOptions).filter {
-          $0.kind == kind
-        }.map { option in
-          let runs = option.runs.map { " · \($0) runs" } ?? " · unlimited"
-          return (
-            action == .useOwnedBPC
+      let exact = blueprint.exactLocationInstanceOptions.filter { $0.kind == kind }
+      let other = blueprint.otherLocationInstanceOptions.filter { $0.kind == kind }
+      candidates =
+        (exact.map { ($0, true) } + other.map { ($0, false) })
+        .map { option, isExact in
+          ConcreteBlueprintSourceCandidate(
+            source: action == .useOwnedBPC
               ? .ownedBPC(itemID: option.itemID)
               : .ownedBPO(itemID: option.itemID),
-            "Item \(option.itemID)\(runs) · ME \(option.materialEfficiency) · TE \(option.timeEfficiency)"
+            locationName: option.locationName,
+            isAtProductionLocation: isExact,
+            runs: option.runs,
+            materialEfficiency: option.materialEfficiency,
+            timeEfficiency: option.timeEfficiency,
+            priceText: nil
           )
         }
     case .buyContractBPC, .buyContractBPO:
       let kind: BlueprintCopyKind =
         action == .buyContractBPC ? .copy : .original
-      return blueprint.attributableContractOptions.filter {
+      candidates = blueprint.attributableContractOptions.filter {
         $0.kind == kind
       }.map { option in
-        let runs = option.runs.map { " · \($0) runs" } ?? " · unlimited"
-        let quality =
-          option.materialEfficiency.flatMap { me in
-            option.timeEfficiency.map { " · ME \(me) · TE \($0)" }
-          } ?? ""
-        return (
-          action == .buyContractBPC
+        ConcreteBlueprintSourceCandidate(
+          source: action == .buyContractBPC
             ? .contractBPC(recordID: option.recordID)
             : .contractBPO(recordID: option.recordID),
-          "Contract \(option.contractID)\(runs)\(quality)"
+          locationName: option.locationName,
+          isAtProductionLocation: true,
+          runs: option.runs,
+          materialEfficiency: option.materialEfficiency,
+          timeEfficiency: option.timeEfficiency,
+          priceText: formatISK(option.price)
         )
       }
     case .buyMarketBPO:
-      return blueprint.marketBPOOptions.map { option in
-        (
-          BlueprintSourceReference.marketBPO(orderID: option.orderID),
-          "Market order \(option.orderID) · \(formatISK(option.price)) · ME 0 · TE 0"
+      candidates = blueprint.marketBPOOptions.map { option in
+        ConcreteBlueprintSourceCandidate(
+          source: .marketBPO(orderID: option.orderID),
+          locationName: nil,
+          isAtProductionLocation: true,
+          runs: nil,
+          materialEfficiency: 0,
+          timeEfficiency: 0,
+          priceText: formatISK(option.price)
         )
       }
     default:
-      return []
+      candidates = []
     }
+    return ConcreteBlueprintSourceMenu.choices(candidates)
   }
 
   private func treeConcreteBlueprintSourceBinding(
     _ blueprint: ProductionTreeBlueprintAssessment,
-    opportunity: ManufacturingOpportunityRow
-  ) -> Binding<BlueprintSourceReference?> {
+    opportunity: ManufacturingOpportunityRow,
+    choices: [ConcreteBlueprintSourceChoice]
+  ) -> Binding<String?> {
     let blueprintTypeID = blueprint.blueprintTypeID
     return Binding(
-      get: { treePreferredBlueprintSources[blueprintTypeID]?.first },
-      set: { source in
-        treePreferredBlueprintSources[blueprintTypeID] = source.map { [$0] } ?? []
+      get: {
+        ConcreteBlueprintSourceMenu.selectedChoiceID(
+          preferredSources: treePreferredBlueprintSources[blueprintTypeID],
+          in: choices
+        )
+      },
+      set: { choiceID in
+        treePreferredBlueprintSources[blueprintTypeID] =
+          choices.first { $0.id == choiceID }?.sources ?? []
         reloadProductionTree(opportunity)
       }
     )

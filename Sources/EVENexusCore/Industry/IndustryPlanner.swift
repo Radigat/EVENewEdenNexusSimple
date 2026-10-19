@@ -602,11 +602,16 @@ public struct IndustryPlanner: Sendable {
     let efficiency = context.productionEfficiencies[definition.productTypeID]
     let fallbackME = isReaction ? 0 : efficiency?.materialEfficiency ?? requestedME
     let fallbackTE = isReaction ? 0 : efficiency?.timeEfficiency ?? requestedTE
+    let blueprintName =
+      isReaction
+      ? nil
+      : try await context.catalog.typeName(id: definition.blueprintTypeID)
     let blueprintJobSlices =
       isReaction
       ? [BlueprintJobSlice.fallback(runs: requestedRuns, me: 0, te: 0)]
       : state.consumeBlueprintJobs(
         blueprintTypeID: definition.blueprintTypeID,
+        blueprintName: blueprintName,
         requiredRuns: requestedRuns,
         fallbackME: fallbackME,
         fallbackTE: fallbackTE
@@ -1478,6 +1483,19 @@ public struct IndustryPlanner: Sendable {
       requestsWithoutEnteredCost: requestsWithoutBlueprintCost,
       total: knownBlueprintCost
     )
+    let ownedWithoutEnteredCostCount = blueprintEntries.filter {
+      $0.treatment == ProductionTreeBlueprintCostProjector.ownedWithoutEnteredCostSource
+    }.count
+    if ownedWithoutEnteredCostCount > 0 {
+      warnings.append(
+        DomainWarning(
+          code: "industry.blueprint-owned-counted-zero",
+          message:
+            "\(ownedWithoutEnteredCostCount) owned Blueprint source\(ownedWithoutEnteredCostCount == 1 ? "" : "s") without an entered cost \(ownedWithoutEnteredCostCount == 1 ? "is" : "are") counted as 0 ISK.",
+          severity: .information
+        )
+      )
+    }
     if !requestsWithoutBlueprintCost.isEmpty {
       warnings.append(
         DomainWarning(
@@ -3070,6 +3088,21 @@ public struct IndustryPlanner: Sendable {
       catalog: context.catalog
     )
     warnings.append(contentsOf: purchaseLogistics.warnings)
+    // A product whose packaged unit does not fit the transport limit cannot be bought at the
+    // Main Hub and moved to the facility; it must be built there.
+    let purchaseIsTransportable = !purchaseLogistics.warnings.contains {
+      $0.code == "logistics.single-item-volume-exceeded"
+    }
+    if !purchaseIsTransportable {
+      warnings.append(
+        DomainWarning(
+          code: "make-or-buy.purchase-not-transportable",
+          message:
+            "Buying at the Main Hub is not possible because the packaged item exceeds the transport limit to \(facility.name); it must be built at the production facility.",
+          severity: .warning
+        )
+      )
+    }
 
     let buildLogistics = try await makeOrBuyLogisticsCost(
       configuration: context.productionBasis?.logistics,
@@ -3082,7 +3115,7 @@ public struct IndustryPlanner: Sendable {
     warnings.append(contentsOf: buildLogistics.warnings)
 
     let purchaseTotal =
-      marketMatchesMainHub
+      marketMatchesMainHub && purchaseIsTransportable
       ? Self.acceptedCostTotal([
         purchaseQuote.total,
         purchaseLogistics.cost,
@@ -3098,7 +3131,10 @@ public struct IndustryPlanner: Sendable {
       ]) : nil
     let recommendation: MakeOrBuyRecommendation
     let savings: Double?
-    if let purchaseTotal, let buildTotal {
+    if !purchaseIsTransportable {
+      recommendation = .produce
+      savings = nil
+    } else if let purchaseTotal, let buildTotal {
       if buildTotal <= purchaseTotal {
         recommendation = .produce
         savings = purchaseTotal - buildTotal
@@ -3117,7 +3153,7 @@ public struct IndustryPlanner: Sendable {
       producedQuantity: producedQuantity,
       mainHub: mainHub,
       purchaseQuote: purchaseQuote,
-      purchaseLogisticsCost: purchaseLogistics.cost,
+      purchaseLogisticsCost: purchaseIsTransportable ? purchaseLogistics.cost : nil,
       purchaseTotalCost: purchaseTotal,
       buildMaterialCost: acceptedBuildMaterialCost,
       buildInstallationCost: installation.cost,
@@ -4269,6 +4305,7 @@ private struct BuildState: Sendable {
 
   mutating func consumeBlueprintJobs(
     blueprintTypeID: Int64,
+    blueprintName: String?,
     requiredRuns: Int,
     fallbackME: Int,
     fallbackTE: Int
@@ -4304,8 +4341,11 @@ private struct BuildState: Sendable {
       warnings.append(
         DomainWarning(
           code: "industry.blueprint-supply-insufficient-runs",
-          message:
-            "The concrete Blueprint supply for type \(blueprintTypeID) is short by \(remaining) runs. Those runs remain unresolved.",
+          message: IndustryWarningText.blueprintRunsShort(
+            blueprintName: blueprintName
+              ?? "an unresolved Blueprint (type ID \(blueprintTypeID))",
+            missingRuns: remaining
+          ),
           severity: .blocking
         )
       )

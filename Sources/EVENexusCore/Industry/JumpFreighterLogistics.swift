@@ -1214,6 +1214,8 @@ public struct CapitalSelfJumpCostBreakdown: Codable, Equatable, Sendable {
 public enum CapitalSelfJumpPolicy {
   public static let ruleVersion = "self-propelled-capital-groups-2026-08-15"
 
+  /// The jump-capable ship group decides, not the manufacturing category: jump freighters are
+  /// produced as large ships but still jump on their own.
   public static func product(
     typeID: Int64,
     name: String,
@@ -1222,7 +1224,6 @@ public enum CapitalSelfJumpPolicy {
     guard
       classification?.categoryName.localizedCaseInsensitiveCompare("Ship")
         == .orderedSame,
-      classification?.manufacturingCategory == .capital,
       let groupName = classification?.groupName,
       isSelfPropelledGroup(groupName)
     else { return nil }
@@ -1237,7 +1238,6 @@ public enum CapitalSelfJumpPolicy {
     guard
       node.sourceCategory?.localizedCaseInsensitiveCompare("Ship")
         == .orderedSame,
-      node.manufacturingCategory == .capital,
       let groupName = node.sourceGroup,
       isSelfPropelledGroup(groupName)
     else { return nil }
