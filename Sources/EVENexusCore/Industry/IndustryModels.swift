@@ -906,7 +906,17 @@ public struct BlueprintCostEntry: Identifiable, Codable, Equatable, Sendable {
 public struct BlueprintCostBreakdown: Codable, Equatable, Sendable {
   public let entries: [BlueprintCostEntry]
   public let requestsWithoutEnteredCost: [UUID]
+  /// Sum of the known entries only.
   public let total: Double
+  /// Produced Blueprint sources without any attributable cost while a
+  /// complete Blueprint cost was required. `nil` for historical plans.
+  public var unresolvedBlueprintCount: Int? = nil
+
+  /// The Blueprint cost that may enter totals: unavailable while a required
+  /// Blueprint source remains unresolved, never silently counted as 0 ISK.
+  public var acceptedTotal: Double? {
+    (unresolvedBlueprintCount ?? 0) > 0 ? nil : total
+  }
 }
 
 public struct LogisticsCostBreakdown: Codable, Equatable, Sendable {
@@ -982,7 +992,7 @@ public struct IndustryCostBreakdown: Codable, Equatable, Sendable {
   public var productionCostBeforeLogistics: Double? {
     Self.total(
       materialCost: materialCost,
-      blueprintCost: blueprintCosts?.total,
+      blueprintCost: blueprintCosts?.acceptedTotal,
       installationCost: installationCost,
       logisticsCost: 0
     )
@@ -991,7 +1001,7 @@ public struct IndustryCostBreakdown: Codable, Equatable, Sendable {
   public var recomputedTotalProductionCost: Double? {
     Self.total(
       materialCost: materialCost,
-      blueprintCost: blueprintCosts?.total,
+      blueprintCost: blueprintCosts?.acceptedTotal,
       installationCost: installationCost,
       logisticsCost: effectiveLogisticsCost
     )

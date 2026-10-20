@@ -142,12 +142,16 @@ public struct DashboardIndustryJobValue: Identifiable, Sendable {
 }
 
 public enum DashboardInProgressIndustryProjector {
-  public static let valuationPolicy = "sde-job-material-reference-v1"
+  public static let valuationPolicy = "sde-job-material-reference-recursive-v2"
 
+  /// - Parameter fallbackUnitValues: unit values for inputs without an ESI
+  ///   reference price, resolved recursively from their own SDE inputs
+  ///   (see `DashboardRecursiveMaterialValuator`).
   public static func projectJobs(
     inputs: [DashboardWealthCharacterInput],
     prices: [Int64: AdjustedPrice],
-    definitionsByProductTypeID: [Int64: BlueprintDefinition]
+    definitionsByProductTypeID: [Int64: BlueprintDefinition],
+    fallbackUnitValues: [Int64: Double] = [:]
   ) -> [DashboardIndustryJobValue] {
     inputs.flatMap { input in
       guard let source = input.industryJobs,
@@ -186,8 +190,11 @@ public enum DashboardInProgressIndustryProjector {
               baseQuantity: material.quantity, runs: job.runs,
               materialEfficiency: blueprintME, facilityMultiplier: 1
             )
-          guard quantity > 0, let reference = prices[material.typeID],
-            let price = reference.averagePrice ?? reference.adjustedPrice,
+          let referencePrice = prices[material.typeID].flatMap {
+            $0.averagePrice ?? $0.adjustedPrice
+          }
+          guard quantity > 0,
+            let price = referencePrice ?? fallbackUnitValues[material.typeID],
             price.isFinite, price >= 0,
             (Double(quantity) * price).isFinite
           else {
@@ -222,11 +229,13 @@ public enum DashboardInProgressIndustryProjector {
     inputs: [DashboardWealthCharacterInput],
     prices: [Int64: AdjustedPrice],
     definitionsByProductTypeID: [Int64: BlueprintDefinition],
+    fallbackUnitValues: [Int64: Double] = [:],
     jobValues: [DashboardIndustryJobValue]? = nil
   ) -> [Int64: DashboardWealthInProgressIndustryValue] {
     let values = jobValues ?? projectJobs(
       inputs: inputs, prices: prices,
-      definitionsByProductTypeID: definitionsByProductTypeID
+      definitionsByProductTypeID: definitionsByProductTypeID,
+      fallbackUnitValues: fallbackUnitValues
     )
     let byCharacter = Dictionary(grouping: values, by: { $0.ownedJob.characterID })
     return Dictionary(
@@ -430,6 +439,15 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
   public let unresolvedIndustryJobCount: Int
   public let unvaluedIndustryMaterialTypeCount: Int
   public let estimatedIndustryJobCount: Int
+  /// Value of owned originals (BPO) included in `assetValue`.
+  public let blueprintOriginalValue: Double?
+  public let blueprintOriginalCount: Int
+  /// Originals valued only at the SDE base price because the research share
+  /// could not be priced.
+  public let estimatedBlueprintOriginalCount: Int
+  /// Value of owned copies (BPC) included in `assetValue`.
+  public let blueprintCopyValue: Double?
+  public let valuedBlueprintCopyCount: Int
   public let isComplete: Bool
   public let freshness: DataFreshness
 
@@ -459,6 +477,11 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     case unresolvedIndustryJobCount
     case unvaluedIndustryMaterialTypeCount
     case estimatedIndustryJobCount
+    case blueprintOriginalValue
+    case blueprintOriginalCount
+    case estimatedBlueprintOriginalCount
+    case blueprintCopyValue
+    case valuedBlueprintCopyCount
     case isComplete
     case freshness
   }
@@ -489,6 +512,11 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     unresolvedIndustryJobCount: Int = 0,
     unvaluedIndustryMaterialTypeCount: Int = 0,
     estimatedIndustryJobCount: Int = 0,
+    blueprintOriginalValue: Double? = nil,
+    blueprintOriginalCount: Int = 0,
+    estimatedBlueprintOriginalCount: Int = 0,
+    blueprintCopyValue: Double? = nil,
+    valuedBlueprintCopyCount: Int = 0,
     isComplete: Bool,
     freshness: DataFreshness
   ) {
@@ -519,6 +547,11 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
     self.unvaluedIndustryMaterialTypeCount =
       unvaluedIndustryMaterialTypeCount
     self.estimatedIndustryJobCount = estimatedIndustryJobCount
+    self.blueprintOriginalValue = blueprintOriginalValue
+    self.blueprintOriginalCount = blueprintOriginalCount
+    self.estimatedBlueprintOriginalCount = estimatedBlueprintOriginalCount
+    self.blueprintCopyValue = blueprintCopyValue
+    self.valuedBlueprintCopyCount = valuedBlueprintCopyCount
     self.isComplete = isComplete
     self.freshness = freshness
   }
@@ -616,6 +649,23 @@ public struct DashboardWealthCharacterValue: Identifiable, Codable, Equatable,
         Int.self,
         forKey: .estimatedIndustryJobCount
       ) ?? 0
+    blueprintOriginalValue = try values.decodeIfPresent(
+      Double.self,
+      forKey: .blueprintOriginalValue
+    )
+    blueprintOriginalCount =
+      try values.decodeIfPresent(Int.self, forKey: .blueprintOriginalCount) ?? 0
+    estimatedBlueprintOriginalCount =
+      try values.decodeIfPresent(
+        Int.self,
+        forKey: .estimatedBlueprintOriginalCount
+      ) ?? 0
+    blueprintCopyValue = try values.decodeIfPresent(
+      Double.self,
+      forKey: .blueprintCopyValue
+    )
+    valuedBlueprintCopyCount =
+      try values.decodeIfPresent(Int.self, forKey: .valuedBlueprintCopyCount) ?? 0
     isComplete = try values.decode(Bool.self, forKey: .isComplete)
     freshness = try values.decode(DataFreshness.self, forKey: .freshness)
   }
@@ -704,7 +754,7 @@ public struct DashboardWealthSnapshot: Identifiable, Codable, Equatable,
 
 public enum DashboardWealthProjector {
   public static let valuationPolicy =
-    "esi-average-then-adjusted-plus-sde-job-materials-blueprint-status-v3"
+    "esi-average-then-adjusted-plus-sde-job-materials-bpo-research-bpc-contracts-v4"
 
   public static func project(
     inputs: [DashboardWealthCharacterInput],
@@ -712,7 +762,8 @@ public enum DashboardWealthProjector {
     typeNames: [Int64: String] = [:],
     assetClassifications: [Int64: IndustryItemClassification] = [:],
     inProgressIndustryValues:
-      [Int64: DashboardWealthInProgressIndustryValue] = [:]
+      [Int64: DashboardWealthInProgressIndustryValue] = [:],
+    blueprintValuation: DashboardWealthBlueprintValuation = .empty
   ) -> DashboardWealthSnapshot {
     let rows = inputs.map { input in
       project(
@@ -720,7 +771,8 @@ public enum DashboardWealthProjector {
         prices: prices.prices,
         typeNames: typeNames,
         assetClassifications: assetClassifications,
-        inProgressIndustry: inProgressIndustryValues[input.character.id]
+        inProgressIndustry: inProgressIndustryValues[input.character.id],
+        blueprintValuation: blueprintValuation
       )
     }.sorted {
       $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
@@ -730,7 +782,8 @@ public enum DashboardWealthProjector {
     let corporationAssets = corporationAssetProjection(
       inputs: inputs,
       prices: prices.prices,
-      assetClassifications: assetClassifications
+      assetClassifications: assetClassifications,
+      blueprintValuation: blueprintValuation
     )
     let corporationWallet = corporationWalletProjection(inputs: inputs)
     let corporationValues = [
@@ -799,14 +852,25 @@ public enum DashboardWealthProjector {
     prices: [Int64: AdjustedPrice],
     typeNames: [Int64: String],
     assetClassifications: [Int64: IndustryItemClassification],
-    inProgressIndustry: DashboardWealthInProgressIndustryValue?
+    inProgressIndustry: DashboardWealthInProgressIndustryValue?,
+    blueprintValuation: DashboardWealthBlueprintValuation
   ) -> DashboardWealthCharacterValue {
     let walletValue = usableValue(input.wallet)
     let assetSnapshot = usableValue(input.assets)
     let openOrders = input.openOrders.flatMap(usableValue)
     let privateContracts = input.privateContracts.flatMap(usableValue)
+    let blueprintRecords = Dictionary(
+      (input.blueprints.flatMap(usableValue) ?? []).map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
     let assetProjection = assetSnapshot.map {
-      valueAssets($0.items, prices: prices, classifications: assetClassifications)
+      valueAssets(
+        $0.items,
+        prices: prices,
+        classifications: assetClassifications,
+        blueprints: blueprintRecords,
+        valuation: blueprintValuation
+      )
     }
     let assetValue = assetProjection?.value
     let unvaluedTypeIDs = assetProjection?.unpricedTypeIDs ?? []
@@ -934,10 +998,17 @@ public enum DashboardWealthProjector {
       unvaluedIndustryMaterialTypeCount:
         inProgressIndustry?.unvaluedMaterialTypeCount ?? 0,
       estimatedIndustryJobCount: inProgressIndustry?.estimatedJobCount ?? 0,
+      blueprintOriginalValue: assetProjection.map { $0.blueprints.originalValue },
+      blueprintOriginalCount: assetProjection?.blueprints.originalCount ?? 0,
+      estimatedBlueprintOriginalCount:
+        assetProjection?.blueprints.estimatedOriginalCount ?? 0,
+      blueprintCopyValue: assetProjection.map { $0.blueprints.copyValue },
+      valuedBlueprintCopyCount: assetProjection?.blueprints.valuedCopyCount ?? 0,
       isComplete: walletValue != nil && assetValue != nil
         && ordersValue != nil && escrowValue != nil
         && contractsValue != nil && courierValue != nil
         && unvaluedTypeIDs.isEmpty && unknownBlueprintStatusCount == 0
+        && (assetProjection?.blueprints.estimatedOriginalCount ?? 0) == 0
         && unvaluedOrderCount == 0
         && missingEscrowOrderCount == 0
         && unvaluedContractItemTypeIDs.isEmpty
@@ -950,6 +1021,7 @@ public enum DashboardWealthProjector {
           adjustedFreshness(
             assetValuationFreshness(input.assets),
             incomplete: !unvaluedTypeIDs.isEmpty || unknownBlueprintStatusCount > 0
+              || (assetProjection?.blueprints.estimatedOriginalCount ?? 0) > 0
           ),
           input.openOrders?.state ?? .unavailable,
           input.privateContracts?.state ?? .unavailable,
@@ -971,7 +1043,8 @@ public enum DashboardWealthProjector {
   private static func corporationAssetProjection(
     inputs: [DashboardWealthCharacterInput],
     prices: [Int64: AdjustedPrice],
-    assetClassifications: [Int64: IndustryItemClassification]
+    assetClassifications: [Int64: IndustryItemClassification],
+    blueprintValuation: DashboardWealthBlueprintValuation
   ) -> CorporationProjection {
     let selected = selectedCorporationSources(
       inputs: inputs,
@@ -989,7 +1062,11 @@ public enum DashboardWealthProjector {
     for entry in selected {
       guard let snapshot = usableValue(entry.sourced) else { continue }
       let projection = valueAssets(
-        snapshot.items, prices: prices, classifications: assetClassifications
+        snapshot.items,
+        prices: prices,
+        classifications: assetClassifications,
+        blueprints: [:],
+        valuation: blueprintValuation
       )
       if let value = projection.value {
         hasValue = true
@@ -1116,37 +1193,97 @@ public enum DashboardWealthProjector {
     )
   }
 
+  struct BlueprintAssetTotals {
+    var originalValue = 0.0
+    var originalCount = 0
+    var estimatedOriginalCount = 0
+    var copyValue = 0.0
+    var valuedCopyCount = 0
+  }
+
+  private enum AssetBlueprintKind {
+    case notBlueprint
+    case original
+    case copy
+    case unknown
+  }
+
   private static func valueAssets(
     _ items: [AssetItem],
     prices: [Int64: AdjustedPrice],
-    classifications: [Int64: IndustryItemClassification]
+    classifications: [Int64: IndustryItemClassification],
+    blueprints: [Int64: OwnedBlueprintInstance],
+    valuation: DashboardWealthBlueprintValuation
   ) -> (
-    value: Double?, unpricedTypeIDs: Set<Int64>, excludedCopyCount: Int, unknownStatusCount: Int
+    value: Double?, unpricedTypeIDs: Set<Int64>, excludedCopyCount: Int,
+    unknownStatusCount: Int, blueprints: BlueprintAssetTotals
   ) {
     var total = 0.0
     var unpricedTypeIDs = Set<Int64>()
     var excludedCopyCount = 0
     var unknownStatusCount = 0
+    var blueprintTotals = BlueprintAssetTotals()
     for item in items {
-      // The asset endpoint's flag is authoritative. Negative quantities are
-      // only a compatibility fallback for older imported blueprint records.
-      if item.isBlueprintCopy == true
-        || (item.isBlueprintCopy == nil && item.quantity == -2)
-      {
-        excludedCopyCount += 1
-        continue
-      }
       let quantity = item.quantity < 0 ? 1 : item.quantity
       guard quantity > 0 else { continue }
-      if item.isBlueprintCopy == nil && item.quantity != -1 {
-        let category = classifications[item.typeID]?.categoryName
-          .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let category, !category.isEmpty,
-          category.caseInsensitiveCompare("Blueprint") != .orderedSame
+      switch blueprintKind(
+        item: item,
+        record: blueprints[item.id],
+        classification: classifications[item.typeID]
+      ) {
+      case .unknown:
+        unknownStatusCount += 1
+        continue
+      case .copy:
+        // A copy is valued at the lowest public Contract price per run for
+        // the same blueprint type. Without runs or a Contract price the copy
+        // stays explicitly unvalued instead of borrowing the original price.
+        guard let runs = blueprints[item.id]?.runs, runs > 0,
+          let runPrice = valuation.copyRunPricesByTypeID[item.typeID]
         else {
-          unknownStatusCount += 1
+          excludedCopyCount += 1
           continue
         }
+        let value = runPrice * Double(runs) * Double(quantity)
+        guard value.isFinite, value >= 0 else {
+          excludedCopyCount += 1
+          continue
+        }
+        total += value
+        blueprintTotals.copyValue += value
+        blueprintTotals.valuedCopyCount += 1
+        continue
+      case .original:
+        if let researched = valuation.originalValuesByItemID[item.id] {
+          let value = researched.value * Double(quantity)
+          if value.isFinite {
+            total += value
+            blueprintTotals.originalValue += value
+            blueprintTotals.originalCount += 1
+            if researched.isLowerBound {
+              blueprintTotals.estimatedOriginalCount += 1
+            }
+            continue
+          }
+        }
+        let record = blueprints[item.id]
+        let isUnresearched =
+          record == nil
+          || (record?.materialEfficiency == 0 && record?.timeEfficiency == 0)
+        if let base = valuation.originalBaseValuesByTypeID[item.typeID] {
+          let value = base * Double(quantity)
+          if value.isFinite {
+            total += value
+            blueprintTotals.originalValue += value
+            blueprintTotals.originalCount += 1
+            if !isUnresearched {
+              blueprintTotals.estimatedOriginalCount += 1
+            }
+            continue
+          }
+        }
+      case .notBlueprint:
+        break
       }
       guard let reference = prices[item.typeID],
         let unitPrice = reference.averagePrice ?? reference.adjustedPrice,
@@ -1162,7 +1299,46 @@ public enum DashboardWealthProjector {
       }
       total += value
     }
-    return (total.isFinite ? total : nil, unpricedTypeIDs, excludedCopyCount, unknownStatusCount)
+    return (
+      total.isFinite ? total : nil, unpricedTypeIDs, excludedCopyCount,
+      unknownStatusCount, blueprintTotals
+    )
+  }
+
+  /// The ESI blueprint record (same item ID) is authoritative. Otherwise the
+  /// asset flag decides: copies are always single items with
+  /// `is_blueprint_copy`, so a stacked blueprint is an original. A single
+  /// blueprint without a record or flag keeps the explicit unknown state.
+  private static func blueprintKind(
+    item: AssetItem,
+    record: OwnedBlueprintInstance?,
+    classification: IndustryItemClassification?
+  ) -> AssetBlueprintKind {
+    if let record {
+      switch record.kind {
+      case .original: return .original
+      case .copy: return .copy
+      case .unknown: break
+      }
+    }
+    if item.isBlueprintCopy == true
+      || (item.isBlueprintCopy == nil && item.quantity == -2)
+    {
+      return .copy
+    }
+    if item.quantity == -1 { return .original }
+    let category = classification?.categoryName
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let category, !category.isEmpty else {
+      return item.isBlueprintCopy == nil ? .unknown : .notBlueprint
+    }
+    guard category.caseInsensitiveCompare("Blueprint") == .orderedSame else {
+      return .notBlueprint
+    }
+    if item.isBlueprintCopy == false || !item.singleton || item.quantity > 1 {
+      return .original
+    }
+    return .unknown
   }
 
   private static func assetValuationFreshness<Value: Codable & Sendable>(
@@ -2058,3 +2234,204 @@ public typealias MoonMaterialMarketPriceRankAnalyzer =
   MaterialPurchaseMarketPriceRankAnalyzer
 
 public typealias JitaPriceEngine = MarketPriceEngine
+
+/// Blueprint valuation inputs for the net-worth projection.
+///
+/// Originals (BPO) use the current replacement estimate of the Blueprints
+/// screen: SDE base price plus the research cost to the current ME/TE level.
+/// Copies (BPC) use the lowest price per run of attributable public BPC
+/// Contracts for the same blueprint type multiplied by the remaining runs.
+public struct DashboardWealthBlueprintValuation: Sendable {
+  public struct OriginalValue: Equatable, Sendable {
+    public let value: Double
+    /// `true` when the research share could not be priced and only the SDE
+    /// base price (a factual lower bound) is available.
+    public let isLowerBound: Bool
+
+    public init(value: Double, isLowerBound: Bool) {
+      self.value = value
+      self.isLowerBound = isLowerBound
+    }
+  }
+
+  /// Personal originals keyed by ESI item ID.
+  public let originalValuesByItemID: [Int64: OriginalValue]
+  /// Unresearched replacement value (SDE base price) keyed by blueprint type.
+  /// Used for originals without an ESI blueprint record, for example packaged
+  /// stacks or corporation assets.
+  public let originalBaseValuesByTypeID: [Int64: Double]
+  /// Lowest public Contract price per run keyed by blueprint type.
+  public let copyRunPricesByTypeID: [Int64: Double]
+
+  public init(
+    originalValuesByItemID: [Int64: OriginalValue] = [:],
+    originalBaseValuesByTypeID: [Int64: Double] = [:],
+    copyRunPricesByTypeID: [Int64: Double] = [:]
+  ) {
+    self.originalValuesByItemID = originalValuesByItemID
+    self.originalBaseValuesByTypeID = originalBaseValuesByTypeID
+    self.copyRunPricesByTypeID = copyRunPricesByTypeID
+  }
+
+  public static let empty = DashboardWealthBlueprintValuation()
+}
+
+public enum DashboardBlueprintValuationBuilder {
+  public static func build(
+    inputs: [DashboardWealthCharacterInput],
+    definitions: [Int64: BlueprintResearchDefinition],
+    pricing: BlueprintResearchPricingInput,
+    copyOffers: [Int64: [PublicContractSearchResult]] = [:]
+  ) -> DashboardWealthBlueprintValuation {
+    var originals: [Int64: DashboardWealthBlueprintValuation.OriginalValue] = [:]
+    for input in inputs {
+      guard let sourced = input.blueprints,
+        [.fresh, .partial, .stale].contains(sourced.state),
+        let instances = sourced.value
+      else { continue }
+      for instance in instances where instance.kind == .original {
+        guard let definition = definitions[instance.blueprintTypeID],
+          let value = originalValue(
+            instance: instance,
+            definition: definition,
+            pricing: pricing
+          )
+        else { continue }
+        originals[instance.id] = value
+      }
+    }
+    var baseValues: [Int64: Double] = [:]
+    for (typeID, definition) in definitions {
+      guard let basePrice = definition.basePrice,
+        basePrice.isFinite, basePrice >= 0
+      else { continue }
+      baseValues[typeID] = basePrice
+    }
+    var runPrices: [Int64: Double] = [:]
+    for (typeID, offers) in copyOffers {
+      if let price = lowestCopyRunPrice(offers.filter { $0.typeID == typeID }) {
+        runPrices[typeID] = price
+      }
+    }
+    return DashboardWealthBlueprintValuation(
+      originalValuesByItemID: originals,
+      originalBaseValuesByTypeID: baseValues,
+      copyRunPricesByTypeID: runPrices
+    )
+  }
+
+  public static func originalValue(
+    instance: OwnedBlueprintInstance,
+    definition: BlueprintResearchDefinition,
+    pricing: BlueprintResearchPricingInput
+  ) -> DashboardWealthBlueprintValuation.OriginalValue? {
+    let quote = BlueprintResearchCostCalculator.quote(
+      instance: instance,
+      definition: definition,
+      pricing: pricing
+    )
+    if let value = quote.estimatedReplacementValue, value.isFinite, value >= 0 {
+      return .init(value: value, isLowerBound: false)
+    }
+    guard let basePrice = definition.basePrice,
+      basePrice.isFinite, basePrice >= 0
+    else { return nil }
+    return .init(value: basePrice, isLowerBound: true)
+  }
+
+  /// Lowest price per run among attributable single-BPC item-exchange offers.
+  public static func lowestCopyRunPrice(
+    _ offers: [PublicContractSearchResult]
+  ) -> Double? {
+    offers.compactMap { offer -> Double? in
+      guard offer.isAttributableBlueprintOffer,
+        offer.isBlueprintCopy == true,
+        let runs = offer.runs, runs > 0,
+        let price = offer.effectiveContractPrice
+      else { return nil }
+      let perRun = price / Double(runs)
+      return perRun.isFinite && perRun > 0 ? perRun : nil
+    }.min()
+  }
+}
+
+/// Resolves a unit value for industry inputs that have no ESI reference price
+/// by recursively valuing their own SDE production inputs.
+public enum DashboardRecursiveMaterialValuator {
+  public static let maximumDepth = 4
+
+  public static func unitValues(
+    for typeIDs: Set<Int64>,
+    prices: [Int64: AdjustedPrice],
+    definitionsByProductTypeID: [Int64: BlueprintDefinition]
+  ) -> [Int64: Double] {
+    var memo: [Int64: Double?] = [:]
+    var result: [Int64: Double] = [:]
+    for typeID in typeIDs.sorted() {
+      var visiting = Set<Int64>()
+      if let value = unitValue(
+        typeID: typeID,
+        depth: 0,
+        prices: prices,
+        definitions: definitionsByProductTypeID,
+        memo: &memo,
+        visiting: &visiting
+      ) {
+        result[typeID] = value
+      }
+    }
+    return result
+  }
+
+  private static func unitValue(
+    typeID: Int64,
+    depth: Int,
+    prices: [Int64: AdjustedPrice],
+    definitions: [Int64: BlueprintDefinition],
+    memo: inout [Int64: Double?],
+    visiting: inout Set<Int64>
+  ) -> Double? {
+    if let reference = prices[typeID],
+      let price = reference.averagePrice ?? reference.adjustedPrice,
+      price.isFinite, price >= 0
+    {
+      return price
+    }
+    if let cached = memo[typeID] { return cached }
+    guard depth < maximumDepth,
+      !visiting.contains(typeID),
+      let definition = definitions[typeID],
+      !definition.activity.materials.isEmpty,
+      let output = definition.activity.products.first(where: {
+        $0.typeID == typeID
+      })?.quantity ?? definition.activity.products.first?.quantity,
+      output > 0
+    else {
+      memo[typeID] = .some(nil)
+      return nil
+    }
+    visiting.insert(typeID)
+    defer { visiting.remove(typeID) }
+    var total = 0.0
+    for material in definition.activity.materials {
+      guard material.quantity > 0,
+        let unit = unitValue(
+          typeID: material.typeID,
+          depth: depth + 1,
+          prices: prices,
+          definitions: definitions,
+          memo: &memo,
+          visiting: &visiting
+        )
+      else {
+        memo[typeID] = .some(nil)
+        return nil
+      }
+      total += unit * Double(material.quantity)
+    }
+    let value = total / Double(output)
+    let accepted = value.isFinite && value >= 0 ? value : nil
+    memo[typeID] = .some(accepted)
+    return accepted
+  }
+}

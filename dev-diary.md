@@ -5326,3 +5326,228 @@ Dashboard-Karten behalten die bisherige Fünfer-Vorschau. Rechenregeln unveränd
 Prüfung: Neuer Core-Test zur Klassengruppierung; `swift test` (430 Tests),
 `xcodebuild … build` und `xcodebuild … test` erfolgreich. Nicht geprüft:
 Sichtkontrolle mit Live-Marktdaten, Eigentümerabnahme offen.
+
+## 20.10.2026 – Nettowert: Baupläne bewerten, Charaktertabelle ausrichten
+
+Auftrag: In der Nettowert-Seite war die Charaktertabelle verschoben, BPOs blieben
+als „Blaupausenstatus unbekannt“ unbewertet und BPCs wurden ausgeschlossen.
+BPOs sollen mit dem Wiederbeschaffungswert aus Baupläne (Forschung bis zum
+aktuellen ME/TE), BPCs mit einem Marktwert, laufende Industrie geschätzt bzw.
+rekursiv bewertet werden.
+
+Änderung:
+- Ursache der Verschiebung: Die Charakterspalte hatte nur eine Mindestbreite und
+  wuchs mit der Hinweiszeile. Jetzt feste Spaltenbreiten, umbrechende Hinweise.
+- Ursache der unbekannten Bauplanstatus: ESI liefert `is_blueprint_copy` nur für
+  Kopien; Originale wurden ohne Kennzeichen als unbekannt gezählt. Der Projektor
+  nutzt jetzt den gespeicherten Blueprint-Datensatz (gleiche Item-ID) und die
+  Stapelregel.
+- BPO: `DashboardBlueprintValuationBuilder` verwendet
+  `BlueprintResearchCostCalculator` (gleiche Regel wie Baupläne). Ohne
+  Forschungsanlage bei erforschten BPOs: SDE-Basispreis als sichtbare Schätzung.
+- BPC: niedrigster Preis je Run aus zurechenbaren öffentlichen Einzel-BPC-Verträgen
+  × eigene Runs. Ohne Angebot weiterhin unbewertet („ohne Vertragspreis“).
+  Abweichung vom Wunsch „Markt-Durchschnitt“: BPCs haben keine Marktorders; der
+  ESI-Preis des Typs ist der BPO-Preis.
+- In Produktion: Materialien ohne Referenzpreis rekursiv über ihre SDE-Eingänge.
+  Weiterhin ESI-Referenzpreise (Average, Fallback Adjusted), nicht Jita-Orderbuch.
+- Bewertungsrichtlinie `…-bpo-research-bpc-contracts-v4`; ältere Tagespunkte
+  behalten ihren Regelstand, neue Felder werden abwärtskompatibel dekodiert.
+
+Prüfung: Neue Core-Tests `NetWorthBlueprintValuationTests` (BPO-Forschungswert,
+Basispreis-Fallback, unerforschte BPOs, BPC-Run-Preis, rekursive Materialien);
+`swift test` (435 Tests, ein einmaliger Dateisystem-Flake in
+`interruptedTransactionsRollBack` war einzeln und im Wiederholungslauf grün),
+`EVEStaticDataKit` separat grün, `xcodebuild … test` (Debug, arm64) grün.
+Der neue Code liegt in bestehenden Dateien, weil XcodeGen lokal fehlt. Nicht geprüft:
+Sichtkontrolle mit echten Charakterdaten und befülltem Vertragsindex;
+Eigentümerabnahme offen.
+
+## 20.10.2026 – Planner: Produktionskosten inklusive Lieferung „nicht verfügbar“
+
+Auftrag: Im Planner (Siege Module I, 5 Runs, ME 10/TE 20) war „Produktionskosten
+inklusive Lieferung“ und damit der Stückpreis nicht verfügbar, obwohl
+Zwischensumme und Lieferung berechnet waren. Bereich im Abgleich mit den
+EVE-Regeln prüfen; BPC-Kosten aus den Verträgen mit passender Run-Zahl ermitteln
+(Eigentümerentscheidung).
+
+Befund:
+- Der gespeicherte Plan enthielt einen konkreten BPC-Versorgungsplan aus zwei
+  Jita-Verträgen (3 Runs ME 8 für 3,5 Mio., 2 von 3 Runs ME 10 für 3,98 Mio.,
+  zusammen 7,48 Mio. ISK), aber keine Bauplan-Kostenzuordnung. Der Planner nahm
+  die Kosten des Versorgungsplans nur bei Wissenschaftsaufträgen, für Vertrags-BPCs
+  dagegen den Preis des Baum-Selektors. Fehlte dieser (z. B. nach einem
+  wiederhergestellten Versorgungsplan), blieb der Bauplan ungeklärt.
+- Widerspruch in der Anzeige: BPC/BPO zeigte 0 ISK, Zwischensumme und
+  Verkaufsszenarien rechneten mit 0 ISK Bauplankosten, nur die Gesamtsumme war
+  „nicht verfügbar“.
+
+Änderung:
+- `ProductionTreeBlueprintCostProjector.contractBPCAllocations` bewertet einen
+  vollständig durch öffentliche BPC-Verträge gedeckten Versorgungsplan mit den
+  vollen Vertragspreisen; der Planner verwendet diesen Betrag bei der Aktion
+  „BPC per Vertrag kaufen“. Run-Fehlmengen, andere Quellen oder fehlende Preise
+  bleiben ungeklärt.
+- `BlueprintCostBreakdown.unresolvedBlueprintCount` und `acceptedTotal`: Bei
+  ungeklärter Quelle sind BPC/BPO, Zwischensumme, Gesamtkosten, Stückkosten,
+  Verkaufsszenarien, Produktionsübersicht und Produktionsaufzeichnung
+  einheitlich „nicht verfügbar“. Historische Pläne ohne das Feld bleiben unverändert.
+
+Nachtrag nach Eigentümertest (gleicher Tag): Die erste Korrektur reichte nicht,
+die App zeigte „0 Bauschritte“. Eigentliche Ursache: `RuntimeState` setzt beim
+Produktionsbaum für alle Markt-Typen ohne Make-or-Buy-Empfehlung die Vorgabe
+„kaufen“, auch für das angefragte Endprodukt. Der Planner baut Endprodukte
+trotzdem, der Baum blendete aber deren Bauschritt aus. Damit fehlten
+Bauplanaktion, Vertragspreis und Kostenzuordnung jedes Endprodukts. Jetzt gelten
+angefragte Wurzelknoten im `ManufacturingProductionTreeProjector` immer als
+„bauen“. Test: `requestedRootStaysABlueprintStepDespiteBuyPreference`.
+
+EVE-Abgleich (EVE University Wiki, Manufacturing/Research/Blueprints): Jobkosten
+= EIV × (SCI × Strukturbonus + Anlagensteuer + SCC 4 % + Alpha 0,25 %) entsprechen
+der Umsetzung; Materialmenge max(Runs, aufrunden(Basis × Runs × ME × Anlage)) ebenso.
+Offen: Das Wiki nennt kein Runden auf zwei Nachkommastellen vor dem Aufrunden;
+Drittwerkzeuge tun das. Ohne belastbare Primärquelle unverändert gelassen.
+
+Prüfung: Neue Core-Tests `contractBPCSupplyChargesWholeContractsCoveringRequiredRuns`
+und `requestedRootStaysABlueprintStepDespiteBuyPreference`,
+erweiterter Test `strictProductionTreeCostsRequireEveryProducedBlueprintAllocation`;
+`swift test` (437 Swift-Testing-Tests) und `xcodebuild … test` (Debug, arm64) grün.
+Nicht geprüft: `EVEStaticDataKit` (unverändert), Sichtkontrolle in der
+App mit Live-Verträgen; Eigentümerabnahme offen.
+
+## 20.10.2026 – Lagerwarnung nur bei möglicherweise unvollständigem Bestand
+
+Auftrag: Die Planner-Warnung „Some character assets in the production warehouse
+are not up to date (partial)“ erschien, obwohl alle 14 Charaktere frisch
+synchronisiert waren. Ursache: 11 Asset-Snapshots stehen auf „partial“, weil ESI
+für 1–10 Spielerstrukturen ohne Zugriff keinen Namen liefert. Die Mengen waren
+vollständig, keine Item-Position war ohne Ort.
+
+Änderung:
+- `AssetWarehouse.stockSourceStates`/`stockRelevantSourceStates`: Ein nur wegen
+  fehlender Struktur- oder Divisionsnamen teilweiser Snapshot gilt für den Bestand
+  als frisch (gleiche Diagnose-Präfixe wie die Nettowert-Bewertung).
+  `structureNameGaps` nennt Charakter und Anzahl. Ältere kodierte Lager ohne die
+  Felder verhalten sich wie bisher.
+- Planner-Warnung, Produktionsbaum-Warnung und Projektbestand („known“) verwenden
+  den bestandsrelevanten Status. Neue Planner-Warnung bei Asset-Orten, die nicht
+  zugeordnet werden können; fehlende Strukturnamen nur als Informationshinweis.
+- Lageransicht: Warnzeile nach bestandsrelevantem Status, darunter ein Hinweis je
+  Charakter mit kopierbarem Namen und Zahl fehlender Strukturnamen.
+
+Prüfung: Neuer Core-Test `missingStructureNamesAloneDoNotMakeStockIncomplete`;
+`swift test` und `xcodebuild … test` (Debug, arm64) grün. Nicht geprüft:
+Sichtkontrolle in der App; Eigentümerabnahme offen.
+
+## 20.10.2026 – Produktionsübersicht: fehlende Gebührensätze aus dem Main Hub
+
+Auftrag: In der Produktionsübersicht blieben Steuer, Broker, `Min. +10 %`,
+prognostizierter und realer Gewinn sowie die Marge einer verkauften Ark leer.
+Ursache: Die Zeile wurde am 19.10.2026 um 16:01 aufgezeichnet, die Jita-Sätze
+(Händlercharakter, 4,2 % Steuer, 1,8 % Broker) wurden erst um 21:12
+eingerichtet. Der Main-Hub-Verkauf im Plansnapshot hatte daher weder Steuer-
+noch Brokersatz. Home- und Coalition-Szenarien kannten nur die Steuer, keinen
+Structure-Brokersatz. Diagnose an einer schreibgeschützten Kopie der lokalen
+Datenbank; die Nutzdaten wurden nicht verändert.
+
+Entscheidung des Eigentümers: Fehlende Sätze werden aus den aktuellen
+Main-Hub-Einstellungen ergänzt und gekennzeichnet.
+
+Änderung:
+- Core: `ProductionOverviewRequestProjection.fillingMissingFeeRates(from:)`
+  ergänzt nur fehlende Sätze; gespeicherte Sätze haben Vorrang, eine nicht
+  anwendbare Brokergebühr bleibt nicht anwendbar. Neue Kennzeichen
+  `salesTaxRateIsCurrentSetting`/`brokerFeeRateIsCurrentSetting`,
+  `ProductionOverviewFeeRates` und `ProductionBasis.productionOverviewFeeRates`.
+- App: Der Projektions-Cache ergänzt beim Lesen. Tabelle, Seitensortierung und
+  die Gesamtsummen verwenden die aktuellen Main-Hub-Sätze; die Summen werden bei
+  einer Satzänderung neu geladen. Ergänzte Steuer- und Brokerbeträge erscheinen
+  kursiv mit Herkunftshinweis im Tooltip, dazu ein Erklärtext über der Tabelle (de/en).
+
+Prüfung: Neue Core-Tests `missingRecordedFeeRatesUseCurrentMainHubRates`,
+`recordedFeeRatesWinOverCurrentMainHubRates` und
+`unavailableCurrentRatesKeepMissingFeeRatesExplicit`; `swift test`
+(441 Swift-Testing-Tests), `swift test` in `Packages/EVEStaticDataKit` und
+`xcodebuild … test` (Debug, arm64) grün. Nicht geprüft: Sichtkontrolle in der
+App; Eigentümerabnahme offen. Erwartung für die Ark-Zeile (nicht in der App
+geprüft): Steuer ≈ 264,6 Mio., Broker ≈ 113,4 Mio., realer Gewinn ≈ 0,48 Mrd. ISK.
+
+## 20.10.2026 – Planner: BPO/BPC-Auflösung und endgültige Berechnung angleichen
+
+Auftrag: Gesamten Planner-Workflow prüfen (Rhea, ME 3/TE 2). Finanzübersicht und
+Verkaufsszenarien zeigten „nicht verfügbar“, dazu fünf Run-Fehlmengen-Warnungen,
+obwohl passende BPCs (z. B. Capital Cargo Bay mit 40 Runs) und BPOs vorhanden sind.
+
+Befund aus dem gespeicherten Plan: 52 von 62 produzierten Blueprints ohne
+Kostenquelle (41 Reaktionen, 11 Komponenten), Versorgungspläne für kleinere
+Run-Zahlen als benötigt (Capital Cargo Bay 27 statt 44, Capital Quantum
+Microprocessor 705 statt 962 auf einem BPO). Ursache: Der Produktionsbaum für die
+BPO/BPC-Auflösung setzte Typen ohne Planner-Vorgabe auf die Kauf-/Bauempfehlung
+bzw. pauschal auf „kaufen“ und erzwang Lagerverbrauch; die endgültige Berechnung
+baut dagegen alles Baubare mit den eigenen Vorgaben. Bauschritte, die der Baum als
+Kauf sah, bekamen keine Blueprint-Kosten, und die Versorgung wurde für einen
+anderen Produktionsgraphen geplant.
+
+Änderung:
+- `manufacturingProductionTree(usesExactPlannerPreferences:)`: Der Planner lässt
+  den Baum mit genau seinen Vorgaben rechnen; fehlende Typen übernehmen die
+  Entscheidung des Planner-Vorlaufs. Main-Hub-Chancen bleiben unverändert.
+- `consumeBlueprintJobs`: Mehrbedarf auf einem Blueprint-Original läuft auf
+  demselben Original weiter statt als Run-Fehlmenge.
+
+Nicht geändert: Die Warnung „Rhea is too large for a courier contract“ ist
+fachlich korrekt (1.300.000 m³ verpackt, Kurierlimit 350.000 m³); Szenarien mit
+dieser Route weisen den Transport als ausstehend aus.
+
+Prüfung: Neuer Core-Test `ownedOriginalCoversRunsBeyondItsPlannedSupply`;
+`swift test` und `xcodebuild … test` (Debug, arm64) grün. Die Angleichung im
+Baum (App-Schicht) ist nicht automatisch getestet. Nicht geprüft: Sichtkontrolle
+mit dem Rhea-Plan; Eigentümerabnahme offen.
+
+## 20.10.2026 – Gestapelte Blueprint-Originale (Reaktionsformeln)
+
+Befund (Rhea-Plan): 13 Reaktionsformeln blieben ohne Kostenquelle, obwohl sie im
+Besitz sind. Sie liegen als Stapel unbenutzter Originale vor (z. B. 24× Hexite);
+ESI meldet dann eine positive Menge statt `-1`. `OwnedBlueprintInstance` stufte
+das als `unknown` ein, daher galten sie weder als BPO noch als Formel.
+
+Änderung: `OwnedBlueprintInstance.kind(quantity:runs:)` – positive Menge mit
+`runs = -1` ist ein Original. Der Dekoder stuft gespeicherte `unknown`-Einträge
+neu ein, damit vorhandene Snapshots ohne neue Synchronisation greifen.
+
+Prüfung: Neuer Core-Test `stackedUnusedOriginalsAreOriginalsIncludingStoredSnapshots`;
+`swift test` und `xcodebuild … test` (Debug, arm64) grün. Nicht geprüft:
+Sichtkontrolle mit dem Rhea-Plan; Eigentümerabnahme offen.
+
+## 20.10.2026 – Bewertung eigener BPCs im Planner
+
+Auftrag (Eigentümerentscheidung): Eigene BPCs ohne eingetragenen Betrag nicht mehr
+mit 0 ISK, sondern „Markt, sonst Herstellung“ bewerten.
+
+Änderung:
+- Core `OwnedBPCValuation` (in `BlueprintResearch.swift`): Vertragswert je Run
+  (nur Angebote mit mindestens gleichem ME/TE), Itemwert, Science-Gebühr je Run,
+  Decryptor-Ableitung aus ME/TE/Runs, erwartete Inventionskosten je Run.
+- `RuntimeState.ownedBPCValues`: Kopierkosten (T1) bzw. erwartete
+  Inventionskosten (T2) mit SDE-Definitionen, Adjusted Prices, Systemindizes
+  der konfigurierten Kopier-/Inventionsanlage, Main-Hub-Preisen für Datacores
+  und Decryptor und den besten Skills aller Charaktere. Gebührenfaktor der
+  Forschungsanlagen in `scienceFacilityContext` zusammengeführt.
+- Planner (`valuingOwnedBPCs`): ersetzt die 0-ISK-Zuordnung eigener BPCs durch
+  den Wert, mit lokalisierter Herkunftsangabe.
+- `BlueprintMaterial` erhält einen öffentlichen Initialisierer.
+
+Beispiel: Die Rhea-BPC (8 Runs, ME 4, TE 4) entspricht einer Invention mit
+Optimized Augmentation Decryptor (Basis 1 Run, ME 2, TE 4).
+
+Annahme: Inventionsgebühr = Itemwert des T2-Produkts × 2 % × Gebührenfaktor;
+das EVE University Wiki belegt den Itemwert-Bezug, den Faktor 2 % nur fürs Kopieren.
+
+Prüfung: Neuer Core-Test `ownedBPCValuationUsesMarketThenInferredInventionInputs`;
+`swift test` und `xcodebuild … test` (Debug, arm64) grün. Die App-seitige
+Datenbeschaffung ist nicht automatisch getestet. Nicht geprüft: Werte im
+Rhea-Plan, Plausibilität gegen Spielwerte; Eigentümerabnahme offen.
+
+Nachtrag (Eigentümerentscheidung, gleicher Tag): Ist der Decryptor nicht eindeutig
+bestimmbar, wird der Mittelwert der erwarteten Inventionskosten aller passenden
+Decryptoren verwendet (`OwnedBPCValuation.decryptorCandidates`, `average`).

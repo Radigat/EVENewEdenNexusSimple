@@ -537,3 +537,141 @@ public enum BlueprintResearchCostCalculator {
     return value.isFinite ? value : nil
   }
 }
+
+/// How an owned Blueprint copy without an entered cost is valued in a plan.
+public enum OwnedBPCValueBasis: String, Codable, Sendable {
+  /// Cheapest equal-or-better public single-BPC Contract price per run.
+  case contractMarket
+  /// Estimated copy job cost of a T1 copy.
+  case copyEstimate
+  /// Estimated expected invention cost of an invented copy.
+  case inventionEstimate
+}
+
+public struct OwnedBPCValue: Codable, Equatable, Sendable {
+  public let amount: Double
+  public let basis: OwnedBPCValueBasis
+  /// Inferred decryptor, only for invention estimates.
+  public let decryptorTypeID: Int64?
+  /// True when the decryptor could not be identified uniquely; the amount is
+  /// then the mean over all matching decryptors.
+  public let isAmbiguous: Bool
+
+  public init(
+    amount: Double,
+    basis: OwnedBPCValueBasis,
+    decryptorTypeID: Int64? = nil,
+    isAmbiguous: Bool = false
+  ) {
+    self.amount = amount
+    self.basis = basis
+    self.decryptorTypeID = decryptorTypeID
+    self.isAmbiguous = isAmbiguous
+  }
+}
+
+/// Values owned Blueprint copies by market replacement first and by the
+/// estimated cost of making them otherwise (owner decision 2026-10-20).
+public enum OwnedBPCValuation {
+  /// Invented copies always start at ME 2 and TE 4 before decryptors.
+  public static let inventedBaseMaterialEfficiency = 2
+  public static let inventedBaseTimeEfficiency = 4
+
+  /// Cheapest price per run among public BPC offers whose ME and TE are at
+  /// least those of the owned copy, multiplied by the used runs.
+  public static func marketValue(
+    usedRuns: Int,
+    materialEfficiency: Int,
+    timeEfficiency: Int,
+    offers: [ProductionTreeContractBlueprintOption]
+  ) -> Double? {
+    guard usedRuns > 0 else { return nil }
+    let perRun = offers.compactMap { offer -> Double? in
+      guard offer.kind == .copy,
+        let runs = offer.runs, runs > 0,
+        let me = offer.materialEfficiency, me >= materialEfficiency,
+        let te = offer.timeEfficiency, te >= timeEfficiency,
+        offer.price.isFinite, offer.price > 0
+      else { return nil }
+      return offer.price / Double(runs)
+    }.min()
+    return perRun.flatMap { valid($0 * Double(usedRuns)) }
+  }
+
+  /// Estimated item value: ME0 manufacturing inputs at adjusted prices.
+  public static func estimatedItemValue(
+    materials: [BlueprintMaterial],
+    adjustedPrices: [Int64: AdjustedPrice]
+  ) -> Double? {
+    var total = 0.0
+    for material in materials {
+      guard let price = adjustedPrices[material.typeID]?.adjustedPrice,
+        price.isFinite, price >= 0
+      else { return nil }
+      total += Double(material.quantity) * price
+    }
+    return valid(total)
+  }
+
+  /// Science job fee per run: EIV × 2 % × (SCI × bonus + taxes).
+  public static func scienceJobCostPerRun(
+    estimatedItemValue: Double,
+    feeFactor: Double
+  ) -> Double? {
+    valid(estimatedItemValue * 0.02 * feeFactor)
+  }
+
+  /// Decryptors that can have produced the copy's ME/TE and, when the copy is
+  /// still unused, its runs. `[nil]` means no decryptor; several entries mean
+  /// the decryptor is ambiguous; `nil` means no invention outcome matches.
+  public static func decryptorCandidates(
+    materialEfficiency: Int,
+    timeEfficiency: Int,
+    availableRuns: Int?,
+    baseRuns: Int,
+    decryptors: [BlueprintDecryptorDefinition]
+  ) -> [BlueprintDecryptorDefinition?]? {
+    let meModifier = materialEfficiency - inventedBaseMaterialEfficiency
+    let teModifier = timeEfficiency - inventedBaseTimeEfficiency
+    if meModifier == 0, teModifier == 0,
+      (availableRuns ?? baseRuns) <= baseRuns
+    {
+      return [nil]
+    }
+    let matches = decryptors.filter {
+      $0.materialEfficiencyModifier == meModifier
+        && $0.timeEfficiencyModifier == teModifier
+        && (availableRuns ?? 0) <= baseRuns + $0.runModifier
+    }.sorted { $0.typeID < $1.typeID }
+    guard !matches.isEmpty else { return nil }
+    if matches.count > 1, let runs = availableRuns,
+      let exact = matches.first(where: { baseRuns + $0.runModifier == runs })
+    {
+      return [exact]
+    }
+    return matches
+  }
+
+  /// Arithmetic mean of the known values; `nil` if any value is unknown.
+  public static func average(_ values: [Double?]) -> Double? {
+    guard !values.isEmpty else { return nil }
+    let known = values.compactMap { $0 }
+    guard known.count == values.count else { return nil }
+    return valid(known.reduce(0, +) / Double(known.count))
+  }
+
+  /// Expected invention cost per output run.
+  public static func inventionCostPerRun(
+    attemptCost: Double,
+    successProbability: Double,
+    outputRuns: Int
+  ) -> Double? {
+    guard successProbability > 0, successProbability <= 1, outputRuns > 0
+    else { return nil }
+    return valid(attemptCost / (successProbability * Double(outputRuns)))
+  }
+
+  private static func valid(_ value: Double) -> Double? {
+    value.isFinite && value >= 0 ? value : nil
+  }
+}

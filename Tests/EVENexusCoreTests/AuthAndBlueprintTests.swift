@@ -581,6 +581,176 @@ struct AuthAndBlueprintTests {
   }
 
   @Test
+  func stackedUnusedOriginalsAreOriginalsIncludingStoredSnapshots() throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    // ESI reports a stack of never-used originals with a positive quantity.
+    let stack = OwnedBlueprintInstance(
+      id: 1,
+      blueprintTypeID: 46_166,
+      locationID: 3,
+      quantity: 24,
+      runs: -1,
+      materialEfficiency: 0,
+      timeEfficiency: 0,
+      source: source
+    )
+    #expect(stack.kind == .original)
+    let inconsistent = OwnedBlueprintInstance(
+      id: 2,
+      blueprintTypeID: 46_166,
+      locationID: 3,
+      quantity: 3,
+      runs: 5,
+      materialEfficiency: 0,
+      timeEfficiency: 0,
+      source: source
+    )
+    #expect(inconsistent.kind == .unknown)
+
+    // A snapshot stored before this rule keeps `unknown` on disk.
+    var stored = try JSONSerialization.jsonObject(
+      with: JSONEncoder().encode(stack)
+    ) as! [String: Any]
+    stored["kind"] = "unknown"
+    let decoded = try JSONDecoder().decode(
+      OwnedBlueprintInstance.self,
+      from: JSONSerialization.data(withJSONObject: stored)
+    )
+    #expect(decoded.kind == .original)
+    let copy = try JSONDecoder().decode(
+      OwnedBlueprintInstance.self,
+      from: JSONEncoder().encode(
+        OwnedBlueprintInstance(
+          id: 3,
+          blueprintTypeID: 2,
+          locationID: 3,
+          quantity: -2,
+          runs: 4,
+          materialEfficiency: 10,
+          timeEfficiency: 20,
+          source: source
+        )
+      )
+    )
+    #expect(copy.kind == .copy)
+  }
+
+  @Test
+  func ownedBPCValuationUsesMarketThenInferredInventionInputs() throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    func offer(_ id: Int64, runs: Int, me: Int, te: Int, price: Double)
+      -> ProductionTreeContractBlueprintOption
+    {
+      ProductionTreeContractBlueprintOption(
+        recordID: id, contractID: id, kind: .copy, runs: runs,
+        materialEfficiency: me, timeEfficiency: te, price: price,
+        locationID: 60_003_760, locationName: "Jita"
+      )
+    }
+    // Only equal-or-better copies count; 10 runs for 20 M is 2 M per run.
+    let market = OwnedBPCValuation.marketValue(
+      usedRuns: 3,
+      materialEfficiency: 10,
+      timeEfficiency: 20,
+      offers: [
+        offer(1, runs: 1, me: 8, te: 16, price: 500_000),
+        offer(2, runs: 10, me: 10, te: 20, price: 20_000_000),
+        offer(3, runs: 2, me: 10, te: 20, price: 5_000_000),
+      ]
+    )
+    #expect(market == 6_000_000)
+    #expect(
+      OwnedBPCValuation.marketValue(
+        usedRuns: 1, materialEfficiency: 10, timeEfficiency: 20,
+        offers: [offer(1, runs: 1, me: 8, te: 16, price: 500_000)]
+      ) == nil
+    )
+
+    func decryptor(_ id: Int64, _ p: Double, _ runs: Int, _ me: Int, _ te: Int)
+      -> BlueprintDecryptorDefinition
+    {
+      BlueprintDecryptorDefinition(
+        typeID: id, probabilityMultiplier: p, runModifier: runs,
+        materialEfficiencyModifier: me, timeEfficiencyModifier: te,
+        source: source
+      )
+    }
+    let decryptors = [
+      decryptor(34_201, 1.2, 1, 2, 10),
+      decryptor(34_202, 1.8, 4, -1, 4),
+      decryptor(34_203, 0.6, 9, -2, 2),
+      decryptor(34_204, 1.5, 3, 1, -2),
+      decryptor(34_205, 1.1, 0, 3, 6),
+      decryptor(34_206, 1.0, 2, 1, 8),
+      decryptor(34_207, 1.9, 2, 1, -2),
+      decryptor(34_208, 0.9, 7, 2, 0),
+    ]
+    // Rhea BPC: 8 runs, ME 4, TE 4 = 1 base run + Optimized Augmentation.
+    let rhea = try #require(
+      OwnedBPCValuation.decryptorCandidates(
+        materialEfficiency: 4, timeEfficiency: 4, availableRuns: 8,
+        baseRuns: 1, decryptors: decryptors
+      )
+    )
+    #expect(rhea.map { $0?.typeID } == [34_208])
+    // Parity and Optimized Attainment share ME/TE; full runs decide.
+    let parity = try #require(
+      OwnedBPCValuation.decryptorCandidates(
+        materialEfficiency: 3, timeEfficiency: 2, availableRuns: 13,
+        baseRuns: 10, decryptors: decryptors
+      )
+    )
+    #expect(parity.map { $0?.typeID } == [34_204])
+    // After used runs both remain candidates and are averaged.
+    let usedUp = try #require(
+      OwnedBPCValuation.decryptorCandidates(
+        materialEfficiency: 3, timeEfficiency: 2, availableRuns: 5,
+        baseRuns: 10, decryptors: decryptors
+      )
+    )
+    #expect(usedUp.map { $0?.typeID } == [34_204, 34_207])
+    #expect(OwnedBPCValuation.average([10, 20]) == 15)
+    #expect(OwnedBPCValuation.average([10, nil]) == nil)
+    let plain = try #require(
+      OwnedBPCValuation.decryptorCandidates(
+        materialEfficiency: 2, timeEfficiency: 4, availableRuns: 10,
+        baseRuns: 10, decryptors: decryptors
+      )
+    )
+    #expect(plain.count == 1 && plain[0] == nil)
+    #expect(
+      OwnedBPCValuation.decryptorCandidates(
+        materialEfficiency: 10, timeEfficiency: 20, availableRuns: 40,
+        baseRuns: 10, decryptors: decryptors
+      ) == nil
+    )
+
+    #expect(
+      OwnedBPCValuation.estimatedItemValue(
+        materials: [
+          BlueprintMaterial(typeID: 34, quantity: 100),
+          BlueprintMaterial(typeID: 35, quantity: 10),
+        ],
+        adjustedPrices: [
+          34: AdjustedPrice(typeID: 34, adjustedPrice: 4, averagePrice: 5),
+          35: AdjustedPrice(typeID: 35, adjustedPrice: 10, averagePrice: 9),
+        ]
+      ) == 500
+    )
+    #expect(
+      OwnedBPCValuation.scienceJobCostPerRun(
+        estimatedItemValue: 1_000_000, feeFactor: 0.1
+      ) == 2_000
+    )
+    // 40 M per attempt, 25 % success, 8 runs per success = 20 M per run.
+    #expect(
+      OwnedBPCValuation.inventionCostPerRun(
+        attemptCost: 40_000_000, successProbability: 0.25, outputRuns: 8
+      ) == 20_000_000
+    )
+  }
+
+  @Test
   func researchCostUsesLevelMultipliersAndSeparateFacilityContexts() throws {
     let source = SourceIdentity(
       provider: "fixture",

@@ -149,6 +149,7 @@ struct RecentProductionsView: View {
 
 struct ProductionBookView: View {
   @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject private var runtime: RuntimeState
   let onOpenHistoricalPlan: (StoredProductionOverviewRow) -> Void
   @State private var rows: [StoredProductionOverviewRow] = []
   @State private var summary: ProductionOverviewSummary?
@@ -286,6 +287,12 @@ struct ProductionBookView: View {
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
+      Text(
+        "If a production did not record its sales-tax or broker-fee rate, the current Main Hub rate is used and shown in italics."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
       GeometryReader { geometry in
         ScrollView(.vertical) {
           ProductionOverviewGrid(
@@ -330,6 +337,9 @@ struct ProductionBookView: View {
     }
     .task(id: summaryRevision) {
       await loadSummary(for: summaryRevision)
+    }
+    .onChange(of: runtime.productionBasis.productionOverviewFeeRates) {
+      summaryRevision += 1
     }
   }
 
@@ -436,7 +446,9 @@ struct ProductionBookView: View {
       let reader = ProductionOverviewSummaryReader(
         modelContainer: modelContext.container
       )
-      let loadedSummary = try await reader.load()
+      let loadedSummary = try await reader.load(
+        currentFeeRates: runtime.productionBasis.productionOverviewFeeRates
+      )
       guard !Task.isCancelled, summaryRevision == requestedRevision else {
         return
       }
@@ -498,11 +510,15 @@ enum ProductionOverviewHistoryPager {
 
 @ModelActor
 actor ProductionOverviewSummaryReader {
-  func load() throws -> ProductionOverviewSummary {
+  func load(
+    currentFeeRates: ProductionOverviewFeeRates? = nil
+  ) throws -> ProductionOverviewSummary {
     let rows = try modelContext.fetch(
       FetchDescriptor<StoredProductionOverviewRow>()
     )
-    let cache = ProductionOverviewProjectionCache()
+    let cache = ProductionOverviewProjectionCache(
+      currentFeeRates: currentFeeRates
+    )
     var units: Int64 = 0
     var projectedProfit: Double = 0
     var realProfit: Double = 0
@@ -552,6 +568,13 @@ final class ProductionOverviewProjectionCache {
 
   private var entries: [UUID: Entry] = [:]
   private(set) var decodedSnapshotCount = 0
+  /// Current Main Hub rates that complete fee rates a stored plan did not
+  /// record. Applied on read, so the cached plan projections stay unchanged.
+  var currentFeeRates: ProductionOverviewFeeRates?
+
+  init(currentFeeRates: ProductionOverviewFeeRates? = nil) {
+    self.currentFeeRates = currentFeeRates
+  }
 
   func retainSnapshots(for rows: [StoredProductionOverviewRow]) {
     let planIDs = Set(rows.map(\.planID))
@@ -559,6 +582,12 @@ final class ProductionOverviewProjectionCache {
   }
 
   func projection(
+    for row: StoredProductionOverviewRow
+  ) -> ProductionOverviewRequestProjection? {
+    storedProjection(for: row)?.fillingMissingFeeRates(from: currentFeeRates)
+  }
+
+  private func storedProjection(
     for row: StoredProductionOverviewRow
   ) -> ProductionOverviewRequestProjection? {
     var entry: Entry
@@ -600,7 +629,7 @@ final class ProductionOverviewProjectionCache {
   }
 
   func productTypeID(for row: StoredProductionOverviewRow) -> Int64? {
-    _ = projection(for: row)
+    _ = storedProjection(for: row)
     return entries[row.planID]?.plan?.topLevelProductNode(
       for: row.requestID
     )?.typeID
@@ -609,6 +638,7 @@ final class ProductionOverviewProjectionCache {
 
 private struct ProductionOverviewGrid: View {
   @EnvironmentObject private var consolidation: ConsolidationController
+  @EnvironmentObject private var runtime: RuntimeState
   let rows: [StoredProductionOverviewRow]
   let isEditable: Bool
   let availableWidth: CGFloat
@@ -760,8 +790,18 @@ private struct ProductionOverviewGrid: View {
             column: 11,
             rowIndex: offset
           )
-          moneyCell(metrics.salesTax, column: 12, row: offset)
-          moneyCell(metrics.brokerFee, column: 13, row: offset)
+          moneyCell(
+            metrics.salesTax,
+            column: 12,
+            row: offset,
+            isCurrentSetting: projection?.salesTaxRateIsCurrentSetting == true
+          )
+          moneyCell(
+            metrics.brokerFee,
+            column: 13,
+            row: offset,
+            isCurrentSetting: projection?.brokerFeeRateIsCurrentSetting == true
+          )
           moneyCell(metrics.productionCost, column: 14, row: offset)
           moneyCell(metrics.saleTotal, column: 15, row: offset)
           moneyCell(metrics.costPerUnit, column: 16, row: offset)
@@ -816,6 +856,8 @@ private struct ProductionOverviewGrid: View {
 
   private var sortedContexts: [ProductionOverviewRowContext] {
     projectionCache.retainSnapshots(for: rows)
+    projectionCache.currentFeeRates =
+      runtime.productionBasis.productionOverviewFeeRates
     let contexts = rows.map { row in
       let projection = projectionCache.projection(for: row)
       return ProductionOverviewRowContext(
@@ -992,14 +1034,16 @@ private struct ProductionOverviewGrid: View {
     _ value: Double?,
     column: Int,
     row: Int,
-    emphasis: CellEmphasis = .none
+    emphasis: CellEmphasis = .none,
+    isCurrentSetting: Bool = false
   ) -> some View {
     Text(compactISK(value))
       .font(.caption.monospacedDigit())
+      .italic(isCurrentSetting && value != nil)
       .lineLimit(1)
       .minimumScaleFactor(0.55)
       .foregroundStyle(valueColor(value, emphasis: emphasis))
-      .help(value.map(exactISK) ?? "Wert nicht verfügbar")
+      .help(moneyHelp(value, isCurrentSetting: isCurrentSetting))
       .frame(
         width: widths[column],
         alignment: .trailing
@@ -1008,6 +1052,15 @@ private struct ProductionOverviewGrid: View {
       .padding(.horizontal, cellHorizontalPadding)
       .background(cellBackground(row: row, emphasis: emphasis))
       .overlay(cellBorder)
+  }
+
+  private func moneyHelp(_ value: Double?, isCurrentSetting: Bool) -> String {
+    guard let value else { return "Wert nicht verfügbar" }
+    guard isCurrentSetting else { return exactISK(value) }
+    return AppLocalization.format(
+      "%@ · Rate from the current Main Hub settings; this production did not record it.",
+      exactISK(value)
+    )
   }
 
   private func percentageCell(

@@ -198,7 +198,7 @@ struct AssetsWarehouseView: View {
           summaryMetric("Item types", value: factualQuantities.count.formatted())
           summaryMetric("Units", value: totalUnits.formatted())
         }
-        if warehouse.sourceStates.contains(where: { $0 != .fresh }) {
+        if warehouse.stockRelevantSourceStates.contains(where: { $0 != .fresh }) {
           Label(
             "At least one asset-owner snapshot is partial, stale, forbidden or unavailable. Its state remains visible under the owner.",
             systemImage: "exclamationmark.triangle.fill"
@@ -213,6 +213,9 @@ struct AssetsWarehouseView: View {
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.caution)
+        }
+        if let nameGaps = warehouse.structureNameGaps, !nameGaps.isEmpty {
+          structureNameGapNote(nameGaps)
         }
         Text(summaryExplanation.localizedUI)
           .font(.caption)
@@ -852,6 +855,34 @@ struct AssetsWarehouseView: View {
     }
     return
       "\(typeCount) \("types".localizedUI) · \(units.formatted()) \("items".localizedUI)"
+  }
+
+  /// Missing structure names never reduce stock; they are listed per owner
+  /// as a note so the owner can see which characters lack structure access.
+  private func structureNameGapNote(
+    _ gaps: [AssetWarehouseStructureNameGap]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Label(
+        "Some player-structure names are unavailable because the character has no access. Stock quantities are complete.",
+        systemImage: "info.circle"
+      )
+      ForEach(gaps, id: \.ownerID) { gap in
+        HStack(spacing: DesignTokens.spacingXS) {
+          EVEEntityText(value: gap.ownerName, font: .caption)
+          Text(
+            AppLocalization.format(
+              "%lld structure names unavailable",
+              Int64(gap.count)
+            )
+          )
+        }
+        .padding(.leading, DesignTokens.spacingMD)
+      }
+    }
+    .font(.caption)
+    .foregroundStyle(DesignTokens.textSecondary)
+    .accessibilityIdentifier("assets.warehouse.structure-name-gaps")
   }
 
   private func summaryMetric(_ title: String, value: String) -> some View {

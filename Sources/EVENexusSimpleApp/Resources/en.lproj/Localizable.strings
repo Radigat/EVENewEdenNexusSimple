@@ -1420,7 +1420,6 @@
 "%lld jobs at material replacement value (estimate)" = "%lld jobs at material replacement value (estimate)";
 "Industry jobs not synchronized" = "Industry jobs not synchronized";
 "%lld industry jobs estimated" = "%lld industry jobs estimated";
-"In production retains consumed Manufacturing and Reaction inputs until delivery. It uses SDE material quantities and the same ESI reference-price policy; unavailable facility or rig modifiers remain a visible estimate instead of becoming zero." = "In production retains consumed Manufacturing and Reaction inputs until delivery. It uses SDE material quantities and the same ESI reference-price policy; unavailable facility or rig modifiers remain a visible estimate instead of becoming zero.";
 "Shown" = "Shown";
 "Hidden" = "Hidden";
 "Assets and own outstanding contract items use ESI average prices with adjusted prices as the visible fallback. Consumed Manufacturing and Reaction materials remain under In production until delivery; missing facility or rig modifiers make that component an explicit estimate. Blueprint copies are excluded; courier collateral is an estimate. Missing personal or accessible corporation values remain partial and are never treated as zero." = "Assets and own outstanding contract items use ESI average prices with adjusted prices as the visible fallback. Consumed Manufacturing and Reaction materials remain under In production until delivery; missing facility or rig modifiers make that component an explicit estimate. Blueprint copies are excluded; courier collateral is an estimate. Missing personal or accessible corporation values remain partial and are never treated as zero.";
@@ -1713,7 +1712,6 @@
 "%@ units × %@ lowest public contract unit price observed so far = %@ provisional gross contract-sale value · contract snapshot %@." = "%@ units × %@ lowest public contract unit price observed so far = %@ provisional gross contract-sale value · contract snapshot %@.";
 
 // Blueprint asset valuation coverage
-"Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Known blueprint copies are excluded. Assets with unknown blueprint status remain unvalued until an asset refresh or SDE classification resolves them." = "Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Known blueprint copies are excluded. Assets with unknown blueprint status remain unvalued until an asset refresh or SDE classification resolves them.";
 "%lld asset stacks unvalued: blueprint status unknown" = "%lld asset stacks unvalued: blueprint status unknown";
 "%lld corporation asset stacks unvalued: blueprint status unknown" = "%lld corporation asset stacks unvalued: blueprint status unknown";
 
@@ -1765,3 +1763,22 @@
 "Automatic concrete allocation" = "Automatic concrete allocation";
 "Preferred concrete Blueprint" = "Preferred concrete Blueprint";
 "Concrete Blueprint" = "Concrete Blueprint";
+"%lld BPC stacks without contract price" = "%lld BPC stacks without contract price";
+"%lld BPOs at SDE base price; research cost unavailable" = "%lld BPOs at SDE base price; research cost unavailable";
+"%lld BPO stacks: %@" = "%1$lld BPO stacks: %2$@";
+"%lld BPC stacks: %@" = "%1$lld BPC stacks: %2$@";
+"Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Assets with unknown blueprint status remain unvalued until an asset or blueprint refresh resolves them." = "Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Assets with unknown blueprint status remain unvalued until an asset or blueprint refresh resolves them.";
+"Blueprint originals (BPO) use the replacement estimate of the Blueprints screen: SDE base price plus research cost to the current ME/TE level with the Profile research facilities. Without a research facility only the SDE base price is counted and the value is marked as an estimate." = "Blueprint originals (BPO) use the replacement estimate of the Blueprints screen: SDE base price plus research cost to the current ME/TE level with the Profile research facilities. Without a research facility only the SDE base price is counted and the value is marked as an estimate.";
+"Blueprint copies (BPC) use the lowest price per run of public single-BPC Contracts for the same blueprint, multiplied by the remaining runs. Copies without such a Contract offer remain unvalued and are listed separately." = "Blueprint copies (BPC) use the lowest price per run of public single-BPC Contracts for the same blueprint, multiplied by the remaining runs. Copies without such a Contract offer remain unvalued and are listed separately.";
+"In production retains consumed Manufacturing and Reaction inputs until delivery. It uses SDE material quantities and the same ESI reference-price policy; inputs without a reference price are valued recursively from their own SDE inputs. Unavailable facility or rig modifiers remain a visible estimate instead of becoming zero." = "In production retains consumed Manufacturing and Reaction inputs until delivery. It uses SDE material quantities and the same ESI reference-price policy; inputs without a reference price are valued recursively from their own SDE inputs. Unavailable facility or rig modifiers remain a visible estimate instead of becoming zero.";
+"%lld produced Blueprint sources have no attributable cost. Select an owned Blueprint, Contract BPCs or enter a cost; until then the BPC/BPO total, production cost and profit remain unavailable." = "%lld produced Blueprint sources have no attributable cost. Select an owned Blueprint, Contract BPCs or enter a cost; until then the BPC/BPO total, production cost and profit remain unavailable.";
+"Some player-structure names are unavailable because the character has no access. Stock quantities are complete." = "Some player-structure names are unavailable because the character has no access. Stock quantities are complete.";
+"%lld structure names unavailable" = "%lld structure names unavailable";
+"%@ · Rate from the current Main Hub settings; this production did not record it." = "%@ · Rate from the current Main Hub settings; this production did not record it.";
+"If a production did not record its sales-tax or broker-fee rate, the current Main Hub rate is used and shown in italics." = "If a production did not record its sales-tax or broker-fee rate, the current Main Hub rate is used and shown in italics.";
+"Owned BPC partly valued; runs without a Contract price or cost estimate count as 0 ISK" = "Owned BPC partly valued; runs without a Contract price or cost estimate count as 0 ISK";
+"Owned BPC valued at the cheapest public BPC Contract price per run" = "Owned BPC valued at the cheapest public BPC Contract price per run";
+"Owned BPC valued at the estimated copy job cost (estimate)" = "Owned BPC valued at the estimated copy job cost (estimate)";
+"Owned BPC valued at the expected invention cost with the decryptor inferred from ME, TE and runs (estimate)" = "Owned BPC valued at the expected invention cost with the decryptor inferred from ME, TE and runs (estimate)";
+"Owned BPC valued by Contract price per run and production cost estimate" = "Owned BPC valued by Contract price per run and production cost estimate";
+"Owned BPC valued at the mean expected invention cost of all decryptors matching ME, TE and runs (estimate)" = "Owned BPC valued at the mean expected invention cost of all decryptors matching ME, TE and runs (estimate)";

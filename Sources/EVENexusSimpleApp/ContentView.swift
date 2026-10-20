@@ -1824,7 +1824,7 @@ struct DashboardView: View {
               if character.excludedBlueprintCopyCount > 0 {
                 Text(
                   AppLocalization.format(
-                    "%lld BPC stacks are excluded",
+                    "%lld BPC stacks without contract price",
                     Int64(character.excludedBlueprintCopyCount)
                   )
                 )

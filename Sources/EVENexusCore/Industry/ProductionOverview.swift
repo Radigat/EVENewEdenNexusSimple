@@ -161,6 +161,12 @@ public struct ProductionOverviewRequestProjection: Equatable, Sendable {
   public let brokerFeeRate: Double?
   public let brokerFeeIsApplicable: Bool
   public let suggestedSalePricePerUnit: Double?
+  /// The sales-tax rate was missing from the stored plan and comes from the
+  /// current Main Hub settings instead.
+  public let salesTaxRateIsCurrentSetting: Bool
+  /// The broker-fee rate was missing from the stored plan and comes from the
+  /// current Main Hub settings instead.
+  public let brokerFeeRateIsCurrentSetting: Bool
 
   public init(
     materialCost: Double?,
@@ -170,7 +176,9 @@ public struct ProductionOverviewRequestProjection: Equatable, Sendable {
     salesTaxRate: Double?,
     brokerFeeRate: Double?,
     brokerFeeIsApplicable: Bool = true,
-    suggestedSalePricePerUnit: Double?
+    suggestedSalePricePerUnit: Double?,
+    salesTaxRateIsCurrentSetting: Bool = false,
+    brokerFeeRateIsCurrentSetting: Bool = false
   ) {
     self.materialCost = materialCost
     self.installationCost = installationCost
@@ -180,6 +188,73 @@ public struct ProductionOverviewRequestProjection: Equatable, Sendable {
     self.brokerFeeRate = brokerFeeRate
     self.brokerFeeIsApplicable = brokerFeeIsApplicable
     self.suggestedSalePricePerUnit = suggestedSalePricePerUnit
+    self.salesTaxRateIsCurrentSetting = salesTaxRateIsCurrentSetting
+    self.brokerFeeRateIsCurrentSetting = brokerFeeRateIsCurrentSetting
+  }
+
+  /// Completes fee rates that the stored plan did not record with the
+  /// current Main Hub rates. Recorded rates always win, and a broker fee
+  /// that was not applicable stays not applicable.
+  public func fillingMissingFeeRates(
+    from current: ProductionOverviewFeeRates?
+  ) -> ProductionOverviewRequestProjection {
+    guard let current else { return self }
+    let storedSalesTaxRate = Self.validRate(salesTaxRate)
+    let storedBrokerFeeRate = Self.validRate(brokerFeeRate)
+    let fallbackSalesTaxRate =
+      storedSalesTaxRate == nil ? Self.validRate(current.salesTaxRate) : nil
+    let fallbackBrokerFeeRate =
+      brokerFeeIsApplicable && storedBrokerFeeRate == nil
+      ? Self.validRate(current.brokerFeeRate) : nil
+    guard fallbackSalesTaxRate != nil || fallbackBrokerFeeRate != nil else {
+      return self
+    }
+    return ProductionOverviewRequestProjection(
+      materialCost: materialCost,
+      installationCost: installationCost,
+      blueprintCost: blueprintCost,
+      logisticsCost: logisticsCost,
+      salesTaxRate: storedSalesTaxRate ?? fallbackSalesTaxRate,
+      brokerFeeRate: storedBrokerFeeRate ?? fallbackBrokerFeeRate,
+      brokerFeeIsApplicable: brokerFeeIsApplicable,
+      suggestedSalePricePerUnit: suggestedSalePricePerUnit,
+      salesTaxRateIsCurrentSetting:
+        salesTaxRateIsCurrentSetting || fallbackSalesTaxRate != nil,
+      brokerFeeRateIsCurrentSetting:
+        brokerFeeRateIsCurrentSetting || fallbackBrokerFeeRate != nil
+    )
+  }
+
+  private static func validRate(_ rate: Double?) -> Double? {
+    guard let rate, rate.isFinite, rate >= 0, rate < 1 else { return nil }
+    return rate
+  }
+}
+
+/// Market fee rates currently configured for the Main Hub.
+public struct ProductionOverviewFeeRates: Equatable, Sendable {
+  public let salesTaxRate: Double?
+  public let brokerFeeRate: Double?
+
+  public init(salesTaxRate: Double?, brokerFeeRate: Double?) {
+    self.salesTaxRate = salesTaxRate
+    self.brokerFeeRate = brokerFeeRate
+  }
+}
+
+extension ProductionBasis {
+  /// Current Main Hub fee rates for production rows whose stored plan did
+  /// not record them; `nil` without a configured Main Hub.
+  public var productionOverviewFeeRates: ProductionOverviewFeeRates? {
+    guard let taxes = mainTradingLocation?.marketTaxes else { return nil }
+    let rates = ProductionOverviewFeeRates(
+      salesTaxRate: taxes.effectiveSalesTaxRate,
+      brokerFeeRate: taxes.effectiveBrokerFeeRate
+    )
+    guard rates.salesTaxRate != nil || rates.brokerFeeRate != nil else {
+      return nil
+    }
+    return rates
   }
 }
 
@@ -206,7 +281,7 @@ public enum ProductionOverviewProjector {
       requestCount: requestCount
     )
     let blueprintCost = allocate(
-      plan.costBreakdown?.blueprintCosts?.total,
+      plan.costBreakdown?.blueprintCosts?.acceptedTotal,
       requestMaterialCost: projectedMaterialCost,
       knownMaterialTotal: knownMaterialTotal,
       requestCount: requestCount

@@ -9,6 +9,11 @@ public enum BlueprintCopyKind: String, Codable, Hashable, Sendable {
 public struct BlueprintMaterial: Codable, Hashable, Sendable {
   public let typeID: Int64
   public let quantity: Int64
+
+  public init(typeID: Int64, quantity: Int64) {
+    self.typeID = typeID
+    self.quantity = quantity
+  }
 }
 
 public struct BlueprintProduct: Codable, Hashable, Sendable {
@@ -70,14 +75,48 @@ public struct OwnedBlueprintInstance: Identifiable, Codable, Hashable, Sendable 
     self.runs = runs
     self.materialEfficiency = materialEfficiency
     self.timeEfficiency = timeEfficiency
-    if quantity == -1 {
-      self.kind = .original
-    } else if quantity == -2 {
-      self.kind = .copy
-    } else {
-      self.kind = .unknown
-    }
+    self.kind = Self.kind(quantity: quantity, runs: runs)
     self.source = source
+  }
+
+  /// ESI: `-1` is an original, `-2` a copy. A positive quantity is a stack of
+  /// unused originals (copies never stack); originals report `runs == -1`.
+  public static func kind(quantity: Int64, runs: Int) -> BlueprintCopyKind {
+    if quantity == -1 { return .original }
+    if quantity == -2 { return .copy }
+    if quantity > 0, runs == -1 { return .original }
+    return .unknown
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id, blueprintTypeID, locationID, quantity, runs
+    case materialEfficiency, timeEfficiency, kind, source
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(Int64.self, forKey: .id)
+    blueprintTypeID = try container.decode(Int64.self, forKey: .blueprintTypeID)
+    locationID = try container.decode(Int64.self, forKey: .locationID)
+    quantity = try container.decode(Int64.self, forKey: .quantity)
+    runs = try container.decode(Int.self, forKey: .runs)
+    materialEfficiency = try container.decode(
+      Int.self,
+      forKey: .materialEfficiency
+    )
+    timeEfficiency = try container.decode(Int.self, forKey: .timeEfficiency)
+    source = try container.decode(SourceIdentity.self, forKey: .source)
+    // Snapshots stored before stacked originals were recognized keep
+    // `unknown`; classify them again from their factual ESI fields.
+    let stored = try container.decodeIfPresent(
+      BlueprintCopyKind.self,
+      forKey: .kind
+    )
+    if let stored, stored != .unknown {
+      kind = stored
+    } else {
+      kind = Self.kind(quantity: quantity, runs: runs)
+    }
   }
 }
 

@@ -65,6 +65,74 @@ struct AssetWarehouseTests {
   }
 
   @Test
+  func missingStructureNamesAloneDoNotMakeStockIncomplete() {
+    let structureID: Int64 = 1_000_000_000_001
+    let hiddenStructureIDs: Set<Int64> = [1_000_000_000_002, 1_000_000_000_003]
+    func inventory(
+      ownerID: Int64,
+      name: String,
+      diagnostics: [String]
+    ) -> AssetOwnerInventory {
+      AssetOwnerInventory(
+        ownerID: ownerID,
+        ownerName: name,
+        assets: Sourced(
+          state: .partial,
+          value: AssetSnapshot(
+            characterID: ownerID,
+            state: .partial,
+            items: [
+              asset(
+                id: ownerID * 10,
+                typeID: 34,
+                quantity: 100,
+                locationID: structureID,
+                kind: .structure
+              )
+            ],
+            resolvedLocationNames: [structureID: "Production"],
+            unresolvedLocationNameIDs: hiddenStructureIDs
+          ),
+          source: SourceIdentity(provider: "ESI", version: "fixture"),
+          diagnostics: diagnostics
+        )
+      )
+    }
+    let namesOnly = AssetWarehouse(
+      inventories: [
+        inventory(
+          ownerID: 11,
+          name: "Alpha",
+          diagnostics: [
+            "esi.structure-resolution.inaccessible:2",
+            "esi.character-assets.unresolved-structure-names:2",
+          ]
+        )
+      ]
+    )
+    #expect(namesOnly.sourceStates == [.partial])
+    #expect(namesOnly.stockRelevantSourceStates == [.fresh])
+    #expect(!namesOnly.hasIncompleteStock)
+    #expect(
+      namesOnly.structureNameGaps
+        == [AssetWarehouseStructureNameGap(ownerID: 11, ownerName: "Alpha", count: 2)]
+    )
+    #expect(namesOnly.factualQuantities[34] == 100)
+
+    let otherGap = AssetWarehouse(
+      inventories: [
+        inventory(
+          ownerID: 12,
+          name: "Beta",
+          diagnostics: ["esi.character-assets.page-unavailable"]
+        )
+      ]
+    )
+    #expect(otherGap.stockRelevantSourceStates == [.partial])
+    #expect(otherGap.hasIncompleteStock)
+  }
+
+  @Test
   func productionWarehouseKeepsOnlyLooseAndContainerStock() {
     let productionLocation: Int64 = 1_000_000_000_001
     let otherLocation: Int64 = 60_003_760

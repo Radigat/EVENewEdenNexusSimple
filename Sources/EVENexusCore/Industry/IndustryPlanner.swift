@@ -1483,7 +1483,10 @@ public struct IndustryPlanner: Sendable {
     let blueprintCosts = BlueprintCostBreakdown(
       entries: blueprintEntries,
       requestsWithoutEnteredCost: requestsWithoutBlueprintCost,
-      total: knownBlueprintCost
+      total: knownBlueprintCost,
+      unresolvedBlueprintCount:
+        context.requiresCompleteBlueprintCosts
+        ? unresolvedBlueprintTypeIDs.count : 0
     )
     let ownedWithoutEnteredCostCount = blueprintEntries.filter {
       $0.treatment == ProductionTreeBlueprintCostProjector.ownedWithoutEnteredCostSource
@@ -4393,6 +4396,23 @@ private struct BuildState: Sendable {
         remaining -= used
       }
       if jobs[cursor].remainingRuns == 0 { cursor += 1 }
+    }
+    // A Blueprint original has unlimited runs: extra demand stays on the
+    // same original instead of becoming a run shortfall.
+    if remaining > 0,
+      let original = jobs.last(where: { $0.job.allocation.source.isOriginal })?
+        .job
+    {
+      slices.append(
+        BlueprintJobSlice(
+          supplyJobID: original.id,
+          source: original.allocation.source,
+          runs: remaining,
+          me: original.allocation.materialEfficiency,
+          te: original.allocation.timeEfficiency
+        )
+      )
+      remaining = 0
     }
     pendingBlueprintJobs[blueprintTypeID] = jobs
     blueprintJobCursors[blueprintTypeID] = cursor

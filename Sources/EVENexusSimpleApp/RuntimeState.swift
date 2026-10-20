@@ -1205,8 +1205,10 @@ final class RuntimeState: ObservableObject {
             reference: "production-location-personal-assets"
           )
           snapshotIDs.append(contentsOf: warehouse.snapshotIDs)
+          // Only stock-relevant gaps warn: missing structure names alone
+          // leave every quantity complete and are a note, not a warning.
           let incompleteStates = Set(
-            warehouse.sourceStates.filter { $0 != .fresh }
+            warehouse.stockRelevantSourceStates.filter { $0 != .fresh }
           )
           if !incompleteStates.isEmpty {
             inputWarnings.append(
@@ -1215,6 +1217,27 @@ final class RuntimeState: ObservableObject {
                 message:
                   "Some character assets in the production warehouse are not up to date (\(incompleteStates.map(\.rawValue).sorted().joined(separator: ", "))); stock used from the warehouse may be incomplete.",
                 severity: .warning
+              )
+            )
+          }
+          if !warehouse.unresolvedLocationIDs.isEmpty {
+            inputWarnings.append(
+              DomainWarning(
+                code: "industry.warehouse-unresolved-locations",
+                message:
+                  "\(warehouse.unresolvedLocationIDs.count) asset location \(warehouse.unresolvedLocationIDs.count == 1 ? "reference" : "references") could not be placed; the items there are not used as warehouse stock.",
+                severity: .warning
+              )
+            )
+          }
+          let nameGaps = warehouse.structureNameGaps ?? []
+          if !nameGaps.isEmpty {
+            inputWarnings.append(
+              DomainWarning(
+                code: "industry.warehouse-structure-names-unavailable",
+                message:
+                  "Structure names unavailable without access (\(nameGaps.map { "\($0.ownerName): \($0.count)" }.joined(separator: ", "))); stock quantities are complete.",
+                severity: .information
               )
             )
           }
@@ -1785,7 +1808,8 @@ final class RuntimeState: ObservableObject {
     loyaltyStoreBlueprintTypeIDs: Set<Int64> = [],
     plannerInputOverride: String? = nil,
     requiresCompleteBlueprintCostsInSelectedPlan: Bool = true,
-    availableStockOverride: [Int64: Int64]? = nil
+    availableStockOverride: [Int64: Int64]? = nil,
+    usesExactPlannerPreferences: Bool = false
   ) async throws -> ManufacturingProductionTreeSnapshot {
     guard targetQuantity > 0,
       (0...10).contains(materialEfficiency),
@@ -1870,7 +1894,7 @@ final class RuntimeState: ObservableObject {
         kind: .warehouse,
         reference: "production-activity-locations"
       )
-      if assetWarehouse.sourceStates.contains(where: { $0 != .fresh }) {
+      if assetWarehouse.stockRelevantSourceStates.contains(where: { $0 != .fresh }) {
         inputWarnings.append(
           DomainWarning(
             code: "production-tree.warehouse-not-fresh",
@@ -1969,6 +1993,19 @@ final class RuntimeState: ObservableObject {
       mainHub: configuredMainHub.location
     )
     var selectedPreferences = recommendations.preferences
+    if usesExactPlannerPreferences {
+      // The Planner's final calculation uses exactly its own preferences and
+      // otherwise builds whatever can be built. The Blueprint tree must
+      // resolve the same build steps and run counts, or Blueprint supply and
+      // costs are planned for a different production graph.
+      selectedPreferences = procurementPreferences.mapValues { preference in
+        MaterialProcurementPreference(
+          supplyMode: preference.supplyMode,
+          purchaseLocation: configuredMainHub.location,
+          usesAvailableStockFirst: preference.usesAvailableStockFirst
+        )
+      }
+    } else {
     for typeID in typeIDs {
       var preference =
         procurementPreferences[typeID]
@@ -1980,6 +2017,7 @@ final class RuntimeState: ObservableObject {
       preference.purchaseLocation = configuredMainHub.location
       preference.usesAvailableStockFirst = true
       selectedPreferences[typeID] = preference
+    }
     }
     let blueprintTypeIDs = Set(
       referencePlan.nodes.compactMap(\.blueprintTypeID)
@@ -2048,6 +2086,17 @@ final class RuntimeState: ObservableObject {
       ),
       reusingMakeOrBuyAnalysesFrom: referencePlan
     )
+    if usesExactPlannerPreferences {
+      // Types without an explicit preference follow the planner's own
+      // decision (build when possible, blacklist respected), not the
+      // make-or-buy recommendation shown for the reference plan.
+      for material in preflightPlan.materials
+      where selectedPreferences[material.typeID] == nil {
+        if let decided = material.procurement {
+          selectedPreferences[material.typeID] = decided
+        }
+      }
+    }
     let preflightTree = ManufacturingProductionTreeProjector.project(
       targetQuantity: targetQuantity,
       mainHub: configuredMainHub.location,
@@ -3320,9 +3369,14 @@ final class RuntimeState: ObservableObject {
           definitionsByProductTypeID[productTypeID] = definition
         }
       }
+      let fallbackUnitValues = await recursiveIndustryMaterialValues(
+        jobDefinitions: definitionsByProductTypeID,
+        prices: prices.prices
+      )
       let jobValues = DashboardInProgressIndustryProjector.projectJobs(
         inputs: inputs, prices: prices.prices,
-        definitionsByProductTypeID: definitionsByProductTypeID
+        definitionsByProductTypeID: definitionsByProductTypeID,
+        fallbackUnitValues: fallbackUnitValues
       )
       let productIDs = Set(jobValues.compactMap { $0.ownedJob.job.productTypeID })
       dashboardIndustryProductNames = (try? await catalog.typeNames(ids: productIDs)) ?? [:]
@@ -3332,19 +3386,148 @@ final class RuntimeState: ObservableObject {
           inputs: inputs,
           prices: prices.prices,
           definitionsByProductTypeID: definitionsByProductTypeID,
+          fallbackUnitValues: fallbackUnitValues,
           jobValues: jobValues
         )
+      let blueprintValuation = await dashboardBlueprintValuation(
+        inputs: inputs,
+        prices: prices,
+        assetClassifications: assetClassifications
+      )
+      guard !Task.isCancelled else { return }
       dashboardWealthSnapshot = DashboardWealthProjector.project(
         inputs: inputs,
         prices: prices,
         typeNames: typeNames,
         assetClassifications: assetClassifications,
-        inProgressIndustryValues: inProgressIndustryValues
+        inProgressIndustryValues: inProgressIndustryValues,
+        blueprintValuation: blueprintValuation
       )
     } catch {
       dashboardWealthError =
         "The current ESI reference prices could not be loaded."
     }
+  }
+
+  /// Loads SDE production definitions for job inputs without an ESI
+  /// reference price, level by level, so their unit value can be derived
+  /// recursively from their own inputs.
+  private func recursiveIndustryMaterialValues(
+    jobDefinitions: [Int64: BlueprintDefinition],
+    prices: [Int64: AdjustedPrice]
+  ) async -> [Int64: Double] {
+    func isPriced(_ typeID: Int64) -> Bool {
+      guard let reference = prices[typeID],
+        let price = reference.averagePrice ?? reference.adjustedPrice
+      else { return false }
+      return price.isFinite && price >= 0
+    }
+    let unpriced = Set(
+      jobDefinitions.values.flatMap(\.activity.materials).map(\.typeID)
+    ).filter { !isPriced($0) }
+    guard !unpriced.isEmpty else { return [:] }
+    var definitions: [Int64: BlueprintDefinition] = [:]
+    var frontier = unpriced
+    var visited = Set<Int64>()
+    for _ in 0..<DashboardRecursiveMaterialValuator.maximumDepth {
+      var next = Set<Int64>()
+      for typeID in frontier.sorted() where !visited.contains(typeID) {
+        guard !Task.isCancelled else { return [:] }
+        visited.insert(typeID)
+        guard
+          let definition = try? await catalog.productionDefinition(
+            productTypeID: typeID
+          )
+        else { continue }
+        definitions[typeID] = definition
+        next.formUnion(
+          definition.activity.materials.map(\.typeID).filter { !isPriced($0) }
+        )
+      }
+      frontier = next.subtracting(visited)
+      if frontier.isEmpty { break }
+    }
+    return DashboardRecursiveMaterialValuator.unitValues(
+      for: unpriced,
+      prices: prices,
+      definitionsByProductTypeID: definitions
+    )
+  }
+
+  /// Collects BPO research definitions and public BPC Contract offers for the
+  /// blueprints in personal and corporation assets.
+  private func dashboardBlueprintValuation(
+    inputs: [DashboardWealthCharacterInput],
+    prices: ReferencePriceSnapshot,
+    assetClassifications: [Int64: IndustryItemClassification]
+  ) async -> DashboardWealthBlueprintValuation {
+    func isBlueprintType(_ typeID: Int64) -> Bool {
+      assetClassifications[typeID]?.categoryName
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .caseInsensitiveCompare("Blueprint") == .orderedSame
+    }
+    var originalTypeIDs = Set<Int64>()
+    var copyTypeIDs = Set<Int64>()
+    for input in inputs {
+      let records = input.blueprints.flatMap {
+        [.fresh, .partial, .stale].contains($0.state) ? $0.value : nil
+      } ?? []
+      let recordsByItemID = Dictionary(
+        records.map { ($0.id, $0) },
+        uniquingKeysWith: { first, _ in first }
+      )
+      for record in records {
+        switch record.kind {
+        case .original: originalTypeIDs.insert(record.blueprintTypeID)
+        case .copy: copyTypeIDs.insert(record.blueprintTypeID)
+        case .unknown: break
+        }
+      }
+      let items =
+        (input.assets.value?.items ?? [])
+        + (input.corporationAssets?.value?.items ?? [])
+      for item in items where recordsByItemID[item.id] == nil {
+        if item.isBlueprintCopy == true || item.quantity == -2 {
+          copyTypeIDs.insert(item.typeID)
+        } else if item.quantity == -1 || isBlueprintType(item.typeID) {
+          originalTypeIDs.insert(item.typeID)
+        }
+      }
+    }
+    var definitions: [Int64: BlueprintResearchDefinition] = [:]
+    for typeID in originalTypeIDs.sorted() {
+      guard !Task.isCancelled else { return .empty }
+      if let definition = try? await catalog.blueprintResearchDefinition(
+        blueprintTypeID: typeID
+      ) {
+        definitions[typeID] = definition
+      }
+    }
+    if !definitions.isEmpty, industrySystemIndices == nil {
+      industrySystemIndices = await loadIndustrySystemIndices()
+    }
+    var copyOffers: [Int64: [PublicContractSearchResult]] = [:]
+    if !copyTypeIDs.isEmpty,
+      publicContractStoreState == .ready,
+      let publicContractIndexer
+    {
+      copyOffers =
+        (try? await publicContractIndexer.includedOfferSnapshot(
+          typeIDs: copyTypeIDs,
+          limitPerType: 500
+        ).offers) ?? [:]
+    }
+    return DashboardBlueprintValuationBuilder.build(
+      inputs: inputs,
+      definitions: definitions,
+      pricing: BlueprintResearchPricingInput(
+        adjustedPrices: prices.prices,
+        adjustedPriceSource: prices.source,
+        materialFacility: researchFacilityContext(activity: .materialEfficiency),
+        timeFacility: researchFacilityContext(activity: .timeEfficiency)
+      ),
+      copyOffers: copyOffers
+    )
   }
 
   func resolveAssetTypeClassifications(_ typeIDs: Set<Int64>) async
@@ -3425,6 +3608,182 @@ final class RuntimeState: ObservableObject {
     async let decryptors = catalog.decryptorDefinitions()
     return try await (activities, decryptors)
   }
+  /// One owned Blueprint copy used by a planned job.
+  struct OwnedBPCUse: Sendable {
+    let blueprintTypeID: Int64
+    let usedRuns: Int
+    let materialEfficiency: Int
+    let timeEfficiency: Int
+    let availableRuns: Int?
+  }
+
+  /// Values owned Blueprint copies: cheapest equal-or-better public BPC
+  /// Contract per run first, otherwise the estimated copy (T1) or expected
+  /// invention (T2) cost per run. A use that cannot be valued is `nil`.
+  func ownedBPCValues(
+    uses: [OwnedBPCUse],
+    contractOffers: [Int64: [ProductionTreeContractBlueprintOption]],
+    capabilities: [CharacterCapabilitySnapshot]
+  ) async -> [OwnedBPCValue?] {
+    var results: [OwnedBPCValue?] = uses.map { use in
+      OwnedBPCValuation.marketValue(
+        usedRuns: use.usedRuns,
+        materialEfficiency: use.materialEfficiency,
+        timeEfficiency: use.timeEfficiency,
+        offers: contractOffers[use.blueprintTypeID] ?? []
+      ).map { OwnedBPCValue(amount: $0, basis: .contractMarket) }
+    }
+    guard results.contains(where: { $0 == nil }),
+      let prices = try? await JitaMarketService(esi: esi)
+        .adjustedPriceSnapshot().prices
+    else { return results }
+    if industrySystemIndices == nil {
+      industrySystemIndices = await loadIndustrySystemIndices()
+    }
+    let decryptors = (try? await catalog.decryptorDefinitions()) ?? []
+    func eiv(_ blueprintTypeID: Int64) async -> Double? {
+      guard
+        let definition = try? await catalog
+          .consolidationManufacturingDefinition(blueprintTypeID)
+      else { return nil }
+      return OwnedBPCValuation.estimatedItemValue(
+        materials: definition.activity.materials,
+        adjustedPrices: prices
+      )
+    }
+    func copyCostPerRun(_ blueprintTypeID: Int64) async -> Double? {
+      guard let value = await eiv(blueprintTypeID),
+        let factor = scienceFeeFactor(for: .copying)
+      else { return nil }
+      return OwnedBPCValuation.scienceJobCostPerRun(
+        estimatedItemValue: value,
+        feeFactor: factor
+      )
+    }
+    var marketBook: PreparedMarketOrderBook?
+    func buyCost(_ materials: [BlueprintMaterial]) async -> Double? {
+      if marketBook == nil {
+        guard let hub = productionBasis.mainTradingLocation?.location,
+          let regionID = hub.regionID, let locationID = hub.locationID,
+          let snapshot = try? await TradeHubMarketService(esi: esi)
+            .orderSnapshot(
+              typeIDs: Set(decryptors.map(\.typeID)).union(
+                materials.map(\.typeID)
+              ),
+              regionID: regionID,
+              locationID: locationID
+            )
+        else { return nil }
+        marketBook = PreparedMarketOrderBook(snapshot: snapshot)
+      }
+      var total = 0.0
+      for material in materials {
+        guard
+          let cost = marketBook?.quote(
+            typeID: material.typeID,
+            quantity: material.quantity,
+            scenario: .materialBuy
+          ).total
+        else { return nil }
+        total += cost
+      }
+      return total.isFinite ? total : nil
+    }
+    for (index, use) in uses.enumerated() where results[index] == nil {
+      guard use.usedRuns > 0 else { continue }
+      let invention = try? await catalog.productionDefinition(
+        productTypeID: use.blueprintTypeID
+      )
+      guard let invention, invention.activity.kind == .invention else {
+        if let perRun = await copyCostPerRun(use.blueprintTypeID) {
+          results[index] = OwnedBPCValue(
+            amount: perRun * Double(use.usedRuns),
+            basis: .copyEstimate
+          )
+        }
+        continue
+      }
+      let sourceBlueprintTypeID = invention.blueprintTypeID
+      guard
+        let activity = (try? await catalog.blueprintScienceActivities(
+          blueprintTypeID: sourceBlueprintTypeID
+        ))?.first(where: { $0.kind == .invention }),
+        let baseRuns = activity.products.first(where: {
+          $0.typeID == use.blueprintTypeID
+        }).map({ Int(clamping: $0.quantity) }),
+        let candidates = OwnedBPCValuation.decryptorCandidates(
+          materialEfficiency: use.materialEfficiency,
+          timeEfficiency: use.timeEfficiency,
+          availableRuns: use.availableRuns,
+          baseRuns: baseRuns,
+          decryptors: decryptors
+        ),
+        let copyCost = await copyCostPerRun(sourceBlueprintTypeID),
+        let productValue = await eiv(use.blueprintTypeID),
+        let inventionFactor = scienceFeeFactor(for: .invention),
+        let inventionFee = OwnedBPCValuation.scienceJobCostPerRun(
+          estimatedItemValue: productValue,
+          feeFactor: inventionFactor
+        )
+      else { continue }
+      // Best trained level of every required skill across all characters.
+      let skillLevels = Dictionary(
+        uniqueKeysWithValues: activity.requiredSkills.compactMap {
+          skill -> (Int64, Int)? in
+          capabilities.compactMap { $0.skillLevel(skill.typeID) }.max()
+            .map { (skill.typeID, $0) }
+        }
+      )
+      // An ambiguous decryptor is valued as the mean over all candidates.
+      var candidateCosts: [Double?] = []
+      for decryptor in candidates {
+        guard
+          let inputs = await buyCost(
+            activity.materials
+              + (decryptor.map {
+                [BlueprintMaterial(typeID: $0.typeID, quantity: 1)]
+              } ?? [])
+          )
+        else {
+          candidateCosts.append(nil)
+          continue
+        }
+        let attemptCost = copyCost + inputs + inventionFee
+        let plan = try? BlueprintSciencePlanner.inventionPlan(
+          inputBPC: .ownedBPC(itemID: 0),
+          inputBlueprintTypeID: sourceBlueprintTypeID,
+          selectedOutputBlueprintTypeID: use.blueprintTypeID,
+          activity: activity,
+          characterID: 0,
+          characterName: "",
+          trainedSkillLevels: skillLevels,
+          decryptor: decryptor,
+          attemptCost: attemptCost,
+          requiredSuccesses: 1
+        )
+        candidateCosts.append(
+          plan.flatMap {
+            OwnedBPCValuation.inventionCostPerRun(
+              attemptCost: attemptCost,
+              successProbability: $0.successProbability,
+              outputRuns: $0.outputRuns
+            )
+          }
+        )
+      }
+      guard let perRun = OwnedBPCValuation.average(candidateCosts) else {
+        continue
+      }
+      results[index] = OwnedBPCValue(
+        amount: perRun * Double(use.usedRuns),
+        basis: .inventionEstimate,
+        decryptorTypeID: candidates.count == 1 ? candidates[0]?.typeID : nil,
+        isAmbiguous: candidates.count > 1
+      )
+    }
+    return results
+  }
+
   func consolidationManufacturingDefinition(_ blueprintID: Int64) async throws -> BlueprintDefinition? {
     try await catalog.consolidationManufacturingDefinition(blueprintID)
   }
@@ -3467,7 +3826,27 @@ final class RuntimeState: ObservableObject {
   private func researchFacilityContext(
     activity: BlueprintResearchActivity
   ) -> BlueprintResearchFacilityContext? {
-    let industryActivity = activity.industryActivity
+    scienceFacilityContext(
+      industryActivity: activity.industryActivity,
+      researchActivity: activity
+    )
+  }
+
+  /// Fee factor (SCI × bonus + taxes) of the configured science facility for
+  /// copying or invention, or `nil` when it is not configured.
+  private func scienceFeeFactor(
+    for industryActivity: IndustryActivitySystem
+  ) -> Double? {
+    scienceFacilityContext(
+      industryActivity: industryActivity,
+      researchActivity: .materialEfficiency
+    )?.totalFeeFactor
+  }
+
+  private func scienceFacilityContext(
+    industryActivity: IndustryActivitySystem,
+    researchActivity activity: BlueprintResearchActivity
+  ) -> BlueprintResearchFacilityContext? {
     guard
       let system = productionBasis.systemConfiguration(
         for: industryActivity

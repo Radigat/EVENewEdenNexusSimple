@@ -391,7 +391,11 @@ struct NetWorthView: View {
           ? snapshot.characters.reduce(0) { $0 + $1.excludedBlueprintCopyCount }
           : snapshot.corporationAssetCoverage?.excludedBlueprintCopyCount ?? 0
         if excluded > 0 {
-          Text(AppLocalization.format("%lld BPC stacks excluded", Int64(excluded)))
+          Text(
+            AppLocalization.format(
+              "%lld BPC stacks without contract price", Int64(excluded)
+            )
+          )
             .font(.caption2)
             .foregroundStyle(DesignTokens.textSecondary)
         }
@@ -584,7 +588,7 @@ struct NetWorthView: View {
     Panel(title: "Per character") {
       if let snapshot = currentSnapshot {
         ScrollView(.horizontal) {
-          VStack(spacing: 0) {
+          VStack(alignment: .leading, spacing: 0) {
             characterHeader
             Divider()
             let sortedCharacters = sortedCharacters(snapshot.characters)
@@ -595,7 +599,7 @@ struct NetWorthView: View {
               }
             }
           }
-          .frame(minWidth: 1_350)
+          .frame(width: Self.characterTableWidth, alignment: .leading)
         }
       } else {
         Text("No current valuation is available.")
@@ -607,7 +611,7 @@ struct NetWorthView: View {
   private var characterHeader: some View {
     HStack(spacing: DesignTokens.spacingSM) {
       characterSortHeader("Character", column: .character)
-        .frame(minWidth: 190, alignment: .leading)
+        .frame(width: Self.characterColumnWidth, alignment: .leading)
       characterSortHeader("Wallet", column: .wallet)
         .frame(width: 130, alignment: .trailing)
       characterSortHeader("Assets", column: .assets)
@@ -713,13 +717,19 @@ struct NetWorthView: View {
           font: .callout.weight(.semibold),
           lineLimit: 1
         )
+        if let blueprintSummary = blueprintSummary(character) {
+          Text(blueprintSummary)
+            .font(.caption2)
+            .foregroundStyle(DesignTokens.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
         let warnings = characterWarnings(character)
         if !warnings.isEmpty {
-          HStack(spacing: DesignTokens.spacingXS) {
+          HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingXS) {
             Text(warnings.joined(separator: " · "))
               .font(.caption2)
               .foregroundStyle(DesignTokens.caution)
-              .lineLimit(2)
+              .fixedSize(horizontal: false, vertical: true)
             if character.unvaluedAssetTypeCount > 0
               || character.unvaluedContractItemTypeCount > 0
             {
@@ -735,7 +745,7 @@ struct NetWorthView: View {
           }
         }
       }
-      .frame(minWidth: 190, alignment: .leading)
+      .frame(width: Self.characterColumnWidth, alignment: .leading)
       characterValue(character.walletValue, width: 130)
       characterValue(character.assetValue, width: 130)
       characterValue(character.ordersValue, width: 130)
@@ -751,7 +761,43 @@ struct NetWorthView: View {
       .frame(width: 95, alignment: .trailing)
     }
     .padding(.vertical, DesignTokens.spacingSM)
+    .frame(width: Self.characterTableWidth, alignment: .leading)
     .accessibilityElement(children: .combine)
+  }
+
+  /// Fixed column widths keep header and every row aligned regardless of the
+  /// length of a character's warning line.
+  private static let characterColumnWidth: CGFloat = 300
+  private static let characterTableWidth: CGFloat =
+    characterColumnWidth + 130 * 6 + 140 + 145 + 95 + DesignTokens.spacingSM * 9
+
+  private func blueprintSummary(
+    _ character: DashboardWealthCharacterValue
+  ) -> String? {
+    var parts: [String] = []
+    if character.blueprintOriginalCount > 0,
+      let value = character.blueprintOriginalValue
+    {
+      parts.append(
+        AppLocalization.format(
+          "%lld BPO stacks: %@",
+          Int64(character.blueprintOriginalCount),
+          formatISK(value)
+        )
+      )
+    }
+    if character.valuedBlueprintCopyCount > 0,
+      let value = character.blueprintCopyValue
+    {
+      parts.append(
+        AppLocalization.format(
+          "%lld BPC stacks: %@",
+          Int64(character.valuedBlueprintCopyCount),
+          formatISK(value)
+        )
+      )
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
   private func characterValue(
@@ -838,8 +884,16 @@ struct NetWorthView: View {
     Panel(title: "Calculation basis") {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
         Label(
-          "Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Known blueprint copies are excluded. Assets with unknown blueprint status remain unvalued until an asset refresh or SDE classification resolves them.",
+          "Personal and corporation assets use ESI average prices, with adjusted prices as the fallback. Assets with unknown blueprint status remain unvalued until an asset or blueprint refresh resolves them.",
           systemImage: "chart.line.uptrend.xyaxis"
+        )
+        Label(
+          "Blueprint originals (BPO) use the replacement estimate of the Blueprints screen: SDE base price plus research cost to the current ME/TE level with the Profile research facilities. Without a research facility only the SDE base price is counted and the value is marked as an estimate.",
+          systemImage: "doc.text"
+        )
+        Label(
+          "Blueprint copies (BPC) use the lowest price per run of public single-BPC Contracts for the same blueprint, multiplied by the remaining runs. Copies without such a Contract offer remain unvalued and are listed separately.",
+          systemImage: "doc.on.doc"
         )
         Label(
           "Reference prices are public ESI data and need no SSO scope. If ESI temporarily omits a type, its value remains unknown until a later snapshot.",
@@ -858,7 +912,7 @@ struct NetWorthView: View {
           systemImage: "truck.box"
         )
         Label(
-          "In production retains consumed Manufacturing and Reaction inputs until delivery. It uses SDE material quantities and the same ESI reference-price policy; unavailable facility or rig modifiers remain a visible estimate instead of becoming zero.",
+          "In production retains consumed Manufacturing and Reaction inputs until delivery. It uses SDE material quantities and the same ESI reference-price policy; inputs without a reference price are valued recursively from their own SDE inputs. Unavailable facility or rig modifiers remain a visible estimate instead of becoming zero.",
           systemImage: "gearshape.2"
         )
         Label(
@@ -1211,6 +1265,7 @@ struct NetWorthView: View {
       return snapshot.characters.allSatisfy {
         $0.assetValue != nil && $0.unvaluedAssetTypeCount == 0
           && $0.unknownBlueprintStatusCount == 0
+          && $0.estimatedBlueprintOriginalCount == 0
       }
     case .orders:
       return snapshot.characters.allSatisfy {
@@ -1360,8 +1415,16 @@ struct NetWorthView: View {
     if character.excludedBlueprintCopyCount > 0 {
       warnings.append(
         AppLocalization.format(
-          "%lld BPC stacks excluded",
+          "%lld BPC stacks without contract price",
           Int64(character.excludedBlueprintCopyCount)
+        )
+      )
+    }
+    if character.estimatedBlueprintOriginalCount > 0 {
+      warnings.append(
+        AppLocalization.format(
+          "%lld BPOs at SDE base price; research cost unavailable",
+          Int64(character.estimatedBlueprintOriginalCount)
         )
       )
     }

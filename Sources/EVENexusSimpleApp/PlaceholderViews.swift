@@ -1234,7 +1234,7 @@ struct PlannerView: View {
         financeOverviewCard(
           section: .blueprints,
           title: "BPC/BPO",
-          value: formatISK(breakdown?.blueprintCosts?.total)
+          value: formatISK(breakdown?.blueprintCosts?.acceptedTotal)
         ) {
           if let blueprintCosts = breakdown?.blueprintCosts {
             blueprintCostDetails(
@@ -1309,7 +1309,7 @@ struct PlannerView: View {
           )
           costMetric(
             "BPC/BPO",
-            breakdown?.blueprintCosts?.total,
+            breakdown?.blueprintCosts?.acceptedTotal,
             explanation:
               "Consumed BPC acquisition cost plus the entered allocation for reusable BPOs."
           )
@@ -1686,7 +1686,7 @@ struct PlannerView: View {
     AppLocalization.format(
       "%@ material procurement + %@ BPC/BPO + %@ installation = %@ production cost before logistics.",
       formatISK(plan.materialCost),
-      formatISK(plan.costBreakdown?.blueprintCosts?.total),
+      formatISK(plan.costBreakdown?.blueprintCosts?.acceptedTotal),
       formatISK(plan.installationCost),
       formatISK(plan.costBreakdown?.productionCostBeforeLogistics)
     )
@@ -3424,7 +3424,20 @@ struct PlannerView: View {
         .font(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
-      metric("Total BPC/BPO cost", blueprintCosts.total)
+      if let unresolved = blueprintCosts.unresolvedBlueprintCount,
+        unresolved > 0
+      {
+        Label(
+          AppLocalization.format(
+            "%lld produced Blueprint sources have no attributable cost. Select an owned Blueprint, Contract BPCs or enter a cost; until then the BPC/BPO total, production cost and profit remain unavailable.",
+            Int64(unresolved)
+          ),
+          systemImage: "exclamationmark.triangle"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
+      metric("Total BPC/BPO cost", blueprintCosts.acceptedTotal)
       Text(
         "BPC is treated as a consumed copy acquisition cost. For a reusable BPO, enter only the cost share you want to allocate to this production line."
       )
@@ -5445,7 +5458,8 @@ struct PlannerView: View {
   }
 
   private func plannerBlueprintAllocations(
-    from tree: ManufacturingProductionTreeSnapshot
+    from tree: ManufacturingProductionTreeSnapshot,
+    contractSupplyPlans: [Int64: BlueprintSupplyPlan] = [:]
   ) -> [Int64: IndustryBlueprintCostAllocation] {
     let manualRequestIDs = Set(
       tree.referencePlan.requests.compactMap { request in
@@ -5485,7 +5499,94 @@ struct PlannerView: View {
           attributableBPCContractRuns: blueprint.attributableBPCContractRuns
         )
       }
-    return ProductionTreeBlueprintCostProjector.allocations(for: choices)
+    var allocations = ProductionTreeBlueprintCostProjector.allocations(
+      for: choices
+    )
+    // The concrete Contract BPC supply decides the jobs' runs and ME/TE, so
+    // its whole-Contract price replaces the cheapest-coverage estimate.
+    let contractChoiceIDs = Set(
+      choices.filter { $0.action == .buyContractBPC }.map(\.blueprintTypeID)
+    )
+    for (blueprintTypeID, allocation) in ProductionTreeBlueprintCostProjector
+      .contractBPCAllocations(supplyPlans: contractSupplyPlans)
+    where contractChoiceIDs.contains(blueprintTypeID) {
+      allocations[blueprintTypeID] = allocation
+    }
+    return allocations
+  }
+
+  /// Replaces the 0 ISK of owned Blueprint copies without an entered cost by
+  /// their Contract replacement value or estimated copy/invention cost.
+  /// Uses that cannot be valued keep counting as 0 ISK and say so.
+  private func valuingOwnedBPCs(
+    _ allocations: [Int64: IndustryBlueprintCostAllocation],
+    supplyPlans: [Int64: BlueprintSupplyPlan],
+    tree: ManufacturingProductionTreeSnapshot,
+    capabilities: [CharacterCapabilitySnapshot]
+  ) async -> [Int64: IndustryBlueprintCostAllocation] {
+    var uses: [RuntimeState.OwnedBPCUse] = []
+    for (blueprintTypeID, allocation) in allocations
+    where allocation.source
+      == ProductionTreeBlueprintCostProjector.ownedWithoutEnteredCostSource
+    {
+      for job in supplyPlans[blueprintTypeID]?.manufacturingJobs ?? [] {
+        guard case .ownedBPC = job.allocation.source else { continue }
+        uses.append(
+          RuntimeState.OwnedBPCUse(
+            blueprintTypeID: blueprintTypeID,
+            usedRuns: job.allocation.allocatedRuns,
+            materialEfficiency: job.allocation.materialEfficiency,
+            timeEfficiency: job.allocation.timeEfficiency,
+            availableRuns: job.allocation.availableRuns
+          )
+        )
+      }
+    }
+    guard !uses.isEmpty else { return allocations }
+    var offers: [Int64: [ProductionTreeContractBlueprintOption]] = [:]
+    for step in plannerBlueprintSteps(in: tree) {
+      offers[step.blueprint.blueprintTypeID] =
+        step.blueprint.attributableContractOptions
+    }
+    let values = await runtime.ownedBPCValues(
+      uses: uses,
+      contractOffers: offers,
+      capabilities: capabilities
+    )
+    var result = allocations
+    for blueprintTypeID in Set(uses.map(\.blueprintTypeID)) {
+      guard let allocation = allocations[blueprintTypeID] else { continue }
+      let typeValues = zip(uses, values).filter {
+        $0.0.blueprintTypeID == blueprintTypeID
+      }.map(\.1)
+      let known = typeValues.compactMap { $0 }
+      guard !known.isEmpty else { continue }
+      let bases = Set(known.map(\.basis))
+      let treatment: String
+      if known.count < typeValues.count {
+        treatment =
+          "Owned BPC partly valued; runs without a Contract price or cost estimate count as 0 ISK"
+      } else if bases == [.contractMarket] {
+        treatment = "Owned BPC valued at the cheapest public BPC Contract price per run"
+      } else if bases == [.copyEstimate] {
+        treatment = "Owned BPC valued at the estimated copy job cost (estimate)"
+      } else if bases == [.inventionEstimate] {
+        treatment =
+          known.contains(where: \.isAmbiguous)
+          ? "Owned BPC valued at the mean expected invention cost of all decryptors matching ME, TE and runs (estimate)"
+          : "Owned BPC valued at the expected invention cost with the decryptor inferred from ME, TE and runs (estimate)"
+      } else {
+        treatment = "Owned BPC valued by Contract price per run and production cost estimate"
+      }
+      result[blueprintTypeID] = IndustryBlueprintCostAllocation(
+        blueprintTypeID: blueprintTypeID,
+        productName: allocation.productName,
+        kind: .bpc,
+        amount: known.reduce(0) { $0 + $1.amount },
+        source: treatment
+      )
+    }
+    return result
   }
 
   private var plannerBlueprintInventories: [OwnedBlueprintInventory] {
@@ -5599,7 +5700,7 @@ struct PlannerView: View {
       let requestedPreferences = preferences ?? procurementPreferences
       let authorizationPayloads = storedCharacters.map(\.authorizationSnapshot)
       let capabilityPayloads = storedCharacters.compactMap(\.capabilitySnapshot)
-      consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.sourceStates.allSatisfy { $0 == .fresh })
+      consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.stockRelevantSourceStates.allSatisfy { $0 == .fresh })
       let plannerInput = input
       let plannerManualStockInput = manualStockInput
       let plannerWarehouse = assetWarehouse
@@ -5672,7 +5773,8 @@ struct PlannerView: View {
           preferredBlueprintSources: preferredBlueprintSources,
           loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
           plannerInputOverride: plannerInput,
-          requiresCompleteBlueprintCostsInSelectedPlan: false
+          requiresCompleteBlueprintCostsInSelectedPlan: false,
+          usesExactPlannerPreferences: true
         )
       } catch is CancellationError {
         return
@@ -5719,7 +5821,8 @@ struct PlannerView: View {
             preferredBlueprintSources: preferredBlueprintSources,
             loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
             plannerInputOverride: plannerInput,
-            requiresCompleteBlueprintCostsInSelectedPlan: false
+            requiresCompleteBlueprintCostsInSelectedPlan: false,
+            usesExactPlannerPreferences: true
           )
         } catch is CancellationError {
           return
@@ -5734,9 +5837,6 @@ struct PlannerView: View {
         }
       }
       blueprintTree = resolvedBlueprintTree
-      var allocations = plannerBlueprintAllocations(
-        from: resolvedBlueprintTree
-      )
       var finalBlueprintSupplyPlans = Dictionary(
         uniqueKeysWithValues: (resolvedBlueprintTree.selectedPlan.blueprintSupplyPlans ?? [])
           .map { ($0.blueprintTypeID, $0) }
@@ -5747,10 +5847,23 @@ struct PlannerView: View {
       {
         finalBlueprintSupplyPlans[blueprintTypeID] = handedOffPlan
       }
+      var allocations = plannerBlueprintAllocations(
+        from: resolvedBlueprintTree,
+        contractSupplyPlans: finalBlueprintSupplyPlans
+      )
       for (type, supplied) in finalBlueprintSupplyPlans where !supplied.scienceJobs.isEmpty {
         if let cost = supplied.batchAllocationCost {
           allocations[type] = IndustryBlueprintCostAllocation(blueprintTypeID: type, productName: supplied.productName, kind: supplied.manufacturingJobs.first?.allocation.source.isOriginal == true ? .bpo : .bpc, amount: cost, source: "Konkreter Wissenschaftsauftrag")
         }
+      }
+      allocations = await valuingOwnedBPCs(
+        allocations,
+        supplyPlans: finalBlueprintSupplyPlans,
+        tree: resolvedBlueprintTree,
+        capabilities: preparedInputs.3
+      )
+      guard !Task.isCancelled, calculationID == requestedCalculationID else {
+        return
       }
       calculationPhase = .calculating
       await runtime.calculate(
@@ -5915,7 +6028,7 @@ struct PlannerView: View {
     guard !Task.isCancelled else { return }
     assetWarehouse = productionWarehouse.warehouse
     warehouseFactualQuantities = productionWarehouse.factualQuantities
-    consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.sourceStates.allSatisfy { $0 == .fresh })
+    consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.stockRelevantSourceStates.allSatisfy { $0 == .fresh })
   }
 }
 

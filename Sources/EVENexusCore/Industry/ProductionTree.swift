@@ -133,6 +133,40 @@ public enum ProductionTreeBlueprintCostProjector {
     }
   }
 
+  /// Allocations for Blueprint supply plans that are covered completely by
+  /// concrete public BPC Contracts. Each Contract is charged at its full
+  /// price, even when only part of its runs is used, because a Contract can
+  /// only be bought as a whole. Plans with a run shortfall, another source
+  /// kind or an unknown price stay unresolved.
+  public static func contractBPCAllocations(
+    supplyPlans: [Int64: BlueprintSupplyPlan]
+  ) -> [Int64: IndustryBlueprintCostAllocation] {
+    supplyPlans.reduce(into: [:]) { result, entry in
+      let (blueprintTypeID, plan) = entry
+      let jobs = plan.manufacturingJobs
+      guard blueprintTypeID > 0,
+        plan.requiredRuns > 0,
+        !jobs.isEmpty,
+        jobs.allSatisfy({
+          if case .contractBPC = $0.allocation.source { return true }
+          return false
+        }),
+        jobs.reduce(0, { $0 + max(0, $1.allocation.allocatedRuns) })
+          >= plan.requiredRuns,
+        let amount = plan.batchAllocationCost.flatMap(validAmount)
+      else { return }
+      let contractCount = Set(jobs.map(\.allocation.source)).count
+      result[blueprintTypeID] = IndustryBlueprintCostAllocation(
+        blueprintTypeID: blueprintTypeID,
+        productName: plan.productName,
+        kind: .bpc,
+        amount: amount,
+        source:
+          "\(contractCount) concrete Main Hub BPC Contract(s), \(plan.requiredRuns) allocated runs"
+      )
+    }
+  }
+
   private static func validAmount(_ amount: Double) -> Double? {
     amount.isFinite && amount >= 0 ? amount : nil
   }
@@ -1043,6 +1077,7 @@ public enum ManufacturingProductionTreeProjector {
     let materials = Dictionary(
       uniqueKeysWithValues: referencePlan.materials.map { ($0.typeID, $0) }
     )
+    let rootSet = Set(rootIDs)
     let factual = warehouse.factualQuantities
     let inventoryComplete =
       !blueprintPortfolio.sourceStates.isEmpty
@@ -1075,8 +1110,15 @@ public enum ManufacturingProductionTreeProjector {
       )
       let analysis = material?.makeOrBuyAnalysis
       let canBuild = node.activity != nil
-      let selectedMode =
-        preferences[node.typeID]?.supplyMode
+      // A requested end product is always built: the planner never buys a
+      // top-level request, so a market-type purchase preference for the same
+      // type must not hide its Blueprint step and cost.
+      let isRequestedRoot =
+        rootSet.contains(node.id) && node.topLevelRequestID != nil
+      let selectedMode: MaterialSupplyMode =
+        isRequestedRoot && canBuild
+        ? .produce
+        : preferences[node.typeID]?.supplyMode
         ?? defaultSupplyMode(
           canBuild: canBuild,
           recommendation: analysis?.recommendation,

@@ -23,7 +23,7 @@ public struct ProductionJournalMetrics: Equatable, Sendable {
     stockUnits = plan.materials.reduce(0) { $0 + $1.fromStock }
     intermediateUnits = plan.materials.reduce(0) { $0 + $1.toProduce }
     materialCost = plan.materialCost
-    blueprintCost = plan.costBreakdown?.blueprintCosts?.total
+    blueprintCost = plan.costBreakdown?.blueprintCosts?.acceptedTotal
     installationCost = plan.installationCost
     logisticsCost = plan.costBreakdown.flatMap {
       $0.effectiveLogisticsCost

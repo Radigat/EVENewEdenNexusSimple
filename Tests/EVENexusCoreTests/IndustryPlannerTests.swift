@@ -722,6 +722,50 @@ struct IndustryPlannerTests {
   }
 
   @Test
+  func requestedRootStaysABlueprintStepDespiteBuyPreference() async throws {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .produce,
+        purchaseLocation: .jita
+      )
+    )
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: context
+    )
+    let rootTypeID = try #require(
+      plan.nodes.first { $0.action == .produce && $0.blueprintTypeID == 801 }
+    ).typeID
+    // The planner's market-type preferences default every type without a
+    // make-or-buy recommendation to "buy", including the requested product.
+    let tree = ManufacturingProductionTreeProjector.project(
+      targetQuantity: 1,
+      mainHub: .jita,
+      referencePlan: plan,
+      selectedPlan: plan,
+      warehouse: AssetWarehouse(inventories: []),
+      warehouseHasSnapshot: false,
+      protectedQuantities: [:],
+      reservedQuantities: [:],
+      preferences: [
+        rootTypeID: MaterialProcurementPreference(
+          supplyMode: .buy,
+          purchaseLocation: .jita
+        )
+      ],
+      blueprintPortfolio: BlueprintPortfolio(inventories: []),
+      blueprintNames: [801: "Product Blueprint", 802: "Component Blueprint"],
+      blueprintContractOffers: [:],
+      publicContractCoverageComplete: true,
+      inventionDefinitions: [:],
+      productionScope: ProductionWarehouseScope(locations: [])
+    )
+    let root = try #require(tree.nodes.first { tree.rootIDs.contains($0.id) })
+    #expect(root.selectedSupplyMode == .produce)
+    #expect(root.blueprint?.blueprintTypeID == 801)
+  }
+
+  @Test
   func marketOriginalIsSeparateFromContractsAndNeverBecomesMarketCopy()
     async throws
   {
@@ -1059,6 +1103,15 @@ struct IndustryPlannerTests {
         $0.code == "industry.blueprint-cost-unresolved"
       }
     )
+    // An unresolved Blueprint is never shown or summed as 0 ISK: the
+    // Blueprint total, the subtotal and every sale scenario stay unavailable.
+    #expect(unresolved.costBreakdown?.blueprintCosts?.unresolvedBlueprintCount == 2)
+    #expect(unresolved.costBreakdown?.blueprintCosts?.acceptedTotal == nil)
+    #expect(unresolved.costBreakdown?.productionCostBeforeLogistics == nil)
+    #expect(unresolved.costBreakdown?.hasConsistentTotal == true)
+    #expect(unresolved.productionCostPerOutputUnit == nil)
+    #expect(unresolved.immediateSale.totalCost == nil)
+    #expect(unresolved.immediateSale.profit == nil)
 
     let allocations: [Int64: IndustryBlueprintCostAllocation] = [
       801: IndustryBlueprintCostAllocation(
@@ -1085,6 +1138,7 @@ struct IndustryPlannerTests {
       )
     )
     #expect(complete.costBreakdown?.blueprintCosts?.total == 12)
+    #expect(complete.costBreakdown?.blueprintCosts?.acceptedTotal == 12)
     #expect(complete.costBreakdown?.totalProductionCost != nil)
 
     let ownedFormula = try await IndustryPlanner().plan(
@@ -1118,6 +1172,151 @@ struct IndustryPlannerTests {
       } == true
     )
     #expect(ownedFormula.costBreakdown?.totalProductionCost != nil)
+  }
+
+  @Test
+  func ownedOriginalCoversRunsBeyondItsPlannedSupply() async throws {
+    let preference = MaterialProcurementPreference(
+      supplyMode: .produce,
+      purchaseLocation: .jita
+    )
+    // The supply plan was prepared for 2 intermediate runs, the final plan
+    // needs 6. An original has unlimited runs, so nothing is short.
+    let supplyJob = BlueprintManufacturingJob(
+      demandID: BlueprintDemandID(
+        requestID: UUID(),
+        blueprintTypeID: 802,
+        productTypeID: 82,
+        nodePath: [81, 82]
+      ),
+      allocation: BlueprintRunAllocation(
+        source: .ownedBPO(itemID: 9_802),
+        provenance: .researchedOriginal,
+        availableRuns: nil,
+        allocatedRuns: 2,
+        remainingRuns: nil,
+        materialEfficiency: 10,
+        timeEfficiency: 20,
+        sourceState: .fresh
+      ),
+      blueprintTypeID: 802,
+      productTypeID: 82,
+      runs: 2,
+      outputQuantity: 2
+    )
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 3 0 0",
+      context: intermediateChoiceContext(
+        preference: preference,
+        blueprintSupplyPlans: [
+          802: BlueprintSupplyPlan(
+            blueprintTypeID: 802,
+            productTypeID: 82,
+            productName: "Choice Intermediate",
+            requiredRuns: 2,
+            manufacturingJobs: [supplyJob]
+          )
+        ]
+      )
+    )
+    #expect(
+      !plan.warnings.contains {
+        $0.code == "industry.blueprint-supply-insufficient-runs"
+      }
+    )
+    let intermediateJobs = plan.jobs.filter { $0.typeID == 82 }
+    #expect(intermediateJobs.reduce(0) { $0 + ($1.runs ?? 0) } == 6)
+    #expect(intermediateJobs.allSatisfy { $0.materialEfficiency == 10 })
+  }
+
+  @Test
+  func contractBPCSupplyChargesWholeContractsCoveringRequiredRuns() throws {
+    let requestID = UUID()
+    func job(
+      _ source: BlueprintSourceReference,
+      available: Int,
+      allocated: Int,
+      price: Double,
+      me: Int
+    ) -> BlueprintManufacturingJob {
+      BlueprintManufacturingJob(
+        demandID: BlueprintDemandID(
+          requestID: requestID,
+          blueprintTypeID: 20_281,
+          productTypeID: 20_280,
+          nodePath: [20_280]
+        ),
+        allocation: BlueprintRunAllocation(
+          source: source,
+          provenance: .contractCopy,
+          availableRuns: available,
+          allocatedRuns: allocated,
+          remainingRuns: available - allocated,
+          materialEfficiency: me,
+          timeEfficiency: 20,
+          sourceState: .fresh,
+          acquisitionCost: price
+        ),
+        blueprintTypeID: 20_281,
+        productTypeID: 20_280,
+        runs: allocated,
+        outputQuantity: Int64(allocated)
+      )
+    }
+    func plan(
+      _ jobs: [BlueprintManufacturingJob],
+      cost: Double?
+    ) -> BlueprintSupplyPlan {
+      BlueprintSupplyPlan(
+        blueprintTypeID: 20_281,
+        productTypeID: 20_280,
+        productName: "Siege Module I",
+        requiredRuns: 5,
+        manufacturingJobs: jobs,
+        batchAllocationCost: cost
+      )
+    }
+    // 5 runs: a 3-run BPC fully used plus a 3-run BPC with 2 used runs.
+    // Both Contracts are bought whole, so the unused run is still paid.
+    let covered = plan(
+      [
+        job(.contractBPC(recordID: 1), available: 3, allocated: 3,
+          price: 3_500_000, me: 8),
+        job(.contractBPC(recordID: 2), available: 3, allocated: 2,
+          price: 3_980_000, me: 10),
+      ],
+      cost: 7_480_000
+    )
+    let allocation = try #require(
+      ProductionTreeBlueprintCostProjector.contractBPCAllocations(
+        supplyPlans: [20_281: covered]
+      )[20_281]
+    )
+    #expect(allocation.kind == .bpc)
+    #expect(allocation.amount == 7_480_000)
+
+    let shortfall = plan(
+      [job(.contractBPC(recordID: 1), available: 3, allocated: 3,
+        price: 3_500_000, me: 8)],
+      cost: 3_500_000
+    )
+    let mixed = plan(
+      [
+        job(.contractBPC(recordID: 1), available: 3, allocated: 3,
+          price: 3_500_000, me: 8),
+        job(.ownedBPC(itemID: 9), available: 2, allocated: 2,
+          price: 0, me: 10),
+      ],
+      cost: 3_500_000
+    )
+    let unpriced = plan(covered.manufacturingJobs, cost: nil)
+    for unresolved in [shortfall, mixed, unpriced] {
+      #expect(
+        ProductionTreeBlueprintCostProjector.contractBPCAllocations(
+          supplyPlans: [20_281: unresolved]
+        ).isEmpty
+      )
+    }
   }
 
   @Test
@@ -3090,7 +3289,8 @@ struct IndustryPlannerTests {
     directRawQuantity: Int64 = 0,
     blueprintCostAllocations: [Int64: IndustryBlueprintCostAllocation] = [:],
     requiresCompleteBlueprintCosts: Bool = false,
-    productionEfficiencies: [Int64: IndustryProductionEfficiency] = [:]
+    productionEfficiencies: [Int64: IndustryProductionEfficiency] = [:],
+    blueprintSupplyPlans: [Int64: BlueprintSupplyPlan] = [:]
   ) -> IndustryPlanningContext {
     let source = SourceIdentity(provider: "fixture", version: "1")
     let intermediate = BlueprintDefinition(
@@ -3217,7 +3417,8 @@ struct IndustryPlannerTests {
       sdeBuild: 1,
       blueprintCostAllocations: blueprintCostAllocations,
       requiresCompleteBlueprintCosts: requiresCompleteBlueprintCosts,
-      productionEfficiencies: productionEfficiencies
+      productionEfficiencies: productionEfficiencies,
+      blueprintSupplyPlans: blueprintSupplyPlans
     )
   }
 

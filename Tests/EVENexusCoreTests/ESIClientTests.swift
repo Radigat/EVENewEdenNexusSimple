@@ -2332,7 +2332,7 @@ struct DashboardProjectionTests {
     #expect(snapshot.corporationAssetCoverage?.corporationCount == 1)
     #expect(snapshot.isComplete)
     #expect(snapshot.corporationAssetFreshness == .fresh)
-    #expect(snapshot.valuationPolicy.hasSuffix("v3"))
+    #expect(snapshot.valuationPolicy.hasSuffix("v4"))
     let decoded = try JSONDecoder().decode(
       DashboardWealthSnapshot.self, from: JSONEncoder().encode(snapshot))
     #expect(decoded == snapshot)

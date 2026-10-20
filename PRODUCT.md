@@ -295,18 +295,42 @@ betrachtet werden; auf der Net-Worth-Seite sind Komponenten einzeln ein- und
 ausblendbar.
 
 Persönliche und Corporation-Assets erhalten das ESI-Kennzeichen
-`is_blueprint_copy` durch Synchronisierung und Speicherung hindurch. Bekannte
-Blueprint-Kopien werden nicht zum Originalpreis bewertet. Bei älteren Daten
-ohne Kennzeichen bleiben unbekannte Blueprint- oder SDE-Klassifikationszustände
-ausdrücklich unbewertet und sichtbar unvollständig. Eine normale Aktualisierung
-ergänzt die verfügbaren Quelldaten. Historische Vermögenssummen behalten ihren
+`is_blueprint_copy` durch Synchronisierung und Speicherung hindurch. Ob ein
+Asset ein Original oder eine Kopie ist, entscheidet zuerst der gespeicherte
+ESI-Blueprint-Datensatz mit derselben Item-ID, danach das Asset-Kennzeichen;
+gestapelte Blueprints sind immer Originale. Einzelne Blueprints ohne Datensatz
+und Kennzeichen sowie Assets ohne SDE-Klassifikation bleiben ausdrücklich
+unbewertet und sichtbar unvollständig.
+
+- **BPO** werden mit der Wiederbeschaffungsschätzung aus **Baupläne** bewertet:
+  SDE-Basispreis plus Forschungskosten bis zum aktuellen ME/TE-Stand mit den
+  Forschungsanlagen und Systemindizes des Profils. Unerforschte Originale
+  (ME 0/TE 0, auch gestapelte) benötigen dafür keine Forschungsanlage. Fehlt sie
+  bei erforschten Originalen, zählt nur der SDE-Basispreis als Untergrenze; die
+  Assets gelten dann als Schätzung und unvollständig. Ohne SDE-Basispreis greift
+  der ESI-Referenzpreis.
+- **BPC** werden mit dem niedrigsten Preis je Durchlauf aus öffentlichen,
+  eindeutig zurechenbaren Einzel-BPC-Verträgen (Item Exchange, ein angebotener
+  Posten, keine Gegenposten) desselben Bauplantyps aus dem lokalen
+  Vertragsindex bewertet, multipliziert mit den verbleibenden Runs des eigenen
+  Datensatzes. Der ESI-Preis des Bauplantyps wird für Kopien nie verwendet.
+  Kopien ohne Runs oder ohne solches Angebot bleiben unbewertet und erscheinen
+  als „BPC-Stapel ohne Vertragspreis“; sie machen die Summe wie bisher nicht
+  unvollständig.
+
+Die Charaktertabelle zeigt BPO- und BPC-Anteil je Charakter unter dem Namen.
+Ihre Spalten haben feste Breiten, damit Kopf und Zeilen unabhängig von der
+Länge der Hinweiszeile bündig bleiben; Hinweise brechen um, statt die Spalte zu
+verbreitern. Eine normale Aktualisierung ergänzt die verfügbaren Quelldaten. Historische Vermögenssummen behalten ihren
 ursprünglichen Regelstand; neue Aufzeichnungen verwenden die korrigierte
 Bewertungsrichtlinie. Details: [Fehlerkorrekturen und Wiederherstellung](Documentation/REVIEW_FIXES_2026-10-02.md).
 
 **In Produktion** bewertet die bereits verbrauchten SDE-Materialmengen aktiver,
 pausierter oder abholbereiter Manufacturing- und Reaction-Jobs mit ESI Average
 Price und Adjusted Price als Fallback. Bekannte ME-Werte vorhandener
-Blueprintinstanzen werden angewendet. Ausgelieferte, abgebrochene und
+Blueprintinstanzen werden angewendet. Materialien ohne Referenzpreis werden
+rekursiv über ihre eigenen SDE-Eingänge (bis zu vier Ebenen, je Ausgabeeinheit)
+mit derselben Preisregel bewertet. Ausgelieferte, abgebrochene und
 zurueckgesetzte Jobs zaehlen nicht. Da ESI fuer den installierten Job keine
 vollständige Facility-/Rig-Materialmodifikation liefert, bleibt dieser Anteil
 als Schätzung gekennzeichnet. Fehlende Job-, Blueprint-, SDE- oder Preisdaten
@@ -371,9 +395,22 @@ als **Assets teilweise verfügbar** mit der Zahl der nicht erreichbaren Orte
 angezeigt. Dieser Zustand ist von einer abgelaufenen SSO-Berechtigung getrennt;
 er wird weder als fehlender Scope noch als leerer Bestand dargestellt.
 
+Fehlen in einem Snapshot nur Struktur- oder Divisionsnamen, gelten seine Mengen
+für Lager, Planner, Produktionsbaum und Projektbestand als vollständig. Die
+Warnung „Some character assets in the production warehouse are not up to date“
+erscheint nur noch, wenn ein Snapshot aus anderem Grund nicht frisch ist
+(veraltet, teilweise geladen, verboten, nicht verfügbar). Items, die keinem Ort
+zugeordnet werden können, erzeugen eine eigene Planner-Warnung und gehen nicht
+in den Bestand ein. Fehlende Strukturnamen stehen in der Lageransicht als
+Hinweis mit Charakter und Anzahl; im Planner sind sie nur ein ausgeblendeter
+Informationshinweis.
+
 ### Blueprints, Industrie und Reaktionen
 
-BPO und BPC bleiben unterschiedliche Instanzen mit eigener Herkunft. Eine BPC
+BPO und BPC bleiben unterschiedliche Instanzen mit eigener Herkunft. Die Art
+folgt der ESI-Menge: `-1` Original, `-2` Kopie; eine positive Menge mit
+`runs = -1` ist ein Stapel unbenutzter Originale (Kopien stapeln nie) und gilt
+als Original, auch in bereits gespeicherten Snapshots. Eine BPC
 kann als verbrauchter Erwerbspreis, eine BPO nur mit einer expliziten lokalen
 Kostenallokation in einen Plan eingehen. Jede verwendete BPC bleibt anhand ihrer
 Item- oder Contract-Identität ein eigener Fertigungsjob mit eigenen Runs,
@@ -673,21 +710,58 @@ Itemnamen statt einer Typ-ID; nur ein nicht auflösbarer Name bleibt ausdrückli
 als unaufgelöster Typ mit ID sichtbar. Die Meldungstexte sind englisch.
 
 Im Planner ist die Blueprintquelle jedes tatsächlich gebauten Knotens
-kostenwirksam. Eine eigene BPC oder vorhandene BPO, für die kein Betrag
-eingetragen ist, zählt mit **0 ISK**; ein Hinweis nennt, wie viele Blueprints so
-eingerechnet sind. Ein eingetragener Erwerbs-, Aktivitätsbetrag oder eine Umlage
+kostenwirksam. Eine vorhandene BPO, für die kein Betrag eingetragen ist, zählt
+mit **0 ISK**; ein Hinweis nennt, wie viele Blueprints so eingerechnet sind.
+Eine eigene BPC ohne eingetragenen Betrag wird je verbrauchtem Run bewertet
+(Eigentümerentscheidung 20.10.2026):
+1. günstigster Preis je Run öffentlicher Einzel-BPC-Verträge am Main Hub mit
+   mindestens gleichem ME und TE,
+2. sonst geschätzte Herstellungskosten: bei T1-Kopien die Kopierauftragskosten
+   (geschätzter Itemwert des Produkts aus ME0-Materialien zu Adjusted Prices
+   × 2 % × Gebührenfaktor der konfigurierten Kopieranlage), bei erfundenen
+   Kopien die erwarteten Inventionskosten je Run: (Kopierkosten eines T1-Runs +
+   Datacores + Decryptor zu Main-Hub-Kaufpreisen + Inventionsgebühr, Itemwert des
+   T2-Produkts × 2 % × Gebührenfaktor der Inventionsanlage) ÷ (Erfolgschance ×
+   Runs je Erfolg). Der Decryptor wird aus ME/TE (Basis ME 2/TE 4) und, bei
+   unbenutzten Kopien, den Runs abgeleitet; passen mehrere Decryptoren (z. B.
+Parity und Optimized Attainment nach verbrauchten Runs), gilt der Mittelwert
+ihrer erwarteten Inventionskosten; die Erfolgschance nutzt die
+   höchsten trainierten Skills aller synchronisierten Charaktere,
+3. sonst 0 ISK.
+Die Herkunft steht in den BPC/BPO-Details; Schätzungen sind als solche
+gekennzeichnet. Ohne konfigurierte Kopier- bzw. Inventionsanlage, Itemwerte,
+Skills oder Marktpreise ist keine Schätzung möglich. Der Faktor 2 % für die
+Inventionsgebühr ist im EVE University Wiki nur für Kopieren belegt und für
+Invention eine Annahme. Ein eingetragener Erwerbs-, Aktivitätsbetrag oder eine Umlage
 ersetzt diese 0 ISK. Kopieren, Invention, Loyalty-Store- und manuell externe BPCs
 sowie gekaufte BPOs benötigen weiterhin einen ausdrücklichen Betrag. Beim Kauf über
 öffentliche Verträge werden nur aktive Item-Exchange-Verträge am exakten Main
 Hub automatisch zugerechnet, wenn Preis, BPC-Kennung, Runs, ME und TE bekannt
 sind und der Vertrag genau eine angebotene Blueprintposition ohne angeforderte
 Gegenposition enthält. Mehrere eindeutig zurechenbare BPCs dürfen gemeinsam
-alle benötigten Runs decken, erzeugen dabei jedoch immer getrennte Jobs. Ein
+alle benötigten Runs decken, erzeugen dabei jedoch immer getrennte Jobs. Als
+BPC-Kosten gilt die konkrete Vertragsauswahl des Bauplan-Versorgungsplans, die
+auch Runs und ME/TE der Jobs bestimmt: Jeder Vertrag zählt mit seinem vollen
+Preis, auch wenn nur ein Teil seiner Runs gebraucht wird (Beispiel: 5 Runs aus
+einer 3-Run-BPC und zwei von drei Runs einer weiteren 3-Run-BPC). Decken die
+Verträge die benötigten Runs nicht vollständig, bleibt der Bauplan ungeklärt.
+Ein angefragtes Endprodukt erscheint in der BPO/BPC-Auflösung immer als
+Bauschritt, auch wenn für denselben Typ eine Kauf-Vorgabe besteht. Die
+BPO/BPC-Auflösung des Planners verwendet genau die Bau-/Kaufvorgaben der
+endgültigen Berechnung; Typen ohne eigene Vorgabe folgen der Planner-Regel
+(bauen, wenn möglich, Blacklist beachtet), nicht der Kauf-/Bauempfehlung. Damit
+stimmen Bauschritte und Run-Zahlen der Blueprint-Versorgung mit dem
+berechneten Plan überein. Reicht ein vorab geplanter Versorgungsjob auf einem
+Blueprint-Original (BPO) nicht für alle Runs, läuft der Rest auf demselben
+Original weiter; nur endliche BPC-Runs können eine Fehlmenge erzeugen. Ein
 BPO-Kaufpreis wird vollständig angezeigt, aber nicht ohne
 eingetragene Umlage einer einzelnen Produktion belastet. Bündel, Nullpreise und
 alte Vertragszeilen ohne Runs/ME/TE bleiben ausdrücklich unkalkulierbar. Fehlt
 bei irgendeinem produzierten Knoten eine Blueprintkostenquelle (zum Beispiel
 gar kein Blueprint vorhanden), bleiben Gesamtkosten und Gewinn unverfügbar.
+In diesem Fall zeigen auch die BPC/BPO-Karte, die Produktionszwischensumme und
+alle Verkaufsszenarien „nicht verfügbar“ statt 0 ISK; die BPC/BPO-Details nennen
+die Zahl der ungeklärten Bauplanquellen.
 **Produktionskosten pro Einheit** sind die Produktionskosten inklusive Lieferung
 Main Hub → Home Hub geteilt durch die erzeugten Endprodukteinheiten; sind diese
 Gesamtkosten nicht verfügbar, ist auch der Wert pro Einheit nicht verfügbar.
@@ -1248,8 +1322,18 @@ Ohne Verkaufspreis bleiben Steuerbetrag und Verkaufsgewinn weiterhin
 unbekannt. Bei einem grundsätzlich möglichen Market-Order-Verkauf blockiert
 ein lediglich unbekannter Brokergebührensatz die Nettowerte weiterhin und wird
 nicht zu null. Historische Snapshots ohne die neuen Satzfelder dürfen einen
-Steuersatz nur aus ihren eigenen belegten Home-/Coalition-Szenarien ableiten;
-fehlt auch dieser Nachweis, bleibt er unverfügbar.
+Steuersatz zuerst aus ihren eigenen belegten Home-/Coalition-Szenarien ableiten.
+
+Hat eine Produktion ihren Verkaufssteuer- oder Brokergebührensatz nicht
+gespeichert (z. B. weil der Main Hub bei der Aufzeichnung noch keinen
+Händlercharakter hatte), verwendet die Produktionsübersicht für genau diesen
+fehlenden Satz den aktuell für den Main Hub wirksamen Satz. Gespeicherte Sätze
+haben immer Vorrang, eine nicht anwendbare Brokergebühr bleibt nicht anwendbar.
+Ergänzte Beträge erscheinen kursiv und nennen ihre Herkunft im Tooltip. Die
+Ergänzung wird beim Anzeigen berechnet, nicht in den Snapshot geschrieben;
+Zeilen, Seitensortierung und Gesamtsummen folgen einer Änderung der
+Main-Hub-Sätze. Ist auch der aktuelle Satz unbekannt, bleibt der Wert
+unverfügbar.
 
 Reaktionen verwenden veröffentlichte SDE-Formeln; fehlende Markt-, Volumen-,
 Kollateral- oder Tarifdaten machen den betroffenen Vergleich unverfügbar.

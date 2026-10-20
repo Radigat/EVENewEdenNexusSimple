@@ -309,11 +309,71 @@ public struct WarehouseAvailability: Codable, Equatable, Sendable {
 
 }
 
+/// Player-structure names that ESI did not return for one asset owner,
+/// usually because the character has no access to the structure. The
+/// inventory quantities themselves are complete.
+public struct AssetWarehouseStructureNameGap: Codable, Equatable, Sendable {
+  public let ownerID: Int64
+  public let ownerName: String
+  public let count: Int
+
+  public init(ownerID: Int64, ownerName: String, count: Int) {
+    self.ownerID = ownerID
+    self.ownerName = ownerName
+    self.count = count
+  }
+}
+
 public struct AssetWarehouse: Codable, Sendable {
   public let locations: [AssetWarehouseLocation]
   public let snapshotIDs: [UUID]
+  /// Raw source state of every selected owner snapshot.
   public let sourceStates: [DataFreshness]
   public let unresolvedLocationIDs: Set<Int64>
+  /// Source states that can affect stock quantities. A snapshot that is
+  /// partial only because structure or division names are missing counts as
+  /// fresh here. `nil` for warehouses encoded before this distinction.
+  public var stockSourceStates: [DataFreshness]? = nil
+  /// Owners with missing structure names, for an informational note only.
+  public var structureNameGaps: [AssetWarehouseStructureNameGap]? = nil
+
+  /// States to use when deciding whether stock may be incomplete.
+  public var stockRelevantSourceStates: [DataFreshness] {
+    stockSourceStates ?? sourceStates
+  }
+
+  /// Stock may be incomplete when an owner snapshot is not fresh for a
+  /// stock-relevant reason or when items could not be placed at a location.
+  public var hasIncompleteStock: Bool {
+    stockRelevantSourceStates.contains { $0 != .fresh }
+      || !unresolvedLocationIDs.isEmpty
+  }
+
+  private static let presentationOnlyDiagnosticPrefixes = [
+    "esi.structure-resolution.",
+    "esi.character-assets.unresolved-structure-names:",
+    "esi.corporation-assets.name-unavailable",
+    "esi.corporation-assets.divisions:",
+  ]
+
+  /// The asset state that matters for quantities: a partial snapshot whose
+  /// diagnostics only concern names stays usable as fresh stock.
+  public static func stockRelevantState(
+    _ assets: Sourced<AssetSnapshot>
+  ) -> DataFreshness {
+    if assets.state == .partial,
+      assets.value != nil,
+      !assets.diagnostics.isEmpty,
+      assets.diagnostics.allSatisfy({ diagnostic in
+        presentationOnlyDiagnosticPrefixes.contains {
+          diagnostic.hasPrefix($0)
+        }
+      })
+    {
+      return .fresh
+    }
+    return assets.state
+  }
 
   public init(inventories: [AssetOwnerInventory]) {
     var grouped: [AssetRootLocation: [Int64: [AssetWarehouseItem]]] = [:]
@@ -328,6 +388,8 @@ public struct AssetWarehouse: Codable, Sendable {
       )] = [:]
     var snapshotIDs: [UUID] = []
     var sourceStates: [DataFreshness] = []
+    var stockSourceStates: [DataFreshness] = []
+    var nameGaps: [AssetWarehouseStructureNameGap] = []
     var unresolved = Set<Int64>()
     var resolvedLocationNames: [Int64: (name: String, capturedAt: Date)] = [:]
     var resolvedStructureTypeIDs: [Int64: (typeID: Int64, capturedAt: Date)] = [:]
@@ -339,8 +401,20 @@ public struct AssetWarehouse: Codable, Sendable {
     }
     for inventory in selectedInventories.sorted(by: { $0.ownerID < $1.ownerID }) {
       sourceStates.append(inventory.assets.state)
+      stockSourceStates.append(Self.stockRelevantState(inventory.assets))
       guard let snapshot = inventory.assets.value else { continue }
       snapshotIDs.append(snapshot.id)
+      if let missingNames = snapshot.unresolvedLocationNameIDs,
+        !missingNames.isEmpty
+      {
+        nameGaps.append(
+          AssetWarehouseStructureNameGap(
+            ownerID: inventory.ownerID,
+            ownerName: inventory.ownerName,
+            count: missingNames.count
+          )
+        )
+      }
       unresolved.formUnion(snapshot.unresolvedLocationIDs)
       for (locationID, name) in snapshot.resolvedLocationNames ?? [:] {
         if resolvedLocationNames[locationID]?.capturedAt ?? .distantPast
@@ -429,18 +503,27 @@ public struct AssetWarehouse: Codable, Sendable {
     self.snapshotIDs = snapshotIDs
     self.sourceStates = sourceStates
     self.unresolvedLocationIDs = unresolved
+    self.stockSourceStates = stockSourceStates
+    self.structureNameGaps = nameGaps.sorted {
+      if $0.count != $1.count { return $0.count > $1.count }
+      return $0.ownerID < $1.ownerID
+    }
   }
 
   private init(
     locations: [AssetWarehouseLocation],
     snapshotIDs: [UUID],
     sourceStates: [DataFreshness],
-    unresolvedLocationIDs: Set<Int64>
+    unresolvedLocationIDs: Set<Int64>,
+    stockSourceStates: [DataFreshness]?,
+    structureNameGaps: [AssetWarehouseStructureNameGap]?
   ) {
     self.locations = locations
     self.snapshotIDs = snapshotIDs
     self.sourceStates = sourceStates
     self.unresolvedLocationIDs = unresolvedLocationIDs
+    self.stockSourceStates = stockSourceStates
+    self.structureNameGaps = structureNameGaps
   }
 
   /// Returns a provenance-preserving view of the warehouse for exact asset
@@ -485,7 +568,9 @@ public struct AssetWarehouse: Codable, Sendable {
       locations: acceptedLocations,
       snapshotIDs: snapshotIDs,
       sourceStates: sourceStates,
-      unresolvedLocationIDs: unresolvedLocationIDs
+      unresolvedLocationIDs: unresolvedLocationIDs,
+      stockSourceStates: stockSourceStates,
+      structureNameGaps: structureNameGaps
     )
   }
 

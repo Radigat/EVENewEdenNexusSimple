@@ -486,6 +486,86 @@ struct ProductionOverviewTests {
   }
 
   @Test
+  func missingRecordedFeeRatesUseCurrentMainHubRates() {
+    let recorded = ProductionOverviewRequestProjection(
+      materialCost: 100,
+      installationCost: 20,
+      blueprintCost: 10,
+      logisticsCost: 5,
+      salesTaxRate: nil,
+      brokerFeeRate: nil,
+      suggestedSalePricePerUnit: nil
+    )
+    let projection = recorded.fillingMissingFeeRates(
+      from: ProductionOverviewFeeRates(salesTaxRate: 0.05, brokerFeeRate: 0.01)
+    )
+
+    #expect(projection.salesTaxRate == 0.05)
+    #expect(projection.brokerFeeRate == 0.01)
+    #expect(projection.salesTaxRateIsCurrentSetting)
+    #expect(projection.brokerFeeRateIsCurrentSetting)
+
+    let calculation = ProductionOverviewCalculation(
+      units: 10,
+      materialCost: projection.materialCost,
+      installationCost: projection.installationCost,
+      blueprintCost: projection.blueprintCost,
+      logisticsCost: projection.logisticsCost,
+      salesTaxRate: projection.salesTaxRate,
+      brokerFeeRate: projection.brokerFeeRate,
+      brokerFeeIsApplicable: projection.brokerFeeIsApplicable,
+      salePricePerUnit: 20,
+      soldUnits: 10
+    )
+    #expect(calculation.projectedProfit == 53)
+    #expect(calculation.realProfit == 53)
+  }
+
+  @Test
+  func recordedFeeRatesWinOverCurrentMainHubRates() {
+    let recorded = ProductionOverviewRequestProjection(
+      materialCost: 100,
+      installationCost: 20,
+      logisticsCost: 5,
+      salesTaxRate: 0.04,
+      brokerFeeRate: nil,
+      brokerFeeIsApplicable: false,
+      suggestedSalePricePerUnit: nil
+    )
+
+    let projection = recorded.fillingMissingFeeRates(
+      from: ProductionOverviewFeeRates(salesTaxRate: 0.05, brokerFeeRate: 0.01)
+    )
+
+    #expect(projection == recorded)
+    #expect(projection.brokerFeeRate == nil)
+    #expect(!projection.salesTaxRateIsCurrentSetting)
+    #expect(!projection.brokerFeeRateIsCurrentSetting)
+    #expect(recorded.fillingMissingFeeRates(from: nil) == recorded)
+  }
+
+  @Test
+  func unavailableCurrentRatesKeepMissingFeeRatesExplicit() {
+    let recorded = ProductionOverviewRequestProjection(
+      materialCost: 100,
+      installationCost: 20,
+      logisticsCost: 5,
+      salesTaxRate: nil,
+      brokerFeeRate: nil,
+      suggestedSalePricePerUnit: nil
+    )
+
+    let projection = recorded.fillingMissingFeeRates(
+      from: ProductionOverviewFeeRates(salesTaxRate: 0.05, brokerFeeRate: nil)
+    )
+
+    #expect(projection.salesTaxRate == 0.05)
+    #expect(projection.brokerFeeRate == nil)
+    #expect(projection.salesTaxRateIsCurrentSetting)
+    #expect(!projection.brokerFeeRateIsCurrentSetting)
+  }
+
+  @Test
   func realProfitUsesSoldTaxAndFullListingBrokerFee() {
     func calculation(soldUnits: Int64) -> ProductionOverviewCalculation {
       ProductionOverviewCalculation(
