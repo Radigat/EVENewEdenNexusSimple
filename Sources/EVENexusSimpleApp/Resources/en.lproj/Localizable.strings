@@ -1918,3 +1918,7 @@
 "Unit price there" = "Unit price there";
 "Difference per unit" = "Difference per unit";
 "No fresh offer" = "No fresh offer";
+"Fee: confirmed public-contract fee of %@ for the delivery hub" = "Fee: confirmed public-contract fee of %@ for the delivery hub";
+"Public-contract fee %@ if empty" = "Public-contract fee %@ if empty";
+"No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings." = "No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings.";
+"of %@" = "of %@";

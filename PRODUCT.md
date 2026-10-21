@@ -1255,13 +1255,22 @@ Home Hub, Coalition Hub oder „Nicht gewählt“.
 Als zehnte Karte steht **Allianzmarkt (manuell)** für Verkäufe an die Allianz,
 etwa nach Absprache in Slack.
 
-- **Eingaben:** Stückpreis (Pflicht), optional abgenommene Menge, Gebühr in
-  Prozent und Lieferort (Produktionsort, Main, Home oder Coalition Hub).
+- **Eingaben:** Stückpreis (Pflicht), abgenommene Menge, Gebühr in Prozent und
+  Lieferort (Produktionsort, Main, Home oder Coalition Hub).
   **Allianzverkauf übernehmen** oder die Eingabetaste übernimmt sie.
+  - Preis und Menge erhalten beim Tippen Tausenderpunkte der App-Sprache; der
+    Preis erlaubt Nachkommastellen mit Dezimalkomma.
+  - Die Menge ist mit der produzierten Stückzahl des Endprodukts vorbelegt
+    („von N“) und lässt sich mit Stepper oder Pfeil hoch/runter im Feld
+    zwischen 1 und der produzierten Menge ändern. Die volle Menge wird als
+    „alles“ gespeichert und folgt damit einer neu berechneten Plan-Menge.
 - **Rechnung:**
   - Erlös = Preis × verkaufte Menge, höchstens die produzierte Menge.
-  - Davon geht die eingetragene Gebühr ab. Ohne Eintrag gilt 0 %, ausdrücklich
-    als manuelle Annahme.
+  - Davon geht die Gebühr ab: ein eingetragener Satz hat Vorrang; sonst gilt
+    die bestätigte öffentliche Vertragsgebühr des Handelsorts des Lieferhubs
+    (Daten & Einstellungen → Markteinstellungen), die das Feld als Platzhalter
+    zeigt. Am Produktionsort oder ohne bestätigten Satz gilt 0 %, ausdrücklich
+    als manuelle Annahme mit Hinweis.
   - Kosten = Produktionskosten inklusive Lieferung Main Hub → Home Hub, plus
     der vorhandene Ausgangstransport des Lieferhubs aus dem Plan.
   - Nicht abgenommene Einheiten bleiben unverkauft; ihre Produktionskosten

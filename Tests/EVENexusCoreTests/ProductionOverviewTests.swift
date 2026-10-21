@@ -882,6 +882,36 @@ struct ProductionOverviewTests {
   }
 
   @Test
+  func allianceSaleUsesTheDeliveryHubContractFeeUnlessAManualRateExists() {
+    let plan = Self.alliancePlan()
+    let contract = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 150, deliveryHub: .mainHub),
+      publicContractFeeRate: 0.04
+    )
+    #expect(contract.feeSource == .publicContract)
+    #expect(contract.appliedFeeRate == 0.04)
+    #expect(contract.fee == 60)
+    #expect(!contract.feeIsManualAssumption)
+    let manual = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 150, feeRate: 0.01),
+      publicContractFeeRate: 0.04
+    )
+    #expect(manual.feeSource == .manual)
+    #expect(manual.fee == 15)
+    // An invalid stored rate never becomes a fee; the 0 % assumption stays visible.
+    let invalid = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 150),
+      publicContractFeeRate: 1.5
+    )
+    #expect(invalid.feeSource == .assumption)
+    #expect(invalid.feeIsManualAssumption)
+    #expect(invalid.fee == 0)
+  }
+
+  @Test
   func allianceSaleStaysUnavailableWithoutPriceRouteOrSingleProduct() {
     let plan = Self.alliancePlan()
     let noPrice = PlannerAllianceSaleCalculator.calculate(

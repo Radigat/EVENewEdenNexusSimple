@@ -6104,3 +6104,26 @@ Rhea-Plan, Plausibilität gegen Spielwerte; Eigentümerabnahme offen.
 Nachtrag (Eigentümerentscheidung, gleicher Tag): Ist der Decryptor nicht eindeutig
 bestimmbar, wird der Mittelwert der erwarteten Inventionskosten aller passenden
 Decryptoren verwendet (`OwnedBPCValuation.decryptorCandidates`, `average`).
+
+## 21.10.2026 – Eingaben des Allianzmarkts (manuell)
+
+Auftrag (Eigentümer): Preisfeld mit Tausenderpunkten und Nachkommastellen,
+Menge automatisch aus der Produktion mit Pfeil hoch/runter, Gebühr als
+öffentliche Vertragsgebühr übernehmen.
+
+Änderung:
+- `PlannerAllianceInputParser.groupedEditingText` gruppiert Preis und Menge beim
+  Tippen nach App-Sprache; Menge ohne Nachkommastellen.
+- Menge vorbelegt mit der produzierten Stückzahl, Stepper und Pfeiltasten
+  (1 … produzierte Menge); die volle Menge bleibt als `nil` („alles“) gespeichert.
+- `PlannerAllianceSaleCalculator.calculate(…, publicContractFeeRate:)`: ohne
+  manuellen Satz gilt die bestätigte öffentliche Vertragsgebühr des Lieferhubs;
+  Ergebnis trägt `feeSource` und `appliedFeeRate` (ältere Snapshots: `nil`).
+  Am Produktionsort gibt es keinen Handelsort und damit keinen Satz; dann
+  bleibt die 0-%-Annahme sichtbar.
+
+Prüfung: Neue Tests `allianceSaleUsesTheDeliveryHubContractFeeUnlessAManualRateExists`,
+`allianceEditingTextGroupsThousandsAndKeepsTheDecimalSeparator`, erweiterter
+Parser-Test; `swift test` und `xcodebuild … test` (Debug, arm64) grün.
+Nicht geprüft: Sichtkontrolle in der laufenden App, insbesondere Pfeiltasten im
+Mengenfeld und Cursorverhalten beim Gruppieren; Eigentümerabnahme offen.

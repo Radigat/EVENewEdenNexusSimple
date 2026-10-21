@@ -2516,3 +2516,7 @@
 "Unit price there" = "Stückpreis dort";
 "Difference per unit" = "Differenz je Einheit";
 "No fresh offer" = "Kein frisches Angebot";
+"Fee: confirmed public-contract fee of %@ for the delivery hub" = "Gebühr: bestätigte öffentliche Vertragsgebühr von %@ für den Liefer-Hub";
+"Public-contract fee %@ if empty" = "Öffentliche Vertragsgebühr %@, wenn leer";
+"No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings." = "Für diesen Lieferort ist keine bestätigte öffentliche Vertragsgebühr hinterlegt. Trage die Gebühr manuell ein oder bestätige sie für den Handelsort unter Daten & Einstellungen → Markteinstellungen.";
+"of %@" = "von %@";

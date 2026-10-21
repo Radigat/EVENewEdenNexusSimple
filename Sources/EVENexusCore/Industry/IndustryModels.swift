@@ -1163,7 +1163,8 @@ public struct PlannerAllianceSaleInput: Codable, Equatable, Sendable {
   public var acceptedQuantity: Int64?
   /// Optional hand-over hub; `nil` means at the production location.
   public var deliveryHub: PlannerTargetMarket?
-  /// Manual fee rate; `nil` means the documented 0 % assumption.
+  /// Manual fee rate; `nil` uses the confirmed public-contract fee rate of
+  /// the delivery hub and, without one, the documented 0 % assumption.
   public var feeRate: Double?
 
   public init(
@@ -1179,6 +1180,16 @@ public struct PlannerAllianceSaleInput: Codable, Equatable, Sendable {
   }
 }
 
+/// Where the alliance-sale fee rate came from.
+public enum PlannerAllianceFeeSource: String, Codable, Sendable {
+  /// Rate typed into the alliance fee field.
+  case manual
+  /// Confirmed public-contract fee rate of the delivery hub's trading location.
+  case publicContract
+  /// No rate available; the documented 0 % assumption applies.
+  case assumption
+}
+
 /// Frozen alliance-market result. Production cost is always borne in full;
 /// units above the accepted quantity stay unsold and earn nothing.
 public struct PlannerAllianceSaleResult: Codable, Equatable, Sendable {
@@ -1189,6 +1200,9 @@ public struct PlannerAllianceSaleResult: Codable, Equatable, Sendable {
   public let grossRevenue: Double?
   public let fee: Double?
   public let feeIsManualAssumption: Bool
+  /// Applied fee rate; `nil` in snapshots older than the fee source.
+  public let appliedFeeRate: Double?
+  public let feeSource: PlannerAllianceFeeSource?
   public let deliveryCost: Double?
   public let totalCost: Double?
   public let profit: Double?
@@ -1200,10 +1214,20 @@ public struct PlannerAllianceSaleResult: Codable, Equatable, Sendable {
 }
 
 public enum PlannerAllianceSaleCalculator {
+  /// `publicContractFeeRate` is the confirmed rate of the delivery hub; it
+  /// applies whenever no manual fee rate was entered.
   public static func calculate(
     plan: IndustryPlanSnapshot,
-    input: PlannerAllianceSaleInput
+    input: PlannerAllianceSaleInput,
+    publicContractFeeRate: Double? = nil
   ) -> PlannerAllianceSaleResult {
+    let contractRate = publicContractFeeRate.flatMap { rate in
+      rate.isFinite && rate >= 0 && rate < 1 ? rate : nil
+    }
+    let feeSource: PlannerAllianceFeeSource =
+      input.feeRate != nil
+      ? .manual : (contractRate != nil ? .publicContract : .assumption)
+    let feeRate = input.feeRate ?? contractRate ?? 0
     func unavailable(
       _ reason: String,
       productName: String? = nil,
@@ -1216,7 +1240,9 @@ public enum PlannerAllianceSaleCalculator {
         soldQuantity: nil,
         grossRevenue: nil,
         fee: nil,
-        feeIsManualAssumption: input.feeRate == nil,
+        feeIsManualAssumption: feeSource == .assumption,
+        appliedFeeRate: feeRate,
+        feeSource: feeSource,
         deliveryCost: nil,
         totalCost: nil,
         profit: nil,
@@ -1286,7 +1312,7 @@ public enum PlannerAllianceSaleCalculator {
     }
     let sold = min(produced, input.acceptedQuantity ?? produced)
     let gross = price * Double(sold)
-    let fee = gross * (input.feeRate ?? 0)
+    let fee = gross * feeRate
     let totalCost = plan.costBreakdown?.totalProductionCost.map {
       $0 + deliveryCost
     }
@@ -1303,7 +1329,9 @@ public enum PlannerAllianceSaleCalculator {
       soldQuantity: sold,
       grossRevenue: gross.isFinite ? gross : nil,
       fee: fee.isFinite ? fee : nil,
-      feeIsManualAssumption: input.feeRate == nil,
+      feeIsManualAssumption: feeSource == .assumption,
+      appliedFeeRate: feeRate,
+      feeSource: feeSource,
       deliveryCost: deliveryCost,
       totalCost: totalCost,
       profit: profit,

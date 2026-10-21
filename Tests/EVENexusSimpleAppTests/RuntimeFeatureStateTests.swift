@@ -569,6 +569,42 @@ struct RuntimeFeatureStateTests {
       ) == nil
     )
     #expect(ProductionOverviewTargetMarketPresentation.rank(.allianceMarket) == 3)
+    // The complete output stays unset so a recalculated plan is sold in full.
+    #expect(
+      PlannerAllianceInputParser.input(
+        unitPrice: "10", acceptedQuantity: "1.000", feePercent: "",
+        deliveryHub: nil, producedQuantity: 1_000, locale: german
+      )?.acceptedQuantity == nil
+    )
+    #expect(
+      PlannerAllianceInputParser.input(
+        unitPrice: "10", acceptedQuantity: "999", feePercent: "",
+        deliveryHub: nil, producedQuantity: 1_000, locale: german
+      )?.acceptedQuantity == 999
+    )
+  }
+
+  @Test
+  func allianceEditingTextGroupsThousandsAndKeepsTheDecimalSeparator() {
+    let german = Locale(identifier: "de_DE")
+    let english = Locale(identifier: "en_US")
+    typealias Parser = PlannerAllianceInputParser
+    #expect(Parser.groupedEditingText("6600000000", locale: german) == "6.600.000.000")
+    #expect(Parser.groupedEditingText("6.600.0000", locale: german) == "66.000.000")
+    #expect(Parser.groupedEditingText("1250000,", locale: german) == "1.250.000,")
+    #expect(Parser.groupedEditingText("1250000,55", locale: german) == "1.250.000,55")
+    #expect(Parser.groupedEditingText(",5", locale: german) == "0,5")
+    #expect(Parser.groupedEditingText("1,2,3", locale: german) == "1,23")
+    #expect(Parser.groupedEditingText("12a34", locale: german) == "1.234")
+    #expect(Parser.groupedEditingText("", locale: german) == "")
+    #expect(Parser.groupedEditingText("1234567.8", locale: english) == "1,234,567.8")
+    #expect(
+      Parser.groupedEditingText("1234,5", locale: german, allowsFraction: false)
+        == "1.234"
+    )
+    #expect(
+      Parser.number("6.600.000.000,25", locale: german) == .value(6_600_000_000.25)
+    )
   }
 
   @Test

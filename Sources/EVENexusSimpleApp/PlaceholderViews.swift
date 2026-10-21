@@ -78,6 +78,46 @@ enum PlannerAllianceInputParser {
     return .value(value)
   }
 
+  /// Regroups typed number text while editing: thousands get the locale's
+  /// grouping separator, the locale's decimal separator is kept (also
+  /// trailing, so a fraction can still be typed). Other characters are
+  /// dropped; `allowsFraction == false` drops the fraction part.
+  static func groupedEditingText(
+    _ text: String,
+    locale: Locale,
+    allowsFraction: Bool = true
+  ) -> String {
+    let decimal = locale.decimalSeparator ?? "."
+    let grouping = locale.groupingSeparator ?? ","
+    var integerDigits = ""
+    var fractionDigits = ""
+    var hasDecimal = false
+    for character in text {
+      if character.isASCII, character.isNumber {
+        if hasDecimal { fractionDigits.append(character) } else { integerDigits.append(character) }
+      } else if String(character) == decimal, !hasDecimal {
+        hasDecimal = true
+      }
+    }
+    if !allowsFraction {
+      hasDecimal = false
+      fractionDigits = ""
+    }
+    if integerDigits.count > 1 {
+      integerDigits = String(integerDigits.drop { $0 == "0" })
+      if integerDigits.isEmpty { integerDigits = "0" }
+    }
+    if hasDecimal, integerDigits.isEmpty { integerDigits = "0" }
+    var grouped = ""
+    for (offset, character) in integerDigits.enumerated() {
+      if offset > 0, (integerDigits.count - offset) % 3 == 0 {
+        grouped.append(grouping)
+      }
+      grouped.append(character)
+    }
+    return hasDecimal ? grouped + decimal + fractionDigits : grouped
+  }
+
   /// Builds the input; `nil` when a field is invalid. The fee text is a
   /// percentage (5 means 5 %).
   static func input(
@@ -85,6 +125,7 @@ enum PlannerAllianceInputParser {
     acceptedQuantity: String,
     feePercent: String,
     deliveryHub: PlannerTargetMarket?,
+    producedQuantity: Int64? = nil,
     locale: Locale
   ) -> PlannerAllianceSaleInput? {
     var input = PlannerAllianceSaleInput(deliveryHub: deliveryHub)
@@ -98,7 +139,10 @@ enum PlannerAllianceInputParser {
     case .value(let value):
       guard value >= 1, value == value.rounded(), value < Double(Int64.max)
       else { return nil }
-      input.acceptedQuantity = Int64(value)
+      // The complete output stays `nil`, so a recalculated plan with another
+      // quantity is still sold in full.
+      input.acceptedQuantity =
+        Int64(value) == producedQuantity ? nil : Int64(value)
     case .invalid: return nil
     }
     switch number(feePercent, locale: locale) {
@@ -6118,7 +6162,8 @@ struct PlannerView: View {
     if labeledPlan.allianceSale == nil, allianceInput != PlannerAllianceSaleInput() {
       let result = PlannerAllianceSaleCalculator.calculate(
         plan: labeledPlan,
-        input: allianceInput
+        input: allianceInput,
+        publicContractFeeRate: allianceContractFeeRate(for: allianceInput.deliveryHub)
       )
       labeledPlan.allianceSale = result
       if runtime.plan?.id == labeledPlan.id {
@@ -6197,6 +6242,51 @@ struct PlannerView: View {
     allianceDeliveryHub = input.deliveryHub
   }
 
+  /// Confirmed public-contract fee rate of the alliance delivery hub; the
+  /// production location has no trading location and therefore no rate.
+  private func allianceContractFeeRate(for hub: PlannerTargetMarket?) -> Double? {
+    switch hub {
+    case .mainHub: runtime.publicContractFeeRate(for: .main)
+    case .homeHub: runtime.publicContractFeeRate(for: .home)
+    case .coalitionHub: runtime.publicContractFeeRate(for: .coalition)
+    case nil, .allianceMarket: nil
+    }
+  }
+
+  /// Produced units of the single end product; `nil` for other plans.
+  private func allianceProducedQuantity(_ plan: IndustryPlanSnapshot) -> Int64? {
+    guard plan.requests.count == 1, let request = plan.requests.first,
+      let node = plan.topLevelProductNode(for: request.id),
+      node.requiredQuantity > 0
+    else { return nil }
+    return node.requiredQuantity
+  }
+
+  /// Shows the complete output while no smaller accepted quantity is saved.
+  private func prefillAllianceAcceptedUnits(_ produced: Int64?) {
+    guard let produced, allianceInput.acceptedQuantity == nil else { return }
+    allianceAcceptedText = produced.formatted(
+      .number.locale(AppLocalization.currentLanguage.locale).grouping(.automatic)
+    )
+  }
+
+  private func allianceAcceptedUnits(produced: Int64) -> Int64 {
+    if case .value(let value) = PlannerAllianceInputParser.number(
+      allianceAcceptedText,
+      locale: AppLocalization.currentLanguage.locale
+    ), value >= 1, value < Double(Int64.max) {
+      return min(Int64(value.rounded()), produced)
+    }
+    return produced
+  }
+
+  private func stepAllianceAcceptedUnits(by delta: Int64, produced: Int64) {
+    let next = min(max(allianceAcceptedUnits(produced: produced) + delta, 1), produced)
+    allianceAcceptedText = next.formatted(
+      .number.locale(AppLocalization.currentLanguage.locale).grouping(.automatic)
+    )
+  }
+
   /// Applies the alliance fields to the draft and the active plan.
   private func applyAllianceInput() {
     guard
@@ -6205,6 +6295,7 @@ struct PlannerView: View {
         acceptedQuantity: allianceAcceptedText,
         feePercent: allianceFeeText,
         deliveryHub: allianceDeliveryHub,
+        producedQuantity: runtime.plan.flatMap(allianceProducedQuantity),
         locale: AppLocalization.currentLanguage.locale
       )
     else {
@@ -6229,7 +6320,8 @@ struct PlannerView: View {
     guard var plan = runtime.plan else { return }
     plan.allianceSale = PlannerAllianceSaleCalculator.calculate(
       plan: plan,
-      input: input
+      input: input,
+      publicContractFeeRate: allianceContractFeeRate(for: input.deliveryHub)
     )
     runtime.plan = plan
     Task { _ = await saveActivePlan(plan) }
@@ -6244,7 +6336,13 @@ struct PlannerView: View {
       isHistorical
       ? plan.allianceSale
       : (plan.allianceSale
-        ?? PlannerAllianceSaleCalculator.calculate(plan: plan, input: allianceInput))
+        ?? PlannerAllianceSaleCalculator.calculate(
+          plan: plan,
+          input: allianceInput,
+          publicContractFeeRate: allianceContractFeeRate(for: allianceInput.deliveryHub)
+        ))
+    let producedQuantity = allianceProducedQuantity(plan)
+    let deliveryContractFeeRate = allianceContractFeeRate(for: allianceDeliveryHub)
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Alliance market (manual)")
         .font(.subheadline.weight(.semibold))
@@ -6279,7 +6377,16 @@ struct PlannerView: View {
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
-          if result.feeIsManualAssumption {
+          if result.feeSource == .publicContract {
+            Text(
+              AppLocalization.format(
+                "Fee: confirmed public-contract fee of %@ for the delivery hub",
+                formatPercent(result.appliedFeeRate)
+              )
+            )
+            .font(.caption2)
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else if result.feeIsManualAssumption {
             Text("Fee: 0 % manual assumption")
               .font(.caption2)
               .foregroundStyle(DesignTokens.caution)
@@ -6329,18 +6436,92 @@ struct PlannerView: View {
             TextField("Required", text: $allianceUnitPriceText)
               .textFieldStyle(.roundedBorder)
               .onSubmit(applyAllianceInput)
+              .onChange(of: allianceUnitPriceText) { _, newValue in
+                let grouped = PlannerAllianceInputParser.groupedEditingText(
+                  newValue,
+                  locale: AppLocalization.currentLanguage.locale
+                )
+                if grouped != newValue { allianceUnitPriceText = grouped }
+              }
+              .accessibilityIdentifier("planner.alliance.unit-price")
           }
           GridRow {
             Text("Accepted units").font(.caption)
-            TextField("All produced units", text: $allianceAcceptedText)
-              .textFieldStyle(.roundedBorder)
-              .onSubmit(applyAllianceInput)
+            HStack(spacing: DesignTokens.spacingXS) {
+              TextField("All produced units", text: $allianceAcceptedText)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(applyAllianceInput)
+                .onChange(of: allianceAcceptedText) { _, newValue in
+                  let grouped = PlannerAllianceInputParser.groupedEditingText(
+                    newValue,
+                    locale: AppLocalization.currentLanguage.locale,
+                    allowsFraction: false
+                  )
+                  if grouped != newValue { allianceAcceptedText = grouped }
+                }
+                .onKeyPress(.upArrow) {
+                  guard let producedQuantity else { return .ignored }
+                  stepAllianceAcceptedUnits(by: 1, produced: producedQuantity)
+                  return .handled
+                }
+                .onKeyPress(.downArrow) {
+                  guard let producedQuantity else { return .ignored }
+                  stepAllianceAcceptedUnits(by: -1, produced: producedQuantity)
+                  return .handled
+                }
+                .accessibilityIdentifier("planner.alliance.accepted-units")
+              if let producedQuantity {
+                Stepper(
+                  "Accepted units",
+                  value: Binding(
+                    get: { allianceAcceptedUnits(produced: producedQuantity) },
+                    set: { newValue in
+                      allianceAcceptedText = newValue.formatted(
+                        .number.locale(AppLocalization.currentLanguage.locale)
+                          .grouping(.automatic)
+                      )
+                    }
+                  ),
+                  in: 1...producedQuantity
+                )
+                .labelsHidden()
+                .accessibilityIdentifier("planner.alliance.accepted-units.stepper")
+                Text(
+                  AppLocalization.format(
+                    "of %@",
+                    producedQuantity.formatted()
+                  )
+                )
+                .font(.caption)
+                .foregroundStyle(DesignTokens.textSecondary)
+              }
+            }
           }
           GridRow {
             Text("Fee (%)").font(.caption)
-            TextField("0 % if empty", text: $allianceFeeText)
-              .textFieldStyle(.roundedBorder)
-              .onSubmit(applyAllianceInput)
+            TextField(
+              deliveryContractFeeRate.map {
+                AppLocalization.format(
+                  "Public-contract fee %@ if empty",
+                  formatPercent($0)
+                )
+              } ?? AppLocalization.text("0 % if empty"),
+              text: $allianceFeeText
+            )
+            .textFieldStyle(.roundedBorder)
+            .onSubmit(applyAllianceInput)
+            .accessibilityIdentifier("planner.alliance.fee")
+          }
+          if deliveryContractFeeRate == nil {
+            GridRow {
+              Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+              Text(
+                "No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings."
+              )
+              .font(.caption2)
+              .foregroundStyle(DesignTokens.textSecondary)
+              .fixedSize(horizontal: false, vertical: true)
+            }
           }
           GridRow {
             Text("Delivery").font(.caption)
@@ -6362,6 +6543,10 @@ struct PlannerView: View {
           Spacer()
           Button("Apply alliance sale", action: applyAllianceInput)
             .buttonStyle(.bordered)
+        }
+        .onAppear { prefillAllianceAcceptedUnits(producedQuantity) }
+        .onChange(of: producedQuantity) { _, newValue in
+          prefillAllianceAcceptedUnits(newValue)
         }
       }
     }
