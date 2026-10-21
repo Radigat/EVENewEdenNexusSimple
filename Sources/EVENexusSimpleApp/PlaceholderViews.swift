@@ -58,6 +58,60 @@ private enum PlannerCalculationPhase: Equatable {
   }
 }
 
+/// Locale-aware parsing of the manual alliance-sale fields (P11). Empty text
+/// means "not entered"; invalid text is reported instead of becoming zero.
+enum PlannerAllianceInputParser {
+  enum Field: Equatable { case empty, value(Double), invalid }
+
+  static func number(_ text: String, locale: Locale) -> Field {
+    let grouping = locale.groupingSeparator ?? ","
+    let decimal = locale.decimalSeparator ?? "."
+    let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: " ", with: "")
+      .replacingOccurrences(of: "\u{00A0}", with: "")
+      .replacingOccurrences(of: grouping, with: "")
+      .replacingOccurrences(of: decimal, with: ".")
+    guard !normalized.isEmpty else { return .empty }
+    guard let value = Double(normalized), value.isFinite, value >= 0 else {
+      return .invalid
+    }
+    return .value(value)
+  }
+
+  /// Builds the input; `nil` when a field is invalid. The fee text is a
+  /// percentage (5 means 5 %).
+  static func input(
+    unitPrice: String,
+    acceptedQuantity: String,
+    feePercent: String,
+    deliveryHub: PlannerTargetMarket?,
+    locale: Locale
+  ) -> PlannerAllianceSaleInput? {
+    var input = PlannerAllianceSaleInput(deliveryHub: deliveryHub)
+    switch number(unitPrice, locale: locale) {
+    case .empty: input.unitPrice = nil
+    case .value(let value): input.unitPrice = value
+    case .invalid: return nil
+    }
+    switch number(acceptedQuantity, locale: locale) {
+    case .empty: input.acceptedQuantity = nil
+    case .value(let value):
+      guard value >= 1, value == value.rounded(), value < Double(Int64.max)
+      else { return nil }
+      input.acceptedQuantity = Int64(value)
+    case .invalid: return nil
+    }
+    switch number(feePercent, locale: locale) {
+    case .empty: input.feeRate = nil
+    case .value(let value):
+      guard value < 100 else { return nil }
+      input.feeRate = value / 100
+    case .invalid: return nil
+    }
+    return input
+  }
+}
+
 struct PlannerView: View {
   @EnvironmentObject private var consolidation: ConsolidationController
   @Binding var historicalPlannerRequest: HistoricalPlannerRequest?
@@ -204,6 +258,15 @@ struct PlannerView: View {
   @State private var procurementPreferences: [Int64: MaterialProcurementPreference] = [:]
   @State private var recommendationApplicationMessage: String?
   @State private var historicalPlan: HistoricalPlanPresentation?
+  /// Explicit target market of the draft; `nil` means not chosen (P10).
+  @State private var targetMarketSelection: PlannerTargetMarket?
+  /// Manual alliance-sale draft (P11).
+  @State private var allianceInput = PlannerAllianceSaleInput()
+  @State private var allianceUnitPriceText = ""
+  @State private var allianceAcceptedText = ""
+  @State private var allianceFeeText = ""
+  @State private var allianceDeliveryHub: PlannerTargetMarket?
+  @State private var allianceInputError: String?
   @State private var historicalLoadError: String?
   @State private var plannerMaterialSort = AppTableSortDescriptor(
     column: PlannerMaterialSortColumn.item,
@@ -990,6 +1053,7 @@ struct PlannerView: View {
     {
       compressedOreRefiningStatusPanel(plan)
     }
+    targetMarketPanel(plan, isHistorical: isHistorical)
     Panel(title: "Sale scenario overview") {
       Text(
         "Shared production and Main Hub to Home Hub delivery costs are shown once above. Every preview below already includes the logistics and fees required by that sale location."
@@ -1060,6 +1124,7 @@ struct PlannerView: View {
           hub: .coalition,
           plan: plan
         )
+        allianceScenarioCard(plan, isHistorical: isHistorical)
       }
     }
     materialPanel(
@@ -1728,6 +1793,87 @@ struct PlannerView: View {
     )
   }
 
+  /// The chosen market of the shown plan: the stored label of a historical
+  /// plan, otherwise the current selection.
+  private func displayedTargetMarket(
+    for plan: IndustryPlanSnapshot
+  ) -> PlannerTargetMarket? {
+    historicalPlan == nil ? targetMarketSelection : plan.targetMarket
+  }
+
+  private static func targetMarketTitle(
+    _ market: PlannerTargetMarket
+  ) -> String {
+    switch market {
+    case .mainHub: AppLocalization.text("Main Hub")
+    case .homeHub: AppLocalization.text("Home Hub")
+    case .coalitionHub: AppLocalization.text("Coalition Hub")
+    case .allianceMarket: AppLocalization.text("Alliance market")
+    }
+  }
+
+  @ViewBuilder
+  private func targetMarketPanel(
+    _ plan: IndustryPlanSnapshot,
+    isHistorical: Bool
+  ) -> some View {
+    let suggestion = PlannerTargetMarketSuggestion.suggest(plan)
+    Panel(title: "Target market") {
+      if isHistorical {
+        LabeledContent(
+          "Target market",
+          value: plan.targetMarket.map(Self.targetMarketTitle)
+            ?? AppLocalization.text("Not chosen")
+        )
+      } else {
+        Picker(
+          "Target market",
+          selection: Binding(
+            get: { targetMarketSelection },
+            set: { chooseTargetMarket($0) }
+          )
+        ) {
+          Text("Not chosen").tag(PlannerTargetMarket?.none)
+          ForEach(PlannerTargetMarket.allCases, id: \.self) { market in
+            Text(Self.targetMarketTitle(market))
+              .tag(PlannerTargetMarket?.some(market))
+          }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("planner.target-market")
+      }
+      if let suggestion {
+        HStack(spacing: DesignTokens.spacingSM) {
+          Text(
+            AppLocalization.format(
+              "Suggestion: %@ (highest available profit %@)",
+              Self.targetMarketTitle(suggestion.market),
+              formatISK(suggestion.profit)
+            )
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          if !isHistorical, targetMarketSelection != suggestion.market {
+            Button("Use suggestion") { chooseTargetMarket(suggestion.market) }
+              .buttonStyle(.borderless)
+              .font(.caption)
+          }
+        }
+      } else {
+        Text(
+          "No sale scenario has an available, final profit, so no target market is suggested."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+      Text(
+        "The target market is a decision label saved with the draft, the plan and the Production Overview. It does not change the calculation; the selected hub is outlined in the sale scenarios below."
+      )
+      .font(.caption2)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
   private func saleScenarioPreview(
     title: String,
     result: SaleScenarioResult,
@@ -1800,9 +1946,19 @@ struct PlannerView: View {
     .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
     .background(DesignTokens.elevated)
     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      if displayedTargetMarket(for: plan)?.rawValue == hub.rawValue {
+        RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+          .stroke(DesignTokens.accent, lineWidth: 2)
+      }
+    }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(
       "planner.sale.\(hub.rawValue).\(result.scenario.rawValue).preview"
+    )
+    .accessibilityValue(
+      displayedTargetMarket(for: plan)?.rawValue == hub.rawValue
+        ? AppLocalization.text("Selected target market") : ""
     )
   }
 
@@ -3926,6 +4082,10 @@ struct PlannerView: View {
             )
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
+            PlannerPurchaseLocationHintPanel(
+              items: groups.flatMap(\.shoppingList.items),
+              onCopy: copyShoppingList
+            )
             ForEach(groups) { group in
               let shoppingList = group.shoppingList
               let export = group.export
@@ -4747,6 +4907,24 @@ struct PlannerView: View {
     if runtime.plan == nil {
       runtime.plan = restored.plan
     }
+    targetMarketSelection =
+      (try? modelContext.appSettingValue(
+        for: AppSettingKey.plannerTargetMarketDraft
+      )).flatMap { $0 }.flatMap(PlannerTargetMarket.init(rawValue:))
+      ?? runtime.plan?.targetMarket
+    if let stored = try? modelContext.appSettingValue(
+      for: AppSettingKey.plannerAllianceSaleDraft
+    ), let data = stored.data(using: .utf8),
+      let decoded = try? JSONDecoder().decode(
+        PlannerAllianceSaleInput.self,
+        from: data
+      )
+    {
+      allianceInput = decoded
+    } else if let fromPlan = runtime.plan?.allianceSale?.input {
+      allianceInput = fromPlan
+    }
+    fillAllianceFields(from: allianceInput)
     if let plan = restored.plan {
       procurementPreferences = Dictionary(
         uniqueKeysWithValues: plan.materials.compactMap { material in
@@ -4843,6 +5021,11 @@ struct PlannerView: View {
     handedOffBlueprintSnapshotIDs = Array(
       Set(handedOffBlueprintSnapshotIDs + request.sourceSnapshotIDs)
     ).sorted { $0.uuidString < $1.uuidString }
+    // A hub opportunity or Dashboard handoff preselects the target market;
+    // a later manual choice in the Planner overrides it.
+    if let role = request.targetMarket {
+      persistTargetMarketDraft(PlannerTargetMarket(role: role))
+    }
     persistenceMessage =
       switch mode {
       case .replace:
@@ -5922,7 +6105,27 @@ struct PlannerView: View {
     }
   }
 
-  private func saveActivePlan(_ plan: IndustryPlanSnapshot) async -> Bool {
+  private func saveActivePlan(_ calculatedPlan: IndustryPlanSnapshot) async -> Bool {
+    var labeledPlan = calculatedPlan
+    if labeledPlan.targetMarket == nil, let targetMarketSelection {
+      labeledPlan.targetMarket = targetMarketSelection
+      if runtime.plan?.id == labeledPlan.id {
+        runtime.plan?.targetMarket = targetMarketSelection
+      }
+    }
+    // A newly calculated plan re-applies the saved alliance input to its own
+    // costs; the nine market scenarios stay untouched.
+    if labeledPlan.allianceSale == nil, allianceInput != PlannerAllianceSaleInput() {
+      let result = PlannerAllianceSaleCalculator.calculate(
+        plan: labeledPlan,
+        input: allianceInput
+      )
+      labeledPlan.allianceSale = result
+      if runtime.plan?.id == labeledPlan.id {
+        runtime.plan?.allianceSale = result
+      }
+    }
+    let plan = labeledPlan
     do {
       let encodedSnapshot = try await Task.detached(priority: .utility) {
         try PlannerPersistenceController.encodePlanSnapshot(plan)
@@ -5943,6 +6146,237 @@ struct PlannerView: View {
       persistenceError = error.localizedDescription
       return false
     }
+  }
+
+  private func persistTargetMarketDraft(_ market: PlannerTargetMarket?) {
+    targetMarketSelection = market
+    do {
+      if let market {
+        try modelContext.upsertAppSetting(
+          key: AppSettingKey.plannerTargetMarketDraft,
+          value: market.rawValue
+        )
+      } else {
+        let key = AppSettingKey.plannerTargetMarketDraft
+        let existing = try modelContext.fetch(
+          FetchDescriptor<AppSetting>(predicate: #Predicate { $0.key == key })
+        )
+        existing.forEach(modelContext.delete)
+      }
+      try modelContext.save()
+    } catch {
+      modelContext.rollback()
+      persistenceError = error.localizedDescription
+    }
+  }
+
+  /// Manual choice: updates the draft and labels the active plan. The frozen
+  /// calculation itself stays unchanged.
+  private func chooseTargetMarket(_ market: PlannerTargetMarket?) {
+    persistTargetMarketDraft(market)
+    guard var plan = runtime.plan else { return }
+    plan.targetMarket = market
+    runtime.plan = plan
+    Task { _ = await saveActivePlan(plan) }
+  }
+
+  private func fillAllianceFields(from input: PlannerAllianceSaleInput) {
+    let locale = AppLocalization.currentLanguage.locale
+    allianceUnitPriceText =
+      input.unitPrice.map {
+        $0.formatted(.number.locale(locale).grouping(.automatic))
+      } ?? ""
+    allianceAcceptedText =
+      input.acceptedQuantity.map {
+        $0.formatted(.number.locale(locale).grouping(.automatic))
+      } ?? ""
+    allianceFeeText =
+      input.feeRate.map {
+        ($0 * 100).formatted(.number.locale(locale).grouping(.never))
+      } ?? ""
+    allianceDeliveryHub = input.deliveryHub
+  }
+
+  /// Applies the alliance fields to the draft and the active plan.
+  private func applyAllianceInput() {
+    guard
+      let input = PlannerAllianceInputParser.input(
+        unitPrice: allianceUnitPriceText,
+        acceptedQuantity: allianceAcceptedText,
+        feePercent: allianceFeeText,
+        deliveryHub: allianceDeliveryHub,
+        locale: AppLocalization.currentLanguage.locale
+      )
+    else {
+      allianceInputError = AppLocalization.text(
+        "Check the alliance fields: price and fee must be numbers, the accepted quantity a whole number of at least 1 and the fee below 100 %."
+      )
+      return
+    }
+    allianceInputError = nil
+    allianceInput = input
+    do {
+      let data = try JSONEncoder().encode(input)
+      try modelContext.upsertAppSetting(
+        key: AppSettingKey.plannerAllianceSaleDraft,
+        value: String(decoding: data, as: UTF8.self)
+      )
+      try modelContext.save()
+    } catch {
+      modelContext.rollback()
+      persistenceError = error.localizedDescription
+    }
+    guard var plan = runtime.plan else { return }
+    plan.allianceSale = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: input
+    )
+    runtime.plan = plan
+    Task { _ = await saveActivePlan(plan) }
+  }
+
+  @ViewBuilder
+  private func allianceScenarioCard(
+    _ plan: IndustryPlanSnapshot,
+    isHistorical: Bool
+  ) -> some View {
+    let result =
+      isHistorical
+      ? plan.allianceSale
+      : (plan.allianceSale
+        ?? PlannerAllianceSaleCalculator.calculate(plan: plan, input: allianceInput))
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text("Alliance market (manual)")
+        .font(.subheadline.weight(.semibold))
+      if let result {
+        HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
+          scenarioPreviewMetric(
+            label: result.isProvisional ? "Profit (provisional)" : "Profit",
+            value: formatISK(result.profit),
+            isPrimary: true
+          )
+          Divider()
+          scenarioPreviewMetric(
+            label: "ROI",
+            value: formatPercent(result.roi),
+            isPrimary: false
+          )
+        }
+        if let reason = result.unavailableReason {
+          Label(reason.localizedUI, systemImage: "exclamationmark.triangle")
+            .font(.caption2)
+            .foregroundStyle(DesignTokens.caution)
+        } else {
+          Text(
+            AppLocalization.format(
+              "%@ of %@ units sold · revenue %@ · fee %@ · delivery %@",
+              (result.soldQuantity ?? 0).formatted(),
+              (result.producedQuantity ?? 0).formatted(),
+              formatISK(result.grossRevenue),
+              formatISK(result.fee),
+              formatISK(result.deliveryCost)
+            )
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          if result.feeIsManualAssumption {
+            Text("Fee: 0 % manual assumption")
+              .font(.caption2)
+              .foregroundStyle(DesignTokens.caution)
+          }
+          if let sold = result.soldQuantity, let produced = result.producedQuantity,
+            sold < produced
+          {
+            Text(
+              AppLocalization.format(
+                "%@ units remain unsold; their production cost is still included.",
+                (produced - sold).formatted()
+              )
+            )
+            .font(.caption2)
+            .foregroundStyle(DesignTokens.caution)
+          }
+          if let offer = PlannerAllianceSaleCalculator.offerText(
+            for: result,
+            formattedUnitPrice: formatISK(result.input.unitPrice),
+            formattedTotal: formatISK(result.grossRevenue)
+          ) {
+            HStack(spacing: DesignTokens.spacingXS) {
+              Image(systemName: "doc.on.doc")
+                .foregroundStyle(DesignTokens.textSecondary)
+              EVEEntityText(
+                value: offer,
+                font: .caption,
+                lineLimit: 2,
+                accessibilityIdentifier: "planner.alliance.offer-copy",
+                copyAccessibilityLabel: "Copy Slack offer",
+                copyAccessibilityHint:
+                  "Copies the alliance offer text for Slack to the clipboard."
+              )
+            }
+          }
+        }
+      } else {
+        Text("No alliance sale was entered for this plan.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      if !isHistorical {
+        Divider()
+        Grid(alignment: .leading, horizontalSpacing: DesignTokens.spacingSM) {
+          GridRow {
+            Text("Price per unit (ISK)").font(.caption)
+            TextField("Required", text: $allianceUnitPriceText)
+              .textFieldStyle(.roundedBorder)
+              .onSubmit(applyAllianceInput)
+          }
+          GridRow {
+            Text("Accepted units").font(.caption)
+            TextField("All produced units", text: $allianceAcceptedText)
+              .textFieldStyle(.roundedBorder)
+              .onSubmit(applyAllianceInput)
+          }
+          GridRow {
+            Text("Fee (%)").font(.caption)
+            TextField("0 % if empty", text: $allianceFeeText)
+              .textFieldStyle(.roundedBorder)
+              .onSubmit(applyAllianceInput)
+          }
+          GridRow {
+            Text("Delivery").font(.caption)
+            Picker("Delivery", selection: $allianceDeliveryHub) {
+              Text("At the production location").tag(PlannerTargetMarket?.none)
+              Text("Main Hub").tag(PlannerTargetMarket?.some(.mainHub))
+              Text("Home Hub").tag(PlannerTargetMarket?.some(.homeHub))
+              Text("Coalition Hub").tag(PlannerTargetMarket?.some(.coalitionHub))
+            }
+            .labelsHidden()
+          }
+        }
+        HStack {
+          if let allianceInputError {
+            Text(allianceInputError)
+              .font(.caption2)
+              .foregroundStyle(DesignTokens.negative)
+          }
+          Spacer()
+          Button("Apply alliance sale", action: applyAllianceInput)
+            .buttonStyle(.bordered)
+        }
+      }
+    }
+    .padding(DesignTokens.spacingMD)
+    .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      if displayedTargetMarket(for: plan) == .allianceMarket {
+        RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+          .stroke(DesignTokens.accent, lineWidth: 2)
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("planner.sale.alliance.preview")
   }
 
   private func recordProduction(_ plan: IndustryPlanSnapshot) {
@@ -8877,5 +9311,214 @@ enum ConcreteBlueprintSourceMenu {
     let price: String = candidate.priceText ?? ""
     let parts: [String] = [kind, place, location, runs, me, te, price]
     return parts.joined(separator: "|")
+  }
+}
+
+/// Sortable columns of the purchase-location hint table (P12).
+enum PurchaseLocationHintColumn: Int, CaseIterable, Hashable {
+  case material
+  case quantity
+  case location
+  case unitPrice
+  case mainHubUnitPrice
+  case difference
+}
+
+enum PurchaseLocationHintSorting {
+  /// Typed values; unknown values follow known ones ascending and precede
+  /// them descending; the type ID is the stable final tie-breaker.
+  static func sorted(
+    _ hints: [MaterialPurchaseLocationHint],
+    by sort: AppTableSortDescriptor<PurchaseLocationHintColumn>
+  ) -> [MaterialPurchaseLocationHint] {
+    func compare<Value: Comparable>(_ lhs: Value?, _ rhs: Value?) -> Bool? {
+      switch (lhs, rhs) {
+      case (let lhs?, let rhs?):
+        guard lhs != rhs else { return nil }
+        return sort.direction.orders(lhs, before: rhs)
+      case (nil, nil): return nil
+      case (nil, _): return sort.direction == .descending
+      case (_, nil): return sort.direction == .ascending
+      }
+    }
+    return hints.sorted { lhs, rhs in
+      let ordered: Bool?
+      switch sort.column {
+      case .material:
+        ordered = compare(lhs.item.name.lowercased(), rhs.item.name.lowercased())
+      case .quantity:
+        ordered = compare(lhs.item.quantity, rhs.item.quantity)
+      case .location:
+        ordered = compare(
+          lhs.location?.name.lowercased(),
+          rhs.location?.name.lowercased()
+        )
+      case .unitPrice:
+        ordered = compare(lhs.unitPrice, rhs.unitPrice)
+      case .mainHubUnitPrice:
+        ordered = compare(lhs.mainHubUnitPrice, rhs.mainHubUnitPrice)
+      case .difference:
+        ordered = compare(lhs.priceDifferencePerUnit, rhs.priceDifferencePerUnit)
+      }
+      return ordered ?? (lhs.item.typeID < rhs.item.typeID)
+    }
+  }
+}
+
+/// Mineral and moon-material purchase-location hints inside the Planner
+/// shopping list (HUB_CHANCEN_PLAN P12). It reads the already prepared
+/// analyses, starts no ESI request and never changes the Main-Hub plan costs.
+struct PlannerPurchaseLocationHintPanel: View {
+  let items: [EVEShoppingListItem]
+  let onCopy: (EVEMultibuyExport) -> Void
+  @EnvironmentObject private var runtime: RuntimeState
+  @State private var sort = AppTableSortDescriptor(
+    column: PurchaseLocationHintColumn.material,
+    direction: .ascending
+  )
+
+  var body: some View {
+    let hints = MaterialPurchaseLocationHints.project(
+      items: items,
+      recommendations: runtime.mineralPurchaseRecommendations
+        + runtime.moonMaterialRecommendations
+    )
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Label("Purchase-location hint · minerals and moon materials", systemImage: "mappin.and.ellipse")
+        .font(.headline)
+      Text(
+        "Decision aid from the mineral and moon-material purchase analyses. The plan costs above stay based on the Main Hub; no ESI request is started."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      analysisStatus(
+        title: "Minerals",
+        refreshedAt: runtime.mineralPurchaseAnalysis?.refreshedAt,
+        isCurrent: runtime.hasCurrentMineralPurchaseAnalysis
+      )
+      analysisStatus(
+        title: "Moon materials",
+        refreshedAt: runtime.moonMaterialAnalysis?.refreshedAt,
+        isCurrent: runtime.hasCurrentMoonMaterialAnalysis
+      )
+      if hints.isEmpty {
+        Text(
+          runtime.mineralPurchaseAnalysis == nil
+            && runtime.moonMaterialAnalysis == nil
+            ? "Analysis not loaded"
+            : "No mineral or moon material is on this shopping list."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        table(PurchaseLocationHintSorting.sorted(hints, by: sort))
+        HStack(spacing: DesignTokens.spacingSM) {
+          ForEach(
+            MaterialPurchaseLocationHints.multibuyGroups(hints),
+            id: \.location.id
+          ) { group in
+            Button {
+              onCopy(group.export)
+            } label: {
+              Label(
+                AppLocalization.format("Copy Multibuy · %@", group.location.name),
+                systemImage: "doc.on.doc"
+              )
+            }
+            .buttonStyle(.bordered)
+            .help("Copies the lines recommended for this location in the EVE Multibuy format.")
+          }
+        }
+      }
+    }
+    .padding(DesignTokens.spacingMD)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("planner.shopping-list.purchase-location-hint")
+  }
+
+  private func analysisStatus(
+    title: LocalizedStringKey,
+    refreshedAt: Date?,
+    isCurrent: Bool
+  ) -> some View {
+    HStack(spacing: DesignTokens.spacingSM) {
+      Text(title).font(.caption.weight(.semibold))
+      if let refreshedAt {
+        Text(
+          AppLocalization.format(
+            isCurrent ? "Updated %@" : "Outdated · %@",
+            refreshedAt.formatted(date: .abbreviated, time: .shortened)
+          )
+        )
+        .font(.caption)
+        .foregroundStyle(isCurrent ? DesignTokens.textSecondary : DesignTokens.caution)
+      } else {
+        Text("Analysis not loaded")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
+      }
+    }
+  }
+
+  private func table(_ hints: [MaterialPurchaseLocationHint]) -> some View {
+    Grid(
+      alignment: .leading,
+      horizontalSpacing: DesignTokens.spacingLG,
+      verticalSpacing: DesignTokens.spacingSM
+    ) {
+      GridRow {
+        SortableTableHeader(title: "Material", column: .material, sort: $sort)
+        SortableTableHeader(title: "Quantity", column: .quantity, sort: $sort)
+        SortableTableHeader(title: "Purchase location", column: .location, sort: $sort)
+        SortableTableHeader(title: "Unit price there", column: .unitPrice, sort: $sort)
+        SortableTableHeader(title: "Main Hub unit price", column: .mainHubUnitPrice, sort: $sort)
+        SortableTableHeader(title: "Difference per unit", column: .difference, sort: $sort)
+      }
+      .font(.caption.bold())
+      .foregroundStyle(DesignTokens.textSecondary)
+      Divider()
+      ForEach(hints) { hint in
+        GridRow {
+          EVEItemText(value: hint.item.name, typeID: hint.item.typeID, font: .caption)
+          Text(hint.item.quantity.formatted())
+            .font(.caption.monospacedDigit())
+          if let location = hint.location {
+            EVEEntityText(value: location.name, font: .caption)
+          } else {
+            Text("No fresh offer")
+              .font(.caption)
+              .foregroundStyle(DesignTokens.caution)
+          }
+          Text(Self.formatISK(hint.unitPrice))
+            .font(.caption.monospacedDigit())
+          Text(Self.formatISK(hint.mainHubUnitPrice))
+            .font(.caption.monospacedDigit())
+          Text(Self.formatSignedISK(hint.priceDifferencePerUnit))
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(
+              (hint.priceDifferencePerUnit ?? 0) < 0
+                ? DesignTokens.positive : DesignTokens.textSecondary
+            )
+        }
+      }
+    }
+  }
+
+  private static func formatISK(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "—" }
+    return value.formatted(
+      .currency(code: "ISK")
+        .locale(AppLocalization.currentLanguage.locale)
+        .grouping(.automatic)
+        .precision(.fractionLength(0...2))
+    )
+  }
+
+  private static func formatSignedISK(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "—" }
+    let formatted = formatISK(abs(value))
+    return value > 0 ? "+\(formatted)" : value < 0 ? "−\(formatted)" : formatted
   }
 }

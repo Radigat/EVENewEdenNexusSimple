@@ -77,7 +77,12 @@ snapshot metadata. Updating a domain replaces its metadata and prunes older
 duplicates. Build-specific SDE payloads remain in SQLite.
 
 Application startup treats the primary SwiftData container as the availability
-gate for background work. When that container cannot be opened, the recovery
+gate for background work. After the container opens, the root view starts the
+runtime-owned `StartupDataLoad` once per process: character synchronization and
+planner configuration run in parallel, then moon, mineral and reaction analyses
+run while `releaseStartupAutomaticScans` opens the gate for the automatic
+Main-Hub and Public-Contracts schedules. The Dashboard joins this character
+result instead of synchronizing again. When that container cannot be opened, the recovery
 surface is shown without opening or migrating the secondary Public Contracts
 store and without starting ESI or automation tasks. On a normal launch,
 independent active-SDE, service-status, demand-ledger, opportunity-snapshot and
@@ -296,6 +301,12 @@ app copies the payload only after the user presses its Multibuy export button.
 The Main Hub row is a full-width disclosure. Its expanded table shows every
 item, quantity, complete weighted unit price, line total and market coverage;
 the export button remains a separate action.
+`EVEMultibuyExport.make(items:)` is the single line formatter. The Planner
+purchase-location hint (`MaterialPurchaseLocationHints`) joins shopping lines
+with the already prepared mineral and moon-material recommendations and groups
+one Multibuy export per recommended location. It never alters plan costs or
+starts network work. `PlannerPurchaseLocationHintPanel` sorts it through the
+shared `SortableTableHeader`.
 The same formatter also creates a separate replenishment payload from positive
 `fromStock` quantities. The Planner displays those warehouse-consumption lines
 with quantity, weighted Main Hub unit price and replacement value; they do not alter
@@ -349,6 +360,26 @@ scenarios separately freeze location-bound gross revenue, Sales Tax, Broker
 Fee, net revenue, finished-product logistics, scenario total cost, profit,
 margin and ROI. Home-Hub market or fee failure leaves only those Home-Hub
 scenarios unavailable and preserves the Main-Hub plan.
+
+`IndustryPlanSnapshot.targetMarket` (`PlannerTargetMarket`) is an optional
+decision label. It is absent in legacy snapshots and never feeds a
+calculation. `PlannerTargetMarketSuggestion` picks the market of the highest
+finite, non-pending sale scenario. The Planner keeps the draft choice in the
+`AppSetting` key `planner.target-market.draft.v1`. It labels newly saved plans
+with it and re-encodes the active plan when the choice changes; the
+Production Overview reads the label from each row's snapshot copy. No
+SwiftData schema change is involved.
+
+The manual alliance sale (`PlannerAllianceSaleInput` →
+`PlannerAllianceSaleCalculator` → optional
+`IndustryPlanSnapshot.allianceSale`) is computed from the frozen plan and
+never changes the nine market scenarios. Its cost is
+`totalProductionCost` plus the existing outbound logistics of the chosen
+delivery hub's listed-sale scenario. Revenue covers only accepted units, the fee
+defaults to an explicit 0 % assumption, and multi-product plans, missing price,
+cost or route stay unavailable. `PlannerTargetMarket.allianceMarket` extends the
+target-market label. The suggestion considers a complete, non-provisional
+alliance result and loses ties to market scenarios.
 
 `IndustryCostBreakdown.total` is the only current-plan total constructor:
 material replacement + entered BPC/BPO allocation + complete Installation +
@@ -483,9 +514,10 @@ cooperative cancellation every 2,048 orders before atomically publishing the
 result. Catalog analysis runs outside the main actor and checks cancellation
 while walking definitions. The production tree does not
 retain or reuse that catalog-wide book: it requests complete depth only for the
-types required by the selected tree. Automatic Main-Hub scans require an
-explicit persisted opt-in; the first launch under this consent version pauses
-the former implicit schedule, while manual refresh remains available. Interactive
+types required by the selected tree. Automatic Main-Hub scans are always
+enabled at app start (owner decision 2026-10-20); the former persisted consent
+keys are no longer read, and a Dashboard pause lasts only for the current run.
+Manual refresh remains available. Interactive
 Planner calculations cancel scheduled or running automatic Main-Hub and Public
 Contracts work, preserve their last complete or resumable state, and restore
 their schedules only after the last overlapping calculation finishes. Explicit
@@ -516,6 +548,19 @@ projections; Net Worth consumes active Manufacturing and Reaction jobs for its
 explicitly estimated in-production component. Missing, stale, partial or
 forbidden job sources retain their prior source-state semantics and never
 become an empty authoritative list.
+
+`ManufacturingOpportunityTopRanking.rank` projects a saved opportunity snapshot
+with fixed standard assumptions:
+
+- no Warehouse stock,
+- installation, sales tax and broker fee included,
+- no Blueprint allocation,
+- the snapshot's `saleRoute(for:)`.
+
+It returns the highest daily profit potentials, with a stable type-ID tie
+order. `DashboardTopOpportunitiesPanel` runs it off the main actor for the Main,
+Home and Coalition snapshots. It hands Build through
+`DashboardNavigationRequest.plannerLaunch` and performs no network work.
 
 `DashboardInProgressIndustryProjector.projectJobs` supplies the same per-job
 material values to the open-job ranking and the in-production aggregate.
@@ -790,7 +835,8 @@ Existing item rows remain available until the normal bounded detail importer
 atomically replaces that contract's items; the migration therefore does not
 turn missing legacy Blueprint facts into zero or discard searchable data.
 
-A first manual start persists the owner's opt-in to automatic continuation.
+Every app start re-enables persisted automatic continuation (owner decision
+2026-10-20); a manual stop pauses it until the next start.
 While the app remains open, unfinished work resumes after a persisted safety
 window; after relaunch it resumes no sooner than 15 seconds after startup.
 First-import completion is persisted independently from current freshness: a
@@ -924,19 +970,97 @@ beside the colors; ISK values use monospaced digits and the amber highlight.
   configured market set.
 - Local storage only; no cloud sync.
 - No Corporation wallet/jobs/orders, transport optimization, multi-hub
-  optimization or job installation.
+  optimization or job installation. Main, Home and Coalition opportunity lists
+  and the Planner target market compare hubs side by side but do not optimize
+  a split across them.
 
 ## Main Hub opportunity scan
 
 The opportunity scan is a read-only comparison, not a production plan. Market
-owns one explicitly started, cancellable snapshot of the configured NPC Main
-Hub. Industry joins both complete published SDE manufacturing definitions and
+owns one cancellable snapshot of the configured NPC Main Hub. It is started
+manually or by the automatic schedule released after the startup load; Home
+and Coalition scans follow in the same run. Industry joins both complete published SDE manufacturing definitions and
 complete reaction definitions to that immutable snapshot. Manufacturing rows
 use the per-category selected manufacturing facility. Reaction rows reuse the
 authoritative Reactions quantity, per-job rounding, duration and EIV
 installation calculation with the separately configured reaction facility and
 reaction system index. UI owns filters, favorites, selection and scenario
 input; it does not fetch ESI or calculate prices itself.
+
+`OpportunityHubRole` (`main`, `home`, `coalition`) parameterizes the scan.
+Materials are always quoted against the Main-Hub market. A Home or Coalition
+role additionally requires its own exact `saleMarket`, which supplies product
+orders, supply/demand coverage and the market source; a missing or mismatched
+sale market throws `inconsistentMarketLocation`. Main-Hub snapshots leave the
+new `hubRole`/`saleHub` fields `nil`, so their encoded files keep the
+historical keys. `ManufacturingOpportunitySaleRoute` selects the logistics:
+
+- `mainHubRoundTrip` keeps the historical Main → production → Main round trip.
+- `homeHub` drops the return leg and adds a production → Home leg only when the
+  production location differs.
+- `coalitionHub` also adds an injected Home → Coalition amount; `nil` makes the
+  logistics unavailable.
+
+Role files are `market/<role>-hub-demand.json` and
+`market/<role>-hub-opportunities.json`; the Main-Hub paths are unchanged.
+The Home-Hub scan is a tail step of `performManufacturingOpportunityAnalysis`.
+It reuses the loaded definitions, names, volumes, adjusted prices, facility
+context and the full Main-Hub material market, so it inherits scheduling,
+priority and cancellation.
+
+- `HomeHubOpportunityScanTarget` resolves the configured Home Hub to an NPC
+  station, a Player Structure, `sharesMainHub` (no second scan), `notConfigured`
+  or `unresolved`.
+- Structure markets use the authorizations most recently handed over through
+  `rememberMarketAuthorizations` and the shared structure-lease selection.
+- Home-Hub failures map through the material-market failure classification.
+  They retain the last snapshot as stale and never alter the Main-Hub snapshot.
+
+Secondary hubs share one implementation: `secondaryHubOpportunities`
+(`SecondaryHubOpportunityState` per role), per-role demand and snapshot stores,
+`HubOpportunityScanTarget` (also `sharesHomeHub` for a Coalition Hub equal to
+the Home Hub) and `analyzeSecondaryHubOpportunities(role:context:)`. The
+Main-Hub scan runs Home, then Coalition.
+
+For Coalition the runtime freezes an `OpportunityCoalitionTransportBasis` in
+the snapshot:
+
+- **Jump Freighter:** the DOTLAN cargo route via
+  `plannerJumpFreighterRouteLoad`, plus the Main-Hub isotope order books.
+- **Courier:** the Profile courier rate and contract limit.
+- **Unavailable:** carries a reason.
+
+`ManufacturingOpportunitySnapshot.saleRoute(for:)` derives each row's onward
+cost from that basis, so run edits re-price the transport. Self-jumping capitals
+stay unavailable: blocked without jump logistics, and left to the Planner with
+it.
+
+`ManufacturingOpportunitiesView(hubRole:)` serves all three navigation entries.
+`ManufacturingOpportunityContractContext` (universe-wide
+`PublicContractReferenceSnapshot`, the hub's confirmed
+`publicContractFeeRate`) enters
+`ManufacturingOpportunityScenarioProjector.costs(…, contract:)`. The projector
+fills `ManufacturingOpportunityCostProjection.contract`, which carries price,
+revenue, fee, profit, ROI and provisional/before-fee flags.
+`RuntimeState.loadOpportunityContractReferences` reads only the local index in
+bounded batches, reuses an identical type set for five minutes and never
+contacts ESI. Sort columns `.contractPrice` and `.contractProfit` use the typed
+values, with unavailable values last.
+Coalition rows project logistics through `saleRoute(for:)`.
+`ManufacturingOpportunityLogisticsProjection.onwardTransportCost` and
+`ManufacturingOpportunityCostProjection.onwardTransportCost` expose the
+Home → Coalition share, which the sortable column `.onwardTransport` uses.
+
+- **Data:** For `home` it reads the Home-Hub snapshot, demand and progress
+  instead of the Main-Hub values.
+- **Logistics:** It projects logistics through
+  `ManufacturingOpportunitySnapshot.defaultSaleRoute`.
+- **Persisted filters:** It re-initializes the persisted filter `@AppStorage`
+  keys through `OpportunityHubRole.storageKey`, so Main-Hub keys stay unchanged.
+- **Texts:** `OpportunityHubText` renames only sale-side wording and the sale
+  warning codes. Material purchases remain Main-Hub texts.
+- **Planner handoff:** `PlannerLaunchRequest.targetMarket` carries the selected
+  hub to the Planner, which ignores it until P10.
 
 Every complete supported definition remains a candidate even when the exact
 Main Hub has no active product order. Sell and buy coverage are recorded
@@ -1114,10 +1238,10 @@ while editing Runs, Blueprint allocation and purchase-budget fields. Parsing
 removes only the selected locale's grouping separator, so grouped input remains
 the same factual value.
 
-Refreshing stays explicit and cancellable. The optional `Check when opened`
-policy may start one scan when the calculator workspace opens, but no more than
-once every six hours from the last observation; it is not a daemon or continuous
-poll. The base calculation reports contribution before Blueprint allocation and
+Refreshing stays cancellable. The automatic schedule (always enabled since
+2026-10-20, pausable for the current run) and the optional `Check when opened`
+policy start at most one scan every six hours from the last observation; this is
+not a daemon or continuous poll. The base calculation reports contribution before Blueprint allocation and
 hauling; the Cost Sheet labels the resulting scenario values and can include
 both explicit amounts. Missing Main-Hub depth, adjusted price, selected-facility
 index/context, trader fees or enabled Cost-Sheet amounts propagates as

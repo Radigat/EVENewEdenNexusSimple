@@ -3,6 +3,26 @@
 Aktueller Konsolidierungsnachweis: [Prüfbericht 25.09.2026](Consolidation/VALIDATION.md).
 Die folgenden Einträge bleiben datierte Fach-, Live- und Eigentümernachweise.
 
+## Hub-Chancen-Ausbau P1–P12, 2026-10-20/21
+
+Plan und Prompts: [HUB_CHANCEN_PLAN.md](HUB_CHANCEN_PLAN.md). Live- und
+Eigentümerabnahmen sind für alle Zeilen offen; der Leitfaden steht dort in
+Abschnitt E.
+
+| Area | Automated evidence | Local-data evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| P1 Startablauf | pass: `StartupDataLoad`-Tests für Reihenfolge, einmaligen Lauf mit Join, frühes Warten des Dashboards, Abbruch ohne Folgeschritte, keine Scans ohne Hintergrunddienste | not run | open |
+| P2 Ladestatus | pass: Zustandszusammenfassung, Phasen für Charaktere/Lager, Analysefehler und Wartezustand, Phasen-Veröffentlichung | not run | open |
+| P3 Chancen-Kern je Rolle | pass: identische Main-Hub-Werte und Dateischlüssel, Home-Verkauf mit Main-Material, abgewiesene Verkaufsmärkte, Routen, Dateinamen, App-Pfade | not run | open |
+| P4/P6 Home-/Coalition-Scan | pass: Zielauflösung (nicht konfiguriert, gleich Main/Home, NPC, Struktur, unvollständig), leerer Grundzustand, Coalition-Transportgrundlage (Kurierpreis, blockiertes Capital, unverfügbar, Gesamtlogistik, Speicherformat) | not run; DOTLAN-, Structure-Market- und ACL-Pfad nicht live geprüft | open |
+| P5/P7 Hub-Ansichten | pass: getrennte Filterschlüssel, Rollenroute, Textanpassung, Navigation, Zielmarkt-Übergabe, Weitertransport-Sortierung | not run | open (visuell) |
+| P8 Vertragspreise | pass: Vertragsprojektion (bestätigte Gebühr, vor Gebühr, ungültiger Satz, vorläufig, kein Angebot, fehlende Kosten), Sortierung beider Spalten | not run; Laufzeit mit vollständigem echtem Index nicht gemessen | open |
+| P9 Top-Chancen | pass: Rangfolge (Grenze, ohne Wert ausgeschlossen, absteigend, Standardprojektion, stabile Reihenfolge), Bauen-Übergabe | not run | open (visuell) |
+| P10 Zielmarkt | pass: Vorschlag, Speicherformat alt/neu, Spaltenrang und Text | not run | open |
+| P11 Allianzmarkt | pass: Teilabnahme, Standardgebühr, Angebotstext, Unverfügbarkeit (Preis, Route, Coalition, mehrere Produkte, Kosten, ungültige Gebühr), Vorschlag, alte Snapshots, Eingabeparser | not run | open |
+| P12 Kaufort-Hinweis | pass: Zuordnung nur analysierter Materialien, fehlendes Angebot, unvollständige Main-Hub-Tiefe, Multibuy je Ort, gemeinsamer Formatierer, Sortierung | not run | open |
+| Abschlusslauf 2026-10-21 | pass: `swift test` 461 Swift-Testing-Tests in 29 Suites plus 59 Tests in 3 Suites; `xcodebuild test` unsigniert `TEST SUCCEEDED` (461 Swift-Testing-Tests, 8 XCTest-Fälle); `swift test --package-path Packages/EVEStaticDataKit` 8 Tests, ein vorgesehener Real-SDE-Skip; `git diff --check` fehlerfrei | — | — |
+
 ## Gemeinsame Mond- und Mineralien-Kaufanalyse, 2026-08-29
 
 | Area | Automated evidence | Local-data evidence | Owner acceptance |

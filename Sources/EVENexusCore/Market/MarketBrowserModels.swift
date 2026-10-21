@@ -638,6 +638,104 @@ public struct ManufacturingOpportunityCostProjection: Equatable, Sendable {
   public let returnOnInvestment: Double?
   public let iskPerHour: Double?
   public let iskPerCubicMeter: Double?
+  /// Home → Coalition share of `logisticsCost`; `nil` outside Coalition rows
+  /// or while that transport is unavailable.
+  public var onwardTransportCost: Double? = nil
+  /// Sale through a public contract instead of the market (P8).
+  public var contract: ManufacturingOpportunityContractProjection? = nil
+}
+
+/// Public-contract inputs for opportunity rows: the local universe-wide
+/// reference snapshot (same rule as the Planner Contract Sale) and the
+/// confirmed non-refundable contract fee rate of the shown hub.
+public struct ManufacturingOpportunityContractContext: Sendable {
+  public let references: PublicContractReferenceSnapshot?
+  public let contractFeeRate: Double?
+
+  public init(
+    references: PublicContractReferenceSnapshot?,
+    contractFeeRate: Double?
+  ) {
+    self.references = references
+    self.contractFeeRate = contractFeeRate
+  }
+}
+
+/// Contract sale of one row. Market tax and broker fee do not apply; the
+/// confirmed contract fee rate is deducted instead.
+public struct ManufacturingOpportunityContractProjection: Equatable, Sendable {
+  /// Lowest comparable single-item offer per unit; `nil` without an offer.
+  public let unitPrice: Double?
+  public let grossRevenue: Double?
+  /// `nil` while no confirmed fee rate exists (`isBeforeContractFee`).
+  public let contractFee: Double?
+  public let profit: Double?
+  public let returnOnInvestment: Double?
+  /// The index is incomplete, so the offer is a provisional estimate.
+  public let isProvisional: Bool
+  /// No confirmed rate: profit and ROI are shown before the contract fee.
+  public let isBeforeContractFee: Bool
+}
+
+public enum ManufacturingOpportunityContractProjector {
+  public static func project(
+    row: ManufacturingOpportunityRow,
+    totalCost: Double?,
+    context: ManufacturingOpportunityContractContext
+  ) -> ManufacturingOpportunityContractProjection {
+    let validRate = context.contractFeeRate.flatMap { rate in
+      rate.isFinite && rate >= 0 && rate < 1 ? rate : nil
+    }
+    let isProvisional =
+      !(context.references?.hasCompleteSearchCoverage ?? false)
+    guard let reference = context.references?.prices[row.productTypeID],
+      reference.unitPrice.isFinite, reference.unitPrice > 0,
+      row.producedQuantity > 0
+    else {
+      return ManufacturingOpportunityContractProjection(
+        unitPrice: nil,
+        grossRevenue: nil,
+        contractFee: nil,
+        profit: nil,
+        returnOnInvestment: nil,
+        isProvisional: isProvisional,
+        isBeforeContractFee: validRate == nil
+      )
+    }
+    let gross = reference.unitPrice * Double(row.producedQuantity)
+    guard gross.isFinite else {
+      return ManufacturingOpportunityContractProjection(
+        unitPrice: reference.unitPrice,
+        grossRevenue: nil,
+        contractFee: nil,
+        profit: nil,
+        returnOnInvestment: nil,
+        isProvisional: isProvisional,
+        isBeforeContractFee: validRate == nil
+      )
+    }
+    let fee = validRate.map { gross * $0 }
+    let net = gross - (fee ?? 0)
+    let profit = totalCost.flatMap { cost -> Double? in
+      let value = net - cost
+      return value.isFinite ? value : nil
+    }
+    let roi: Double? =
+      if let profit, let totalCost, totalCost > 0 {
+        profit / totalCost
+      } else {
+        nil
+      }
+    return ManufacturingOpportunityContractProjection(
+      unitPrice: reference.unitPrice,
+      grossRevenue: gross,
+      contractFee: fee,
+      profit: profit,
+      returnOnInvestment: roi,
+      isProvisional: isProvisional,
+      isBeforeContractFee: validRate == nil
+    )
+  }
 }
 
 public enum ManufacturingOpportunitySortColumn: String, CaseIterable,
@@ -662,6 +760,12 @@ public enum ManufacturingOpportunitySortColumn: String, CaseIterable,
   case timeEfficiency
   case group
   case category
+  /// Coalition Hub only: Home → Coalition transport.
+  case onwardTransport
+  /// Lowest comparable public-contract unit price.
+  case contractPrice
+  /// Profit when selling through that public contract.
+  case contractProfit
 }
 
 public enum ManufacturingOpportunitySortDirection: String, Sendable {
@@ -736,6 +840,27 @@ public struct ManufacturingOpportunitySortDescriptor: Equatable, Sendable {
       )
     case .iskPerHour:
       return compare(lhsCosts.iskPerHour, rhsCosts.iskPerHour, lhs, rhs)
+    case .onwardTransport:
+      return compare(
+        lhsCosts.onwardTransportCost,
+        rhsCosts.onwardTransportCost,
+        lhs,
+        rhs
+      )
+    case .contractPrice:
+      return compare(
+        lhsCosts.contract?.unitPrice,
+        rhsCosts.contract?.unitPrice,
+        lhs,
+        rhs
+      )
+    case .contractProfit:
+      return compare(
+        lhsCosts.contract?.profit,
+        rhsCosts.contract?.profit,
+        lhs,
+        rhs
+      )
     case .iskPerCubicMeter:
       return compare(
         lhsCosts.iskPerCubicMeter,
@@ -825,15 +950,19 @@ public struct ManufacturingOpportunityLogisticsProjection: Equatable, Sendable {
   public let cost: Double?
   public let legs: [LogisticsCostLeg]
   public let warnings: [DomainWarning]
+  /// Home → Coalition amount contained in `cost` (Coalition route only).
+  public let onwardTransportCost: Double?
 
   public init(
     cost: Double?,
     legs: [LogisticsCostLeg],
-    warnings: [DomainWarning]
+    warnings: [DomainWarning],
+    onwardTransportCost: Double? = nil
   ) {
     self.cost = cost
     self.legs = legs
     self.warnings = warnings
+    self.onwardTransportCost = onwardTransportCost
   }
 }
 
@@ -1726,13 +1855,158 @@ public struct ManufacturingOpportunityCoverage: Codable, Equatable, Sendable {
   }
 }
 
+/// Market role whose sales an opportunity scan evaluates. Materials are always
+/// bought at the Main Hub; only the sale market, fees and route differ.
+public enum OpportunityHubRole: String, Codable, CaseIterable, Sendable {
+  case main
+  case home
+  case coalition
+
+  /// Stable file prefix. `main` keeps the historical `main-hub` file names.
+  public var storageFilePrefix: String {
+    switch self {
+    case .main: "main-hub"
+    case .home: "home-hub"
+    case .coalition: "coalition-hub"
+    }
+  }
+
+  /// Settings key for this role. `main` keeps the historical key unchanged;
+  /// other roles insert their name after the first key component, for
+  /// example `market-opportunities.home.filter.search-text`.
+  public func storageKey(_ mainKey: String) -> String {
+    guard self != .main else { return mainKey }
+    guard let dot = mainKey.firstIndex(of: ".") else {
+      return "\(mainKey).\(rawValue)"
+    }
+    return "\(mainKey[..<dot]).\(rawValue)\(mainKey[dot...])"
+  }
+
+  public var demandFileName: String { "\(storageFilePrefix)-demand.json" }
+  public var opportunitiesFileName: String {
+    "\(storageFilePrefix)-opportunities.json"
+  }
+}
+
+/// Frozen basis for the Home → Coalition transport of a Coalition-Hub scan.
+/// Costs depend on each row's output and revenue, so the basis is stored and
+/// the amount is derived per row (HUB_CHANCEN_PLAN P6).
+public enum OpportunityCoalitionTransportBasis: Codable, Sendable {
+  /// Courier contract with the Profile rate and contract-volume limit.
+  case courier(
+    homeHub: ProcurementLocation,
+    coalitionHub: ProcurementLocation,
+    iskPerCubicMeter: Double,
+    maximumContractVolumeM3: Double
+  )
+  /// Jump Freighter cargo flight; isotope prices come from the Main Hub.
+  case jumpFreighter(
+    homeHub: ProcurementLocation,
+    configuration: JumpFreighterLogisticsConfiguration,
+    route: JumpRouteSnapshot,
+    isotopeMarket: MarketOrderSnapshot
+  )
+  /// No usable transport; profit stays unavailable.
+  case unavailable(homeHub: ProcurementLocation?, code: String, message: String)
+
+  public var homeHub: ProcurementLocation? {
+    switch self {
+    case .courier(let homeHub, _, _, _): homeHub
+    case .jumpFreighter(let homeHub, _, _, _): homeHub
+    case .unavailable(let homeHub, _, _): homeHub
+    }
+  }
+
+  /// Home → Coalition cost for one row's complete output.
+  public func transport(
+    for row: ManufacturingOpportunityRow
+  ) -> (cost: Double?, warnings: [DomainWarning]) {
+    let selfJumps =
+      row.categoryName.localizedCaseInsensitiveCompare("Ship") == .orderedSame
+      && JumpRouteClass(groupName: row.groupName) != nil
+    let cargo = [
+      LogisticsCargoItem(
+        typeID: row.productTypeID,
+        quantity: row.producedQuantity,
+        collateral: row.grossRevenue,
+        packagedVolumePerUnit: row.packagedVolumePerUnit
+      )
+    ]
+    switch self {
+    case .unavailable(_, let code, let message):
+      return (nil, [DomainWarning(code: code, message: message, severity: .blocking)])
+    case .courier(let homeHub, let coalitionHub, let rate, let maximumVolume):
+      if selfJumps {
+        return (
+          nil,
+          [
+            DomainWarning(
+              code: "capital-self-jump.disabled",
+              message:
+                "At least one produced capital must self-jump from the Home Hub to the Coalition Hub. Enable jump logistics to calculate its DOTLAN route and fuel; the hull is not treated as courier cargo.",
+              severity: .blocking
+            )
+          ]
+        )
+      }
+      let result = LogisticsCostCalculator.calculateLegs(
+        kind: .outboundProducts,
+        origin: homeHub.name,
+        destination: coalitionHub.name,
+        cargo: cargo,
+        iskPerCubicMeter: rate,
+        maximumContractVolumeM3: maximumVolume
+      )
+      guard !result.warnings.contains(where: { $0.severity == .blocking })
+      else { return (nil, result.warnings) }
+      let total = result.legs.reduce(0) { $0 + $1.roundedCharge }
+      return total.isFinite && total >= 0 ? (total, result.warnings) : (nil, result.warnings)
+    case .jumpFreighter(_, let configuration, let route, let isotopeMarket):
+      if selfJumps {
+        return (
+          nil,
+          [
+            DomainWarning(
+              code: "capital-self-jump.opportunity-unsupported",
+              message:
+                "This capital self-jumps to the Coalition Hub. Its hull-specific DOTLAN route and fuel are calculated in the Planner; the opportunity list keeps its transport and profit unavailable.",
+              severity: .blocking
+            )
+          ]
+        )
+      }
+      let result = JumpFreighterLogisticsCalculator.calculate(
+        configuration: configuration,
+        route: route,
+        cargo: cargo,
+        mainHubMarket: PreparedMarketOrderBook(snapshot: isotopeMarket)
+      )
+      switch result.status {
+      case .notRequired:
+        return (0, result.warnings)
+      case .calculated:
+        return (result.breakdown?.totalCost, result.warnings)
+      default:
+        return (nil, result.warnings)
+      }
+    }
+  }
+}
+
 public struct ManufacturingOpportunitySnapshot: Identifiable, Codable,
   Sendable
 {
   public let id: UUID
   public let createdAt: Date
   public let settings: ManufacturingOpportunitySettings
+  /// Procurement hub for every material purchase.
   public let mainHub: ProcurementLocation
+  /// `nil` for Main-Hub scans, including every snapshot saved before roles.
+  public let hubRole: OpportunityHubRole?
+  /// Sale hub of a Home- or Coalition-Hub scan; `nil` means the Main Hub.
+  public let saleHub: ProcurementLocation?
+  /// Home → Coalition transport basis of a Coalition-Hub scan.
+  public let coalitionTransport: OpportunityCoalitionTransportBasis?
   public let productionWarehouseScope: ProductionWarehouseScope
   public let logisticsConfiguration: LogisticsConfiguration?
   public let rows: [ManufacturingOpportunityRow]
@@ -1754,12 +2028,18 @@ public struct ManufacturingOpportunitySnapshot: Identifiable, Codable,
     demand: ManufacturingOpportunityDemandSnapshot? = nil,
     sdeSource: SourceIdentity,
     marketSource: SourceIdentity,
-    warnings: [DomainWarning]
+    warnings: [DomainWarning],
+    hubRole: OpportunityHubRole? = nil,
+    saleHub: ProcurementLocation? = nil,
+    coalitionTransport: OpportunityCoalitionTransportBasis? = nil
   ) {
     self.id = id
     self.createdAt = createdAt
     self.settings = settings
     self.mainHub = mainHub
+    self.hubRole = hubRole
+    self.saleHub = saleHub
+    self.coalitionTransport = coalitionTransport
     self.productionWarehouseScope = productionWarehouseScope
     self.logisticsConfiguration = logisticsConfiguration
     self.rows = rows
@@ -1768,6 +2048,37 @@ public struct ManufacturingOpportunitySnapshot: Identifiable, Codable,
     self.sdeSource = sdeSource
     self.marketSource = marketSource
     self.warnings = warnings
+  }
+
+  public var resolvedHubRole: OpportunityHubRole { hubRole ?? .main }
+  public var resolvedSaleHub: ProcurementLocation { saleHub ?? mainHub }
+
+  /// Row-independent route. Coalition needs the row for its onward cost, so
+  /// this property reports that transport as unavailable; use
+  /// `saleRoute(for:)` for projections.
+  public var defaultSaleRoute: ManufacturingOpportunitySaleRoute {
+    switch resolvedHubRole {
+    case .main: .mainHubRoundTrip
+    case .home: .homeHub(resolvedSaleHub)
+    case .coalition:
+      .coalitionHub(
+        homeHub: coalitionTransport?.homeHub ?? resolvedSaleHub,
+        onwardTransportCost: nil
+      )
+    }
+  }
+
+  /// Logistics route for one (possibly re-projected) row.
+  public func saleRoute(
+    for row: ManufacturingOpportunityRow
+  ) -> ManufacturingOpportunitySaleRoute {
+    guard resolvedHubRole == .coalition else { return defaultSaleRoute }
+    guard let coalitionTransport, let homeHub = coalitionTransport.homeHub
+    else { return defaultSaleRoute }
+    return .coalitionHub(
+      homeHub: homeHub,
+      onwardTransportCost: coalitionTransport.transport(for: row).cost
+    )
   }
 }
 
@@ -1884,7 +2195,11 @@ public enum ManufacturingOpportunityAnalyzer {
     facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext],
     reactionFacility: ReactionFacilityCostContext? = nil,
     salesTaxRate: Double?,
-    brokerFeeRate: Double?
+    brokerFeeRate: Double?,
+    hubRole: OpportunityHubRole = .main,
+    saleHub: ProcurementLocation? = nil,
+    saleMarket: MarketOrderSnapshot? = nil,
+    coalitionTransport: OpportunityCoalitionTransportBasis? = nil
   ) throws -> ManufacturingOpportunitySnapshot {
     let requestedRunsAreValid =
       settings.requestedRuns.map {
@@ -1902,6 +2217,22 @@ public enum ManufacturingOpportunityAnalyzer {
     guard market.locationID == mainHub.locationID,
       mainHub.regionID.map({ $0 == market.regionID }) ?? true
     else { throw ManufacturingOpportunityError.inconsistentMarketLocation }
+    // Main-Hub scans sell where they buy. Other roles need their own exact
+    // sale market; materials still come from the Main-Hub market.
+    let productMarket: MarketOrderSnapshot
+    switch hubRole {
+    case .main:
+      guard saleHub == nil, saleMarket == nil else {
+        throw ManufacturingOpportunityError.inconsistentMarketLocation
+      }
+      productMarket = market
+    case .home, .coalition:
+      guard let saleHub, let saleMarket,
+        saleMarket.locationID == saleHub.locationID,
+        saleHub.regionID.map({ $0 == saleMarket.regionID }) ?? true
+      else { throw ManufacturingOpportunityError.inconsistentMarketLocation }
+      productMarket = saleMarket
+    }
     let manufacturing = definitions.filter {
       $0.activity.kind == .manufacturing
         && !$0.activity.materials.isEmpty
@@ -1930,6 +2261,7 @@ public enum ManufacturingOpportunityAnalyzer {
         packagedVolumes: packagedVolumes,
         settings: settings,
         market: market,
+        productMarket: productMarket,
         demandSummary: demand?.dailySummary(for: definition.productTypeID),
         adjustedPrices: adjustedPrices,
         facility: facilities[
@@ -1954,6 +2286,7 @@ public enum ManufacturingOpportunityAnalyzer {
         packagedVolumes: packagedVolumes,
         settings: settings,
         market: market,
+        productMarket: productMarket,
         demandSummary: demand?.dailySummary(for: definition.productTypeID),
         adjustedPrices: adjustedPrices,
         facility: reactionFacility,
@@ -2011,7 +2344,7 @@ public enum ManufacturingOpportunityAnalyzer {
           message:
             "Daily demand is unavailable until two different exact Main Hub snapshots at least 30 minutes apart contain a comparable order for that type.",
           severity: .information,
-          source: market.source
+          source: productMarket.source
         ),
         at: 0
       )
@@ -2035,11 +2368,11 @@ public enum ManufacturingOpportunityAnalyzer {
       coverage: ManufacturingOpportunityCoverage(
         completeManufacturingDefinitionCount: manufacturing.count,
         completeReactionDefinitionCount: reactions.count,
-        mainHubActiveOrderTypeCount: market.ordersByType.values.reduce(0) {
+        mainHubActiveOrderTypeCount: productMarket.ordersByType.values.reduce(0) {
           count, orders in
           count
             + (orders.contains(where: {
-              $0.locationID == market.locationID && $0.price.isFinite
+              $0.locationID == productMarket.locationID && $0.price.isFinite
                 && $0.price > 0 && $0.volumeRemaining > 0
             }) ? 1 : 0)
         },
@@ -2053,8 +2386,11 @@ public enum ManufacturingOpportunityAnalyzer {
       // would only increase startup RSS and disk I/O.
       demand: demand?.withDailyHistory(nil),
       sdeSource: sdeSource,
-      marketSource: market.source,
-      warnings: warnings
+      marketSource: productMarket.source,
+      warnings: warnings,
+      hubRole: hubRole == .main ? nil : hubRole,
+      saleHub: hubRole == .main ? nil : saleHub,
+      coalitionTransport: hubRole == .coalition ? coalitionTransport : nil
     )
   }
 
@@ -2066,15 +2402,16 @@ public enum ManufacturingOpportunityAnalyzer {
     packagedVolumes: [Int64: Double],
     settings: ManufacturingOpportunitySettings,
     market: MarketOrderSnapshot,
+    productMarket: MarketOrderSnapshot,
     demandSummary: ManufacturingOpportunityDailyDemandSummary?,
     adjustedPrices: [Int64: AdjustedPrice],
     facility: ManufacturingOpportunityFacilityContext?,
     salesTaxRate: Double?,
     brokerFeeRate: Double?
   ) -> ManufacturingOpportunityRow? {
-    let productOrders = (market.ordersByType[definition.productTypeID] ?? [])
+    let productOrders = (productMarket.ordersByType[definition.productTypeID] ?? [])
       .filter {
-        $0.locationID == market.locationID && $0.price.isFinite && $0.price > 0
+        $0.locationID == productMarket.locationID && $0.price.isFinite && $0.price > 0
           && $0.volumeRemaining > 0
       }
     guard
@@ -2094,7 +2431,7 @@ public enum ManufacturingOpportunityAnalyzer {
           message:
             "No active sell order is available for this product at the exact Main Hub. Revenue and dependent profitability values remain unavailable.",
           severity: .blocking,
-          source: market.source
+          source: productMarket.source
         )
       )
     }
@@ -2244,6 +2581,7 @@ public enum ManufacturingOpportunityAnalyzer {
     packagedVolumes: [Int64: Double],
     settings: ManufacturingOpportunitySettings,
     market: MarketOrderSnapshot,
+    productMarket: MarketOrderSnapshot,
     demandSummary: ManufacturingOpportunityDailyDemandSummary?,
     adjustedPrices: [Int64: AdjustedPrice],
     facility: ReactionFacilityCostContext?,
@@ -2270,9 +2608,9 @@ public enum ManufacturingOpportunityAnalyzer {
       )
     else { return nil }
 
-    let productOrders = (market.ordersByType[definition.productTypeID] ?? [])
+    let productOrders = (productMarket.ordersByType[definition.productTypeID] ?? [])
       .filter {
-        $0.locationID == market.locationID && $0.price.isFinite && $0.price > 0
+        $0.locationID == productMarket.locationID && $0.price.isFinite && $0.price > 0
           && $0.volumeRemaining > 0
       }
     var warnings = reaction.warnings
@@ -2283,7 +2621,7 @@ public enum ManufacturingOpportunityAnalyzer {
           message:
             "No active sell order is available for this reaction product at the exact Main Hub. Revenue and dependent profitability values remain unavailable.",
           severity: .blocking,
-          source: market.source
+          source: productMarket.source
         )
       )
     }
@@ -2842,6 +3180,25 @@ public enum ManufacturingOpportunityRunProjector {
   }
 }
 
+/// Sale route of an opportunity row. Materials always start at the Main Hub.
+public enum ManufacturingOpportunitySaleRoute: Equatable, Sendable {
+  /// Main Hub → production → back to the Main Hub (historical behavior).
+  case mainHubRoundTrip
+  /// Main Hub → production at or near the Home Hub; no return leg.
+  case homeHub(ProcurementLocation)
+  /// Like `homeHub`, plus the separately calculated Home → Coalition transport.
+  /// `nil` marks that transport as unavailable.
+  case coalitionHub(
+    homeHub: ProcurementLocation,
+    onwardTransportCost: Double?
+  )
+
+  public var isCoalition: Bool {
+    if case .coalitionHub = self { return true }
+    return false
+  }
+}
+
 public enum ManufacturingOpportunityScenarioProjector {
   /// Profit that the selected run batch can realize against observed exact-hub
   /// daily demand. Demand below the produced quantity reduces the potential;
@@ -2886,7 +3243,25 @@ public enum ManufacturingOpportunityScenarioProjector {
     sheet: ManufacturingOpportunityCostSheet,
     logistics: ManufacturingOpportunityLogisticsProjection
   ) -> ManufacturingOpportunityCostProjection {
-    costs(for: row, sheet: sheet, logisticsCost: logistics.cost)
+    var projection = costs(for: row, sheet: sheet, logisticsCost: logistics.cost)
+    projection.onwardTransportCost = logistics.onwardTransportCost
+    return projection
+  }
+
+  /// Market costs plus the public-contract sale of the same scenario.
+  public static func costs(
+    for row: ManufacturingOpportunityRow,
+    sheet: ManufacturingOpportunityCostSheet,
+    logistics: ManufacturingOpportunityLogisticsProjection,
+    contract: ManufacturingOpportunityContractContext
+  ) -> ManufacturingOpportunityCostProjection {
+    var projection = costs(for: row, sheet: sheet, logistics: logistics)
+    projection.contract = ManufacturingOpportunityContractProjector.project(
+      row: row,
+      totalCost: projection.totalCost,
+      context: contract
+    )
+    return projection
   }
 
   public static func logistics(
@@ -2894,7 +3269,8 @@ public enum ManufacturingOpportunityScenarioProjector {
     procurement: ManufacturingOpportunityProcurementProjection,
     configuration: LogisticsConfiguration?,
     mainHub: ProcurementLocation,
-    warehouseIsAvailable: Bool
+    warehouseIsAvailable: Bool,
+    route: ManufacturingOpportunitySaleRoute = .mainHubRoundTrip
   ) -> ManufacturingOpportunityLogisticsProjection {
     guard let configuration else {
       return ManufacturingOpportunityLogisticsProjection(
@@ -2908,6 +3284,16 @@ public enum ManufacturingOpportunityScenarioProjector {
             severity: .blocking
           )
         ]
+      )
+    }
+    if route != .mainHubRoundTrip {
+      return saleHubLogistics(
+        for: row,
+        procurement: procurement,
+        configuration: configuration,
+        mainHub: mainHub,
+        warehouseIsAvailable: warehouseIsAvailable,
+        route: route
       )
     }
     let homeHub = configuration.homeTradeHub
@@ -3027,6 +3413,169 @@ public enum ManufacturingOpportunityScenarioProjector {
       legs: legs,
       warnings: warnings
     )
+  }
+
+  /// Home- and Coalition-Hub sales: materials travel from the Main Hub to the
+  /// production location; the product is not returned to the Main Hub. Like the
+  /// Planner, a Home-Hub sale carries only this inbound leg (plus a hop from a
+  /// differing production location to the Home Hub). A Coalition-Hub sale adds
+  /// the separately calculated Home-to-Coalition transport; a missing amount
+  /// keeps profit unavailable instead of becoming zero.
+  private static func saleHubLogistics(
+    for row: ManufacturingOpportunityRow,
+    procurement: ManufacturingOpportunityProcurementProjection,
+    configuration: LogisticsConfiguration,
+    mainHub: ProcurementLocation,
+    warehouseIsAvailable: Bool,
+    route: ManufacturingOpportunitySaleRoute
+  ) -> ManufacturingOpportunityLogisticsProjection {
+    let homeHub: ProcurementLocation
+    let onwardTransportCost: Double?
+    switch route {
+    case .mainHubRoundTrip:
+      preconditionFailure("Main-Hub routes use the round-trip projection.")
+    case .homeHub(let hub):
+      homeHub = hub
+      onwardTransportCost = 0
+    case .coalitionHub(let hub, let cost):
+      homeHub = hub
+      onwardTransportCost = cost
+    }
+    guard let onwardTransportCost,
+      onwardTransportCost.isFinite, onwardTransportCost >= 0
+    else {
+      return unavailableLogistics(
+        code: "manufacturing-opportunity.coalition-transport-unavailable",
+        message:
+          "The Home Hub to Coalition Hub transport is unavailable. Coalition Hub profit, ROI and ISK rates remain unavailable instead of treating transport as zero."
+      )
+    }
+    let configuredProductionLocation = configuration.productionLocationName
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let productionLocation =
+      configuredProductionLocation.isEmpty
+      ? homeHub.name : configuredProductionLocation
+    let productionIsMainHub = sameLocationName(productionLocation, mainHub.name)
+    let productionIsHomeHub = sameLocationName(productionLocation, homeHub.name)
+    let recordedOnwardCost: Double? =
+      route.isCoalition ? onwardTransportCost : nil
+    if productionIsMainHub, mainHub.representsSameLocation(as: homeHub) {
+      return ManufacturingOpportunityLogisticsProjection(
+        cost: onwardTransportCost,
+        legs: [],
+        warnings: [],
+        onwardTransportCost: recordedOnwardCost
+      )
+    }
+    guard configuration.isEnabled else {
+      return unavailableLogistics(
+        code: "manufacturing-opportunity.sale-hub-logistics-disabled",
+        message:
+          "The Main Hub, production location and sale hub differ, but Profile logistics is disabled. Logistics and profit remain unavailable instead of being treated as zero."
+      )
+    }
+    guard let rate = configuration.effectiveISKPerCubicMeter else {
+      return unavailableLogistics(
+        code: "logistics.missing-volume-rate",
+        message:
+          "Logistics is enabled in Profile, but the ISK per m³ rate is missing or invalid."
+      )
+    }
+    guard let maximumVolume = configuration.effectiveMaximumContractVolumeM3
+    else {
+      return unavailableLogistics(
+        code: "logistics.invalid-volume-limit",
+        message:
+          "Logistics is enabled in Profile, but the contract volume limit is invalid."
+      )
+    }
+    guard warehouseIsAvailable else {
+      return unavailableLogistics(
+        code: "manufacturing-opportunity.production-warehouse-unavailable",
+        message:
+          "The production warehouse snapshot is unavailable, so the quantity that must be hauled from the Main Hub cannot be determined."
+      )
+    }
+    var legs: [LogisticsCostLeg] = []
+    var warnings: [DomainWarning] = []
+    if !productionIsMainHub {
+      let inbound = LogisticsCostCalculator.calculateLegs(
+        kind: .inboundMaterials,
+        origin: mainHub.name,
+        destination: productionLocation,
+        cargo: inboundCargo(for: row, procurement: procurement),
+        iskPerCubicMeter: rate,
+        maximumContractVolumeM3: maximumVolume
+      )
+      legs.append(contentsOf: inbound.legs)
+      warnings.append(contentsOf: inbound.warnings)
+    }
+    if !productionIsHomeHub {
+      let toHomeHub = LogisticsCostCalculator.calculateLegs(
+        kind: .outboundProducts,
+        origin: productionLocation,
+        destination: homeHub.name,
+        cargo: [
+          LogisticsCargoItem(
+            typeID: row.productTypeID,
+            quantity: row.producedQuantity,
+            collateral: row.grossRevenue,
+            packagedVolumePerUnit: row.packagedVolumePerUnit
+          )
+        ],
+        iskPerCubicMeter: rate,
+        maximumContractVolumeM3: maximumVolume
+      )
+      legs.append(contentsOf: toHomeHub.legs)
+      warnings.append(contentsOf: toHomeHub.warnings)
+    }
+    guard !warnings.contains(where: { $0.severity == .blocking }) else {
+      return ManufacturingOpportunityLogisticsProjection(
+        cost: nil,
+        legs: [],
+        warnings: warnings
+      )
+    }
+    let total = legs.reduce(onwardTransportCost) { $0 + $1.roundedCharge }
+    guard total.isFinite, total >= 0 else {
+      return unavailableLogistics(
+        code: "logistics.invalid-total",
+        message: "The logistics total exceeded safe numeric limits."
+      )
+    }
+    return ManufacturingOpportunityLogisticsProjection(
+      cost: total,
+      legs: legs,
+      warnings: warnings,
+      onwardTransportCost: recordedOnwardCost
+    )
+  }
+
+  private static func sameLocationName(_ lhs: String, _ rhs: String) -> Bool {
+    lhs.compare(rhs, options: [.caseInsensitive, .diacriticInsensitive])
+      == .orderedSame
+  }
+
+  private static func inboundCargo(
+    for row: ManufacturingOpportunityRow,
+    procurement: ManufacturingOpportunityProcurementProjection
+  ) -> [LogisticsCargoItem] {
+    let sourcingByTypeID = procurement.lines.reduce(
+      into: [Int64: ManufacturingOpportunitySourcingLine]()
+    ) { result, line in
+      result[line.typeID] = line
+    }
+    return row.materials.compactMap { material -> LogisticsCargoItem? in
+      guard let sourcing = sourcingByTypeID[material.typeID],
+        sourcing.toBuy > 0
+      else { return nil }
+      return LogisticsCargoItem(
+        typeID: material.typeID,
+        quantity: sourcing.toBuy,
+        collateral: sourcing.purchaseCashRequirement,
+        packagedVolumePerUnit: material.packagedVolumePerUnit
+      )
+    }
   }
 
   private static func costs(
@@ -3259,6 +3808,78 @@ public enum ManufacturingOpportunityScenarioProjector {
 /// Stock already present in the production Warehouse retains its replacement
 /// value in profit, but it does not consume new wallet cash and is therefore not
 /// counted here.
+/// One Dashboard top-opportunity entry (HUB_CHANCEN_PLAN P9).
+public struct ManufacturingOpportunityTopEntry: Identifiable, Sendable {
+  public var id: Int64 { row.productTypeID }
+  public let row: ManufacturingOpportunityRow
+  public let dailyProfitPotential: Double
+  public let returnOnInvestment: Double?
+}
+
+/// Ranks a saved scan by daily profit potential with standard assumptions:
+/// no Warehouse stock (every material is bought), installation, sales tax and
+/// broker fee included, no Blueprint allocation and no purchase budget. The
+/// hub role's logistics route applies. Rows without a value are not ranked.
+public enum ManufacturingOpportunityTopRanking {
+  public static let standardCostSheet = ManufacturingOpportunityCostSheet(
+    includesInstallation: true,
+    includesSalesTax: true,
+    includesBrokerFee: true,
+    includesBlueprintAllocation: false,
+    blueprintAllocationPerRun: nil,
+    includesHauling: false,
+    haulingCostPerBatch: nil
+  )
+
+  public static func rank(
+    _ snapshot: ManufacturingOpportunitySnapshot,
+    limit: Int = 5
+  ) -> [ManufacturingOpportunityTopEntry] {
+    guard limit > 0 else { return [] }
+    var entries: [ManufacturingOpportunityTopEntry] = []
+    for row in snapshot.rows {
+      let procurement = ManufacturingOpportunityScenarioProjector.procurement(
+        for: row,
+        factualWarehouseQuantities: [:],
+        protectedQuantities: [:],
+        reservedQuantities: [:]
+      )
+      let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+        for: row,
+        procurement: procurement,
+        configuration: snapshot.logisticsConfiguration,
+        mainHub: snapshot.mainHub,
+        warehouseIsAvailable: true,
+        route: snapshot.saleRoute(for: row)
+      )
+      let costs = ManufacturingOpportunityScenarioProjector.costs(
+        for: row,
+        sheet: standardCostSheet,
+        logistics: logistics
+      )
+      guard
+        let potential = ManufacturingOpportunityScenarioProjector
+          .dailyProfitPotential(for: row, costs: costs)
+      else { continue }
+      entries.append(
+        ManufacturingOpportunityTopEntry(
+          row: row,
+          dailyProfitPotential: potential,
+          returnOnInvestment: costs.returnOnInvestment
+        )
+      )
+    }
+    return Array(
+      entries.sorted {
+        if $0.dailyProfitPotential != $1.dailyProfitPotential {
+          return $0.dailyProfitPotential > $1.dailyProfitPotential
+        }
+        return $0.row.productTypeID < $1.row.productTypeID
+      }.prefix(limit)
+    )
+  }
+}
+
 public enum ManufacturingOpportunityBudgetFilter {
   public static func accepts(
     maximumMaterialPurchaseISK: Double?,

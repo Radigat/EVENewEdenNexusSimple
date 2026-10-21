@@ -122,6 +122,199 @@ final class SharedAnalysisRefresh {
   }
 }
 
+/// Where a Home- or Coalition-Hub opportunity scan reads its sale market.
+enum HubOpportunityScanTarget: Equatable, Sendable {
+  case notConfigured
+  /// The hub equals the Main Hub: no second scan, the Main-Hub data applies.
+  case sharesMainHub
+  /// The Coalition Hub equals the Home Hub: the Home-Hub data applies.
+  case sharesHomeHub
+  case npcStation(regionID: Int64, locationID: Int64)
+  case playerStructure(structureID: Int64, systemID: Int64, regionID: Int64?)
+  /// The saved location lacks the exact identifiers a market request needs.
+  case unresolved
+
+  var requiresScan: Bool {
+    switch self {
+    case .npcStation, .playerStructure: true
+    default: false
+    }
+  }
+
+  static func resolve(
+    mainHub: ProcurementLocation?,
+    homeHub: ProcurementLocation?
+  ) -> Self {
+    resolve(saleHub: homeHub, sharedHubs: [(mainHub, .sharesMainHub)])
+  }
+
+  static func resolve(
+    mainHub: ProcurementLocation?,
+    homeHub: ProcurementLocation?,
+    coalitionHub: ProcurementLocation?
+  ) -> Self {
+    resolve(
+      saleHub: coalitionHub,
+      sharedHubs: [(mainHub, .sharesMainHub), (homeHub, .sharesHomeHub)]
+    )
+  }
+
+  private static func resolve(
+    saleHub: ProcurementLocation?,
+    sharedHubs: [(ProcurementLocation?, Self)]
+  ) -> Self {
+    guard let saleHub else { return .notConfigured }
+    for (hub, shared) in sharedHubs {
+      if let hub, hub.representsSameLocation(as: saleHub) { return shared }
+    }
+    switch saleHub.kind {
+    case .npcTradeHub:
+      guard let regionID = saleHub.regionID,
+        let locationID = saleHub.locationID
+      else { return .unresolved }
+      return .npcStation(regionID: regionID, locationID: locationID)
+    case .playerStructure:
+      guard let structureID = saleHub.locationID,
+        let systemID = saleHub.solarSystemID
+      else { return .unresolved }
+      return .playerStructure(
+        structureID: structureID,
+        systemID: systemID,
+        regionID: saleHub.regionID
+      )
+    case .legacy:
+      return .unresolved
+    }
+  }
+}
+
+typealias HomeHubOpportunityScanTarget = HubOpportunityScanTarget
+
+/// Published state of one secondary (Home or Coalition) opportunity hub.
+struct SecondaryHubOpportunityState: Sendable {
+  var analysis: ManufacturingOpportunitySnapshot?
+  var demand: ManufacturingOpportunityDemandSnapshot?
+  var marketState: Sourced<MarketOrderSummarySnapshot>?
+  var error: String?
+  var isAnalyzing = false
+  var progress = ManufacturingOpportunityScanProgress()
+}
+
+/// Inputs of a completed Main-Hub scan that the Home-Hub scan reuses, so the
+/// catalog, Main-Hub material market and facility context load only once.
+private struct SecondaryHubOpportunityScanContext: Sendable {
+  let definitions: [BlueprintDefinition]
+  let typeNames: [Int64: String]
+  let classifications: [Int64: IndustryItemClassification]
+  let packagedVolumes: [Int64: Double]
+  let settings: ManufacturingOpportunitySettings
+  let mainHub: ProcurementLocation
+  let productionWarehouseScope: ProductionWarehouseScope
+  let logisticsConfiguration: LogisticsConfiguration
+  let mainMarket: MarketOrderSnapshot
+  let adjustedPrices: [Int64: AdjustedPrice]
+  let facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext]
+  let reactionFacility: ReactionFacilityCostContext?
+  let isAutomatic: Bool
+}
+
+struct CharacterBatchSyncResult: Equatable, Sendable {
+  let synchronizedCount: Int
+  let totalCount: Int
+  let failedCharacterNames: [String]
+}
+
+/// Owner decision 2026-10-20: every app start loads the ESI-backed data once.
+/// Characters and the planner configuration load first and in parallel; market
+/// analyses and the automatic background scans start only afterwards. The load
+/// is owned by the runtime, so leaving a screen does not cancel it.
+@MainActor
+final class StartupDataLoad: ObservableObject {
+  enum Phase: Equatable {
+    case idle
+    case loadingCharactersAndConfiguration
+    case refreshingAnalysesAndScans
+    case completed
+    case cancelled
+  }
+
+  struct Steps {
+    var prepareConfiguration: @MainActor () async -> Void
+    var synchronizeCharacters: @MainActor () async -> CharacterBatchSyncResult
+    var refreshMarketAnalyses: @MainActor () async -> Void
+    var releaseAutomaticScans: @MainActor () async -> Void
+  }
+
+  @Published private(set) var phase: Phase = .idle
+  @Published private(set) var characterResult: CharacterBatchSyncResult?
+  private var task: Task<Void, Never>?
+  private var characterTask: Task<CharacterBatchSyncResult, Never>?
+  private let expectsStart: Bool
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+  /// `expectsStart` makes early readers wait for the root view to start the
+  /// load instead of synchronizing the same characters a second time.
+  init(expectsStart: Bool = false) {
+    self.expectsStart = expectsStart
+  }
+
+  var hasStarted: Bool { task != nil }
+
+  /// Starts the load once per runtime. Later calls join the first load.
+  @discardableResult
+  func start(_ steps: Steps) -> Bool {
+    guard task == nil else { return false }
+    phase = .loadingCharactersAndConfiguration
+    let synchronizeCharacters = steps.synchronizeCharacters
+    let characterTask = Task { await synchronizeCharacters() }
+    self.characterTask = characterTask
+    let waiters = startWaiters
+    startWaiters = []
+    waiters.forEach { $0.resume() }
+    task = Task { [weak self] in
+      let configuration = Task { await steps.prepareConfiguration() }
+      let result = await withTaskCancellationHandler {
+        await characterTask.value
+      } onCancel: {
+        characterTask.cancel()
+        configuration.cancel()
+      }
+      await configuration.value
+      guard let self else { return }
+      self.characterResult = result
+      guard !Task.isCancelled else {
+        self.phase = .cancelled
+        return
+      }
+      self.phase = .refreshingAnalysesAndScans
+      let analyses = Task { await steps.refreshMarketAnalyses() }
+      await steps.releaseAutomaticScans()
+      await analyses.value
+      self.phase = Task.isCancelled ? .cancelled : .completed
+    }
+    return true
+  }
+
+  func run(_ steps: Steps) async {
+    start(steps)
+    await task?.value
+  }
+
+  /// The startup character result, or `nil` when no startup load was started.
+  func characterSynchronizationResult() async -> CharacterBatchSyncResult? {
+    if characterTask == nil, expectsStart {
+      await withCheckedContinuation { startWaiters.append($0) }
+    }
+    guard let characterTask else { return nil }
+    return await characterTask.value
+  }
+
+  func cancel() {
+    characterTask?.cancel()
+    task?.cancel()
+  }
+}
+
 @MainActor
 final class RuntimeState: ObservableObject {
   let plannerFeatureState = RuntimeFeatureState()
@@ -182,12 +375,33 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var dashboardIndustryProductNames: [Int64: String] = [:]
   @Published private(set) var isRefreshingDashboardWealth = false
   private var hasReservedDashboardStartupRefresh = false
+  let startupDataLoad: StartupDataLoad
+  let startsBackgroundServices: Bool
+  /// Automatic Main-Hub and Public-Contracts scans wait for the startup load,
+  /// so they do not compete with the first character synchronization.
+  @Published private(set) var areStartupAutomaticScansReleased = false
   @Published private(set) var manufacturingOpportunityAnalysis: ManufacturingOpportunitySnapshot?
   @Published private(set) var manufacturingOpportunityProgress =
     ManufacturingOpportunityScanProgress()
   @Published private(set) var isAnalyzingManufacturingOpportunities = false
   @Published private(set) var manufacturingOpportunityError: String?
   @Published private(set) var manufacturingOpportunitySnapshotError: String?
+  /// Home- and Coalition-Hub scan state (P4/P6); the Main Hub keeps its
+  /// historical properties above.
+  @Published private(set) var secondaryHubOpportunities:
+    [OpportunityHubRole: SecondaryHubOpportunityState] = [:]
+  private var secondaryHubProgressThrottles:
+    [OpportunityHubRole: ProgressPublicationThrottle] = [:]
+  private var rememberedCapabilities: [CharacterCapabilitySnapshot] = []
+  /// Local public-contract references for the opportunity lists (P8).
+  @Published private(set) var opportunityContractReferences:
+    PublicContractReferenceSnapshot?
+  @Published private(set) var opportunityContractReferenceError: String?
+  private var opportunityContractReferenceKey: (types: Set<Int64>, loadedAt: Date)?
+  /// Latest authorizations handed over by the startup load or Dashboard; the
+  /// Home-Hub structure market needs them outside any view.
+  private var marketAuthorizations: [AuthorizationSnapshot] = []
+  private var marketAuthorizationClientID = ""
   @Published private(set) var manufacturingOpportunityDemand:
     ManufacturingOpportunityDemandSnapshot?
   @Published private(set) var manufacturingOpportunityDemandError: String?
@@ -253,6 +467,10 @@ final class RuntimeState: ObservableObject {
     StoredAssetWarehouseProjectionCache()
   private let manufacturingOpportunityDemandStore: ManufacturingOpportunityDemandStore
   private let manufacturingOpportunitySnapshotStore: ManufacturingOpportunitySnapshotStore
+  private let secondaryHubDemandStores:
+    [OpportunityHubRole: ManufacturingOpportunityDemandStore]
+  private let secondaryHubSnapshotStores:
+    [OpportunityHubRole: ManufacturingOpportunitySnapshotStore]
   private let loyaltyStoreCatalogStore: LoyaltyStoreCatalogStore
   private let loyaltyStoreCatalogService: LoyaltyStoreCatalogService
   private let dataRoot: URL
@@ -289,17 +507,15 @@ final class RuntimeState: ObservableObject {
     5 * 60
   private static let plannerESICacheRetainedBytes = 32 * 1_024 * 1_024
   private static let warningESICacheRetainedBytes = 16 * 1_024 * 1_024
-  private static let mainHubMarketAutomationEnabledKey =
-    "market.main-hub.automatic-updates-enabled"
-  private static let mainHubMarketAutomationConsentVersionKey =
-    "market.main-hub.automatic-updates-consent-version"
-  private static let mainHubMarketAutomationConsentVersion = 1
-
   init(
     dataRoot providedDataRoot: URL? = nil,
     ccpUserAgentOwnerContact: String? = nil,
     startBackgroundServices: Bool = true
   ) {
+    self.startsBackgroundServices = startBackgroundServices
+    self.startupDataLoad = StartupDataLoad(
+      expectsStart: startBackgroundServices
+    )
     self.ccpUserAgentOwnerContact =
       CCPUserAgentConfiguration.normalizedOwnerContact(
         ccpUserAgentOwnerContact
@@ -319,16 +535,43 @@ final class RuntimeState: ObservableObject {
     let resolvedDataRoot = providedDataRoot ?? Self.fallbackDataRoot()
     dataRoot = resolvedDataRoot
     manufacturingOpportunityDemandStore = ManufacturingOpportunityDemandStore(
-      fileURL:
-        resolvedDataRoot
-        .appendingPathComponent("market", isDirectory: true)
-        .appendingPathComponent("main-hub-demand.json")
+      fileURL: Self.opportunityDemandFileURL(
+        dataRoot: resolvedDataRoot,
+        role: .main
+      )
     )
     manufacturingOpportunitySnapshotStore = ManufacturingOpportunitySnapshotStore(
-      fileURL:
-        resolvedDataRoot
-        .appendingPathComponent("market", isDirectory: true)
-        .appendingPathComponent("main-hub-opportunities.json")
+      fileURL: Self.opportunitySnapshotFileURL(
+        dataRoot: resolvedDataRoot,
+        role: .main
+      )
+    )
+    let secondaryRoles: [OpportunityHubRole] = [.home, .coalition]
+    secondaryHubDemandStores = Dictionary(
+      uniqueKeysWithValues: secondaryRoles.map {
+        (
+          $0,
+          ManufacturingOpportunityDemandStore(
+            fileURL: Self.opportunityDemandFileURL(
+              dataRoot: resolvedDataRoot,
+              role: $0
+            )
+          )
+        )
+      }
+    )
+    secondaryHubSnapshotStores = Dictionary(
+      uniqueKeysWithValues: secondaryRoles.map {
+        (
+          $0,
+          ManufacturingOpportunitySnapshotStore(
+            fileURL: Self.opportunitySnapshotFileURL(
+              dataRoot: resolvedDataRoot,
+              role: $0
+            )
+          )
+        )
+      }
     )
     loyaltyStoreCatalogStore = LoyaltyStoreCatalogStore(
       fileURL:
@@ -349,26 +592,9 @@ final class RuntimeState: ObservableObject {
       .appendingPathComponent("public-contracts.sqlite")
     publicContractIndexer = nil
     publicContractStoreState = startBackgroundServices ? .preparing : .disabled
-    let defaults = AppDefaults.store
-    if startBackgroundServices,
-      defaults.integer(
-        forKey: Self.mainHubMarketAutomationConsentVersionKey
-      ) < Self.mainHubMarketAutomationConsentVersion
-    {
-      // Earlier builds silently enabled this catalog-wide scan. Pause it once
-      // so the expensive background work only resumes after an explicit choice.
-      defaults.set(
-        false,
-        forKey: Self.mainHubMarketAutomationEnabledKey
-      )
-      defaults.set(
-        Self.mainHubMarketAutomationConsentVersion,
-        forKey: Self.mainHubMarketAutomationConsentVersionKey
-      )
-    }
-    mainHubMarketAutomaticUpdatesEnabled =
-      startBackgroundServices
-      && defaults.bool(forKey: Self.mainHubMarketAutomationEnabledKey)
+    // Owner decision 2026-10-20: the Main-Hub scan always runs automatically.
+    // A pause from the Dashboard menu lasts only for the current app run.
+    mainHubMarketAutomaticUpdatesEnabled = startBackgroundServices
     guard startBackgroundServices else { return }
     startESIMemoryPressureMonitoring()
     Task(priority: .utility) {
@@ -376,6 +602,10 @@ final class RuntimeState: ObservableObject {
       async let serviceStatus: Void = refreshEVEOnlineServiceStatus()
       async let demand: Void = loadManufacturingOpportunityDemand()
       async let opportunities: Void = loadManufacturingOpportunityAnalysis()
+      async let homeOpportunities: Void = loadHomeHubOpportunityData()
+      async let coalitionOpportunities: Void = loadSecondaryHubOpportunityData(
+        role: .coalition
+      )
       async let loyaltyStores: Void = loadLoyaltyStoreCatalog()
       async let contracts: Void = preparePublicContractStore(
         at: contractStoreURL
@@ -385,6 +615,8 @@ final class RuntimeState: ObservableObject {
         serviceStatus,
         demand,
         opportunities,
+        homeOpportunities,
+        coalitionOpportunities,
         contracts,
         loyaltyStores
       )
@@ -483,14 +715,6 @@ final class RuntimeState: ObservableObject {
   }
 
   func setMainHubMarketAutomaticUpdatesEnabled(_ enabled: Bool) {
-    AppDefaults.store.set(
-      enabled,
-      forKey: Self.mainHubMarketAutomationEnabledKey
-    )
-    AppDefaults.store.set(
-      Self.mainHubMarketAutomationConsentVersion,
-      forKey: Self.mainHubMarketAutomationConsentVersionKey
-    )
     mainHubMarketAutomaticUpdatesEnabled = enabled
     if enabled {
       prepareMainHubMarketAutomation()
@@ -508,6 +732,7 @@ final class RuntimeState: ObservableObject {
     retryAfter: TimeInterval? = nil
   ) {
     guard mainHubMarketAutomaticUpdatesEnabled,
+      areStartupAutomaticScansReleased,
       preparedMainHubMarketIdentity != nil,
       mainHubMarketAutomationTask == nil,
       mainHubMarketAutomaticScanTask == nil,
@@ -709,10 +934,19 @@ final class RuntimeState: ObservableObject {
         try await publicContractIndexer.localProgress(),
         force: true
       )
-      let automation = try await publicContractIndexer.automationState(
+      var automation = try await publicContractIndexer.automationState(
         regularRefreshInterval:
           PublicContractAutomationPolicy.regularRefreshInterval
       )
+      // Owner decision 2026-10-20: the import always continues at app start.
+      // A manual stop pauses it only until the next start.
+      if !automation.isEnabled {
+        try await publicContractIndexer.setAutomaticUpdatesEnabled(true)
+        automation = try await publicContractIndexer.automationState(
+          regularRefreshInterval:
+            PublicContractAutomationPolicy.regularRefreshInterval
+        )
+      }
       publicContractAutomaticUpdatesEnabled = automation.isEnabled
       if automation.isEnabled {
         await scheduleAutomaticPublicContractSynchronization(
@@ -871,6 +1105,7 @@ final class RuntimeState: ObservableObject {
     guard publicContractSyncTask == nil,
       publicContractAutomationTask == nil,
       publicContractAutomaticUpdatesEnabled,
+      areStartupAutomaticScansReleased,
       interactivePlannerWorkCoordinator.canSchedule(.publicContracts),
       let publicContractIndexer
     else { return }
@@ -894,6 +1129,10 @@ final class RuntimeState: ObservableObject {
       publicContractNextAutomaticRunAt = nil
       return
     }
+    // Another caller may have scheduled or started work while the state loaded.
+    guard publicContractSyncTask == nil,
+      publicContractAutomationTask == nil
+    else { return }
     let earliest = Date().addingTimeInterval(
       PublicContractAutomationPolicy.startupDelay
     )
@@ -914,6 +1153,26 @@ final class RuntimeState: ObservableObject {
       self.publicContractNextAutomaticRunAt = nil
       self.beginPublicContractSynchronization(manualStart: false)
     }
+  }
+
+  /// Each hub role keeps its own demand ledger and opportunity snapshot.
+  /// The Main Hub keeps its historical `market/main-hub-*.json` files.
+  static func opportunityDemandFileURL(
+    dataRoot: URL,
+    role: OpportunityHubRole
+  ) -> URL {
+    dataRoot
+      .appendingPathComponent("market", isDirectory: true)
+      .appendingPathComponent(role.demandFileName)
+  }
+
+  static func opportunitySnapshotFileURL(
+    dataRoot: URL,
+    role: OpportunityHubRole
+  ) -> URL {
+    dataRoot
+      .appendingPathComponent("market", isDirectory: true)
+      .appendingPathComponent(role.opportunitiesFileName)
   }
 
   private static func fallbackDataRoot() -> URL {
@@ -964,6 +1223,7 @@ final class RuntimeState: ObservableObject {
     capabilities: [CharacterCapabilitySnapshot] = []
   ) async {
     isPlannerConfigurationReady = false
+    rememberedCapabilities = capabilities
     if let encodedBasis {
       do {
         productionBasis = try JSONDecoder().decode(
@@ -2590,6 +2850,29 @@ final class RuntimeState: ObservableObject {
         manufacturingOpportunitySnapshotError =
           "The current Main Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced."
       }
+      let secondaryContext = SecondaryHubOpportunityScanContext(
+          definitions: definitions,
+          typeNames: names,
+          classifications: classifications,
+          packagedVolumes: packagedVolumeSnapshot.value ?? [:],
+          settings: opportunitySettings,
+          mainHub: mainHub,
+          productionWarehouseScope: productionWarehouseScope,
+          logisticsConfiguration: logisticsConfiguration,
+          mainMarket: market,
+          adjustedPrices: adjusted,
+          facilities: facilities,
+          reactionFacility: reactionFacility,
+          isAutomatic: isAutomatic
+        )
+      try await analyzeSecondaryHubOpportunities(
+        role: .home,
+        context: secondaryContext
+      )
+      try await analyzeSecondaryHubOpportunities(
+        role: .coalition,
+        context: secondaryContext
+      )
     } catch is CancellationError {
       return
     } catch ESIError.cancelled {
@@ -4329,6 +4612,517 @@ final class RuntimeState: ObservableObject {
       authorization: authorization,
       lease: lease
     )
+  }
+
+  func rememberMarketAuthorizations(
+    _ authorizations: [AuthorizationSnapshot],
+    clientID: String,
+    capabilities: [CharacterCapabilitySnapshot]? = nil
+  ) {
+    marketAuthorizations = authorizations
+    marketAuthorizationClientID = clientID
+    if let capabilities { rememberedCapabilities = capabilities }
+  }
+
+  // MARK: Public-contract references for opportunities (HUB_CHANCEN_PLAN P8)
+
+  /// Reads the local contract index only; it never starts ESI work. The
+  /// universe-wide rule and the 500-offer bound match the Planner Contract
+  /// Sale. Identical type sets are reused for five minutes.
+  func loadOpportunityContractReferences(typeIDs: Set<Int64>) async {
+    guard !typeIDs.isEmpty else { return }
+    if let key = opportunityContractReferenceKey, key.types == typeIDs,
+      Date().timeIntervalSince(key.loadedAt) < 5 * 60
+    {
+      return
+    }
+    guard publicContractStoreState == .ready, let publicContractIndexer else {
+      opportunityContractReferences = nil
+      opportunityContractReferenceError =
+        "The local Public Contracts index is not ready. Contract prices remain unavailable."
+      return
+    }
+    do {
+      let limitPerType = 500
+      let snapshot = try await publicContractIndexer.includedOfferSnapshot(
+        typeIDs: typeIDs,
+        limitPerType: limitPerType
+      )
+      try Task.checkCancellation()
+      opportunityContractReferences =
+        PublicContractReferenceSnapshot.projectUniverseWide(
+          offers: snapshot.offers,
+          progress: snapshot.progress,
+          limitPerType: limitPerType,
+          allowedRegionIDs: nil
+        )
+      opportunityContractReferenceKey = (typeIDs, Date())
+      opportunityContractReferenceError = nil
+    } catch is CancellationError {
+      return
+    } catch {
+      opportunityContractReferenceError =
+        "The local Public Contracts index could not be read. Contract prices remain unavailable."
+    }
+  }
+
+  /// Confirmed non-refundable public-contract fee rate of a hub role.
+  func publicContractFeeRate(for role: OpportunityHubRole) -> Double? {
+    switch role {
+    case .main: productionBasis.mainTradingLocation?.publicContractFeeRate
+    case .home: productionBasis.homeTradingLocation?.publicContractFeeRate
+    case .coalition:
+      productionBasis.coalitionTradingLocation?.publicContractFeeRate
+    }
+  }
+
+  // MARK: Secondary hub opportunities (HUB_CHANCEN_PLAN P4/P6)
+
+  var homeHubOpportunityAnalysis: ManufacturingOpportunitySnapshot? {
+    secondaryHubOpportunities[.home]?.analysis
+  }
+  var homeHubOpportunityDemand: ManufacturingOpportunityDemandSnapshot? {
+    secondaryHubOpportunities[.home]?.demand
+  }
+  var homeHubMarketState: Sourced<MarketOrderSummarySnapshot>? {
+    secondaryHubOpportunities[.home]?.marketState
+  }
+  var homeHubOpportunityError: String? {
+    secondaryHubOpportunities[.home]?.error
+  }
+  var isAnalyzingHomeHubOpportunities: Bool {
+    secondaryHubOpportunities[.home]?.isAnalyzing ?? false
+  }
+  var homeHubOpportunityProgress: ManufacturingOpportunityScanProgress {
+    secondaryHubOpportunities[.home]?.progress
+      ?? ManufacturingOpportunityScanProgress()
+  }
+  var homeHubOpportunityScanTarget: HubOpportunityScanTarget {
+    opportunityScanTarget(for: .home)
+  }
+
+  func opportunityState(
+    for role: OpportunityHubRole
+  ) -> SecondaryHubOpportunityState {
+    secondaryHubOpportunities[role] ?? SecondaryHubOpportunityState()
+  }
+
+  func opportunityScanTarget(
+    for role: OpportunityHubRole
+  ) -> HubOpportunityScanTarget {
+    let main = productionBasis.mainTradingLocation?.location
+    let home = productionBasis.homeTradingLocation?.location
+    switch role {
+    case .main:
+      return main == nil ? .notConfigured : .sharesMainHub
+    case .home:
+      return .resolve(mainHub: main, homeHub: home)
+    case .coalition:
+      return .resolve(
+        mainHub: main,
+        homeHub: home,
+        coalitionHub: productionBasis.coalitionTradingLocation?.location
+      )
+    }
+  }
+
+  private func secondaryTradingLocation(
+    for role: OpportunityHubRole
+  ) -> TradingLocationConfiguration? {
+    switch role {
+    case .main: nil
+    case .home: productionBasis.homeTradingLocation
+    case .coalition: productionBasis.coalitionTradingLocation
+    }
+  }
+
+  private func updateSecondaryHub(
+    _ role: OpportunityHubRole,
+    _ change: (inout SecondaryHubOpportunityState) -> Void
+  ) {
+    var state = secondaryHubOpportunities[role] ?? SecondaryHubOpportunityState()
+    change(&state)
+    secondaryHubOpportunities[role] = state
+  }
+
+  func loadHomeHubOpportunityData() async {
+    await loadSecondaryHubOpportunityData(role: .home)
+  }
+
+  func loadSecondaryHubOpportunityData(role: OpportunityHubRole) async {
+    guard let demandStore = secondaryHubDemandStores[role],
+      let snapshotStore = secondaryHubSnapshotStores[role]
+    else { return }
+    do {
+      let demand = try await demandStore.currentDemand()
+      updateSecondaryHub(role) { $0.demand = demand }
+    } catch {
+      updateSecondaryHub(role) {
+        $0.error = Self.secondaryHubMessage(.demandUnreadable, role: role)
+      }
+    }
+    guard opportunityState(for: role).analysis == nil else { return }
+    do {
+      let stored = try await snapshotStore.load()
+      await snapshotStore.releaseCachedSnapshot()
+      guard opportunityState(for: role).analysis == nil else { return }
+      updateSecondaryHub(role) { $0.analysis = stored }
+    } catch {
+      updateSecondaryHub(role) {
+        $0.error = Self.secondaryHubMessage(.snapshotUnreadable, role: role)
+      }
+    }
+  }
+
+  private enum SecondaryHubMessage {
+    case demandUnreadable
+    case snapshotUnreadable
+    case locationUnresolved
+    case demandNotStored
+    case snapshotNotSaved
+    case scanFailed
+  }
+
+  /// Fixed per-role texts so each one has its own localization entry.
+  private static func secondaryHubMessage(
+    _ message: SecondaryHubMessage,
+    role: OpportunityHubRole
+  ) -> String {
+    let coalition = role == .coalition
+    switch message {
+    case .demandUnreadable:
+      return coalition
+        ? "The stored Coalition Hub demand observations could not be read. Existing data was not replaced."
+        : "The stored Home Hub demand observations could not be read. Existing data was not replaced."
+    case .snapshotUnreadable:
+      return coalition
+        ? "The last saved Coalition Hub item list could not be read. Existing data was not replaced."
+        : "The last saved Home Hub item list could not be read. Existing data was not replaced."
+    case .locationUnresolved:
+      return coalition
+        ? "The Coalition Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings."
+        : "The Home Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings."
+    case .demandNotStored:
+      return coalition
+        ? "The Coalition Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced."
+        : "The Home Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced."
+    case .snapshotNotSaved:
+      return coalition
+        ? "The current Coalition Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced."
+        : "The current Home Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced."
+    case .scanFailed:
+      return coalition
+        ? "The Coalition Hub opportunity scan could not be completed. The Main Hub and Home Hub results are unaffected."
+        : "The Home Hub opportunity scan could not be completed. The Main Hub results are unaffected."
+    }
+  }
+
+  /// Runs inside the Main-Hub scan and therefore follows its 6-hour reuse,
+  /// startup release, request priority and Planner-first cancellation. A
+  /// failure of this hub never replaces or invalidates another hub's result.
+  private func analyzeSecondaryHubOpportunities(
+    role: OpportunityHubRole,
+    context: SecondaryHubOpportunityScanContext
+  ) async throws {
+    let target = opportunityScanTarget(for: role)
+    guard target.requiresScan else {
+      updateSecondaryHub(role) {
+        $0.error =
+          target == .unresolved
+          ? Self.secondaryHubMessage(.locationUnresolved, role: role) : nil
+      }
+      return
+    }
+    guard let hub = secondaryTradingLocation(for: role),
+      let demandStore = secondaryHubDemandStores[role],
+      let snapshotStore = secondaryHubSnapshotStores[role]
+    else { return }
+    updateSecondaryHub(role) {
+      $0.isAnalyzing = true
+      $0.error = nil
+      $0.progress = ManufacturingOpportunityScanProgress()
+    }
+    secondaryHubProgressThrottles[role] = ProgressPublicationThrottle(
+      minimumInterval: 2
+    )
+    defer { updateSecondaryHub(role) { $0.isAnalyzing = false } }
+    do {
+      let productTypeIDs = Set(context.definitions.map(\.productTypeID))
+      let saleMarket = try await secondaryHubMarketSnapshot(
+        role: role,
+        target: target,
+        productTypeIDs: productTypeIDs,
+        preferredTraderID: hub.marketTaxes.traderCharacterID
+      )
+      try Task.checkCancellation()
+      let previousMarket = opportunityState(for: role).marketState
+      updateSecondaryHub(role) {
+        $0.marketState = Sourced(
+          state: saleMarket.state,
+          value: MarketOrderSummarySnapshot(snapshot: saleMarket),
+          source: saleMarket.source
+        ).retainingLastKnownValue(from: previousMarket)
+      }
+      let demand: ManufacturingOpportunityDemandSnapshot?
+      do {
+        demand = try await demandStore.observe(saleMarket)
+        updateSecondaryHub(role) { $0.demand = demand }
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        demand = nil
+        updateSecondaryHub(role) {
+          $0.error = Self.secondaryHubMessage(.demandNotStored, role: role)
+        }
+      }
+      let coalitionTransport =
+        role == .coalition
+        ? await coalitionTransportBasis(mainMarket: context.mainMarket)
+        : nil
+      try Task.checkCancellation()
+      let salesTaxRate = hub.marketTaxes.effectiveSalesTaxRate
+      let brokerFeeRate = hub.marketTaxes.effectiveBrokerFeeRate
+      let saleHub = hub.location
+      let analysisTask = Task.detached(
+        priority: context.isAutomatic ? .utility : .userInitiated
+      ) {
+        try ManufacturingOpportunityAnalyzer.analyze(
+          definitions: context.definitions,
+          typeNames: context.typeNames,
+          classifications: context.classifications,
+          packagedVolumes: context.packagedVolumes,
+          settings: context.settings,
+          mainHub: context.mainHub,
+          productionWarehouseScope: context.productionWarehouseScope,
+          logisticsConfiguration: context.logisticsConfiguration,
+          market: context.mainMarket,
+          demand: demand,
+          adjustedPrices: context.adjustedPrices,
+          facilities: context.facilities,
+          reactionFacility: context.reactionFacility,
+          salesTaxRate: salesTaxRate,
+          brokerFeeRate: brokerFeeRate,
+          hubRole: role,
+          saleHub: saleHub,
+          saleMarket: saleMarket,
+          coalitionTransport: coalitionTransport
+        )
+      }
+      let analysis = try await withTaskCancellationHandler {
+        try await analysisTask.value
+      } onCancel: {
+        analysisTask.cancel()
+      }
+      updateSecondaryHub(role) { $0.analysis = analysis }
+      do {
+        try await snapshotStore.save(analysis)
+        await snapshotStore.releaseCachedSnapshot()
+      } catch {
+        updateSecondaryHub(role) {
+          $0.error = Self.secondaryHubMessage(.snapshotNotSaved, role: role)
+        }
+      }
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch ESIError.cancelled {
+      throw CancellationError()
+    } catch {
+      let failure = Self.materialPurchaseMarketFailure(error)
+      let previousMarket = opportunityState(for: role).marketState
+      updateSecondaryHub(role) {
+        $0.marketState = Sourced<MarketOrderSummarySnapshot>(
+          state: failure.state,
+          value: nil,
+          source: SourceIdentity(
+            provider: "ESI",
+            version: "\(role.storageFilePrefix)-market"
+          ),
+          diagnostics: [failure.diagnostic]
+        ).retainingLastKnownValue(from: previousMarket)
+        $0.error = Self.secondaryHubMessage(.scanFailed, role: role)
+      }
+    }
+  }
+
+  /// Home → Coalition transport basis, following the Planner: Jump Freighter
+  /// cargo when jump logistics is enabled, otherwise the Profile courier.
+  /// Missing hubs, route, pilot or tariff keep the transport unavailable.
+  private func coalitionTransportBasis(
+    mainMarket: MarketOrderSnapshot
+  ) async -> OpportunityCoalitionTransportBasis {
+    guard let home = productionBasis.homeTradingLocation?.location,
+      let coalition = productionBasis.coalitionTradingLocation?.location
+    else {
+      return .unavailable(
+        homeHub: nil,
+        code: "coalition-transport.home-hub-missing",
+        message:
+          "A Coalition Hub scan needs a configured Home Hub as the starting point of the onward transport. Coalition Hub profit remains unavailable."
+      )
+    }
+    let logistics = productionBasis.logistics
+    if logistics.jumpFreighter.isEnabled {
+      let load = await plannerJumpFreighterRouteLoad(
+        configuration: logistics.jumpFreighter,
+        homeHub: home,
+        coalitionHub: coalition,
+        capabilities: rememberedCapabilities,
+        capitalProducts: []
+      )
+      guard let routeState = load.route, routeState.state == .fresh,
+        let route = routeState.value
+      else {
+        let warning = load.warnings.first
+        return .unavailable(
+          homeHub: home,
+          code: warning?.code ?? "jump-freighter.route-unavailable",
+          message: warning?.message
+            ?? "The current DOTLAN Jump Freighter route is unavailable. Coalition Hub transport is not treated as free."
+        )
+      }
+      let isotopeMarket = mainMarket.restricted(
+        to: JumpFuelIsotope.marketTypeIDs
+      )
+      return .jumpFreighter(
+        homeHub: home,
+        configuration: logistics.jumpFreighter,
+        route: route,
+        isotopeMarket: isotopeMarket
+      )
+    }
+    guard logistics.isEnabled else {
+      return .unavailable(
+        homeHub: home,
+        code: "coalition-transport.logistics-disabled",
+        message:
+          "Profile logistics is disabled, so the Home Hub to Coalition Hub courier transport and Coalition Hub profit remain unavailable."
+      )
+    }
+    guard let rate = logistics.effectiveISKPerCubicMeter,
+      let maximumVolume = logistics.effectiveMaximumContractVolumeM3
+    else {
+      return .unavailable(
+        homeHub: home,
+        code: "logistics.missing-volume-rate",
+        message:
+          "Logistics is enabled in Profile, but the ISK per m³ rate is missing or invalid."
+      )
+    }
+    return .courier(
+      homeHub: home,
+      coalitionHub: coalition,
+      iskPerCubicMeter: rate,
+      maximumContractVolumeM3: maximumVolume
+    )
+  }
+
+  private func secondaryHubMarketSnapshot(
+    role: OpportunityHubRole,
+    target: HubOpportunityScanTarget,
+    productTypeIDs: Set<Int64>,
+    preferredTraderID: Int64?
+  ) async throws -> MarketOrderSnapshot {
+    let service = TradeHubMarketService(esi: esi)
+    switch target {
+    case .npcStation(let regionID, let locationID):
+      let snapshot = try await service.locationOrderSnapshot(
+        regionID: regionID,
+        locationID: locationID
+      ) { [weak self] completed, total in
+        await MainActor.run {
+          self?.publishSecondaryHubProgress(
+            role: role,
+            ManufacturingOpportunityScanProgress(
+              completedPages: completed,
+              totalPages: total
+            )
+          )
+        }
+      }
+      await esi.removeCachedPublicResponses(
+        pathPrefix: "/markets/\(regionID)/orders/"
+      )
+      return snapshot
+    case .playerStructure(let structureID, let systemID, let knownRegionID):
+      let authorization = await marketStructureAuthorization(
+        authorizations: marketAuthorizations,
+        clientID: marketAuthorizationClientID
+      )
+      let leasesByCharacterID: [Int64: AccessTokenLease]
+      switch authorization {
+      case .authorizationRequired:
+        throw ESIError.authorizationRequired
+      case .missingScope:
+        throw ESIError.missingScope(TradeHubMarketService.structureMarketScope)
+      case .unavailable:
+        throw ESIError.http(401)
+      case .available(let leases):
+        leasesByCharacterID = leases
+      }
+      let regionID: Int64
+      if let knownRegionID {
+        regionID = knownRegionID
+      } else {
+        regionID = try await solarSystemSearch.details(systemID: systemID)
+          .regionID
+      }
+      let orderedLeases = leasesByCharacterID.values.sorted {
+        if $0.characterID == preferredTraderID { return true }
+        if $1.characterID == preferredTraderID { return false }
+        return $0.characterID < $1.characterID
+      }
+      var lastError: Error = ESIError.authorizationRequired
+      for lease in orderedLeases {
+        do {
+          return try await service.structureOrderSnapshot(
+            typeIDs: productTypeIDs,
+            regionID: regionID,
+            systemID: systemID,
+            structureID: structureID,
+            lease: lease
+          )
+        } catch is CancellationError {
+          throw CancellationError()
+        } catch ESIError.cancelled {
+          throw CancellationError()
+        } catch {
+          lastError = error
+        }
+      }
+      throw lastError
+    case .notConfigured, .sharesMainHub, .sharesHomeHub, .unresolved:
+      throw ESIError.notFound
+    }
+  }
+
+  private func publishSecondaryHubProgress(
+    role: OpportunityHubRole,
+    _ progress: ManufacturingOpportunityScanProgress
+  ) {
+    guard progress != opportunityState(for: role).progress else { return }
+    let reachedBoundary =
+      progress.totalPages > 0
+      && progress.completedPages >= progress.totalPages
+    var throttle =
+      secondaryHubProgressThrottles[role]
+      ?? ProgressPublicationThrottle(minimumInterval: 2)
+    let publish = throttle.shouldPublish(at: .now, force: reachedBoundary)
+    secondaryHubProgressThrottles[role] = throttle
+    guard publish else { return }
+    updateSecondaryHub(role) { $0.progress = progress }
+  }
+
+  /// Releases the automatic Main-Hub and Public-Contracts scans after the
+  /// startup character load. Their 6-hour reuse windows still apply.
+  func releaseStartupAutomaticScans() async {
+    guard startsBackgroundServices, !areStartupAutomaticScansReleased else {
+      return
+    }
+    areStartupAutomaticScansReleased = true
+    prepareMainHubMarketAutomation()
+    if publicContractAutomaticUpdatesEnabled {
+      await scheduleAutomaticPublicContractSynchronization()
+    }
   }
 
   func reserveDashboardStartupRefresh() -> Bool {

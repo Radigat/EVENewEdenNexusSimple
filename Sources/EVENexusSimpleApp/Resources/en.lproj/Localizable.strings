@@ -1782,3 +1782,139 @@
 "Owned BPC valued at the expected invention cost with the decryptor inferred from ME, TE and runs (estimate)" = "Owned BPC valued at the expected invention cost with the decryptor inferred from ME, TE and runs (estimate)";
 "Owned BPC valued by Contract price per run and production cost estimate" = "Owned BPC valued by Contract price per run and production cost estimate";
 "Owned BPC valued at the mean expected invention cost of all decryptors matching ME, TE and runs (estimate)" = "Owned BPC valued at the mean expected invention cost of all decryptors matching ME, TE and runs (estimate)";
+
+/* Dashboard startup data status (HUB_CHANCEN_PLAN P2) */
+"App start" = "App start";
+"Waiting" = "Waiting";
+"Warehouse & Blueprints" = "Warehouse & Blueprints";
+"Moon materials" = "Moon materials";
+"Minerals" = "Minerals";
+"%@ · %@" = "%@ · %@";
+
+/* Home Hub market scan (HUB_CHANCEN_PLAN P4) */
+"Home Hub market" = "Home Hub market";
+"Uses Main Hub data" = "Uses Main Hub data";
+"Home Hub location incomplete" = "Home Hub location incomplete";
+"The stored Home Hub demand observations could not be read. Existing data was not replaced." = "The stored Home Hub demand observations could not be read. Existing data was not replaced.";
+"The last saved Home Hub item list could not be read. Existing data was not replaced." = "The last saved Home Hub item list could not be read. Existing data was not replaced.";
+"The Home Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings." = "The Home Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings.";
+"The Home Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced." = "The Home Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced.";
+"The current Home Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced." = "The current Home Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced.";
+"The Home Hub opportunity scan could not be completed. The Main Hub results are unaffected." = "The Home Hub opportunity scan could not be completed. The Main Hub results are unaffected.";
+
+/* Home Hub opportunities (HUB_CHANCEN_PLAN P5) */
+"Home Hub Opportunities" = "Home Hub Opportunities";
+"No Home Hub configured" = "No Home Hub configured";
+"Select a Home Hub under Data & Settings → Market Settings. Its opportunities are scanned together with the Main Hub." = "Select a Home Hub under Data & Settings → Market Settings. Its opportunities are scanned together with the Main Hub.";
+"Open Market Settings" = "Open Market Settings";
+"Home Hub equals the Main Hub" = "Home Hub equals the Main Hub";
+"No separate Home Hub scan runs. Use Main Hub Opportunities for this location." = "No separate Home Hub scan runs. Use Main Hub Opportunities for this location.";
+"Open Main Hub Opportunities" = "Open Main Hub Opportunities";
+"The Home Hub is scanned together with the next Main Hub scan at %@. Update starts both now." = "The Home Hub is scanned together with the next Main Hub scan at %@. Update starts both now.";
+"The Home Hub is scanned together with the Main Hub. Update starts both now." = "The Home Hub is scanned together with the Main Hub. Update starts both now.";
+"Total cost: material replacement value plus installation, optional Blueprint allocation and the required inbound Profile logistics from the Main Hub. Products are sold at this hub, so no return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort." = "Total cost: material replacement value plus installation, optional Blueprint allocation and the required inbound Profile logistics from the Main Hub. Products are sold at this hub, so no return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort.";
+"The Home Hub to Coalition Hub transport is unavailable. Coalition Hub profit, ROI and ISK rates remain unavailable instead of treating transport as zero." = "The Home Hub to Coalition Hub transport is unavailable. Coalition Hub profit, ROI and ISK rates remain unavailable instead of treating transport as zero.";
+"The Main Hub, production location and sale hub differ, but Profile logistics is disabled. Logistics and profit remain unavailable instead of being treated as zero." = "The Main Hub, production location and sale hub differ, but Profile logistics is disabled. Logistics and profit remain unavailable instead of being treated as zero.";
+
+/* Coalition Hub market scan (HUB_CHANCEN_PLAN P6) */
+"Coalition Hub market" = "Coalition Hub market";
+"Uses Home Hub data" = "Uses Home Hub data";
+"Coalition Hub location incomplete" = "Coalition Hub location incomplete";
+"The stored Coalition Hub demand observations could not be read. Existing data was not replaced." = "The stored Coalition Hub demand observations could not be read. Existing data was not replaced.";
+"The last saved Coalition Hub item list could not be read. Existing data was not replaced." = "The last saved Coalition Hub item list could not be read. Existing data was not replaced.";
+"The Coalition Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings." = "The Coalition Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings.";
+"The Coalition Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced." = "The Coalition Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced.";
+"The current Coalition Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced." = "The current Coalition Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced.";
+"The Coalition Hub opportunity scan could not be completed. The Main Hub and Home Hub results are unaffected." = "The Coalition Hub opportunity scan could not be completed. The Main Hub and Home Hub results are unaffected.";
+"A Coalition Hub scan needs a configured Home Hub as the starting point of the onward transport. Coalition Hub profit remains unavailable." = "A Coalition Hub scan needs a configured Home Hub as the starting point of the onward transport. Coalition Hub profit remains unavailable.";
+"Profile logistics is disabled, so the Home Hub to Coalition Hub courier transport and Coalition Hub profit remain unavailable." = "Profile logistics is disabled, so the Home Hub to Coalition Hub courier transport and Coalition Hub profit remain unavailable.";
+"This capital self-jumps to the Coalition Hub. Its hull-specific DOTLAN route and fuel are calculated in the Planner; the opportunity list keeps its transport and profit unavailable." = "This capital self-jumps to the Coalition Hub. Its hull-specific DOTLAN route and fuel are calculated in the Planner; the opportunity list keeps its transport and profit unavailable.";
+
+/* Coalition Hub opportunities (HUB_CHANCEN_PLAN P7) */
+"Coalition Hub Opportunities" = "Coalition Hub Opportunities";
+"No Coalition Hub configured" = "No Coalition Hub configured";
+"Select a Coalition Hub under Data & Settings → Market Settings. Its opportunities are scanned together with the Main Hub." = "Select a Coalition Hub under Data & Settings → Market Settings. Its opportunities are scanned together with the Main Hub.";
+"Coalition Hub equals the Main Hub" = "Coalition Hub equals the Main Hub";
+"No separate Coalition Hub scan runs. Use Main Hub Opportunities for this location." = "No separate Coalition Hub scan runs. Use Main Hub Opportunities for this location.";
+"Coalition Hub equals the Home Hub" = "Coalition Hub equals the Home Hub";
+"No separate Coalition Hub scan runs. Use Home Hub Opportunities for this location." = "No separate Coalition Hub scan runs. Use Home Hub Opportunities for this location.";
+"Open Home Hub Opportunities" = "Open Home Hub Opportunities";
+"The Coalition Hub is scanned together with the next Main Hub scan at %@. Update starts all scans now." = "The Coalition Hub is scanned together with the next Main Hub scan at %@. Update starts all scans now.";
+"The Coalition Hub is scanned together with the Main Hub. Update starts all scans now." = "The Coalition Hub is scanned together with the Main Hub. Update starts all scans now.";
+"Home → Coalition" = "Home → Coalition";
+"Home → Coalition: onward transport of the complete output from the Home Hub to the Coalition Hub, by Jump Freighter when jump logistics is enabled and otherwise by Profile courier. It is part of Cost. Missing route, pilot or tariff keeps it unavailable. Click to sort." = "Home → Coalition: onward transport of the complete output from the Home Hub to the Coalition Hub, by Jump Freighter when jump logistics is enabled and otherwise by Profile courier. It is part of Cost. Missing route, pilot or tariff keeps it unavailable. Click to sort.";
+"Total cost: material replacement value plus installation, optional Blueprint allocation, the inbound Profile logistics from the Main Hub and the Home → Coalition transport. No return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort." = "Total cost: material replacement value plus installation, optional Blueprint allocation, the inbound Profile logistics from the Main Hub and the Home → Coalition transport. No return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort.";
+"At least one produced capital must self-jump from the Home Hub to the Coalition Hub. Enable jump logistics to calculate its DOTLAN route and fuel; the hull is not treated as courier cargo." = "At least one produced capital must self-jump from the Home Hub to the Coalition Hub. Enable jump logistics to calculate its DOTLAN route and fuel; the hull is not treated as courier cargo.";
+
+/* Contract prices in hub opportunities (HUB_CHANCEN_PLAN P8) */
+"Contract price" = "Contract price";
+"Contract profit" = "Contract profit";
+"Contract revenue" = "Contract revenue";
+"Contract fee" = "Contract fee";
+"Contract ROI" = "Contract ROI";
+"Before contract fee" = "Before contract fee";
+"Contract price: lowest unit price of a comparable public Item Exchange contract in the local index for exactly this product, one offered line, no requested line and a positive price; bundles are excluded. The search covers the whole imported universe, as in the Planner. ≈ marks a provisional value while the index is incomplete. No offer stays unavailable. Click to sort." = "Contract price: lowest unit price of a comparable public Item Exchange contract in the local index for exactly this product, one offered line, no requested line and a positive price; bundles are excluded. The search covers the whole imported universe, as in the Planner. ≈ marks a provisional value while the index is incomplete. No offer stays unavailable. Click to sort.";
+"Contract profit: contract price × produced units, minus the confirmed public-contract fee rate of this hub and the total cost. Market sales tax and broker fee do not apply. Without a confirmed rate the value is shown before the contract fee. Click to sort." = "Contract profit: contract price × produced units, minus the confirmed public-contract fee rate of this hub and the total cost. Market sales tax and broker fee do not apply. Without a confirmed rate the value is shown before the contract fee. Click to sort.";
+"No comparable public contract offer was observed for this product. Contract values remain unavailable." = "No comparable public contract offer was observed for this product. Contract values remain unavailable.";
+"The Public Contracts index is incomplete. The contract price is a provisional estimate from offers observed so far." = "The Public Contracts index is incomplete. The contract price is a provisional estimate from offers observed so far.";
+"No confirmed public-contract fee rate exists for this hub. Contract profit and ROI are shown before the contract fee; enter the rate in Market Settings." = "No confirmed public-contract fee rate exists for this hub. Contract profit and ROI are shown before the contract fee; enter the rate in Market Settings.";
+"The local Public Contracts index is not ready. Contract prices remain unavailable." = "The local Public Contracts index is not ready. Contract prices remain unavailable.";
+"The local Public Contracts index could not be read. Contract prices remain unavailable." = "The local Public Contracts index could not be read. Contract prices remain unavailable.";
+
+/* Dashboard top opportunities (HUB_CHANCEN_PLAN P9) */
+"Top opportunities" = "Top opportunities";
+"Ranked by daily profit potential from the saved scans with standard assumptions: every material is bought, installation, sales tax and broker fee are included, no Blueprint allocation and no purchase budget. Open a hub for Warehouse-aware values." = "Ranked by daily profit potential from the saved scans with standard assumptions: every material is bought, installation, sales tax and broker fee are included, no Blueprint allocation and no purchase budget. Open a hub for Warehouse-aware values.";
+"Open this opportunity list" = "Open this opportunity list";
+"No saved row has an available daily profit potential." = "No saved row has an available daily profit potential.";
+"No saved scan yet. It runs automatically with the next Main Hub scan." = "No saved scan yet. It runs automatically with the next Main Hub scan.";
+"%@ / day" = "%@ / day";
+"ROI %@" = "ROI %@";
+"Transfer this saved batch to the Planner." = "Transfer this saved batch to the Planner.";
+
+/* Planner target market (HUB_CHANCEN_PLAN P10) */
+"Target market" = "Target market";
+"Not chosen" = "Not chosen";
+"Suggestion: %@ (highest available profit %@)" = "Suggestion: %@ (highest available profit %@)";
+"Use suggestion" = "Use suggestion";
+"No sale scenario has an available, final profit, so no target market is suggested." = "No sale scenario has an available, final profit, so no target market is suggested.";
+"The target market is a decision label saved with the draft, the plan and the Production Overview. It does not change the calculation; the selected hub is outlined in the sale scenarios below." = "The target market is a decision label saved with the draft, the plan and the Production Overview. It does not change the calculation; the selected hub is outlined in the sale scenarios below.";
+"Selected target market" = "Selected target market";
+
+/* Planner alliance market (HUB_CHANCEN_PLAN P11) */
+"Alliance market" = "Alliance market";
+"Alliance market (manual)" = "Alliance market (manual)";
+"Profit (provisional)" = "Profit (provisional)";
+"%@ of %@ units sold · revenue %@ · fee %@ · delivery %@" = "%@ of %@ units sold · revenue %@ · fee %@ · delivery %@";
+"Fee: 0 % manual assumption" = "Fee: 0 % manual assumption";
+"%@ units remain unsold; their production cost is still included." = "%@ units remain unsold; their production cost is still included.";
+"Copy Slack offer" = "Copy Slack offer";
+"Copies the alliance offer text for Slack to the clipboard." = "Copies the alliance offer text for Slack to the clipboard.";
+"No alliance sale was entered for this plan." = "No alliance sale was entered for this plan.";
+"Price per unit (ISK)" = "Price per unit (ISK)";
+"Accepted units" = "Accepted units";
+"All produced units" = "All produced units";
+"Fee (%)" = "Fee (%)";
+"0 % if empty" = "0 % if empty";
+"Delivery" = "Delivery";
+"At the production location" = "At the production location";
+"Apply alliance sale" = "Apply alliance sale";
+"Check the alliance fields: price and fee must be numbers, the accepted quantity a whole number of at least 1 and the fee below 100 %." = "Check the alliance fields: price and fee must be numbers, the accepted quantity a whole number of at least 1 and the fee below 100 %.";
+"The manual alliance sale needs a plan with exactly one end product, because one unit price applies." = "The manual alliance sale needs a plan with exactly one end product, because one unit price applies.";
+"Enter an alliance price per unit. Without a price the scenario remains unavailable." = "Enter an alliance price per unit. Without a price the scenario remains unavailable.";
+"The accepted quantity must be positive." = "The accepted quantity must be positive.";
+"The manual fee rate must be at least 0 % and below 100 %." = "The manual fee rate must be at least 0 % and below 100 %.";
+"The transport to the selected delivery hub is unavailable in this plan. Alliance profit is not calculated with free transport." = "The transport to the selected delivery hub is unavailable in this plan. Alliance profit is not calculated with free transport.";
+"The production cost of this plan is unavailable, so alliance profit remains unavailable." = "The production cost of this plan is unavailable, so alliance profit remains unavailable.";
+
+/* Planner purchase-location hint (HUB_CHANCEN_PLAN P12) */
+"Purchase-location hint · minerals and moon materials" = "Purchase-location hint · minerals and moon materials";
+"Decision aid from the mineral and moon-material purchase analyses. The plan costs above stay based on the Main Hub; no ESI request is started." = "Decision aid from the mineral and moon-material purchase analyses. The plan costs above stay based on the Main Hub; no ESI request is started.";
+"Outdated · %@" = "Outdated · %@";
+"Analysis not loaded" = "Analysis not loaded";
+"No mineral or moon material is on this shopping list." = "No mineral or moon material is on this shopping list.";
+"Copy Multibuy · %@" = "Copy Multibuy · %@";
+"Copies the lines recommended for this location in the EVE Multibuy format." = "Copies the lines recommended for this location in the EVE Multibuy format.";
+"Purchase location" = "Purchase location";
+"Unit price there" = "Unit price there";
+"Difference per unit" = "Difference per unit";
+"No fresh offer" = "No fresh offer";

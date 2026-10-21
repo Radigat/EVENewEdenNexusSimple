@@ -1155,6 +1155,240 @@ public struct PlanProvenance: Codable, Sendable {
   public let ruleVersion: String
 }
 
+/// Owner input for the manual alliance-market sale (HUB_CHANCEN_PLAN P11).
+public struct PlannerAllianceSaleInput: Codable, Equatable, Sendable {
+  /// Agreed price per unit; `nil` keeps the scenario unavailable.
+  public var unitPrice: Double?
+  /// Units the alliance takes; `nil` means the complete output.
+  public var acceptedQuantity: Int64?
+  /// Optional hand-over hub; `nil` means at the production location.
+  public var deliveryHub: PlannerTargetMarket?
+  /// Manual fee rate; `nil` means the documented 0 % assumption.
+  public var feeRate: Double?
+
+  public init(
+    unitPrice: Double? = nil,
+    acceptedQuantity: Int64? = nil,
+    deliveryHub: PlannerTargetMarket? = nil,
+    feeRate: Double? = nil
+  ) {
+    self.unitPrice = unitPrice
+    self.acceptedQuantity = acceptedQuantity
+    self.deliveryHub = deliveryHub == .allianceMarket ? nil : deliveryHub
+    self.feeRate = feeRate
+  }
+}
+
+/// Frozen alliance-market result. Production cost is always borne in full;
+/// units above the accepted quantity stay unsold and earn nothing.
+public struct PlannerAllianceSaleResult: Codable, Equatable, Sendable {
+  public let input: PlannerAllianceSaleInput
+  public let productName: String?
+  public let producedQuantity: Int64?
+  public let soldQuantity: Int64?
+  public let grossRevenue: Double?
+  public let fee: Double?
+  public let feeIsManualAssumption: Bool
+  public let deliveryCost: Double?
+  public let totalCost: Double?
+  public let profit: Double?
+  public let roi: Double?
+  /// The delivery route still needs a manual transport quote.
+  public let isProvisional: Bool
+  /// Why the scenario is unavailable; `nil` when it was calculated.
+  public let unavailableReason: String?
+}
+
+public enum PlannerAllianceSaleCalculator {
+  public static func calculate(
+    plan: IndustryPlanSnapshot,
+    input: PlannerAllianceSaleInput
+  ) -> PlannerAllianceSaleResult {
+    func unavailable(
+      _ reason: String,
+      productName: String? = nil,
+      produced: Int64? = nil
+    ) -> PlannerAllianceSaleResult {
+      PlannerAllianceSaleResult(
+        input: input,
+        productName: productName,
+        producedQuantity: produced,
+        soldQuantity: nil,
+        grossRevenue: nil,
+        fee: nil,
+        feeIsManualAssumption: input.feeRate == nil,
+        deliveryCost: nil,
+        totalCost: nil,
+        profit: nil,
+        roi: nil,
+        isProvisional: false,
+        unavailableReason: reason
+      )
+    }
+    guard plan.requests.count == 1, let request = plan.requests.first,
+      let node = plan.topLevelProductNode(for: request.id),
+      node.requiredQuantity > 0
+    else {
+      return unavailable(
+        "The manual alliance sale needs a plan with exactly one end product, because one unit price applies."
+      )
+    }
+    let produced = node.requiredQuantity
+    guard let price = input.unitPrice, price.isFinite, price > 0 else {
+      return unavailable(
+        "Enter an alliance price per unit. Without a price the scenario remains unavailable.",
+        productName: node.name,
+        produced: produced
+      )
+    }
+    if let accepted = input.acceptedQuantity, accepted <= 0 {
+      return unavailable(
+        "The accepted quantity must be positive.",
+        productName: node.name,
+        produced: produced
+      )
+    }
+    if let rate = input.feeRate, !(rate.isFinite && rate >= 0 && rate < 1) {
+      return unavailable(
+        "The manual fee rate must be at least 0 % and below 100 %.",
+        productName: node.name,
+        produced: produced
+      )
+    }
+    let delivery: (cost: Double?, pending: Bool)
+    switch input.deliveryHub {
+    case nil, .allianceMarket:
+      delivery = (0, false)
+    case .mainHub:
+      delivery = (
+        plan.listedSale.outboundLogisticsCost,
+        plan.listedSale.hasPendingManualTransportCost
+      )
+    case .homeHub:
+      delivery = (
+        plan.homeListedSale.map { $0.outboundLogisticsCost } ?? 0,
+        plan.homeListedSale?.hasPendingManualTransportCost ?? false
+      )
+    case .coalitionHub:
+      delivery = (
+        plan.coalitionListedSale?.outboundLogisticsCost,
+        plan.coalitionListedSale?.hasPendingManualTransportCost ?? false
+      )
+    }
+    guard let deliveryCost = delivery.cost, deliveryCost.isFinite,
+      deliveryCost >= 0
+    else {
+      return unavailable(
+        "The transport to the selected delivery hub is unavailable in this plan. Alliance profit is not calculated with free transport.",
+        productName: node.name,
+        produced: produced
+      )
+    }
+    let sold = min(produced, input.acceptedQuantity ?? produced)
+    let gross = price * Double(sold)
+    let fee = gross * (input.feeRate ?? 0)
+    let totalCost = plan.costBreakdown?.totalProductionCost.map {
+      $0 + deliveryCost
+    }
+    let profit = totalCost.flatMap { cost -> Double? in
+      let value = gross - fee - cost
+      return value.isFinite ? value : nil
+    }
+    let roi: Double? =
+      if let profit, let totalCost, totalCost > 0 { profit / totalCost } else { nil }
+    return PlannerAllianceSaleResult(
+      input: input,
+      productName: node.name,
+      producedQuantity: produced,
+      soldQuantity: sold,
+      grossRevenue: gross.isFinite ? gross : nil,
+      fee: fee.isFinite ? fee : nil,
+      feeIsManualAssumption: input.feeRate == nil,
+      deliveryCost: deliveryCost,
+      totalCost: totalCost,
+      profit: profit,
+      roi: roi,
+      isProvisional: delivery.pending,
+      unavailableReason: totalCost == nil
+        ? "The production cost of this plan is unavailable, so alliance profit remains unavailable."
+        : nil
+    )
+  }
+
+  /// Copyable Slack offer; `nil` while no price exists.
+  public static func offerText(
+    for result: PlannerAllianceSaleResult,
+    formattedUnitPrice: String,
+    formattedTotal: String
+  ) -> String? {
+    guard let name = result.productName, let sold = result.soldQuantity,
+      result.input.unitPrice != nil
+    else { return nil }
+    return "WTS \(sold)× \(name) @ \(formattedUnitPrice) each (\(formattedTotal) total)"
+  }
+}
+
+/// Sale market chosen for a plan (HUB_CHANCEN_PLAN P10).
+public enum PlannerTargetMarket: String, Codable, CaseIterable, Sendable {
+  case mainHub = "main"
+  case homeHub = "home"
+  case coalitionHub = "coalition"
+  /// Manual alliance sale (Slack), HUB_CHANCEN_PLAN P11.
+  case allianceMarket = "alliance"
+
+  public init(role: OpportunityHubRole) {
+    switch role {
+    case .main: self = .mainHub
+    case .home: self = .homeHub
+    case .coalition: self = .coalitionHub
+    }
+  }
+}
+
+/// Suggests the market of the sale scenario with the highest available
+/// profit. Missing, non-finite or provisional (pending-cost) scenarios are
+/// never suggested; equal profits prefer Main, then Home, then Coalition.
+public enum PlannerTargetMarketSuggestion {
+  public static func scenarios(
+    of plan: IndustryPlanSnapshot
+  ) -> [(market: PlannerTargetMarket, result: SaleScenarioResult?)] {
+    [
+      (.mainHub, plan.immediateSale),
+      (.mainHub, plan.listedSale),
+      (.mainHub, plan.mainContractSale),
+      (.homeHub, plan.homeImmediateSale),
+      (.homeHub, plan.homeListedSale),
+      (.homeHub, plan.homeContractSale),
+      (.coalitionHub, plan.coalitionImmediateSale),
+      (.coalitionHub, plan.coalitionListedSale),
+      (.coalitionHub, plan.coalitionContractSale),
+    ]
+  }
+
+  public static func suggest(
+    _ plan: IndustryPlanSnapshot
+  ) -> (market: PlannerTargetMarket, profit: Double)? {
+    var best: (market: PlannerTargetMarket, profit: Double)?
+    for (market, result) in scenarios(of: plan) {
+      guard let result, let profit = result.profit, profit.isFinite,
+        !result.hasPendingScenarioCost
+      else { continue }
+      if best == nil || profit > best!.profit {
+        best = (market, profit)
+      }
+    }
+    // The manual alliance price is an owner assumption; it competes only when
+    // complete and not provisional, and loses ties to the market scenarios.
+    if let alliance = plan.allianceSale, let profit = alliance.profit,
+      profit.isFinite, !alliance.isProvisional,
+      best == nil || profit > best!.profit
+    {
+      best = (.allianceMarket, profit)
+    }
+    return best
+  }
+}
+
 public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public let id: UUID
   public let createdAt: Date
@@ -1170,6 +1404,12 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   /// `nil` identifies historical snapshots created before concrete Blueprint
   /// source, job and run allocation was persisted.
   public var blueprintSupplyPlans: [BlueprintSupplyPlan]? = nil
+  /// Explicitly chosen sale market (HUB_CHANCEN_PLAN P10). `nil` means not
+  /// chosen, including every snapshot saved before this field existed. It is
+  /// a decision label only and never changes the frozen calculation.
+  public var targetMarket: PlannerTargetMarket? = nil
+  /// Manual alliance-market scenario (P11); `nil` when never entered.
+  public var allianceSale: PlannerAllianceSaleResult? = nil
   public let immediateSale: SaleScenarioResult
   public let listedSale: SaleScenarioResult
   public let mainContractSale: SaleScenarioResult?

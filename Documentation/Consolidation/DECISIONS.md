@@ -82,3 +82,32 @@ lässt rechnen.
   `ConsolidationWorkspace` und werden unverändert dekodiert und wieder gespeichert, aber nicht mehr
   verwendet oder validiert. Format (`formatVersion` 1), SwiftData-Schema und Migrationskette sind
   unverändert, ebenso Sicherungen. Ein neuer Arbeitsdatenverbund legt kein Projekt mehr an.
+
+## 20.10.2026 – Zentraler Startablauf, automatische Scans ohne Opt-in
+
+Eigentümerentscheid: Beim Programmstart lädt die App alle ESI-Daten automatisch.
+Grundlage ist das Ablaufdiagramm aus [HUB_CHANCEN_PLAN.md](../HUB_CHANCEN_PLAN.md),
+Schritt P1.
+
+- **Reihenfolge:** Zuerst laufen parallel die Synchronisierung aller verbundenen
+  Charaktere und die Planner-Konfiguration. Danach starten Reaktionen,
+  Mondmaterial- und Mineralien-Analyse sowie die Freigabe der automatischen
+  Main-Hub- und Public-Contracts-Scans. Der Ablauf gehört dem `RuntimeState`
+  (`StartupDataLoad`) und läuft einmal je App-Prozess.
+- **Ersetzt:** Bisher lief der Charakter-Sync erst beim ersten Dashboard-Aufruf.
+  Das Dashboard übernimmt jetzt das Ergebnis des Startablaufs und synchronisiert
+  nicht ein zweites Mal.
+- **Main-Hub-Scan:** Die Einwilligung (`market.main-hub.automatic-updates-*` in den
+  App-Defaults) wird nicht mehr gelesen. Die gespeicherten Werte bleiben unverändert
+  liegen. „Pausieren“ im Dashboard wirkt nur bis zum nächsten Start.
+- **Public Contracts:** Ein ausgeschalteter Automatikschalter im Vertragsindex
+  wird beim Start wieder eingeschaltet. Ein manueller Stopp pausiert den Import
+  bis zum nächsten Start.
+- **Unverändert:**
+  - die Transportgrenze (6 Anfragen, davon höchstens 2 automatisch),
+  - der Planner-Vorrang mit kooperativem Abbruch,
+  - die 6-Stunden-Wiederverwendung und 15 Sekunden Startverzögerung der Scans,
+  - das 5-Minuten-Fenster der Analysen.
+
+  Im Recovery-Modus und mit `EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1` startet
+  nichts. Ohne Hintergrunddienste synchronisiert das Dashboard wie bisher selbst.

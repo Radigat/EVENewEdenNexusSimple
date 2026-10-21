@@ -8,6 +8,8 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case dashboard
   case planner
   case manufacturingOpportunities
+  case homeHubOpportunities
+  case coalitionHubOpportunities
   case publicContracts
   case reactions
   case moonMaterialAnalysis
@@ -30,6 +32,8 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .dashboard: "Dashboard"
     case .planner: "Planner"
     case .manufacturingOpportunities: "Main Hub Opportunities"
+    case .homeHubOpportunities: "Home Hub Opportunities"
+    case .coalitionHubOpportunities: "Coalition Hub Opportunities"
     case .publicContracts: "Public Contracts"
     case .reactions: "Reactions"
     case .moonMaterialAnalysis: "Moon purchase analysis"
@@ -48,6 +52,8 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .dashboard: "gauge.with.dots.needle.67percent"
     case .planner: "hammer.fill"
     case .manufacturingOpportunities: "chart.line.uptrend.xyaxis"
+    case .homeHubOpportunities: "house.fill"
+    case .coalitionHubOpportunities: "flag.fill"
     case .publicContracts: "doc.text.magnifyingglass"
     case .reactions: "atom"
     case .moonMaterialAnalysis: "chart.xyaxis.line"
@@ -65,6 +71,8 @@ enum NavigationSection: String, CaseIterable, Identifiable {
 struct DashboardNavigationRequest {
   let section: NavigationSection
   var negativeReactionsOnly = false
+  /// Opens the Planner with this batch instead of only switching sections.
+  var plannerLaunch: PlannerLaunchRequest? = nil
 }
 
 enum DataSettingsSection: String, CaseIterable, Identifiable {
@@ -120,6 +128,8 @@ struct PlannerLaunchRequest: Equatable {
   let timeEfficiency: Int
   let blueprintSupplyPlanData: Data?
   let sourceSnapshotIDs: [UUID]
+  /// Sale hub chosen in a hub-opportunity view; the Planner uses it from P10.
+  let targetMarket: OpportunityHubRole?
 
   init(
     id: UUID = UUID(),
@@ -130,9 +140,11 @@ struct PlannerLaunchRequest: Equatable {
     materialEfficiency: Int,
     timeEfficiency: Int,
     blueprintSupplyPlans: [BlueprintSupplyPlan] = [],
-    sourceSnapshotIDs: [UUID] = []
+    sourceSnapshotIDs: [UUID] = [],
+    targetMarket: OpportunityHubRole? = nil
   ) {
     self.id = id
+    self.targetMarket = targetMarket
     self.productTypeID = productTypeID
     self.productName = productName
     self.requestedRuns = min(
@@ -210,7 +222,8 @@ enum MainHubOpportunityPlannerHandoff {
     requestedRuns: Int,
     wantedQuantity: Int,
     materialEfficiency: Int,
-    timeEfficiency: Int
+    timeEfficiency: Int,
+    targetMarket: OpportunityHubRole? = nil
   ) -> PlannerLaunchRequest {
     PlannerLaunchRequest(
       productTypeID: productTypeID,
@@ -218,13 +231,66 @@ enum MainHubOpportunityPlannerHandoff {
       requestedRuns: requestedRuns,
       wantedQuantity: wantedQuantity,
       materialEfficiency: materialEfficiency,
-      timeEfficiency: timeEfficiency
+      timeEfficiency: timeEfficiency,
+      targetMarket: targetMarket
+    )
+  }
+}
+
+/// Shared character synchronization for the startup load and the Dashboard.
+@MainActor
+enum CharacterBatchSynchronizer {
+  static func synchronize(
+    characters: [StoredCharacter],
+    runtime: RuntimeState,
+    modelContext: ModelContext,
+    clientID: String = EVEConstants.ssoClientID
+  ) async -> CharacterBatchSyncResult {
+    let orderedCharacters = characters.sorted {
+      $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
+        == .orderedAscending
+    }
+    var synchronizedCount = 0
+    var failures: [String] = []
+    for character in orderedCharacters {
+      guard !Task.isCancelled else { break }
+      do {
+        let authorization = try JSONDecoder().decode(
+          AuthorizationSnapshot.self,
+          from: character.authorizationSnapshot
+        )
+        try await runtime.syncCharacter(
+          authorization: authorization,
+          clientID: clientID
+        )
+        guard let latest = runtime.lastCharacterSync,
+          latest.authorization.characterID == character.characterID
+        else {
+          throw ESIError.notFound
+        }
+        try CharacterSyncPersistence.apply(
+          latest,
+          to: character,
+          in: modelContext
+        )
+        try modelContext.save()
+        synchronizedCount += 1
+      } catch {
+        modelContext.rollback()
+        failures.append(character.characterName)
+      }
+    }
+    return CharacterBatchSyncResult(
+      synchronizedCount: synchronizedCount,
+      totalCount: orderedCharacters.count,
+      failedCharacterNames: failures
     )
   }
 }
 
 struct ContentView: View {
   @EnvironmentObject private var consolidation: ConsolidationController
+  @Environment(\.modelContext) private var modelContext
   @State private var consolidationArea: ConsolidationArea?
   let runtime: RuntimeState
   @Query(sort: \StoredProductionBasis.updatedAt, order: .reverse)
@@ -285,6 +351,10 @@ struct ContentView: View {
           case .dashboard:
             DashboardView { request in
               opensNegativeReactions = request.negativeReactionsOnly
+              if let launch = request.plannerLaunch {
+                historicalPlannerRequest = nil
+                plannerLaunchRequest = launch
+              }
               guardedSelection.wrappedValue = request.section
             }
           case .planner:
@@ -295,6 +365,39 @@ struct ContentView: View {
             )
           case .manufacturingOpportunities:
             ManufacturingOpportunitiesView { request in
+              historicalPlannerRequest = nil
+              plannerLaunchRequest = request
+              selection = .planner
+            }
+          case .homeHubOpportunities:
+            ManufacturingOpportunitiesView(
+              hubRole: .home,
+              onOpenMarketSettings: {
+                guardedDataSettingsSelection.wrappedValue = .marketSettings
+                guardedSelection.wrappedValue = .data
+              },
+              onOpenMainHubOpportunities: {
+                guardedSelection.wrappedValue = .manufacturingOpportunities
+              }
+            ) { request in
+              historicalPlannerRequest = nil
+              plannerLaunchRequest = request
+              selection = .planner
+            }
+          case .coalitionHubOpportunities:
+            ManufacturingOpportunitiesView(
+              hubRole: .coalition,
+              onOpenMarketSettings: {
+                guardedDataSettingsSelection.wrappedValue = .marketSettings
+                guardedSelection.wrappedValue = .data
+              },
+              onOpenMainHubOpportunities: {
+                guardedSelection.wrappedValue = .manufacturingOpportunities
+              },
+              onOpenHomeHubOpportunities: {
+                guardedSelection.wrappedValue = .homeHubOpportunities
+              }
+            ) { request in
               historicalPlannerRequest = nil
               plannerLaunchRequest = request
               selection = .planner
@@ -345,17 +448,12 @@ struct ContentView: View {
     .task {
       guard !didPreparePlannerConfiguration else { return }
       didPreparePlannerConfiguration = true
-      await runtime.preparePlannerConfiguration(
-        encodedBasis: storedBases.first?.encodedBasis,
-        capabilities: storedCharacters.compactMap { character in
-          character.capabilitySnapshot.flatMap {
-            try? JSONDecoder().decode(
-              CharacterCapabilitySnapshot.self,
-              from: $0
-            )
-          }
-        }
-      )
+      let steps = startupDataLoadSteps()
+      guard runtime.startsBackgroundServices else {
+        await steps.prepareConfiguration()
+        return
+      }
+      await runtime.startupDataLoad.run(steps)
     }
     .task {
       while !Task.isCancelled {
@@ -417,6 +515,68 @@ struct ContentView: View {
         } else {
           dataSettingsSelection = destination
         }
+      }
+    )
+  }
+
+  /// Startup order (owner decision 2026-10-20): characters and planner
+  /// configuration, then market analyses and the automatic background scans.
+  private func startupDataLoadSteps() -> StartupDataLoad.Steps {
+    let runtime = runtime
+    let modelContext = modelContext
+    let characters = storedCharacters
+    let encodedBasis = storedBases.first?.encodedBasis
+    let capabilities = storedCharacters.compactMap { character in
+      character.capabilitySnapshot.flatMap {
+        try? JSONDecoder().decode(
+          CharacterCapabilitySnapshot.self,
+          from: $0
+        )
+      }
+    }
+    return StartupDataLoad.Steps(
+      prepareConfiguration: {
+        await runtime.preparePlannerConfiguration(
+          encodedBasis: encodedBasis,
+          capabilities: capabilities
+        )
+      },
+      synchronizeCharacters: {
+        await CharacterBatchSynchronizer.synchronize(
+          characters: characters,
+          runtime: runtime,
+          modelContext: modelContext
+        )
+      },
+      refreshMarketAnalyses: {
+        let authorizations = characters.compactMap {
+          try? JSONDecoder().decode(
+            AuthorizationSnapshot.self,
+            from: $0.authorizationSnapshot
+          )
+        }
+        runtime.rememberMarketAuthorizations(
+          authorizations,
+          clientID: EVEConstants.ssoClientID,
+          capabilities: characters.compactMap { character in
+            character.capabilitySnapshot.flatMap {
+              try? JSONDecoder().decode(
+                CharacterCapabilitySnapshot.self,
+                from: $0
+              )
+            }
+          }
+        )
+        async let moon: Void = runtime.refreshMoonMaterialAnalysis(
+          authorizations: authorizations, clientID: EVEConstants.ssoClientID)
+        async let minerals: Void = runtime.refreshMineralPurchaseAnalysis(
+          authorizations: authorizations, clientID: EVEConstants.ssoClientID)
+        async let reactions: Void = runtime.refreshConfiguredReactions(
+          authorizations: authorizations, clientID: EVEConstants.ssoClientID)
+        _ = await (moon, minerals, reactions)
+      },
+      releaseAutomaticScans: {
+        await runtime.releaseStartupAutomaticScans()
       }
     )
   }
@@ -804,12 +964,167 @@ struct DashboardPreviewList<Row: Identifiable, RowContent: View>: View {
   }
 }
 
+/// Areas of the app-start data load shown on the Dashboard (P2).
+enum StartupDataArea: String, CaseIterable, Identifiable, Sendable {
+  case characters
+  case warehouseAndBlueprints
+  case reactions
+  case moonMaterials
+  case minerals
+
+  var id: Self { self }
+
+  var title: LocalizedStringKey {
+    switch self {
+    case .characters: "Characters"
+    case .warehouseAndBlueprints: "Warehouse & Blueprints"
+    case .reactions: "Reactions"
+    case .moonMaterials: "Moon materials"
+    case .minerals: "Minerals"
+    }
+  }
+
+  var systemImage: String {
+    switch self {
+    case .characters: "person.2"
+    case .warehouseAndBlueprints: "shippingbox"
+    case .reactions: "flask"
+    case .moonMaterials: "moon"
+    case .minerals: "cube"
+    }
+  }
+}
+
+enum StartupDataStatus: Equatable, Sendable {
+  /// The startup load has not reached this area and no earlier data exists.
+  case waiting
+  case running
+  case known(DataFreshness)
+}
+
+struct StartupDataStatusRow: Identifiable, Equatable, Sendable {
+  let area: StartupDataArea
+  let status: StartupDataStatus
+  let timestamp: Date?
+
+  var id: StartupDataArea { area }
+}
+
+/// Pure projection of existing runtime and persisted source states. It starts
+/// no work and never turns missing data into a fresh or zero state.
+enum StartupDataStatusProjector {
+  struct SourceObservation: Equatable, Sendable {
+    let freshness: DataFreshness
+    let capturedAt: Date
+  }
+
+  /// Equal states keep their value. Usable (fresh/stale/partial) mixed with
+  /// unusable (forbidden/unavailable) is `partial`. Otherwise the worse value
+  /// wins: fresh < stale < partial, forbidden < unavailable.
+  static func combined(_ states: [DataFreshness]) -> DataFreshness? {
+    guard let first = states.first else { return nil }
+    if states.allSatisfy({ $0 == first }) { return first }
+    let usable = states.filter { [.fresh, .stale, .partial].contains($0) }
+    if !usable.isEmpty, usable.count < states.count { return .partial }
+    if usable.isEmpty { return .unavailable }
+    if usable.contains(.partial) { return .partial }
+    return usable.contains(.stale) ? .stale : .fresh
+  }
+
+  static func characters(
+    phase: StartupDataLoad.Phase,
+    result: CharacterBatchSyncResult?,
+    lastSyncDates: [Date?]
+  ) -> StartupDataStatusRow {
+    let latest = lastSyncDates.compactMap { $0 }.max()
+    let status: StartupDataStatus
+    if phase == .loadingCharactersAndConfiguration {
+      status = .running
+    } else if let result {
+      if result.totalCount == 0 {
+        status = .known(.unavailable)
+      } else if result.failedCharacterNames.isEmpty {
+        status = .known(.fresh)
+      } else if result.synchronizedCount == 0 {
+        status = .known(.unavailable)
+      } else {
+        status = .known(.partial)
+      }
+    } else if lastSyncDates.isEmpty {
+      status = .known(.unavailable)
+    } else {
+      status = latest == nil ? .waiting : .known(.stale)
+    }
+    return StartupDataStatusRow(
+      area: .characters,
+      status: status,
+      timestamp: latest
+    )
+  }
+
+  static func warehouseAndBlueprints(
+    phase: StartupDataLoad.Phase,
+    characterCount: Int,
+    observations: [SourceObservation]
+  ) -> StartupDataStatusRow {
+    let latest = observations.map(\.capturedAt).max()
+    if phase == .loadingCharactersAndConfiguration {
+      return StartupDataStatusRow(
+        area: .warehouseAndBlueprints,
+        status: .running,
+        timestamp: latest
+      )
+    }
+    guard characterCount > 0,
+      let state = combined(observations.map(\.freshness))
+    else {
+      return StartupDataStatusRow(
+        area: .warehouseAndBlueprints,
+        status: characterCount == 0 ? .known(.unavailable) : .waiting,
+        timestamp: latest
+      )
+    }
+    // Every character needs both an asset and a blueprint observation.
+    let complete = observations.count >= characterCount * 2
+    return StartupDataStatusRow(
+      area: .warehouseAndBlueprints,
+      status: .known(complete || state != .fresh ? state : .partial),
+      timestamp: latest
+    )
+  }
+
+  static func analysis(
+    area: StartupDataArea,
+    phase: StartupDataLoad.Phase,
+    isRefreshing: Bool,
+    marketStates: [DataFreshness]?,
+    hasError: Bool,
+    timestamp: Date?
+  ) -> StartupDataStatusRow {
+    let status: StartupDataStatus
+    if isRefreshing {
+      status = .running
+    } else if let marketStates {
+      let state = combined(marketStates) ?? .unavailable
+      status = .known(hasError && state == .fresh ? .stale : state)
+    } else if hasError {
+      status = .known(.unavailable)
+    } else if phase == .idle || phase == .loadingCharactersAndConfiguration {
+      status = .waiting
+    } else {
+      status = .known(.unavailable)
+    }
+    return StartupDataStatusRow(area: area, status: status, timestamp: timestamp)
+  }
+}
+
 struct DashboardView: View {
   var onNavigate: (DashboardNavigationRequest) -> Void = { _ in }
   @EnvironmentObject private var runtime: RuntimeState
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
+  @Query private var esiSnapshotMetadata: [StoredESISnapshotMetadata]
   @Query(sort: \AppSetting.key)
   private var settings: [AppSetting]
   @State private var blueprintNames: [Int64: String] = [:]
@@ -861,6 +1176,7 @@ struct DashboardView: View {
               purchasePanel(kind: .moonMaterials)
               purchasePanel(kind: .minerals)
             }
+            DashboardTopOpportunitiesPanel(onNavigate: onNavigate)
           }
         }
         .frame(maxWidth: 1_440, alignment: .leading)
@@ -891,6 +1207,10 @@ struct DashboardView: View {
       runtime.prepareMainHubMarketAutomation()
     }
     .task(id: marketRefreshIdentity) {
+      runtime.rememberMarketAuthorizations(
+        authorizationSnapshots,
+        clientID: EVEConstants.ssoClientID
+      )
       guard runtime.isPlannerConfigurationReady else { return }
       async let moon: Void = runtime.refreshMoonMaterialAnalysis(
         authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID)
@@ -998,6 +1318,11 @@ struct DashboardView: View {
         .help("Automatic data options")
         .accessibilityLabel("Automatic data options")
       }
+      StartupDataStatusSection(
+        startupLoad: runtime.startupDataLoad,
+        inputs: startupDataStatusInputs
+      )
+      Divider()
       automaticStatusRow(
         title: "Contracts",
         detail: contractAutomaticStatus,
@@ -1011,6 +1336,20 @@ struct DashboardView: View {
         systemImage: "building.columns",
         color: mainHubAutomaticStatusColor,
         progress: mainHubAutomaticProgress
+      )
+      automaticStatusRow(
+        title: "Home Hub market",
+        detail: secondaryHubAutomaticStatus(.home),
+        systemImage: "house",
+        color: secondaryHubAutomaticStatusColor(.home),
+        progress: secondaryHubAutomaticProgress(.home)
+      )
+      automaticStatusRow(
+        title: "Coalition Hub market",
+        detail: secondaryHubAutomaticStatus(.coalition),
+        systemImage: "flag",
+        color: secondaryHubAutomaticStatusColor(.coalition),
+        progress: secondaryHubAutomaticProgress(.coalition)
       )
       Text("Market analyses")
         .font(.caption2)
@@ -1046,25 +1385,48 @@ struct DashboardView: View {
     color: Color,
     progress: Double?
   ) -> some View {
-    VStack(alignment: .leading, spacing: 3) {
-      HStack(spacing: DesignTokens.spacingSM) {
-        Image(systemName: systemImage)
-          .foregroundStyle(color)
-          .frame(width: 16)
-        Text(title)
-          .font(.caption.weight(.semibold))
-        Spacer()
-        Text(detail.localizedUI)
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(DesignTokens.textSecondary)
-          .lineLimit(1)
-      }
-      if let progress {
-        ProgressView(value: progress)
-          .tint(color)
-          .controlSize(.mini)
-      }
+    AutomaticStatusRow(
+      title: title,
+      detail: detail,
+      systemImage: systemImage,
+      color: color,
+      progress: progress
+    )
+  }
+
+  private var startupDataStatusInputs: StartupDataStatusSection.Inputs {
+    let characterIDs = Set(characters.map(\.characterID))
+    let observations = esiSnapshotMetadata.compactMap {
+      metadata -> StartupDataStatusProjector.SourceObservation? in
+      guard characterIDs.contains(metadata.characterID),
+        metadata.domain == "assets" || metadata.domain == "blueprints",
+        let freshness = DataFreshness(rawValue: metadata.freshness)
+      else { return nil }
+      return StartupDataStatusProjector.SourceObservation(
+        freshness: freshness,
+        capturedAt: metadata.capturedAt
+      )
     }
+    return StartupDataStatusSection.Inputs(
+      lastSyncDates: characters.map(\.lastSyncAt),
+      warehouseObservations: observations,
+      isAnalyzingReactions: runtime.isAnalyzingReactions,
+      reactionMarketStates: runtime.reactionAnalysis.map { _ in [.fresh] },
+      reactionHasError: runtime.reactionAnalysisError != nil,
+      reactionTimestamp: runtime.reactionAnalysis?.createdAt,
+      isRefreshingMoon: runtime.isRefreshingMoonMaterialAnalysis,
+      moonMarketStates: runtime.moonMaterialAnalysis.map {
+        $0.configuredMarkets.values.map(\.state)
+      },
+      moonHasError: runtime.moonMaterialAnalysisError != nil,
+      moonTimestamp: runtime.moonMaterialAnalysis?.refreshedAt,
+      isRefreshingMinerals: runtime.isRefreshingMineralPurchaseAnalysis,
+      mineralMarketStates: runtime.mineralPurchaseAnalysis.map {
+        $0.configuredMarkets.values.map(\.state)
+      },
+      mineralHasError: runtime.mineralPurchaseAnalysisError != nil,
+      mineralTimestamp: runtime.mineralPurchaseAnalysis?.refreshedAt
+    )
   }
 
   private var contractAutomaticProgress: Double? {
@@ -1190,6 +1552,108 @@ struct DashboardView: View {
     else { return DesignTokens.caution }
     return runtime.mainHubMarketAutomaticUpdatesEnabled
       ? DesignTokens.positive : DesignTokens.textSecondary
+  }
+
+  private func secondaryHubAutomaticProgress(
+    _ role: OpportunityHubRole
+  ) -> Double? {
+    let state = runtime.opportunityState(for: role)
+    guard state.isAnalyzing else { return nil }
+    return state.progress.fractionCompleted
+  }
+
+  private func secondaryHubAutomaticStatus(
+    _ role: OpportunityHubRole
+  ) -> String {
+    let coalition = role == .coalition
+    switch runtime.opportunityScanTarget(for: role) {
+    case .notConfigured:
+      return AppLocalization.text(
+        coalition ? "Coalition Hub not configured" : "Home Hub not configured"
+      )
+    case .sharesMainHub:
+      return AppLocalization.text("Uses Main Hub data")
+    case .sharesHomeHub:
+      return AppLocalization.text("Uses Home Hub data")
+    case .unresolved:
+      return AppLocalization.text(
+        coalition
+          ? "Coalition Hub location incomplete" : "Home Hub location incomplete"
+      )
+    case .npcStation, .playerStructure:
+      break
+    }
+    let state = runtime.opportunityState(for: role)
+    if state.isAnalyzing {
+      if state.progress.totalPages > 0 {
+        return AppLocalization.format(
+          "Updating · page %lld/%lld",
+          Int64(state.progress.completedPages),
+          Int64(state.progress.totalPages)
+        )
+      }
+      return AppLocalization.text("Preparing market pages")
+    }
+    if state.error != nil {
+      if state.marketState?.state == .forbidden {
+        return StartupDataStatusSection.freshnessText(.forbidden)
+      }
+      return AppLocalization.text("Update failed")
+    }
+    guard runtime.mainHubMarketAutomaticUpdatesEnabled else {
+      return AppLocalization.text("Paused")
+    }
+    if let capturedAt = matchingSecondaryHubCapturedAt(role) {
+      return AppLocalization.format(
+        "Updated %@",
+        capturedAt.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    if let next = runtime.mainHubMarketNextAutomaticRunAt {
+      return AppLocalization.format(
+        "Next %@",
+        next.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    return AppLocalization.text("Preparing")
+  }
+
+  private func secondaryHubAutomaticStatusColor(
+    _ role: OpportunityHubRole
+  ) -> Color {
+    switch runtime.opportunityScanTarget(for: role) {
+    case .notConfigured, .sharesMainHub, .sharesHomeHub:
+      return DesignTokens.textSecondary
+    case .unresolved:
+      return DesignTokens.caution
+    case .npcStation, .playerStructure:
+      break
+    }
+    let state = runtime.opportunityState(for: role)
+    if state.isAnalyzing { return DesignTokens.accent }
+    if state.error != nil { return DesignTokens.negative }
+    if state.marketState?.state == .stale { return DesignTokens.caution }
+    return runtime.mainHubMarketAutomaticUpdatesEnabled
+      ? DesignTokens.positive : DesignTokens.textSecondary
+  }
+
+  /// Only a capture of the currently configured exact hub counts.
+  private func matchingSecondaryHubCapturedAt(
+    _ role: OpportunityHubRole
+  ) -> Date? {
+    let configured =
+      role == .coalition
+      ? runtime.productionBasis.coalitionTradingLocation
+      : runtime.productionBasis.homeTradingLocation
+    guard let locationID = configured?.location.locationID else { return nil }
+    let state = runtime.opportunityState(for: role)
+    if let market = state.marketState?.value, market.locationID == locationID {
+      return market.capturedAt
+    }
+    guard let analysis = state.analysis,
+      analysis.resolvedSaleHub.locationID == locationID
+    else { return nil }
+    return analysis.createdAt
   }
 
   private var matchingMainHubMarketCapturedAt: Date? {
@@ -2196,40 +2660,25 @@ struct DashboardView: View {
     dashboardDataRefreshError = nil
     defer { isRefreshingDashboardData = false }
 
-    var synchronizedCount = 0
-    var failures: [String] = []
-    let orderedCharacters = characters.sorted {
-      $0.characterName.localizedCaseInsensitiveCompare($1.characterName)
-        == .orderedAscending
+    // At app start the Dashboard joins the runtime-owned startup load instead
+    // of synchronizing every character a second time.
+    let startupResult =
+      isStartup
+      ? await runtime.startupDataLoad.characterSynchronizationResult()
+      : nil
+    let result: CharacterBatchSyncResult
+    if let startupResult {
+      result = startupResult
+    } else {
+      result = await CharacterBatchSynchronizer.synchronize(
+        characters: characters,
+        runtime: runtime,
+        modelContext: modelContext
+      )
     }
-    for character in orderedCharacters {
-      guard !Task.isCancelled else { return }
-      do {
-        let authorization = try JSONDecoder().decode(
-          AuthorizationSnapshot.self,
-          from: character.authorizationSnapshot
-        )
-        try await runtime.syncCharacter(
-          authorization: authorization,
-          clientID: EVEConstants.ssoClientID
-        )
-        guard let latest = runtime.lastCharacterSync,
-          latest.authorization.characterID == character.characterID
-        else {
-          throw ESIError.notFound
-        }
-        try CharacterSyncPersistence.apply(
-          latest,
-          to: character,
-          in: modelContext
-        )
-        try modelContext.save()
-        synchronizedCount += 1
-      } catch {
-        modelContext.rollback()
-        failures.append(character.characterName)
-      }
-    }
+    guard !Task.isCancelled else { return }
+    let synchronizedCount = result.synchronizedCount
+    let failures = result.failedCharacterNames
 
     if !runtime.isRefreshingDashboardWealth {
       await runtime.refreshDashboardWealth(inputs: wealthInputs)
@@ -2255,7 +2704,7 @@ struct DashboardView: View {
       dashboardDataRefreshError = AppLocalization.format(
         "%lld of %lld characters updated; unavailable characters kept their previous data: %@",
         Int64(synchronizedCount),
-        Int64(orderedCharacters.count),
+        Int64(result.totalCount),
         failures.joined(separator: ", ")
       )
     }
@@ -3686,6 +4135,11 @@ struct EVEEntityText: View {
   var lineLimit: Int? = nil
   var showsTransparentLabel = false
   var accessibilityIdentifier: String? = nil
+  /// Non-name copy targets (for example a Slack offer) keep the shared copy
+  /// feedback but describe what is copied.
+  var copyAccessibilityLabel: LocalizedStringKey = "Copy EVE name"
+  var copyAccessibilityHint: LocalizedStringKey =
+    "Copies the displayed EVE name to the clipboard."
 
   @State private var copySucceeded: Bool?
   @State private var feedbackTask: Task<Void, Never>?
@@ -3705,9 +4159,9 @@ struct EVEEntityText: View {
     }
     .buttonStyle(.plain)
     .help(AppLocalization.format("Click to copy %@.", value))
-    .accessibilityLabel("Copy EVE name")
+    .accessibilityLabel(copyAccessibilityLabel)
     .accessibilityValue(Text(verbatim: value))
-    .accessibilityHint("Copies the displayed EVE name to the clipboard.")
+    .accessibilityHint(copyAccessibilityHint)
     .accessibilityIdentifier(accessibilityIdentifier ?? "eve-entity.copy")
     .popover(isPresented: feedbackBinding, arrowEdge: .bottom) {
       Label(
@@ -3851,5 +4305,374 @@ struct FullWidthDisclosure<Label: View, Content: View>: View {
           .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
+  }
+}
+
+/// One compact row of the Dashboard card "Automatic data".
+struct AutomaticStatusRow: View {
+  let title: LocalizedStringKey
+  let detail: String
+  let systemImage: String
+  let color: Color
+  let progress: Double?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        Image(systemName: systemImage)
+          .foregroundStyle(color)
+          .frame(width: 16)
+        Text(title)
+          .font(.caption.weight(.semibold))
+        Spacer()
+        Text(detail.localizedUI)
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(DesignTokens.textSecondary)
+          .lineLimit(1)
+      }
+      if let progress {
+        ProgressView(value: progress)
+          .tint(color)
+          .controlSize(.mini)
+      }
+    }
+  }
+}
+
+/// Startup-load rows of the Dashboard card "Automatic data". Observes the
+/// runtime-owned load so phase changes refresh only this section.
+struct StartupDataStatusSection: View {
+  struct Inputs {
+    let lastSyncDates: [Date?]
+    let warehouseObservations: [StartupDataStatusProjector.SourceObservation]
+    let isAnalyzingReactions: Bool
+    let reactionMarketStates: [DataFreshness]?
+    let reactionHasError: Bool
+    let reactionTimestamp: Date?
+    let isRefreshingMoon: Bool
+    let moonMarketStates: [DataFreshness]?
+    let moonHasError: Bool
+    let moonTimestamp: Date?
+    let isRefreshingMinerals: Bool
+    let mineralMarketStates: [DataFreshness]?
+    let mineralHasError: Bool
+    let mineralTimestamp: Date?
+  }
+
+  @ObservedObject var startupLoad: StartupDataLoad
+  let inputs: Inputs
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text("App start")
+        .font(.caption2)
+        .foregroundStyle(DesignTokens.textSecondary)
+      ForEach(rows) { row in
+        AutomaticStatusRow(
+          title: row.area.title,
+          detail: Self.detail(for: row),
+          systemImage: row.area.systemImage,
+          color: Self.color(for: row.status),
+          progress: nil
+        )
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("dashboard.startup-data-status")
+  }
+
+  var rows: [StartupDataStatusRow] {
+    let phase = startupLoad.phase
+    return [
+      StartupDataStatusProjector.characters(
+        phase: phase,
+        result: startupLoad.characterResult,
+        lastSyncDates: inputs.lastSyncDates
+      ),
+      StartupDataStatusProjector.warehouseAndBlueprints(
+        phase: phase,
+        characterCount: inputs.lastSyncDates.count,
+        observations: inputs.warehouseObservations
+      ),
+      StartupDataStatusProjector.analysis(
+        area: .reactions,
+        phase: phase,
+        isRefreshing: inputs.isAnalyzingReactions,
+        marketStates: inputs.reactionMarketStates,
+        hasError: inputs.reactionHasError,
+        timestamp: inputs.reactionTimestamp
+      ),
+      StartupDataStatusProjector.analysis(
+        area: .moonMaterials,
+        phase: phase,
+        isRefreshing: inputs.isRefreshingMoon,
+        marketStates: inputs.moonMarketStates,
+        hasError: inputs.moonHasError,
+        timestamp: inputs.moonTimestamp
+      ),
+      StartupDataStatusProjector.analysis(
+        area: .minerals,
+        phase: phase,
+        isRefreshing: inputs.isRefreshingMinerals,
+        marketStates: inputs.mineralMarketStates,
+        hasError: inputs.mineralHasError,
+        timestamp: inputs.mineralTimestamp
+      ),
+    ]
+  }
+
+  static func detail(for row: StartupDataStatusRow) -> String {
+    let state: String
+    switch row.status {
+    case .waiting: state = AppLocalization.text("Waiting")
+    case .running: state = AppLocalization.text("Running")
+    case .known(let freshness): state = freshnessText(freshness)
+    }
+    guard let timestamp = row.timestamp else { return state }
+    return AppLocalization.format(
+      "%@ · %@",
+      state,
+      timestamp.formatted(date: .omitted, time: .shortened)
+    )
+  }
+
+  static func freshnessText(_ freshness: DataFreshness) -> String {
+    switch freshness {
+    case .fresh: AppLocalization.text("Fresh")
+    case .partial: AppLocalization.text("Partial")
+    case .stale: AppLocalization.text("Stale")
+    case .forbidden: AppLocalization.text("Forbidden")
+    case .unavailable: AppLocalization.text("Unavailable")
+    }
+  }
+
+  static func color(for status: StartupDataStatus) -> Color {
+    switch status {
+    case .waiting: DesignTokens.textSecondary
+    case .running: DesignTokens.accent
+    case .known(.fresh): DesignTokens.positive
+    case .known(.partial), .known(.stale): DesignTokens.caution
+    case .known(.forbidden), .known(.unavailable): DesignTokens.negative
+    }
+  }
+}
+
+/// Dashboard card "Top opportunities" (HUB_CHANCEN_PLAN P9). It ranks only the
+/// saved Main-, Home- and Coalition-Hub snapshots and starts no ESI request.
+struct DashboardTopOpportunitiesPanel: View {
+  let onNavigate: (DashboardNavigationRequest) -> Void
+  @EnvironmentObject private var runtime: RuntimeState
+  @State private var entries: [OpportunityHubRole: [ManufacturingOpportunityTopEntry]] = [:]
+
+  private static let roles: [OpportunityHubRole] = [.main, .home, .coalition]
+
+  var body: some View {
+    Panel(title: "Top opportunities") {
+      Text(
+        "Ranked by daily profit potential from the saved scans with standard assumptions: every material is bought, installation, sales tax and broker fee are included, no Blueprint allocation and no purchase budget. Open a hub for Warehouse-aware values."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      DashboardCardLayout(
+        weights: [1, 1, 1],
+        minimumWidths: [300, 300, 300]
+      ) {
+        ForEach(Self.roles, id: \.self) { role in
+          hubColumn(role)
+        }
+      }
+    }
+    .task(id: snapshotIdentity) {
+      let snapshots = Self.roles.compactMap { role in
+        snapshot(for: role).map { (role, $0) }
+      }
+      let ranked = await Task.detached(priority: .utility) {
+        Dictionary(
+          uniqueKeysWithValues: snapshots.map {
+            ($0.0, ManufacturingOpportunityTopRanking.rank($0.1))
+          }
+        )
+      }.value
+      guard !Task.isCancelled else { return }
+      entries = ranked
+    }
+    .accessibilityIdentifier("dashboard.top-opportunities")
+  }
+
+  /// Changes whenever a saved snapshot or the hub configuration changes.
+  private var snapshotIdentity: String {
+    Self.roles.map { role in
+      "\(role.rawValue):\(snapshot(for: role)?.id.uuidString ?? "-")"
+    }.joined(separator: "|")
+  }
+
+  private func snapshot(
+    for role: OpportunityHubRole
+  ) -> ManufacturingOpportunitySnapshot? {
+    switch role {
+    case .main:
+      return runtime.manufacturingOpportunityAnalysis
+    case .home, .coalition:
+      // Only a scan of the currently configured exact hub is ranked.
+      guard runtime.opportunityScanTarget(for: role).requiresScan,
+        let analysis = runtime.opportunityState(for: role).analysis,
+        analysis.resolvedSaleHub.locationID == configuredLocationID(role)
+      else { return nil }
+      return analysis
+    }
+  }
+
+  private func configuredLocationID(_ role: OpportunityHubRole) -> Int64? {
+    switch role {
+    case .main: runtime.productionBasis.mainTradingLocation?.location.locationID
+    case .home: runtime.productionBasis.homeTradingLocation?.location.locationID
+    case .coalition:
+      runtime.productionBasis.coalitionTradingLocation?.location.locationID
+    }
+  }
+
+  private static func section(for role: OpportunityHubRole) -> NavigationSection {
+    switch role {
+    case .main: .manufacturingOpportunities
+    case .home: .homeHubOpportunities
+    case .coalition: .coalitionHubOpportunities
+    }
+  }
+
+  private static func title(for role: OpportunityHubRole) -> LocalizedStringKey {
+    switch role {
+    case .main: "Main Hub Opportunities"
+    case .home: "Home Hub Opportunities"
+    case .coalition: "Coalition Hub Opportunities"
+    }
+  }
+
+  @ViewBuilder
+  private func hubColumn(_ role: OpportunityHubRole) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Button {
+        onNavigate(DashboardNavigationRequest(section: Self.section(for: role)))
+      } label: {
+        Label(Self.title(for: role), systemImage: "chevron.right")
+          .font(.callout.weight(.semibold))
+          .labelStyle(.titleAndIcon)
+      }
+      .buttonStyle(.borderless)
+      .help("Open this opportunity list")
+      if let hint = unavailableHint(role) {
+        Text(hint.localizedUI)
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else if let rows = entries[role], !rows.isEmpty {
+        ForEach(rows) { entry in
+          entryRow(entry, role: role)
+        }
+      } else if entries[role] != nil {
+        Text("No saved row has an available daily profit potential.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        ProgressView().controlSize(.small)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+  }
+
+  private func unavailableHint(_ role: OpportunityHubRole) -> String? {
+    if role != .main {
+      switch runtime.opportunityScanTarget(for: role) {
+      case .notConfigured:
+        return role == .home
+          ? "No Home Hub configured" : "No Coalition Hub configured"
+      case .sharesMainHub:
+        return "Uses Main Hub data"
+      case .sharesHomeHub:
+        return "Uses Home Hub data"
+      case .unresolved:
+        return role == .home
+          ? "Home Hub location incomplete" : "Coalition Hub location incomplete"
+      case .npcStation, .playerStructure:
+        break
+      }
+    } else if runtime.productionBasis.mainTradingLocation == nil {
+      return "Main Hub not configured"
+    }
+    return snapshot(for: role) == nil
+      ? "No saved scan yet. It runs automatically with the next Main Hub scan."
+      : nil
+  }
+
+  private func entryRow(
+    _ entry: ManufacturingOpportunityTopEntry,
+    role: OpportunityHubRole
+  ) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
+      EVEItemText(
+        value: entry.row.productName,
+        typeID: entry.row.productTypeID,
+        font: .caption
+      )
+      Spacer()
+      VStack(alignment: .trailing, spacing: 2) {
+        Text(
+          AppLocalization.format(
+            "%@ / day",
+            Self.formatSignedISK(entry.dailyProfitPotential)
+          )
+        )
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(
+          entry.dailyProfitPotential >= 0
+            ? DesignTokens.positive : DesignTokens.negative
+        )
+        Text(
+          AppLocalization.format(
+            "ROI %@",
+            Self.formatPercent(entry.returnOnInvestment)
+          )
+        )
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+      Button("Build") {
+        onNavigate(
+          DashboardNavigationRequest(
+            section: .planner,
+            plannerLaunch: MainHubOpportunityPlannerHandoff.request(
+              productTypeID: entry.row.productTypeID,
+              productName: entry.row.productName,
+              requestedRuns: entry.row.runs,
+              wantedQuantity: Int(clamping: entry.row.producedQuantity),
+              materialEfficiency: entry.row.displayedMaterialEfficiency ?? 0,
+              timeEfficiency: entry.row.displayedTimeEfficiency ?? 0,
+              targetMarket: role
+            )
+          )
+        )
+      }
+      .buttonStyle(.borderless)
+      .font(.caption)
+      .help("Transfer this saved batch to the Planner.")
+      .accessibilityLabel("Build in Planner")
+    }
+  }
+
+  private static func formatSignedISK(_ value: Double) -> String {
+    let formatted = abs(value).formatted(
+      .currency(code: "ISK")
+        .locale(AppLocalization.currentLanguage.locale)
+        .grouping(.automatic)
+        .precision(.fractionLength(0))
+    )
+    return value > 0 ? "+\(formatted)" : value < 0 ? "−\(formatted)" : formatted
+  }
+
+  private static func formatPercent(_ value: Double?) -> String {
+    value?.formatted(
+      .percent
+        .locale(AppLocalization.currentLanguage.locale)
+        .grouping(.automatic)
+        .precision(.fractionLength(1))
+    ) ?? "—"
   }
 }

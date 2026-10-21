@@ -22,4 +22,11 @@ sind weiterhin separat auszuweisen.
 
 ## Geplant
 
-Noch keine Vorhaben festgelegt.
+Noch keine weiteren Vorhaben festgelegt.
+
+## Umgesetzt, Abnahme offen
+
+- [Hub-Chancen-Plan](Documentation/HUB_CHANCEN_PLAN.md) (20./21.10.2026,
+  implementiert und automatisch geprüft): zentraler Startablauf, Home- und
+  Coalition-Hub-Chancen, Verträge in den Chancen, Top-Chancen, Zielmarkt und
+  Allianzmarkt im Planner, Kaufort-Hinweis. Live- und Eigentümerabnahme offen.

@@ -20,6 +20,7 @@ Prüfnachweise: [Aktuelle Verifikation](Documentation/Consolidation/FUNCTIONAL_V
 | [WORKFLOW.md](WORKFLOW.md) | Build, Tests und Git |
 | [MODEL_POLICY.md](MODEL_POLICY.md) | Modellvorgaben je Werkzeug und freigabepflichtige Eskalation |
 | [ROADMAP.md](ROADMAP.md) | Konsolidierung abgeschlossen; Weiterentwicklung auf Auftrag |
+| [Hub-Chancen-Plan](Documentation/HUB_CHANCEN_PLAN.md) | Ablauf Start → Hub-Chancen → Planner (P0–P13), Checkliste und Owner-Testleitfaden |
 | [Konsolidierung](Documentation/Consolidation/DECISIONS.md) | Herkunft, Auswahl und Konflikte |
 | [Archiv](_archive/README.md) | gesicherte Altstände und Wiederherstellung |
 

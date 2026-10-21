@@ -742,3 +742,93 @@ private actor MixedLocationMarketTransport: ESIHTTPTransporting {
     )
   }
 }
+
+// MARK: - Planner purchase-location hints (HUB_CHANCEN_PLAN P12)
+
+@Suite("Planner purchase-location hints")
+struct MaterialPurchaseLocationHintTests {
+  private let source = SourceIdentity(provider: "Fixture", version: "1")
+  private let amarr = ProcurementLocation(
+    id: "npc:60008494",
+    name: "Amarr VIII (Oris) - Emperor Family Academy",
+    locationID: 60_008_494,
+    kind: .npcTradeHub
+  )
+
+  private func item(
+    _ typeID: Int64,
+    _ name: String,
+    quantity: Int64,
+    mainHubUnitPrice: Double?
+  ) -> EVEShoppingListItem {
+    EVEShoppingListItem(
+      typeID: typeID,
+      name: name,
+      quantity: quantity,
+      marketQuote: mainHubUnitPrice.map { price in
+        PriceQuote(
+          id: UUID(),
+          typeID: typeID,
+          quantity: quantity,
+          scenario: .materialBuy,
+          total: price * Double(quantity),
+          weightedUnitPrice: price,
+          filledQuantity: quantity,
+          capturedAt: .now,
+          source: source,
+          warnings: []
+        )
+      }
+    )
+  }
+
+  private func recommendation(
+    _ typeID: Int64,
+    _ name: String,
+    location: ProcurementLocation?,
+    price: Double?
+  ) -> MaterialPurchaseRecommendation {
+    MaterialPurchaseRecommendation(
+      material: MaterialPurchaseItem(id: typeID, name: name),
+      location: location,
+      unitPrice: price,
+      hasCompleteMarketCoverage: true
+    )
+  }
+
+  @Test
+  func hintsJoinOnlyAnalysedMaterialsAndKeepMissingOffersExplicit() {
+    let items = [
+      item(34, "Tritanium", quantity: 1_000, mainHubUnitPrice: 4),
+      item(35, "Pyerite", quantity: 500, mainHubUnitPrice: nil),
+      item(11_399, "Morphite", quantity: 3, mainHubUnitPrice: 9_000),
+      item(3_828, "Construction Blocks", quantity: 10, mainHubUnitPrice: 50),
+    ]
+    let hints = MaterialPurchaseLocationHints.project(
+      items: items,
+      recommendations: [
+        recommendation(34, "Tritanium", location: amarr, price: 3.5),
+        recommendation(35, "Pyerite", location: .jita, price: 9),
+        recommendation(11_399, "Morphite", location: nil, price: nil),
+      ]
+    )
+    // Construction Blocks are neither a mineral nor a moon material.
+    #expect(hints.map(\.item.typeID) == [34, 35, 11_399])
+    #expect(hints[0].priceDifferencePerUnit == -0.5)
+    // Incomplete Main-Hub coverage leaves the comparison unavailable.
+    #expect(hints[1].mainHubUnitPrice == nil)
+    #expect(hints[1].priceDifferencePerUnit == nil)
+    #expect(hints[2].location == nil)
+    #expect(hints[2].priceDifferencePerUnit == nil)
+
+    let groups = MaterialPurchaseLocationHints.multibuyGroups(hints)
+    #expect(groups.map(\.location.id) == [amarr.id, ProcurementLocation.jita.id])
+    #expect(groups[0].export.text == "Tritanium 1000")
+    #expect(groups[1].export.text == "Pyerite 500")
+    // The shared formatter produces the same lines as the Main-Hub export.
+    #expect(
+      EVEMultibuyExport.make(items: [items[0], items[1]]).text
+        == "Tritanium 1000\nPyerite 500"
+    )
+  }
+}

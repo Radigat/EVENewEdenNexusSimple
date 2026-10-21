@@ -1896,6 +1896,780 @@ struct MarketBrowserTests {
       snapshot.warnings.contains { $0.code == "manufacturing-opportunity.missing-sales-fees" })
   }
 
+  // MARK: Hub roles (HUB_CHANCEN_PLAN P3)
+
+  private static let roleTestHomeHub = ProcurementLocation(
+    id: "structure:1035000000001",
+    name: "Home Keepstar",
+    locationID: 1_035_000_000_001,
+    kind: .playerStructure,
+    solarSystemID: 30_004_000,
+    regionID: 10_000_060
+  )
+
+  private func roleTestInputs() -> (
+    definitions: [BlueprintDefinition],
+    market: MarketOrderSnapshot,
+    facility: ManufacturingOpportunityFacilityContext
+  ) {
+    let source = SourceIdentity(provider: "Fixture", version: "1")
+    let definition = BlueprintDefinition(
+      blueprintTypeID: 200,
+      productTypeID: 100,
+      maxProductionLimit: 100,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 3_600,
+        materials: [BlueprintMaterial(typeID: 34, quantity: 10)],
+        products: [BlueprintProduct(typeID: 100, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let market = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: 10_000_002,
+      locationID: 60_003_760,
+      capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+      state: .fresh,
+      ordersByType: [
+        34: [marketOrder(id: 1, typeID: 34, side: .sell, price: 10, volume: 1_000)],
+        100: [marketOrder(id: 2, typeID: 100, side: .sell, price: 200, volume: 100)],
+      ],
+      source: source
+    )
+    let facility = ManufacturingOpportunityFacilityContext(
+      name: "Home Factory",
+      materialMultiplier: 1,
+      timeMultiplier: 1,
+      jobCostMultiplier: 1,
+      facilityTaxRate: 0,
+      systemCostIndex: 0.1,
+      sccSurchargeRate: 0,
+      alphaSurchargeRate: 0
+    )
+    return ([definition], market, facility)
+  }
+
+  private func roleTestAnalyze(
+    hubRole: OpportunityHubRole = .main,
+    saleHub: ProcurementLocation? = nil,
+    saleMarket: MarketOrderSnapshot? = nil,
+    usesDefaults: Bool = false,
+    inputs suppliedInputs: (
+      definitions: [BlueprintDefinition],
+      market: MarketOrderSnapshot,
+      facility: ManufacturingOpportunityFacilityContext
+    )? = nil,
+    coalitionTransport: OpportunityCoalitionTransportBasis? = nil
+  ) throws -> ManufacturingOpportunitySnapshot {
+    let inputs = suppliedInputs ?? roleTestInputs()
+    let settings = ManufacturingOpportunitySettings(
+      targetQuantity: 5,
+      requestedRuns: nil,
+      materialEfficiency: 0,
+      timeEfficiency: 0
+    )
+    let adjusted: [Int64: AdjustedPrice] = [
+      34: AdjustedPrice(typeID: 34, adjustedPrice: 2, averagePrice: nil)
+    ]
+    if usesDefaults {
+      return try ManufacturingOpportunityAnalyzer.analyze(
+        definitions: inputs.definitions,
+        typeNames: [34: "Tritanium", 100: "Fixture Product"],
+        classifications: [:],
+        packagedVolumes: [100: 5],
+        settings: settings,
+        mainHub: .jita,
+        productionWarehouseScope: ProductionWarehouseScope(locations: []),
+        market: inputs.market,
+        adjustedPrices: adjusted,
+        facilities: [.module: inputs.facility],
+        salesTaxRate: 0.10,
+        brokerFeeRate: 0.05
+      )
+    }
+    return try ManufacturingOpportunityAnalyzer.analyze(
+      definitions: inputs.definitions,
+      typeNames: [34: "Tritanium", 100: "Fixture Product"],
+      classifications: [:],
+      packagedVolumes: [100: 5],
+      settings: settings,
+      mainHub: .jita,
+      productionWarehouseScope: ProductionWarehouseScope(locations: []),
+      market: inputs.market,
+      adjustedPrices: adjusted,
+      facilities: [.module: inputs.facility],
+      salesTaxRate: 0.10,
+      brokerFeeRate: 0.05,
+      hubRole: hubRole,
+      saleHub: saleHub,
+      saleMarket: saleMarket,
+      coalitionTransport: coalitionTransport
+    )
+  }
+
+  private func roleTestHomeMarket(productPrice: Double) -> MarketOrderSnapshot {
+    let home = Self.roleTestHomeHub
+    return MarketOrderSnapshot(
+      id: UUID(),
+      regionID: home.regionID ?? 0,
+      locationID: home.locationID ?? 0,
+      capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+      state: .fresh,
+      ordersByType: [
+        100: [
+          MarketOrder(
+            id: 9,
+            typeID: 100,
+            locationID: home.locationID ?? 0,
+            systemID: home.solarSystemID ?? 0,
+            side: .sell,
+            price: productPrice,
+            volumeRemaining: 40,
+            minimumVolume: 1,
+            issued: .now
+          )
+        ]
+      ],
+      source: SourceIdentity(provider: "Home fixture", version: "1")
+    )
+  }
+
+  @Test
+  func mainHubOpportunityScanStaysIdenticalWithExplicitMainRole() throws {
+    let inputs = roleTestInputs()
+    let defaults = try roleTestAnalyze(usesDefaults: true, inputs: inputs)
+    let explicit = try roleTestAnalyze(hubRole: .main, inputs: inputs)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    // Rows carry fresh warning-source identities, so compare factual values.
+    func facts(_ row: ManufacturingOpportunityRow) -> [String] {
+      [
+        "\(row.productTypeID)", "\(row.runs)", "\(row.producedQuantity)",
+        "\(row.durationSeconds)", "\(row.activeBuyDemand)",
+        "\(row.activeSellSupply)", "\(String(describing: row.materialCost))",
+        "\(String(describing: row.installationCost))",
+        "\(String(describing: row.grossRevenue))",
+        "\(String(describing: row.salesTax))",
+        "\(String(describing: row.brokerFee))",
+        "\(String(describing: row.netRevenue))",
+        "\(String(describing: row.contributionProfit))",
+        "\(String(describing: row.returnOnInvestment))",
+        "\(String(describing: row.iskPerHour))",
+        "\(row.materials.map { "\($0.typeID):\($0.quantity)" })",
+        "\(row.warnings.map(\.code))",
+      ]
+    }
+    #expect(defaults.rows.map(facts) == explicit.rows.map(facts))
+    #expect(defaults.rows.count == 1)
+    #expect(defaults.coverage == explicit.coverage)
+    #expect(defaults.warnings.map(\.code) == explicit.warnings.map(\.code))
+    #expect(defaults.hubRole == nil)
+    #expect(defaults.saleHub == nil)
+    #expect(defaults.resolvedHubRole == .main)
+    #expect(defaults.resolvedSaleHub == .jita)
+    #expect(defaults.marketSource == explicit.marketSource)
+
+    // Main-Hub files keep their historical keys: no role fields are written,
+    // and a file without them decodes as a Main-Hub scan.
+    let json = try #require(
+      String(data: encoder.encode(defaults), encoding: .utf8)
+    )
+    #expect(!json.contains("hubRole"))
+    #expect(!json.contains("saleHub"))
+    let decoded = try JSONDecoder().decode(
+      ManufacturingOpportunitySnapshot.self,
+      from: encoder.encode(defaults)
+    )
+    #expect(decoded.resolvedHubRole == .main)
+  }
+
+  @Test
+  func homeHubScanSellsAtItsOwnMarketButBuysMaterialsAtTheMainHub() throws {
+    let inputs = roleTestInputs()
+    let main = try roleTestAnalyze(inputs: inputs)
+    let home = try roleTestAnalyze(
+      hubRole: .home,
+      saleHub: Self.roleTestHomeHub,
+      saleMarket: roleTestHomeMarket(productPrice: 300),
+      inputs: inputs
+    )
+    let mainRow = try #require(main.rows.first)
+    let homeRow = try #require(home.rows.first)
+    #expect(homeRow.materialCost == mainRow.materialCost)
+    #expect(mainRow.grossRevenue == 200 * Double(mainRow.producedQuantity))
+    #expect(homeRow.grossRevenue == 300 * Double(homeRow.producedQuantity))
+    #expect(homeRow.activeSellSupply == 40)
+    #expect(home.hubRole == .home)
+    #expect(home.saleHub == Self.roleTestHomeHub)
+    #expect(home.mainHub == .jita)
+    #expect(home.marketSource.provider == "Home fixture")
+
+    let decoded = try JSONDecoder().decode(
+      ManufacturingOpportunitySnapshot.self,
+      from: JSONEncoder().encode(home)
+    )
+    #expect(decoded.resolvedHubRole == .home)
+    #expect(decoded.resolvedSaleHub == Self.roleTestHomeHub)
+  }
+
+  @Test
+  func hubRolesRejectMissingOrMismatchedSaleMarkets() {
+    #expect(throws: ManufacturingOpportunityError.inconsistentMarketLocation) {
+      try roleTestAnalyze(hubRole: .home, saleHub: Self.roleTestHomeHub)
+    }
+    #expect(throws: ManufacturingOpportunityError.inconsistentMarketLocation) {
+      try roleTestAnalyze(
+        hubRole: .coalition,
+        saleHub: .jita,
+        saleMarket: roleTestHomeMarket(productPrice: 1)
+      )
+    }
+    #expect(throws: ManufacturingOpportunityError.inconsistentMarketLocation) {
+      try roleTestAnalyze(
+        hubRole: .main,
+        saleHub: Self.roleTestHomeHub,
+        saleMarket: roleTestHomeMarket(productPrice: 1)
+      )
+    }
+  }
+
+  @Test
+  func saleRoutesKeepMainRoundTripAndDropTheReturnLegForOtherHubs() {
+    let row = sortableOpportunityRow(
+      name: "Product",
+      value: 18,
+      demand: 1,
+      materialQuantity: 18,
+      materialUnitPrice: 10,
+      materialVolume: 5
+    )
+    let procurement = ManufacturingOpportunityScenarioProjector.procurement(
+      for: row,
+      factualWarehouseQuantities: [:],
+      protectedQuantities: [:],
+      reservedQuantities: [:]
+    )
+    let configuration = LogisticsConfiguration(
+      isEnabled: true,
+      includeInboundMaterials: true,
+      includeOutboundProducts: false,
+      productionLocationName: "Home Factory",
+      homeTradeHub: .legacy(name: "Home Factory"),
+      iskPerCubicMeter: 100
+    )
+    func logistics(
+      _ route: ManufacturingOpportunitySaleRoute?
+    ) -> ManufacturingOpportunityLogisticsProjection {
+      guard let route else {
+        return ManufacturingOpportunityScenarioProjector.logistics(
+          for: row,
+          procurement: procurement,
+          configuration: configuration,
+          mainHub: .jita,
+          warehouseIsAvailable: true
+        )
+      }
+      return ManufacturingOpportunityScenarioProjector.logistics(
+        for: row,
+        procurement: procurement,
+        configuration: configuration,
+        mainHub: .jita,
+        warehouseIsAvailable: true,
+        route: route
+      )
+    }
+    let defaultRoute = logistics(nil)
+    let mainRoute = logistics(.mainHubRoundTrip)
+    #expect(defaultRoute.cost == 2_000_000)
+    #expect(mainRoute.cost == defaultRoute.cost)
+    #expect(mainRoute.legs.map(\.kind) == defaultRoute.legs.map(\.kind))
+
+    let homeFactory = ProcurementLocation.legacy(name: "Home Factory")
+    let home = logistics(.homeHub(homeFactory))
+    #expect(home.cost == 1_000_000)
+    #expect(home.legs.map(\.kind) == [.inboundMaterials])
+
+    let coalition = logistics(
+      .coalitionHub(homeHub: homeFactory, onwardTransportCost: 5_000_000)
+    )
+    #expect(coalition.cost == 6_000_000)
+    #expect(coalition.legs.map(\.kind) == [.inboundMaterials])
+
+    let unknownOnward = logistics(
+      .coalitionHub(homeHub: homeFactory, onwardTransportCost: nil)
+    )
+    #expect(unknownOnward.cost == nil)
+    #expect(
+      unknownOnward.warnings.map(\.code)
+        == ["manufacturing-opportunity.coalition-transport-unavailable"]
+    )
+
+    // A production site away from the Home Hub adds the hop to the Home Hub.
+    let remoteHome = logistics(.homeHub(.legacy(name: "Remote Home Hub")))
+    #expect(remoteHome.legs.map(\.kind) == [.inboundMaterials, .outboundProducts])
+    #expect(remoteHome.cost == 2_000_000)
+  }
+
+  @Test
+  func hubRoleFilesKeepMainNamesAndSeparateOtherRoles() {
+    #expect(OpportunityHubRole.main.demandFileName == "main-hub-demand.json")
+    #expect(
+      OpportunityHubRole.main.opportunitiesFileName
+        == "main-hub-opportunities.json"
+    )
+    #expect(OpportunityHubRole.home.demandFileName == "home-hub-demand.json")
+    #expect(
+      OpportunityHubRole.coalition.opportunitiesFileName
+        == "coalition-hub-opportunities.json"
+    )
+    let names = OpportunityHubRole.allCases.flatMap {
+      [$0.demandFileName, $0.opportunitiesFileName]
+    }
+    #expect(Set(names).count == names.count)
+  }
+
+  @Test
+  func hubRoleKeysKeepMainAndRouteFollowsTheSnapshotRole() throws {
+    #expect(
+      OpportunityHubRole.main.storageKey("market-opportunities.filter.value")
+        == "market-opportunities.filter.value"
+    )
+    #expect(
+      OpportunityHubRole.home.storageKey("market-opportunities.filter.value")
+        == "market-opportunities.home.filter.value"
+    )
+    #expect(
+      OpportunityHubRole.home.storageKey(
+        "manufacturing-opportunity.maximum-material-purchase-isk"
+      ) == "manufacturing-opportunity.home.maximum-material-purchase-isk"
+    )
+    #expect(OpportunityHubRole.coalition.storageKey("plain") == "plain.coalition")
+
+    let inputs = roleTestInputs()
+    let main = try roleTestAnalyze(inputs: inputs)
+    #expect(main.defaultSaleRoute == .mainHubRoundTrip)
+    let home = try roleTestAnalyze(
+      hubRole: .home,
+      saleHub: Self.roleTestHomeHub,
+      saleMarket: roleTestHomeMarket(productPrice: 300),
+      inputs: inputs
+    )
+    #expect(home.defaultSaleRoute == .homeHub(Self.roleTestHomeHub))
+  }
+
+  @Test
+  func coalitionTransportBasisPricesCourierAndKeepsCapitalsUnavailable() throws {
+    let home = ProcurementLocation.legacy(name: "Home Factory")
+    let courier = OpportunityCoalitionTransportBasis.courier(
+      homeHub: home,
+      coalitionHub: Self.roleTestHomeHub,
+      iskPerCubicMeter: 100,
+      maximumContractVolumeM3: 350_000
+    )
+    let row = sortableOpportunityRow(
+      name: "Product",
+      value: 18,
+      demand: 1,
+      materialQuantity: 18,
+      materialUnitPrice: 10,
+      materialVolume: 5
+    )
+    // 18 m³ × 100 ISK stays below the 0.5% collateral floor rounded to 1M.
+    #expect(courier.transport(for: row).cost == 1_000_000)
+
+    let carrier = sortableOpportunityRow(
+      name: "Carrier",
+      value: 1,
+      demand: 1,
+      categoryName: "Ship",
+      groupName: "Carrier"
+    )
+    let courierCapital = courier.transport(for: carrier)
+    #expect(courierCapital.cost == nil)
+    #expect(courierCapital.warnings.map(\.code) == ["capital-self-jump.disabled"])
+
+    let missing = OpportunityCoalitionTransportBasis.unavailable(
+      homeHub: home,
+      code: "coalition-transport.logistics-disabled",
+      message: "disabled"
+    )
+    #expect(missing.transport(for: row).cost == nil)
+    #expect(missing.homeHub == home)
+
+    // The snapshot route carries the per-row onward cost into the logistics.
+    let inputs = roleTestInputs()
+    let coalition = try roleTestAnalyze(
+      hubRole: .coalition,
+      saleHub: Self.roleTestHomeHub,
+      saleMarket: roleTestHomeMarket(productPrice: 300),
+      inputs: inputs,
+      coalitionTransport: courier
+    )
+    #expect(
+      coalition.saleRoute(for: row)
+        == .coalitionHub(homeHub: home, onwardTransportCost: 1_000_000)
+    )
+    #expect(
+      coalition.defaultSaleRoute
+        == .coalitionHub(homeHub: home, onwardTransportCost: nil)
+    )
+    let procurement = ManufacturingOpportunityScenarioProjector.procurement(
+      for: row,
+      factualWarehouseQuantities: [:],
+      protectedQuantities: [:],
+      reservedQuantities: [:]
+    )
+    let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+      for: row,
+      procurement: procurement,
+      configuration: LogisticsConfiguration(
+        isEnabled: true,
+        includeInboundMaterials: true,
+        includeOutboundProducts: false,
+        productionLocationName: "Home Factory",
+        homeTradeHub: .legacy(name: "Home Factory"),
+        iskPerCubicMeter: 100
+      ),
+      mainHub: .jita,
+      warehouseIsAvailable: true,
+      route: coalition.saleRoute(for: row)
+    )
+    #expect(logistics.cost == 2_000_000)
+
+    // The basis survives the saved file; Main and Home scans never store one.
+    let decoded = try JSONDecoder().decode(
+      ManufacturingOpportunitySnapshot.self,
+      from: JSONEncoder().encode(coalition)
+    )
+    #expect(decoded.resolvedHubRole == .coalition)
+    #expect(decoded.saleRoute(for: row) == coalition.saleRoute(for: row))
+    let main = try roleTestAnalyze(inputs: inputs, coalitionTransport: courier)
+    #expect(main.coalitionTransport == nil)
+  }
+
+  @Test
+  func coalitionOnwardTransportIsRecordedAndSortableWithUnknownValuesLast()
+    throws
+  {
+    let home = ProcurementLocation.legacy(name: "Home Factory")
+    let configuration = LogisticsConfiguration(
+      isEnabled: true,
+      includeInboundMaterials: true,
+      includeOutboundProducts: false,
+      productionLocationName: "Home Factory",
+      homeTradeHub: .legacy(name: "Home Factory"),
+      iskPerCubicMeter: 100
+    )
+    func costs(
+      _ row: ManufacturingOpportunityRow,
+      onward: Double?
+    ) -> ManufacturingOpportunityCostProjection {
+      let procurement = ManufacturingOpportunityScenarioProjector.procurement(
+        for: row,
+        factualWarehouseQuantities: [:],
+        protectedQuantities: [:],
+        reservedQuantities: [:]
+      )
+      let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+        for: row,
+        procurement: procurement,
+        configuration: configuration,
+        mainHub: .jita,
+        warehouseIsAvailable: true,
+        route: .coalitionHub(homeHub: home, onwardTransportCost: onward)
+      )
+      return ManufacturingOpportunityScenarioProjector.costs(
+        for: row,
+        sheet: ManufacturingOpportunityCostSheet(),
+        logistics: logistics
+      )
+    }
+    let cheap = sortableOpportunityRow(name: "Cheap", value: 1, demand: 1)
+    let costly = sortableOpportunityRow(name: "Costly", value: 2, demand: 1)
+    let unknown = sortableOpportunityRow(name: "Unknown", value: 3, demand: 1)
+    let cheapCosts = costs(cheap, onward: 1_000_000)
+    let costlyCosts = costs(costly, onward: 3_000_000)
+    let unknownCosts = costs(unknown, onward: nil)
+    #expect(cheapCosts.onwardTransportCost == 1_000_000)
+    #expect(costlyCosts.onwardTransportCost == 3_000_000)
+    #expect(unknownCosts.onwardTransportCost == nil)
+    #expect(unknownCosts.logisticsCost == nil)
+
+    // Main and Home routes never report an onward amount.
+    let homeRoute = ManufacturingOpportunityScenarioProjector.logistics(
+      for: cheap,
+      procurement: ManufacturingOpportunityScenarioProjector.procurement(
+        for: cheap,
+        factualWarehouseQuantities: [:],
+        protectedQuantities: [:],
+        reservedQuantities: [:]
+      ),
+      configuration: configuration,
+      mainHub: .jita,
+      warehouseIsAvailable: true,
+      route: .homeHub(home)
+    )
+    #expect(homeRoute.onwardTransportCost == nil)
+
+    let entries = [
+      (unknown, unknownCosts), (costly, costlyCosts), (cheap, cheapCosts),
+    ]
+    func sorted(_ direction: ManufacturingOpportunitySortDirection) -> [String] {
+      let descriptor = ManufacturingOpportunitySortDescriptor(
+        column: .onwardTransport,
+        direction: direction
+      )
+      return entries.sorted {
+        descriptor.orderedBefore(
+          lhs: $0.0,
+          lhsCosts: $0.1,
+          rhs: $1.0,
+          rhsCosts: $1.1
+        )
+      }.map(\.0.productName)
+    }
+    #expect(sorted(.ascending) == ["Cheap", "Costly", "Unknown"])
+    #expect(sorted(.descending) == ["Unknown", "Costly", "Cheap"])
+  }
+
+  private func contractReferences(
+    unitPricesByType: [Int64: Double],
+    complete: Bool
+  ) throws -> PublicContractReferenceSnapshot {
+    var prices: [Int64: PublicContractReferencePrice] = [:]
+    for (typeID, price) in unitPricesByType {
+      let offer = PublicContractSearchResult(
+        contractID: typeID * 10,
+        recordID: typeID * 10,
+        regionID: 10_000_002,
+        regionName: "The Forge",
+        contractType: "item_exchange",
+        price: price * 2,
+        dateIssued: Date(timeIntervalSince1970: 1_800_000_000),
+        dateExpired: Date(timeIntervalSince1970: 1_800_086_400),
+        startLocationID: 60_003_760,
+        typeID: typeID,
+        isIncluded: true,
+        quantity: 2,
+        offeredLineCount: 1,
+        requestedLineCount: 0
+      )
+      prices[typeID] = try #require(PublicContractReferencePrice(offer))
+    }
+    return PublicContractReferenceSnapshot(
+      capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+      locationID: 0,
+      locationName: "Entire universe",
+      prices: prices,
+      hasCompleteSearchCoverage: complete,
+      source: SourceIdentity(provider: "ESI Public Contracts", version: "test")
+    )
+  }
+
+  @Test
+  func contractProjectionDeductsTheConfirmedFeeAndMarksMissingStates() throws {
+    let row = sortableOpportunityRow(name: "Product", value: 10, demand: 1)
+    let references = try contractReferences(
+      unitPricesByType: [10: 50],
+      complete: true
+    )
+    let total = 300.0
+    let confirmed = ManufacturingOpportunityContractProjector.project(
+      row: row,
+      totalCost: total,
+      context: ManufacturingOpportunityContractContext(
+        references: references,
+        contractFeeRate: 0.1
+      )
+    )
+    #expect(confirmed.unitPrice == 50)
+    #expect(confirmed.grossRevenue == 500)
+    #expect(confirmed.contractFee == 50)
+    #expect(confirmed.profit == 150)
+    #expect(confirmed.returnOnInvestment == 0.5)
+    #expect(!confirmed.isProvisional)
+    #expect(!confirmed.isBeforeContractFee)
+
+    let beforeFee = ManufacturingOpportunityContractProjector.project(
+      row: row,
+      totalCost: total,
+      context: ManufacturingOpportunityContractContext(
+        references: references,
+        contractFeeRate: nil
+      )
+    )
+    #expect(beforeFee.isBeforeContractFee)
+    #expect(beforeFee.contractFee == nil)
+    #expect(beforeFee.profit == 200)
+    // An invalid rate is treated like a missing one, never as 0 %.
+    #expect(
+      ManufacturingOpportunityContractProjector.project(
+        row: row,
+        totalCost: total,
+        context: ManufacturingOpportunityContractContext(
+          references: references,
+          contractFeeRate: 1.5
+        )
+      ).isBeforeContractFee
+    )
+
+    let provisional = ManufacturingOpportunityContractProjector.project(
+      row: row,
+      totalCost: total,
+      context: ManufacturingOpportunityContractContext(
+        references: try contractReferences(
+          unitPricesByType: [10: 50],
+          complete: false
+        ),
+        contractFeeRate: 0.1
+      )
+    )
+    #expect(provisional.isProvisional)
+    #expect(provisional.unitPrice == 50)
+
+    let noOffer = ManufacturingOpportunityContractProjector.project(
+      row: sortableOpportunityRow(name: "Other", value: 11, demand: 1),
+      totalCost: total,
+      context: ManufacturingOpportunityContractContext(
+        references: references,
+        contractFeeRate: 0.1
+      )
+    )
+    #expect(noOffer.unitPrice == nil)
+    #expect(noOffer.profit == nil)
+    #expect(
+      ManufacturingOpportunityContractProjector.project(
+        row: row,
+        totalCost: nil,
+        context: ManufacturingOpportunityContractContext(
+          references: references,
+          contractFeeRate: 0.1
+        )
+      ).profit == nil
+    )
+  }
+
+  @Test
+  func contractColumnsSortByTypedValuesWithUnavailableValuesLast() throws {
+    let references = try contractReferences(
+      unitPricesByType: [1: 5, 2: 9],
+      complete: true
+    )
+    let context = ManufacturingOpportunityContractContext(
+      references: references,
+      contractFeeRate: 0
+    )
+    let rows = [
+      sortableOpportunityRow(name: "Missing", value: 3, demand: 1),
+      sortableOpportunityRow(name: "Expensive", value: 2, demand: 1),
+      sortableOpportunityRow(name: "Cheap", value: 1, demand: 1),
+    ]
+    let entries = rows.map { row in
+      (
+        row,
+        ManufacturingOpportunityScenarioProjector.costs(
+          for: row,
+          sheet: ManufacturingOpportunityCostSheet(),
+          logistics: ManufacturingOpportunityLogisticsProjection(
+            cost: 0,
+            legs: [],
+            warnings: []
+          ),
+          contract: context
+        )
+      )
+    }
+    func sorted(
+      _ column: ManufacturingOpportunitySortColumn,
+      _ direction: ManufacturingOpportunitySortDirection
+    ) -> [String] {
+      let descriptor = ManufacturingOpportunitySortDescriptor(
+        column: column,
+        direction: direction
+      )
+      return entries.sorted {
+        descriptor.orderedBefore(
+          lhs: $0.0,
+          lhsCosts: $0.1,
+          rhs: $1.0,
+          rhsCosts: $1.1
+        )
+      }.map(\.0.productName)
+    }
+    #expect(sorted(.contractPrice, .ascending) == ["Cheap", "Expensive", "Missing"])
+    #expect(sorted(.contractPrice, .descending) == ["Missing", "Expensive", "Cheap"])
+    #expect(sorted(.contractProfit, .ascending).last == "Missing")
+    #expect(entries.first?.1.contract?.unitPrice == nil)
+  }
+
+  @Test
+  func topRankingUsesStandardAssumptionsAndSkipsRowsWithoutPotential() {
+    let rows = (1...8).map { index in
+      sortableOpportunityRow(
+        name: "Product \(index)",
+        value: Int64(index * 10),
+        demand: index == 3 ? nil : Int64(index)
+      )
+    }
+    let source = SourceIdentity(provider: "Fixture", version: "1")
+    let snapshot = ManufacturingOpportunitySnapshot(
+      settings: ManufacturingOpportunitySettings(),
+      mainHub: .jita,
+      productionWarehouseScope: ProductionWarehouseScope(locations: []),
+      logisticsConfiguration: LogisticsConfiguration(
+        isEnabled: true,
+        includeInboundMaterials: true,
+        includeOutboundProducts: false,
+        productionLocationName: ProcurementLocation.jita.name,
+        homeTradeHub: .jita,
+        iskPerCubicMeter: 100
+      ),
+      rows: rows,
+      coverage: ManufacturingOpportunityCoverage(
+        completeManufacturingDefinitionCount: rows.count,
+        mainHubActiveOrderTypeCount: rows.count,
+        candidateCount: rows.count,
+        candidatesWithSellOrders: rows.count,
+        candidatesWithBuyOrders: 0
+      ),
+      sdeSource: source,
+      marketSource: source,
+      warnings: []
+    )
+    let top = ManufacturingOpportunityTopRanking.rank(snapshot, limit: 5)
+    #expect(top.count == 5)
+    #expect(!top.contains { $0.row.productName == "Product 3" })
+    let potentials = top.map(\.dailyProfitPotential)
+    #expect(potentials == potentials.sorted(by: >))
+    // Every entry equals the standard projection of its saved row.
+    for entry in top {
+      let costs = ManufacturingOpportunityScenarioProjector.costs(
+        for: entry.row,
+        sheet: ManufacturingOpportunityTopRanking.standardCostSheet,
+        logistics: ManufacturingOpportunityLogisticsProjection(
+          cost: 0,
+          legs: [],
+          warnings: []
+        )
+      )
+      #expect(
+        ManufacturingOpportunityScenarioProjector.dailyProfitPotential(
+          for: entry.row,
+          costs: costs
+        ) == entry.dailyProfitPotential
+      )
+    }
+    let all = ManufacturingOpportunityTopRanking.rank(snapshot, limit: 20)
+    #expect(all.count == 7)
+    // Equal potentials keep a stable type-ID order.
+    for (lhs, rhs) in zip(all, all.dropFirst())
+    where lhs.dailyProfitPotential == rhs.dailyProfitPotential {
+      #expect(lhs.row.productTypeID < rhs.row.productTypeID)
+    }
+    #expect(ManufacturingOpportunityTopRanking.rank(snapshot, limit: 0).isEmpty)
+  }
+
   private func sortableOpportunityRow(
     name: String,
     value: Int64,

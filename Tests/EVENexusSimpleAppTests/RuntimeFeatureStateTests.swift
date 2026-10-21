@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import EVENexusCore
 import SwiftUI
 import Testing
@@ -41,6 +42,561 @@ struct RuntimeFeatureStateTests {
     await same.value
     await changed.value
     #expect(calls == ["first", "changed"])
+  }
+
+  @Test
+  func startupLoadRunsAnalysesAndScansOnlyAfterCharactersAndConfiguration() async {
+    let load = StartupDataLoad()
+    let characterGate = AnalysisRefreshTestGate()
+    var calls: [String] = []
+    let steps = StartupDataLoad.Steps(
+      prepareConfiguration: { calls.append("configuration") },
+      synchronizeCharacters: {
+        calls.append("characters")
+        await characterGate.wait()
+        calls.append("characters-done")
+        return CharacterBatchSyncResult(
+          synchronizedCount: 2,
+          totalCount: 3,
+          failedCharacterNames: ["Pilot C"]
+        )
+      },
+      refreshMarketAnalyses: { calls.append("analyses") },
+      releaseAutomaticScans: { calls.append("scans") }
+    )
+    let run = Task { await load.run(steps) }
+    while !characterGate.isWaiting { await Task.yield() }
+    for _ in 0..<10 { await Task.yield() }
+    #expect(load.phase == .loadingCharactersAndConfiguration)
+    #expect(!calls.contains("analyses"))
+    #expect(!calls.contains("scans"))
+    characterGate.release()
+    await run.value
+    #expect(load.phase == .completed)
+    let charactersDone = calls.firstIndex(of: "characters-done") ?? .max
+    let configuration = calls.firstIndex(of: "configuration") ?? .max
+    #expect((calls.firstIndex(of: "analyses") ?? -1) > charactersDone)
+    #expect((calls.firstIndex(of: "scans") ?? -1) > charactersDone)
+    #expect((calls.firstIndex(of: "analyses") ?? -1) > configuration)
+    #expect(load.characterResult?.failedCharacterNames == ["Pilot C"])
+  }
+
+  @Test
+  func startupLoadRunsOnceAndLateCallersJoinTheSameCharacterResult() async {
+    let load = StartupDataLoad()
+    var characterRuns = 0
+    let steps = StartupDataLoad.Steps(
+      prepareConfiguration: {},
+      synchronizeCharacters: {
+        characterRuns += 1
+        return CharacterBatchSyncResult(
+          synchronizedCount: 1,
+          totalCount: 1,
+          failedCharacterNames: []
+        )
+      },
+      refreshMarketAnalyses: {},
+      releaseAutomaticScans: {}
+    )
+    #expect(load.start(steps))
+    #expect(!load.start(steps))
+    await load.run(steps)
+    let joined = await load.characterSynchronizationResult()
+    #expect(characterRuns == 1)
+    #expect(joined?.synchronizedCount == 1)
+  }
+
+  @Test
+  func earlyDashboardReaderWaitsForTheExpectedStartupLoad() async {
+    let load = StartupDataLoad(expectsStart: true)
+    let reader = Task { await load.characterSynchronizationResult() }
+    for _ in 0..<10 { await Task.yield() }
+    load.start(
+      StartupDataLoad.Steps(
+        prepareConfiguration: {},
+        synchronizeCharacters: {
+          CharacterBatchSyncResult(
+            synchronizedCount: 4,
+            totalCount: 4,
+            failedCharacterNames: []
+          )
+        },
+        refreshMarketAnalyses: {},
+        releaseAutomaticScans: {}
+      )
+    )
+    #expect(await reader.value?.synchronizedCount == 4)
+    #expect(await StartupDataLoad().characterSynchronizationResult() == nil)
+  }
+
+  @Test
+  func cancelledStartupLoadDoesNotStartAnalysesOrScans() async {
+    let load = StartupDataLoad()
+    let characterGate = AnalysisRefreshTestGate()
+    var calls: [String] = []
+    let run = Task {
+      await load.run(
+        StartupDataLoad.Steps(
+          prepareConfiguration: {},
+          synchronizeCharacters: {
+            await characterGate.wait()
+            calls.append(Task.isCancelled ? "characters-cancelled" : "characters")
+            return CharacterBatchSyncResult(
+              synchronizedCount: 0,
+              totalCount: 1,
+              failedCharacterNames: []
+            )
+          },
+          refreshMarketAnalyses: { calls.append("analyses") },
+          releaseAutomaticScans: { calls.append("scans") }
+        )
+      )
+    }
+    while !characterGate.isWaiting { await Task.yield() }
+    load.cancel()
+    characterGate.release()
+    await run.value
+    #expect(load.phase == .cancelled)
+    #expect(calls == ["characters-cancelled"])
+  }
+
+  @Test
+  func automaticScansStayDisabledWithoutBackgroundServices() async {
+    let runtime = RuntimeState(startBackgroundServices: false)
+    #expect(!runtime.mainHubMarketAutomaticUpdatesEnabled)
+    await runtime.releaseStartupAutomaticScans()
+    #expect(!runtime.areStartupAutomaticScansReleased)
+    #expect(await runtime.startupDataLoad.characterSynchronizationResult() == nil)
+  }
+
+  @Test
+  func mainHubOpportunityFilesKeepTheirHistoricalPaths() {
+    let root = URL(fileURLWithPath: "/tmp/eve-nexus-role-paths", isDirectory: true)
+    #expect(
+      RuntimeState.opportunityDemandFileURL(dataRoot: root, role: .main).path
+        == "/tmp/eve-nexus-role-paths/market/main-hub-demand.json"
+    )
+    #expect(
+      RuntimeState.opportunitySnapshotFileURL(dataRoot: root, role: .main).path
+        == "/tmp/eve-nexus-role-paths/market/main-hub-opportunities.json"
+    )
+    #expect(
+      RuntimeState.opportunitySnapshotFileURL(dataRoot: root, role: .coalition)
+        .lastPathComponent == "coalition-hub-opportunities.json"
+    )
+  }
+
+  @Test
+  func startupStatusCombinesSourceStatesWithoutInventingFreshData() {
+    typealias P = StartupDataStatusProjector
+    #expect(P.combined([]) == nil)
+    #expect(P.combined([.fresh, .fresh]) == .fresh)
+    #expect(P.combined([.fresh, .stale]) == .stale)
+    #expect(P.combined([.stale, .partial]) == .partial)
+    #expect(P.combined([.fresh, .unavailable]) == .partial)
+    #expect(P.combined([.forbidden, .forbidden]) == .forbidden)
+    #expect(P.combined([.forbidden, .unavailable]) == .unavailable)
+  }
+
+  @Test
+  func startupStatusFollowsTheLoadPhaseForCharactersAndWarehouse() {
+    typealias P = StartupDataStatusProjector
+    let synced = Date(timeIntervalSince1970: 1_800_000_000)
+    #expect(
+      P.characters(
+        phase: .loadingCharactersAndConfiguration,
+        result: nil,
+        lastSyncDates: [synced]
+      ).status == .running
+    )
+    let partial = P.characters(
+      phase: .completed,
+      result: CharacterBatchSyncResult(
+        synchronizedCount: 1,
+        totalCount: 2,
+        failedCharacterNames: ["Pilot B"]
+      ),
+      lastSyncDates: [synced, nil]
+    )
+    #expect(partial.status == .known(.partial))
+    #expect(partial.timestamp == synced)
+    #expect(
+      P.characters(phase: .idle, result: nil, lastSyncDates: []).status
+        == .known(.unavailable)
+    )
+
+    let observation = P.SourceObservation(freshness: .fresh, capturedAt: synced)
+    // One character with assets and blueprints is complete.
+    #expect(
+      P.warehouseAndBlueprints(
+        phase: .completed,
+        characterCount: 1,
+        observations: [observation, observation]
+      ).status == .known(.fresh)
+    )
+    // A missing blueprint observation is not reported as fresh.
+    #expect(
+      P.warehouseAndBlueprints(
+        phase: .completed,
+        characterCount: 1,
+        observations: [observation]
+      ).status == .known(.partial)
+    )
+    #expect(
+      P.warehouseAndBlueprints(
+        phase: .completed,
+        characterCount: 2,
+        observations: []
+      ).status == .waiting
+    )
+  }
+
+  @Test
+  func startupStatusKeepsAnalysisErrorsAndWaitingStatesVisible() {
+    typealias P = StartupDataStatusProjector
+    func status(
+      phase: StartupDataLoad.Phase = .completed,
+      refreshing: Bool = false,
+      states: [DataFreshness]? = nil,
+      error: Bool = false
+    ) -> StartupDataStatus {
+      P.analysis(
+        area: .minerals,
+        phase: phase,
+        isRefreshing: refreshing,
+        marketStates: states,
+        hasError: error,
+        timestamp: nil
+      ).status
+    }
+    #expect(status(refreshing: true, states: [.fresh]) == .running)
+    #expect(status(phase: .loadingCharactersAndConfiguration) == .waiting)
+    #expect(status() == .known(.unavailable))
+    #expect(status(error: true) == .known(.unavailable))
+    #expect(status(states: [.fresh, .forbidden]) == .known(.partial))
+    // A failed refresh keeps the last snapshot, but no longer as fresh.
+    #expect(status(states: [.fresh], error: true) == .known(.stale))
+    #expect(
+      StartupDataStatusSection.detail(
+        for: StartupDataStatusRow(area: .minerals, status: .waiting, timestamp: nil)
+      ) == AppLocalization.text("Waiting")
+    )
+  }
+
+  @Test
+  func startupLoadPublishesPhaseChangesForTheDashboard() async {
+    let load = StartupDataLoad()
+    var publications = 0
+    let subscription = load.objectWillChange.sink { publications += 1 }
+    await load.run(
+      StartupDataLoad.Steps(
+        prepareConfiguration: {},
+        synchronizeCharacters: {
+          CharacterBatchSyncResult(
+            synchronizedCount: 0,
+            totalCount: 0,
+            failedCharacterNames: []
+          )
+        },
+        refreshMarketAnalyses: {},
+        releaseAutomaticScans: {}
+      )
+    )
+    subscription.cancel()
+    #expect(load.phase == .completed)
+    #expect(publications >= 3)
+  }
+
+  @Test
+  func homeHubScanTargetSkipsMainHubAndRequiresExactIdentifiers() {
+    typealias Target = HomeHubOpportunityScanTarget
+    let structure = ProcurementLocation(
+      id: "structure:1035000000001",
+      name: "Home Keepstar",
+      locationID: 1_035_000_000_001,
+      kind: .playerStructure,
+      solarSystemID: 30_004_000,
+      regionID: 10_000_060
+    )
+    let amarr = ProcurementLocation(
+      id: "npc:60008494",
+      name: "Amarr VIII (Oris) - Emperor Family Academy",
+      locationID: 60_008_494,
+      kind: .npcTradeHub,
+      solarSystemID: 30_002_187,
+      regionID: 10_000_043
+    )
+    #expect(Target.resolve(mainHub: .jita, homeHub: nil) == .notConfigured)
+    #expect(Target.resolve(mainHub: .jita, homeHub: .jita) == .sharesMainHub)
+    #expect(
+      Target.resolve(mainHub: .jita, homeHub: amarr)
+        == .npcStation(regionID: 10_000_043, locationID: 60_008_494)
+    )
+    #expect(
+      Target.resolve(mainHub: .jita, homeHub: structure)
+        == .playerStructure(
+          structureID: 1_035_000_000_001,
+          systemID: 30_004_000,
+          regionID: 10_000_060
+        )
+    )
+    // Without a Main Hub the Home Hub still resolves on its own.
+    #expect(
+      Target.resolve(mainHub: nil, homeHub: amarr)
+        == .npcStation(regionID: 10_000_043, locationID: 60_008_494)
+    )
+    let structureWithoutSystem = ProcurementLocation(
+      id: "structure:1035000000002",
+      name: "Unresolved Structure",
+      locationID: 1_035_000_000_002,
+      kind: .playerStructure
+    )
+    #expect(
+      Target.resolve(mainHub: .jita, homeHub: structureWithoutSystem)
+        == .unresolved
+    )
+    #expect(
+      Target.resolve(mainHub: .jita, homeHub: .legacy(name: "Old Home"))
+        == .unresolved
+    )
+  }
+
+  @Test
+  func coalitionScanTargetSkipsMainAndHomeHubs() {
+    let home = ProcurementLocation(
+      id: "structure:1035000000001",
+      name: "Home Keepstar",
+      locationID: 1_035_000_000_001,
+      kind: .playerStructure,
+      solarSystemID: 30_004_000,
+      regionID: 10_000_060
+    )
+    let coalition = ProcurementLocation(
+      id: "structure:1035000000009",
+      name: "Coalition Keepstar",
+      locationID: 1_035_000_000_009,
+      kind: .playerStructure,
+      solarSystemID: 30_004_100,
+      regionID: nil
+    )
+    typealias Target = HubOpportunityScanTarget
+    #expect(
+      Target.resolve(mainHub: .jita, homeHub: home, coalitionHub: nil)
+        == .notConfigured
+    )
+    #expect(
+      Target.resolve(mainHub: .jita, homeHub: home, coalitionHub: .jita)
+        == .sharesMainHub
+    )
+    #expect(
+      Target.resolve(mainHub: .jita, homeHub: home, coalitionHub: home)
+        == .sharesHomeHub
+    )
+    #expect(
+      Target.resolve(mainHub: .jita, homeHub: home, coalitionHub: coalition)
+        == .playerStructure(
+          structureID: 1_035_000_000_009,
+          systemID: 30_004_100,
+          regionID: nil
+        )
+    )
+    #expect(Target.sharesHomeHub.requiresScan == false)
+    #expect(Target.npcStation(regionID: 1, locationID: 2).requiresScan)
+    let runtime = RuntimeState(startBackgroundServices: false)
+    #expect(runtime.opportunityScanTarget(for: .coalition) == .notConfigured)
+    #expect(runtime.opportunityState(for: .coalition).analysis == nil)
+  }
+
+  @Test
+  func homeHubStateStartsEmptyWithoutBackgroundServices() {
+    let runtime = RuntimeState(startBackgroundServices: false)
+    #expect(runtime.homeHubOpportunityAnalysis == nil)
+    #expect(runtime.homeHubMarketState == nil)
+    #expect(runtime.homeHubOpportunityError == nil)
+    #expect(!runtime.isAnalyzingHomeHubOpportunities)
+    // A fresh profile has no Home Hub, so no Home-Hub scan is planned.
+    #expect(runtime.productionBasis.homeTradingLocation == nil)
+    #expect(runtime.homeHubOpportunityScanTarget == .notConfigured)
+  }
+
+  @Test
+  func homeHubOpportunityTextsNameTheSaleHubOnly() {
+    #expect(
+      OpportunityHubText.adapt("Market Opportunities · Main Hub", for: .home)
+        == "Market Opportunities · Home Hub"
+    )
+    #expect(
+      OpportunityHubText.adapt("Noch kein Main-Hub-Scan", for: .home)
+        == "Noch kein Home-Hub-Scan"
+    )
+    #expect(
+      OpportunityHubText.adapt("Market Opportunities · Main Hub", for: .main)
+        == "Market Opportunities · Main Hub"
+    )
+    #expect(
+      OpportunityHubText.saleWarningCodes.contains(
+        "manufacturing-opportunity.product-sell-order-unavailable"
+      )
+    )
+    // Material-depth warnings describe Main-Hub purchases and stay unchanged.
+    #expect(
+      !OpportunityHubText.saleWarningCodes.contains(
+        "manufacturing-opportunity.blueprint-cost-scope"
+      )
+    )
+  }
+
+  @Test
+  func homeHubOpportunitiesFollowMainHubInNavigationAndCarryTheTargetMarket() {
+    let sections = NavigationSection.allCases
+    let main = sections.firstIndex(of: .manufacturingOpportunities)
+    let home = sections.firstIndex(of: .homeHubOpportunities)
+    #expect(main != nil && home == main.map { $0 + 1 })
+    #expect(NavigationSection.establishedCases.contains(.homeHubOpportunities))
+
+    let homeRequest = MainHubOpportunityPlannerHandoff.request(
+      productTypeID: 100,
+      productName: "Fixture Product",
+      requestedRuns: 2,
+      wantedQuantity: 2,
+      materialEfficiency: 10,
+      timeEfficiency: 20,
+      targetMarket: .home
+    )
+    #expect(homeRequest.targetMarket == .home)
+    #expect(homeRequest.inputLine.contains("Fixture Product"))
+    let legacyRequest = MainHubOpportunityPlannerHandoff.request(
+      productTypeID: 100,
+      productName: "Fixture Product",
+      requestedRuns: 2,
+      wantedQuantity: 2,
+      materialEfficiency: 10,
+      timeEfficiency: 20
+    )
+    #expect(legacyRequest.targetMarket == nil)
+  }
+
+  @Test
+  func coalitionHubOpportunitiesFollowHomeHubAndAdaptTheirTexts() {
+    let sections = NavigationSection.allCases
+    let home = sections.firstIndex(of: .homeHubOpportunities)
+    let coalition = sections.firstIndex(of: .coalitionHubOpportunities)
+    #expect(home != nil && coalition == home.map { $0 + 1 })
+    #expect(
+      OpportunityHubText.adapt("Marktchancen · Main Hub", for: .coalition)
+        == "Marktchancen · Coalition Hub"
+    )
+    #expect(
+      OpportunityHubText.adapt("Noch kein Main-Hub-Scan", for: .coalition)
+        == "Noch kein Coalition-Hub-Scan"
+    )
+    #expect(
+      OpportunityHubRole.coalition.storageKey("market-opportunities.filter.group")
+        == "market-opportunities.coalition.filter.group"
+    )
+  }
+
+  @Test
+  func dashboardTopOpportunityBuildCarriesBatchAndTargetMarket() {
+    let request = DashboardNavigationRequest(
+      section: .planner,
+      plannerLaunch: MainHubOpportunityPlannerHandoff.request(
+        productTypeID: 100,
+        productName: "Fixture Product",
+        requestedRuns: 3,
+        wantedQuantity: 3,
+        materialEfficiency: 10,
+        timeEfficiency: 20,
+        targetMarket: .coalition
+      )
+    )
+    #expect(request.section == .planner)
+    #expect(request.plannerLaunch?.targetMarket == .coalition)
+    #expect(request.plannerLaunch?.requestedRuns == 3)
+    #expect(DashboardNavigationRequest(section: .dashboard).plannerLaunch == nil)
+  }
+
+  @Test
+  func productionOverviewTargetMarketHasRankAndExplicitUnchosenText() {
+    typealias Presentation = ProductionOverviewTargetMarketPresentation
+    #expect(Presentation.rank(.mainHub) == 0)
+    #expect(Presentation.rank(.homeHub) == 1)
+    #expect(Presentation.rank(.coalitionHub) == 2)
+    #expect(Presentation.rank(nil) == nil)
+    #expect(Presentation.text(.homeHub) == "Home Hub")
+    #expect(Presentation.text(nil) == AppLocalization.text("Not chosen"))
+    #expect(AppSettingKey.plannerTargetMarketDraft == "planner.target-market.draft.v1")
+  }
+
+  @Test
+  func allianceInputParserKeepsEmptyFieldsUnsetAndRejectsInvalidValues() {
+    let german = Locale(identifier: "de_DE")
+    let parsed = PlannerAllianceInputParser.input(
+      unitPrice: "1.250.000,5",
+      acceptedQuantity: "12",
+      feePercent: "2,5",
+      deliveryHub: .homeHub,
+      locale: german
+    )
+    #expect(parsed?.unitPrice == 1_250_000.5)
+    #expect(parsed?.acceptedQuantity == 12)
+    #expect(parsed?.feeRate == 0.025)
+    #expect(parsed?.deliveryHub == .homeHub)
+    let empty = PlannerAllianceInputParser.input(
+      unitPrice: "",
+      acceptedQuantity: " ",
+      feePercent: "",
+      deliveryHub: nil,
+      locale: german
+    )
+    #expect(empty == PlannerAllianceSaleInput())
+    #expect(
+      PlannerAllianceInputParser.input(
+        unitPrice: "abc", acceptedQuantity: "", feePercent: "",
+        deliveryHub: nil, locale: german
+      ) == nil
+    )
+    #expect(
+      PlannerAllianceInputParser.input(
+        unitPrice: "10", acceptedQuantity: "1,5", feePercent: "",
+        deliveryHub: nil, locale: german
+      ) == nil
+    )
+    #expect(
+      PlannerAllianceInputParser.input(
+        unitPrice: "10", acceptedQuantity: "", feePercent: "100",
+        deliveryHub: nil, locale: german
+      ) == nil
+    )
+    #expect(ProductionOverviewTargetMarketPresentation.rank(.allianceMarket) == 3)
+  }
+
+  @Test
+  func purchaseLocationHintsSortTypedValuesWithUnknownLast() {
+    func hint(_ typeID: Int64, _ name: String, price: Double?) -> MaterialPurchaseLocationHint {
+      MaterialPurchaseLocationHint(
+        item: EVEShoppingListItem(typeID: typeID, name: name, quantity: 1, marketQuote: nil),
+        location: price == nil ? nil : .jita,
+        unitPrice: price,
+        mainHubUnitPrice: nil
+      )
+    }
+    let hints = [hint(3, "C", price: nil), hint(2, "B", price: 9), hint(1, "A", price: 4)]
+    let ascending = PurchaseLocationHintSorting.sorted(
+      hints,
+      by: AppTableSortDescriptor(column: .unitPrice, direction: .ascending)
+    )
+    #expect(ascending.map(\.item.name) == ["A", "B", "C"])
+    let descending = PurchaseLocationHintSorting.sorted(
+      hints,
+      by: AppTableSortDescriptor(column: .unitPrice, direction: .descending)
+    )
+    #expect(descending.map(\.item.name) == ["C", "B", "A"])
+    let byName = PurchaseLocationHintSorting.sorted(
+      hints,
+      by: AppTableSortDescriptor(column: .material, direction: .ascending)
+    )
+    #expect(byName.map(\.item.name) == ["A", "B", "C"])
   }
 
   @Test

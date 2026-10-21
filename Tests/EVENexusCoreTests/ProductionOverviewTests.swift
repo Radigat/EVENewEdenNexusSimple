@@ -628,6 +628,333 @@ struct ProductionOverviewTests {
     #expect(calculation.realProfit == nil)
   }
 
+  private static func targetMarketPlan(
+    main: SaleScenarioResult,
+    homeListed: SaleScenarioResult? = nil,
+    coalitionContract: SaleScenarioResult? = nil
+  ) -> IndustryPlanSnapshot {
+    IndustryPlanSnapshot(
+      id: UUID(),
+      createdAt: Date(timeIntervalSince1970: 100),
+      requests: [],
+      nodes: [],
+      materials: [],
+      stockAllocations: [],
+      jobs: [],
+      materialCost: 0,
+      installationCost: 0,
+      costBreakdown: IndustryCostBreakdown(
+        materialCost: 0,
+        purchasedMaterialCost: 0,
+        stockMaterialCost: 0,
+        blueprintCosts: BlueprintCostBreakdown(
+          entries: [], requestsWithoutEnteredCost: [], total: 0
+        ),
+        systemIndexCost: 0,
+        facilityTax: 0,
+        sccSurcharge: 0,
+        alphaSurcharge: 0,
+        installationCost: 0,
+        logistics: nil,
+        logisticsCost: 0,
+        totalProductionCost: 0
+      ),
+      immediateSale: main,
+      listedSale: Self.emptySale(.listedSale),
+      mainContractSale: nil,
+      homeImmediateSale: nil,
+      homeListedSale: homeListed,
+      homeContractSale: nil,
+      coalitionImmediateSale: nil,
+      coalitionListedSale: nil,
+      coalitionContractSale: coalitionContract,
+      totalJobSeconds: 1,
+      makespanSeconds: 1,
+      warnings: [],
+      explanations: [],
+      provenance: PlanProvenance(
+        sdeBuild: 1,
+        esiCompatibilityDate: "fixture",
+        snapshotIDs: [],
+        priceTimestamp: Date(timeIntervalSince1970: 100),
+        ruleVersion: "fixture"
+      )
+    )
+  }
+
+  private static func sale(
+    _ scenario: PriceScenario,
+    profit: Double?,
+    grossRevenue: Double? = nil,
+    contractFee: Double? = nil
+  ) -> SaleScenarioResult {
+    SaleScenarioResult(
+      scenario: scenario,
+      grossRevenue: grossRevenue,
+      contractFee: contractFee,
+      grossOrNetRevenue: nil,
+      profit: profit,
+      margin: nil,
+      roi: nil,
+      quotes: []
+    )
+  }
+
+  @Test
+  func targetMarketSuggestionPicksTheHighestFinalProfit() {
+    let plan = Self.targetMarketPlan(
+      main: Self.sale(.immediateSale, profit: 100),
+      homeListed: Self.sale(.listedSale, profit: 250),
+      // Higher, but still before the contract fee: never suggested.
+      coalitionContract: Self.sale(
+        .contractSale,
+        profit: 900,
+        grossRevenue: 1_000,
+        contractFee: nil
+      )
+    )
+    let suggestion = PlannerTargetMarketSuggestion.suggest(plan)
+    #expect(suggestion?.market == .homeHub)
+    #expect(suggestion?.profit == 250)
+
+    let tie = Self.targetMarketPlan(
+      main: Self.sale(.immediateSale, profit: 250),
+      homeListed: Self.sale(.listedSale, profit: 250)
+    )
+    #expect(PlannerTargetMarketSuggestion.suggest(tie)?.market == .mainHub)
+
+    let none = Self.targetMarketPlan(main: Self.sale(.immediateSale, profit: nil))
+    #expect(PlannerTargetMarketSuggestion.suggest(none) == nil)
+    #expect(PlannerTargetMarket(role: .coalition) == .coalitionHub)
+  }
+
+  @Test
+  func targetMarketIsSavedInTheSnapshotAndOptionalForOldPlans() throws {
+    var plan = Self.targetMarketPlan(main: Self.sale(.immediateSale, profit: 1))
+    let legacy = try JSONEncoder().encode(plan)
+    #expect(
+      !(String(data: legacy, encoding: .utf8) ?? "").contains("targetMarket")
+    )
+    #expect(
+      try JSONDecoder().decode(IndustryPlanSnapshot.self, from: legacy)
+        .targetMarket == nil
+    )
+    plan.targetMarket = .coalitionHub
+    let labeled = try JSONDecoder().decode(
+      IndustryPlanSnapshot.self,
+      from: JSONEncoder().encode(plan)
+    )
+    #expect(labeled.targetMarket == .coalitionHub)
+    #expect(labeled.immediateSale.profit == 1)
+  }
+
+  private static func alliancePlan(
+    producedQuantity: Int64 = 10,
+    totalProductionCost: Double? = 1_000,
+    mainOutboundLogistics: Double? = 50,
+    extraRequest: Bool = false
+  ) -> IndustryPlanSnapshot {
+    let requestID = UUID()
+    var requests = [
+      ProductionRequestLine(
+        id: requestID,
+        lineNumber: 1,
+        productName: "Alliance Product",
+        wantedQuantity: Int(producedQuantity),
+        materialEfficiency: 0,
+        timeEfficiency: 0
+      )
+    ]
+    if extraRequest {
+      requests.append(
+        ProductionRequestLine(
+          id: UUID(),
+          lineNumber: 2,
+          productName: "Second Product",
+          wantedQuantity: 1,
+          materialEfficiency: 0,
+          timeEfficiency: 0
+        )
+      )
+    }
+    return IndustryPlanSnapshot(
+      id: UUID(),
+      createdAt: Date(timeIntervalSince1970: 100),
+      requests: requests,
+      nodes: [
+        PlanNode(
+          id: UUID(), typeID: 100, name: "Alliance Product",
+          requiredQuantity: producedQuantity, action: .produce,
+          activity: .manufacturing, runs: 1, materialEfficiency: 0,
+          timeEfficiency: 0, children: [], topLevelRequestID: requestID
+        )
+      ],
+      materials: [],
+      stockAllocations: [],
+      jobs: [],
+      materialCost: 0,
+      installationCost: 0,
+      costBreakdown: IndustryCostBreakdown(
+        materialCost: 0,
+        purchasedMaterialCost: 0,
+        stockMaterialCost: 0,
+        blueprintCosts: BlueprintCostBreakdown(
+          entries: [], requestsWithoutEnteredCost: [], total: 0
+        ),
+        systemIndexCost: 0,
+        facilityTax: 0,
+        sccSurcharge: 0,
+        alphaSurcharge: 0,
+        installationCost: 0,
+        logistics: nil,
+        logisticsCost: 0,
+        totalProductionCost: totalProductionCost
+      ),
+      immediateSale: Self.emptySale(.immediateSale),
+      listedSale: SaleScenarioResult(
+        scenario: .listedSale,
+        outboundLogisticsCost: mainOutboundLogistics,
+        grossOrNetRevenue: nil,
+        profit: 1,
+        margin: nil,
+        roi: nil,
+        quotes: []
+      ),
+      mainContractSale: nil,
+      homeImmediateSale: nil,
+      homeListedSale: nil,
+      homeContractSale: nil,
+      coalitionImmediateSale: nil,
+      coalitionListedSale: nil,
+      coalitionContractSale: nil,
+      totalJobSeconds: 1,
+      makespanSeconds: 1,
+      warnings: [],
+      explanations: [],
+      provenance: PlanProvenance(
+        sdeBuild: 1,
+        esiCompatibilityDate: "fixture",
+        snapshotIDs: [],
+        priceTimestamp: Date(timeIntervalSince1970: 100),
+        ruleVersion: "fixture"
+      )
+    )
+  }
+
+  @Test
+  func allianceSaleChargesFullCostAndSellsOnlyTheAcceptedUnits() {
+    let plan = Self.alliancePlan()
+    let result = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(
+        unitPrice: 200,
+        acceptedQuantity: 6,
+        deliveryHub: .mainHub,
+        feeRate: 0.05
+      )
+    )
+    #expect(result.unavailableReason == nil)
+    #expect(result.soldQuantity == 6)
+    #expect(result.grossRevenue == 1_200)
+    #expect(result.fee == 60)
+    #expect(result.deliveryCost == 50)
+    #expect(result.totalCost == 1_050)
+    #expect(result.profit == 90)
+    #expect(!result.feeIsManualAssumption)
+
+    // No fee entered: 0 % as an explicit manual assumption, full output sold.
+    let defaultFee = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 150)
+    )
+    #expect(defaultFee.feeIsManualAssumption)
+    #expect(defaultFee.fee == 0)
+    #expect(defaultFee.soldQuantity == 10)
+    #expect(defaultFee.deliveryCost == 0)
+    #expect(defaultFee.profit == 500)
+    #expect(
+      PlannerAllianceSaleCalculator.offerText(
+        for: defaultFee,
+        formattedUnitPrice: "150 ISK",
+        formattedTotal: "1,500 ISK"
+      ) == "WTS 10× Alliance Product @ 150 ISK each (1,500 ISK total)"
+    )
+  }
+
+  @Test
+  func allianceSaleStaysUnavailableWithoutPriceRouteOrSingleProduct() {
+    let plan = Self.alliancePlan()
+    let noPrice = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput()
+    )
+    #expect(noPrice.profit == nil)
+    #expect(noPrice.unavailableReason != nil)
+    #expect(
+      PlannerAllianceSaleCalculator.offerText(
+        for: noPrice,
+        formattedUnitPrice: "-",
+        formattedTotal: "-"
+      ) == nil
+    )
+    let noRoute = PlannerAllianceSaleCalculator.calculate(
+      plan: Self.alliancePlan(mainOutboundLogistics: nil),
+      input: PlannerAllianceSaleInput(unitPrice: 200, deliveryHub: .mainHub)
+    )
+    #expect(noRoute.profit == nil)
+    #expect(noRoute.deliveryCost == nil)
+    // A missing Coalition scenario never becomes free transport.
+    let noCoalition = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 200, deliveryHub: .coalitionHub)
+    )
+    #expect(noCoalition.profit == nil)
+    let twoProducts = PlannerAllianceSaleCalculator.calculate(
+      plan: Self.alliancePlan(extraRequest: true),
+      input: PlannerAllianceSaleInput(unitPrice: 200)
+    )
+    #expect(twoProducts.profit == nil)
+    let noCost = PlannerAllianceSaleCalculator.calculate(
+      plan: Self.alliancePlan(totalProductionCost: nil),
+      input: PlannerAllianceSaleInput(unitPrice: 200)
+    )
+    #expect(noCost.grossRevenue == 2_000)
+    #expect(noCost.profit == nil)
+    #expect(noCost.unavailableReason != nil)
+    #expect(
+      PlannerAllianceSaleCalculator.calculate(
+        plan: plan,
+        input: PlannerAllianceSaleInput(unitPrice: 200, feeRate: 1.2)
+      ).profit == nil
+    )
+  }
+
+  @Test
+  func allianceMarketCanBeSuggestedAndOldSnapshotsStayReadable() throws {
+    var plan = Self.alliancePlan()
+    // The listed Main-Hub card earns 1 ISK; the alliance deal earns more.
+    plan.allianceSale = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 150)
+    )
+    #expect(PlannerTargetMarketSuggestion.suggest(plan)?.market == .allianceMarket)
+    plan.targetMarket = .allianceMarket
+    let decoded = try JSONDecoder().decode(
+      IndustryPlanSnapshot.self,
+      from: JSONEncoder().encode(plan)
+    )
+    #expect(decoded.targetMarket == .allianceMarket)
+    #expect(decoded.allianceSale?.profit == 500)
+    // A P10 snapshot without the new field still decodes.
+    var older = Self.alliancePlan()
+    older.targetMarket = .homeHub
+    let olderData = try JSONEncoder().encode(older)
+    #expect(!(String(data: olderData, encoding: .utf8) ?? "").contains("allianceSale"))
+    let olderDecoded = try JSONDecoder().decode(IndustryPlanSnapshot.self, from: olderData)
+    #expect(olderDecoded.allianceSale == nil)
+    #expect(olderDecoded.targetMarket == .homeHub)
+  }
+
   private static func emptySale(
     _ scenario: PriceScenario
   ) -> SaleScenarioResult {

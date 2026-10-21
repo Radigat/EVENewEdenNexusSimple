@@ -1768,6 +1768,19 @@ public struct MarketOrderSnapshot: Identifiable, Codable, Sendable {
   public let state: DataFreshness
   public let ordersByType: [Int64: [MarketOrder]]
   public let source: SourceIdentity
+
+  /// The same snapshot identity and provenance, restricted to `typeIDs`.
+  public func restricted(to typeIDs: Set<Int64>) -> MarketOrderSnapshot {
+    MarketOrderSnapshot(
+      id: id,
+      regionID: regionID,
+      locationID: locationID,
+      capturedAt: capturedAt,
+      state: state,
+      ordersByType: ordersByType.filter { typeIDs.contains($0.key) },
+      source: source
+    )
+  }
 }
 
 public struct MarketOrderTypeSummary: Codable, Equatable, Sendable {

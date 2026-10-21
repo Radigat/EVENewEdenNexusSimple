@@ -556,6 +556,7 @@ private struct ProductionOverviewRowContext {
   let productTypeID: Int64?
   let projection: ProductionOverviewRequestProjection?
   let metrics: ProductionOverviewCalculation
+  let targetMarket: PlannerTargetMarket?
 }
 
 final class ProductionOverviewProjectionCache {
@@ -634,6 +635,37 @@ final class ProductionOverviewProjectionCache {
       for: row.requestID
     )?.typeID
   }
+
+  /// Target market recorded in the row's plan snapshot; `nil` for rows saved
+  /// before P10 or without a choice.
+  func targetMarket(for row: StoredProductionOverviewRow) -> PlannerTargetMarket? {
+    _ = storedProjection(for: row)
+    return entries[row.planID]?.plan?.targetMarket
+  }
+}
+
+/// Grid text and documented sort rank of a target market (P10).
+enum ProductionOverviewTargetMarketPresentation {
+  static func text(_ market: PlannerTargetMarket?) -> String {
+    switch market {
+    case .mainHub: "Main Hub"
+    case .homeHub: "Home Hub"
+    case .coalitionHub: "Coalition Hub"
+    case .allianceMarket: AppLocalization.text("Alliance market")
+    case nil: AppLocalization.text("Not chosen")
+    }
+  }
+
+  /// Main, Home, Coalition, Alliance; an unchosen market stays unknown (`nil`).
+  static func rank(_ market: PlannerTargetMarket?) -> Int? {
+    switch market {
+    case .mainHub: 0
+    case .homeHub: 1
+    case .coalitionHub: 2
+    case .allianceMarket: 3
+    case nil: nil
+    }
+  }
 }
 
 private struct ProductionOverviewGrid: View {
@@ -676,11 +708,12 @@ private struct ProductionOverviewGrid: View {
     ("Margin", "Margin"),
     ("Verkauft", "Verkaufte Units"),
     ("Real Gewinn", "Realer Gewinn"),
+    ("Ziel", "Zielmarkt"),
   ]
 
   private let widthWeights: [CGFloat] = [
     28, 50, 88, 34, 24, 24, 52, 36, 48, 46, 44, 48, 42, 42, 52,
-    54, 50, 54, 54, 54, 42, 52, 52,
+    54, 50, 54, 54, 54, 42, 52, 52, 48,
   ]
 
   private let sortColumns = ProductionOverviewSortColumn.allCases
@@ -826,6 +859,11 @@ private struct ProductionOverviewGrid: View {
             row: offset,
             emphasis: .profit
           )
+          textCell(
+            ProductionOverviewTargetMarketPresentation.text(context.targetMarket),
+            column: 23,
+            row: offset
+          )
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
@@ -864,7 +902,8 @@ private struct ProductionOverviewGrid: View {
         row: row,
         productTypeID: projectionCache.productTypeID(for: row),
         projection: projection,
-        metrics: calculation(for: row, projection: projection)
+        metrics: calculation(for: row, projection: projection),
+        targetMarket: projectionCache.targetMarket(for: row)
       )
     }
     return contexts.sorted { lhsContext, rhsContext in
@@ -925,6 +964,11 @@ private struct ProductionOverviewGrid: View {
         ordered = compare(lhs.soldUnits, rhs.soldUnits)
       case .realProfit:
         ordered = compareOptional(lhsMetrics.realProfit, rhsMetrics.realProfit)
+      case .targetMarket:
+        ordered = compareOptional(
+          ProductionOverviewTargetMarketPresentation.rank(lhsContext.targetMarket),
+          ProductionOverviewTargetMarketPresentation.rank(rhsContext.targetMarket)
+        )
       }
       return ordered ?? (lhs.id.uuidString < rhs.id.uuidString)
     }
@@ -1325,6 +1369,7 @@ private enum ProductionOverviewSortColumn: Int, CaseIterable, Hashable {
   case margin
   case soldUnits
   case realProfit
+  case targetMarket
 }
 
 private func calculation(

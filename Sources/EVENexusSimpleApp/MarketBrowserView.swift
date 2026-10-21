@@ -884,6 +884,12 @@ struct MarketBrowserView: View {
 
 struct ManufacturingOpportunitiesView: View {
   let onBuildInPlanner: (PlannerLaunchRequest) -> Void
+  /// `main` keeps the historical Main-Hub workspace; `home` shows the
+  /// Home-Hub scan with its own persisted filters (HUB_CHANCEN_PLAN P5).
+  let hubRole: OpportunityHubRole
+  var onOpenMarketSettings: () -> Void = {}
+  var onOpenMainHubOpportunities: () -> Void = {}
+  var onOpenHomeHubOpportunities: () -> Void = {}
 
   @EnvironmentObject private var runtime: RuntimeState
   @Query(sort: \StoredCharacter.characterName)
@@ -1003,11 +1009,240 @@ struct ManufacturingOpportunitiesView: View {
   @State private var treePreferredBlueprintSources: [Int64: [BlueprintSourceReference]] = [:]
   @State private var treeBlueprintCostTexts: [Int64: String] = [:]
 
-  init(onBuildInPlanner: @escaping (PlannerLaunchRequest) -> Void) {
+  init(
+    hubRole: OpportunityHubRole = .main,
+    onOpenMarketSettings: @escaping () -> Void = {},
+    onOpenMainHubOpportunities: @escaping () -> Void = {},
+    onOpenHomeHubOpportunities: @escaping () -> Void = {},
+    onBuildInPlanner: @escaping (PlannerLaunchRequest) -> Void
+  ) {
+    self.hubRole = hubRole
+    self.onOpenMarketSettings = onOpenMarketSettings
+    self.onOpenMainHubOpportunities = onOpenMainHubOpportunities
+    self.onOpenHomeHubOpportunities = onOpenHomeHubOpportunities
     self.onBuildInPlanner = onBuildInPlanner
+    guard hubRole != .main else { return }
+    // Filters are persisted per hub. Favorites, Blueprint cost and the
+    // Corporation-hangar switch stay shared because they describe items.
+    let store = AppDefaults.store
+    func key(_ mainKey: String) -> String { hubRole.storageKey(mainKey) }
+    _minimumAverageDailyDemand = AppStorage(
+      wrappedValue: 0,
+      key("market-opportunities.minimum-average-daily-demand"),
+      store: store
+    )
+    _analysisBasisExpanded = AppStorage(
+      wrappedValue: true,
+      key("market-opportunities.analysis-basis-expanded"),
+      store: store
+    )
+    _encodedProductFamilies = AppStorage(
+      wrappedValue: "",
+      key("market-opportunities.filter.product-families"),
+      store: store
+    )
+    _encodedProductionClasses = AppStorage(
+      wrappedValue: "",
+      key("market-opportunities.filter.production-classes"),
+      store: store
+    )
+    _maximumMaterialPurchaseISKText = AppStorage(
+      wrappedValue: "",
+      key("manufacturing-opportunity.maximum-material-purchase-isk"),
+      store: store
+    )
+    _filterDeckExpanded = AppStorage(
+      wrappedValue: true,
+      key("market-opportunities.filter.expanded"),
+      store: store
+    )
+    _searchText = AppStorage(
+      wrappedValue: "",
+      key("market-opportunities.filter.search-text"),
+      store: store
+    )
+    _selectedCategory = AppStorage(
+      wrappedValue: "",
+      key("market-opportunities.filter.category"),
+      store: store
+    )
+    _selectedGroup = AppStorage(
+      wrappedValue: "",
+      key("market-opportunities.filter.group"),
+      store: store
+    )
+    _favoritesOnly = AppStorage(
+      wrappedValue: false,
+      key("market-opportunities.filter.favorites-only"),
+      store: store
+    )
+    _valueFilter = AppStorage(
+      wrappedValue: ManufacturingOpportunityValueFilter.all,
+      key("market-opportunities.filter.value"),
+      store: store
+    )
+  }
+
+  // MARK: Role-dependent runtime state
+
+  private var analysis: ManufacturingOpportunitySnapshot? {
+    hubRole == .main
+      ? runtime.manufacturingOpportunityAnalysis
+      : runtime.opportunityState(for: hubRole).analysis
+  }
+
+  private var opportunityDemand: ManufacturingOpportunityDemandSnapshot? {
+    hubRole == .main
+      ? runtime.manufacturingOpportunityDemand
+      : runtime.opportunityState(for: hubRole).demand
+  }
+
+  /// Home and Coalition scans depend on the Main-Hub scan, so both errors apply.
+  private var opportunityError: String? {
+    hubRole == .main
+      ? runtime.manufacturingOpportunityError
+      : runtime.opportunityState(for: hubRole).error
+        ?? runtime.manufacturingOpportunityError
+  }
+
+  private var opportunitySnapshotError: String? {
+    hubRole == .main ? runtime.manufacturingOpportunitySnapshotError : nil
+  }
+
+  private var opportunityDemandError: String? {
+    hubRole == .main ? runtime.manufacturingOpportunityDemandError : nil
+  }
+
+  private var scanProgressValue: ManufacturingOpportunityScanProgress {
+    let state = runtime.opportunityState(for: hubRole)
+    return hubRole != .main && state.isAnalyzing
+      ? state.progress
+      : runtime.manufacturingOpportunityProgress
+  }
+
+  private var contractContext: ManufacturingOpportunityContractContext {
+    ManufacturingOpportunityContractContext(
+      references: runtime.opportunityContractReferences,
+      contractFeeRate: runtime.publicContractFeeRate(for: hubRole)
+    )
+  }
+
+  /// Localizes a Main-Hub text and names the shown hub instead.
+  private func hubText(_ key: String) -> String {
+    OpportunityHubText.adapt(AppLocalization.text(key), for: hubRole)
+  }
+
+  /// Sale-side warnings name the shown hub; material warnings keep "Main Hub"
+  /// because materials are always bought there.
+  private func presentedWarning(_ warning: DomainWarning) -> String {
+    OpportunityHubText.saleWarningCodes.contains(warning.code)
+      ? hubText(warning.message) : AppLocalization.text(warning.message)
   }
 
   var body: some View {
+    if let unavailable = homeHubUnavailableState {
+      unavailable
+    } else {
+      workspaceBody
+    }
+  }
+
+  /// Hub missing, equal to another hub or incomplete: explain instead of
+  /// scanning.
+  private var homeHubUnavailableState: AnyView? {
+    guard hubRole != .main else { return nil }
+    let coalition = hubRole == .coalition
+    switch runtime.opportunityScanTarget(for: hubRole) {
+    case .notConfigured:
+      return AnyView(
+        ContentUnavailableView {
+          Label(
+            coalition ? "No Coalition Hub configured" : "No Home Hub configured",
+            systemImage: coalition ? "flag" : "house"
+          )
+        } description: {
+          Text(
+            coalition
+              ? "Select a Coalition Hub under Data & Settings → Market Settings. Its opportunities are scanned together with the Main Hub."
+              : "Select a Home Hub under Data & Settings → Market Settings. Its opportunities are scanned together with the Main Hub."
+          )
+        } actions: {
+          Button("Open Market Settings") { onOpenMarketSettings() }
+        }
+      )
+    case .sharesMainHub:
+      return AnyView(
+        ContentUnavailableView {
+          Label(
+            coalition
+              ? "Coalition Hub equals the Main Hub" : "Home Hub equals the Main Hub",
+            systemImage: coalition ? "flag" : "house"
+          )
+        } description: {
+          Text(
+            coalition
+              ? "No separate Coalition Hub scan runs. Use Main Hub Opportunities for this location."
+              : "No separate Home Hub scan runs. Use Main Hub Opportunities for this location."
+          )
+        } actions: {
+          Button("Open Main Hub Opportunities") { onOpenMainHubOpportunities() }
+        }
+      )
+    case .sharesHomeHub:
+      return AnyView(
+        ContentUnavailableView {
+          Label("Coalition Hub equals the Home Hub", systemImage: "flag")
+        } description: {
+          Text(
+            "No separate Coalition Hub scan runs. Use Home Hub Opportunities for this location."
+          )
+        } actions: {
+          Button("Open Home Hub Opportunities") { onOpenHomeHubOpportunities() }
+        }
+      )
+    case .unresolved:
+      return AnyView(
+        ContentUnavailableView {
+          Label(
+            coalition
+              ? "Coalition Hub location incomplete" : "Home Hub location incomplete",
+            systemImage: coalition ? "flag" : "house"
+          )
+        } description: {
+          Text(
+            coalition
+              ? "The Coalition Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings."
+              : "The Home Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings."
+          )
+        } actions: {
+          Button("Open Market Settings") { onOpenMarketSettings() }
+        }
+      )
+    case .npcStation, .playerStructure:
+      return nil
+    }
+  }
+
+  /// Shown while a configured Home or Coalition Hub has no saved scan yet.
+  private var homeHubPendingScanText: String {
+    let coalition = hubRole == .coalition
+    if let next = runtime.mainHubMarketNextAutomaticRunAt {
+      return AppLocalization.format(
+        coalition
+          ? "The Coalition Hub is scanned together with the next Main Hub scan at %@. Update starts all scans now."
+          : "The Home Hub is scanned together with the next Main Hub scan at %@. Update starts both now.",
+        next.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    return AppLocalization.text(
+      coalition
+        ? "The Coalition Hub is scanned together with the Main Hub. Update starts all scans now."
+        : "The Home Hub is scanned together with the Main Hub. Update starts both now."
+    )
+  }
+
+  @ViewBuilder
+  private var workspaceBody: some View {
     let planPayloads = activePlanSnapshotPayloads
     let planReservationsAreCurrent =
       preparedPlanReservations.source == planPayloads
@@ -1042,16 +1277,16 @@ struct ManufacturingOpportunitiesView: View {
           VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
             header
             filterDeck
-            if let error = runtime.manufacturingOpportunityError {
+            if let error = opportunityError {
               Label(error.localizedUI, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
                 .foregroundStyle(DesignTokens.negative)
             }
             if runtime.isAnalyzingManufacturingOpportunities { scanProgress }
-            if let snapshot = runtime.manufacturingOpportunityAnalysis {
+            if let snapshot = analysis {
               basis(snapshot)
             }
-            if let snapshotError = runtime.manufacturingOpportunitySnapshotError {
+            if let snapshotError = opportunitySnapshotError {
               Label(
                 snapshotError.localizedUI,
                 systemImage: "externaldrive.badge.exclamationmark"
@@ -1075,7 +1310,7 @@ struct ManufacturingOpportunitiesView: View {
 
         if planReservationsAreCurrent {
           calculatorWorkspace(
-            runtime.manufacturingOpportunityAnalysis,
+            analysis,
             candidates: preparedCandidates
           )
         } else {
@@ -1100,6 +1335,12 @@ struct ManufacturingOpportunitiesView: View {
     .task(id: candidateTrigger) {
       await prepareCandidates(trigger: candidateTrigger)
     }
+    .task(id: analysis?.id) {
+      guard let analysis else { return }
+      await runtime.loadOpportunityContractReferences(
+        typeIDs: Set(analysis.rows.map(\.productTypeID))
+      )
+    }
     .onAppear {
       restoreCatalogFilters()
       minimumAverageDailyDemand = max(0, minimumAverageDailyDemand)
@@ -1108,9 +1349,12 @@ struct ManufacturingOpportunitiesView: View {
     .task {
       await runtime.loadManufacturingOpportunityAnalysis()
       await runtime.loadManufacturingOpportunityDemand()
+      if hubRole != .main {
+        await runtime.loadSecondaryHubOpportunityData(role: hubRole)
+      }
       runtime.prepareMainHubMarketAutomation()
     }
-    .onChange(of: runtime.manufacturingOpportunityAnalysis?.id) { _, _ in
+    .onChange(of: analysis?.id) { _, _ in
       discardUnavailableStoredCatalogChoices()
       shoppingCopyStatus = nil
       requestedRunsByTypeID = [:]
@@ -1171,10 +1415,14 @@ struct ManufacturingOpportunitiesView: View {
         Rectangle().fill(DesignTokens.accent).frame(height: 2)
       }
       ContentUnavailableView(
-        "No Main Hub scan yet",
+        hubText("No Main Hub scan yet"),
         systemImage: "chart.line.uptrend.xyaxis",
         description: Text(
-          "Start the explicit scan to compare published manufacturing recipes against one current Main Hub order-book snapshot."
+          hubRole == .main
+            ? AppLocalization.text(
+              "Start the explicit scan to compare published manufacturing recipes against one current Main Hub order-book snapshot."
+            )
+            : homeHubPendingScanText
         )
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1189,10 +1437,12 @@ struct ManufacturingOpportunitiesView: View {
   private var header: some View {
     HStack(spacing: DesignTokens.spacingMD) {
       VStack(alignment: .leading, spacing: 2) {
-        Text("Market Opportunities · Main Hub")
+        Text(hubText("Market Opportunities · Main Hub"))
           .font(.title2.bold())
         Text(
-          "Main Hub market · Production candidates · Ranking · Planner handoff"
+          hubText(
+            "Main Hub market · Production candidates · Ranking · Planner handoff"
+          )
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
@@ -1492,22 +1742,22 @@ struct ManufacturingOpportunitiesView: View {
 
   private var scanProgress: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-      if let fraction = runtime.manufacturingOpportunityProgress.fractionCompleted {
+      if let fraction = scanProgressValue.fractionCompleted {
         ProgressView(value: fraction)
       } else {
         ProgressView()
       }
       HStack {
-        Text("Loading the configured Main Hub order book")
+        Text(hubText("Loading the configured Main Hub order book"))
         Spacer()
-        if runtime.manufacturingOpportunityProgress.totalPages > 0 {
+        if scanProgressValue.totalPages > 0 {
           Text(
             AppLocalization.format(
               "%@ / %@ pages",
               formatInteger(
-                runtime.manufacturingOpportunityProgress.completedPages
+                scanProgressValue.completedPages
               ),
-              formatInteger(runtime.manufacturingOpportunityProgress.totalPages)
+              formatInteger(scanProgressValue.totalPages)
             )
           )
           .monospacedDigit()
@@ -1601,9 +1851,12 @@ struct ManufacturingOpportunitiesView: View {
               )
             )
             Text(
-              AppLocalization.format(
-                "Main Hub active order types: %@",
-                formatInteger(snapshot.coverage.mainHubActiveOrderTypeCount)
+              OpportunityHubText.adapt(
+                AppLocalization.format(
+                  "Main Hub active order types: %@",
+                  formatInteger(snapshot.coverage.mainHubActiveOrderTypeCount)
+                ),
+                for: hubRole
               )
             )
             if let demand = snapshot.demand {
@@ -1613,7 +1866,7 @@ struct ManufacturingOpportunitiesView: View {
                   formatInteger(demand.sampleCount)
                 )
               )
-              if let history = runtime.manufacturingOpportunityDemand,
+              if let history = opportunityDemand,
                 history.regionID == demand.regionID,
                 history.locationID == demand.locationID
               {
@@ -1653,12 +1906,21 @@ struct ManufacturingOpportunitiesView: View {
               .minimumRateObservationDuration
           {
             Text(
-              "Daily demand is normalized from the exact Main Hub lower bound observed between \(formatUTCTime(demand.firstObservedAt)) and \(formatUTCTime(demand.lastObservedAt)). Each item needs a surviving comparable order and at least 30 minutes of observation."
+              OpportunityHubText.adapt(
+                AppLocalization.format(
+                  "Daily demand is normalized from the exact Main Hub lower bound observed between %@ and %@. Each item needs a surviving comparable order and at least 30 minutes of observation.",
+                  formatUTCTime(demand.firstObservedAt),
+                  formatUTCTime(demand.lastObservedAt)
+                ),
+                for: hubRole
+              )
             )
             .foregroundStyle(DesignTokens.textSecondary)
           } else {
             Text(
-              "A second exact Main Hub scan at least 30 minutes after the baseline is required before a daily demand rate can be calculated."
+              hubText(
+                "A second exact Main Hub scan at least 30 minutes after the baseline is required before a daily demand rate can be calculated."
+              )
             )
             .foregroundStyle(DesignTokens.textSecondary)
           }
@@ -1674,13 +1936,13 @@ struct ManufacturingOpportunitiesView: View {
         )
         .foregroundStyle(DesignTokens.caution)
       }
-      if let demandError = runtime.manufacturingOpportunityDemandError {
+      if let demandError = opportunityDemandError {
         Label(demandError.localizedUI, systemImage: "externaldrive.badge.exclamationmark")
           .foregroundStyle(DesignTokens.caution)
       }
       ForEach(snapshot.warnings) { warning in
         Label(
-          LocalizedStringKey(warning.message),
+          presentedWarning(warning),
           systemImage: warning.severity == .blocking
             ? "xmark.octagon.fill" : "info.circle"
         )
@@ -1812,10 +2074,20 @@ struct ManufacturingOpportunitiesView: View {
         column: .dailyProfitPotential,
         width: 125
       )
+      sortableHeaderCell("Contract price", column: .contractPrice, width: 115)
+      sortableHeaderCell("Contract profit", column: .contractProfit, width: 120)
       sortableHeaderCell("ROI", column: .roi, width: 65)
       sortableHeaderCell("ISK / h", column: .iskPerHour, width: 95)
       sortableHeaderCell("ISK / m³", column: .iskPerCubicMeter, width: 95)
         .padding(.leading, DesignTokens.spacingSM)
+      if hubRole == .coalition {
+        sortableHeaderCell(
+          "Home → Coalition",
+          column: .onwardTransport,
+          width: 120
+        )
+        .padding(.leading, DesignTokens.spacingSM)
+      }
       sortableHeaderCell("Group", column: .group, width: 145, alignment: .leading)
         .padding(.leading, DesignTokens.spacingSM)
       sortableHeaderCell("Category", column: .category, width: 125, alignment: .leading)
@@ -1853,7 +2125,8 @@ struct ManufacturingOpportunitiesView: View {
             requestedRuns: row.runs,
             wantedQuantity: Int(clamping: row.producedQuantity),
             materialEfficiency: row.displayedMaterialEfficiency ?? 0,
-            timeEfficiency: row.displayedTimeEfficiency ?? 0
+            timeEfficiency: row.displayedTimeEfficiency ?? 0,
+            targetMarket: hubRole
           )
         )
       }
@@ -1903,10 +2176,32 @@ struct ManufacturingOpportunitiesView: View {
           $0 >= 0 ? DesignTokens.positive : DesignTokens.negative
         } ?? DesignTokens.caution
       )
+      textCell(
+        contractCellText(formatISK(costs.contract?.unitPrice), costs.contract),
+        width: 115,
+        color: contractCellColor(costs.contract, value: nil)
+      )
+      textCell(
+        contractCellText(
+          formatSignedISK(costs.contract?.profit),
+          costs.contract
+        ),
+        width: 120,
+        color: contractCellColor(costs.contract, value: costs.contract?.profit)
+      )
       textCell(formatPercent(costs.returnOnInvestment), width: 65)
       textCell(formatISK(costs.iskPerHour), width: 95)
       textCell(formatISK(costs.iskPerCubicMeter), width: 95)
         .padding(.leading, DesignTokens.spacingSM)
+      if hubRole == .coalition {
+        textCell(
+          formatISK(costs.onwardTransportCost),
+          width: 120,
+          color: costs.onwardTransportCost == nil
+            ? DesignTokens.caution : DesignTokens.textPrimary
+        )
+        .padding(.leading, DesignTokens.spacingSM)
+      }
       textCell(row.groupName, width: 145, alignment: .leading)
         .padding(.leading, DesignTokens.spacingSM)
       textCell(row.categoryName, width: 125, alignment: .leading)
@@ -1965,7 +2260,7 @@ struct ManufacturingOpportunitiesView: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .help(Text(sortableColumnHelp(column)))
+    .help(Text(sortableColumnHelpText(column)))
     .accessibilityLabel(title)
     .accessibilityValue(
       tableSort?.column == column
@@ -1974,9 +2269,45 @@ struct ManufacturingOpportunitiesView: View {
     )
   }
 
+  private func sortableColumnHelpText(
+    _ column: ManufacturingOpportunitySortColumn
+  ) -> String {
+    if column == .contractPrice {
+      return AppLocalization.text(
+        "Contract price: lowest unit price of a comparable public Item Exchange contract in the local index for exactly this product, one offered line, no requested line and a positive price; bundles are excluded. The search covers the whole imported universe, as in the Planner. ≈ marks a provisional value while the index is incomplete. No offer stays unavailable. Click to sort."
+      )
+    }
+    if column == .contractProfit {
+      return AppLocalization.text(
+        "Contract profit: contract price × produced units, minus the confirmed public-contract fee rate of this hub and the total cost. Market sales tax and broker fee do not apply. Without a confirmed rate the value is shown before the contract fee. Click to sort."
+      )
+    }
+    if column == .onwardTransport {
+      return AppLocalization.text(
+        "Home → Coalition: onward transport of the complete output from the Home Hub to the Coalition Hub, by Jump Freighter when jump logistics is enabled and otherwise by Profile courier. It is part of Cost. Missing route, pilot or tariff keeps it unavailable. Click to sort."
+      )
+    }
+    if hubRole == .coalition, column == .cost {
+      return AppLocalization.text(
+        "Total cost: material replacement value plus installation, optional Blueprint allocation, the inbound Profile logistics from the Main Hub and the Home → Coalition transport. No return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
+      )
+    }
+    if hubRole != .main, column == .cost {
+      return AppLocalization.text(
+        "Total cost: material replacement value plus installation, optional Blueprint allocation and the required inbound Profile logistics from the Main Hub. Products are sold at this hub, so no return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
+      )
+    }
+    switch column {
+    case .revenue, .salesTax, .brokerFee:
+      return hubText(sortableColumnHelp(column))
+    default:
+      return AppLocalization.text(sortableColumnHelp(column))
+    }
+  }
+
   private func sortableColumnHelp(
     _ column: ManufacturingOpportunitySortColumn
-  ) -> LocalizedStringKey {
+  ) -> String {
     switch column {
     case .cost:
       "Total cost: material replacement value plus installation, optional Blueprint allocation and both required Profile logistics legs. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
@@ -2007,6 +2338,29 @@ struct ManufacturingOpportunitiesView: View {
     default:
       "Click to sort ascending; click again to sort descending."
     }
+  }
+
+  /// Provisional contract values carry a leading "≈".
+  private func contractCellText(
+    _ value: String,
+    _ contract: ManufacturingOpportunityContractProjection?
+  ) -> String {
+    guard let contract, contract.unitPrice != nil else { return value }
+    return contract.isProvisional ? "≈ \(value)" : value
+  }
+
+  private func contractCellColor(
+    _ contract: ManufacturingOpportunityContractProjection?,
+    value: Double?
+  ) -> Color {
+    guard let contract, contract.unitPrice != nil else {
+      return DesignTokens.caution
+    }
+    if contract.isProvisional || contract.isBeforeContractFee {
+      return DesignTokens.caution
+    }
+    guard let value else { return DesignTokens.textPrimary }
+    return value >= 0 ? DesignTokens.positive : DesignTokens.negative
   }
 
   private func textCell(
@@ -3120,7 +3474,8 @@ struct ManufacturingOpportunitiesView: View {
     let costs = ManufacturingOpportunityScenarioProjector.costs(
       for: row,
       sheet: costSheet,
-      logistics: logistics
+      logistics: logistics,
+      contract: contractContext
     )
     return ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
@@ -3168,6 +3523,40 @@ struct ManufacturingOpportunitiesView: View {
           detailMetric("ROI", formatPercent(costs.returnOnInvestment))
           detailMetric("ISK / h", formatISK(costs.iskPerHour))
           detailMetric("ISK / m³", formatISK(costs.iskPerCubicMeter))
+          detailMetric(
+            "Contract price",
+            contractCellText(formatISK(costs.contract?.unitPrice), costs.contract)
+          )
+          detailMetric(
+            "Contract revenue",
+            contractCellText(
+              formatISK(costs.contract?.grossRevenue),
+              costs.contract
+            )
+          )
+          detailMetric(
+            "Contract fee",
+            costs.contract?.isBeforeContractFee == true
+              ? AppLocalization.text("Before contract fee")
+              : formatISK(costs.contract?.contractFee)
+          )
+          detailMetric(
+            "Contract profit",
+            contractCellText(
+              formatSignedISK(costs.contract?.profit),
+              costs.contract
+            )
+          )
+          detailMetric(
+            "Contract ROI",
+            formatPercent(costs.contract?.returnOnInvestment)
+          )
+          if hubRole == .coalition {
+            detailMetric(
+              "Home → Coalition",
+              formatISK(costs.onwardTransportCost)
+            )
+          }
         }
         if let facilityName = row.facilityName {
           Label(facilityName, systemImage: "hammer.fill")
@@ -3185,9 +3574,52 @@ struct ManufacturingOpportunitiesView: View {
               .font(.caption.monospacedDigit())
           }
         }
+        if let referenceError = runtime.opportunityContractReferenceError {
+          Label(referenceError.localizedUI, systemImage: "doc.text.magnifyingglass")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.caution)
+        } else if let contract = costs.contract {
+          if contract.unitPrice == nil {
+            Label(
+              "No comparable public contract offer was observed for this product. Contract values remain unavailable.",
+              systemImage: "doc.text.magnifyingglass"
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          } else if contract.isProvisional {
+            Label(
+              "The Public Contracts index is incomplete. The contract price is a provisional estimate from offers observed so far.",
+              systemImage: "doc.text.magnifyingglass"
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.caution)
+          }
+          if contract.unitPrice != nil, contract.isBeforeContractFee {
+            Label(
+              "No confirmed public-contract fee rate exists for this hub. Contract profit and ROI are shown before the contract fee; enter the rate in Market Settings.",
+              systemImage: "exclamationmark.triangle"
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.caution)
+          }
+        }
+        // The concrete reason behind an unavailable Home → Coalition transport.
+        ForEach(
+          analysis?.coalitionTransport?.transport(for: row).warnings ?? []
+        ) { warning in
+          Label(
+            AppLocalization.text(warning.message),
+            systemImage: "flag"
+          )
+          .font(.caption)
+          .foregroundStyle(
+            warning.severity == .blocking
+              ? DesignTokens.negative : DesignTokens.caution
+          )
+        }
         ForEach(logistics.warnings) { warning in
           Label(
-            LocalizedStringKey(warning.message),
+            presentedWarning(warning),
             systemImage: "exclamationmark.triangle"
           )
           .font(.caption)
@@ -3198,7 +3630,7 @@ struct ManufacturingOpportunitiesView: View {
         }
         ForEach(row.warnings) { warning in
           Label(
-            LocalizedStringKey(warning.message),
+            presentedWarning(warning),
             systemImage: "exclamationmark.triangle"
           )
           .font(.caption)
@@ -3338,7 +3770,7 @@ struct ManufacturingOpportunitiesView: View {
   private func logisticsProjection(
     for row: ManufacturingOpportunityRow
   ) -> ManufacturingOpportunityLogisticsProjection {
-    let snapshot = runtime.manufacturingOpportunityAnalysis
+    let snapshot = analysis
     return ManufacturingOpportunityScenarioProjector.logistics(
       for: row,
       procurement: procurementProjection(for: row),
@@ -3346,7 +3778,8 @@ struct ManufacturingOpportunitiesView: View {
       mainHub: snapshot?.mainHub
         ?? runtime.productionBasis.mainTradingLocation?.location
         ?? .jita,
-      warehouseIsAvailable: warehouseHasSnapshot
+      warehouseIsAvailable: warehouseHasSnapshot,
+      route: snapshot?.saleRoute(for: row) ?? .mainHubRoundTrip
     )
   }
 
@@ -3368,17 +3801,17 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private var categories: [String] {
-    Array(Set(runtime.manufacturingOpportunityAnalysis?.rows.map(\.categoryName) ?? []))
+    Array(Set(analysis?.rows.map(\.categoryName) ?? []))
       .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
   }
 
   private var groups: [String] {
-    Array(Set(runtime.manufacturingOpportunityAnalysis?.rows.map(\.groupName) ?? []))
+    Array(Set(analysis?.rows.map(\.groupName) ?? []))
       .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
   }
 
   private var hasProductionClassMetadata: Bool {
-    runtime.manufacturingOpportunityAnalysis?.rows.contains {
+    analysis?.rows.contains {
       $0.metaGroupID != nil || $0.techLevel != nil
     } == true
   }
@@ -3459,7 +3892,7 @@ struct ManufacturingOpportunitiesView: View {
     let activeSort = activeCandidateSort
 
     return ManufacturingOpportunityCandidateProjectionTrigger(
-      snapshotID: runtime.manufacturingOpportunityAnalysis?.id,
+      snapshotID: analysis?.id,
       requestedWarehouseIdentity: warehouseIdentity,
       preparedWarehouseIdentity: preparedWarehouseIdentity,
       reservationRevision: preparedPlanReservationRevision,
@@ -3476,7 +3909,9 @@ struct ManufacturingOpportunitiesView: View {
       includesBlueprintCost: costIncludesBlueprint,
       blueprintCostText: blueprintCostPerRunText,
       sortColumn: activeSort.column.rawValue,
-      sortDirection: activeSort.direction.rawValue
+      sortDirection: activeSort.direction.rawValue,
+      contractReferenceID: runtime.opportunityContractReferences?.id,
+      contractFeeRate: runtime.publicContractFeeRate(for: hubRole)
     )
   }
 
@@ -4191,7 +4626,7 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private func discardUnavailableStoredCatalogChoices() {
-    guard runtime.manufacturingOpportunityAnalysis != nil else { return }
+    guard analysis != nil else { return }
     if !selectedCategory.isEmpty, !categories.contains(selectedCategory) {
       selectedCategory = ""
     }
@@ -4302,7 +4737,7 @@ struct ManufacturingOpportunitiesView: View {
           && (requestedME != row.materialEfficiency
             || requestedTE != row.timeEfficiency)
     else { return candidate }
-    guard let snapshot = runtime.manufacturingOpportunityAnalysis,
+    guard let snapshot = analysis,
       let projectedRow = ManufacturingOpportunityRunProjector.project(
         row,
         requestedRuns: requestedRuns,
@@ -4321,12 +4756,14 @@ struct ManufacturingOpportunitiesView: View {
       procurement: procurement,
       configuration: snapshot.logisticsConfiguration,
       mainHub: snapshot.mainHub,
-      warehouseIsAvailable: warehouseHasSnapshot
+      warehouseIsAvailable: warehouseHasSnapshot,
+      route: snapshot.saleRoute(for: projectedRow)
     )
     let costs = ManufacturingOpportunityScenarioProjector.costs(
       for: projectedRow,
       sheet: costSheet,
-      logistics: logistics
+      logistics: logistics,
+      contract: contractContext
     )
     return ManufacturingOpportunityCandidate(
       row: projectedRow,
@@ -4340,7 +4777,7 @@ struct ManufacturingOpportunitiesView: View {
     trigger: ManufacturingOpportunityCandidateProjectionTrigger
   ) async {
     guard
-      let snapshot = runtime.manufacturingOpportunityAnalysis,
+      let snapshot = analysis,
       preparedWarehouseIdentity == warehouseIdentity,
       preparedPlanReservations.source == activePlanSnapshotPayloads
     else { return }
@@ -4359,7 +4796,8 @@ struct ManufacturingOpportunitiesView: View {
       favoritesOnly: favoritesOnly,
       valueFilter: valueFilter,
       costSheet: costSheet,
-      sort: activeCandidateSort
+      sort: activeCandidateSort,
+      contract: contractContext
     )
     let candidates = await ManufacturingOpportunityCandidateProjection.prepare(
       input: input
@@ -4905,6 +5343,8 @@ private struct ManufacturingOpportunityCandidateProjectionTrigger: Hashable {
   let blueprintCostText: String
   let sortColumn: String
   let sortDirection: String
+  let contractReferenceID: UUID?
+  let contractFeeRate: Double?
 }
 
 private struct ManufacturingOpportunityCandidateProjectionInput: Sendable {
@@ -4923,6 +5363,7 @@ private struct ManufacturingOpportunityCandidateProjectionInput: Sendable {
   let valueFilter: ManufacturingOpportunityValueFilter
   let costSheet: ManufacturingOpportunityCostSheet
   let sort: ManufacturingOpportunitySortDescriptor
+  let contract: ManufacturingOpportunityContractContext
 }
 
 private struct PreparedManufacturingOpportunityCandidates {
@@ -4976,12 +5417,14 @@ private enum ManufacturingOpportunityCandidateProjection {
           procurement: procurement,
           configuration: input.snapshot.logisticsConfiguration,
           mainHub: input.snapshot.mainHub,
-          warehouseIsAvailable: input.warehouseIsAvailable
+          warehouseIsAvailable: input.warehouseIsAvailable,
+          route: input.snapshot.saleRoute(for: row)
         )
         let costs = ManufacturingOpportunityScenarioProjector.costs(
           for: row,
           sheet: input.costSheet,
-          logistics: logistics
+          logistics: logistics,
+          contract: input.contract
         )
         guard input.valueFilter.accepts(costs) else { continue }
         candidates.append(
@@ -5115,4 +5558,27 @@ private enum MarketOrderSortColumn: Hashable, Sendable {
   case minimumVolume
   case expires
   case modified
+}
+
+/// Presents Main-Hub wording for another opportunity hub (P5). Only texts
+/// about the sale market are adapted; material purchases stay at the Main Hub.
+enum OpportunityHubText {
+  static let saleWarningCodes: Set<String> = [
+    "manufacturing-opportunity.product-sell-order-unavailable",
+    "manufacturing-opportunity.observed-demand-lower-bound",
+    "manufacturing-opportunity.observed-demand-needs-baseline",
+  ]
+
+  static func adapt(_ text: String, for role: OpportunityHubRole) -> String {
+    let replacement: (spaced: String, hyphenated: String)
+    switch role {
+    case .main: return text
+    case .home: replacement = ("Home Hub", "Home-Hub")
+    case .coalition: replacement = ("Coalition Hub", "Coalition-Hub")
+    }
+    return
+      text
+      .replacingOccurrences(of: "Main Hub", with: replacement.spaced)
+      .replacingOccurrences(of: "Main-Hub", with: replacement.hyphenated)
+  }
 }

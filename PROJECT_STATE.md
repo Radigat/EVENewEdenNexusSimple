@@ -1,6 +1,6 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Projektstatus
 
-Stand: 29.09.2026. Modellvorgaben je Werkzeug: [MODEL_POLICY.md](MODEL_POLICY.md).
+Stand: 21.10.2026. Modellvorgaben je Werkzeug: [MODEL_POLICY.md](MODEL_POLICY.md).
 Es gibt nur einen aktiven Projektstand: `/Users/svenstolze/Developer/EVE New Eden Nexus - Assets, Industry, Markets`.
 Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
 
@@ -96,3 +96,39 @@ live geprüft: Die Standorte werden korrekt angezeigt.
 Eigentümers); Sicherungs-Tag `stand-2026-10-19` liegt auch auf GitHub. Der
 Konsolidierungsbranch ist in `main` aufgegangen und lokal gelöscht; gearbeitet
 wird auf `main`.
+
+## Hub-Chancen-Ausbau (20./21.10.2026)
+
+Auf Auftrag des Eigentümers ist das Ablaufdiagramm „Programmstart → ESI laden →
+Hub-Chancen → Produktionsplanung“ in den Schritten P0–P13 umgesetzt. Plan,
+Checkliste, Prompts und Owner-Testleitfaden:
+[HUB_CHANCEN_PLAN.md](Documentation/HUB_CHANCEN_PLAN.md).
+
+- **Implementiert:**
+  - zentraler, vollautomatischer Startablauf mit Ladestatus auf dem Dashboard;
+  - Home- und Coalition-Hub-Chancen mit eigenen Scans, Bedarfsledgern und
+    Ansichten sowie Transport Home → Coalition;
+  - Vertragspreise in allen Chancenansichten;
+  - Dashboard-Karte „Top-Chancen“;
+  - Zielmarkt im Planner und Allianzmarkt als manuelles zehntes Szenario;
+  - Kaufort-Hinweis für Mineralien und Mondmaterialien mit Multibuy je
+    Kaufort.
+
+  Bestehende Rechenregeln und die neun Marktszenarien sind unverändert. Es gibt
+  keine SwiftData-Schemaänderung. Regeländerung: Die Opt-ins für Main-Hub-Scan
+  und Vertragsfortsetzung entfallen
+  ([Entscheidung](Documentation/Consolidation/DECISIONS.md)).
+- **Automatisch geprüft (21.10.2026):**
+  - `swift test`: 461 Swift-Testing-Tests in 29 Suites plus 59 Tests in 3
+    Suites;
+  - `xcodebuild test` unsigniert: `TEST SUCCEEDED`;
+  - `EVEStaticDataKit`: 8 Tests, ein vorgesehener Real-SDE-Skip;
+  - `git diff --check` fehlerfrei.
+
+  Nachweise: [ACCEPTANCE.md](Documentation/ACCEPTANCE.md).
+- **Offen:**
+  - Live-Prüfung mit echten Charakteren, Structure-Märkten, DOTLAN und
+    vollständigem Vertragsindex;
+  - visuelle und fachliche Eigentümerabnahme.
+
+  Alle Änderungen sind lokal und nicht committet.

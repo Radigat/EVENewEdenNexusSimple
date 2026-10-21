@@ -2380,3 +2380,139 @@
 "Owned BPC valued at the expected invention cost with the decryptor inferred from ME, TE and runs (estimate)" = "Eigene BPC mit den erwarteten Inventionskosten bewertet; Decryptor aus ME, TE und Runs abgeleitet (Schätzung)";
 "Owned BPC valued by Contract price per run and production cost estimate" = "Eigene BPC mit Vertragspreis je Run und Herstellungskostenschätzung bewertet";
 "Owned BPC valued at the mean expected invention cost of all decryptors matching ME, TE and runs (estimate)" = "Eigene BPC mit dem Mittelwert der erwarteten Inventionskosten aller zu ME, TE und Runs passenden Decryptoren bewertet (Schätzung)";
+
+/* Dashboard startup data status (HUB_CHANCEN_PLAN P2) */
+"App start" = "Programmstart";
+"Waiting" = "Wartet";
+"Warehouse & Blueprints" = "Lager & Baupläne";
+"Moon materials" = "Mondmaterialien";
+"Minerals" = "Mineralien";
+"%@ · %@" = "%@ · %@";
+
+/* Home Hub market scan (HUB_CHANCEN_PLAN P4) */
+"Home Hub market" = "Home-Hub-Markt";
+"Uses Main Hub data" = "Nutzt Main-Hub-Daten";
+"Home Hub location incomplete" = "Home-Hub-Ort unvollständig";
+"The stored Home Hub demand observations could not be read. Existing data was not replaced." = "Die gespeicherten Home-Hub-Bedarfsbeobachtungen konnten nicht gelesen werden. Vorhandene Daten wurden nicht ersetzt.";
+"The last saved Home Hub item list could not be read. Existing data was not replaced." = "Die zuletzt gespeicherte Home-Hub-Itemliste konnte nicht gelesen werden. Vorhandene Daten wurden nicht ersetzt.";
+"The Home Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings." = "Für den Home Hub fehlt eine exakte Stations-, Struktur- oder Sonnensystemkennung. Bitte in den Markteinstellungen erneut auswählen.";
+"The Home Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced." = "Der Home-Hub-Scan ist abgeschlossen, aber seine Bedarfsbeobachtung konnte nicht gespeichert werden. Vorhandene Beobachtungen wurden nicht ersetzt.";
+"The current Home Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced." = "Die aktuelle Home-Hub-Itemliste ist sichtbar, konnte aber nicht für den nächsten App-Start gespeichert werden. Vorhandene gespeicherte Daten wurden nicht ersetzt.";
+"The Home Hub opportunity scan could not be completed. The Main Hub results are unaffected." = "Der Home-Hub-Chancen-Scan konnte nicht abgeschlossen werden. Die Main-Hub-Ergebnisse sind davon nicht betroffen.";
+
+/* Home Hub opportunities (HUB_CHANCEN_PLAN P5) */
+"Home Hub Opportunities" = "Home-Hub-Chancen";
+"No Home Hub configured" = "Kein Home Hub konfiguriert";
+"Select a Home Hub under Data & Settings → Market Settings. Its opportunities are scanned together with the Main Hub." = "Wähle unter Daten & Einstellungen → Markteinstellungen einen Home Hub. Seine Chancen werden zusammen mit dem Main Hub gescannt.";
+"Open Market Settings" = "Markteinstellungen öffnen";
+"Home Hub equals the Main Hub" = "Home Hub entspricht dem Main Hub";
+"No separate Home Hub scan runs. Use Main Hub Opportunities for this location." = "Es läuft kein eigener Home-Hub-Scan. Für diesen Ort gelten die Main-Hub-Chancen.";
+"Open Main Hub Opportunities" = "Main-Hub-Chancen öffnen";
+"The Home Hub is scanned together with the next Main Hub scan at %@. Update starts both now." = "Der Home Hub wird mit dem nächsten Main-Hub-Scan um %@ gescannt. „Aktualisieren“ startet beide sofort.";
+"The Home Hub is scanned together with the Main Hub. Update starts both now." = "Der Home Hub wird zusammen mit dem Main Hub gescannt. „Aktualisieren“ startet beide sofort.";
+"Total cost: material replacement value plus installation, optional Blueprint allocation and the required inbound Profile logistics from the Main Hub. Products are sold at this hub, so no return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort." = "Gesamtkosten: Material-Wiederbeschaffungswert plus Installation, optionale Blueprint-Umlage und die erforderliche Profillogistik vom Main Hub zur Produktion. Verkauft wird an diesem Hub, daher ist kein Rückweg zum Main Hub enthalten. Warehouse-Bestand behält seinen Wiederbeschaffungswert; nur die Fehlmenge verbraucht Einkaufsgeld. Zum Sortieren klicken.";
+"The Home Hub to Coalition Hub transport is unavailable. Coalition Hub profit, ROI and ISK rates remain unavailable instead of treating transport as zero." = "Der Transport vom Home Hub zum Coalition Hub ist nicht verfügbar. Gewinn, ROI und ISK-Raten am Coalition Hub bleiben unverfügbar, statt den Transport als null zu werten.";
+"The Main Hub, production location and sale hub differ, but Profile logistics is disabled. Logistics and profit remain unavailable instead of being treated as zero." = "Main Hub, Produktionsort und Verkaufs-Hub unterscheiden sich, aber die Profillogistik ist deaktiviert. Logistik und Gewinn bleiben unverfügbar, statt als null gewertet zu werden.";
+
+/* Coalition Hub market scan (HUB_CHANCEN_PLAN P6) */
+"Coalition Hub market" = "Coalition-Hub-Markt";
+"Uses Home Hub data" = "Nutzt Home-Hub-Daten";
+"Coalition Hub location incomplete" = "Coalition-Hub-Ort unvollständig";
+"The stored Coalition Hub demand observations could not be read. Existing data was not replaced." = "Die gespeicherten Coalition-Hub-Bedarfsbeobachtungen konnten nicht gelesen werden. Vorhandene Daten wurden nicht ersetzt.";
+"The last saved Coalition Hub item list could not be read. Existing data was not replaced." = "Die zuletzt gespeicherte Coalition-Hub-Itemliste konnte nicht gelesen werden. Vorhandene Daten wurden nicht ersetzt.";
+"The Coalition Hub has no exact station, structure or solar-system identifier. Select it again in Market Settings." = "Für den Coalition Hub fehlt eine exakte Stations-, Struktur- oder Sonnensystemkennung. Bitte in den Markteinstellungen erneut auswählen.";
+"The Coalition Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced." = "Der Coalition-Hub-Scan ist abgeschlossen, aber seine Bedarfsbeobachtung konnte nicht gespeichert werden. Vorhandene Beobachtungen wurden nicht ersetzt.";
+"The current Coalition Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced." = "Die aktuelle Coalition-Hub-Itemliste ist sichtbar, konnte aber nicht für den nächsten App-Start gespeichert werden. Vorhandene gespeicherte Daten wurden nicht ersetzt.";
+"The Coalition Hub opportunity scan could not be completed. The Main Hub and Home Hub results are unaffected." = "Der Coalition-Hub-Chancen-Scan konnte nicht abgeschlossen werden. Die Ergebnisse von Main Hub und Home Hub sind davon nicht betroffen.";
+"A Coalition Hub scan needs a configured Home Hub as the starting point of the onward transport. Coalition Hub profit remains unavailable." = "Ein Coalition-Hub-Scan braucht einen konfigurierten Home Hub als Startpunkt des Weitertransports. Der Coalition-Hub-Gewinn bleibt unverfügbar.";
+"Profile logistics is disabled, so the Home Hub to Coalition Hub courier transport and Coalition Hub profit remain unavailable." = "Die Profillogistik ist deaktiviert. Kuriertransport vom Home Hub zum Coalition Hub und Coalition-Hub-Gewinn bleiben deshalb unverfügbar.";
+"This capital self-jumps to the Coalition Hub. Its hull-specific DOTLAN route and fuel are calculated in the Planner; the opportunity list keeps its transport and profit unavailable." = "Dieses Capital springt selbst zum Coalition Hub. Seine rumpfspezifische DOTLAN-Route und der Treibstoff werden im Planner berechnet; in der Chancenliste bleiben Transport und Gewinn unverfügbar.";
+
+/* Coalition Hub opportunities (HUB_CHANCEN_PLAN P7) */
+"Coalition Hub Opportunities" = "Coalition-Hub-Chancen";
+"No Coalition Hub configured" = "Kein Coalition Hub konfiguriert";
+"Select a Coalition Hub under Data & Settings → Market Settings. Its opportunities are scanned together with the Main Hub." = "Wähle unter Daten & Einstellungen → Markteinstellungen einen Coalition Hub. Seine Chancen werden zusammen mit dem Main Hub gescannt.";
+"Coalition Hub equals the Main Hub" = "Coalition Hub entspricht dem Main Hub";
+"No separate Coalition Hub scan runs. Use Main Hub Opportunities for this location." = "Es läuft kein eigener Coalition-Hub-Scan. Für diesen Ort gelten die Main-Hub-Chancen.";
+"Coalition Hub equals the Home Hub" = "Coalition Hub entspricht dem Home Hub";
+"No separate Coalition Hub scan runs. Use Home Hub Opportunities for this location." = "Es läuft kein eigener Coalition-Hub-Scan. Für diesen Ort gelten die Home-Hub-Chancen.";
+"Open Home Hub Opportunities" = "Home-Hub-Chancen öffnen";
+"The Coalition Hub is scanned together with the next Main Hub scan at %@. Update starts all scans now." = "Der Coalition Hub wird mit dem nächsten Main-Hub-Scan um %@ gescannt. „Aktualisieren“ startet alle Scans sofort.";
+"The Coalition Hub is scanned together with the Main Hub. Update starts all scans now." = "Der Coalition Hub wird zusammen mit dem Main Hub gescannt. „Aktualisieren“ startet alle Scans sofort.";
+"Home → Coalition" = "Home → Coalition";
+"Home → Coalition: onward transport of the complete output from the Home Hub to the Coalition Hub, by Jump Freighter when jump logistics is enabled and otherwise by Profile courier. It is part of Cost. Missing route, pilot or tariff keeps it unavailable. Click to sort." = "Home → Coalition: Weitertransport der gesamten Ausgabe vom Home Hub zum Coalition Hub, per Jump Freighter bei aktiver Sprunglogistik, sonst per Profil-Kurier. Der Betrag ist in den Kosten enthalten. Fehlen Route, Pilot oder Tarif, bleibt er unverfügbar. Zum Sortieren klicken.";
+"Total cost: material replacement value plus installation, optional Blueprint allocation, the inbound Profile logistics from the Main Hub and the Home → Coalition transport. No return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort." = "Gesamtkosten: Material-Wiederbeschaffungswert plus Installation, optionale Blueprint-Umlage, die Profillogistik vom Main Hub zur Produktion und der Transport Home → Coalition. Ein Rückweg zum Main Hub ist nicht enthalten. Warehouse-Bestand behält seinen Wiederbeschaffungswert; nur die Fehlmenge verbraucht Einkaufsgeld. Zum Sortieren klicken.";
+"At least one produced capital must self-jump from the Home Hub to the Coalition Hub. Enable jump logistics to calculate its DOTLAN route and fuel; the hull is not treated as courier cargo." = "Mindestens ein produziertes Capital muss selbst vom Home Hub zum Coalition Hub springen. Aktiviere die Sprunglogistik, um DOTLAN-Route und Treibstoff zu berechnen; der Rumpf gilt nicht als Kurierfracht.";
+
+/* Contract prices in hub opportunities (HUB_CHANCEN_PLAN P8) */
+"Contract price" = "Vertragspreis";
+"Contract profit" = "Vertragsgewinn";
+"Contract revenue" = "Vertragserlös";
+"Contract fee" = "Vertragsgebühr";
+"Contract ROI" = "Vertrags-ROI";
+"Before contract fee" = "Vor Vertragsgebühr";
+"Contract price: lowest unit price of a comparable public Item Exchange contract in the local index for exactly this product, one offered line, no requested line and a positive price; bundles are excluded. The search covers the whole imported universe, as in the Planner. ≈ marks a provisional value while the index is incomplete. No offer stays unavailable. Click to sort." = "Vertragspreis: niedrigster Stückpreis eines vergleichbaren öffentlichen Item-Exchange-Vertrags im lokalen Index für genau dieses Produkt, mit einer Angebotsposition, ohne Gegenposition und mit positivem Preis; Bündel sind ausgeschlossen. Gesucht wird wie im Planner im gesamten importierten Universum. ≈ kennzeichnet einen vorläufigen Wert, solange der Index unvollständig ist. Ohne Angebot bleibt der Wert unverfügbar. Zum Sortieren klicken.";
+"Contract profit: contract price × produced units, minus the confirmed public-contract fee rate of this hub and the total cost. Market sales tax and broker fee do not apply. Without a confirmed rate the value is shown before the contract fee. Click to sort." = "Vertragsgewinn: Vertragspreis × produzierte Einheiten, abzüglich des bestätigten Vertragsgebührensatzes dieses Hubs und der Gesamtkosten. Marktsteuer und Brokergebühr entfallen. Ohne bestätigten Satz wird der Wert vor Vertragsgebühr gezeigt. Zum Sortieren klicken.";
+"No comparable public contract offer was observed for this product. Contract values remain unavailable." = "Für dieses Produkt wurde kein vergleichbares öffentliches Vertragsangebot beobachtet. Vertragswerte bleiben unverfügbar.";
+"The Public Contracts index is incomplete. The contract price is a provisional estimate from offers observed so far." = "Der Public-Contracts-Index ist unvollständig. Der Vertragspreis ist eine vorläufige Schätzung aus den bisher beobachteten Angeboten.";
+"No confirmed public-contract fee rate exists for this hub. Contract profit and ROI are shown before the contract fee; enter the rate in Market Settings." = "Für diesen Hub gibt es keinen bestätigten Vertragsgebührensatz. Vertragsgewinn und ROI werden vor Vertragsgebühr gezeigt; den Satz in den Markteinstellungen hinterlegen.";
+"The local Public Contracts index is not ready. Contract prices remain unavailable." = "Der lokale Public-Contracts-Index ist nicht bereit. Vertragspreise bleiben unverfügbar.";
+"The local Public Contracts index could not be read. Contract prices remain unavailable." = "Der lokale Public-Contracts-Index konnte nicht gelesen werden. Vertragspreise bleiben unverfügbar.";
+
+/* Dashboard top opportunities (HUB_CHANCEN_PLAN P9) */
+"Top opportunities" = "Top-Chancen";
+"Ranked by daily profit potential from the saved scans with standard assumptions: every material is bought, installation, sales tax and broker fee are included, no Blueprint allocation and no purchase budget. Open a hub for Warehouse-aware values." = "Rangfolge nach täglichem Gewinnpotenzial aus den gespeicherten Scans mit Standardannahmen: alle Materialien werden gekauft, Installation, Verkaufssteuer und Brokergebühr sind enthalten, ohne Blueprint-Umlage und ohne Einkaufsbudget. Werte mit Lagerbezug zeigt die jeweilige Chancenansicht.";
+"Open this opportunity list" = "Diese Chancenliste öffnen";
+"No saved row has an available daily profit potential." = "Keine gespeicherte Zeile hat ein verfügbares tägliches Gewinnpotenzial.";
+"No saved scan yet. It runs automatically with the next Main Hub scan." = "Noch kein gespeicherter Scan. Er läuft automatisch mit dem nächsten Main-Hub-Scan.";
+"%@ / day" = "%@ / Tag";
+"ROI %@" = "ROI %@";
+"Transfer this saved batch to the Planner." = "Diese gespeicherte Charge an den Planner übergeben.";
+
+/* Planner target market (HUB_CHANCEN_PLAN P10) */
+"Target market" = "Zielmarkt";
+"Not chosen" = "Nicht gewählt";
+"Suggestion: %@ (highest available profit %@)" = "Vorschlag: %@ (höchster verfügbarer Gewinn %@)";
+"Use suggestion" = "Vorschlag übernehmen";
+"No sale scenario has an available, final profit, so no target market is suggested." = "Kein Verkaufsszenario hat einen verfügbaren, endgültigen Gewinn; deshalb gibt es keinen Zielmarkt-Vorschlag.";
+"The target market is a decision label saved with the draft, the plan and the Production Overview. It does not change the calculation; the selected hub is outlined in the sale scenarios below." = "Der Zielmarkt ist eine Entscheidungsmarkierung, die mit Entwurf, Plan und Produktionsübersicht gespeichert wird. Er ändert die Rechnung nicht; der gewählte Hub ist in den Verkaufsszenarien unten umrandet.";
+"Selected target market" = "Gewählter Zielmarkt";
+
+/* Planner alliance market (HUB_CHANCEN_PLAN P11) */
+"Alliance market" = "Allianzmarkt";
+"Alliance market (manual)" = "Allianzmarkt (manuell)";
+"Profit (provisional)" = "Gewinn (vorläufig)";
+"%@ of %@ units sold · revenue %@ · fee %@ · delivery %@" = "%@ von %@ Einheiten verkauft · Erlös %@ · Gebühr %@ · Lieferung %@";
+"Fee: 0 % manual assumption" = "Gebühr: 0 % als manuelle Annahme";
+"%@ units remain unsold; their production cost is still included." = "%@ Einheiten bleiben unverkauft; ihre Produktionskosten sind trotzdem enthalten.";
+"Copy Slack offer" = "Slack-Angebot kopieren";
+"Copies the alliance offer text for Slack to the clipboard." = "Kopiert den Angebotstext für Slack in die Zwischenablage.";
+"No alliance sale was entered for this plan." = "Für diesen Plan wurde kein Allianzverkauf eingetragen.";
+"Price per unit (ISK)" = "Preis je Einheit (ISK)";
+"Accepted units" = "Abgenommene Einheiten";
+"All produced units" = "Alle produzierten Einheiten";
+"Fee (%)" = "Gebühr (%)";
+"0 % if empty" = "0 %, wenn leer";
+"Delivery" = "Lieferung";
+"At the production location" = "Am Produktionsort";
+"Apply alliance sale" = "Allianzverkauf übernehmen";
+"Check the alliance fields: price and fee must be numbers, the accepted quantity a whole number of at least 1 and the fee below 100 %." = "Bitte die Allianzfelder prüfen: Preis und Gebühr müssen Zahlen sein, die abgenommene Menge eine ganze Zahl ab 1 und die Gebühr unter 100 %.";
+"The manual alliance sale needs a plan with exactly one end product, because one unit price applies." = "Der manuelle Allianzverkauf braucht einen Plan mit genau einem Endprodukt, weil ein einziger Stückpreis gilt.";
+"Enter an alliance price per unit. Without a price the scenario remains unavailable." = "Trage einen Allianzpreis je Einheit ein. Ohne Preis bleibt das Szenario unverfügbar.";
+"The accepted quantity must be positive." = "Die abgenommene Menge muss positiv sein.";
+"The manual fee rate must be at least 0 % and below 100 %." = "Die manuelle Gebühr muss mindestens 0 % und unter 100 % betragen.";
+"The transport to the selected delivery hub is unavailable in this plan. Alliance profit is not calculated with free transport." = "Der Transport zum gewählten Liefer-Hub ist in diesem Plan nicht verfügbar. Der Allianzgewinn wird nicht mit kostenlosem Transport gerechnet.";
+"The production cost of this plan is unavailable, so alliance profit remains unavailable." = "Die Produktionskosten dieses Plans sind nicht verfügbar; deshalb bleibt der Allianzgewinn unverfügbar.";
+
+/* Planner purchase-location hint (HUB_CHANCEN_PLAN P12) */
+"Purchase-location hint · minerals and moon materials" = "Kaufort-Hinweis · Mineralien und Mondmaterialien";
+"Decision aid from the mineral and moon-material purchase analyses. The plan costs above stay based on the Main Hub; no ESI request is started." = "Entscheidungshilfe aus der Mineralien- und Mondmaterial-Kaufanalyse. Die Plankosten oben bleiben Main-Hub-basiert; es wird kein ESI-Abruf gestartet.";
+"Outdated · %@" = "Veraltet · %@";
+"Analysis not loaded" = "Analyse nicht geladen";
+"No mineral or moon material is on this shopping list." = "Diese Einkaufsliste enthält keine Mineralien oder Mondmaterialien.";
+"Copy Multibuy · %@" = "Multibuy kopieren · %@";
+"Copies the lines recommended for this location in the EVE Multibuy format." = "Kopiert die für diesen Ort empfohlenen Zeilen im EVE-Multibuy-Format.";
+"Purchase location" = "Kaufort";
+"Unit price there" = "Stückpreis dort";
+"Difference per unit" = "Differenz je Einheit";
+"No fresh offer" = "Kein frisches Angebot";

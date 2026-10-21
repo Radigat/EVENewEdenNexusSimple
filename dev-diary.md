@@ -1,5 +1,551 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 21. Oktober 2026 – P13: Abschluss Hub-Chancen-Ausbau
+
+Ziel: Die Dokumentation auf den Stand P0–P12 bringen, die Nachweise eintragen
+und einen Owner-Testleitfaden bereitstellen. Keine neuen Funktionen.
+
+Änderung:
+
+- **ARCHITECTURE.md:** Version-1-Grenzen um den Hub-Vergleich ohne
+  Aufteilungsoptimierung ergänzt; Scan-Auslösung und Wiederverwendung an die
+  automatische Planung angepasst.
+- **PRODUCT.md:** Typischer Arbeitsablauf um Startablauf, Top-Chancen,
+  Hub-Chancen, Zielmarkt, Allianzmarkt und Kaufort-Hinweis ergänzt.
+- **ACCEPTANCE.md:** Neuer Abschnitt mit den automatischen Nachweisen je
+  Schritt; Live- und Owner-Abnahme getrennt als offen ausgewiesen.
+- **HANDOFFS.md:** Neue Übergaben; die überholten Opt-in-Teile alter Zeilen sind
+  als ersetzt markiert.
+- **PROJECT_STATE, README, ROADMAP:** aktualisiert.
+- **HUB_CHANCEN_PLAN.md:** Status „implementiert, automatisch geprüft“,
+  Checkliste mit offenem Live-/Owner-Teil und Owner-Testleitfaden
+  (Abschnitt E).
+- **Leerzeichen:** Zwei Zeilen mit Leerzeichen am Zeilenende entfernt.
+
+Prüfung:
+
+- `swift test`: 461 Swift-Testing-Tests in 29 Suites plus 59 Tests in 3 Suites.
+- `xcodebuild test` unsigniert: `TEST SUCCEEDED` (461 Swift-Testing-Tests,
+  8 XCTest-Fälle).
+- `swift test --package-path Packages/EVEStaticDataKit`: 8 Tests, ein
+  vorgesehener Real-SDE-Skip.
+- `git diff --check` fehlerfrei.
+
+Offen:
+
+- Live-Prüfung (Charaktere, Structure-Märkte, DOTLAN, vollständiger
+  Vertragsindex).
+- Visuelle und fachliche Eigentümerabnahme nach Leitfaden.
+- Commit und Push nur auf Auftrag.
+
+## 21. Oktober 2026 – P12: Kaufort-Hinweis für Mineralien und Mondmaterialien
+
+Ziel: In der Planner-Einkaufsliste den günstigsten Kaufort je Mineral und
+Mondmaterial aus den vorhandenen Analysen zeigen, mit Multibuy je Kaufort und
+ohne Änderung der Plankosten.
+
+Änderung:
+
+- **Core:**
+  - `EVEMultibuyExport.make(items:)` ist jetzt der gemeinsame Formatierer; die
+    bestehenden Exporte nutzen ihn unverändert.
+  - `MaterialPurchaseLocationHint` enthält die Main-Hub-Differenz nur bei
+    vollständiger Markttiefe.
+  - `MaterialPurchaseLocationHints` mit `project` und `multibuyGroups`.
+- **Planner:** `PlannerPurchaseLocationHintPanel` in der Einkaufsliste mit
+  Analyse-Stand (aktuell/veraltet/nicht geladen), sortierbarer Tabelle
+  (`PurchaseLocationHintSorting`, gemeinsamer Header), kopierbaren Namen und
+  Multibuy-Knöpfen je Kaufort.
+- **Texte:** Neue Texte sind deutsch und englisch lokalisiert.
+- **Testdatei:** Die neue Test-Suite liegt in der bereits im Xcode-Projekt
+  registrierten `MarketPricingTests.swift`; das Projekt selbst ist unverändert.
+
+Prüfung:
+
+- Zwei neue Tests: Zuordnung (nur analysierte Materialien, fehlendes Angebot,
+  unvollständige Main-Hub-Tiefe), Gruppierung und gemeinsamer Formatierer;
+  Sortierung mit unbekannten Werten am Ende.
+- `swift test`: 461 Tests in 29 Suites und 59 Tests in 3 Suites erfolgreich.
+- Xcode-Debug-Build erfolgreich.
+
+Offen: Visuelle Owner-Abnahme. Als Nächstes folgt P13 (Abschluss).
+
+## 21. Oktober 2026 – P11: Allianzmarkt als manuelles Verkaufsziel
+
+Ziel: Ein zehntes Planner-Szenario „Allianzmarkt (manuell)“ mit eigenem
+Zielmarkt und kopierbarem Slack-Angebot einführen.
+
+Änderung:
+
+- **Core:**
+  - Neu sind `PlannerAllianceSaleInput`, `PlannerAllianceSaleResult` und
+    `PlannerAllianceSaleCalculator` (mit Angebotstext).
+  - Die Kosten sind `totalProductionCost` plus der Ausgangstransport des
+    Lieferhubs. Verkauft wird nur die abgenommene Menge; die Gebühr ist
+    standardmäßig 0 % als Annahme.
+  - Unverfügbar ohne Preis, Route, Kosten oder bei mehreren Produkten.
+  - `PlannerTargetMarket.allianceMarket`, das optionale Feld
+    `IndustryPlanSnapshot.allianceSale` und ein Vorschlag inklusive Allianz.
+- **Planner:**
+  - Karte mit Ergebnis, Hinweisen (manuelle Gebühr, unverkaufter Rest, Grund
+    bei Unverfügbarkeit) und Eingabefeldern.
+  - Der ortsabhängige Parser `PlannerAllianceInputParser` prüft die Eingaben.
+  - Entwurf in `planner.alliance-sale.draft.v1`; neue Pläne übernehmen die
+    Eingaben.
+  - Die Karte ist umrandet, wenn der Allianzmarkt als Zielmarkt gewählt ist.
+- **Kopieren:** `EVEEntityText` hat eine optionale eigene
+  Barrierefreiheitsbeschriftung für den Slack-Text bekommen, mit derselben
+  Kopierrückmeldung.
+- **Produktionsübersicht:** Die Spalte „Ziel“ kennt den Rang 3 für
+  Allianzmarkt.
+- **Texte:** Neue Texte sind deutsch und englisch lokalisiert.
+
+Prüfung:
+
+- Vier neue Tests:
+  - volle Kosten bei Teilabnahme, Standardgebühr, Angebotstext;
+  - Unverfügbarkeit ohne Preis, Route, Coalition-Szenario, Einzelprodukt oder
+    Kosten sowie bei ungültiger Gebühr;
+  - Vorschlag Allianz und Lesbarkeit älterer Snapshots;
+  - Parser.
+- `swift test`: 460 Tests in 28 Suites und 58 Tests in 3 Suites erfolgreich.
+  Der eine längere Parallellauf trat wieder direkt nach dem Neubau auf.
+- Xcode-Debug-Build erfolgreich.
+
+Offen: Visuelle und fachliche Owner-Abnahme. Die Produktionsübersicht übernimmt
+den Allianzpreis nicht automatisch als Verkaufspreis; der bleibt eine manuelle
+Eingabe. Als Nächstes folgt P12.
+
+## 21. Oktober 2026 – P10: Zielmarkt im Planner
+
+Ziel: Im Planner einen Zielmarkt ausdrücklich wählen, vorschlagen, hervorheben
+und speichern, ohne die Rechnung zu ändern.
+
+Änderung:
+
+- **Core:** `PlannerTargetMarket` mit Abbildung von `OpportunityHubRole`,
+  `PlannerTargetMarketSuggestion` (höchster endgültiger Gewinn, vorläufige oder
+  unverfügbare Szenarien ausgeschlossen, Gleichstand Main → Home → Coalition)
+  und das optionale Feld `IndustryPlanSnapshot.targetMarket`.
+- **Planner:**
+  - Zielmarkt-Fläche mit Segmentauswahl, Vorschlag und „Vorschlag übernehmen“.
+  - Die Karten des gewählten Hubs sind umrandet.
+  - Die Entwurfswahl liegt in `AppSetting` (`planner.target-market.draft.v1`).
+  - Eine Übergabe mit `targetMarket` setzt vor; die manuelle Wahl hat Vorrang.
+  - Neue Pläne übernehmen die Wahl; eine Änderung beschriftet den aktiven Plan
+    neu.
+- **Produktionsübersicht:** Die sortierbare Spalte „Ziel“ ist hinten angehängt.
+  Rang Main/Home/Coalition, „Nicht gewählt“ unbekannt.
+- **Schema:** Keine SwiftData-Schemaänderung.
+- **Texte:** Neue Texte sind deutsch und englisch lokalisiert.
+
+Prüfung:
+
+- Drei neue Tests: Vorschlag (Maximum, vorläufig ausgeschlossen, Gleichstand,
+  keiner), Speicherformat (alt ohne Feld lesbar, neu mit Feld, Rechnung
+  unverändert) und Spaltenrang/Text.
+- `swift test`: 457 Tests in 28 Suites und 57 Tests in 3 Suites erfolgreich.
+- Xcode-Debug-Build erfolgreich.
+
+Offen: Visuelle Owner-Abnahme. Als Nächstes folgt P11 (Allianzmarkt als
+manuelles Verkaufsziel); er erweitert `PlannerTargetMarket`.
+
+## 21. Oktober 2026 – P9: Dashboard-Karte „Top-Chancen“
+
+Ziel: Auf dem Dashboard je Hub die besten gespeicherten Chancen zeigen, mit
+Sprung in die Chancenansicht und Übergabe an den Planner.
+
+Änderung:
+
+- **Rangfolge im Core:** `ManufacturingOpportunityTopRanking` bewertet nach
+  täglichem Gewinnpotenzial mit Standardannahmen (`standardCostSheet`, kein
+  Lager, Hub-Route). Zeilen ohne Wert fallen weg; die Reihenfolge ist stabil.
+- **Dashboard:** `DashboardTopOpportunitiesPanel` zeigt bis zu 5 Einträge je
+  Hub und berechnet die Rangfolge abseits des Main Actors. Hub-Titel springen in
+  die Chancenansicht, „Bauen“ übergibt Charge und Zielmarkt über
+  `DashboardNavigationRequest.plannerLaunch`.
+- **Hinweise:** nicht konfiguriert, gleich anderem Hub, unvollständig, kein
+  Scan.
+- **Texte:** Neue Texte sind deutsch und englisch lokalisiert.
+
+Prüfung:
+
+- Zwei neue Tests: Rangfolge (Grenze, ohne Wert ausgeschlossen, absteigend,
+  Werte gleich der Standardprojektion, stabile Reihenfolge) und Übergabe der
+  Charge mit Zielmarkt.
+- `swift test`: 455 Tests in 28 Suites und 56 Tests in 3 Suites erfolgreich.
+- Xcode-Debug-Build erfolgreich.
+
+Offen: Visuelle Owner-Abnahme der Karte. Als Nächstes folgt P10 (Zielmarkt im
+Planner).
+
+## 21. Oktober 2026 – P8: Öffentliche Verträge als Erlösquelle in den Hub-Chancen
+
+Ziel: In allen Chancenansichten zusätzlich den Verkauf über einen öffentlichen
+Vertrag zeigen, mit Vertragspreis, Gewinn und ROI.
+
+Änderung:
+
+- **Core:** Neu sind `ManufacturingOpportunityContractContext`,
+  `ManufacturingOpportunityContractProjection` und
+  `ManufacturingOpportunityContractProjector`. Die Projektion nutzt die
+  universumsweite Referenz wie der Planner und zieht den bestätigten
+  Vertragsgebührensatz ab. Ohne Satz wird „vor Vertragsgebühr“ markiert; ist der
+  Index unvollständig, gilt der Wert als vorläufig.
+- **Kosten und Sortierung:** `costs(…, contract:)` und die Sortierspalten
+  `.contractPrice`/`.contractProfit`.
+- **Runtime:** `loadOpportunityContractReferences` liest gebündelt nur den
+  lokalen Index und nutzt einen gleichen Typsatz fünf Minuten wieder.
+  `publicContractFeeRate(for:)` liefert den Satz je Rolle.
+- **Ansicht:**
+  - Spalten „Vertragspreis“ und „Vertragsgewinn“; „≈“ markiert vorläufige
+    Werte.
+  - Detailwerte mit Hinweisen.
+  - Die Kandidatenprojektion rechnet neu, sobald Referenzen oder Satz
+    wechseln.
+- **Texte:** Neue Texte sind deutsch und englisch lokalisiert.
+
+Prüfung:
+
+- Zwei neue Tests: bestätigte Gebühr, vor Gebühr, ungültiger Satz, vorläufig,
+  kein Angebot, fehlende Kosten; Sortierung beider Spalten mit unbekannten
+  Werten am Ende.
+- `swift test`: 454 Tests in 28 Suites und 55 Tests in 3 Suites erfolgreich.
+- Xcode-Debug-Build erfolgreich.
+
+Abweichung vom Prompt: Gelesen wird gebündelt für alle Typen des angezeigten
+Scans, nicht nur für die gerade sichtbaren Zeilen. Wert- und Sortierfilter
+brauchen die Vertragswerte vor der Sichtbarkeitsfilterung. Die
+Fünf-Minuten-Wiederverwendung begrenzt die Last.
+
+Offen: Laufzeitmessung der Indexabfrage mit vollständigem echtem Index,
+Owner-Abnahme. Als Nächstes folgt P9.
+
+## 20. Oktober 2026 – P7: Ansicht „Coalition-Hub-Chancen“
+
+Ziel: Die Coalition-Hub-Chancen mit derselben Oberfläche zeigen, ergänzt um den
+Transport Home → Coalition.
+
+Änderung:
+
+- **Navigation:** Neuer Bereich `coalitionHubOpportunities` nach den
+  Home-Hub-Chancen.
+- **Ansicht:** Daten, Fehler und Fortschritt kommen je Rolle aus
+  `opportunityState(for:)`. Die Logistik läuft je Zeile über
+  `saleRoute(for:)`, damit Runs-Änderungen den Weitertransport neu bepreisen.
+- **Core:** `onwardTransportCost` in Logistik- und Kostenprojektion, neue
+  Sortierspalte `.onwardTransport`.
+- **Spalte und Details:** Neue Tabellenspalte „Home → Coalition“ mit Tooltip.
+  Die Details zeigen Betrag und konkreten Unverfügbarkeitsgrund.
+- **Leerzustände:** gleich Main, gleich Home (Sprung zu den Home-Hub-Chancen),
+  unvollständig, kein Scan.
+- **Texte:** Neue Texte deutsch und englisch, dazu die bisher unübersetzte
+  Capital-Selbstsprung-Meldung.
+
+Prüfung:
+
+- Zwei neue Tests: aufgezeichneter Weitertransport mit sortierter Reihenfolge
+  (unbekannt aufsteigend am Ende, absteigend am Anfang); Navigation, Texte und
+  Schlüssel.
+- `swift test`: 452 Tests in 28 Suites und 55 Tests in 3 Suites erfolgreich.
+- Xcode-Debug-Build erfolgreich.
+- Einzelne langsame Parallelläufe direkt nach Neubauten waren nicht
+  reproduzierbar; seriell und wiederholt dauert die Suite etwa 2,2 s.
+
+Offen: Visuelle und fachliche Owner-Abnahme mit echtem Coalition Hub. Als
+Nächstes folgt P8.
+
+## 20. Oktober 2026 – P6: Coalition-Hub-Markt-Snapshot, Bedarf und Transport
+
+Ziel: Für den Coalition Hub einen eigenen Markt-Snapshot, Bedarfsledger und eine
+Chancenanalyse mit Transport Home → Coalition erzeugen. Der Eigentümer hat auf
+Rückfrage entschieden: erst P6, danach P7.
+
+Änderung:
+
+- **Gemeinsamer Ablauf:** Der Home-Hub-Code aus P4 ist auf Rollen
+  verallgemeinert. Neu sind `SecondaryHubOpportunityState`, die Stores je
+  Rolle, `HubOpportunityScanTarget` (mit `sharesHomeHub`) und
+  `analyzeSecondaryHubOpportunities`. Die bisherigen Home-Zugriffe bleiben als
+  berechnete Properties.
+- **Reihenfolge:** Der Main-Hub-Scan rechnet danach Home und dann Coalition.
+- **Core:** `OpportunityCoalitionTransportBasis` (Kurier, Jump Freighter,
+  unverfügbar) mit `transport(for:)`. Der Snapshot hat das Feld
+  `coalitionTransport`, dazu kommen `saleRoute(for:)` und
+  `MarketOrderSnapshot.restricted(to:)`.
+- **Charakterdaten:** Die Charakter-Fähigkeiten für die Pilotenwahl übergeben
+  Startablauf und Planner-Konfiguration.
+- **Dashboard:** Neue Zeile „Coalition-Hub-Markt“; die Home-/Coalition-Zeilen
+  nutzen jetzt eine gemeinsame Rollenfunktion.
+- **Lokalisierung:** Neue Texte deutsch und englisch.
+
+Prüfung:
+
+- Zwei neue Tests:
+  - Kurierpreis, blockiertes Capital, unverfügbare Grundlage, Zeilenroute mit
+    Gesamtlogistik 2 Mio. ISK und Speicherformat;
+  - Coalition-Zielauflösung inklusive gleich Main/Home.
+- Die P4-/P5-Tests sind unverändert grün.
+- `swift test`: 451 Tests in 28 Suites und 54 Tests in 3 Suites erfolgreich.
+- Xcode-Debug-Build erfolgreich.
+
+Offen:
+
+- Live-Prüfung mit echtem Coalition Hub (Structure-ACL, DOTLAN) und
+  Owner-Abnahme.
+- Selbstspringende Capitals bleiben in der Chancenliste bewusst unverfügbar.
+- P7 (Ansicht).
+
+## 20. Oktober 2026 – P5: Ansicht „Home-Hub-Chancen“
+
+Ziel: Die Home-Hub-Chancen mit derselben Oberfläche wie die Main-Hub-Chancen
+zeigen.
+
+Änderung:
+
+- **Navigation:** Neuer Bereich `homeHubOpportunities` direkt nach den
+  Main-Hub-Chancen.
+- **Rolle in der Ansicht:** `ManufacturingOpportunitiesView` hat die Rolle
+  `hubRole`. Daten, Fehler, Bedarf und Fortschritt kommen je Rolle aus der
+  Runtime.
+- **Logistik:** über `defaultSaleRoute`. Für Home gibt es keinen Rückweg zum
+  Main Hub.
+- **Filter:** Persistierte Filter haben eigene Schlüssel über
+  `OpportunityHubRole.storageKey`; die Main-Schlüssel sind unverändert.
+  Favoriten, Blueprint-Umlage und der Corporation-Hangar-Schalter bleiben
+  gemeinsam.
+- **Texte:** `OpportunityHubText` passt Kopf, Leerzustand, Fortschritt,
+  Grundlage, Gesamtkosten-, Erlös- und Gebühren-Tooltips sowie
+  Verkaufswarnungen an. Materialwarnungen bleiben „Main Hub“.
+- **Leerzustände:** kein Home Hub, Home = Main, unvollständiger Ort, noch kein
+  Scan.
+- **Übergabe:** `PlannerLaunchRequest.targetMarket` übergibt „Home Hub“ beim
+  Bauen.
+- **Lokalisierung:** Neue Texte deutsch und englisch, darunter auch die
+  P3-Logistikmeldungen.
+
+Prüfung:
+
+- Drei neue Tests: Schlüssel und Route, Textanpassung, Navigation und
+  Zielmarkt-Übergabe.
+- `swift test`: 450 Tests in 28 Suites und 53 Tests in 3 Suites erfolgreich.
+- Xcode-Debug-Build erfolgreich; `plutil` OK.
+- Visuelle Prüfung in der laufenden App steht aus.
+
+Offen:
+
+- Visuelle und fachliche Owner-Abnahme mit echtem Home Hub.
+- Die Detail-Tooltips zu Runs/ME/TE nennen bewusst weiter die gewichteten
+  Main-Hub-Materialpreise.
+- P6.
+
+## 20. Oktober 2026 – P4: Home-Hub-Markt-Snapshot und Bedarf
+
+Ziel: Für den Home Hub einen eigenen Markt-Snapshot, einen eigenen
+Bedarfsledger und eine Chancenanalyse erzeugen und speichern; noch ohne eigene
+Ansicht.
+
+Änderung:
+
+- **Ablauf:** Der Home-Hub-Scan läuft am Ende jedes Main-Hub-Scans. Er nutzt
+  dessen Katalog-, Material- und Anlagenkontext wieder und übernimmt damit die
+  6-Stunden-Wiederverwendung, die Startfreigabe, die Priorität und den
+  Planner-Vorrang.
+- **Ziel und Marktdaten:** `HomeHubOpportunityScanTarget` bestimmt, woher der
+  Markt kommt: NPC-Station (Regionsbuch) oder Player Structure (Structure-Markt
+  mit Charakter-Lease, Home-Händler bevorzugt). Bei `sharesMainHub` läuft kein
+  zweiter Scan; ein unvollständiger Ort wird gemeldet.
+- **Speicher:** Eigene Stores unter `market/home-hub-*.json`. Gespeicherte
+  Home-Daten werden beim Start geladen.
+- **Autorisierungen:** Startablauf und Dashboard übergeben die
+  Charakter-Autorisierungen mit `rememberMarketAuthorizations`.
+- **Dashboard:** Neue Zeile „Home-Hub-Markt“ in der Karte „Automatic data“.
+- **Texte:** Neue Texte sind deutsch und englisch lokalisiert.
+
+Prüfung:
+
+- Zwei neue Tests: Zielauflösung (nicht konfiguriert, gleich Main, NPC,
+  Struktur, unvollständig, Legacy) und leerer Grundzustand.
+- Die Rollenrechnung selbst ist durch die P3-Tests abgedeckt.
+- `swift test`: 449 Tests in 28 Suites und 51 Tests in 3 Suites erfolgreich.
+- Xcode-Debug-Build erfolgreich; `plutil` für beide Sprachdateien OK.
+- Ein echter ESI-Abruf (NPC-Region bzw. Structure-Markt) ist nicht live geprüft.
+
+Offen:
+
+- Live-Prüfung mit echtem Home Hub und Owner-Abnahme.
+- Liegt ein Home Hub als NPC-Station in derselben Region wie der Main Hub, wird
+  das Regionsbuch ein zweites Mal geladen.
+- P5 (Ansicht).
+
+## 20. Oktober 2026 – P2: Ladestatus des Startablaufs auf dem Dashboard
+
+Ziel: Den Stand des P1-Startablaufs je Bereich mit Zustand und Zeitpunkt auf dem
+Dashboard zeigen. Der Eigentümer hatte P2 zunächst übersprungen und es nach P3
+ausdrücklich nachbeauftragt.
+
+Änderung:
+
+- **Startablauf beobachtbar:** `StartupDataLoad` ist jetzt ein
+  `ObservableObject` (`phase`, `characterResult`).
+- **Status-Projektor:** Der reine `StartupDataStatusProjector`
+  (`ContentView.swift`) leitet die Zeilen für Charaktere, Lager & Baupläne,
+  Reaktionen, Mondmaterialien und Mineralien ab. Die Quellen sind das
+  Sync-Ergebnis, die ESI-Metadaten `assets`/`blueprints` und die
+  Analyse-Snapshots samt Fehlerzuständen.
+- **Anzeige:** `StartupDataStatusSection` steht in der vorhandenen Karte
+  „Automatic data“ über den Zeilen für Verträge und Main-Hub-Markt. Die
+  Zeilendarstellung ist als gemeinsame `AutomaticStatusRow` ausgelagert.
+- **Texte:** Neue Texte sind deutsch und englisch lokalisiert.
+
+Prüfung: Vier neue Tests decken ab:
+
+- die Zusammenfassung der Zustände,
+- Charaktere/Lager je Phase inklusive fehlender Bauplan-Metadaten,
+- Analysefehler und Wartezustand,
+- die Phasen-Veröffentlichung.
+
+`swift test`: 449 Tests in 28 Suites und 49 Tests in 3 Suites erfolgreich.
+Xcode-Debug-Build erfolgreich. Beide `Localizable.strings` sind mit `plutil`
+geprüft.
+
+Offen: Visuelle Prüfung in der laufenden App und Owner-Abnahme. Als Nächstes
+folgt P4.
+
+## 20. Oktober 2026 – P3: Chancen-Kern je Hub-Rolle
+
+Ziel: Den Main-Hub-Chancen-Kern für Home- und Coalition-Hub nutzbar machen,
+ohne das Main-Hub-Verhalten zu ändern. Umfang: nur Kern und Tests, keine UI.
+P2 (Ladestatus) hat der Eigentümer übersprungen; es bleibt offen.
+
+Änderung:
+
+- **Hub-Rolle:** `OpportunityHubRole` (main/home/coalition) mit Dateinamen je
+  Rolle. Die Main-Hub-Dateien heißen weiter `market/main-hub-*.json`.
+- **Analyzer:** `ManufacturingOpportunityAnalyzer.analyze` hat optional
+  `hubRole`, `saleHub` und `saleMarket`. Material wird weiter am Main-Hub-Markt
+  bewertet, das Produkt am Verkaufsmarkt.
+- **Snapshot:** `ManufacturingOpportunitySnapshot` hat die optionalen Felder
+  `hubRole`/`saleHub`. Bei Main-Hub-Scans bleiben sie leer und werden nicht
+  geschrieben.
+- **Logistik:** `ManufacturingOpportunitySaleRoute` steuert die Route (Main
+  Hin- und Rücktransport, Home ohne Rücktransport, Coalition mit
+  eingespeisten Kosten Home → Coalition). Der Main-Pfad ist unverändert; neu
+  ist nur `saleHubLogistics`.
+- **Speicherpfade:** `RuntimeState` erzeugt sie über
+  `opportunityDemandFileURL`/`opportunitySnapshotFileURL`.
+
+Prüfung: Sechs neue Tests decken ab:
+
+- identische Main-Hub-Ergebnisse und Dateischlüssel,
+- Home-Verkauf mit Materialkauf am Main Hub,
+- Abweisung fehlender oder falscher Verkaufsmärkte,
+- die Routen,
+- die Dateinamen,
+- die Main-Hub-Pfade in der App.
+
+Die bestehenden Main-Hub-Tests sind unverändert grün. `swift test`: 449 Tests
+in 28 Suites und 45 Tests in 3 Suites erfolgreich. Xcode-Debug-Build erfolgreich.
+
+Offen:
+
+- P2 (vom Eigentümer übersprungen).
+- P4 lädt Home-Hub-Marktdaten und speist sie ein.
+- Die Warntexte nennen noch wörtlich „Main Hub“ und werden mit den Ansichten
+  P5/P7 angepasst.
+- Keine Live- oder Owner-Prüfung.
+
+## 20. Oktober 2026 – P1: Zentraler Startablauf „ESI laden“
+
+Ziel: Beim Programmstart alle Daten automatisch laden (Eigentümerentscheid,
+[HUB_CHANCEN_PLAN.md](Documentation/HUB_CHANCEN_PLAN.md)).
+
+Änderung:
+
+- **Startablauf:** `StartupDataLoad` in `RuntimeState.swift` läuft einmal je
+  Prozess. Er synchronisiert Charaktere und lädt die Planner-Konfiguration
+  parallel. Danach startet er Mond-, Mineral- und Reaktionsanalyse und gibt mit
+  `releaseStartupAutomaticScans` die automatischen Main-Hub- und
+  Public-Contracts-Scans frei.
+- **Sync-Logik:** Die Charakter-Synchronisierung aus dem Dashboard ist in
+  `CharacterBatchSynchronizer` (`ContentView.swift`) ausgelagert. Das Dashboard
+  übernimmt beim Start dieses Ergebnis und wartet bei Bedarf, bis der Ablauf
+  gestartet ist.
+- **Main-Hub-Einwilligung:** Die Einwilligung und ihre Versionsprüfung sind
+  entfernt. Die Pause im Dashboard gilt nur noch für den laufenden App-Prozess.
+- **Vertragsimport:** Der Automatikschalter des Vertragsindex wird beim Start
+  wieder eingeschaltet.
+- **Doppelte Planung:** Eine zusätzliche Prüfung nach dem Laden des Zustands
+  verhindert, dass der Vertragsimport doppelt eingeplant wird.
+
+Begründung in [DECISIONS.md](Documentation/Consolidation/DECISIONS.md); PRODUCT.md
+und ARCHITECTURE.md sind angepasst.
+
+Prüfung: Fünf neue Tests in `RuntimeFeatureStateTests` decken ab:
+
+- Reihenfolge (Analysen und Scans erst nach Charakteren und Konfiguration),
+- einmaliger Lauf mit Mitnutzung des Ergebnisses,
+- frühes Warten des Dashboards,
+- Abbruch ohne Folgeschritte,
+- keine Scans ohne Hintergrunddienste.
+
+`swift test`: 444 Tests in 28 Suites und 44 Tests in 3 Suites erfolgreich.
+Xcode-Debug-Build (`CODE_SIGNING_ALLOWED=NO`) erfolgreich. `EVEStaticDataKit`
+wurde nicht berührt und nicht separat getestet.
+
+Offen: Live-Prüfung des Startablaufs mit echten Charakteren und die
+Owner-Abnahme stehen aus. Als Nächstes folgt P2 (Ladestatus auf dem Dashboard).
+
+## 20. Oktober 2026 – P0: Abgleichstabelle gegen den Code geprüft
+
+Ziel: Die dokumentbasierte Abgleichstabelle in
+[HUB_CHANCEN_PLAN.md](Documentation/HUB_CHANCEN_PLAN.md) gegen den Quellcode
+prüfen (nur lesen).
+
+Ergebnis: Alle 19 Statuswerte sind bestätigt, keiner musste korrigiert werden.
+Belege:
+
+- **Startpfad** (`EVENexusSimpleApp.swift`, `RuntimeState.init`): lädt SDE,
+  Dienststatus, Bedarfsledger, Chancen-Snapshot, LP-Katalog und den
+  Vertragsspeicher.
+- **Main-Hub-Automatik und Vertragsautomatik**: beide nur nach Opt-in.
+- **Charakter-Sync, Reaktionen, Mond und Mineral**: werden erst über `.task` des
+  Dashboards angestoßen.
+- **Chancen**: Speicherung fest in `market/main-hub-*.json`, ohne öffentliche
+  Verträge.
+- **Planner**: neun `SaleScenarioResult`-Felder, aber kein gespeicherter
+  Zielmarkt und kein Allianzmarkt.
+- **Kaufort-Empfehlung**: `MaterialPurchaseRecommendationProjector` ist nicht an
+  den Planner angebunden.
+
+Zusätzlich gefunden: Das Dashboard hat bereits eine Karte „Automatic data“; das
+ist im Plan als Hinweis für P2 vermerkt.
+
+Prüfung: Code nur gelesen, keine Codeänderung, deshalb kein Build und kein
+Testlauf. PRODUCT.md ist unverändert.
+
+Offen: P1–P13.
+
+## 20. Oktober 2026 – Abgleich Ablaufdiagramm, Plan Home-/Coalition-Hub-Chancen
+
+Ziel: Das Ablaufdiagramm des Eigentümers (Programmstart → ESI laden → Analysen,
+Dashboard, Verträge und Hub-Chancen → Planer → Produktionsentscheidung) mit dem
+aktuellen Stand abgleichen. Fehlende Punkte als Checkliste und in kleinen Prompts
+planen.
+
+Änderung: Neu ist [Documentation/HUB_CHANCEN_PLAN.md](Documentation/HUB_CHANCEN_PLAN.md)
+mit Abgleichstabelle, Checkliste, Abhängigkeitsplan und den Prompts P0–P13. Jeder
+Prompt nennt seinen Nachfolger. ROADMAP.md verweist unter „Geplant“ darauf.
+Eigentümerentscheide: Allianzmarkt ist ein manuelles Verkaufsziel; beim
+Programmstart wird alles automatisch geladen (ersetzt die bisherigen Opt-ins; die
+Regeländerung wird erst in P1 umgesetzt und begründet).
+
+Ergebnis und Prüfung: Es ist nur Dokumentation entstanden; Code und Verhalten
+sind unverändert, ein Build war nicht nötig. Die Bewertung beruht auf PRODUCT.md
+und ARCHITECTURE.md; eine Codeprüfung fand in diesem Schritt nicht statt.
+
+Offen: P0 (Codeverifikation der Abgleichstabelle) bis P13.
+
 ## 29. September 2026 – Projektweite Modellvorgabe
 
 Ziel: Alle neuen Codex-Aufgaben des Projekts standardmäßig mit GPT-5.6 Sol und

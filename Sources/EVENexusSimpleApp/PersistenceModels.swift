@@ -9,6 +9,12 @@ enum AppSettingKey {
   static let privateContractsPrefix = "net-worth.private-contracts."
   static let corporationWalletPrefix = "net-worth.corporation-wallet."
   static let dashboardWealthHistory = "dashboard.wealth-history.v1"
+  /// Planner draft target market (HUB_CHANCEN_PLAN P10); value is the raw
+  /// `PlannerTargetMarket`, a missing row means not chosen.
+  static let plannerTargetMarketDraft = "planner.target-market.draft.v1"
+  /// Planner draft input of the manual alliance sale (P11), JSON-encoded
+  /// `PlannerAllianceSaleInput`.
+  static let plannerAllianceSaleDraft = "planner.alliance-sale.draft.v1"
 
   static func industryJobs(characterID: Int64) -> String {
     "\(industryJobsPrefix)\(characterID)"

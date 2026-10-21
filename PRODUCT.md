@@ -131,10 +131,12 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 
 | Bereich | Zweck und wesentliche Grenze |
 | --- | --- |
-| Dashboard | verdichteter Überblick über Jobs, persönliche Wallet-Salden, Finanzen, Markt und Automatisierungszustände; beim ersten Dashboard-Aufruf eines App-Laufs werden die verbundenen Charaktere einmal synchronisiert |
+| Dashboard | verdichteter Überblick über Jobs, persönliche Wallet-Salden, Finanzen, Markt und Automatisierungszustände; übernimmt die Charakterdaten aus dem zentralen Startablauf |
 | Planner | Produktionsgraph, Build/Buy/Warehouse-Auswahl, Installation, Logistik, Gebühren, Erlös, Profit und ROI |
 | Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen und festen Capital-Routen im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Bauen** übergibt die konkrete Charge an den Planner |
+| Home Hub Opportunities | dieselbe Chancenansicht für Verkäufe am Home Hub (Material vom Main Hub, ohne Rückweg); eigene Filter, gemeinsamer Scan mit dem Main Hub |
+| Coalition Hub Opportunities | Chancenansicht für Verkäufe am Coalition Hub inklusive sortierbarem Transport Home → Coalition (Jump Freighter oder Kurier); eigene Filter, gemeinsamer Scan |
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
 | Reactions | veröffentlichte Reaktionsrezepte, vollständige Batch-Kosten, Logistik und Make-or-Buy-Vergleich |
 | Moon purchase analysis | Mengen- und Preisvergleich ausgewählter Marktrollen für Mondmaterialien; vollständiger Tabellenexport als PNG |
@@ -249,6 +251,26 @@ Negativfilter. Ein früher gespeicherter Dashboard-Gruppenfilter begrenzt die
 Treffer nicht mehr. Nach Konfigurationsänderungen werden unpassende
 Empfehlungen bis zur gemeinsamen Aktualisierung ausdrücklich zurückgehalten.
 
+Unter den drei Marktkarten steht die Karte **Top-Chancen** mit je bis zu fünf
+Einträgen für Main, Home und Coalition Hub.
+
+- **Grundlage:** nur die gespeicherten Scans; die Karte startet keinen
+  ESI-Abruf. Gewertet wird nur ein Scan des aktuell konfigurierten exakten Hubs.
+- **Rangfolge:** nach täglichem Gewinnpotenzial mit sichtbar genannten
+  Standardannahmen: alle Materialien werden gekauft, Installation,
+  Verkaufssteuer und Brokergebühr sind enthalten, ohne Blueprint-Umlage und
+  ohne Einkaufsbudget. Es gilt die Route des jeweiligen Hubs. Zeilen ohne
+  verfügbares Gewinnpotenzial werden nicht gerankt; gleiche Werte folgen der
+  Typ-ID.
+- **Einträge:** Jeder Eintrag zeigt das Produkt mit Icon und kopierbarem Namen,
+  das tägliche Gewinnpotenzial und den ROI.
+- **Bedienung:** Ein Klick auf den Hub-Titel öffnet die Chancenansicht.
+  **Bauen** übergibt die gespeicherte Charge mit Zielmarkt an den Planner.
+- **Hinweise:** Ein nicht konfigurierter, gleicher oder unvollständiger Hub
+  bekommt einen Hinweis, ebenso ein Hub ohne Scan.
+
+Werte mit Lagerbezug zeigen die Chancenansichten selbst.
+
 Mondmaterialien und Mineralien erhalten je eine kompakte Einkaufsliste mit
 Material, günstigstem konfiguriertem Kaufort und Stückpreis, ebenfalls mit
 Fünfer-Vorschau und vollständiger Aufklappansicht. Die Fachansichten zeigen
@@ -275,9 +297,41 @@ Tagesänderungen gehören nicht mehr zu diesem Ticker. Ansichtenwechsel teilen
 laufende Aktualisierungen und nutzen passende vorhandene Ergebnisse innerhalb
 des fünfminütigen Wiederverwendungsfensters. Aufklappen startet keine Analyse.
 
-Beim ersten Dashboard-Aufruf eines laufenden App-Prozesses synchronisiert die
-App jeden verbundenen Charakter genau einmal über den bestehenden vollständigen
-Charakter-Sync. Dazu gehören insbesondere Wallet, Assets, Industriejobdaten,
+Beim Programmstart lädt die App alle Daten automatisch in einem zentralen
+Ablauf (Eigentümerentscheid 20.10.2026, [Entscheidung](Documentation/Consolidation/DECISIONS.md)).
+
+1. **Charaktere und Konfiguration:** Gleichzeitig laufen der vollständige
+   Charakter-Sync (jeder verbundene Charakter genau einmal je App-Prozess) und
+   das Laden der Planner-Konfiguration.
+2. **Analysen:** Danach starten Reaktionen, Mondmaterial- und
+   Mineralien-Analyse.
+3. **Scans:** Gleichzeitig werden der automatische Main-Hub-Chancen-Scan und
+   der Public-Contracts-Import freigegeben.
+
+Der Ablauf gehört nicht zu einer Ansicht und läuft unabhängig vom gewählten
+Bereich weiter. Das Dashboard wartet beim ersten Aufruf auf das Sync-Ergebnis
+dieses Ablaufs und synchronisiert nicht ein zweites Mal; ohne Hintergrunddienste
+synchronisiert es wie bisher selbst.
+
+Die Dashboard-Karte **Automatic data** zeigt unter **Programmstart** den Stand
+dieses Ablaufs. Es gibt je eine Zeile für Charaktere, Lager & Baupläne,
+Reaktionen, Mondmaterialien und Mineralien; darunter folgen wie bisher die
+Zeilen für Verträge und Main-Hub-Markt. Jede Zeile nennt einen Zustand (Wartet,
+Laufend, Aktuell, Teilweise, Veraltet, Verboten, Nicht verfügbar) und, falls
+bekannt, die Uhrzeit des letzten Datenstands.
+
+- **Charaktere:** Grundlage ist das Sync-Ergebnis des Startablaufs. Scheitern
+  einzelne Charaktere, gilt der Stand als Teilweise.
+- **Lager & Baupläne:** Grundlage sind die gespeicherten ESI-Metadaten der
+  Domänen `assets` und `blueprints`. Fehlt für einen Charakter eine davon, ist
+  der Stand nicht Aktuell, sondern Teilweise.
+- **Analysen:** Sie fassen die Marktzustände ihres Snapshots zusammen. Eine
+  fehlgeschlagene Aktualisierung mit erhaltenem Snapshot gilt als Veraltet.
+
+Die Anzeige startet keine Abrufe und macht aus fehlenden Daten weder einen
+aktuellen Stand noch null.
+
+Der Charakter-Sync verwendet den bestehenden vollständigen Ablauf. Dazu gehören insbesondere Wallet, Assets, Industriejobdaten,
 Orders, private Contracts sowie zugängliche Corporation-Wallets und -Assets.
 Einzelne Fehler behalten den letzten bekannten Quellstand und werden als
 partiell gemeldet; sie ersetzen ihn nicht durch null. Die Wallet-Karte bietet
@@ -665,6 +719,151 @@ verschwindet. Ältere gespeicherte Chancen-Snapshots ohne Aktivitätskennzeichen
 bleiben lesbar und gelten wie ihr damaliger Inhalt ausschließlich als
 Manufacturing.
 
+Der Chancen-Kern kann neben dem Main Hub auch Verkäufe am Home oder Coalition Hub
+bewerten. Material kommt dabei immer vom Main Hub; Verkaufsmarkt, Bedarf,
+Gebühren und Route stammen vom jeweiligen Hub. Es gibt drei Routen:
+
+- **Main Hub:** Hin- und Rücktransport, wie bisher.
+- **Home Hub:** nur der Hintransport zur Produktion, plus ein Weg zum Home Hub,
+  falls die Produktion woanders liegt.
+- **Coalition Hub:** wie Home Hub, zusätzlich der getrennt berechnete Transport
+  Home → Coalition. Ist dieser unbekannt, bleibt der Gewinn unverfügbar.
+
+Jede Rolle hat eigene Dateien (`market/home-hub-*.json`,
+`market/coalition-hub-*.json`); die Main-Hub-Dateien heißen unverändert
+`market/main-hub-*.json`.
+
+Der **Home-Hub-Scan** läuft direkt im Anschluss an jeden Main-Hub-Scan.
+
+- **Gleiche Steuerung:** Er übernimmt damit dessen 6-Stunden-Wiederverwendung,
+  die Freigabe nach dem Startablauf, die Abrufpriorität und den
+  Planner-Vorrang. Ohne Main-Hub-Scan (kein Main Hub konfiguriert) gibt es
+  auch keinen Home-Hub-Scan.
+- **Marktdaten:**
+  - NPC-Station: das öffentliche Regions-Orderbuch, gefiltert auf die exakte
+    Station.
+  - Player Structure: `/markets/structures/{id}/` mit dem Scope
+    `esi-markets.structure_markets.v1`. Den Zugang liefern die beim Start
+    oder vom Dashboard übergebenen Charakter-Autorisierungen; der
+    Home-Hub-Händler hat Vorrang.
+- **Bedarf:** Ein eigener Bedarfsledger zählt nur die exakte Home-Location.
+- **Rechnung:** Material wird zu Main-Hub-Preisen bewertet, Verkauf und
+  Gebühren kommen aus dem Home-Hub-Händlerprofil.
+- **Speicherung:** `market/home-hub-*.json`.
+- **Sonderfälle:**
+  - Home = Main: Es läuft kein zweiter Scan, die Main-Hub-Daten gelten.
+  - Fehlende Autorisierung, fehlender Scope, verweigerter ACL-Zugriff oder ein
+    unvollständiger Ort bleiben sichtbar unverfügbar. Ein vorhandener Stand
+    bleibt als veraltet erhalten.
+  - Ein Home-Hub-Fehler verändert die Main-Hub-Ergebnisse nicht.
+
+Die Dashboard-Karte **Automatic data** zeigt den Stand in der Zeile
+**Home-Hub-Markt**.
+
+Der Navigationsbereich **Home-Hub-Chancen** steht direkt unter den
+Main-Hub-Chancen.
+
+- **Oberfläche:** dieselbe wie bei den Main-Hub-Chancen, mit Filtern, Spalten,
+  Runs/ME/TE, Favoriten und **Bauen**.
+- **Daten:** der gespeicherte Home-Hub-Scan.
+- **Logistik:** nur der Hintransport vom Main Hub zur Produktion, ohne Rückweg
+  zum Main Hub.
+- **Gespeicherte Filter:** eigene Schlüssel
+  (`market-opportunities.home.…`, `manufacturing-opportunity.home.…`).
+  Suche, Kategorie, Gruppe, Ergebniswert, Produktarten, Produktionsklassen,
+  Mindest-Tagesbedarf, Materialbudget und Aufklappzustände sind dadurch vom
+  Main Hub getrennt. Favoriten, Blueprint-Umlage und der
+  Corporation-Hangar-Schalter gelten für beide Hubs gemeinsam.
+- **Texte:** Kopfzeile, Leerzustand, Fortschritt, Markt- und
+  Bedarfsgrundlage sowie Verkaufswarnungen nennen den Home Hub. Warnungen zu
+  Materialkäufen nennen weiter den Main Hub, weil dort eingekauft wird.
+- **Aktualisieren** startet den gemeinsamen Main- und Home-Hub-Scan.
+- **Bauen** übergibt zusätzlich den Zielmarkt „Home Hub“ an den Planner. Der
+  Planner wertet ihn erst ab P10 aus.
+- **Leerzustände:**
+  - Ohne Home Hub erscheint ein Hinweis mit Sprung in die Markteinstellungen.
+  - Bei Home = Main erscheint ein Hinweis mit Sprung zu den Main-Hub-Chancen.
+  - Bei unvollständigem Ort erscheint ein Hinweis auf erneute Auswahl.
+  - Ohne bisherigen Scan nennt die Ansicht den nächsten automatischen Lauf.
+
+Der **Coalition-Hub-Scan** läuft im selben Main-Hub-Scan nach dem Home Hub,
+mit denselben Regeln.
+
+- **Markt:** Structure-Markt mit Charakter-Lease; der Coalition-Händler hat
+  Vorrang.
+- **Bedarf und Speicher:** eigener Bedarfsledger und eigener Snapshot unter
+  `market/coalition-hub-*.json`.
+- **Rechnung:** Material zu Main-Hub-Preisen, Verkauf und Gebühren aus dem
+  Coalition-Händlerprofil.
+- **Kein eigener Scan:** Ist der Coalition Hub gleich dem Main oder dem Home
+  Hub, läuft kein zweiter Scan.
+- **Transport Home → Coalition:** Wie im Planner gilt für jede Zeile:
+  - Ist die Sprunglogistik aktiv, rechnet die App einen Jump-Freighter-Frachtflug
+    mit der DOTLAN-Route des konfigurierten Rumpfs und Piloten und den
+    Isotopenpreisen des Main Hubs.
+  - Sonst rechnet sie den Profil-Kurier (m³-Tarif, 0,5-%-Sicherheitsuntergrenze,
+    Millionenrundung).
+  - Die Grundlage wird im Snapshot gespeichert, die Kosten entstehen je Zeile aus
+    Menge und Erlös.
+- **Wann der Transport unverfügbar bleibt:**
+  - kein Home Hub,
+  - deaktivierte Logistik ohne Sprunglogistik,
+  - fehlender Tarif,
+  - fehlende DOTLAN-Route oder fehlender Pilot.
+
+  Der Gewinn ist dann ebenfalls nicht verfügbar und wird nie 0.
+- **Capitals:** Sie dürfen am Coalition Hub verkauft werden. Ein selbstspringendes
+  Capital bleibt ohne Sprunglogistik blockiert. Mit Sprunglogistik wird es in der
+  Chancenliste ausdrücklich nicht gerechnet, weil seine rumpfspezifische Route
+  der Planner bestimmt.
+- **Fehler:** Fehlender Scope oder ACL-Zugriff bleibt sichtbar unverfügbar und
+  verändert weder Main- noch Home-Ergebnisse.
+
+Die Karte **Automatic data** zeigt dazu die Zeile **Coalition-Hub-Markt**.
+
+Der Bereich **Coalition-Hub-Chancen** steht direkt unter den Home-Hub-Chancen.
+
+- **Grundlage:** dieselbe Oberfläche und Filterlogik, mit eigenen Schlüsseln
+  (`market-opportunities.coalition.…`, `manufacturing-opportunity.coalition.…`).
+- **Zusätzliche Spalte „Home → Coalition“:** Sie ist sortierbar; unbekannte
+  Werte stehen aufsteigend am Ende. Der Betrag ist in den Kosten enthalten und
+  wird nach Runs-Änderungen je Zeile neu berechnet.
+- **Details:** Die Zeilendetails nennen den Betrag und, falls er unverfügbar
+  ist, den konkreten Grund (zum Beispiel fehlende DOTLAN-Route, deaktivierte
+  Logistik oder selbstspringendes Capital).
+- **Texte:** Kopf- und Verkaufstexte nennen den Coalition Hub.
+- **Bauen** übergibt den Zielmarkt „Coalition Hub“.
+- **Leerzustände:**
+  - kein Coalition Hub,
+  - gleich Main Hub (mit Sprung zu den Main-Hub-Chancen),
+  - gleich Home Hub (mit Sprung zu den Home-Hub-Chancen),
+  - unvollständiger Ort,
+  - noch kein Scan.
+
+Alle drei Chancenansichten zeigen zusätzlich die sortierbaren Spalten
+**Vertragspreis** und **Vertragsgewinn**.
+
+- **Vertragspreis:** der niedrigste Stückpreis eines vergleichbaren
+  öffentlichen Item-Exchange-Vertrags im lokalen Index. Es gilt dieselbe Regel
+  wie beim Vertragshandel im Planner: genau der Produkttyp, eine
+  Angebotsposition, keine Gegenposition, positiver Preis, Bündel
+  ausgeschlossen, gesucht im gesamten importierten Universum, höchstens 500
+  Angebote je Typ.
+- **Vertragsgewinn:** Vertragspreis × Ausgabe, abzüglich des bestätigten
+  Vertragsgebührensatzes des angezeigten Hubs und der Gesamtkosten.
+  Marktsteuer und Brokergebühr entfallen. Fehlt ein bestätigter Satz, gelten
+  Gewinn und ROI ausdrücklich „vor Vertragsgebühr“.
+- **Zeilendetails:** Sie zeigen Vertragspreis, -erlös, -gebühr, -gewinn und
+  -ROI sowie Hinweise zu fehlendem Angebot, vorläufigem Index oder fehlendem
+  Satz.
+- **Vorläufige Werte:** Solange der Index unvollständig ist, sind die Werte
+  vorläufig und mit „≈“ markiert.
+- **Kein Angebot:** Der Wert bleibt unverfügbar, nie 0.
+- **Sortierung:** Unbekannte Werte stehen aufsteigend nach den bekannten.
+- **Datenquelle:** nur der lokale Vertragsindex, ohne ESI-Abruf. Gelesen wird
+  gebündelt für die Typen des angezeigten Scans; ein gleicher Typsatz wird fünf
+  Minuten wiederverwendet.
+
 Der tägliche Chancenwert ist `Gewinn je Einheit × beobachteter Tagesbedarf`.
 Damit sind beispielsweise 1.000 Einheiten pro Tag mit 1 Million ISK Gewinn je
 Einheit wirtschaftlich gleichrangig zu einer Einheit pro Tag mit 1 Milliarde
@@ -1026,6 +1225,63 @@ Produktionsgraph, Materialbedarf, Dauer, Installation und Ergebnisrechnung.
 Ein eindeutig zurechenbarer BPC-Vertrag übernimmt seine gemeinsamen ME/TE
 ebenfalls automatisch. Reaktionen bleiben ohne ME/TE.
 
+Über den Verkaufsszenarien wählt man im Planner den **Zielmarkt**: Main Hub,
+Home Hub, Coalition Hub oder „Nicht gewählt“.
+
+- **Vorschlag:** der Markt des Szenarios mit dem höchsten verfügbaren,
+  endgültigen Gewinn unter den neun Karten. Unverfügbare und vorläufige
+  Szenarien (ausstehende Transport- oder Vertragsgebühr) werden nie
+  vorgeschlagen; bei Gleichstand gilt die Reihenfolge Main, Home, Coalition.
+  **Vorschlag übernehmen** setzt ihn, jede manuelle Wahl hat Vorrang.
+- **Vorauswahl durch Übergabe:** **Bauen** aus den Hub-Chancen oder der
+  Dashboard-Karte setzt den Zielmarkt vor.
+- **Hervorhebung:** Die drei Karten des gewählten Hubs sind umrandet.
+- **Speicherung:**
+  - im Entwurf über den Einstellungsschlüssel
+    `planner.target-market.draft.v1`;
+  - im Plan-Snapshot als optionales Feld `targetMarket`; neue Berechnungen
+    übernehmen die Entwurfswahl;
+  - in der Snapshot-Kopie der Produktionsübersicht.
+
+  Eine SwiftData-Schemaänderung ist dafür nicht nötig.
+- **Rechnung:** Der Zielmarkt ist eine Entscheidungsmarkierung und ändert
+  keine Rechnung.
+- **Ältere Pläne und Produktionszeilen** bleiben lesbar und zeigen „Nicht
+  gewählt“.
+- **Produktionsübersicht:** Die neue, sortierbare Spalte **Ziel** sortiert
+  nach dem festen Rang Main, Home, Coalition, Allianzmarkt; „Nicht gewählt“
+  steht aufsteigend am Ende. Historische Pläne zeigen den gespeicherten Zielmarkt nur lesend.
+
+Als zehnte Karte steht **Allianzmarkt (manuell)** für Verkäufe an die Allianz,
+etwa nach Absprache in Slack.
+
+- **Eingaben:** Stückpreis (Pflicht), optional abgenommene Menge, Gebühr in
+  Prozent und Lieferort (Produktionsort, Main, Home oder Coalition Hub).
+  **Allianzverkauf übernehmen** oder die Eingabetaste übernimmt sie.
+- **Rechnung:**
+  - Erlös = Preis × verkaufte Menge, höchstens die produzierte Menge.
+  - Davon geht die eingetragene Gebühr ab. Ohne Eintrag gilt 0 %, ausdrücklich
+    als manuelle Annahme.
+  - Kosten = Produktionskosten inklusive Lieferung Main Hub → Home Hub, plus
+    der vorhandene Ausgangstransport des Lieferhubs aus dem Plan.
+  - Nicht abgenommene Einheiten bleiben unverkauft; ihre Produktionskosten
+    sind trotzdem enthalten.
+- **Wann die Karte unverfügbar bleibt:** ohne Preis, mit mehreren Endprodukten,
+  ohne Transport zum Lieferhub oder ohne Produktionskosten. Sie wird dann nie 0.
+- **Vorläufig:** Ein Lieferweg mit ausstehendem manuellem Transport macht das
+  Ergebnis vorläufig.
+- **Zielmarkt:** **Allianzmarkt** ist als weiterer Zielmarkt wählbar und wird
+  vorgeschlagen, wenn sein vollständiges Ergebnis den höchsten Gewinn hat; bei
+  Gleichstand gewinnen die Marktszenarien.
+- **Speicherung:** Die Eingaben stehen im Entwurf
+  (`planner.alliance-sale.draft.v1`), das Ergebnis im Plan-Snapshot
+  (`allianceSale`) und in dessen Kopie in der Produktionsübersicht. Neue
+  Berechnungen übernehmen die Eingaben.
+- **Slack-Text:** Ein Angebotstext („WTS Menge× Item @ Preis …“) ist über die
+  gemeinsame Kopierrückmeldung kopierbar. Eine Slack-Anbindung gibt es nicht.
+
+Die neun Marktszenarien und ihre Rechnung sind unverändert.
+
 Die Verkaufsstrategien bestehen an Main Hub, Home Hub und Koalitions-Hub jeweils
 aus Sofortverkauf in vorhandene Buy Orders, eingestelltem Verkauf über Sell
 Orders und öffentlichem Vertragshandel. Einen getrennten Direkthandel zwischen
@@ -1045,6 +1301,33 @@ unbekannte persönliche Vertragsgebühr wird als vorläufig gekennzeichnet und
 niemals als 0 ISK behandelt. Verbotene Routen sowie unbekannte Volumen, Tarife
 oder Marktdaten lassen die abhängigen Vorschauwerte ausdrücklich
 **Nicht verfügbar**.
+
+In der aufgeklappten **EVE shopping list** zeigt der Bereich
+**Kaufort-Hinweis · Mineralien und Mondmaterialien** für jede Mineral- und
+Mondmaterial-Position:
+
+- den günstigsten konfigurierten Kaufort aus der bereits geladenen Mineralien-
+  bzw. Mondmaterial-Kaufanalyse,
+- den Stückpreis dort,
+- den gewichteten Main-Hub-Stückpreis des Plans,
+- die Differenz je Einheit (negativ heißt günstiger).
+
+Weitere Eigenschaften:
+
+- **Analyse-Stand:** Je Analyse steht der Zeitpunkt. „Veraltet“ erscheint, wenn
+  die Analyse nicht mehr zur aktuellen Marktkonfiguration passt; ohne Analyse
+  steht „Analyse nicht geladen“.
+- **Fehlende Werte:** Ein Material ohne frisches Angebot bleibt ausdrücklich
+  ohne Kaufort. Ohne vollständige Main-Hub-Markttiefe bleibt die Differenz
+  unverfügbar.
+- **Bedienung:** Die Tabelle ist sortierbar, unbekannte Werte stehen aufsteigend
+  am Ende. Material- und Ortsnamen sind kopierbar.
+- **Multibuy:** Je empfohlenem Kaufort gibt es einen Export
+  **Multibuy kopieren · Ort** mit demselben Zeilenformat wie der
+  Main-Hub-Export.
+- **Rechnung:** Der Hinweis ist nur Entscheidungshilfe und startet keinen
+  ESI-Abruf. Plankosten, Einkaufsliste und Main-Hub-Multibuy bleiben
+  unverändert Main-Hub-basiert.
 
 Für jede transportierte Einheit gilt ausschließlich das öffentliche
 ESI-Typfeld `packaged_volume`. Die aktuelle clientbasierte CCP-SDE-Datei
@@ -1420,7 +1703,9 @@ Der ausführliche Produktionsvertrag steht in
   sollen SDE-abhängige Bereiche verwendet und die Main-Hub-Analyse erneut
   ausgeführt werden. Der Hinweis beschreibt den derzeit notwendigen
   Betriebsablauf; er behauptet keine automatische Laufzeitumschaltung.
-- Öffentliche Contract-Imports sind opt-in, zeigen Fortschritt und Teilstatus,
+- Öffentliche Contract-Imports starten bzw. laufen nach jedem Programmstart
+  automatisch weiter. Ein manueller Stopp pausiert sie bis zum nächsten Start.
+  Sie zeigen Fortschritt und Teilstatus,
   können sicher gestoppt werden und bewahren einen letzten erfolgreichen Stand.
   Eine kompakte Steuerkarte bleibt dauerhaft in der Navigationsseitenleiste
   sichtbar. Dort lässt sich der Erstimport starten oder fortsetzen, ohne die
@@ -1507,8 +1792,8 @@ mit kurzen, wiederverwendbaren Prompts steht in
   automatische Main-Hub-Aktualisierungen verwenden weiterhin Utility. Auch ein
   ausdrücklich in der Oberfläche gestarteter
   mehrtägiger Contract-Import verwendet nach dem Start die begrenzte
-  Hintergrundspur; die Nutzerentscheidung aktiviert weiterhin die automatische
-  Fortsetzung. Die bestehenden Seiten-, Worker-, Cache- und Abbruchbegrenzungen
+  Hintergrundspur. Die automatische Fortsetzung ist seit 20.10.2026 bei jedem
+  Programmstart aktiv. Die bestehenden Seiten-, Worker-, Cache- und Abbruchbegrenzungen
   bleiben unverändert.
 - Sämtliche GET- und POST-Transporte desselben App-ESI-Clients passieren eine
   gemeinsame, abbrechbare Warteschlange. Insgesamt laufen höchstens sechs
@@ -1692,12 +1977,18 @@ Standardsatz getrennt.
    Hintergrund vorbereitet; bestehende Routen bleiben bei einem ESI-Fehler
    erhalten.
 7. Unter **Market Settings** Main, Home und gegebenenfalls Coalition Hub sowie
-   Trader- und Gebührennachweise festlegen.
-8. Bestände und Blueprints prüfen, Schutzbestände setzen und erst danach planen.
-9. Für den etablierten, speicherbaren Ablauf im Planner Marktdeckung,
-   Produktionszweige, Kostenbestandteile und Warnungen prüfen; Empfehlungen
-   bleiben übersteuerbar.
-10. Produktion nur nach erneuter Kontrolle im etablierten Planner als
+   Trader- und Gebührennachweise (inklusive bestätigtem Vertragsgebührensatz)
+   festlegen.
+8. Nach jedem Start lädt die App Charaktere, Analysen und die Hub-Scans
+   automatisch; den Stand zeigt die Dashboard-Karte **Automatic data**.
+9. Auf dem Dashboard (**Top-Chancen**) oder in den Main-, Home- und
+   Coalition-Hub-Chancen ein Produkt nach Gewinn, ROI, Bedarf oder eigener
+   Entscheidung wählen und mit **Bauen** an den Planner übergeben.
+10. Schutzbestände setzen und im Planner Bestände und Blueprints, Marktdeckung, Produktionszweige,
+    Kostenbestandteile und Warnungen prüfen, den **Zielmarkt** (einschließlich
+    Allianzmarkt) wählen und den Kaufort-Hinweis für Mineralien und
+    Mondmaterialien beachten; Empfehlungen bleiben übersteuerbar.
+11. Produktion nur nach erneuter Kontrolle im etablierten Planner als
     historischen Datensatz erfassen.
 
 ## Bekannte Grenzen
