@@ -1,5 +1,13 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 21. Oktober 2026 – Commit und Push des Hub-Chancen-Ausbaus
+
+Auf Auftrag des Eigentümers ist der Stand P0–P13 als `9000f3f` auf `main`
+committet und nach `origin/main` gepusht (Fast-Forward von `b6e2547`, kein
+Tag). Vorab geprüft: `origin/main` war unverändert, `git diff --check` war
+fehlerfrei und der Diff enthielt keine Tokens. Dieser Nachtrag korrigiert die
+Aussage in PROJECT_STATE.md, der Stand sei nicht committet.
+
 ## 21. Oktober 2026 – P13: Abschluss Hub-Chancen-Ausbau
 
 Ziel: Die Dokumentation auf den Stand P0–P12 bringen, die Nachweise eintragen
@@ -36,7 +44,6 @@ Offen:
 - Live-Prüfung (Charaktere, Structure-Märkte, DOTLAN, vollständiger
   Vertragsindex).
 - Visuelle und fachliche Eigentümerabnahme nach Leitfaden.
-- Commit und Push nur auf Auftrag.
 
 ## 21. Oktober 2026 – P12: Kaufort-Hinweis für Mineralien und Mondmaterialien
 

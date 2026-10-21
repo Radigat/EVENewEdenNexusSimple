@@ -131,4 +131,5 @@ Checkliste, Prompts und Owner-Testleitfaden:
     vollständigem Vertragsindex;
   - visuelle und fachliche Eigentümerabnahme.
 
-  Alle Änderungen sind lokal und nicht committet.
+  Der Stand ist auf Auftrag des Eigentümers als `9000f3f` auf `main`
+  committet und nach `origin/main` gepusht (Fast-Forward, kein Tag).
