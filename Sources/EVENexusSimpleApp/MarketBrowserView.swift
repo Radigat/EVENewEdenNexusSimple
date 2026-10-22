@@ -1335,7 +1335,10 @@ struct ManufacturingOpportunitiesView: View {
     .task(id: candidateTrigger) {
       await prepareCandidates(trigger: candidateTrigger)
     }
-    .task(id: analysis?.id) {
+    .task(id: ContractReferenceTrigger(
+      analysisID: analysis?.id,
+      regionScope: runtime.publicContractRegionScope
+    )) {
       guard let analysis else { return }
       await runtime.loadOpportunityContractReferences(
         typeIDs: Set(analysis.rows.map(\.productTypeID))
@@ -5581,4 +5584,10 @@ enum OpportunityHubText {
       .replacingOccurrences(of: "Main Hub", with: replacement.spaced)
       .replacingOccurrences(of: "Main-Hub", with: replacement.hyphenated)
   }
+}
+
+/// Reloads opportunity contract prices for a new analysis or region scope.
+private struct ContractReferenceTrigger: Equatable {
+  let analysisID: UUID?
+  let regionScope: Set<Int64>?
 }

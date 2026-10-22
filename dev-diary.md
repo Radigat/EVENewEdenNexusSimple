@@ -1,5 +1,90 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 22. Oktober 2026 – Manuelle Preisprofile entfernt
+
+Ziel (Eigentümerauftrag): Prüfen, ob die Preisprofile in den Markteinstellungen
+irgendwo verwendet werden, und sie andernfalls entfernen.
+
+Befund: Keine Verwendung. Profile wurden nur geschrieben (Einzelpreis, CSV,
+Planpreise), angezeigt, gesichert und in der Diagnose gezählt.
+`ManualPriceProfile.price(_:at:)` rief nur ein Test auf;
+`ConsolidatedProject.priceProfileID` wurde nie gesetzt.
+
+Änderung:
+
+- Markteinstellungen: Panel **Preisprofile** (`ConsolidationPricesView`,
+  `ConsolidationPriceTable`) entfernt.
+- `ConsolidationImports`: Importart `prices` entfernt; Wertspalte ohne Angabe
+  ist `quantity`.
+- `ConsolidationWorkspace`: `createPriceProfile`, Profil-Vorschauzeilen und
+  ID-Prüfung entfernt; `priceProfiles` als Altdatenfeld dokumentiert.
+  `ManualPriceProfile.price(_:at:)` entfernt, die Struktur bleibt für das
+  unveränderte Dekodieren.
+- Diagnoseexport zählt Preisprofile unter den Altdaten.
+- Test `moneyIsExactAndValidityEndIsExclusive` → `moneyIsExact` (Gültigkeitsteil
+  entfällt mit der Funktion).
+- Doku: PRODUCT, ARCHITECTURE, PROJECT_STATE, DECISIONS, FEATURE_COVERAGE,
+  FUNCTIONAL_CONSOLIDATION, FUNCTIONAL_VALIDATION, COMPONENTS.
+
+Daten: Format, SwiftData-Schema, Migrationen und Sicherungen unverändert;
+gespeicherte Profile bleiben erhalten.
+
+Prüfung (automatisch): `swift build` erfolgreich; `swift test` 474 Tests in
+31 Suites bestanden; natives `xcodebuild … -configuration Debug … test` mit
+`** TEST SUCCEEDED **`. `EVEStaticDataKit` nicht berührt.
+
+Offen: visuelle Eigentümerabnahme der Markteinstellungen.
+
+## 22. Oktober 2026 – Regionsauswahl für den Vertragsimport
+
+Ziel (Eigentümerauftrag): In den Einstellungen wählen, ob der Import
+öffentlicher Verträge das gesamte Universum oder nur ausgewählte Regionen
+abruft; Trade-Hub-, Hub-Rollen- und Produktionsregionen markiert und oben;
+Hub-Chancen rechnen nur mit dem gewählten Umfang.
+
+Änderung:
+
+- `PublicContractStore`: neue Einstellung `region_scope` in
+  `contract_settings` (fehlend = Universum, kein Schemawechsel).
+  `regionSchedule`, `pendingContractIDs`, `automationState`, `progress`,
+  `search`, `includedOffers` und `facets` filtern auf den Umfang. Zeilen
+  abgewählter Regionen bleiben erhalten.
+- `PublicContractIndexer`: `regionScope`, `setRegionScope`, `knownRegions`
+  (lädt die ESI-Regionsliste einmalig, falls noch keine bekannt ist).
+- Neu `PublicContractRegion`, `PublicContractRegionRole`,
+  `PublicContractRegionOption`, `PublicContractRegionCatalog` in
+  `PublicContractModels.swift` (Hinweise und Sortierung).
+- `RuntimeState`: veröffentlichter Umfang, `loadPublicContractRegions`,
+  `applyPublicContractRegionScope` (Cache der Chancen-Vertragspreise
+  verworfen, Fortschritt/Facetten neu, Automatik neu geplant);
+  `projectUniverseWide` erhält den Umfang als `allowedRegionIDs`.
+- Markteinstellungen: neues Panel **Vertragsregionen**
+  (`PublicContractRegionSettingsPanel` in `PublicContractsView.swift`) mit
+  kopierbaren Regionsnamen (`EVEEntityText`), getrennter Checkbox, Filter,
+  Schnellauswahl Hub-/Produktionsregionen. Hub-Chancen laden Vertragspreise
+  bei Umfangsänderung neu.
+- Neue Dateien bewusst vermieden, damit `project.pbxproj` unverändert bleibt.
+- Nachbesserung nach Sichtprüfung: Der Coalition Hub (Spielerstruktur in
+  C-J6MT) wurde keiner Region zugeordnet, weil der gespeicherte Ort nur das
+  Sonnensystem kennt. `PublicContractRegionCatalog` nimmt jetzt eine
+  Zuordnung System → Region entgegen (`unresolvedSolarSystemIDs`,
+  `systemRegions`); das Panel löst sie über `resolveSolarSystem` (ESI,
+  zwischengespeichert) auf. Dadurch steht Insmother als Koalitions-Hub oben.
+
+Prüfung:
+
+- `swift build`; vier neue Tests in `PublicContractTests` (Abruf nur
+  gewählter Regionen, Filterung von Angeboten/Suche/Fortschritt/Facetten,
+  Hinweise und Reihenfolge der Regionsoptionen, Coalition-Hub-Region über
+  das Sonnensystem).
+- `swift test`: 475 Swift-Testing-Tests in 31 Suites, 61 Tests in 3 Suites
+  und 8 XCTest-Tests bestanden.
+- `xcodebuild test` unsigniert: `TEST SUCCEEDED`.
+- `EVEStaticDataKit` nicht berührt, nicht erneut getestet.
+
+Offen: Sichtprüfung des Panels und Live-Abruf mit Regionsauswahl durch den
+Eigentümer.
+
 ## 22. Oktober 2026 – „Automatische Daten“ in die Seitenleiste verlegt
 
 Ziel (Eigentümerauftrag): Dashboard grafisch entlasten; die Karte

@@ -77,7 +77,7 @@ lässt rechnen.
   Input-BPC-Reservierungen. Neue Aufträge speichern keine Projekt-ID; alte Projekt-IDs bleiben erhalten.
   Aufträge, die früher zu archivierten Projekten gehörten, sind dadurch wieder wirksam, bis sie archiviert werden.
 - **Preisprofile:** Sie bleiben pflegbar, sind aber reine Referenzpreise. Der Marktimport liest den
-  aktuell berechneten Plan.
+  aktuell berechneten Plan. (Am 22.10.2026 entfernt, siehe unten.)
 - **Altdaten:** `projects`, `selectedProjectID`, `reservations` und `purchases` bleiben im
   `ConsolidationWorkspace` und werden unverändert dekodiert und wieder gespeichert, aber nicht mehr
   verwendet oder validiert. Format (`formatVersion` 1), SwiftData-Schema und Migrationskette sind
@@ -111,3 +111,15 @@ Schritt P1.
 
   Im Recovery-Modus und mit `EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1` startet
   nichts. Ohne Hintergrunddienste synchronisiert das Dashboard wie bisher selbst.
+
+## 22.10.2026 – Manuelle Preisprofile entfernt
+
+- **Anlass:** Eigentümerauftrag nach Prüfung. Profile wurden angelegt, mit Einzelpreisen, CSV oder
+  Planpreisen gefüllt, angezeigt und gesichert, aber keine Berechnung, kein Filter und keine Ansicht
+  las sie. `ConsolidatedProject.priceProfileID` wurde nie gesetzt.
+- **Entfernt:** Panel **Preisprofile** in den Markteinstellungen, CSV-Importart `prices`,
+  `createPriceProfile`, `ManualPriceProfile.price(_:at:)` und die Vorschauzeilen für Profiländerungen.
+- **Altdaten:** `priceProfiles` und `ManualPriceProfile` bleiben im `ConsolidationWorkspace` und
+  werden unverändert dekodiert und wieder gespeichert, aber nicht mehr validiert. Format
+  (`formatVersion` 1), SwiftData-Schema, Migrationskette und Sicherungen sind unverändert. Die
+  Diagnose zählt Profile unter den Altdaten.

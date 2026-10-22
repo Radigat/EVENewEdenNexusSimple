@@ -154,6 +154,29 @@ public actor PublicContractIndexer {
     try await store.progress()
   }
 
+  public func regionScope() async throws -> Set<Int64>? {
+    try await store.regionScope()
+  }
+
+  public func setRegionScope(_ regionIDs: Set<Int64>?) async throws {
+    try await store.setRegionScope(regionIDs)
+  }
+
+  /// Known regions; loads the ESI region list once while none is stored, so
+  /// a scope can be chosen before the first contract import.
+  public func knownRegions() async throws -> [PublicContractRegion] {
+    let stored = try await store.knownRegions()
+    guard stored.isEmpty else { return stored }
+    let response = try await remote.regionIDs()
+    let ids = Set(response.value.filter { $0 > 0 })
+    guard !ids.isEmpty else { return [] }
+    let names = await remote.regionNames(ids: ids)
+    try await store.upsertRegions(
+      ids.map { id in (id: id, name: names.value?[id] ?? "Region \(id)") }
+    )
+    return try await store.knownRegions()
+  }
+
   public func setAutomaticUpdatesEnabled(_ isEnabled: Bool) async throws {
     try await store.setAutomaticUpdatesEnabled(isEnabled)
   }

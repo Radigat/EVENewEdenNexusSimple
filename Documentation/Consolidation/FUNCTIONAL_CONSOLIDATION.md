@@ -26,8 +26,8 @@ ursprüngliche Patches bleiben unter `_archive/` bzw. diesem Dokumentverzeichnis
 direkt aus der eingetragenen Produktion, dem ESI-Bestand nach Schutzmengen und der Planner-Handeingabe.
 Projektwahl, Projekteinstellungen, Reservierungen und Einkaufsbudget/-fortschritt gibt es nicht mehr.
 Begründung und Altdatenbehandlung: [DECISIONS.md](DECISIONS.md). Warehouse, Blueprints und Produktionsübersicht öffnen nur ihre jeweils passenden Fachdialoge für
-manuelle Lager, Wissenschaftsaufträge beziehungsweise Verkaufsbelege. Preisprofile sind direkt in
-den Markteinstellungen integriert; lokale Sicherung, Wiederherstellung und Diagnose liegen in den
+manuelle Lager, Wissenschaftsaufträge beziehungsweise Verkaufsbelege. Manuelle Preisprofile sind seit
+22.10.2026 entfernt; lokale Sicherung, Wiederherstellung und Diagnose liegen in den
 allgemeinen Einstellungen. Der frühere bereichsumschaltende Projektverwaltungsdialog ist entfernt.
 
 - Projekte: entfernt. Gespeicherte Projekt-, Reservierungs- und Einkaufsdatensätze bleiben als

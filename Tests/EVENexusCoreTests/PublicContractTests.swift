@@ -1106,6 +1106,200 @@ struct PublicContractTests {
     fixture.removeFiles()
   }
 
+  @Test
+  func regionScopeLimitsImportToTheSelectedRegions() async throws {
+    let fixture = try ContractStoreFixture()
+    let now = Date(timeIntervalSince1970: 2_000)
+    let remote = ContractRemoteFixture(
+      now: now,
+      regionIDs: [10_000_002, 10_000_043, 10_000_060]
+    )
+    let indexer = PublicContractIndexer(
+      remote: remote,
+      catalog: ContractCatalogFixture(),
+      store: fixture.store,
+      regionRequestSpacing: 0.1,
+      itemRequestSpacing: 0.25,
+      now: { now },
+      sleep: { _ in }
+    )
+    try await indexer.setRegionScope([10_000_043])
+    #expect(try await indexer.regionScope() == [10_000_043])
+
+    let result = try await indexer.synchronizeAll { _ in }
+    #expect(result.phase == .completed)
+    #expect(result.regionCount == 1)
+    #expect(result.hasCompleteSearchCoverage)
+    #expect(await remote.contractRequestCount == 1)
+    // The full ESI region list stays known for the selection.
+    #expect(try await indexer.knownRegions().count == 3)
+
+    try await indexer.setRegionScope(nil)
+    #expect(try await indexer.regionScope() == nil)
+    let universe = try await indexer.localProgress()
+    #expect(universe.regionCount == 3)
+    #expect(!universe.hasCompleteSearchCoverage)
+    await fixture.cleanup()
+  }
+
+  @Test
+  func regionScopeFiltersOffersSearchAndProgressWithoutDeletingRows()
+    async throws
+  {
+    let fixture = try ContractStoreFixture()
+    let store = fixture.store
+    let now = Date(timeIntervalSince1970: 3_250)
+    try await store.upsertRegions([
+      (10_000_002, "The Forge"), (10_000_043, "Domain"),
+    ])
+    try await store.recordRegionSuccess(
+      regionID: 10_000_002,
+      contracts: [contract(id: 71, now: now)],
+      fetchedAt: now,
+      nextAllowedAt: now.addingTimeInterval(1_800)
+    )
+    try await store.recordRegionSuccess(
+      regionID: 10_000_043,
+      contracts: [contract(id: 72, now: now)],
+      fetchedAt: now,
+      nextAllowedAt: now.addingTimeInterval(1_800)
+    )
+    let ark = metadata(
+      typeID: 28_372,
+      name: "Ark Blueprint",
+      groupID: 902,
+      group: "Jump Freighter Blueprint",
+      categoryID: 9,
+      category: "Blueprint"
+    )
+    for (contractID, recordID) in [(Int64(71), Int64(711)), (72, 721)] {
+      try await store.storeItems(
+        contractID: contractID,
+        items: [item(recordID: recordID, typeID: 28_372)],
+        metadata: [28_372: ark],
+        fetchedAt: now
+      )
+    }
+
+    try await store.setRegionScope([10_000_043])
+    let scopedOffers = try await store.includedOffers(
+      typeIDs: [28_372],
+      now: now
+    )
+    #expect(scopedOffers[28_372]?.map(\.contractID) == [72])
+    let scopedSearch = try await store.search(
+      PublicContractSearchFilter(itemQuery: "Ark"),
+      now: now
+    )
+    #expect(scopedSearch.map(\.contractID) == [72])
+    let scopedProgress = try await store.progress()
+    #expect(scopedProgress.regionCount == 1)
+    #expect(scopedProgress.indexedContracts == 1)
+    #expect(scopedProgress.indexedItems == 1)
+    #expect(try await store.facets().categories.first?.resultCount == 1)
+    #expect(
+      try await store.regionSchedule(
+        now: now.addingTimeInterval(3_600)
+      ).map(\.id) == [10_000_043]
+    )
+
+    // An empty selection means the entire universe again.
+    try await store.setRegionScope([])
+    let offers = try await store.includedOffers(typeIDs: [28_372], now: now)
+    #expect(offers[28_372]?.map(\.contractID).sorted() == [71, 72])
+    #expect(try await store.progress().indexedContracts == 2)
+    await fixture.cleanup()
+  }
+
+  @Test
+  func regionOptionsMarkHubRolesProductionSitesAndTradeHubsFirst() {
+    let delve = ActivitySystemConfiguration(
+      activity: .manufacturing,
+      solarSystemID: 30_004_759,
+      solarSystemName: "1DQ1-A",
+      regionID: 10_000_060,
+      regionName: "Delve"
+    )
+    let jita = TradingLocationConfiguration(
+      location: MarketTradeHub.jita.procurementLocation
+    )
+    var basis = ProductionBasis()
+    basis.tradingLocations = [jita]
+    basis.mainTradingLocationID = jita.id
+    basis.manufacturingSystems = [delve]
+    let regions = [
+      PublicContractRegion(id: 10_000_001, name: "Derelik"),
+      PublicContractRegion(id: 10_000_002, name: "The Forge"),
+      PublicContractRegion(id: 10_000_043, name: "Domain"),
+      PublicContractRegion(id: 10_000_060, name: "Delve"),
+      PublicContractRegion(id: 10_000_005, name: "Detorid"),
+    ]
+
+    let options = PublicContractRegionCatalog.options(
+      regions: regions,
+      basis: basis
+    )
+
+    #expect(
+      options.map(\.name) == [
+        "The Forge", "Delve", "Domain", "Derelik", "Detorid",
+      ]
+    )
+    #expect(options[0].roles == [.mainHub, .tradeHub])
+    #expect(options[0].tradeHubs == [.jita])
+    #expect(options[1].roles == [.productionSite])
+    #expect(options[2].tradeHubs == [.amarr])
+    #expect(!options[3].isRecommended)
+    #expect(
+      PublicContractRegionCatalog.suggestedRegionIDs(basis: basis)
+        == [10_000_002, 10_000_060]
+    )
+  }
+
+  @Test
+  func coalitionStructureRegionResolvesThroughItsSolarSystem() {
+    let structure = TradingLocationConfiguration(
+      location: ProcurementLocation(
+        id: "structure-1",
+        name: "C-J6MT - Keepstar",
+        locationID: 1_035_466_617_946,
+        kind: .playerStructure,
+        solarSystemID: 30_001_198
+      )
+    )
+    var basis = ProductionBasis()
+    basis.tradingLocations = [structure]
+    basis.coalitionTradingLocationID = structure.id
+    let regions = [
+      PublicContractRegion(id: 10_000_009, name: "Insmother"),
+      PublicContractRegion(id: 10_000_001, name: "Derelik"),
+    ]
+
+    #expect(
+      PublicContractRegionCatalog.unresolvedSolarSystemIDs(basis: basis)
+        == [30_001_198]
+    )
+    let unresolved = PublicContractRegionCatalog.options(
+      regions: regions,
+      basis: basis
+    )
+    #expect(unresolved.first { $0.id == 10_000_009 }?.roles == [])
+
+    let options = PublicContractRegionCatalog.options(
+      regions: regions,
+      basis: basis,
+      systemRegions: [30_001_198: 10_000_009]
+    )
+    #expect(options.first?.name == "Insmother")
+    #expect(options.first?.roles == [.coalitionHub])
+    #expect(
+      PublicContractRegionCatalog.suggestedRegionIDs(
+        basis: basis,
+        systemRegions: [30_001_198: 10_000_009]
+      ) == [10_000_009]
+    )
+  }
+
   private func contract(
     id: Int64,
     now: Date,

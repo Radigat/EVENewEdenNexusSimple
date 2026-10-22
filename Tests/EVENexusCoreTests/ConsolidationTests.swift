@@ -129,16 +129,11 @@ struct ConsolidationTests {
         catalogNames: [34: "Tritanium"])
     }
   }
-  @Test func moneyIsExactAndValidityEndIsExclusive() throws {
+  @Test func moneyIsExact() throws {
     #expect(try ISKAmount.parse("123,45").hundredths == 12345)
     for invalid in ["", "0", "-1", "1.234", "1,234.50", "1 000", "92233720368547759"] {
       #expect(throws: (any Error).self) { try ISKAmount.parse(invalid) }
     }
-    var p = ManualPriceProfile(name: "P", validFrom: Date(timeIntervalSince1970: 100))
-    p.validUntil = Date(timeIntervalSince1970: 200)
-    p.prices[34] = try ISKAmount.parse("0.01")
-    #expect(p.price(34, at: Date(timeIntervalSince1970: 100)) != nil)
-    #expect(p.price(34, at: Date(timeIntervalSince1970: 200)) == nil)
   }
   @Test func receiptAllocationPreventsDoubleUseAndOversaleAndKeepsCosts() throws {
     var w = try workspace()

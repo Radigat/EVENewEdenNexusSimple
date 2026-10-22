@@ -1924,3 +1924,30 @@
 "No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings." = "No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings.";
 "of %@" = "of %@";
 "%@ revenue − %@ fee − %@ costs (production incl. materials, blueprints, installation and inbound logistics %@ + delivery %@) = %@ profit" = "%@ revenue − %@ fee − %@ costs (production incl. materials, blueprints, installation and inbound logistics %@ + delivery %@) = %@ profit";
+
+/* Contract regions */
+"Contract Regions" = "Contract Regions";
+"Choose which regions the Public Contracts import fetches. Main, Home and Coalition Hub opportunities, the Planner Contract Sale and the contract search compare only offers from these regions." = "Choose which regions the Public Contracts import fetches. Main, Home and Coalition Hub opportunities, the Planner Contract Sale and the contract search compare only offers from these regions.";
+"The local Public Contracts index is not ready. The region selection can be changed once it is available." = "The local Public Contracts index is not ready. The region selection can be changed once it is available.";
+"Import scope" = "Import scope";
+"Entire universe" = "Entire universe";
+"Selected regions" = "Selected regions";
+"Every EVE region is imported and compared. The first complete import takes considerably longer than a regional selection." = "Every EVE region is imported and compared. The first complete import takes considerably longer than a regional selection.";
+"Apply Region Selection" = "Apply Region Selection";
+"Not applied yet" = "Not applied yet";
+"Select at least one region or import the entire universe." = "Select at least one region or import the entire universe.";
+"A running contract import finishes with its previous region list; the new selection applies from the next run." = "A running contract import finishes with its previous region list; the new selection applies from the next run.";
+"Filter regions" = "Filter regions";
+"Select hub and production regions" = "Select hub and production regions";
+"Clear selection" = "Clear selection";
+"%lld of %lld regions selected" = "%1$lld of %2$lld regions selected";
+"Loading the EVE region list…" = "Loading the EVE region list…";
+"The EVE region list is not available yet." = "The EVE region list is not available yet.";
+"Recommended regions" = "Recommended regions";
+"All other regions" = "All other regions";
+"Production site" = "Production site";
+"Trade hub %@" = "Trade hub %@";
+"Contract import now covers the entire universe. Regions without a complete import are fetched with the next automatic update." = "Contract import now covers the entire universe. Regions without a complete import are fetched with the next automatic update.";
+"Region selection saved. Newly selected regions are fetched with the next automatic update." = "Region selection saved. Newly selected regions are fetched with the next automatic update.";
+"The EVE region list could not be loaded. The saved contract region selection is unchanged." = "The EVE region list could not be loaded. The saved contract region selection is unchanged.";
+"The contract region selection could not be saved. The previous selection remains active." = "The contract region selection could not be saved. The previous selection remains active.";

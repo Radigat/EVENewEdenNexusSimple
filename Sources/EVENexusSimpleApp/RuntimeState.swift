@@ -417,7 +417,8 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var opportunityContractReferences:
     PublicContractReferenceSnapshot?
   @Published private(set) var opportunityContractReferenceError: String?
-  private var opportunityContractReferenceKey: (types: Set<Int64>, loadedAt: Date)?
+  private var opportunityContractReferenceKey:
+    (types: Set<Int64>, regions: Set<Int64>?, loadedAt: Date)?
   /// Latest authorizations handed over by the startup load or Dashboard; the
   /// Home-Hub structure market needs them outside any view.
   private var marketAuthorizations: [AuthorizationSnapshot] = []
@@ -472,6 +473,11 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var publicContractNextAutomaticRunAt: Date?
   @Published private(set) var publicContractStoreState: PublicContractStoreState =
     .disabled
+  /// Regions the contract import fetches and compares; `nil` is the entire
+  /// universe. Persisted in the local Public Contracts index.
+  @Published private(set) var publicContractRegionScope: Set<Int64>?
+  @Published private(set) var publicContractKnownRegions: [PublicContractRegion] = []
+  @Published private(set) var publicContractRegionError: String?
 
   private let esi: ESIClient
   private let eveOnlineStatusClient = EVEOnlineStatusClient()
@@ -916,6 +922,58 @@ final class RuntimeState: ObservableObject {
     }
   }
 
+  /// Loads the selectable regions; the ESI region list is fetched once when
+  /// the local index does not know any region yet.
+  func loadPublicContractRegions() async {
+    guard publicContractStoreState == .ready,
+      let publicContractIndexer
+    else { return }
+    do {
+      publicContractRegionScope = try await publicContractIndexer.regionScope()
+      publicContractKnownRegions =
+        try await publicContractIndexer.knownRegions()
+      publicContractRegionError = nil
+    } catch is CancellationError {
+      return
+    } catch {
+      publicContractRegionError =
+        "The EVE region list could not be loaded. The saved contract region selection is unchanged."
+    }
+  }
+
+  /// Saves the contract region scope (`nil` = entire universe). Newly
+  /// selected regions without a complete import are fetched by the next
+  /// automatic run, which is rescheduled immediately; a run already in
+  /// progress keeps its region list until it finishes.
+  func applyPublicContractRegionScope(_ regionIDs: Set<Int64>?) async {
+    guard let publicContractIndexer else { return }
+    let accepted = regionIDs.flatMap { $0.isEmpty ? nil : $0 }
+    do {
+      try await publicContractIndexer.setRegionScope(accepted)
+      publicContractRegionScope = accepted
+      publicContractRegionError = nil
+    } catch {
+      publicContractRegionError =
+        "The contract region selection could not be saved. The previous selection remains active."
+      return
+    }
+    opportunityContractReferenceKey = nil
+    if !isSynchronizingPublicContracts,
+      let progress = try? await publicContractIndexer.localProgress()
+    {
+      publishPublicContractProgress(progress, force: true)
+    }
+    if hasLoadedPublicContractBrowser {
+      await refreshPublicContractFacets()
+    }
+    if publicContractSyncTask == nil, publicContractAutomaticUpdatesEnabled {
+      publicContractAutomationTask?.cancel()
+      publicContractAutomationTask = nil
+      publicContractNextAutomaticRunAt = nil
+      await scheduleAutomaticPublicContractSynchronization()
+    }
+  }
+
   func startPublicContractSynchronization() {
     guard publicContractStoreState == .ready else { return }
     beginPublicContractSynchronization(manualStart: true)
@@ -1005,6 +1063,7 @@ final class RuntimeState: ObservableObject {
       )
       publicContractStoreState = .ready
       publicContractError = nil
+      publicContractRegionScope = try? await store.regionScope()
       await preparePublicContractAutomation()
       if hasRequestedPublicContractBrowser {
         await loadPublicContractBrowser()
@@ -2059,7 +2118,7 @@ final class RuntimeState: ObservableObject {
           offers: snapshot.offers,
           progress: snapshot.progress,
           limitPerType: limitPerType,
-          allowedRegionIDs: nil
+          allowedRegionIDs: publicContractRegionScope
         )
       )
     } catch is CancellationError {
@@ -4652,6 +4711,7 @@ final class RuntimeState: ObservableObject {
   func loadOpportunityContractReferences(typeIDs: Set<Int64>) async {
     guard !typeIDs.isEmpty else { return }
     if let key = opportunityContractReferenceKey, key.types == typeIDs,
+      key.regions == publicContractRegionScope,
       Date().timeIntervalSince(key.loadedAt) < 5 * 60
     {
       return
@@ -4674,9 +4734,11 @@ final class RuntimeState: ObservableObject {
           offers: snapshot.offers,
           progress: snapshot.progress,
           limitPerType: limitPerType,
-          allowedRegionIDs: nil
+          allowedRegionIDs: publicContractRegionScope
         )
-      opportunityContractReferenceKey = (typeIDs, Date())
+      opportunityContractReferenceKey = (
+        typeIDs, publicContractRegionScope, Date()
+      )
       opportunityContractReferenceError = nil
     } catch is CancellationError {
       return

@@ -2556,3 +2556,30 @@
 "The stored authorization could not be read. Authorize this character again." = "Die gespeicherte Autorisierung konnte nicht gelesen werden. Autorisiere diesen Charakter erneut.";
 "The synchronization result belonged to another character and was discarded." = "Das Synchronisierungsergebnis gehörte zu einem anderen Charakter und wurde verworfen.";
 "The synchronized data could not be saved locally; the previous data was kept." = "Die synchronisierten Daten konnten nicht lokal gespeichert werden; die bisherigen Daten bleiben erhalten.";
+
+/* Contract regions */
+"Contract Regions" = "Vertragsregionen";
+"Choose which regions the Public Contracts import fetches. Main, Home and Coalition Hub opportunities, the Planner Contract Sale and the contract search compare only offers from these regions." = "Lege fest, welche Regionen der Import öffentlicher Verträge abruft. Main-, Home- und Coalition-Hub-Chancen, der Vertragsverkauf im Planner und die Vertragssuche vergleichen nur Angebote aus diesen Regionen.";
+"The local Public Contracts index is not ready. The region selection can be changed once it is available." = "Der lokale Index öffentlicher Verträge ist noch nicht bereit. Die Regionsauswahl lässt sich ändern, sobald er verfügbar ist.";
+"Import scope" = "Abrufumfang";
+"Entire universe" = "Gesamtes Universum";
+"Selected regions" = "Ausgewählte Regionen";
+"Every EVE region is imported and compared. The first complete import takes considerably longer than a regional selection." = "Alle EVE-Regionen werden abgerufen und verglichen. Der erste vollständige Abruf dauert deutlich länger als bei einer Regionsauswahl.";
+"Apply Region Selection" = "Regionsauswahl übernehmen";
+"Not applied yet" = "Noch nicht übernommen";
+"Select at least one region or import the entire universe." = "Wähle mindestens eine Region oder rufe das gesamte Universum ab.";
+"A running contract import finishes with its previous region list; the new selection applies from the next run." = "Ein laufender Vertragsabruf endet mit seiner bisherigen Regionsliste; die neue Auswahl gilt ab dem nächsten Lauf.";
+"Filter regions" = "Regionen filtern";
+"Select hub and production regions" = "Hub- und Produktionsregionen wählen";
+"Clear selection" = "Auswahl leeren";
+"%lld of %lld regions selected" = "%1$lld von %2$lld Regionen ausgewählt";
+"Loading the EVE region list…" = "EVE-Regionsliste wird geladen …";
+"The EVE region list is not available yet." = "Die EVE-Regionsliste ist noch nicht verfügbar.";
+"Recommended regions" = "Empfohlene Regionen";
+"All other regions" = "Alle weiteren Regionen";
+"Production site" = "Produktionsort";
+"Trade hub %@" = "Trade-Hub %@";
+"Contract import now covers the entire universe. Regions without a complete import are fetched with the next automatic update." = "Der Vertragsabruf umfasst jetzt das gesamte Universum. Regionen ohne vollständigen Abruf werden mit der nächsten automatischen Aktualisierung geladen.";
+"Region selection saved. Newly selected regions are fetched with the next automatic update." = "Regionsauswahl gespeichert. Neu gewählte Regionen werden mit der nächsten automatischen Aktualisierung geladen.";
+"The EVE region list could not be loaded. The saved contract region selection is unchanged." = "Die EVE-Regionsliste konnte nicht geladen werden. Die gespeicherte Vertragsregionsauswahl bleibt unverändert.";
+"The contract region selection could not be saved. The previous selection remains active." = "Die Vertragsregionsauswahl konnte nicht gespeichert werden. Die bisherige Auswahl bleibt aktiv.";

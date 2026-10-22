@@ -3279,8 +3279,8 @@ struct MarketSettingsView: View {
         roleConfiguration
         addMarketConfiguration
         configuredMarkets
+        PublicContractRegionSettingsPanel()
         profitabilityConfiguration
-        ConsolidationPricesView()
       }
       .padding(DesignTokens.spacingLG)
     }

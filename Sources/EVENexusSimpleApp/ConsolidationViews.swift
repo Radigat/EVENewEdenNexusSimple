@@ -271,7 +271,7 @@ private struct ConsolidationCSVImportControls: View {
         "Ungültige Datenzeilen ausdrücklich auslassen und protokollieren", isOn: $skipInvalidRows)
       TextField("Einzelentscheidungen (Typ-ID=replace oder skip, Komma)", text: $decisionText)
       TextField("Spalte für Typ-ID", text: $typeColumn)
-      TextField("Wertspalte (leer: quantity bzw. price)", text: $valueColumn)
+      TextField("Wertspalte (leer: quantity)", text: $valueColumn)
       Button(loading ? "CSV wird geprüft…" : "CSV auswählen und Vorschau erstellen") { choose() }
         .disabled(loading)
       Text(
@@ -325,147 +325,6 @@ private struct ConsolidationCSVImportControls: View {
           valueColumn: valueColumn.isEmpty ? nil : valueColumn)
         controller.setPreview(preview, catalogBuild: build)
       } catch { controller.error = error.localizedDescription }
-    }
-  }
-}
-
-struct ConsolidationPricesView: View {
-  @EnvironmentObject private var controller: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
-  @State private var id: UUID?
-  @State private var name = ""
-  @State private var type = ""
-  @State private var price = ""
-  @State private var from = Date()
-  @State private var until = Date().addingTimeInterval(86400)
-  @State private var hasEnd = false
-  var profile: ManualPriceProfile? { controller.workspace.priceProfiles.first { $0.id == id } }
-  var body: some View {
-    VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-      ConsolidationChangeStatusView()
-      Panel(title: "Preisprofile") {
-        Text(
-          "Manuelle Preisprofile sind gespeicherte Referenzpreise. Sie fließen in keine Planberechnung ein; der Planner verwendet weiterhin aktuelle Marktpreise."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-        Picker("Profil", selection: $id) {
-          Text("Auswählen").tag(Optional<UUID>.none)
-          ForEach(controller.workspace.priceProfiles) { Text($0.name).tag(Optional($0.id)) }
-        }
-        TextField("Name", text: $name)
-        DatePicker("Gültig ab (einschließlich)", selection: $from)
-        Toggle("Gültigkeitsende festlegen", isOn: $hasEnd)
-        if hasEnd { DatePicker("Gültig bis (ausschließlich)", selection: $until) }
-        HStack {
-          Button("Profil erstellen") {
-            do {
-              try controller.edit {
-                try $0.createPriceProfile(name: name, from: from, until: hasEnd ? until : nil)
-              }
-              id = controller.workspace.priceProfiles.last?.id
-            } catch { controller.error = error.localizedDescription }
-          }
-          Button("Name und Gültigkeit ändern") {
-            controller.propose(["Gültigkeit des ausgewählten Preisprofils ändern."]) { w in
-              guard let i = w.priceProfiles.firstIndex(where: { $0.id == id }),
-                !hasEnd || until > from
-              else { throw ConsolidationError.invalid("Ungültiger Zeitraum.") }
-              guard !ConsolidationWorkspace.normalized(name).isEmpty,
-                !w.priceProfiles.contains(where: {
-                  $0.id != id
-                    && ConsolidationWorkspace.normalized($0.name)
-                      == ConsolidationWorkspace.normalized(name)
-                })
-              else {
-                throw ConsolidationError.invalid("Preisprofilname ist leer oder bereits vergeben.")
-              }
-              w.priceProfiles[i].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-              w.priceProfiles[i].validFrom = from
-              w.priceProfiles[i].validUntil = hasEnd ? until : nil
-            }
-          }
-        }
-        TextField("CCP Typ-ID", text: $type)
-        TextField("Einzelpreis in ISK", text: $price)
-        Button("Preis prüfen") { Task { await addPrice() } }
-        Button("Marktpreise aus aktuellem Plan prüfen") { importMarket() }
-        if let id { ConsolidationCSVImportControls(kind: .prices(id)) }
-        if let profile {
-          Text("Quelle: \(profile.source)").font(.caption).textSelection(.enabled)
-          ConsolidationPriceTable(
-            rows: profile.prices.map { type, price in
-              ConsolidationPriceRow(
-                id: type,
-                name: profile.names[type] ?? "Name nicht aufgelöst",
-                cents: price.hundredths
-              )
-            })
-        }
-      }
-    }
-    .accessibilityIdentifier("market-settings.price-profiles")
-    .onChange(of: id) {
-      if let p = profile {
-        name = p.name
-        from = p.validFrom
-        hasEnd = p.validUntil != nil
-        until = p.validUntil ?? .now
-      }
-    }
-    .onDisappear {
-      controller.error = nil
-      controller.preview = nil
-    }
-  }
-  private func addPrice() async {
-    do {
-      guard let typeID = Int64(type), let id else {
-        throw ConsolidationError.invalid("Profil und Typ-ID auswählen.")
-      }
-      let amount = try ISKAmount.parse(price)
-      let build = runtime.activeSDEBuild
-      let names = try await runtime.consolidationCatalogNames([typeID])
-      guard let resolved = names[typeID], build == runtime.activeSDEBuild else {
-        throw ConsolidationError.invalid("Typ nicht verfügbar.")
-      }
-      controller.propose(
-        ["\(resolved): \(amount.displayText) ISK je Einheit."], catalogBuild: build
-      ) { w in
-        guard let i = w.priceProfiles.firstIndex(where: { $0.id == id }) else {
-          throw ConsolidationError.stalePreview
-        }
-        w.priceProfiles[i].prices[typeID] = amount
-        w.priceProfiles[i].names[typeID] = resolved
-        w.priceProfiles[i].source = "manual"
-      }
-    } catch { controller.error = error.localizedDescription }
-  }
-  private func importMarket() {
-    let currentPlan = runtime.plan
-    controller.propose([
-      "Verfügbare gewichtete Einkaufspreise aus dem aktuellen Plan übernehmen. Fehlende Preise bleiben fehlend. Auf Cent runden; Planberechnung bleibt unverändert."
-    ]) { w in
-      guard let i = w.priceProfiles.firstIndex(where: { $0.id == id }), let plan = currentPlan
-      else {
-        throw ConsolidationError.invalid("Profil auswählen und zuerst im Planner berechnen.")
-      }
-      var count = 0
-      for row in plan.materials {
-        if let price = row.quote?.weightedUnitPrice, price.isFinite, price > 0,
-          price * 100 < Double(Int64.max)
-        {
-          let amount = try ISKAmount(hundredths: Int64((price * 100).rounded()))
-          w.priceProfiles[i].prices[row.typeID] = amount
-          w.priceProfiles[i].names[row.typeID] = row.name
-          count += 1
-        }
-      }
-      guard count > 0 else {
-        throw ConsolidationError.invalid("Keine verwendbaren Marktpreise vorhanden.")
-      }
-      w.priceProfiles[i].source =
-        "Plan \(plan.id), Preisstand \(plan.provenance.priceTimestamp.formatted(.iso8601))"
     }
   }
 }
@@ -631,29 +490,5 @@ private struct ConsolidationSalesView: View {
           rowID: cost.id, evidenceID: evidenceID, quantity: qty, switchToEvidence: switchMode)
       }
     } catch { controller.error = error.localizedDescription }
-  }
-}
-
-private struct ConsolidationPriceRow: Identifiable {
-  let id: Int64
-  let name: String
-  let cents: Int64
-}
-private struct ConsolidationPriceTable: View {
-  let rows: [ConsolidationPriceRow]
-  @State private var sortOrder = [
-    KeyPathComparator(\ConsolidationPriceRow.name), KeyPathComparator(\ConsolidationPriceRow.id),
-  ]
-  var body: some View {
-    Table(
-      rows.sorted(using: sortOrder + [KeyPathComparator(\ConsolidationPriceRow.id)]),
-      sortOrder: $sortOrder
-    ) {
-      TableColumn("Name", value: \.name) { EVEEntityText(value: $0.name) }
-      TableColumn("Typ-ID", value: \.id) { Text(String($0.id)) }
-      TableColumn("Preis (ISK)", value: \.cents) {
-        Text((try? ISKAmount(hundredths: $0.cents).displayText) ?? "Nicht verfügbar")
-      }
-    }.frame(height: 220)
   }
 }

@@ -619,3 +619,172 @@ public enum PublicContractAutomationPolicy {
     }
   }
 }
+
+
+/// One EVE region from the ESI region list of the Public Contracts index.
+public struct PublicContractRegion: Identifiable, Equatable, Sendable {
+  public let id: Int64
+  public let name: String
+
+  public init(id: Int64, name: String) {
+    self.id = id
+    self.name = name
+  }
+}
+
+/// Why a region is worth importing. The raw value is the display rank:
+/// configured hub roles first, then production sites and the major NPC
+/// trade hubs.
+public enum PublicContractRegionRole: Int, CaseIterable, Comparable, Sendable {
+  case mainHub
+  case homeHub
+  case coalitionHub
+  case comparisonMarket
+  case productionSite
+  case tradeHub
+
+  public static func < (lhs: Self, rhs: Self) -> Bool {
+    lhs.rawValue < rhs.rawValue
+  }
+}
+
+/// A selectable region with the hints shown behind its name.
+public struct PublicContractRegionOption: Identifiable, Equatable, Sendable {
+  public let id: Int64
+  public let name: String
+  /// Sorted by display rank, without duplicates.
+  public let roles: [PublicContractRegionRole]
+  /// Built-in trade hubs located in this region, in their declared order.
+  public let tradeHubs: [MarketTradeHub]
+
+  public init(
+    id: Int64,
+    name: String,
+    roles: [PublicContractRegionRole] = [],
+    tradeHubs: [MarketTradeHub] = []
+  ) {
+    self.id = id
+    self.name = name
+    self.roles = roles
+    self.tradeHubs = tradeHubs
+  }
+
+  public var isRecommended: Bool { !roles.isEmpty }
+}
+
+public enum PublicContractRegionCatalog {
+  /// Annotates every known region with configured hub roles, production
+  /// sites and built-in trade hubs. Recommended regions come first (by their
+  /// highest-ranked role, then name); all other regions follow by name. The
+  /// region ID is the final tie-breaker. `systemRegions` resolves locations
+  /// that only know their solar system, such as player structures.
+  public static func options(
+    regions: [PublicContractRegion],
+    basis: ProductionBasis,
+    systemRegions: [Int64: Int64] = [:]
+  ) -> [PublicContractRegionOption] {
+    let roles = roleAssignments(basis: basis, systemRegions: systemRegions)
+    let options = regions.map { region in
+      PublicContractRegionOption(
+        id: region.id,
+        name: region.name,
+        roles: (roles[region.id] ?? []).sorted(),
+        tradeHubs: MarketTradeHub.allCases.filter { $0.regionID == region.id }
+      )
+    }
+    return options.sorted { lhs, rhs in
+      switch (lhs.roles.first, rhs.roles.first) {
+      case let (left?, right?) where left != right:
+        return left < right
+      case (.some, nil):
+        return true
+      case (nil, .some):
+        return false
+      default:
+        let order = lhs.name.localizedStandardCompare(rhs.name)
+        if order != .orderedSame { return order == .orderedAscending }
+        return lhs.id < rhs.id
+      }
+    }
+  }
+
+  /// Region IDs of every configured hub role and production site. Used as
+  /// the suggested starting selection when the user leaves the universe.
+  public static func suggestedRegionIDs(
+    basis: ProductionBasis,
+    systemRegions: [Int64: Int64] = [:]
+  ) -> Set<Int64> {
+    Set(
+      roleAssignments(basis: basis, systemRegions: systemRegions)
+        .filter { !$0.value.subtracting([.tradeHub]).isEmpty }
+        .keys
+    )
+  }
+
+  /// Solar systems of hub locations whose region is not stored; the caller
+  /// resolves them and passes the result as `systemRegions`.
+  public static func unresolvedSolarSystemIDs(
+    basis: ProductionBasis
+  ) -> Set<Int64> {
+    let locations =
+      [
+        basis.mainTradingLocation, basis.homeTradingLocation,
+        basis.coalitionTradingLocation,
+      ].compactMap { $0?.location }
+      + basis.tradingLocations
+      .filter { basis.comparisonTradingLocationIDs.contains($0.id) }
+      .map(\.location)
+    return Set(
+      locations
+        .filter { regionID(of: $0, systemRegions: [:]) == nil }
+        .compactMap(\.solarSystemID)
+        .filter { $0 > 0 }
+    )
+  }
+
+  static func roleAssignments(
+    basis: ProductionBasis,
+    systemRegions: [Int64: Int64] = [:]
+  ) -> [Int64: Set<PublicContractRegionRole>] {
+    var roles: [Int64: Set<PublicContractRegionRole>] = [:]
+    func regionID(of location: ProcurementLocation?) -> Int64? {
+      Self.regionID(of: location, systemRegions: systemRegions)
+    }
+    func assign(_ role: PublicContractRegionRole, _ regionID: Int64?) {
+      guard let regionID, regionID > 0 else { return }
+      roles[regionID, default: []].insert(role)
+    }
+    assign(.mainHub, regionID(of: basis.mainTradingLocation?.location))
+    assign(.homeHub, regionID(of: basis.homeTradingLocation?.location))
+    assign(
+      .coalitionHub,
+      regionID(of: basis.coalitionTradingLocation?.location)
+    )
+    for market in basis.tradingLocations
+    where basis.comparisonTradingLocationIDs.contains(market.id) {
+      assign(.comparisonMarket, regionID(of: market.location))
+    }
+    for system in basis.configuredActivitySystems {
+      assign(.productionSite, system.regionID)
+    }
+    for hub in MarketTradeHub.allCases {
+      assign(.tradeHub, hub.regionID)
+    }
+    return roles
+  }
+
+  private static func regionID(
+    of location: ProcurementLocation?,
+    systemRegions: [Int64: Int64]
+  ) -> Int64? {
+    guard let location else { return nil }
+    if let regionID = location.regionID { return regionID }
+    if let regionID = location.locationID
+      .flatMap(MarketTradeHub.matching(stationID:))?
+      .regionID
+    {
+      return regionID
+    }
+    return location.solarSystemID.flatMap { systemRegions[$0] }
+  }
+}

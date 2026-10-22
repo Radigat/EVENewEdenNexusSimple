@@ -8,7 +8,7 @@ beschrieben; jede Legacy-Feature-ID ist in [FEATURE_COVERAGE.md](FEATURE_COVERAG
 
 | Bereich | Aktive kanonische Quelle | Zusammenführung |
 | --- | --- | --- |
-| App, Navigation, Profile | Bestehende SwiftUI-App | Projekte, Reservierungen und Einkauf im Planner; übrige Fachverwaltung am jeweiligen Arbeitsbereich; Preisprofile in Markt-, Sicherung in Allgemeine Einstellungen |
+| App, Navigation, Profile | Bestehende SwiftUI-App | Projekte, Reservierungen und Einkauf im Planner; übrige Fachverwaltung am jeweiligen Arbeitsbereich; Preisprofile entfernt (22.10.2026), Sicherung in Allgemeine Einstellungen |
 | Auth, SSO, ESI, Charaktere | Aktive Dienste | Keine zweite Anmeldung; vorhandene Wallet-Snapshots für Belege |
 | SDE, Katalog und Updates | EVEStaticDataKit / SQLiteStaticCatalog | Veröffentlichte Typvalidierung und bestehende Science-Definitionen |
 | Projekte, Lager, Reservierungen | ConsolidationWorkspace / ConsolidationController | Legacy-Fachverträge mit aktuellem Schutz-/Bestandsmodell |

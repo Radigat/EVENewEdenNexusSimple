@@ -19,9 +19,10 @@ Die Details zu Schnittstellen, Wissenschaftsversorgung und Sicherung stehen im
 
 Fertigungsprojekte samt Projektwahl, Reservierungen und Einkaufsbudget/-fortschritt
 sind entfernt; der Planner hält Eingabe und Plan ausschließlich in
-`StoredPlannerDraft`/`StoredPlan`. Die Preisprofil-Bedienung ist Teil der
-bestehenden Markteinstellungen, die lokale Sicherung/Wiederherstellung und der
-anonymisierte Diagnoseexport sind Teil der allgemeinen Einstellungen. Das
+`StoredPlannerDraft`/`StoredPlan`. Manuelle Preisprofile sind entfernt
+(`priceProfiles` bleibt als Altdatenfeld im `ConsolidationWorkspace`); die lokale
+Sicherung/Wiederherstellung und der anonymisierte Diagnoseexport sind Teil der
+allgemeinen Einstellungen. Das
 verbleibende `ConsolidationWorkbenchView` dient nur den fachlich zugeordneten
 Dialogen für manuelle Lager, Wissenschaftsaufträge und Verkaufsbelege.
 Automatische Migrations- und SDE-Sicherungen bleiben im Kern und im

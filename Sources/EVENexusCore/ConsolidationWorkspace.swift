@@ -90,10 +90,6 @@ public struct ManualPriceProfile: Codable, Identifiable, Sendable {
     self.name = name
     self.validFrom = validFrom
   }
-  public func price(_ typeID: Int64, at date: Date) -> ISKAmount? {
-    guard date >= validFrom, validUntil.map({ date < $0 }) ?? true else { return nil }
-    return prices[typeID]
-  }
 }
 
 public struct ProjectPurchase: Codable, Identifiable, Sendable {
@@ -234,6 +230,8 @@ public struct ConsolidationWorkspace: Codable, Sendable {
   public var warehouses: [ManualWarehouse] = []
   /// Legacy, read-only (see `selectedProjectID`).
   public var reservations: [ProjectStockReservation] = []
+  /// Legacy, read-only: manual price profiles were removed on 2026-10-22 because no calculation
+  /// read them. Stored values are decoded and re-encoded unchanged.
   public var priceProfiles: [ManualPriceProfile] = []
   /// Legacy, read-only (see `selectedProjectID`).
   public var purchases: [ProjectPurchase] = []
@@ -271,16 +269,6 @@ public struct ConsolidationWorkspace: Codable, Sendable {
     }
     warehouses[index] = warehouse
   }
-  public mutating func createPriceProfile(name: String, from: Date, until: Date?) throws {
-    try uniqueName(name, among: priceProfiles.map(\.name))
-    guard until.map({ $0 > from }) ?? true else {
-      throw ConsolidationError.invalid("Das Gültigkeitsende muss nach dem Beginn liegen.")
-    }
-    var p = ManualPriceProfile(name: name, validFrom: from)
-    p.validUntil = until
-    priceProfiles.append(p)
-  }
-
   public mutating func addEvidence(_ receipt: ProductionSaleEvidence) throws {
     guard !receipt.id.isEmpty, receipt.typeID > 0, receipt.quantity > 0 else {
       throw ConsolidationError.invalid("Ungültiger Verkaufsbeleg.")
@@ -339,10 +327,10 @@ public struct ConsolidationWorkspace: Codable, Sendable {
   }
 
   public func validate() throws {
-    // Legacy project, reservation and purchase records are kept as stored and not validated.
+    // Legacy project, reservation, purchase and price profile records are kept as stored and not
+    // validated.
     guard formatVersion == 1, revision >= 0,
       Set(warehouses.map(\.id)).count == warehouses.count,
-      Set(priceProfiles.map(\.id)).count == priceProfiles.count,
       Set(evidence.map(\.id)).count == evidence.count,
       Set(costs.map(\.id)).count == costs.count, Set(sales.map(\.id)).count == sales.count
     else { throw ConsolidationError.invalid("Widersprüchliche Identitäten in den Arbeitsdaten.") }
@@ -444,21 +432,6 @@ extension ConsolidationPreview {
         if before != after {
           lines.append("Lager \(warehouse.name), Typ \(type): \(before) → \(after) Einheiten.")
         }
-      }
-    }
-    for profile in proposed.priceProfiles {
-      let old = base.priceProfiles.first { $0.id == profile.id }
-      if old?.name != profile.name || old?.validFrom != profile.validFrom
-        || old?.validUntil != profile.validUntil || old?.source != profile.source
-      {
-        lines.append(
-          "Preisprofil \(profile.name): ab \(profile.validFrom.formatted(.iso8601)), bis \(profile.validUntil?.formatted(.iso8601) ?? "unbegrenzt"), Quelle \(profile.source)."
-        )
-      }
-      for type in profile.prices.keys.sorted() where old?.prices[type] != profile.prices[type] {
-        lines.append(
-          "Preisprofil \(profile.name), Typ \(type): \(old?.prices[type]?.displayText ?? "fehlend") → \(profile.prices[type]!.displayText) ISK je Einheit."
-        )
       }
     }
     for evidence in proposed.evidence where !base.evidence.contains(where: { $0.id == evidence.id })

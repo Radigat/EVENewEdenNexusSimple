@@ -52,8 +52,8 @@ Quelle: archivierte Feature-Matrix; Status gegen vorhandenen Quellcode und die a
 | RES-001 | Materialien für Projekte reservieren | Am 19.10.2026 durch Eigentümerentscheid entfernt: keine Projektreservierungen; Schutzmengen der aktuellen Formel bleiben maßgeblich. |
 | RES-002 | Konkurrenz und Schutzmengen erkennen | Am 19.10.2026 durch Eigentümerentscheid entfernt: keine Projektreservierungen; Schutzmengen der aktuellen Formel bleiben maßgeblich. |
 | BOB-001 | Bestand verwenden und Zwischenstufen bauen/kaufen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
-| PRC-001 | Manuelle Preise und Profile | In Markteinstellungen integriert: exakte manuelle Preisprofile, Gültigkeit und CSV-Vorschau; reine Referenzpreise ohne Einfluss auf Berechnungen. |
-| PRC-002 | CSV-Preisimport | In Markteinstellungen integriert: exakte manuelle Preisprofile, Gültigkeit und CSV-Vorschau; reine Referenzpreise ohne Einfluss auf Berechnungen. |
+| PRC-001 | Manuelle Preise und Profile | Entfernt am 22.10.2026 auf Eigentümerauftrag: keine Berechnung las die Profile. Gespeicherte Profile bleiben als Altdaten erhalten ([DECISIONS.md](DECISIONS.md)). |
+| PRC-002 | CSV-Preisimport | Entfernt am 22.10.2026 auf Eigentümerauftrag: keine Berechnung las die Profile. Gespeicherte Profile bleiben als Altdaten erhalten ([DECISIONS.md](DECISIONS.md)). |
 | FIN-001 | Material-/Job-/Gesamtkosten | Zurückgezogene Legacy-Ansicht bleibt entfernt; bestehende aktuelle Rechnung/Wallet und erforderliche Belegdienste bleiben nutzbar. |
 | FIN-002 | Erlös, Gewinn, Marge, ROI, Break-even | Zurückgezogene Legacy-Ansicht bleibt entfernt; bestehende aktuelle Rechnung/Wallet und erforderliche Belegdienste bleiben nutzbar. |
 | FIN-003 | Materialeinkauf, Logistik, Produktion und benötigtes Projektbudget | Am 19.10.2026 durch Eigentümerentscheid entfernt: kein Projekt-Einkaufsbudget mehr; aktuelle Gewinnlogik bleibt maßgeblich. |

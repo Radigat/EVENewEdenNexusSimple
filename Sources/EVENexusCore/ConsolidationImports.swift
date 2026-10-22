@@ -2,7 +2,6 @@ import Foundation
 
 public enum ConsolidationImportKind: Sendable {
   case warehouse(UUID)
-  case prices(UUID)
 }
 public enum ConsolidationImportConflict: String, CaseIterable, Sendable { case replace, skip }
 
@@ -17,11 +16,7 @@ public enum ConsolidationImports {
     let document = try DelimitedInventoryCSVParser().parse(source: source, options: options)
     let headers = document.headers.map { $0.lowercased().replacingOccurrences(of: "_", with: "") }
     let expectedValue =
-      valueColumn
-      ?? {
-        if case .warehouse = kind { return "quantity" }
-        return "price"
-      }()
+      valueColumn ?? "quantity"
     guard
       let typeIndex = headers.firstIndex(
         of: typeColumn.lowercased().replacingOccurrences(of: "_", with: "")),
@@ -93,31 +88,6 @@ public enum ConsolidationImports {
         outcomes.append(
           "Zeile \(line), Typ \(type): \(skip ? "übersprungen" : "setzen auf \(quantity)").")
       }
-    case .prices(let id):
-      guard let i = candidate.priceProfiles.firstIndex(where: { $0.id == id }) else {
-        throw ConsolidationError.stalePreview
-      }
-      for (line, type, text) in rows {
-        let amount: ISKAmount
-        do { amount = try ISKAmount.parse(text) } catch {
-          if skipInvalidRows {
-            outcomes.append("Zeile \(line): ungültiger Preis, ausgelassen.")
-            continue
-          }
-          throw ConsolidationError.invalid(
-            "Zeile \(line): ungültiger positiver ISK-Preis (maximal zwei Dezimalstellen).")
-        }
-        let skip =
-          candidate.priceProfiles[i].prices[type] != nil && (decisions[type] ?? conflict) == .skip
-        if !skip {
-          candidate.priceProfiles[i].prices[type] = amount
-          candidate.priceProfiles[i].names[type] = catalogNames[type]
-        }
-        outcomes.append(
-          "Zeile \(line), Typ \(type): \(skip ? "übersprungen" : amount.displayText + " ISK").")
-      }
-      candidate.priceProfiles[i].source =
-        "CSV: \(URL(fileURLWithPath: source.displayName).lastPathComponent) / \(source.sha256)"
     }
     candidate.imports.append(
       ConsolidationImportReport(

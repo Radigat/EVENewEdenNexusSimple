@@ -13,8 +13,8 @@ Die heutige Oberfläche und aktuelle Berechnungen bleiben Grundlage. V3 ergänzt
 bestehende Modelle, Nummern, historische Werte und technische Kennungen werden erhalten.
 Fertigungsprojekte, Reservierungen sowie Einkaufsbudget und -fortschritt sind seit 19.10.2026 auf
 Eigentümerentscheid entfernt; der Planner rechnet direkt aus Eingabe, ESI-Bestand und Handeingabe.
-Preisprofile sind in die Markteinstellungen,
-Sicherung/Wiederherstellung in die allgemeinen Einstellungen integriert. Die früheren gemeinsamen
+Manuelle Preisprofile sind seit 22.10.2026 entfernt (keine Berechnung las sie);
+Sicherung/Wiederherstellung ist in die allgemeinen Einstellungen integriert. Die früheren gemeinsamen
 Toolbar-Einstiege und der bereichsumschaltende Projektverwaltungsdialog sind entfernt.
 
 Maßgeblich: [Funktionsvertrag](Documentation/Consolidation/FUNCTIONAL_CONSOLIDATION.md),

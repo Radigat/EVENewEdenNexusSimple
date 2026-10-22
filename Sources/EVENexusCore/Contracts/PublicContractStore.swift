@@ -50,6 +50,38 @@ public actor PublicContractStore {
     database.close()
   }
 
+  /// Regions whose contracts are fetched, counted and searched. `nil` means
+  /// the entire universe. Rows of other regions stay stored but are neither
+  /// refreshed nor returned until their region is selected again.
+  public func regionScope() throws -> Set<Int64>? {
+    guard let value = try setting(key: "region_scope") else { return nil }
+    let ids = Set(
+      value.split(separator: ",").compactMap { Int64($0) }.filter { $0 > 0 }
+    )
+    return ids.isEmpty ? nil : ids
+  }
+
+  /// Stores the region scope; `nil` or an empty set selects the universe.
+  public func setRegionScope(_ regionIDs: Set<Int64>?) throws {
+    let accepted = (regionIDs ?? []).filter { $0 > 0 }
+    try setSetting(
+      key: "region_scope",
+      value: accepted.isEmpty
+        ? nil : accepted.sorted().map(String.init).joined(separator: ",")
+    )
+  }
+
+  /// Every region known from the ESI region list, by name.
+  public func knownRegions() throws -> [PublicContractRegion] {
+    try database.query(
+      "SELECT region_id, name FROM regions ORDER BY name COLLATE NOCASE, region_id"
+    ).compactMap { row in
+      guard let id = row.int64("region_id"), let name = row.string("name")
+      else { return nil }
+      return PublicContractRegion(id: id, name: name)
+    }
+  }
+
   public func setAutomaticUpdatesEnabled(_ isEnabled: Bool) throws {
     try setSetting(
       key: "automatic_updates_enabled",
@@ -79,21 +111,26 @@ public actor PublicContractStore {
       )
     }
 
+    let regionScope = try regionScopeClause("region_id")
     let state = try database.query(
       """
       SELECT
-        (SELECT COUNT(*) FROM regions) AS regions,
-        (SELECT COUNT(*) FROM regions WHERE last_success_at IS NULL)
+        (SELECT COUNT(*) FROM regions WHERE 1=1\(regionScope)) AS regions,
+        (SELECT COUNT(*) FROM regions
+          WHERE last_success_at IS NULL\(regionScope))
           AS incomplete_regions,
         (SELECT COUNT(*) FROM regions
           WHERE last_success_at IS NULL
-            AND (next_allowed_at IS NULL OR next_allowed_at <= ?))
+            AND (next_allowed_at IS NULL OR next_allowed_at <= ?)\(regionScope))
           AS eligible_incomplete_regions,
         (SELECT MIN(next_allowed_at) FROM regions
-          WHERE last_success_at IS NULL) AS next_incomplete_region,
-        (SELECT MIN(next_allowed_at) FROM regions) AS next_region,
-        (SELECT MAX(last_success_at) FROM regions) AS last_success,
-        (SELECT COUNT(*) FROM contracts WHERE item_status='pending') AS pending_items
+          WHERE last_success_at IS NULL\(regionScope)) AS next_incomplete_region,
+        (SELECT MIN(next_allowed_at) FROM regions WHERE 1=1\(regionScope))
+          AS next_region,
+        (SELECT MAX(last_success_at) FROM regions WHERE 1=1\(regionScope))
+          AS last_success,
+        (SELECT COUNT(*) FROM contracts
+          WHERE item_status='pending'\(regionScope)) AS pending_items
       """,
       [.real(now.timeIntervalSince1970)]
     ).first
@@ -150,11 +187,12 @@ public actor PublicContractStore {
   }
 
   public func regionSchedule(now: Date) throws -> [(id: Int64, name: String)] {
-    try database.query(
+    let regionScope = try regionScopeClause("region_id")
+    return try database.query(
       """
       SELECT region_id, name
       FROM regions
-      WHERE next_allowed_at IS NULL OR next_allowed_at <= ?
+      WHERE (next_allowed_at IS NULL OR next_allowed_at <= ?)\(regionScope)
       ORDER BY CASE
                  WHEN last_success_at IS NULL THEN 0
                  WHEN status='unavailable' THEN 1
@@ -354,11 +392,12 @@ public actor PublicContractStore {
         """
       )
     }
+    let regionScope = try regionScopeClause("region_id")
     return try database.query(
       """
       SELECT contract_id
       FROM contracts
-      WHERE item_status='pending' AND date_expired > ?
+      WHERE item_status='pending' AND date_expired > ?\(regionScope)
       ORDER BY date_issued DESC, contract_id
       LIMIT ?
       """,
@@ -485,7 +524,7 @@ public actor PublicContractStore {
     let categoryNameColumn =
       searchesByName ? "t.category_name" : "i.category_name"
 
-    var conditions = ["c.date_expired > ?"]
+    var conditions = ["c.date_expired > ?\(try regionScopeClause("c.region_id"))"]
     var values: [PublicContractSQLiteValue] = [
       .real(now.timeIntervalSince1970)
     ]
@@ -559,6 +598,7 @@ public actor PublicContractStore {
     let accepted = typeIDs.filter { $0 > 0 }.sorted()
     guard !accepted.isEmpty else { return [:] }
     let boundedLimit = min(500, max(1, limitPerType))
+    let regionScope = try regionScopeClause("c.region_id")
     var grouped: [Int64: [PublicContractSearchResult]] = [:]
 
     // Stay below SQLite's conservative host-parameter limit, leaving room for
@@ -608,7 +648,7 @@ public actor PublicContractStore {
             ON sl.location_id=c.start_location_id
           LEFT JOIN contract_locations el
             ON el.location_id=c.end_location_id
-          WHERE c.date_expired > ?
+          WHERE c.date_expired > ?\(regionScope)
             AND i.is_included = 1
             AND i.type_id IN (\(placeholders))
             AND (? IS NULL OR c.start_location_id = ?)
@@ -648,12 +688,17 @@ public actor PublicContractStore {
   public func facets() throws -> (
     categories: [PublicContractFacet], groups: [PublicContractFacet]
   ) {
+    let regionClause = try regionScopeClause("region_id")
+    let regionScope =
+      regionClause.isEmpty
+      ? ""
+      : " AND contract_id IN (SELECT contract_id FROM contracts WHERE 1=1\(regionClause))"
     let categories = try database.query(
       """
       SELECT category_id AS id, category_name AS name,
              COUNT(DISTINCT contract_id) AS result_count
       FROM contract_items
-      WHERE category_id IS NOT NULL AND category_name IS NOT NULL
+      WHERE category_id IS NOT NULL AND category_name IS NOT NULL\(regionScope)
       GROUP BY category_id, category_name
       ORDER BY category_name COLLATE NOCASE
       """
@@ -668,7 +713,7 @@ public actor PublicContractStore {
       SELECT group_id AS id, group_name AS name, category_id AS parent_id,
              COUNT(DISTINCT contract_id) AS result_count
       FROM contract_items
-      WHERE group_id IS NOT NULL AND group_name IS NOT NULL
+      WHERE group_id IS NOT NULL AND group_name IS NOT NULL\(regionScope)
       GROUP BY group_id, group_name, category_id
       ORDER BY group_name COLLATE NOCASE
       """
@@ -693,28 +738,40 @@ public actor PublicContractStore {
     message: String? = nil,
     nextRequestAt: Date? = nil
   ) throws -> PublicContractSyncProgress {
+    let regionScope = try regionScopeClause("region_id")
+    let itemScope =
+      regionScope.isEmpty
+      ? ""
+      : " WHERE contract_id IN (SELECT contract_id FROM contracts WHERE 1=1\(regionScope))"
     let counts = try database.query(
       """
       SELECT
-        (SELECT COUNT(*) FROM regions) AS regions,
-        (SELECT COUNT(*) FROM regions WHERE last_success_at IS NOT NULL)
+        (SELECT COUNT(*) FROM regions WHERE 1=1\(regionScope)) AS regions,
+        (SELECT COUNT(*) FROM regions
+          WHERE last_success_at IS NOT NULL\(regionScope))
           AS completed_regions,
-        (SELECT COUNT(*) FROM regions WHERE status='fresh') AS fresh_regions,
-        (SELECT COUNT(*) FROM regions WHERE last_success_at IS NULL)
+        (SELECT COUNT(*) FROM regions WHERE status='fresh'\(regionScope))
+          AS fresh_regions,
+        (SELECT COUNT(*) FROM regions
+          WHERE last_success_at IS NULL\(regionScope))
           AS remaining_initial_regions,
-        (SELECT COUNT(*) FROM regions WHERE status='unavailable') AS failed_regions,
+        (SELECT COUNT(*) FROM regions WHERE status='unavailable'\(regionScope))
+          AS failed_regions,
         (SELECT error_message FROM regions
-          WHERE status='unavailable' AND error_message IS NOT NULL
+          WHERE status='unavailable' AND error_message IS NOT NULL\(regionScope)
           GROUP BY error_message
           ORDER BY COUNT(*) DESC, error_message
           LIMIT 1) AS region_error_message,
         (SELECT MIN(next_allowed_at) FROM regions
-          WHERE status='unavailable') AS failed_region_retry,
-        (SELECT COUNT(*) FROM contracts) AS contracts,
-        (SELECT COUNT(*) FROM contracts WHERE item_status='pending') AS pending,
-        (SELECT COUNT(*) FROM contracts WHERE item_status='unavailable') AS failed_items,
-        (SELECT COUNT(*) FROM contract_items) AS items,
-        (SELECT MAX(last_success_at) FROM regions) AS completed_at
+          WHERE status='unavailable'\(regionScope)) AS failed_region_retry,
+        (SELECT COUNT(*) FROM contracts WHERE 1=1\(regionScope)) AS contracts,
+        (SELECT COUNT(*) FROM contracts
+          WHERE item_status='pending'\(regionScope)) AS pending,
+        (SELECT COUNT(*) FROM contracts
+          WHERE item_status='unavailable'\(regionScope)) AS failed_items,
+        (SELECT COUNT(*) FROM contract_items\(itemScope)) AS items,
+        (SELECT MAX(last_success_at) FROM regions WHERE 1=1\(regionScope))
+          AS completed_at
       """
     ).first
     return PublicContractSyncProgress(
@@ -806,6 +863,13 @@ public actor PublicContractStore {
         .real(observedAt.timeIntervalSince1970),
       ]
     )
+  }
+
+  /// `AND column IN (…)` for the selected region scope, empty for the
+  /// universe. Region IDs are typed integers, so inlining them is safe.
+  private func regionScopeClause(_ column: String) throws -> String {
+    guard let ids = try regionScope() else { return "" }
+    return " AND \(column) IN (\(ids.sorted().map(String.init).joined(separator: ",")))"
   }
 
   private func setting(key: String) throws -> String? {

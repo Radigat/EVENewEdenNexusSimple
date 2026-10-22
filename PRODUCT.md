@@ -14,14 +14,13 @@ werden im Planner-Entwurf gespeichert und beim Start wiederhergestellt. Fertigun
 sowie Einkaufsbudget und -fortschritt gibt es nicht. Manuelle Lager fließen nicht in die Planberechnung ein.
 Warehouse öffnet **Manuelle Lager**, Blueprints **Wissenschaftsaufträge** und die
 Produktionsübersicht **Verkaufsbelege**. Die früheren gemeinsamen Einstiege **Projekte & Einkauf**
-und **Preisprofile & Sicherung** samt Projektverwaltungsdialog sind entfernt: Preisprofile sind
-direkt in **Daten & Einstellungen → Markteinstellungen**, Sicherung, Wiederherstellung und Diagnose
-in **Daten & Einstellungen → Allgemein** integriert. Alle Arbeitsbereiche verwenden denselben lokalen
-Datenbestand. Früher gespeicherte Projekt-, Reservierungs- und Einkaufsdatensätze bleiben als nicht
-mehr verwendete Altdaten unverändert erhalten ([Entscheidung](Documentation/Consolidation/DECISIONS.md)).
+und **Preisprofile & Sicherung** samt Projektverwaltungsdialog sind entfernt; Sicherung,
+Wiederherstellung und Diagnose liegen in **Daten & Einstellungen → Allgemein**. Manuelle
+Preisprofile gibt es nicht mehr. Alle Arbeitsbereiche verwenden denselben lokalen
+Datenbestand. Früher gespeicherte Projekt-, Reservierungs-, Einkaufs- und Preisprofildatensätze bleiben
+als nicht mehr verwendete Altdaten unverändert erhalten ([Entscheidung](Documentation/Consolidation/DECISIONS.md)).
 
-Manuelle Lager und Preisprofile besitzen kontrollierte CSV-Importe; Preisprofile sind Referenzpreise
-ohne Einfluss auf Berechnungen und können die gewichteten Preise des aktuellen Plans übernehmen.
+Manuelle Lager besitzen einen kontrollierten CSV-Import.
 Copying, ME-/TE-Forschung und Invention sind global gespeicherte Wissenschaftsaufträge; jeder nicht
 archivierte Auftrag liefert konkrete Versorgung und übernimmt deren Effizienzen, Kosten und
 vorgeschaltete Zeiten in die aktuelle Fertigung.
@@ -878,9 +877,11 @@ Alle drei Chancenansichten zeigen zusätzlich die sortierbaren Spalten
   vorläufig und mit „≈“ markiert.
 - **Kein Angebot:** Der Wert bleibt unverfügbar, nie 0.
 - **Sortierung:** Unbekannte Werte stehen aufsteigend nach den bekannten.
-- **Datenquelle:** nur der lokale Vertragsindex, ohne ESI-Abruf. Gelesen wird
-  gebündelt für die Typen des angezeigten Scans; ein gleicher Typsatz wird fünf
-  Minuten wiederverwendet.
+- **Datenquelle:** nur der lokale Vertragsindex, ohne ESI-Abruf, begrenzt auf
+  die gewählten **Vertragsregionen** (Standard: gesamtes Universum). Gelesen
+  wird gebündelt für die Typen des angezeigten Scans; ein gleicher Typsatz wird
+  bei unveränderter Regionsauswahl fünf Minuten wiederverwendet, eine geänderte
+  Auswahl lädt die Vertragspreise sofort neu.
 
 Der tägliche Chancenwert ist `Gewinn je Einheit × beobachteter Tagesbedarf`.
 Damit sind beispielsweise 1.000 Einheiten pro Tag mit 1 Million ISK Gewinn je
@@ -1826,6 +1827,32 @@ Der ausführliche Produktionsvertrag steht in
   bleiben getrennte sichtbare Zustände. Der Detailbereich kann jederzeit
   verlassen werden; der Import gehört dem gemeinsamen Runtime-State und läuft
   nicht als Lebenszyklusaufgabe der Vertragsansicht.
+- **Vertragsregionen** (Daten & Einstellungen → Markteinstellungen) legen den
+  Abrufumfang fest: **Gesamtes Universum** (Standard, bisheriges Verhalten)
+  oder **Ausgewählte Regionen**. Die Liste stammt aus der ESI-Regionsliste des
+  lokalen Index; ist noch keine Region bekannt, lädt die App sie einmalig.
+  Hinter dem Namen stehen in Klammern Hinweise wie Main Hub, Home Hub,
+  Koalitions-Hub, Vergleichsmarkt, Produktionsort (Region eines konfigurierten
+  Aktivitätssystems) oder Trade-Hub Jita/Amarr/Dodixie/Rens/Hek. Kennt ein
+  Hub-Ort (etwa eine Spielerstruktur als Coalition Hub) nur sein Sonnensystem,
+  ermittelt die App die Region über die zwischengespeicherte ESI-Systemabfrage;
+  schlägt sie fehl, bleibt die Region ohne Hinweis. Regionen mit
+  Hinweis stehen unter **Empfohlene Regionen** oben (Reihenfolge: Main, Home,
+  Koalition, Vergleichsmarkt, Produktionsort, Trade-Hub, dann Name), alle
+  übrigen alphabetisch darunter. Beim Wechsel auf die Auswahl sind Hub- und
+  Produktionsregionen vorausgewählt; eine leere Auswahl lässt sich nicht
+  übernehmen. Die Auswahl wird erst mit **Regionsauswahl übernehmen** im
+  lokalen Vertragsindex gespeichert (unabhängig vom Speichern der
+  Markteinstellungen).
+- Der gewählte Umfang gilt für Regionsabruf, Detailabruf, Fortschritt,
+  Vollständigkeit, Suche, Kategorien/Gruppen und alle Angebotsabfragen. Damit
+  vergleichen Main-, Home- und Coalition-Hub-Chancen, der Vertragsverkauf im
+  Planner und die Bauplanangebote nur Verträge der gewählten Regionen. Verträge
+  abgewählter Regionen bleiben gespeichert, werden aber weder aktualisiert
+  noch angezeigt; nach erneuter Auswahl werden sie mit dem nächsten Abruf
+  aufgefrischt. „Vollständig“ bezieht sich auf die gewählten Regionen. Ein
+  bereits laufender Abruf endet mit seiner bisherigen Regionsliste; die
+  automatische Planung wird nach dem Übernehmen sofort neu berechnet.
 - Eine Schemaerweiterung darf keinen vollständigen Bestand bereits fertiger
   Contract-Details ungefragt erneut über ESI abrufen. Die zurückgenommene
   Blueprint-Nachpflege v1 repariert beim nächsten Store-Öffnen ausschließlich

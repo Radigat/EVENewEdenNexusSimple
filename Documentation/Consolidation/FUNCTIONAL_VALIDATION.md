@@ -80,8 +80,8 @@ Geprüft wurden:
 Die Prüfung des damaligen Sicherungsdialogs und des Einstiegs **Projekte & Einkauf** ist historische
 Evidenz für die Funktionen. Der aktuelle Planner enthält Projektwahl und -einstellungen direkt,
 Reservierungen bei der Lagerverwendung sowie Einkaufsbudget und -fortschritt bei der Einkaufsliste.
-Sicherung liegt unter **Daten & Einstellungen → Allgemein**, Preisprofile unter
-**Daten & Einstellungen → Markteinstellungen**. Für diese Verlagerungen wird keine erneute visuelle
+Sicherung liegt unter **Daten & Einstellungen → Allgemein**; Preisprofile sind seit 22.10.2026
+entfernt. Für diese Verlagerungen wird keine erneute visuelle
 Eigentümerabnahme behauptet.
 
 Beim Sichttest gefundene zu allgemeine Vorschautexte und die technische Meldung bei fehlendem Katalog wurden

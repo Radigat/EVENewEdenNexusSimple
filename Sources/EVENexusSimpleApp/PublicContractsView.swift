@@ -736,3 +736,295 @@ enum PublicContractSearchPolicy {
     isExplicitSubmission ? nil : typingPause
   }
 }
+
+/// Market Settings panel choosing the regions of the Public Contracts import:
+/// the entire universe or an explicit selection. Configured hub roles,
+/// production sites and the built-in trade hubs are marked and listed first.
+struct PublicContractRegionSettingsPanel: View {
+  @EnvironmentObject private var runtime: RuntimeState
+
+  @State private var didLoad = false
+  @State private var isLoading = false
+  @State private var isApplying = false
+  @State private var draftUsesUniverse = true
+  @State private var draftSelection: Set<Int64> = []
+  @State private var filterText = ""
+  @State private var statusMessage: String?
+  /// Regions of hub solar systems without a stored region (player
+  /// structures), resolved through the cached ESI system lookup.
+  @State private var systemRegions: [Int64: Int64] = [:]
+
+  var body: some View {
+    Panel(title: "Contract Regions") {
+      Text(
+        "Choose which regions the Public Contracts import fetches. Main, Home and Coalition Hub opportunities, the Planner Contract Sale and the contract search compare only offers from these regions."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
+      if runtime.publicContractStoreState != .ready {
+        Label(
+          "The local Public Contracts index is not ready. The region selection can be changed once it is available.",
+          systemImage: "exclamationmark.triangle.fill"
+        )
+        .foregroundStyle(DesignTokens.caution)
+      } else {
+        Picker("Import scope", selection: universeBinding) {
+          Text("Entire universe").tag(true)
+          Text("Selected regions").tag(false)
+        }
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .accessibilityIdentifier("market-settings.contract-regions.scope")
+
+        if draftUsesUniverse {
+          Text(
+            "Every EVE region is imported and compared. The first complete import takes considerably longer than a regional selection."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        } else {
+          regionSelection
+        }
+
+        HStack {
+          Button("Apply Region Selection") { apply() }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canApply)
+            .accessibilityIdentifier("market-settings.contract-regions.apply")
+          if isApplying || isLoading {
+            ProgressView().controlSize(.small)
+          }
+          if hasChanges {
+            Label("Not applied yet", systemImage: "exclamationmark.triangle.fill")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(DesignTokens.caution)
+          }
+        }
+        if !draftUsesUniverse, draftSelection.isEmpty {
+          Text("Select at least one region or import the entire universe.")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.caution)
+        }
+        if runtime.isSynchronizingPublicContracts {
+          Text(
+            "A running contract import finishes with its previous region list; the new selection applies from the next run."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
+        if let statusMessage {
+          Text(statusMessage)
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+        if let error = runtime.publicContractRegionError {
+          Text(LocalizedStringKey(error))
+            .font(.caption)
+            .foregroundStyle(DesignTokens.caution)
+        }
+      }
+    }
+    .task(id: runtime.publicContractStoreState == .ready) {
+      await load()
+    }
+    .task(
+      id: PublicContractRegionCatalog.unresolvedSolarSystemIDs(
+        basis: runtime.productionBasis
+      )
+    ) {
+      await resolveSystemRegions()
+    }
+  }
+
+  @ViewBuilder
+  private var regionSelection: some View {
+    let options = PublicContractRegionCatalog.options(
+      regions: runtime.publicContractKnownRegions,
+      basis: runtime.productionBasis,
+      systemRegions: systemRegions
+    )
+    let filtered = filteredOptions(options)
+    HStack {
+      TextField("Filter regions", text: $filterText)
+        .textFieldStyle(.roundedBorder)
+        .frame(maxWidth: 260)
+      Button("Select hub and production regions") {
+        draftSelection.formUnion(
+          PublicContractRegionCatalog.suggestedRegionIDs(
+            basis: runtime.productionBasis,
+            systemRegions: systemRegions
+          )
+        )
+      }
+      Button("Clear selection") { draftSelection.removeAll() }
+        .disabled(draftSelection.isEmpty)
+      Spacer()
+      Text("\(draftSelection.count) of \(options.count) regions selected")
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+    }
+    if options.isEmpty {
+      Text(
+        isLoading
+          ? "Loading the EVE region list…"
+          : "The EVE region list is not available yet."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    } else {
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          let recommended = filtered.filter(\.isRecommended)
+          let others = filtered.filter { !$0.isRecommended }
+          if !recommended.isEmpty {
+            Text("Recommended regions")
+              .font(.headline)
+            ForEach(recommended) { regionRow($0) }
+          }
+          if !others.isEmpty {
+            Text("All other regions")
+              .font(.headline)
+              .padding(.top, recommended.isEmpty ? 0 : DesignTokens.spacingSM)
+            ForEach(others) { regionRow($0) }
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, DesignTokens.spacingXS)
+      }
+      .frame(minHeight: 180, maxHeight: 360)
+    }
+  }
+
+  private func regionRow(_ option: PublicContractRegionOption) -> some View {
+    HStack(spacing: DesignTokens.spacingSM) {
+      Toggle(isOn: selectionBinding(option.id)) {
+        Text(verbatim: option.name)
+      }
+      .toggleStyle(.checkbox)
+      .labelsHidden()
+      .accessibilityLabel(Text(verbatim: option.name))
+      EVEEntityText(value: option.name, font: .body)
+      if let hint = Self.hint(for: option) {
+        Text(verbatim: "(\(hint))")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      Spacer(minLength: 0)
+    }
+    .accessibilityIdentifier("market-settings.contract-regions.\(option.id)")
+  }
+
+  /// Localized role hints shown behind a region name, e.g.
+  /// "Main Hub · Trade hub Jita".
+  static func hint(for option: PublicContractRegionOption) -> String? {
+    let labels = option.roles.map { role -> String in
+      switch role {
+      case .mainHub: AppLocalization.text("Main Hub")
+      case .homeHub: AppLocalization.text("Home Hub")
+      case .coalitionHub: AppLocalization.text("Coalition Hub")
+      case .comparisonMarket: AppLocalization.text("Comparison market")
+      case .productionSite: AppLocalization.text("Production site")
+      case .tradeHub:
+        AppLocalization.format(
+          "Trade hub %@",
+          option.tradeHubs.map { $0.rawValue.capitalized }
+            .joined(separator: ", ")
+        )
+      }
+    }
+    return labels.isEmpty ? nil : labels.joined(separator: " · ")
+  }
+
+  private func filteredOptions(
+    _ options: [PublicContractRegionOption]
+  ) -> [PublicContractRegionOption] {
+    let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return options }
+    return options.filter {
+      $0.name.localizedCaseInsensitiveContains(query)
+        || (Self.hint(for: $0)?.localizedCaseInsensitiveContains(query)
+          ?? false)
+    }
+  }
+
+  private var draftScope: Set<Int64>? {
+    draftUsesUniverse ? nil : draftSelection
+  }
+
+  private var hasChanges: Bool {
+    draftScope != runtime.publicContractRegionScope
+  }
+
+  private var canApply: Bool {
+    hasChanges && !isApplying
+      && (draftUsesUniverse || !draftSelection.isEmpty)
+  }
+
+  private var universeBinding: Binding<Bool> {
+    Binding {
+      draftUsesUniverse
+    } set: { usesUniverse in
+      draftUsesUniverse = usesUniverse
+      if !usesUniverse, draftSelection.isEmpty {
+        draftSelection = PublicContractRegionCatalog.suggestedRegionIDs(
+          basis: runtime.productionBasis,
+          systemRegions: systemRegions
+        )
+      }
+    }
+  }
+
+  private func selectionBinding(_ regionID: Int64) -> Binding<Bool> {
+    Binding {
+      draftSelection.contains(regionID)
+    } set: { isSelected in
+      if isSelected {
+        draftSelection.insert(regionID)
+      } else {
+        draftSelection.remove(regionID)
+      }
+    }
+  }
+
+  private func resolveSystemRegions() async {
+    let systemIDs = PublicContractRegionCatalog.unresolvedSolarSystemIDs(
+      basis: runtime.productionBasis
+    )
+    for systemID in systemIDs.sorted() where systemRegions[systemID] == nil {
+      guard
+        let details = try? await runtime.resolveSolarSystem(systemID),
+        !Task.isCancelled
+      else { continue }
+      systemRegions[systemID] = details.regionID
+    }
+  }
+
+  private func load() async {
+    guard runtime.publicContractStoreState == .ready else { return }
+    isLoading = true
+    await runtime.loadPublicContractRegions()
+    isLoading = false
+    guard !didLoad else { return }
+    didLoad = true
+    draftUsesUniverse = runtime.publicContractRegionScope == nil
+    draftSelection = runtime.publicContractRegionScope ?? []
+  }
+
+  private func apply() {
+    let scope = draftScope
+    isApplying = true
+    statusMessage = nil
+    Task {
+      await runtime.applyPublicContractRegionScope(scope)
+      isApplying = false
+      if runtime.publicContractRegionError == nil {
+        statusMessage = AppLocalization.text(
+          scope == nil
+            ? "Contract import now covers the entire universe. Regions without a complete import are fetched with the next automatic update."
+            : "Region selection saved. Newly selected regions are fetched with the next automatic update."
+        )
+      }
+    }
+  }
+}
