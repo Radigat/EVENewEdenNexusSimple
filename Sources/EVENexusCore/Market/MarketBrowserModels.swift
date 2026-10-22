@@ -643,6 +643,10 @@ public struct ManufacturingOpportunityCostProjection: Equatable, Sendable {
   public var onwardTransportCost: Double? = nil
   /// Sale through a public contract instead of the market (P8).
   public var contract: ManufacturingOpportunityContractProjection? = nil
+  /// Acquisition of a Loyalty Store, Faction or Storyline BPC. `nil` when the
+  /// projection was made without a contract context.
+  public var blueprintAcquisition: ManufacturingOpportunityBlueprintAcquisition? =
+    nil
 }
 
 /// Public-contract inputs for opportunity rows: the local universe-wide
@@ -651,13 +655,369 @@ public struct ManufacturingOpportunityCostProjection: Equatable, Sendable {
 public struct ManufacturingOpportunityContractContext: Sendable {
   public let references: PublicContractReferenceSnapshot?
   public let contractFeeRate: Double?
+  /// Included public-contract offers of Blueprint types, keyed by Blueprint
+  /// type ID, read from the same local index and region scope as
+  /// `references`.
+  public let blueprintOffers: [Int64: [PublicContractSearchResult]]
+  /// Blueprint types offered by at least one NPC Loyalty Store.
+  public let loyaltyStoreBlueprintTypeIDs: Set<Int64>
+  /// Loyalty Store offers of those Blueprints with LP value and the LP and
+  /// wallet of the best-suited character.
+  public let loyaltyStoreBlueprintOffers: [Int64: [LoyaltyStoreBlueprintOffer]]
+  /// Invention estimates per invented Blueprint type; a missing entry means
+  /// the estimate is not available yet, never free.
+  public let inventionEstimates: [Int64: ManufacturingOpportunityInventionEstimate]
+  /// The user declared own BPCs: the purchase is not priced, the optional
+  /// manual Blueprint allocation applies instead.
+  public let usesOwnBlueprintRights: Bool
 
   public init(
     references: PublicContractReferenceSnapshot?,
-    contractFeeRate: Double?
+    contractFeeRate: Double?,
+    blueprintOffers: [Int64: [PublicContractSearchResult]] = [:],
+    loyaltyStoreBlueprintTypeIDs: Set<Int64> = [],
+    loyaltyStoreBlueprintOffers: [Int64: [LoyaltyStoreBlueprintOffer]] = [:],
+    inventionEstimates: [Int64: ManufacturingOpportunityInventionEstimate] = [:],
+    usesOwnBlueprintRights: Bool = false
   ) {
     self.references = references
     self.contractFeeRate = contractFeeRate
+    self.blueprintOffers = blueprintOffers
+    self.loyaltyStoreBlueprintTypeIDs = loyaltyStoreBlueprintTypeIDs
+    self.loyaltyStoreBlueprintOffers = loyaltyStoreBlueprintOffers
+    self.inventionEstimates = inventionEstimates
+    self.usesOwnBlueprintRights = usesOwnBlueprintRights
+  }
+}
+
+/// Expected invention cost of one Tech II Blueprint without decryptor: T1
+/// copy job, datacores at the Main Hub and invention fee per attempt, divided
+/// by the success probability of the best trained skills and the output runs.
+public struct ManufacturingOpportunityInventionEstimate: Equatable, Sendable {
+  /// `nil` when a price, fee, facility or skill input is unavailable.
+  public let costPerRun: Double?
+  public let attemptCost: Double?
+  public let successProbability: Double?
+  public let outputRuns: Int?
+  /// The Blueprint has no invention source (for example a Faction BPC).
+  public let isInvented: Bool
+
+  public init(
+    costPerRun: Double?,
+    attemptCost: Double?,
+    successProbability: Double?,
+    outputRuns: Int?,
+    isInvented: Bool = true
+  ) {
+    self.costPerRun = costPerRun
+    self.attemptCost = attemptCost
+    self.successProbability = successProbability
+    self.outputRuns = outputRuns
+    self.isInvented = isInvented
+  }
+
+  public static let notInvented = Self(
+    costPerRun: nil,
+    attemptCost: nil,
+    successProbability: nil,
+    outputRuns: nil,
+    isInvented: false
+  )
+}
+
+/// The Loyalty Store route for one row's BPC.
+public struct ManufacturingOpportunityLoyaltyStoreRoute: Equatable, Sendable {
+  public let corporationID: Int64
+  public let corporationName: String?
+  public let purchases: Int
+  /// Estimated runs per purchase (see `runsPerBlueprintCopy`).
+  public let runsPerPurchase: Int
+  public let totalLP: Int64
+  public let totalISK: Double
+  public let requiredItemsValue: Double?
+  public let iskPerLP: Double?
+  /// ISK + required items + LP × LP value; `nil` while a part is unknown.
+  public let purchaseValue: Double?
+  /// Allocated to the used runs.
+  public let allocatedCost: Double?
+  public let bestCharacterName: String?
+  public let availableLP: Int64?
+  public let availableISK: Double?
+
+  /// ISK cash needed: store ISK cost plus buying the required items.
+  public var cashRequirement: Double? {
+    requiredItemsValue.map { totalISK + $0 }
+  }
+
+  /// `nil` while the character LP are unknown.
+  public var hasEnoughLP: Bool? { availableLP.map { $0 >= totalLP } }
+
+  /// `nil` while wallet or required-item value is unknown.
+  public var hasEnoughISK: Bool? {
+    guard let availableISK, let cashRequirement else { return nil }
+    return availableISK >= cashRequirement
+  }
+}
+
+/// How a row obtains the Blueprint it needs. Loyalty Store, Faction and
+/// Storyline Blueprints exist only as BPCs that must be bought with Loyalty
+/// Points or from public contracts; their purchase is part of the cost.
+public struct ManufacturingOpportunityBlueprintAcquisition: Equatable,
+  Sendable
+{
+  public enum State: Equatable, Sendable {
+    /// Ordinary Blueprint; covered by the optional manual allocation.
+    case notRequired
+    /// BPC required, the user declared own BPCs.
+    case ownRights
+    /// BPC required and priced from attributable BPC contracts.
+    case contract
+    /// BPC required and priced through the Loyalty Store with own LP.
+    case loyaltyStore
+    /// Tech II BPC priced by the expected invention cost.
+    case invention
+    /// BPC required, neither a covering contract nor a usable LP route.
+    case unavailable
+  }
+
+  public let state: State
+  /// Allocated ISK for the used runs; `0` for `notRequired`/`ownRights`,
+  /// `nil` while unavailable.
+  public let cost: Double?
+  public let requiredRuns: Int
+  public let coveredRuns: Int
+  public let contractCount: Int
+  /// Full price of the selected contracts; may exceed the allocated contract
+  /// cost when a BPC has more runs than the scenario uses.
+  public let purchasePrice: Double?
+  /// Allocated contract cost, independent of the chosen route.
+  public let contractCost: Double?
+  /// The contract index is incomplete, so the contract price is provisional.
+  public let isProvisional: Bool
+  /// Cheapest Loyalty Store route, shown even when the LP do not suffice.
+  public let loyaltyStore: ManufacturingOpportunityLoyaltyStoreRoute?
+  /// Invention estimate of an invented Blueprint; `nil` otherwise or while
+  /// it is still being calculated.
+  public var invention: ManufacturingOpportunityInventionEstimate? = nil
+  /// Expected invention cost for the used runs.
+  public var inventionCost: Double? = nil
+  /// The row needs invention (Tech II/III).
+  public var requiresInvention = false
+
+  public var isRequired: Bool { state != .notRequired }
+}
+
+public enum ManufacturingOpportunityBlueprintAcquisitionProjector {
+  /// Manufacturing rows whose Blueprint is offered in a Loyalty Store, or
+  /// whose product is Faction or Storyline, need a bought BPC.
+  public static func requiresBlueprintCopy(
+    row: ManufacturingOpportunityRow,
+    loyaltyStoreBlueprintTypeIDs: Set<Int64>
+  ) -> Bool {
+    guard row.effectiveActivityKind == .manufacturing else { return false }
+    if loyaltyStoreBlueprintTypeIDs.contains(row.blueprintTypeID) {
+      return true
+    }
+    let productionClass = ManufacturingOpportunityProductionClass.classify(
+      metaGroupID: row.metaGroupID,
+      techLevel: row.techLevel
+    )
+    return productionClass == .faction || productionClass == .storyline
+  }
+
+  /// Tech II and Tech III Blueprints are obtained by invention or reverse
+  /// engineering, never as a free original.
+  public static func requiresInvention(row: ManufacturingOpportunityRow) -> Bool {
+    guard row.effectiveActivityKind == .manufacturing else { return false }
+    let productionClass = ManufacturingOpportunityProductionClass.classify(
+      metaGroupID: row.metaGroupID,
+      techLevel: row.techLevel
+    )
+    return productionClass == .techII || productionClass == .techIII
+  }
+
+  /// Rows whose Blueprint must be bought, earned with LP or invented.
+  public static func requiresAcquisition(
+    row: ManufacturingOpportunityRow,
+    loyaltyStoreBlueprintTypeIDs: Set<Int64>
+  ) -> Bool {
+    requiresInvention(row: row)
+      || requiresBlueprintCopy(
+        row: row,
+        loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs
+      )
+  }
+
+  /// ESI does not state the runs of a Loyalty Store BPC. The most frequent
+  /// run count of unresearched contract BPCs of the same type is used;
+  /// without contract evidence one run per BPC is assumed, which can only
+  /// overstate the cost.
+  public static func runsPerBlueprintCopy(
+    offers: [PublicContractSearchResult]
+  ) -> Int {
+    let runs = offers.compactMap { offer -> Int? in
+      guard offer.isBlueprintCopy == true,
+        offer.materialEfficiency == 0, offer.timeEfficiency == 0,
+        let runs = offer.runs, runs > 0
+      else { return nil }
+      return runs
+    }
+    let counts = Dictionary(grouping: runs, by: { $0 }).mapValues(\.count)
+    return counts.max {
+      $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key
+    }?.key ?? 1
+  }
+
+  public static func project(
+    row: ManufacturingOpportunityRow,
+    context: ManufacturingOpportunityContractContext
+  ) -> ManufacturingOpportunityBlueprintAcquisition {
+    let requiredRuns = max(0, row.runs)
+    let isProvisional =
+      !(context.references?.hasCompleteSearchCoverage ?? false)
+    let estimate = context.inventionEstimates[row.blueprintTypeID]
+    let needsInvention =
+      requiresInvention(row: row) && estimate?.isInvented != false
+    guard
+      needsInvention
+        || requiresBlueprintCopy(
+          row: row,
+          loyaltyStoreBlueprintTypeIDs: context.loyaltyStoreBlueprintTypeIDs
+        )
+    else {
+      return ManufacturingOpportunityBlueprintAcquisition(
+        state: .notRequired,
+        cost: 0,
+        requiredRuns: requiredRuns,
+        coveredRuns: 0,
+        contractCount: 0,
+        purchasePrice: nil,
+        contractCost: nil,
+        isProvisional: false,
+        loyaltyStore: nil
+      )
+    }
+    let contractOffers = context.blueprintOffers[row.blueprintTypeID] ?? []
+    let selection = ProductionTreeBPCContractSelector.select(
+      requiredRuns: requiredRuns,
+      from: contractOffers
+    ).flatMap { selection in
+      selection.coveredRuns >= requiredRuns && selection.coveredRuns > 0
+        && selection.totalPrice.isFinite && selection.totalPrice >= 0
+        ? selection : nil
+    }
+    // Runs left on a bought BPC keep their value for a later batch, so only
+    // the used share is charged to this scenario.
+    let contractCost = selection.flatMap { selection -> Double? in
+      let value =
+        selection.totalPrice
+        * min(1, Double(requiredRuns) / Double(selection.coveredRuns))
+      return value.isFinite ? value : nil
+    }
+    let loyaltyStore = cheapestLoyaltyStoreRoute(
+      offers: context.loyaltyStoreBlueprintOffers[row.blueprintTypeID] ?? [],
+      requiredRuns: requiredRuns,
+      runsPerCopy: runsPerBlueprintCopy(offers: contractOffers)
+    )
+    let inventionCost: Double? =
+      needsInvention
+      ? estimate?.costPerRun.flatMap { perRun -> Double? in
+        let value = perRun * Double(requiredRuns)
+        return value.isFinite && value >= 0 ? value : nil
+      } : nil
+    func result(
+      _ state: ManufacturingOpportunityBlueprintAcquisition.State,
+      cost: Double?
+    ) -> ManufacturingOpportunityBlueprintAcquisition {
+      var acquisition = ManufacturingOpportunityBlueprintAcquisition(
+        state: state,
+        cost: cost,
+        requiredRuns: requiredRuns,
+        coveredRuns: selection?.coveredRuns ?? 0,
+        contractCount: selection?.contractCount ?? 0,
+        purchasePrice: selection?.totalPrice,
+        contractCost: contractCost,
+        isProvisional: contractCost != nil && isProvisional,
+        loyaltyStore: loyaltyStore
+      )
+      acquisition.invention = needsInvention ? estimate : nil
+      acquisition.inventionCost = inventionCost
+      acquisition.requiresInvention = needsInvention
+      return acquisition
+    }
+    if context.usesOwnBlueprintRights { return result(.ownRights, cost: 0) }
+    // The LP route counts only with enough LP of a known character. The
+    // cheapest available route is priced.
+    let loyaltyCost: Double? =
+      loyaltyStore?.hasEnoughLP == true ? loyaltyStore?.allocatedCost : nil
+    let routes: [(ManufacturingOpportunityBlueprintAcquisition.State, Double)] =
+      [
+        inventionCost.map { (.invention, $0) },
+        contractCost.map { (.contract, $0) },
+        loyaltyCost.map { (.loyaltyStore, $0) },
+      ].compactMap { $0 }
+    guard let cheapest = routes.min(by: { $0.1 < $1.1 }) else {
+      return result(.unavailable, cost: nil)
+    }
+    return result(cheapest.0, cost: cheapest.1)
+  }
+
+  static func cheapestLoyaltyStoreRoute(
+    offers: [LoyaltyStoreBlueprintOffer],
+    requiredRuns: Int,
+    runsPerCopy: Int
+  ) -> ManufacturingOpportunityLoyaltyStoreRoute? {
+    guard requiredRuns > 0 else { return nil }
+    let routes = offers.compactMap { offer -> ManufacturingOpportunityLoyaltyStoreRoute? in
+      let runsPerPurchase = max(1, offer.quantity) * max(1, runsPerCopy)
+      let purchases = (requiredRuns + runsPerPurchase - 1) / runsPerPurchase
+      guard purchases > 0, offer.iskCost.isFinite, offer.iskCost >= 0 else {
+        return nil
+      }
+      let totalLP = Int64(offer.lpCost) * Int64(purchases)
+      let totalISK = offer.iskCost * Double(purchases)
+      let items = offer.requiredItemsValue.map { $0 * Double(purchases) }
+      let lpValue = offer.iskPerLP.map { $0 * Double(totalLP) }
+      let purchaseValue: Double? =
+        if let items, let lpValue { totalISK + items + lpValue } else { nil }
+      let allocated = purchaseValue.flatMap { value -> Double? in
+        let share = min(
+          1,
+          Double(requiredRuns) / Double(purchases * runsPerPurchase)
+        )
+        let cost = value * share
+        return cost.isFinite ? cost : nil
+      }
+      return ManufacturingOpportunityLoyaltyStoreRoute(
+        corporationID: offer.corporationID,
+        corporationName: offer.corporationName,
+        purchases: purchases,
+        runsPerPurchase: runsPerPurchase,
+        totalLP: totalLP,
+        totalISK: totalISK,
+        requiredItemsValue: items,
+        iskPerLP: offer.iskPerLP,
+        purchaseValue: purchaseValue,
+        allocatedCost: allocated,
+        bestCharacterName: offer.bestCharacterName,
+        availableLP: offer.availableLP,
+        availableISK: offer.availableISK
+      )
+    }
+    // Prefer routes the user can pay in LP, then the lowest known cost.
+    return routes.min { lhs, rhs in
+      let lhsUsable = lhs.hasEnoughLP == true
+      let rhsUsable = rhs.hasEnoughLP == true
+      if lhsUsable != rhsUsable { return lhsUsable }
+      switch (lhs.allocatedCost, rhs.allocatedCost) {
+      case (let l?, let r?) where l != r: return l < r
+      case (.some, nil): return true
+      case (nil, .some): return false
+      default:
+        if lhs.totalLP != rhs.totalLP { return lhs.totalLP < rhs.totalLP }
+        return lhs.corporationID < rhs.corporationID
+      }
+    }
   }
 }
 
@@ -3255,7 +3615,16 @@ public enum ManufacturingOpportunityScenarioProjector {
     logistics: ManufacturingOpportunityLogisticsProjection,
     contract: ManufacturingOpportunityContractContext
   ) -> ManufacturingOpportunityCostProjection {
-    var projection = costs(for: row, sheet: sheet, logistics: logistics)
+    let acquisition = ManufacturingOpportunityBlueprintAcquisitionProjector
+      .project(row: row, context: contract)
+    var projection = costs(
+      for: row,
+      sheet: sheet,
+      logisticsCost: logistics.cost,
+      blueprintAcquisition: acquisition
+    )
+    projection.onwardTransportCost = logistics.onwardTransportCost
+    projection.blueprintAcquisition = acquisition
     projection.contract = ManufacturingOpportunityContractProjector.project(
       row: row,
       totalCost: projection.totalCost,
@@ -3581,19 +3950,27 @@ public enum ManufacturingOpportunityScenarioProjector {
   private static func costs(
     for row: ManufacturingOpportunityRow,
     sheet: ManufacturingOpportunityCostSheet,
-    logisticsCost: Double?
+    logisticsCost: Double?,
+    blueprintAcquisition: ManufacturingOpportunityBlueprintAcquisition? = nil
   ) -> ManufacturingOpportunityCostProjection {
     let installation = selected(
       sheet.includesInstallation,
       value: row.installationCost
     )
+    // A priced or unavailable BPC purchase replaces the manual allocation so
+    // the Blueprint is never charged twice.
     let blueprintAllocation: Double? =
-      row.supportsBlueprintEfficiency
-      ? selectedProduct(
-        sheet.includesBlueprintAllocation,
-        value: sheet.blueprintAllocationPerRun,
-        multiplier: Double(row.runs)
-      ) : 0
+      switch blueprintAcquisition?.state {
+      case .contract?, .loyaltyStore?, .invention?, .unavailable?:
+        blueprintAcquisition?.cost
+      case .notRequired?, .ownRights?, nil:
+        row.supportsBlueprintEfficiency
+          ? selectedProduct(
+            sheet.includesBlueprintAllocation,
+            value: sheet.blueprintAllocationPerRun,
+            multiplier: Double(row.runs)
+          ) : 0
+      }
     let totalCost = sum([
       row.materialCost,
       installation,
@@ -3804,82 +4181,144 @@ public enum ManufacturingOpportunityScenarioProjector {
   }
 }
 
-/// Applies an optional wallet-facing ceiling to the factual material shortfall.
-/// Stock already present in the production Warehouse retains its replacement
-/// value in profit, but it does not consume new wallet cash and is therefore not
-/// counted here.
-/// One Dashboard top-opportunity entry (HUB_CHANCEN_PLAN P9).
-public struct ManufacturingOpportunityTopEntry: Identifiable, Sendable {
-  public var id: Int64 { row.productTypeID }
-  public let row: ManufacturingOpportunityRow
+/// One row of a hub's top list as calculated by that hub's opportunity view
+/// (Dashboard, HUB_CHANCEN_PLAN P9).
+public struct HubTopOpportunityEntry: Codable, Equatable, Identifiable, Sendable {
+  public var id: Int64 { productTypeID }
+  public let productTypeID: Int64
+  public let productName: String
+  public let runs: Int
+  public let producedQuantity: Int64
+  public let materialEfficiency: Int?
+  public let timeEfficiency: Int?
   public let dailyProfitPotential: Double
   public let returnOnInvestment: Double?
+
+  public init(
+    productTypeID: Int64,
+    productName: String,
+    runs: Int,
+    producedQuantity: Int64,
+    materialEfficiency: Int?,
+    timeEfficiency: Int?,
+    dailyProfitPotential: Double,
+    returnOnInvestment: Double?
+  ) {
+    self.productTypeID = productTypeID
+    self.productName = productName
+    self.runs = runs
+    self.producedQuantity = producedQuantity
+    self.materialEfficiency = materialEfficiency
+    self.timeEfficiency = timeEfficiency
+    self.dailyProfitPotential = dailyProfitPotential
+    self.returnOnInvestment = returnOnInvestment
+  }
 }
 
-/// Ranks a saved scan by daily profit potential with standard assumptions:
-/// no Warehouse stock (every material is bought), installation, sales tax and
-/// broker fee included, no Blueprint allocation and no purchase budget. The
-/// hub role's logistics route applies. Rows without a value are not ranked.
-public enum ManufacturingOpportunityTopRanking {
-  public static let standardCostSheet = ManufacturingOpportunityCostSheet(
-    includesInstallation: true,
-    includesSalesTax: true,
-    includesBrokerFee: true,
-    includesBlueprintAllocation: false,
-    blueprintAllocationPerRun: nil,
-    includesHauling: false,
-    haulingCostPerBatch: nil
-  )
+/// The Dashboard top list of one hub. It is never calculated separately: the
+/// hub view publishes the rows it shows (same filters, Warehouse, plan
+/// reservations, cost settings, contract and Loyalty Store basis), ranked by
+/// daily profit potential.
+public struct HubTopOpportunityResult: Codable, Sendable {
+  public let role: OpportunityHubRole
+  public let snapshotID: UUID
+  public let calculatedAt: Date
+  public let entries: [HubTopOpportunityEntry]
 
+  public init(
+    role: OpportunityHubRole,
+    snapshotID: UUID,
+    calculatedAt: Date,
+    entries: [HubTopOpportunityEntry]
+  ) {
+    self.role = role
+    self.snapshotID = snapshotID
+    self.calculatedAt = calculatedAt
+    self.entries = entries
+  }
+
+  public static let limit = 5
+
+  /// Ranks candidates the hub view already prepared.
   public static func rank(
-    _ snapshot: ManufacturingOpportunitySnapshot,
-    limit: Int = 5
-  ) -> [ManufacturingOpportunityTopEntry] {
-    guard limit > 0 else { return [] }
-    var entries: [ManufacturingOpportunityTopEntry] = []
-    for row in snapshot.rows {
-      let procurement = ManufacturingOpportunityScenarioProjector.procurement(
-        for: row,
-        factualWarehouseQuantities: [:],
-        protectedQuantities: [:],
-        reservedQuantities: [:]
-      )
-      let logistics = ManufacturingOpportunityScenarioProjector.logistics(
-        for: row,
-        procurement: procurement,
-        configuration: snapshot.logisticsConfiguration,
-        mainHub: snapshot.mainHub,
-        warehouseIsAvailable: true,
-        route: snapshot.saleRoute(for: row)
-      )
-      let costs = ManufacturingOpportunityScenarioProjector.costs(
-        for: row,
-        sheet: standardCostSheet,
-        logistics: logistics
-      )
+    role: OpportunityHubRole,
+    snapshotID: UUID,
+    candidates: [(ManufacturingOpportunityRow, ManufacturingOpportunityCostProjection)],
+    calculatedAt: Date = .now
+  ) -> HubTopOpportunityResult {
+    let entries = candidates.compactMap { row, costs -> HubTopOpportunityEntry? in
       guard
         let potential = ManufacturingOpportunityScenarioProjector
           .dailyProfitPotential(for: row, costs: costs)
-      else { continue }
-      entries.append(
-        ManufacturingOpportunityTopEntry(
-          row: row,
-          dailyProfitPotential: potential,
-          returnOnInvestment: costs.returnOnInvestment
-        )
+      else { return nil }
+      return HubTopOpportunityEntry(
+        productTypeID: row.productTypeID,
+        productName: row.productName,
+        runs: row.runs,
+        producedQuantity: row.producedQuantity,
+        materialEfficiency: row.displayedMaterialEfficiency,
+        timeEfficiency: row.displayedTimeEfficiency,
+        dailyProfitPotential: potential,
+        returnOnInvestment: costs.returnOnInvestment
       )
+    }.sorted {
+      if $0.dailyProfitPotential != $1.dailyProfitPotential {
+        return $0.dailyProfitPotential > $1.dailyProfitPotential
+      }
+      return $0.productTypeID < $1.productTypeID
     }
-    return Array(
-      entries.sorted {
-        if $0.dailyProfitPotential != $1.dailyProfitPotential {
-          return $0.dailyProfitPotential > $1.dailyProfitPotential
-        }
-        return $0.row.productTypeID < $1.row.productTypeID
-      }.prefix(limit)
+    return HubTopOpportunityResult(
+      role: role,
+      snapshotID: snapshotID,
+      calculatedAt: calculatedAt,
+      entries: Array(entries.prefix(limit))
     )
   }
 }
 
+extension HubTopOpportunityResult: Equatable {
+  /// The calculation time alone is no change.
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.role == rhs.role && lhs.snapshotID == rhs.snapshotID
+      && lhs.entries == rhs.entries
+  }
+}
+
+public actor HubTopOpportunityStore {
+  private let fileURL: URL
+
+  public init(fileURL: URL) {
+    self.fileURL = fileURL
+  }
+
+  public func load() throws -> [OpportunityHubRole: HubTopOpportunityResult] {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+      return [:]
+    }
+    let results = try JSONDecoder().decode(
+      [HubTopOpportunityResult].self,
+      from: Data(contentsOf: fileURL)
+    )
+    return Dictionary(
+      results.map { ($0.role, $0) },
+      uniquingKeysWith: { $1 }
+    )
+  }
+
+  public func save(_ results: [OpportunityHubRole: HubTopOpportunityResult]) throws {
+    try FileManager.default.createDirectory(
+      at: fileURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let ordered = results.values.sorted { $0.role.rawValue < $1.role.rawValue }
+    try JSONEncoder().encode(ordered).write(to: fileURL, options: .atomic)
+  }
+}
+
+/// Applies an optional wallet-facing ceiling to the factual material shortfall.
+/// Stock already present in the production Warehouse retains its replacement
+/// value in profit, but it does not consume new wallet cash and is therefore not
+/// counted here.
 public enum ManufacturingOpportunityBudgetFilter {
   public static func accepts(
     maximumMaterialPurchaseISK: Double?,

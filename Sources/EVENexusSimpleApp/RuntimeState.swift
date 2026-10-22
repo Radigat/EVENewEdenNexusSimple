@@ -417,6 +417,20 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var opportunityContractReferences:
     PublicContractReferenceSnapshot?
   @Published private(set) var opportunityContractReferenceError: String?
+  /// Included BPC offers for Loyalty Store, Faction and Storyline Blueprints
+  /// of the opportunity rows, keyed by Blueprint type ID.
+  @Published private(set) var opportunityBlueprintOffers:
+    [Int64: [PublicContractSearchResult]] = [:]
+  /// Invention estimates per Tech II/III Blueprint type of the opportunity
+  /// lists; a type without entry is not estimated yet.
+  @Published private(set) var opportunityInventionEstimates:
+    [Int64: ManufacturingOpportunityInventionEstimate] = [:]
+  @Published private(set) var isEstimatingOpportunityInvention = false
+  @Published private(set) var opportunityInventionError: String?
+  private var opportunityInventionEstimatesLoadedAt: Date?
+  private var pendingInventionTypeIDs: Set<Int64> = []
+  /// Changes with every new set of invention estimates.
+  @Published private(set) var opportunityInventionRevision = UUID()
   private var opportunityContractReferenceKey:
     (types: Set<Int64>, regions: Set<Int64>?, loadedAt: Date)?
   /// Latest authorizations handed over by the startup load or Dashboard; the
@@ -429,6 +443,18 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var loyaltyStoreCatalog: LoyaltyStoreCatalogSnapshot?
   @Published private(set) var isRefreshingLoyaltyStoreCatalog = false
   @Published private(set) var loyaltyStoreCatalogError: String?
+  /// Saved Loyalty Points per character; `nil` until loaded.
+  @Published private(set) var characterLoyaltyPoints:
+    CharacterLoyaltyPointsSnapshot?
+  /// Characters whose token lacks the Loyalty Points scope.
+  @Published private(set) var loyaltyPointsMissingScopeCharacters: Set<String> =
+    []
+  @Published private(set) var loyaltyPointsError: String?
+  /// Top opportunities as calculated by each hub view (Dashboard source).
+  @Published private(set) var hubTopOpportunities:
+    [OpportunityHubRole: HubTopOpportunityResult] = [:]
+  private let characterLoyaltyPointsStore: CharacterLoyaltyPointsStore
+  private let hubTopOpportunityStore: HubTopOpportunityStore
   @Published var isWorking = false {
     didSet { plannerFeatureState.invalidate() }
   }
@@ -605,6 +631,18 @@ final class RuntimeState: ObservableObject {
         .appendingPathComponent("market", isDirectory: true)
         .appendingPathComponent("loyalty-store-catalog.json")
     )
+    characterLoyaltyPointsStore = CharacterLoyaltyPointsStore(
+      fileURL:
+        resolvedDataRoot
+        .appendingPathComponent("market", isDirectory: true)
+        .appendingPathComponent("character-loyalty-points.json")
+    )
+    hubTopOpportunityStore = HubTopOpportunityStore(
+      fileURL:
+        resolvedDataRoot
+        .appendingPathComponent("market", isDirectory: true)
+        .appendingPathComponent("hub-top-opportunities.json")
+    )
     let catalog = SQLiteStaticCatalog(
       rootURL:
         resolvedDataRoot
@@ -632,7 +670,9 @@ final class RuntimeState: ObservableObject {
       async let coalitionOpportunities: Void = loadSecondaryHubOpportunityData(
         role: .coalition
       )
-      async let loyaltyStores: Void = loadLoyaltyStoreCatalog()
+      async let loyaltyStores: Void = loadAndRefreshLoyaltyStoreCatalog()
+      async let loyaltyPoints: Void = loadCharacterLoyaltyPoints()
+      async let hubTop: Void = loadHubTopOpportunities()
       async let contracts: Void = preparePublicContractStore(
         at: contractStoreURL
       )
@@ -644,7 +684,9 @@ final class RuntimeState: ObservableObject {
         homeOpportunities,
         coalitionOpportunities,
         contracts,
-        loyaltyStores
+        loyaltyStores,
+        loyaltyPoints,
+        hubTop
       )
     }
   }
@@ -684,13 +726,28 @@ final class RuntimeState: ObservableObject {
     }
   }
 
+  /// Loads the saved catalog and refreshes it automatically when it is
+  /// missing, lacks offer details or is older than one day.
+  func loadAndRefreshLoyaltyStoreCatalog(now: Date = .now) async {
+    await loadLoyaltyStoreCatalog()
+    if let catalog = loyaltyStoreCatalog, catalog.hasOfferDetails,
+      now.timeIntervalSince(catalog.fetchedAt) < 24 * 60 * 60
+    {
+      return
+    }
+    guard loyaltyStoreCatalogError == nil || loyaltyStoreCatalog == nil else {
+      return
+    }
+    await refreshLoyaltyStoreCatalog()
+  }
+
   func refreshLoyaltyStoreCatalog() async {
     guard !isRefreshingLoyaltyStoreCatalog else { return }
     isRefreshingLoyaltyStoreCatalog = true
     loyaltyStoreCatalogError = nil
     defer { isRefreshingLoyaltyStoreCatalog = false }
     do {
-      let snapshot = try await loyaltyStoreCatalogService.refresh()
+      let snapshot = try await loyaltyStoreCatalogService.refreshWithValuation()
       try await loyaltyStoreCatalogStore.save(snapshot)
       loyaltyStoreCatalog = snapshot
     } catch is CancellationError {
@@ -3996,52 +4053,109 @@ final class RuntimeState: ObservableObject {
       ).map { OwnedBPCValue(amount: $0, basis: .contractMarket) }
     }
     guard results.contains(where: { $0 == nil }),
-      let prices = try? await JitaMarketService(esi: esi)
-        .adjustedPriceSnapshot().prices
+      let inputs = await scienceCostInputs()
     else { return results }
-    if industrySystemIndices == nil {
-      industrySystemIndices = await loadIndustrySystemIndices()
-    }
-    let decryptors = (try? await catalog.decryptorDefinitions()) ?? []
-    func eiv(_ blueprintTypeID: Int64) async -> Double? {
-      guard
-        let definition = try? await catalog
-          .consolidationManufacturingDefinition(blueprintTypeID)
-      else { return nil }
-      return OwnedBPCValuation.estimatedItemValue(
-        materials: definition.activity.materials,
-        adjustedPrices: prices
-      )
-    }
-    func copyCostPerRun(_ blueprintTypeID: Int64) async -> Double? {
-      guard let value = await eiv(blueprintTypeID),
-        let factor = scienceFeeFactor(for: .copying)
-      else { return nil }
-      return OwnedBPCValuation.scienceJobCostPerRun(
-        estimatedItemValue: value,
-        feeFactor: factor
-      )
-    }
-    var marketBook: PreparedMarketOrderBook?
-    func buyCost(_ materials: [BlueprintMaterial]) async -> Double? {
-      if marketBook == nil {
-        guard let hub = productionBasis.mainTradingLocation?.location,
-          let regionID = hub.regionID, let locationID = hub.locationID,
-          let snapshot = try? await TradeHubMarketService(esi: esi)
-            .orderSnapshot(
-              typeIDs: Set(decryptors.map(\.typeID)).union(
-                materials.map(\.typeID)
-              ),
-              regionID: regionID,
-              locationID: locationID
-            )
-        else { return nil }
-        marketBook = PreparedMarketOrderBook(snapshot: snapshot)
+    var missingInventionTypeIDs: Set<Int64> = []
+    for (index, use) in uses.enumerated() where results[index] == nil {
+      if let definition = try? await catalog.productionDefinition(
+        productTypeID: use.blueprintTypeID
+      ), definition.activity.kind == .invention {
+        missingInventionTypeIDs.insert(use.blueprintTypeID)
       }
+    }
+    await inputs.prefetchInventionMaterials(
+      outputBlueprintTypeIDs: missingInventionTypeIDs,
+      catalog: catalog
+    )
+    for (index, use) in uses.enumerated() where results[index] == nil {
+      guard use.usedRuns > 0 else { continue }
+      guard missingInventionTypeIDs.contains(use.blueprintTypeID) else {
+        if let perRun = await copyCostPerRun(use.blueprintTypeID, inputs: inputs) {
+          results[index] = OwnedBPCValue(
+            amount: perRun * Double(use.usedRuns),
+            basis: .copyEstimate
+          )
+        }
+        continue
+      }
+      guard
+        let estimate = await inventionCost(
+          outputBlueprintTypeID: use.blueprintTypeID,
+          inputs: inputs,
+          capabilities: capabilities,
+          decryptorCandidates: { baseRuns, decryptors in
+            OwnedBPCValuation.decryptorCandidates(
+              materialEfficiency: use.materialEfficiency,
+              timeEfficiency: use.timeEfficiency,
+              availableRuns: use.availableRuns,
+              baseRuns: baseRuns,
+              decryptors: decryptors
+            )
+          }
+        ),
+        let perRun = estimate.costPerRun
+      else { continue }
+      results[index] = OwnedBPCValue(
+        amount: perRun * Double(use.usedRuns),
+        basis: .inventionEstimate,
+        decryptorTypeID: estimate.candidates.count == 1
+          ? estimate.candidates[0]?.typeID : nil,
+        isAmbiguous: estimate.candidates.count > 1
+      )
+    }
+    return results
+  }
+
+  // MARK: Science cost estimates (copy and invention)
+
+  /// Shared price inputs of copy and invention estimates: ESI adjusted
+  /// prices for the job fees, decryptor definitions and Main-Hub order books
+  /// for datacores and decryptors.
+  @MainActor
+  final class ScienceCostInputs {
+    let prices: [Int64: AdjustedPrice]
+    let decryptors: [BlueprintDecryptorDefinition]
+    private let loadBook: (Set<Int64>) async -> PreparedMarketOrderBook?
+    private var book: PreparedMarketOrderBook?
+    private var bookTypeIDs: Set<Int64> = []
+
+    init(
+      prices: [Int64: AdjustedPrice],
+      decryptors: [BlueprintDecryptorDefinition],
+      loadBook: @escaping (Set<Int64>) async -> PreparedMarketOrderBook?
+    ) {
+      self.prices = prices
+      self.decryptors = decryptors
+      self.loadBook = loadBook
+    }
+
+    /// Loads one Main-Hub order book for every invention input at once.
+    func prefetchInventionMaterials(
+      outputBlueprintTypeIDs: Set<Int64>,
+      catalog: SQLiteStaticCatalog
+    ) async {
+      var typeIDs = Set(decryptors.map(\.typeID))
+      for outputTypeID in outputBlueprintTypeIDs {
+        guard
+          let invention = try? await catalog.productionDefinition(
+            productTypeID: outputTypeID
+          ),
+          invention.activity.kind == .invention,
+          let activity = (try? await catalog.blueprintScienceActivities(
+            blueprintTypeID: invention.blueprintTypeID
+          ))?.first(where: { $0.kind == .invention })
+        else { continue }
+        typeIDs.formUnion(activity.materials.map(\.typeID))
+      }
+      await ensureBook(typeIDs)
+    }
+
+    func buyCost(_ materials: [BlueprintMaterial]) async -> Double? {
+      await ensureBook(Set(materials.map(\.typeID)))
       var total = 0.0
       for material in materials {
         guard
-          let cost = marketBook?.quote(
+          let cost = book?.quote(
             typeID: material.typeID,
             quantity: material.quantity,
             scenario: .materialBuy
@@ -4051,99 +4165,245 @@ final class RuntimeState: ObservableObject {
       }
       return total.isFinite ? total : nil
     }
-    for (index, use) in uses.enumerated() where results[index] == nil {
-      guard use.usedRuns > 0 else { continue }
-      let invention = try? await catalog.productionDefinition(
-        productTypeID: use.blueprintTypeID
-      )
-      guard let invention, invention.activity.kind == .invention else {
-        if let perRun = await copyCostPerRun(use.blueprintTypeID) {
-          results[index] = OwnedBPCValue(
-            amount: perRun * Double(use.usedRuns),
-            basis: .copyEstimate
-          )
-        }
-        continue
-      }
-      let sourceBlueprintTypeID = invention.blueprintTypeID
-      guard
-        let activity = (try? await catalog.blueprintScienceActivities(
-          blueprintTypeID: sourceBlueprintTypeID
-        ))?.first(where: { $0.kind == .invention }),
-        let baseRuns = activity.products.first(where: {
-          $0.typeID == use.blueprintTypeID
-        }).map({ Int(clamping: $0.quantity) }),
-        let candidates = OwnedBPCValuation.decryptorCandidates(
-          materialEfficiency: use.materialEfficiency,
-          timeEfficiency: use.timeEfficiency,
-          availableRuns: use.availableRuns,
-          baseRuns: baseRuns,
-          decryptors: decryptors
-        ),
-        let copyCost = await copyCostPerRun(sourceBlueprintTypeID),
-        let productValue = await eiv(use.blueprintTypeID),
-        let inventionFactor = scienceFeeFactor(for: .invention),
-        let inventionFee = OwnedBPCValuation.scienceJobCostPerRun(
-          estimatedItemValue: productValue,
-          feeFactor: inventionFactor
-        )
-      else { continue }
-      // Best trained level of every required skill across all characters.
-      let skillLevels = Dictionary(
-        uniqueKeysWithValues: activity.requiredSkills.compactMap {
-          skill -> (Int64, Int)? in
-          capabilities.compactMap { $0.skillLevel(skill.typeID) }.max()
-            .map { (skill.typeID, $0) }
-        }
-      )
-      // An ambiguous decryptor is valued as the mean over all candidates.
-      var candidateCosts: [Double?] = []
-      for decryptor in candidates {
-        guard
-          let inputs = await buyCost(
-            activity.materials
-              + (decryptor.map {
-                [BlueprintMaterial(typeID: $0.typeID, quantity: 1)]
-              } ?? [])
-          )
-        else {
-          candidateCosts.append(nil)
-          continue
-        }
-        let attemptCost = copyCost + inputs + inventionFee
-        let plan = try? BlueprintSciencePlanner.inventionPlan(
-          inputBPC: .ownedBPC(itemID: 0),
-          inputBlueprintTypeID: sourceBlueprintTypeID,
-          selectedOutputBlueprintTypeID: use.blueprintTypeID,
-          activity: activity,
-          characterID: 0,
-          characterName: "",
-          trainedSkillLevels: skillLevels,
-          decryptor: decryptor,
-          attemptCost: attemptCost,
-          requiredSuccesses: 1
-        )
-        candidateCosts.append(
-          plan.flatMap {
-            OwnedBPCValuation.inventionCostPerRun(
-              attemptCost: attemptCost,
-              successProbability: $0.successProbability,
-              outputRuns: $0.outputRuns
+
+    private func ensureBook(_ typeIDs: Set<Int64>) async {
+      guard !typeIDs.isSubset(of: bookTypeIDs) else { return }
+      let wanted = bookTypeIDs.union(typeIDs)
+      guard let loaded = await loadBook(wanted) else { return }
+      book = loaded
+      bookTypeIDs = wanted
+    }
+  }
+
+  struct InventionCostEstimate {
+    let costPerRun: Double?
+    let attemptCost: Double?
+    let successProbability: Double?
+    let outputRuns: Int?
+    let candidates: [BlueprintDecryptorDefinition?]
+  }
+
+  func scienceCostInputs() async -> ScienceCostInputs? {
+    guard
+      let prices = try? await JitaMarketService(esi: esi)
+        .adjustedPriceSnapshot().prices
+    else { return nil }
+    if industrySystemIndices == nil {
+      industrySystemIndices = await loadIndustrySystemIndices()
+    }
+    let decryptors = (try? await catalog.decryptorDefinitions()) ?? []
+    let hub = productionBasis.mainTradingLocation?.location
+    let esi = esi
+    return ScienceCostInputs(
+      prices: prices,
+      decryptors: decryptors,
+      loadBook: { typeIDs in
+        guard let hub, let regionID = hub.regionID,
+          let locationID = hub.locationID,
+          let snapshot = try? await TradeHubMarketService(esi: esi)
+            .orderSnapshot(
+              typeIDs: typeIDs,
+              regionID: regionID,
+              locationID: locationID
             )
-          }
-        )
+        else { return nil }
+        return PreparedMarketOrderBook(snapshot: snapshot)
       }
-      guard let perRun = OwnedBPCValuation.average(candidateCosts) else {
+    )
+  }
+
+  private func estimatedItemValue(
+    _ blueprintTypeID: Int64,
+    inputs: ScienceCostInputs
+  ) async -> Double? {
+    guard
+      let definition = try? await catalog
+        .consolidationManufacturingDefinition(blueprintTypeID)
+    else { return nil }
+    return OwnedBPCValuation.estimatedItemValue(
+      materials: definition.activity.materials,
+      adjustedPrices: inputs.prices
+    )
+  }
+
+  private func copyCostPerRun(
+    _ blueprintTypeID: Int64,
+    inputs: ScienceCostInputs
+  ) async -> Double? {
+    guard let value = await estimatedItemValue(blueprintTypeID, inputs: inputs),
+      let factor = scienceFeeFactor(for: .copying)
+    else { return nil }
+    return OwnedBPCValuation.scienceJobCostPerRun(
+      estimatedItemValue: value,
+      feeFactor: factor
+    )
+  }
+
+  /// Expected invention cost per output run: T1 copy job, datacores and
+  /// decryptor at the Main Hub and the invention job fee per attempt,
+  /// divided by success probability (best trained skills across all
+  /// characters) and output runs. An ambiguous decryptor is valued as the
+  /// mean over all candidates. `nil` when the output is not invented.
+  func inventionCost(
+    outputBlueprintTypeID: Int64,
+    inputs: ScienceCostInputs,
+    capabilities: [CharacterCapabilitySnapshot],
+    decryptorCandidates: (Int, [BlueprintDecryptorDefinition])
+      -> [BlueprintDecryptorDefinition?]? = { _, _ in [nil] }
+  ) async -> InventionCostEstimate? {
+    guard
+      let invention = try? await catalog.productionDefinition(
+        productTypeID: outputBlueprintTypeID
+      ),
+      invention.activity.kind == .invention
+    else { return nil }
+    let unavailable = InventionCostEstimate(
+      costPerRun: nil,
+      attemptCost: nil,
+      successProbability: nil,
+      outputRuns: nil,
+      candidates: []
+    )
+    let sourceBlueprintTypeID = invention.blueprintTypeID
+    guard
+      let activity = (try? await catalog.blueprintScienceActivities(
+        blueprintTypeID: sourceBlueprintTypeID
+      ))?.first(where: { $0.kind == .invention }),
+      let baseRuns = activity.products.first(where: {
+        $0.typeID == outputBlueprintTypeID
+      }).map({ Int(clamping: $0.quantity) }),
+      let candidates = decryptorCandidates(baseRuns, inputs.decryptors),
+      let copyCost = await copyCostPerRun(sourceBlueprintTypeID, inputs: inputs),
+      let productValue = await estimatedItemValue(
+        outputBlueprintTypeID,
+        inputs: inputs
+      ),
+      let inventionFactor = scienceFeeFactor(for: .invention),
+      let inventionFee = OwnedBPCValuation.scienceJobCostPerRun(
+        estimatedItemValue: productValue,
+        feeFactor: inventionFactor
+      )
+    else { return unavailable }
+    // Best trained level of every required skill across all characters.
+    let skillLevels = Dictionary(
+      uniqueKeysWithValues: activity.requiredSkills.compactMap {
+        skill -> (Int64, Int)? in
+        capabilities.compactMap { $0.skillLevel(skill.typeID) }.max()
+          .map { (skill.typeID, $0) }
+      }
+    )
+    var candidateCosts: [Double?] = []
+    var lastAttempt: Double?
+    var lastPlan: BlueprintInventionPlan?
+    for decryptor in candidates {
+      guard
+        let materials = await inputs.buyCost(
+          activity.materials
+            + (decryptor.map {
+              [BlueprintMaterial(typeID: $0.typeID, quantity: 1)]
+            } ?? [])
+        )
+      else {
+        candidateCosts.append(nil)
         continue
       }
-      results[index] = OwnedBPCValue(
-        amount: perRun * Double(use.usedRuns),
-        basis: .inventionEstimate,
-        decryptorTypeID: candidates.count == 1 ? candidates[0]?.typeID : nil,
-        isAmbiguous: candidates.count > 1
+      let attemptCost = copyCost + materials + inventionFee
+      let plan = try? BlueprintSciencePlanner.inventionPlan(
+        inputBPC: .ownedBPC(itemID: 0),
+        inputBlueprintTypeID: sourceBlueprintTypeID,
+        selectedOutputBlueprintTypeID: outputBlueprintTypeID,
+        activity: activity,
+        characterID: 0,
+        characterName: "",
+        trainedSkillLevels: skillLevels,
+        decryptor: decryptor,
+        attemptCost: attemptCost,
+        requiredSuccesses: 1
+      )
+      lastAttempt = attemptCost
+      lastPlan = plan
+      candidateCosts.append(
+        plan.flatMap {
+          OwnedBPCValuation.inventionCostPerRun(
+            attemptCost: attemptCost,
+            successProbability: $0.successProbability,
+            outputRuns: $0.outputRuns
+          )
+        }
       )
     }
-    return results
+    return InventionCostEstimate(
+      costPerRun: OwnedBPCValuation.average(candidateCosts),
+      attemptCost: candidates.count == 1 ? lastAttempt : nil,
+      successProbability: candidates.count == 1
+        ? lastPlan?.successProbability : nil,
+      outputRuns: candidates.count == 1 ? lastPlan?.outputRuns : nil,
+      candidates: candidates
+    )
+  }
+
+  /// Invention estimates for the Tech II and Tech III Blueprints of the
+  /// opportunity lists, without decryptor. Identical type sets are reused
+  /// for one hour.
+  func loadOpportunityInventionEstimates(blueprintTypeIDs: Set<Int64>) async {
+    guard !blueprintTypeIDs.isEmpty else { return }
+    let wanted = blueprintTypeIDs.subtracting(opportunityInventionEstimates.keys)
+    if wanted.isEmpty, let loadedAt = opportunityInventionEstimatesLoadedAt,
+      Date().timeIntervalSince(loadedAt) < 60 * 60
+    {
+      return
+    }
+    // A request during a running estimate is queued, never dropped.
+    guard !isEstimatingOpportunityInvention else {
+      pendingInventionTypeIDs.formUnion(blueprintTypeIDs)
+      return
+    }
+    isEstimatingOpportunityInvention = true
+    await estimateOpportunityInvention(blueprintTypeIDs: blueprintTypeIDs)
+    while !pendingInventionTypeIDs.isEmpty, !Task.isCancelled {
+      let pending = pendingInventionTypeIDs
+      pendingInventionTypeIDs = []
+      await estimateOpportunityInvention(blueprintTypeIDs: pending)
+    }
+    isEstimatingOpportunityInvention = false
+  }
+
+  private func estimateOpportunityInvention(
+    blueprintTypeIDs: Set<Int64>
+  ) async {
+    guard let inputs = await scienceCostInputs() else {
+      opportunityInventionError =
+        "Invention costs could not be estimated because ESI reference prices are unavailable."
+      return
+    }
+    await inputs.prefetchInventionMaterials(
+      outputBlueprintTypeIDs: blueprintTypeIDs,
+      catalog: catalog
+    )
+    var estimates: [Int64: ManufacturingOpportunityInventionEstimate] = [:]
+    for typeID in blueprintTypeIDs.sorted() {
+      if Task.isCancelled { return }
+      guard
+        let estimate = await inventionCost(
+          outputBlueprintTypeID: typeID,
+          inputs: inputs,
+          capabilities: rememberedCapabilities
+        )
+      else {
+        estimates[typeID] = .notInvented
+        continue
+      }
+      estimates[typeID] = ManufacturingOpportunityInventionEstimate(
+        costPerRun: estimate.costPerRun,
+        attemptCost: estimate.attemptCost,
+        successProbability: estimate.successProbability,
+        outputRuns: estimate.outputRuns
+      )
+    }
+    opportunityInventionEstimates.merge(estimates) { $1 }
+    opportunityInventionEstimatesLoadedAt = .now
+    opportunityInventionRevision = UUID()
+    opportunityInventionError = nil
   }
 
   func consolidationManufacturingDefinition(_ blueprintID: Int64) async throws -> BlueprintDefinition? {
@@ -4691,6 +4951,69 @@ final class RuntimeState: ObservableObject {
       authorization: authorization,
       lease: lease
     )
+    await syncLoyaltyPoints(authorization: authorization, lease: lease)
+  }
+
+  // MARK: Loyalty Points
+
+  func loadCharacterLoyaltyPoints() async {
+    do {
+      characterLoyaltyPoints = try await characterLoyaltyPointsStore.load()
+      loyaltyPointsError = nil
+    } catch {
+      loyaltyPointsError =
+        "The saved Loyalty Points could not be read. They remain unknown, not zero."
+    }
+  }
+
+  /// Character LP feed the Loyalty Store route of the opportunity lists. A
+  /// failure keeps the previous balance; a missing scope is reported.
+  private func syncLoyaltyPoints(
+    authorization: AuthorizationSnapshot,
+    lease: AccessTokenLease
+  ) async {
+    do {
+      let points = try await LoyaltyPointsSyncService(esi: esi).synchronize(
+        characterID: authorization.characterID,
+        lease: lease
+      )
+      var snapshot = characterLoyaltyPoints ?? CharacterLoyaltyPointsSnapshot()
+      snapshot.characters[authorization.characterID] =
+        CharacterLoyaltyPointsSnapshot.CharacterEntry(
+          characterID: authorization.characterID,
+          characterName: authorization.characterName,
+          capturedAt: .now,
+          points: points
+        )
+      try await characterLoyaltyPointsStore.save(snapshot)
+      characterLoyaltyPoints = snapshot
+      loyaltyPointsMissingScopeCharacters.remove(authorization.characterName)
+      loyaltyPointsError = nil
+    } catch ESIError.missingScope {
+      loyaltyPointsMissingScopeCharacters.insert(authorization.characterName)
+    } catch is CancellationError {
+      return
+    } catch {
+      loyaltyPointsError =
+        "Loyalty Points could not be updated. The previous values were kept."
+    }
+  }
+
+  // MARK: Hub top opportunities (Dashboard)
+
+  func loadHubTopOpportunities() async {
+    if let stored = try? await hubTopOpportunityStore.load() {
+      hubTopOpportunities = stored
+    }
+  }
+
+  /// Called by a hub view after it prepared its candidates, so the Dashboard
+  /// shows exactly the hub's own values.
+  func publishHubTopOpportunities(_ result: HubTopOpportunityResult) {
+    guard hubTopOpportunities[result.role] != result else { return }
+    hubTopOpportunities[result.role] = result
+    let all = hubTopOpportunities
+    Task { try? await hubTopOpportunityStore.save(all) }
   }
 
   func rememberMarketAuthorizations(
@@ -4708,9 +5031,13 @@ final class RuntimeState: ObservableObject {
   /// Reads the local contract index only; it never starts ESI work. The
   /// universe-wide rule and the 500-offer bound match the Planner Contract
   /// Sale. Identical type sets are reused for five minutes.
-  func loadOpportunityContractReferences(typeIDs: Set<Int64>) async {
+  func loadOpportunityContractReferences(
+    typeIDs: Set<Int64>,
+    blueprintTypeIDs: Set<Int64> = []
+  ) async {
     guard !typeIDs.isEmpty else { return }
-    if let key = opportunityContractReferenceKey, key.types == typeIDs,
+    let requestedTypeIDs = typeIDs.union(blueprintTypeIDs)
+    if let key = opportunityContractReferenceKey, key.types == requestedTypeIDs,
       key.regions == publicContractRegionScope,
       Date().timeIntervalSince(key.loadedAt) < 5 * 60
     {
@@ -4718,6 +5045,7 @@ final class RuntimeState: ObservableObject {
     }
     guard publicContractStoreState == .ready, let publicContractIndexer else {
       opportunityContractReferences = nil
+      opportunityBlueprintOffers = [:]
       opportunityContractReferenceError =
         "The local Public Contracts index is not ready. Contract prices remain unavailable."
       return
@@ -4725,19 +5053,32 @@ final class RuntimeState: ObservableObject {
     do {
       let limitPerType = 500
       let snapshot = try await publicContractIndexer.includedOfferSnapshot(
-        typeIDs: typeIDs,
+        typeIDs: requestedTypeIDs,
         limitPerType: limitPerType
       )
       try Task.checkCancellation()
+      let regionScope = publicContractRegionScope.flatMap {
+        $0.isEmpty ? nil : $0
+      }
+      var blueprintOffers: [Int64: [PublicContractSearchResult]] = [:]
+      for typeID in blueprintTypeIDs {
+        let offers = (snapshot.offers[typeID] ?? []).filter { offer in
+          offer.isAttributableBlueprintOffer
+            && offer.isBlueprintCopy == true
+            && (regionScope?.contains(offer.regionID) ?? true)
+        }
+        if !offers.isEmpty { blueprintOffers[typeID] = offers }
+      }
+      opportunityBlueprintOffers = blueprintOffers
       opportunityContractReferences =
         PublicContractReferenceSnapshot.projectUniverseWide(
-          offers: snapshot.offers,
+          offers: snapshot.offers.filter { typeIDs.contains($0.key) },
           progress: snapshot.progress,
           limitPerType: limitPerType,
           allowedRegionIDs: publicContractRegionScope
         )
       opportunityContractReferenceKey = (
-        typeIDs, publicContractRegionScope, Date()
+        requestedTypeIDs, publicContractRegionScope, Date()
       )
       opportunityContractReferenceError = nil
     } catch is CancellationError {

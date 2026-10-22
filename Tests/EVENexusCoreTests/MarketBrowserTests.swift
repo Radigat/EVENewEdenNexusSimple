@@ -2550,6 +2550,281 @@ struct MarketBrowserTests {
     )
   }
 
+  private func bpcOffer(
+    contractID: Int64,
+    blueprintTypeID: Int64,
+    runs: Int,
+    price: Double
+  ) -> PublicContractSearchResult {
+    PublicContractSearchResult(
+      contractID: contractID,
+      recordID: contractID,
+      regionID: 10_000_002,
+      regionName: "The Forge",
+      contractType: "item_exchange",
+      price: price,
+      dateIssued: Date(timeIntervalSince1970: 1_800_000_000),
+      dateExpired: Date(timeIntervalSince1970: 1_800_086_400),
+      startLocationID: 60_003_760,
+      typeID: blueprintTypeID,
+      isIncluded: true,
+      quantity: 1,
+      isBlueprintCopy: true,
+      materialEfficiency: 0,
+      timeEfficiency: 0,
+      runs: runs,
+      offeredLineCount: 1,
+      requestedLineCount: 0
+    )
+  }
+
+  @Test
+  func loyaltyStoreAndFactionBlueprintsPriceTheBPCPurchaseIntoTheCost() throws {
+    let logistics = ManufacturingOpportunityLogisticsProjection(
+      cost: 0,
+      legs: [],
+      warnings: []
+    )
+    // Two runs; without a Blueprint share the scenario profit is 20 ISK.
+    let loyaltyRow = sortableOpportunityRow(
+      name: "Loyalty ship",
+      value: 2,
+      demand: 1,
+      blueprintTypeID: 900
+    )
+    let references = try contractReferences(
+      unitPricesByType: [:],
+      complete: true
+    )
+    let offers: [Int64: [PublicContractSearchResult]] = [
+      900: [bpcOffer(contractID: 1, blueprintTypeID: 900, runs: 5, price: 100)]
+    ]
+    let priced = ManufacturingOpportunityScenarioProjector.costs(
+      for: loyaltyRow,
+      sheet: ManufacturingOpportunityCostSheet(
+        includesBlueprintAllocation: true,
+        blueprintAllocationPerRun: 1_000
+      ),
+      logistics: logistics,
+      contract: ManufacturingOpportunityContractContext(
+        references: references,
+        contractFeeRate: 0,
+        blueprintOffers: offers,
+        loyaltyStoreBlueprintTypeIDs: [900]
+      )
+    )
+    // Only the two used runs of the five bought runs are charged, and the
+    // manual allocation is replaced instead of being added.
+    #expect(priced.blueprintAcquisition?.state == .contract)
+    #expect(priced.blueprintAcquisition?.cost == 40)
+    #expect(priced.blueprintAcquisition?.purchasePrice == 100)
+    #expect(priced.blueprintAcquisition?.isProvisional == false)
+    #expect(priced.blueprintAllocation == 40)
+    #expect(priced.totalCost == 41)
+    #expect(priced.profit == -20)
+
+    let missing = ManufacturingOpportunityScenarioProjector.costs(
+      for: loyaltyRow,
+      sheet: ManufacturingOpportunityCostSheet(),
+      logistics: logistics,
+      contract: ManufacturingOpportunityContractContext(
+        references: references,
+        contractFeeRate: 0,
+        loyaltyStoreBlueprintTypeIDs: [900]
+      )
+    )
+    #expect(missing.blueprintAcquisition?.state == .unavailable)
+    #expect(missing.totalCost == nil)
+    #expect(missing.profit == nil)
+
+    let ownRights = ManufacturingOpportunityScenarioProjector.costs(
+      for: loyaltyRow,
+      sheet: ManufacturingOpportunityCostSheet(),
+      logistics: logistics,
+      contract: ManufacturingOpportunityContractContext(
+        references: references,
+        contractFeeRate: 0,
+        loyaltyStoreBlueprintTypeIDs: [900],
+        usesOwnBlueprintRights: true
+      )
+    )
+    #expect(ownRights.blueprintAcquisition?.state == .ownRights)
+    #expect(ownRights.profit == 20)
+
+    // Faction products need a BPC even without Loyalty Store catalog data.
+    let factionRow = sortableOpportunityRow(
+      name: "Faction module",
+      value: 2,
+      demand: 1,
+      blueprintTypeID: 901,
+      metaGroupID: 4
+    )
+    #expect(
+      ManufacturingOpportunityBlueprintAcquisitionProjector
+        .requiresBlueprintCopy(row: factionRow, loyaltyStoreBlueprintTypeIDs: [])
+    )
+    let ordinary = ManufacturingOpportunityScenarioProjector.costs(
+      for: sortableOpportunityRow(name: "Tech I", value: 2, demand: 1, metaGroupID: 1),
+      sheet: ManufacturingOpportunityCostSheet(),
+      logistics: logistics,
+      contract: ManufacturingOpportunityContractContext(
+        references: references,
+        contractFeeRate: 0,
+        loyaltyStoreBlueprintTypeIDs: [900]
+      )
+    )
+    #expect(ordinary.blueprintAcquisition?.state == .notRequired)
+    #expect(ordinary.profit == 20)
+  }
+
+  @Test
+  func cheaperLoyaltyStoreRouteIsUsedOnlyWithEnoughLoyaltyPoints() throws {
+    let logistics = ManufacturingOpportunityLogisticsProjection(
+      cost: 0,
+      legs: [],
+      warnings: []
+    )
+    // Two runs; without a Blueprint share the scenario profit is 20 ISK.
+    let row = sortableOpportunityRow(
+      name: "Loyalty ship",
+      value: 2,
+      demand: 1,
+      blueprintTypeID: 900
+    )
+    let references = try contractReferences(unitPricesByType: [:], complete: true)
+    // Contract: 5 runs for 100 ISK → 40 ISK for two runs.
+    let contracts: [Int64: [PublicContractSearchResult]] = [
+      900: [bpcOffer(contractID: 1, blueprintTypeID: 900, runs: 5, price: 100)]
+    ]
+    func lpOffer(availableLP: Int64?) -> LoyaltyStoreBlueprintOffer {
+      // The unresearched 5-run contract BPC sets 5 runs per purchase: one
+      // purchase of 1 ISK + 2 ISK items + 5 LP × 1 ISK = 8 ISK, 2/5 charged.
+      LoyaltyStoreBlueprintOffer(
+        corporationID: 7,
+        corporationName: "Navy",
+        blueprintTypeID: 900,
+        lpCost: 5,
+        iskCost: 1,
+        quantity: 1,
+        requiredItemsValue: 2,
+        iskPerLP: 1,
+        bestCharacterName: availableLP == nil ? nil : "Pilot",
+        availableLP: availableLP,
+        availableISK: 4
+      )
+    }
+    func costs(_ availableLP: Int64?) -> ManufacturingOpportunityCostProjection {
+      ManufacturingOpportunityScenarioProjector.costs(
+        for: row,
+        sheet: ManufacturingOpportunityCostSheet(),
+        logistics: logistics,
+        contract: ManufacturingOpportunityContractContext(
+          references: references,
+          contractFeeRate: 0,
+          blueprintOffers: contracts,
+          loyaltyStoreBlueprintTypeIDs: [900],
+          loyaltyStoreBlueprintOffers: [900: [lpOffer(availableLP: availableLP)]]
+        )
+      )
+    }
+    let enough = costs(5)
+    #expect(enough.blueprintAcquisition?.state == .loyaltyStore)
+    #expect(abs((enough.blueprintAcquisition?.cost ?? 0) - 3.2) < 1e-9)
+    #expect(enough.blueprintAcquisition?.contractCost == 40)
+    let route = try #require(enough.blueprintAcquisition?.loyaltyStore)
+    #expect(route.totalLP == 5)
+    #expect(route.purchases == 1)
+    #expect(route.runsPerPurchase == 5)
+    #expect(route.purchaseValue == 8)
+    #expect(route.cashRequirement == 3)
+    #expect(route.hasEnoughLP == true)
+    #expect(route.hasEnoughISK == true)
+    #expect(abs((enough.profit ?? 0) - 16.8) < 1e-9)
+
+    // Too few or unknown LP: the contract stays the priced route.
+    #expect(costs(4).blueprintAcquisition?.state == .contract)
+    #expect(costs(4).blueprintAcquisition?.loyaltyStore?.hasEnoughLP == false)
+    #expect(costs(nil).blueprintAcquisition?.state == .contract)
+    #expect(costs(nil).blueprintAcquisition?.loyaltyStore?.hasEnoughLP == nil)
+  }
+
+  @Test
+  func techIIRowsPriceTheExpectedInventionCostOrACheaperContract() throws {
+    let logistics = ManufacturingOpportunityLogisticsProjection(
+      cost: 0,
+      legs: [],
+      warnings: []
+    )
+    // Two runs; without a Blueprint share the scenario profit is 20 ISK.
+    let row = sortableOpportunityRow(
+      name: "Tech II module",
+      value: 2,
+      demand: 1,
+      blueprintTypeID: 950,
+      metaGroupID: 2
+    )
+    let references = try contractReferences(unitPricesByType: [:], complete: true)
+    let estimate = ManufacturingOpportunityInventionEstimate(
+      costPerRun: 3,
+      attemptCost: 9,
+      successProbability: 0.3,
+      outputRuns: 10
+    )
+    func costs(
+      estimates: [Int64: ManufacturingOpportunityInventionEstimate],
+      contracts: [Int64: [PublicContractSearchResult]] = [:]
+    ) -> ManufacturingOpportunityCostProjection {
+      ManufacturingOpportunityScenarioProjector.costs(
+        for: row,
+        sheet: ManufacturingOpportunityCostSheet(),
+        logistics: logistics,
+        contract: ManufacturingOpportunityContractContext(
+          references: references,
+          contractFeeRate: 0,
+          blueprintOffers: contracts,
+          inventionEstimates: estimates
+        )
+      )
+    }
+    let invented = costs(estimates: [950: estimate])
+    #expect(invented.blueprintAcquisition?.state == .invention)
+    #expect(invented.blueprintAcquisition?.requiresInvention == true)
+    #expect(invented.blueprintAcquisition?.inventionCost == 6)
+    #expect(invented.blueprintAllocation == 6)
+    #expect(invented.profit == 14)
+
+    // A cheaper covering T2 BPC contract wins: 10 runs for 2 ISK → 0.4.
+    let cheaperContract = costs(
+      estimates: [950: estimate],
+      contracts: [950: [bpcOffer(contractID: 2, blueprintTypeID: 950, runs: 10, price: 2)]]
+    )
+    #expect(cheaperContract.blueprintAcquisition?.state == .contract)
+    #expect(cheaperContract.blueprintAcquisition?.inventionCost == 6)
+
+    // Not estimated yet: never free.
+    let pending = costs(estimates: [:])
+    #expect(pending.blueprintAcquisition?.state == .unavailable)
+    #expect(pending.profit == nil)
+
+    // An unknown estimate input keeps the cost unavailable.
+    let unknown = costs(
+      estimates: [
+        950: ManufacturingOpportunityInventionEstimate(
+          costPerRun: nil,
+          attemptCost: nil,
+          successProbability: nil,
+          outputRuns: nil
+        )
+      ]
+    )
+    #expect(unknown.blueprintAcquisition?.state == .unavailable)
+
+    // The SDE has no invention source: an ordinary Blueprint.
+    let notInvented = costs(estimates: [950: .notInvented])
+    #expect(notInvented.blueprintAcquisition?.state == .notRequired)
+    #expect(notInvented.profit == 20)
+  }
+
   @Test
   func contractColumnsSortByTypedValuesWithUnavailableValuesLast() throws {
     let references = try contractReferences(
@@ -2604,7 +2879,7 @@ struct MarketBrowserTests {
   }
 
   @Test
-  func topRankingUsesStandardAssumptionsAndSkipsRowsWithoutPotential() {
+  func hubTopListRanksTheHubProjectionAndSkipsRowsWithoutPotential() throws {
     let rows = (1...8).map { index in
       sortableOpportunityRow(
         name: "Product \(index)",
@@ -2637,37 +2912,61 @@ struct MarketBrowserTests {
       marketSource: source,
       warnings: []
     )
-    let top = ManufacturingOpportunityTopRanking.rank(snapshot, limit: 5)
-    #expect(top.count == 5)
-    #expect(!top.contains { $0.row.productName == "Product 3" })
+    // The hub view's own projection; the Dashboard only ranks it.
+    let candidates = snapshot.rows.map { row in
+      (
+        row,
+        ManufacturingOpportunityScenarioProjector.costs(
+          for: row,
+          sheet: ManufacturingOpportunityCostSheet(),
+          logistics: ManufacturingOpportunityLogisticsProjection(
+            cost: 0,
+            legs: [],
+            warnings: []
+          ),
+          contract: ManufacturingOpportunityContractContext(
+            references: nil,
+            contractFeeRate: nil
+          )
+        )
+      )
+    }
+    let result = HubTopOpportunityResult.rank(
+      role: .main,
+      snapshotID: snapshot.id,
+      candidates: candidates
+    )
+    let top = result.entries
+    #expect(top.count == HubTopOpportunityResult.limit)
+    #expect(!top.contains { $0.productName == "Product 3" })
     let potentials = top.map(\.dailyProfitPotential)
     #expect(potentials == potentials.sorted(by: >))
-    // Every entry equals the standard projection of its saved row.
     for entry in top {
-      let costs = ManufacturingOpportunityScenarioProjector.costs(
-        for: entry.row,
-        sheet: ManufacturingOpportunityTopRanking.standardCostSheet,
-        logistics: ManufacturingOpportunityLogisticsProjection(
-          cost: 0,
-          legs: [],
-          warnings: []
-        )
+      let candidate = try #require(
+        candidates.first { $0.0.productTypeID == entry.productTypeID }
       )
       #expect(
         ManufacturingOpportunityScenarioProjector.dailyProfitPotential(
-          for: entry.row,
-          costs: costs
+          for: candidate.0,
+          costs: candidate.1
         ) == entry.dailyProfitPotential
       )
     }
-    let all = ManufacturingOpportunityTopRanking.rank(snapshot, limit: 20)
-    #expect(all.count == 7)
     // Equal potentials keep a stable type-ID order.
-    for (lhs, rhs) in zip(all, all.dropFirst())
+    for (lhs, rhs) in zip(top, top.dropFirst())
     where lhs.dailyProfitPotential == rhs.dailyProfitPotential {
-      #expect(lhs.row.productTypeID < rhs.row.productTypeID)
+      #expect(lhs.productTypeID < rhs.productTypeID)
     }
-    #expect(ManufacturingOpportunityTopRanking.rank(snapshot, limit: 0).isEmpty)
+    // The calculation time alone is no change.
+    #expect(
+      result
+        == HubTopOpportunityResult(
+          role: .main,
+          snapshotID: snapshot.id,
+          calculatedAt: .distantPast,
+          entries: top
+        )
+    )
   }
 
   private func sortableOpportunityRow(

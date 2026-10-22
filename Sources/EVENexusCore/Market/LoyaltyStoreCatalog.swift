@@ -28,6 +28,47 @@ public struct LoyaltyStoreOfferDTO: Codable, Equatable, Sendable {
   }
 }
 
+/// One offer of one NPC corporation's Loyalty Store.
+public struct LoyaltyStoreOffer: Codable, Equatable, Sendable {
+  public let corporationID: Int64
+  public let offerID: Int64
+  public let typeID: Int64
+  public let quantity: Int
+  public let lpCost: Int
+  public let iskCost: Double
+  public let requiredItems: [LoyaltyStoreRequiredItemDTO]
+
+  public init(
+    corporationID: Int64,
+    offerID: Int64,
+    typeID: Int64,
+    quantity: Int,
+    lpCost: Int,
+    iskCost: Double,
+    requiredItems: [LoyaltyStoreRequiredItemDTO]
+  ) {
+    self.corporationID = corporationID
+    self.offerID = offerID
+    self.typeID = typeID
+    self.quantity = quantity
+    self.lpCost = lpCost
+    self.iskCost = iskCost
+    self.requiredItems = requiredItems
+  }
+
+  public init(corporationID: Int64, dto: LoyaltyStoreOfferDTO) {
+    self.init(
+      corporationID: corporationID,
+      offerID: dto.offerID,
+      typeID: dto.typeID,
+      quantity: dto.quantity,
+      lpCost: dto.lpCost,
+      iskCost: dto.iskCost,
+      requiredItems: dto.requiredItems
+    )
+  }
+}
+
 public struct LoyaltyStoreCatalogSnapshot: Codable, Equatable, Sendable {
   public let id: UUID
   public let fetchedAt: Date
@@ -36,6 +77,13 @@ public struct LoyaltyStoreCatalogSnapshot: Codable, Equatable, Sendable {
   public let successfulCorporationCount: Int
   public let failedCorporationCount: Int
   public let offeredTypeIDs: [Int64]
+  /// Complete offers with LP, ISK and required items; `nil` in catalogs
+  /// saved before offers were retained.
+  public let offers: [LoyaltyStoreOffer]?
+  public let corporationNames: [Int64: String]?
+  /// ESI average prices of offered products and required items captured
+  /// with the catalog; the basis of the self-calculated LP value.
+  public let averagePrices: [Int64: Double]?
 
   public init(
     id: UUID = UUID(),
@@ -44,7 +92,10 @@ public struct LoyaltyStoreCatalogSnapshot: Codable, Equatable, Sendable {
     corporationCount: Int,
     successfulCorporationCount: Int,
     failedCorporationCount: Int,
-    offeredTypeIDs: [Int64]
+    offeredTypeIDs: [Int64],
+    offers: [LoyaltyStoreOffer]? = nil,
+    corporationNames: [Int64: String]? = nil,
+    averagePrices: [Int64: Double]? = nil
   ) {
     self.id = id
     self.fetchedAt = fetchedAt
@@ -53,7 +104,14 @@ public struct LoyaltyStoreCatalogSnapshot: Codable, Equatable, Sendable {
     self.successfulCorporationCount = successfulCorporationCount
     self.failedCorporationCount = failedCorporationCount
     self.offeredTypeIDs = Array(Set(offeredTypeIDs.filter { $0 > 0 })).sorted()
+    self.offers = offers
+    self.corporationNames = corporationNames
+    self.averagePrices = averagePrices
   }
+
+  /// Offers saved before this field existed force a refresh, because the
+  /// LP route cannot be priced without them.
+  public var hasOfferDetails: Bool { offers != nil }
 
   public var isComplete: Bool {
     corporationCount > 0
@@ -96,6 +154,42 @@ public struct LoyaltyStoreCatalogService: Sendable {
     self.esi = esi
   }
 
+  /// Fetches every NPC Loyalty Store, the corporation names and the ESI
+  /// average prices used for the LP value.
+  public func refreshWithValuation() async throws -> LoyaltyStoreCatalogSnapshot {
+    let catalog = try await refresh()
+    let offers = catalog.offers ?? []
+    let corporationIDs = Set(offers.map(\.corporationID))
+    let names = await UniverseNameService(esi: esi).names(for: corporationIDs)
+    var averagePrices: [Int64: Double] = [:]
+    if let response = try? await esi.get(
+      [ESIAdjustedPriceDTO].self,
+      endpoint: ESIEndpoint(path: "/markets/prices/")
+    ) {
+      var neededTypeIDs = Set(offers.map(\.typeID))
+      for offer in offers {
+        neededTypeIDs.formUnion(offer.requiredItems.map(\.typeID))
+      }
+      for price in response.value where neededTypeIDs.contains(price.typeID) {
+        if let average = price.averagePrice, average.isFinite, average > 0 {
+          averagePrices[price.typeID] = average
+        }
+      }
+    }
+    return LoyaltyStoreCatalogSnapshot(
+      id: catalog.id,
+      fetchedAt: catalog.fetchedAt,
+      expiresAt: catalog.expiresAt,
+      corporationCount: catalog.corporationCount,
+      successfulCorporationCount: catalog.successfulCorporationCount,
+      failedCorporationCount: catalog.failedCorporationCount,
+      offeredTypeIDs: catalog.offeredTypeIDs,
+      offers: offers,
+      corporationNames: names.value,
+      averagePrices: averagePrices.isEmpty ? nil : averagePrices
+    )
+  }
+
   public func refresh() async throws -> LoyaltyStoreCatalogSnapshot {
     let corporations = try await esi.get(
       [Int64].self,
@@ -105,6 +199,7 @@ public struct LoyaltyStoreCatalogService: Sendable {
       Set(corporations.value.filter { $0 > 0 })
     ).sorted().prefix(500)
     var offeredTypeIDs = Set<Int64>()
+    var offers: [LoyaltyStoreOffer] = []
     var successful = 0
     var failed = 0
     var earliestExpiry = corporations.expiresAt
@@ -121,6 +216,11 @@ public struct LoyaltyStoreCatalogService: Sendable {
         }
         successful += 1
         offeredTypeIDs.formUnion(response.value.map(\.typeID))
+        offers.append(
+          contentsOf: response.value.map {
+            LoyaltyStoreOffer(corporationID: corporationID, dto: $0)
+          }
+        )
         if let expiry = response.expiresAt {
           earliestExpiry = earliestExpiry.map { min($0, expiry) } ?? expiry
         }
@@ -139,7 +239,8 @@ public struct LoyaltyStoreCatalogService: Sendable {
       corporationCount: corporationIDs.count,
       successfulCorporationCount: successful,
       failedCorporationCount: failed,
-      offeredTypeIDs: Array(offeredTypeIDs)
+      offeredTypeIDs: Array(offeredTypeIDs),
+      offers: offers
     )
   }
 }

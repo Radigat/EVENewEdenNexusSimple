@@ -946,6 +946,11 @@ struct ManufacturingOpportunitiesView: View {
   )
   private var blueprintCostPerRunText = ""
   @AppStorage(
+    "market-opportunities.cost.blueprint.own-rights",
+    store: AppDefaults.store
+  )
+  private var usesOwnBlueprintRights = false
+  @AppStorage(
     "manufacturing-opportunity.maximum-material-purchase-isk",
     store: AppDefaults.store
   )
@@ -991,6 +996,8 @@ struct ManufacturingOpportunitiesView: View {
   @State private var preparedPlanReservationRevision = UUID()
   @State private var preparedCandidateProjection: PreparedManufacturingOpportunityCandidates?
   @State private var requestedRunsByTypeID: [Int64: Int] = [:]
+  @State private var loyaltyStoreBlueprintOffers:
+    [Int64: [LoyaltyStoreBlueprintOffer]] = [:]
   @State private var requestedRunTextsByTypeID: [Int64: String] = [:]
   @State private var requestedMEByTypeID: [Int64: Int] = [:]
   @State private var requestedMETextsByTypeID: [Int64: String] = [:]
@@ -1123,8 +1130,61 @@ struct ManufacturingOpportunitiesView: View {
   private var contractContext: ManufacturingOpportunityContractContext {
     ManufacturingOpportunityContractContext(
       references: runtime.opportunityContractReferences,
-      contractFeeRate: runtime.publicContractFeeRate(for: hubRole)
+      contractFeeRate: runtime.publicContractFeeRate(for: hubRole),
+      blueprintOffers: runtime.opportunityBlueprintOffers,
+      loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
+      loyaltyStoreBlueprintOffers: loyaltyStoreBlueprintOffers,
+      inventionEstimates: runtime.opportunityInventionEstimates,
+      usesOwnBlueprintRights: usesOwnBlueprintRights
     )
+  }
+
+  /// Wallet balances by character name for the Loyalty Store affordability.
+  private var walletISKByCharacterName: [String: Double] {
+    var result: [String: Double] = [:]
+    for character in characters {
+      guard let data = character.walletBalanceSnapshot,
+        let balance = try? JSONDecoder().decode(Sourced<Double>.self, from: data),
+        let value = balance.value, value.isFinite
+      else { continue }
+      result[character.characterName] = value
+    }
+    return result
+  }
+
+  private var loyaltyStoreOfferTrigger: LoyaltyStoreOfferTrigger {
+    LoyaltyStoreOfferTrigger(
+      analysisID: analysis?.id,
+      catalogID: runtime.loyaltyStoreCatalog?.id,
+      loyaltyPoints: runtime.characterLoyaltyPoints,
+      wallets: walletISKByCharacterName
+    )
+  }
+
+  /// Rows that pass the user's value, budget and demand filters, with the
+  /// row-level Runs, ME and TE applied — exactly the visible table.
+  private func visibleCandidates(
+    _ candidates: [ManufacturingOpportunityCandidate]?
+  ) -> [ManufacturingOpportunityCandidate]? {
+    candidates.map { candidates in
+      candidates
+        .map(candidateApplyingRequestedParameters)
+        .filter { candidate in
+          valueFilter.accepts(candidate.costs)
+            && ManufacturingOpportunityBudgetFilter.accepts(
+              maximumMaterialPurchaseISK: parsedMaximumMaterialPurchaseISK,
+              purchaseCashRequirement: candidate.purchaseCashRequirement
+            )
+            && ManufacturingOpportunityAverageDemandFilter.accepts(
+              minimumAverageDailyDemand: Int64(minimumAverageDailyDemand),
+              averageDailyDemand: candidate.row.averageDailyDemand
+            )
+        }
+    }
+  }
+
+  private var loyaltyStoreBlueprintTypeIDs: Set<Int64> {
+    Set(runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? [])
   }
 
   /// Localizes a Main-Hub text and names the shown hub instead.
@@ -1250,21 +1310,7 @@ struct ManufacturingOpportunitiesView: View {
     let allPreparedCandidates =
       preparedCandidateProjection?.trigger == candidateTrigger
       ? preparedCandidateProjection?.candidates : nil
-    let preparedCandidates = allPreparedCandidates.map { candidates in
-      candidates
-        .map(candidateApplyingRequestedParameters)
-        .filter { candidate in
-          valueFilter.accepts(candidate.costs)
-            && ManufacturingOpportunityBudgetFilter.accepts(
-              maximumMaterialPurchaseISK: parsedMaximumMaterialPurchaseISK,
-              purchaseCashRequirement: candidate.purchaseCashRequirement
-            )
-            && ManufacturingOpportunityAverageDemandFilter.accepts(
-              minimumAverageDailyDemand: Int64(minimumAverageDailyDemand),
-              averageDailyDemand: candidate.row.averageDailyDemand
-            )
-        }
-    }
+    let preparedCandidates = visibleCandidates(allPreparedCandidates)
     GeometryReader { geometry in
       let upperControlsHeight =
         ManufacturingOpportunityPageLayout.upperControlsHeight(
@@ -1324,6 +1370,54 @@ struct ManufacturingOpportunitiesView: View {
     .task(id: warehouseIdentity) {
       await prepareWarehouse(identity: warehouseIdentity)
     }
+    .task(id: loyaltyStoreOfferTrigger) {
+      let trigger = loyaltyStoreOfferTrigger
+      guard let analysis else {
+        loyaltyStoreBlueprintOffers = [:]
+        return
+      }
+      let catalog = runtime.loyaltyStoreCatalog
+      let loyaltyStoreBlueprints = loyaltyStoreBlueprintTypeIDs
+      let offers = await Task.detached(priority: .utility) {
+        LoyaltyStoreBlueprintOfferBuilder.build(
+          catalog: catalog,
+          blueprintTypeIDs: Set(
+            analysis.rows.filter {
+              ManufacturingOpportunityBlueprintAcquisitionProjector
+                .requiresBlueprintCopy(
+                  row: $0,
+                  loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprints
+                )
+            }.map(\.blueprintTypeID)
+          ),
+          characterPoints: trigger.loyaltyPoints?.flattened,
+          walletISKByCharacterName: trigger.wallets
+        )
+      }.value
+      guard !Task.isCancelled else { return }
+      loyaltyStoreBlueprintOffers = offers
+    }
+    .task(id: HubTopPublishTrigger(
+      candidates: candidateTrigger,
+      isPrepared: allPreparedCandidates != nil,
+      valueFilter: valueFilter.rawValue,
+      maximumMaterialPurchase: maximumMaterialPurchaseISKText,
+      minimumAverageDailyDemand: minimumAverageDailyDemand,
+      runs: requestedRunsByTypeID,
+      materialEfficiency: requestedMEByTypeID,
+      timeEfficiency: requestedTEByTypeID
+    )) {
+      guard let snapshot = analysis, let visible = preparedCandidates else {
+        return
+      }
+      runtime.publishHubTopOpportunities(
+        HubTopOpportunityResult.rank(
+          role: hubRole,
+          snapshotID: snapshot.id,
+          candidates: visible.map { ($0.row, $0.costs) }
+        )
+      )
+    }
     .task(id: planPayloads) {
       let prepared = await StoredPlanReservationProjection.prepare(
         payloads: planPayloads
@@ -1337,11 +1431,33 @@ struct ManufacturingOpportunitiesView: View {
     }
     .task(id: ContractReferenceTrigger(
       analysisID: analysis?.id,
-      regionScope: runtime.publicContractRegionScope
+      regionScope: runtime.publicContractRegionScope,
+      loyaltyStoreCatalogID: runtime.loyaltyStoreCatalog?.id
     )) {
       guard let analysis else { return }
+      let loyaltyStoreBlueprints = loyaltyStoreBlueprintTypeIDs
       await runtime.loadOpportunityContractReferences(
-        typeIDs: Set(analysis.rows.map(\.productTypeID))
+        typeIDs: Set(analysis.rows.map(\.productTypeID)),
+        blueprintTypeIDs: Set(
+          analysis.rows.filter {
+            ManufacturingOpportunityBlueprintAcquisitionProjector
+              .requiresAcquisition(
+                row: $0,
+                loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprints
+              )
+          }.map(\.blueprintTypeID)
+        )
+      )
+    }
+    .task(id: analysis?.id) {
+      guard let analysis else { return }
+      await runtime.loadOpportunityInventionEstimates(
+        blueprintTypeIDs: Set(
+          analysis.rows.filter(
+            ManufacturingOpportunityBlueprintAcquisitionProjector
+              .requiresInvention(row:)
+          ).map(\.blueprintTypeID)
+        )
       )
     }
     .onAppear {
@@ -1683,6 +1799,17 @@ struct ManufacturingOpportunitiesView: View {
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
+      compactToggle(
+        "Own BPCs available",
+        isOn: $usesOwnBlueprintRights
+      )
+      .help(
+        Text(
+          AppLocalization.text(
+            "Tech II/III, Loyalty Store, Faction and Storyline Blueprints exist only as BPCs. Their acquisition is priced with the cheapest available route: expected invention cost (Tech II/III), the cheapest attributable BPC contracts in the selected contract regions, or the Loyalty Store when a character has enough LP (ISK cost, required items and LP at the self-calculated LP value). Enable this when you already own the BPCs; the acquisition is then not priced and the optional Blueprint allocation applies instead."
+          )
+        )
+      )
       compactToggle("Include blueprint allocation", isOn: $costIncludesBlueprint)
       TextField(
         "ISK per run",
@@ -2156,7 +2283,13 @@ struct ManufacturingOpportunitiesView: View {
       requestedEfficiencyCell(row, kind: .material)
       requestedEfficiencyCell(row, kind: .time)
       textCell(formatDuration(row.durationSeconds), width: 80)
-      textCell(formatISK(costs.totalCost), width: 100)
+      textCell(
+        formatISK(costs.totalCost),
+        width: 100,
+        color: costs.blueprintAcquisition?.state == .unavailable
+          ? DesignTokens.caution : DesignTokens.textPrimary,
+        help: costCellHelp(costs)
+      )
       textCell(formatISK(costs.grossRevenue), width: 100)
       textCell(formatISK(costs.salesTax), width: 85)
       textCell(formatISK(costs.brokerFee), width: 85)
@@ -2182,7 +2315,8 @@ struct ManufacturingOpportunitiesView: View {
       textCell(
         contractCellText(formatISK(costs.contract?.unitPrice), costs.contract),
         width: 115,
-        color: contractCellColor(costs.contract, value: nil)
+        color: contractCellColor(costs.contract, value: nil),
+        help: contractCellHelp(costs.contract, isProfit: false)
       )
       textCell(
         contractCellText(
@@ -2190,7 +2324,8 @@ struct ManufacturingOpportunitiesView: View {
           costs.contract
         ),
         width: 120,
-        color: contractCellColor(costs.contract, value: costs.contract?.profit)
+        color: contractCellColor(costs.contract, value: costs.contract?.profit),
+        help: contractCellHelp(costs.contract, isProfit: true)
       )
       textCell(formatPercent(costs.returnOnInvestment), width: 65)
       textCell(formatISK(costs.iskPerHour), width: 95)
@@ -2282,7 +2417,7 @@ struct ManufacturingOpportunitiesView: View {
     }
     if column == .contractProfit {
       return AppLocalization.text(
-        "Contract profit: contract price × produced units, minus the confirmed public-contract fee rate of this hub and the total cost. Market sales tax and broker fee do not apply. Without a confirmed rate the value is shown before the contract fee. Click to sort."
+        "Contract profit: contract price × produced units, minus the confirmed public-contract fee rate of this hub and the total cost. Market sales tax and broker fee do not apply. Green with + is a gain, red with − is a loss. ≈ marks a provisional value while the index is incomplete. Without a confirmed rate the value is shown before the contract fee. Click to sort."
       )
     }
     if column == .onwardTransport {
@@ -2292,12 +2427,12 @@ struct ManufacturingOpportunitiesView: View {
     }
     if hubRole == .coalition, column == .cost {
       return AppLocalization.text(
-        "Total cost: material replacement value plus installation, optional Blueprint allocation, the inbound Profile logistics from the Main Hub and the Home → Coalition transport. No return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
+        "Total cost: material replacement value plus installation, the Blueprint share (BPC purchase for Loyalty Store, Faction and Storyline Blueprints, otherwise the optional allocation), the inbound Profile logistics from the Main Hub and the Home → Coalition transport. No return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
       )
     }
     if hubRole != .main, column == .cost {
       return AppLocalization.text(
-        "Total cost: material replacement value plus installation, optional Blueprint allocation and the required inbound Profile logistics from the Main Hub. Products are sold at this hub, so no return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
+        "Total cost: material replacement value plus installation, the Blueprint share (BPC purchase for Loyalty Store, Faction and Storyline Blueprints, otherwise the optional allocation) and the required inbound Profile logistics from the Main Hub. Products are sold at this hub, so no return leg to the Main Hub is included. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
       )
     }
     switch column {
@@ -2312,8 +2447,20 @@ struct ManufacturingOpportunitiesView: View {
     _ column: ManufacturingOpportunitySortColumn
   ) -> String {
     switch column {
+    case .task:
+      "Task: Build transfers the row with its quantity, Runs, ME and TE to the Planner. Click to sort."
+    case .item:
+      "Item: the manufactured or reacted product. Click the name to copy it. Click to sort."
+    case .quantity:
+      "Quantity: units produced by the row's Runs, using the SDE output per run. Click to sort."
+    case .duration:
+      "Duration: production time of all Runs with the row's TE and the facility time bonus, without skills or slot planning. Click to sort."
+    case .group:
+      "Group: SDE item group of the product. Click to sort."
+    case .category:
+      "Category: SDE item category of the product. Click to sort."
     case .cost:
-      "Total cost: material replacement value plus installation, optional Blueprint allocation and both required Profile logistics legs. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
+      "Total cost: material replacement value plus installation, the Blueprint share and both required Profile logistics legs. Tech II/III, Loyalty Store, Faction and Storyline Blueprints add the cheapest available acquisition (expected invention cost, BPC contracts in the selected contract regions or the Loyalty Store with own LP), charged for the used runs; without a route the cost stays unavailable. Other Blueprints use the optional Blueprint allocation. Warehouse stock keeps its replacement value; only the shortfall consumes purchase cash. Click to sort."
     case .revenue:
       "Gross revenue: lowest active sell-order price at the exact Main Hub multiplied by the complete scenario output. No tax or fee has been deducted yet. Click to sort."
     case .salesTax:
@@ -2352,30 +2499,305 @@ struct ManufacturingOpportunitiesView: View {
     return contract.isProvisional ? "≈ \(value)" : value
   }
 
+  /// The colour carries only the sign of a contract profit; provisional or
+  /// before-fee states are marked by "≈" and explained in the cell help.
   private func contractCellColor(
     _ contract: ManufacturingOpportunityContractProjection?,
     value: Double?
   ) -> Color {
     guard let contract, contract.unitPrice != nil else {
-      return DesignTokens.caution
-    }
-    if contract.isProvisional || contract.isBeforeContractFee {
-      return DesignTokens.caution
+      return DesignTokens.textSecondary
     }
     guard let value else { return DesignTokens.textPrimary }
     return value >= 0 ? DesignTokens.positive : DesignTokens.negative
+  }
+
+  private func contractCellHelp(
+    _ contract: ManufacturingOpportunityContractProjection?,
+    isProfit: Bool
+  ) -> String {
+    guard let contract, contract.unitPrice != nil else {
+      return AppLocalization.text(
+        "No comparable public contract offer exists in the selected contract regions."
+      )
+    }
+    var parts: [String] = []
+    if isProfit, let profit = contract.profit {
+      parts.append(
+        AppLocalization.text(
+          profit >= 0
+            ? "Positive: selling by contract earns this amount after all costs."
+            : "Negative: selling by contract loses this amount after all costs."
+        )
+      )
+    }
+    if contract.isProvisional {
+      parts.append(
+        AppLocalization.text(
+          "≈ Provisional: the Public Contracts index is still incomplete, so a cheaper offer may exist."
+        )
+      )
+    }
+    if isProfit, contract.isBeforeContractFee {
+      parts.append(
+        AppLocalization.text(
+          "Before contract fee: no confirmed public-contract fee rate exists for this hub."
+        )
+      )
+    }
+    return parts.isEmpty
+      ? AppLocalization.text("Confirmed from a complete contract index.")
+      : parts.joined(separator: " ")
+  }
+
+  private func costCellHelp(
+    _ costs: ManufacturingOpportunityCostProjection
+  ) -> String? {
+    guard let acquisition = costs.blueprintAcquisition,
+      acquisition.isRequired
+    else { return nil }
+    switch acquisition.state {
+    case .contract:
+      let text = AppLocalization.format(
+        "Includes %@ for the BPC purchase: %lld of %lld bought runs from %lld contract(s), purchase price %@.",
+        formatISK(acquisition.cost),
+        Int64(acquisition.requiredRuns),
+        Int64(acquisition.coveredRuns),
+        Int64(acquisition.contractCount),
+        formatISK(acquisition.purchasePrice)
+      )
+      return acquisition.isProvisional
+        ? text + " "
+          + AppLocalization.text(
+            "≈ Provisional: the Public Contracts index is still incomplete, so a cheaper offer may exist."
+          )
+        : text
+    case .loyaltyStore:
+      guard let route = acquisition.loyaltyStore else { return nil }
+      return AppLocalization.format(
+        "Includes %@ for the Loyalty Store BPC from %@: %@ LP at %@ per LP, store cost %@ and required items %@, charged for the used runs. Details are in the row details.",
+        formatISK(acquisition.cost),
+        route.corporationName
+          ?? AppLocalization.text("Unresolved corporation"),
+        formatInteger(route.totalLP),
+        formatISK(route.iskPerLP),
+        formatISK(route.totalISK),
+        formatISK(route.requiredItemsValue)
+      )
+    case .invention:
+      return AppLocalization.format(
+        "Includes %@ expected invention cost for %lld runs (T1 copy, datacores at the Main Hub and invention fee per attempt, divided by success chance and output runs; no decryptor).",
+        formatISK(acquisition.cost),
+        Int64(acquisition.requiredRuns)
+      )
+    case .ownRights:
+      return AppLocalization.text(
+        "Bought, invented or Loyalty Store BPC: own BPCs are declared, so the purchase is not priced."
+      )
+    case .unavailable:
+      return AppLocalization.text(
+        acquisition.requiresInvention
+          ? "Tech II/III BPC: no invention estimate and no covering BPC contract is available. Cost and profit stay unavailable until the estimate is calculated, an offer exists or own BPCs are declared."
+          : "Loyalty Store, Faction or Storyline BPC: no attributable BPC contract in the selected contract regions covers the runs, and no character has enough Loyalty Points. Cost and profit stay unavailable until an offer exists, the LP suffice or own BPCs are declared."
+      )
+    case .notRequired:
+      return nil
+    }
+  }
+
+  /// Both BPC routes side by side, with LP and wallet coverage of the
+  /// character who holds the most LP at the offering corporation.
+  private func blueprintAcquisitionDetails(
+    _ acquisition: ManufacturingOpportunityBlueprintAcquisition
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text("Blueprint acquisition")
+        .font(.caption.bold())
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(verbatim: blueprintAcquisitionStateText(acquisition.state))
+        .font(.caption)
+      if acquisition.requiresInvention {
+        Text(verbatim: inventionDetailText(acquisition))
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(
+            acquisition.inventionCost == nil
+              ? DesignTokens.caution : DesignTokens.textPrimary
+          )
+      }
+      Text(
+        verbatim: acquisition.contractCost == nil
+          ? AppLocalization.text(
+            "Contract: no attributable BPC contract covers the runs in the selected contract regions."
+          )
+          : AppLocalization.format(
+            "Contract: %@ for %lld of %lld bought runs from %lld contract(s), purchase price %@.",
+            formatISK(acquisition.contractCost),
+            Int64(acquisition.requiredRuns),
+            Int64(acquisition.coveredRuns),
+            Int64(acquisition.contractCount),
+            formatISK(acquisition.purchasePrice)
+          )
+            + (acquisition.isProvisional ? " ≈" : "")
+      )
+      .font(.caption.monospacedDigit())
+      if let route = acquisition.loyaltyStore {
+        Text(
+          verbatim: AppLocalization.format(
+            "Loyalty Store %@: %lld × purchase (%lld runs each), %@ LP, store cost %@, required items %@, LP value %@ per LP, total %@ for the used runs.",
+            route.corporationName
+              ?? AppLocalization.text("Unresolved corporation"),
+            Int64(route.purchases),
+            Int64(route.runsPerPurchase),
+            formatInteger(route.totalLP),
+            formatISK(route.totalISK),
+            formatISK(route.requiredItemsValue),
+            formatISK(route.iskPerLP),
+            formatISK(route.allocatedCost)
+          )
+        )
+        .font(.caption.monospacedDigit())
+        Label {
+          Text(verbatim: loyaltyPointCoverageText(route))
+        } icon: {
+          Image(
+            systemName: route.hasEnoughLP == true
+              ? "checkmark.circle.fill" : "exclamationmark.triangle"
+          )
+        }
+        .font(.caption)
+        .foregroundStyle(
+          route.hasEnoughLP == true ? DesignTokens.positive : DesignTokens.caution
+        )
+        Label {
+          Text(verbatim: walletCoverageText(route))
+        } icon: {
+          Image(
+            systemName: route.hasEnoughISK == true
+              ? "checkmark.circle.fill" : "exclamationmark.triangle"
+          )
+        }
+        .font(.caption)
+        .foregroundStyle(
+          route.hasEnoughISK == true ? DesignTokens.positive : DesignTokens.caution
+        )
+      } else if runtime.loyaltyStoreCatalog?.hasOfferDetails != true {
+        Text(
+          runtime.isRefreshingLoyaltyStoreCatalog
+            ? "The Loyalty Store catalog is being loaded."
+            : "No Loyalty Store catalog with offer details is available yet."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      } else {
+        Text("No Loyalty Store offers this Blueprint.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    .padding(.vertical, 4)
+  }
+
+  private func inventionDetailText(
+    _ acquisition: ManufacturingOpportunityBlueprintAcquisition
+  ) -> String {
+    guard let estimate = acquisition.invention else {
+      return AppLocalization.text(
+        runtime.isEstimatingOpportunityInvention
+          ? "Invention: the estimate is being calculated."
+          : "Invention: no estimate is available yet."
+      )
+    }
+    guard let perRun = estimate.costPerRun else {
+      return AppLocalization.text(
+        "Invention: unavailable. A reference price, a datacore at the Main Hub, the copy or invention facility, or reverse engineering (Tech III) is missing."
+      )
+    }
+    return AppLocalization.format(
+      "Invention: %@ per attempt, success chance %@, %lld runs per success → %@ per run, %@ for %lld runs.",
+      formatISK(estimate.attemptCost),
+      formatPercent(estimate.successProbability),
+      Int64(estimate.outputRuns ?? 0),
+      formatISK(perRun),
+      formatISK(acquisition.inventionCost),
+      Int64(acquisition.requiredRuns)
+    )
+  }
+
+  private func blueprintAcquisitionStateText(
+    _ state: ManufacturingOpportunityBlueprintAcquisition.State
+  ) -> String {
+    switch state {
+    case .notRequired: ""
+    case .ownRights:
+      AppLocalization.text("Own BPCs declared: the purchase is not priced.")
+    case .contract:
+      AppLocalization.text("Priced with the cheaper available route: contract.")
+    case .loyaltyStore:
+      AppLocalization.text(
+        "Priced with the cheaper available route: Loyalty Store with own LP."
+      )
+    case .invention:
+      AppLocalization.text(
+        "Priced with the cheaper available route: invention."
+      )
+    case .unavailable:
+      AppLocalization.text(
+        "No usable route: cost and profit remain unavailable."
+      )
+    }
+  }
+
+  private func loyaltyPointCoverageText(
+    _ route: ManufacturingOpportunityLoyaltyStoreRoute
+  ) -> String {
+    guard let available = route.availableLP else {
+      return AppLocalization.text(
+        "Character LP unknown: synchronize the characters and grant the Loyalty Points scope."
+      )
+    }
+    guard let name = route.bestCharacterName else {
+      return AppLocalization.format(
+        "No character has LP at this corporation; %@ LP are needed.",
+        formatInteger(route.totalLP)
+      )
+    }
+    return AppLocalization.format(
+      "%@ has %@ of %@ needed LP.",
+      name,
+      formatInteger(available),
+      formatInteger(route.totalLP)
+    )
+  }
+
+  private func walletCoverageText(
+    _ route: ManufacturingOpportunityLoyaltyStoreRoute
+  ) -> String {
+    guard let name = route.bestCharacterName, let wallet = route.availableISK
+    else {
+      return AppLocalization.format(
+        "Wallet unknown; %@ are needed for the store cost and the required items.",
+        formatISK(route.cashRequirement)
+      )
+    }
+    return AppLocalization.format(
+      "%@ has %@ of %@ needed for the store cost and the required items.",
+      name,
+      formatISK(wallet),
+      formatISK(route.cashRequirement)
+    )
   }
 
   private func textCell(
     _ value: String,
     width: CGFloat,
     alignment: Alignment = .trailing,
-    color: Color = DesignTokens.textPrimary
+    color: Color = DesignTokens.textPrimary,
+    help: String? = nil
   ) -> some View {
     Text(verbatim: value)
       .font(.caption.monospacedDigit())
       .lineLimit(1)
-      .help(value)
+      .help(help ?? value)
       .foregroundStyle(color)
       .frame(width: width, alignment: alignment)
   }
@@ -3500,7 +3922,12 @@ struct ManufacturingOpportunitiesView: View {
             formatISK(procurement.purchaseCashRequirement)
           )
           detailMetric("Installation", formatISK(costs.installationCost))
-          detailMetric("Blueprint allocation", formatISK(costs.blueprintAllocation))
+          detailMetric(
+            costs.blueprintAcquisition?.isRequired == true
+              && costs.blueprintAcquisition?.state != .ownRights
+              ? "BPC purchase" : "Blueprint allocation",
+            formatISK(costs.blueprintAllocation)
+          )
           detailMetric("Logistics", formatISK(costs.logisticsCost))
           detailMetric("Total cost", formatISK(costs.totalCost))
           detailMetric("Gross revenue", formatISK(costs.grossRevenue))
@@ -3560,6 +3987,9 @@ struct ManufacturingOpportunitiesView: View {
               formatISK(costs.onwardTransportCost)
             )
           }
+        }
+        if let acquisition = costs.blueprintAcquisition, acquisition.isRequired {
+          blueprintAcquisitionDetails(acquisition)
         }
         if let facilityName = row.facilityName {
           Label(facilityName, systemImage: "hammer.fill")
@@ -3914,7 +4344,19 @@ struct ManufacturingOpportunitiesView: View {
       sortColumn: activeSort.column.rawValue,
       sortDirection: activeSort.direction.rawValue,
       contractReferenceID: runtime.opportunityContractReferences?.id,
-      contractFeeRate: runtime.publicContractFeeRate(for: hubRole)
+      contractFeeRate: runtime.publicContractFeeRate(for: hubRole),
+      blueprintOfferTypeIDs: runtime.opportunityBlueprintOffers.keys.sorted(),
+      loyaltyStoreCatalogID: runtime.loyaltyStoreCatalog?.id,
+      usesOwnBlueprintRights: usesOwnBlueprintRights,
+      inventionRevision: runtime.opportunityInventionRevision,
+      loyaltyStoreOfferIdentity: loyaltyStoreBlueprintOffers.keys.sorted().map {
+        key in
+        let offers = loyaltyStoreBlueprintOffers[key] ?? []
+        return "\(key):"
+          + offers.map {
+            "\($0.corporationID)/\($0.availableLP ?? -1)/\($0.availableISK ?? -1)"
+          }.joined(separator: ",")
+      }
     )
   }
 
@@ -5348,6 +5790,11 @@ private struct ManufacturingOpportunityCandidateProjectionTrigger: Hashable {
   let sortDirection: String
   let contractReferenceID: UUID?
   let contractFeeRate: Double?
+  let blueprintOfferTypeIDs: [Int64]
+  let loyaltyStoreCatalogID: UUID?
+  let usesOwnBlueprintRights: Bool
+  let inventionRevision: UUID
+  let loyaltyStoreOfferIdentity: [String]
 }
 
 private struct ManufacturingOpportunityCandidateProjectionInput: Sendable {
@@ -5587,7 +6034,26 @@ enum OpportunityHubText {
 }
 
 /// Reloads opportunity contract prices for a new analysis or region scope.
+private struct LoyaltyStoreOfferTrigger: Equatable {
+  let analysisID: UUID?
+  let catalogID: UUID?
+  let loyaltyPoints: CharacterLoyaltyPointsSnapshot?
+  let wallets: [String: Double]
+}
+
+private struct HubTopPublishTrigger: Hashable {
+  let candidates: ManufacturingOpportunityCandidateProjectionTrigger
+  let isPrepared: Bool
+  let valueFilter: String
+  let maximumMaterialPurchase: String
+  let minimumAverageDailyDemand: Int
+  let runs: [Int64: Int]
+  let materialEfficiency: [Int64: Int]
+  let timeEfficiency: [Int64: Int]
+}
+
 private struct ContractReferenceTrigger: Equatable {
   let analysisID: UUID?
   let regionScope: Set<Int64>?
+  let loyaltyStoreCatalogID: UUID?
 }

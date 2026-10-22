@@ -1,5 +1,124 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 22. Oktober 2026 – Erfindungskosten in den Hub-Chancen
+
+Ziel (Eigentümerauftrag): Prüfen, ob Erfindungskosten für T2-Gegenstände in
+Main-, Home- und Coalition-Hub-Chancen enthalten sind, und sie andernfalls
+einbeziehen.
+
+Befund: Nicht enthalten. T2-Zeilen trugen nur die optionale, standardmäßig
+ausgeschaltete manuelle Blueprint-Umlage; eine Erfindungsrechnung gab es nur
+für die Bewertung eigener BPCs im Planner.
+
+Änderung:
+
+- `RuntimeState`: Erfindungsrechnung aus `ownedBPCValues` in
+  `inventionCost(outputBlueprintTypeID:…)` mit `ScienceCostInputs`
+  herausgelöst; beide Stellen nutzen dieselbe Rechnung. Das Main-Hub-Orderbuch
+  wird jetzt einmal für alle Datacores und Decryptoren vorab geladen (vorher nur
+  mit den Materialien des ersten Aufrufs).
+- Neu `loadOpportunityInventionEstimates`: Schätzung ohne Decryptor je
+  T2/T3-Blaupause eines Hubs, eine Stunde wiederverwendet; parallele
+  Anforderungen werden gesammelt statt verworfen.
+- Core: `ManufacturingOpportunityInventionEstimate`, Route `.invention` in der
+  BPC-Beschaffung; die günstigste nutzbare Route aus Erfindung, Vertrag und
+  LP-Store wird eingepreist. T2-BPC-Verträge werden dafür mitgeladen.
+- Hub-Ansicht: Erfindungszeile in **Blaupausenbeschaffung**, Kosten-Tooltip,
+  Spalten- und Schalterhilfe ergänzt.
+
+Prüfung (automatisch): `swift build` erfolgreich; `swift test` 483 Tests in
+31 Suites bestanden (neu `techIIRowsPriceTheExpectedInventionCostOrACheaperContract`).
+Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`;
+`swift test --package-path Packages/EVEStaticDataKit` 8 Tests bestanden.
+
+Offen: Decryptoren werden für Chancen nicht optimiert (Basis ohne Decryptor).
+Reverse Engineering (T3) bleibt unverfügbar, solange keine BPC-Verträge
+vorliegen. Live-Prüfung und visuelle Eigentümerabnahme stehen aus.
+
+## 22. Oktober 2026 – LP-Store-Route, Charakter-LP und Dashboard aus den Hubs
+
+Ziel (Eigentümerauftrag, Fortsetzung): LP-Store-Kosten (LP, ISK,
+Pflichtgegenstände) selbst einpreisen, LP und ISK der Charaktere abrufen und
+die Bezahlbarkeit zeigen; die Dashboard-Topliste muss die Werte der drei
+Hub-Chancenansichten verwenden statt eigener Annahmen.
+
+Befund: Der LP-Store-Katalog wurde nie abgerufen (`refreshLoyaltyStoreCatalog`
+ohne Aufrufer, keine Katalogdatei vorhanden). Damit wurden LP-Store-Blaupausen
+bisher nur über die Fraktions-/Storyline-Klasse erkannt.
+
+Änderung:
+
+- `LoyaltyStoreCatalog`: speichert vollständige Angebote (`LoyaltyStoreOffer`),
+  Corporation-Namen und ESI-Durchschnittspreise; Altkataloge ohne Angebote
+  bleiben lesbar und lösen eine Aktualisierung aus. Automatisches Laden beim
+  Start bei fehlendem, unvollständigem oder über einen Tag altem Katalog.
+- Neu `LoyaltyStoreValuation.swift`: `LoyaltyPointValuation` (LP-Wert =
+  Median der fünf besten Angebote je Corporation), `CharacterLoyaltyPoints`,
+  `LoyaltyStoreBlueprintOffer(Builder)`.
+- Neu `LoyaltyPointsSyncService.swift`: Scope `esi-characters.read_loyalty.v1`
+  (in `EVEScope.versionOne`, Scope-Erklärung in den Einstellungen), Abruf bei
+  jeder Charaktersynchronisierung, eigene JSON-Datei statt SwiftData-Schema.
+- BPC-Beschaffung: zweite Route `loyaltyStore`; gewählt wird die günstigere
+  nutzbare Route, die LP-Route nur mit genug LP eines bekannten Charakters.
+  LP-BPC-Runs aus unerforschten Vertrags-BPCs, sonst 1 Run.
+- Hub-Ansicht: Abschnitt **Blaupausenbeschaffung** in den Zeilendetails mit
+  LP- und Wallet-Deckung; Schalter heißt jetzt **Eigene BPCs vorhanden**.
+- Dashboard: `ManufacturingOpportunityTopRanking` (eigene Standardannahmen)
+  entfernt. Die Hub-Ansichten melden ihre sichtbaren Zeilen als
+  `HubTopOpportunityResult`; das Dashboard zeigt diese mit Stand und Hinweis
+  auf neuere Scans.
+- Seitenleiste: Zeile **LP-Stores** unter Automatische Daten.
+
+Prüfung (automatisch): `swift build` erfolgreich; `swift test` 482 Tests in
+31 Suites bestanden (neu u. a. `lpValueIsTheMedianOfTheFiveBestPricedOffers`,
+`blueprintOffersDistinguishUnknownFromZeroLoyaltyPoints`,
+`cheaperLoyaltyStoreRouteIsUsedOnlyWithEnoughLoyaltyPoints`,
+`hubTopListRanksTheHubProjectionAndSkipsRowsWithoutPotential`).
+Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`;
+`swift test --package-path Packages/EVEStaticDataKit` 8 Tests bestanden.
+
+Offen: Der neue LP-Scope erfordert eine erneute Anmeldung der Charaktere. Der
+erste Katalogabruf (rund 500 NPC-Corporations) läuft einige Minuten im
+Hintergrund. Die Dashboard-Spalte eines Hubs aktualisiert sich erst beim
+Öffnen des Hubs. Der LP-Wert beruht auf ESI-Durchschnittspreisen, nicht auf
+Hub-Orderbüchern. Live-Abruf und visuelle Eigentümerabnahme stehen aus.
+
+## 22. Oktober 2026 – Hub-Chancen: Vertragsspalten, Tooltips, BPC-Kauf
+
+Ziel (Eigentümerauftrag): In Main-, Home- und Coalition-Hub-Chancen das
+Vorzeichen von Vertragspreis/-gewinn eindeutig machen, alle Spalten per
+Mouse-Over erklären und den Kauf von LP-, Fraktions- und Storyline-BPCs in die
+Kosten einrechnen.
+
+Änderung:
+
+- Vertragsspalten: Die Farbe zeigt nur noch das Vorzeichen (grün +, rot −).
+  Vorher war ein vorläufiger Index orange wie eine Warnung. „≈“ bleibt, und ein
+  Zell-Tooltip erklärt Vorzeichen, vorläufigen Index und fehlenden Gebührensatz.
+- Spaltenköpfe Aufgabe, Gegenstand, Menge, Dauer, Gruppe und Kategorie
+  erklären jetzt ihre Berechnung; der Kosten- und Vertragsgewinn-Tooltip wurde
+  ergänzt.
+- Core: `ManufacturingOpportunityBlueprintAcquisitionProjector` erkennt
+  BPC-pflichtige Zeilen (LP-Store-Blaupause, Fraktion, Storyline) und bewertet
+  den Kauf über `ProductionTreeBPCContractSelector`, anteilig je genutztem Run.
+  `ManufacturingOpportunityContractContext` trägt BPC-Angebote,
+  LP-Store-Blaupausen und den Schalter „Eigene LP oder BPCs vorhanden“.
+- `RuntimeState.loadOpportunityContractReferences` liest die BPC-Angebote
+  gebündelt mit den Produktpreisen aus dem lokalen Index, begrenzt auf die
+  Vertragsregionen.
+- Neuer Schalter unter Kosten und Budget (`market-opportunities.cost.blueprint.own-rights`).
+
+Prüfung (automatisch): `swift build` erfolgreich; `swift test` 476 Tests in
+31 Suites bestanden (neu:
+`loyaltyStoreAndFactionBlueprintsPriceTheBPCPurchaseIntoTheCost`).
+Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`;
+`swift test --package-path Packages/EVEStaticDataKit` 8 Tests bestanden.
+
+Offen: LP-Store-Preise (LP + ISK + Pflichtgegenstände) werden nicht bewertet;
+mit eigenen LP gilt die manuelle Blueprint-Umlage. Die Dashboard-Top-Liste
+rechnet weiterhin ohne BPC-Kauf (am selben Tag behoben, siehe oben).
+Visuelle Eigentümerabnahme.
+
 ## 22. Oktober 2026 – Manuelle Preisprofile entfernt
 
 Ziel (Eigentümerauftrag): Prüfen, ob die Preisprofile in den Markteinstellungen

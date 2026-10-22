@@ -8397,6 +8397,10 @@ struct CharactersView: View {
       AppLocalization.text("Read owned blueprint originals and copies.")
     case "esi-characters.read_standings.v1":
       AppLocalization.text("Read standings used for market fees.")
+    case LoyaltyPointsSyncService.requiredScope:
+      AppLocalization.text(
+        "Read the character's Loyalty Points to check Loyalty Store BPC purchases."
+      )
     case "esi-industry.read_character_jobs.v1":
       AppLocalization.text("Read the character's industry jobs.")
     case "esi-markets.read_character_orders.v1":
@@ -8437,6 +8441,8 @@ struct CharactersView: View {
         ["Blueprints", "Production Planner"]
       case "esi-characters.read_standings.v1":
         ["Profile", "Production Planner"]
+      case LoyaltyPointsSyncService.requiredScope:
+        ["Main Hub Opportunities", "Home Hub Opportunities", "Coalition Hub Opportunities"]
       case "esi-industry.read_character_jobs.v1":
         ["Dashboard", "Net Worth", "Profile"]
       case "esi-markets.read_character_orders.v1":

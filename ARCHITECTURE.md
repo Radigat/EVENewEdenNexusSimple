@@ -1332,13 +1332,19 @@ shared recursive production graph remains owned by Planner and Main-Hub
 opportunities, including factual Warehouse allocation, Blueprint source and
 ME/TE selection, reactions, market depth, installation cost and logistics.
 
-Loyalty Store item classification is a separate manually refreshed, atomically
-saved snapshot. One refresh reads the public NPC-corporation list and each
-public LP offer endpoint sequentially at automatic priority. Later Faction,
-Tech, product and LP-BPC filter combinations are local set membership checks and
-perform no ESI request. ESI supplies LP cost, ISK cost and required items but no
-BPC runs, ME or TE; therefore the LP source requires an explicit complete ISK
-equivalent before it affects production profit.
+The Loyalty Store catalog is a separate, atomically saved snapshot, refreshed
+automatically at startup when missing, without offer details or older than one
+day. One refresh reads the public NPC-corporation list and each public LP offer
+endpoint sequentially at automatic priority, then corporation names and ESI
+average prices. Filter combinations remain local set membership checks. ESI
+supplies LP cost, ISK cost and required items but no BPC runs, ME or TE. Hub
+opportunities price the LP route in Core (`LoyaltyPointValuation`,
+`ManufacturingOpportunityBlueprintAcquisitionProjector`) with a self-calculated
+LP value per corporation and only when a character holds enough LP
+(`LoyaltyPointsSyncService`, own JSON store, no SwiftData schema change); run
+counts are inferred from unresearched contract BPCs. The Dashboard top list is
+not a separate calculation: each hub view publishes its visible rows as
+`HubTopOpportunityResult` through `RuntimeState`.
 
 The selected tree forces complete logistics policy: purchased lines are grouped
 by the facility that consumes them for Main-Hub-to-facility legs, and every

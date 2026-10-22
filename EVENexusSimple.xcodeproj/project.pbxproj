@@ -27,6 +27,7 @@
 		019FD0410000000000000012 /* AppOperatorConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000002 /* AppOperatorConfiguration.swift */; };
 		019FD0410000000000000013 /* PersistenceSchemaV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000003 /* PersistenceSchemaV1.swift */; };
 		019FD0410000000000000014 /* PersistenceRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FD0410000000000000004 /* PersistenceRecovery.swift */; };
+		01A09B0C0000000000000012 /* LoyaltyStoreValuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09B0C0000000000000002 /* LoyaltyStoreValuation.swift */; };
 		01A09B090000000000000012 /* LoyaltyStoreCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */; };
 		01A09C090000000000000012 /* UniverseTypeVolumeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09C090000000000000002 /* UniverseTypeVolumeService.swift */; };
 		01A09D090000000000000012 /* PackagedVolumeSnapshotCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */; };
@@ -43,6 +44,7 @@
 		1D00ECB0F3388C5B32184441 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */; };
 		1E600417C5B848EEAF4C1755 /* CharacterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F452FB1FDAFBD6E12B798D6 /* CharacterModels.swift */; };
 		20EFB0D2B0CE105388134CB5 /* libCSQLite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */; };
+		01A09B0C0000000000000013 /* LoyaltyPointsSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09B0C0000000000000003 /* LoyaltyPointsSyncService.swift */; };
 		228924544F2948A22F9CFF98 /* UniverseNameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */; };
 		237C28B3A49F5D209A81A7D1 /* BlueprintsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEED60D10F72549632C98A56 /* BlueprintsView.swift */; };
 		2671DB95E43D8F7804261A61 /* ReactionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29789B46A3F6749D2E76BCE3 /* ReactionModels.swift */; };
@@ -224,6 +226,7 @@
 		019FD0410000000000000002 /* AppOperatorConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOperatorConfiguration.swift; sourceTree = "<group>"; };
 		019FD0410000000000000003 /* PersistenceSchemaV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceSchemaV1.swift; sourceTree = "<group>"; };
 		019FD0410000000000000004 /* PersistenceRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceRecovery.swift; sourceTree = "<group>"; };
+		01A09B0C0000000000000002 /* LoyaltyStoreValuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyStoreValuation.swift; sourceTree = "<group>"; };
 		01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyStoreCatalog.swift; sourceTree = "<group>"; };
 		01A09C090000000000000002 /* UniverseTypeVolumeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseTypeVolumeService.swift; sourceTree = "<group>"; };
 		01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackagedVolumeSnapshotCatalog.swift; sourceTree = "<group>"; };
@@ -243,6 +246,7 @@
 		312D142B1E16A8C378F71587 /* RuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeState.swift; sourceTree = "<group>"; };
 		34B7BB4788BEBA60D7A5800B /* MarketModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketModels.swift; sourceTree = "<group>"; };
 		352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryRulesTests.swift; sourceTree = "<group>"; };
+		01A09B0C0000000000000003 /* LoyaltyPointsSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyPointsSyncService.swift; sourceTree = "<group>"; };
 		38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseNameService.swift; sourceTree = "<group>"; };
 		39DBB992564EF207D526DC27 /* ProductionOverview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionOverview.swift; sourceTree = "<group>"; };
 		3C5E612A0056AAB168E0190B /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -405,6 +409,7 @@
 				4C7C78585E5BA3B164F251BC /* PlayerStructureSearchService.swift */,
 				200372FAEF4F92809C607302 /* SolarSystemSearchService.swift */,
 				38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */,
+				01A09B0C0000000000000003 /* LoyaltyPointsSyncService.swift */,
 			);
 			path = ESI;
 			sourceTree = "<group>";
@@ -432,6 +437,7 @@
 				019FBE470000000000000001 /* MarketBrowserModels.swift */,
 				019FBE470000000000000002 /* MarketBrowserService.swift */,
 				01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */,
+				01A09B0C0000000000000002 /* LoyaltyStoreValuation.swift */,
 				34B7BB4788BEBA60D7A5800B /* MarketModels.swift */,
 			);
 			path = Market;
@@ -912,6 +918,7 @@
 				019FBE470000000000000011 /* MarketBrowserModels.swift in Sources */,
 				019FBE470000000000000012 /* MarketBrowserService.swift in Sources */,
 				01A09B090000000000000012 /* LoyaltyStoreCatalog.swift in Sources */,
+				01A09B0C0000000000000012 /* LoyaltyStoreValuation.swift in Sources */,
 				C1331DC10EACED041A875426 /* MarketModels.swift in Sources */,
 				A1A07595FEE9253FD0A90517 /* MemoizedIndustryCatalog.swift in Sources */,
 				01A09D090000000000000012 /* PackagedVolumeSnapshotCatalog.swift in Sources */,
@@ -932,6 +939,7 @@
 				9822FE3C1410EB6A12E07294 /* SolarSystemSearchService.swift in Sources */,
 				DECA0A6F7B397D308D8B6CFD /* SourceState.swift in Sources */,
 				228924544F2948A22F9CFF98 /* UniverseNameService.swift in Sources */,
+				01A09B0C0000000000000013 /* LoyaltyPointsSyncService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

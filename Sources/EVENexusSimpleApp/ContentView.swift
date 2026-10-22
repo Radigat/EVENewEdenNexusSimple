@@ -777,6 +777,13 @@ struct SidebarAutomaticDataStatus: View {
           color: secondaryHubAutomaticStatusColor(.coalition),
           progress: secondaryHubAutomaticProgress(.coalition)
         )
+        automaticStatusRow(
+          title: "Loyalty Stores",
+          detail: loyaltyStoreAutomaticStatus,
+          systemImage: "rosette",
+          color: loyaltyStoreAutomaticStatusColor,
+          progress: nil
+        )
       }
     }
     .padding(.horizontal, DesignTokens.spacingMD)
@@ -796,6 +803,7 @@ struct SidebarAutomaticDataStatus: View {
       || runtime.isAnalyzingManufacturingOpportunities
       || runtime.opportunityState(for: .home).isAnalyzing
       || runtime.opportunityState(for: .coalition).isAnalyzing
+      || runtime.isRefreshingLoyaltyStoreCatalog
   }
 
   private var optionsMenu: some View {
@@ -982,6 +990,53 @@ struct SidebarAutomaticDataStatus: View {
       )
     }
     return AppLocalization.text("Preparing")
+  }
+
+  /// Daily Loyalty Store catalog plus the LP known per character.
+  private var loyaltyStoreAutomaticStatus: String {
+    var parts: [String] = []
+    if runtime.isRefreshingLoyaltyStoreCatalog {
+      parts.append(AppLocalization.text("Updating"))
+    } else if let error = runtime.loyaltyStoreCatalogError {
+      parts.append(AppLocalization.text(error))
+    } else if let catalog = runtime.loyaltyStoreCatalog,
+      let offers = catalog.offers
+    {
+      parts.append(
+        AppLocalization.format(
+          "%lld offers · %@",
+          Int64(offers.count),
+          catalog.fetchedAt.formatted(date: .abbreviated, time: .shortened)
+        )
+      )
+    } else {
+      parts.append(AppLocalization.text("Not loaded yet"))
+    }
+    let knownCharacters = runtime.characterLoyaltyPoints?.characters.count ?? 0
+    parts.append(
+      AppLocalization.format("LP known for %lld character(s)", Int64(knownCharacters))
+    )
+    if !runtime.loyaltyPointsMissingScopeCharacters.isEmpty {
+      parts.append(
+        AppLocalization.format(
+          "LP scope missing: %@",
+          runtime.loyaltyPointsMissingScopeCharacters.sorted()
+            .joined(separator: ", ")
+        )
+      )
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  private var loyaltyStoreAutomaticStatusColor: Color {
+    if runtime.isRefreshingLoyaltyStoreCatalog { return DesignTokens.accent }
+    if runtime.loyaltyStoreCatalogError != nil { return DesignTokens.negative }
+    if runtime.loyaltyStoreCatalog?.hasOfferDetails != true
+      || !runtime.loyaltyPointsMissingScopeCharacters.isEmpty
+    {
+      return DesignTokens.caution
+    }
+    return DesignTokens.positive
   }
 
   private var mainHubAutomaticStatusColor: Color {
@@ -4560,19 +4615,19 @@ struct StartupDataStatusSection: View {
   }
 }
 
-/// Dashboard card "Top opportunities" (HUB_CHANCEN_PLAN P9). It ranks only the
-/// saved Main-, Home- and Coalition-Hub snapshots and starts no ESI request.
+/// Dashboard card "Top opportunities" (HUB_CHANCEN_PLAN P9). It calculates
+/// nothing itself: every column shows the rows its hub view last calculated
+/// with its own filters, Warehouse, cost, contract and Loyalty Store basis.
 struct DashboardTopOpportunitiesPanel: View {
   let onNavigate: (DashboardNavigationRequest) -> Void
   @EnvironmentObject private var runtime: RuntimeState
-  @State private var entries: [OpportunityHubRole: [ManufacturingOpportunityTopEntry]] = [:]
 
   private static let roles: [OpportunityHubRole] = [.main, .home, .coalition]
 
   var body: some View {
     Panel(title: "Top opportunities") {
       Text(
-        "Ranked by daily profit potential from the saved scans with standard assumptions: every material is bought, installation, sales tax and broker fee are included, no Blueprint allocation and no purchase budget. Open a hub for Warehouse-aware values."
+        "Ranked by daily profit potential exactly as calculated in the Main, Home and Coalition Hub opportunity lists, with their filters, Warehouse, cost settings, contract and Loyalty Store basis. A hub updates its column whenever it is opened."
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -4585,28 +4640,7 @@ struct DashboardTopOpportunitiesPanel: View {
         }
       }
     }
-    .task(id: snapshotIdentity) {
-      let snapshots = Self.roles.compactMap { role in
-        snapshot(for: role).map { (role, $0) }
-      }
-      let ranked = await Task.detached(priority: .utility) {
-        Dictionary(
-          uniqueKeysWithValues: snapshots.map {
-            ($0.0, ManufacturingOpportunityTopRanking.rank($0.1))
-          }
-        )
-      }.value
-      guard !Task.isCancelled else { return }
-      entries = ranked
-    }
     .accessibilityIdentifier("dashboard.top-opportunities")
-  }
-
-  /// Changes whenever a saved snapshot or the hub configuration changes.
-  private var snapshotIdentity: String {
-    Self.roles.map { role in
-      "\(role.rawValue):\(snapshot(for: role)?.id.uuidString ?? "-")"
-    }.joined(separator: "|")
   }
 
   private func snapshot(
@@ -4666,16 +4700,36 @@ struct DashboardTopOpportunitiesPanel: View {
         Text(hint.localizedUI)
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
-      } else if let rows = entries[role], !rows.isEmpty {
-        ForEach(rows) { entry in
-          entryRow(entry, role: role)
+      } else if let result = runtime.hubTopOpportunities[role] {
+        if result.snapshotID != snapshot(for: role)?.id {
+          Label(
+            "A newer scan exists. Open this hub to recalculate the list.",
+            systemImage: "clock.arrow.circlepath"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
         }
-      } else if entries[role] != nil {
-        Text("No saved row has an available daily profit potential.")
+        if result.entries.isEmpty {
+          Text("No visible row of this hub has an available daily profit potential.")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+        } else {
+          ForEach(result.entries) { entry in
+            entryRow(entry, role: role)
+          }
+        }
+        Text(
+          AppLocalization.format(
+            "Calculated in the hub %@",
+            result.calculatedAt.formatted(date: .abbreviated, time: .shortened)
+          )
+        )
+        .font(.caption2)
+        .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        Text("Not calculated yet. Open this hub once to calculate its list.")
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        ProgressView().controlSize(.small)
       }
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -4706,13 +4760,13 @@ struct DashboardTopOpportunitiesPanel: View {
   }
 
   private func entryRow(
-    _ entry: ManufacturingOpportunityTopEntry,
+    _ entry: HubTopOpportunityEntry,
     role: OpportunityHubRole
   ) -> some View {
     HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
       EVEItemText(
-        value: entry.row.productName,
-        typeID: entry.row.productTypeID,
+        value: entry.productName,
+        typeID: entry.productTypeID,
         font: .caption
       )
       Spacer()
@@ -4742,12 +4796,12 @@ struct DashboardTopOpportunitiesPanel: View {
           DashboardNavigationRequest(
             section: .planner,
             plannerLaunch: MainHubOpportunityPlannerHandoff.request(
-              productTypeID: entry.row.productTypeID,
-              productName: entry.row.productName,
-              requestedRuns: entry.row.runs,
-              wantedQuantity: Int(clamping: entry.row.producedQuantity),
-              materialEfficiency: entry.row.displayedMaterialEfficiency ?? 0,
-              timeEfficiency: entry.row.displayedTimeEfficiency ?? 0,
+              productTypeID: entry.productTypeID,
+              productName: entry.productName,
+              requestedRuns: entry.runs,
+              wantedQuantity: Int(clamping: entry.producedQuantity),
+              materialEfficiency: entry.materialEfficiency ?? 0,
+              timeEfficiency: entry.timeEfficiency ?? 0,
               targetMarket: role
             )
           )

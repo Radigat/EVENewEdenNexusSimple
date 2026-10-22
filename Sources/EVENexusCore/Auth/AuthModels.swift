@@ -44,6 +44,7 @@ public enum EVEScope {
   public static let versionOne: Set<String> = [
     "esi-skills.read_skills.v1",
     "esi-characters.read_standings.v1",
+    "esi-characters.read_loyalty.v1",
     "esi-characters.read_corporation_roles.v1",
     "esi-characters.read_blueprints.v1",
     "esi-contracts.read_character_contracts.v1",

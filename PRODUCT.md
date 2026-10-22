@@ -263,22 +263,24 @@ Empfehlungen bis zur gemeinsamen Aktualisierung ausdrücklich zurückgehalten.
 Unter den drei Marktkarten steht die Karte **Top-Chancen** mit je bis zu fünf
 Einträgen für Main, Home und Coalition Hub.
 
-- **Grundlage:** nur die gespeicherten Scans; die Karte startet keinen
-  ESI-Abruf. Gewertet wird nur ein Scan des aktuell konfigurierten exakten Hubs.
-- **Rangfolge:** nach täglichem Gewinnpotenzial mit sichtbar genannten
-  Standardannahmen: alle Materialien werden gekauft, Installation,
-  Verkaufssteuer und Brokergebühr sind enthalten, ohne Blueprint-Umlage und
-  ohne Einkaufsbudget. Es gilt die Route des jeweiligen Hubs. Zeilen ohne
-  verfügbares Gewinnpotenzial werden nicht gerankt; gleiche Werte folgen der
-  Typ-ID.
+- **Grundlage:** Die Karte rechnet nicht selbst. Jede Hub-Chancenansicht
+  meldet nach jeder Berechnung ihre sichtbaren Zeilen, also mit denselben
+  Filtern, Warehouse-Beständen, Planreservierungen, Kosteneinstellungen,
+  Zeilen-Runs/ME/TE und derselben Vertrags- und LP-Store-Grundlage. Die
+  Meldung wird lokal gespeichert (`market/hub-top-opportunities.json`) und
+  überdauert einen Neustart. Die Karte startet keinen ESI-Abruf.
+- **Aktualität:** Ein Hub aktualisiert seine Spalte, sobald er geöffnet ist.
+  Gibt es einen neueren Scan als den gemeldeten, weist die Spalte darauf hin;
+  ohne Meldung fordert sie zum einmaligen Öffnen des Hubs auf. Unter jeder
+  Spalte steht der Berechnungszeitpunkt.
+- **Rangfolge:** nach täglichem Gewinnpotenzial. Zeilen ohne verfügbares
+  Gewinnpotenzial werden nicht gerankt; gleiche Werte folgen der Typ-ID.
 - **Einträge:** Jeder Eintrag zeigt das Produkt mit Icon und kopierbarem Namen,
   das tägliche Gewinnpotenzial und den ROI.
 - **Bedienung:** Ein Klick auf den Hub-Titel öffnet die Chancenansicht.
   **Bauen** übergibt die gespeicherte Charge mit Zielmarkt an den Planner.
 - **Hinweise:** Ein nicht konfigurierter, gleicher oder unvollständiger Hub
   bekommt einen Hinweis, ebenso ein Hub ohne Scan.
-
-Werte mit Lagerbezug zeigen die Chancenansichten selbst.
 
 Mondmaterialien und Mineralien erhalten je eine kompakte Einkaufsliste mit
 Material, günstigstem konfiguriertem Kaufort und Stückpreis, ebenfalls mit
@@ -874,7 +876,10 @@ Alle drei Chancenansichten zeigen zusätzlich die sortierbaren Spalten
   -ROI sowie Hinweise zu fehlendem Angebot, vorläufigem Index oder fehlendem
   Satz.
 - **Vorläufige Werte:** Solange der Index unvollständig ist, sind die Werte
-  vorläufig und mit „≈“ markiert.
+  vorläufig und mit „≈“ markiert. Die Farbe zeigt nur das Vorzeichen:
+  Vertragsgewinn grün mit „+“ ist ein Gewinn, rot mit „−“ ein Verlust; der
+  Vertragspreis ist neutral. Der Mouse-Over einer Zelle nennt Vorzeichen,
+  vorläufigen Index und fehlenden Gebührensatz.
 - **Kein Angebot:** Der Wert bleibt unverfügbar, nie 0.
 - **Sortierung:** Unbekannte Werte stehen aufsteigend nach den bekannten.
 - **Datenquelle:** nur der lokale Vertragsindex, ohne ESI-Abruf, begrenzt auf
@@ -1118,7 +1123,65 @@ Durchschnitt mindestens in der eingegebenen Höhe angezeigt; unbekannt wird
 nicht als null behandelt. Der Filter löst weder ESI noch einen neuen Scan aus.
 
 Gesamtkosten bestehen aus Material-Wiederbeschaffungswert, Installation,
-optionaler Blueprint-Umlage und den erforderlichen Wegen der Profillogistik.
+Blueprint-Anteil und den erforderlichen Wegen der Profillogistik.
+
+Blueprint-Anteil: Loyalty-Store-, Fraktions- und Storyline-Blaupausen gibt es
+nur als BPC. Eine Manufacturing-Zeile braucht einen BPC-Kauf, wenn ihre
+Blaupause im zuletzt geladenen LP-Store-Katalog angeboten wird oder ihr Produkt
+Fraktion (Metagruppe 4) oder Storyline (Metagruppe 3) ist. Erste Route: Aus dem
+lokalen Vertragsindex wählt die App die günstigste Abdeckung aus
+zuordenbaren BPC-Verträgen (Item Exchange, genau eine BPC, Runs, ME und TE
+bekannt) in den gewählten **Vertragsregionen**. Der Kostenanteil ist der
+Kaufpreis mal genutzte Runs / gekaufte Runs; restliche Runs behalten ihren
+Wert für eine spätere Charge.
+
+Tech-II- und Tech-III-Zeilen (Metagruppe 2 bzw. 14) brauchen eine erfundene
+BPC. Ihre Route ist die erwartete Erfindung ohne Decryptor, je Versuch:
+Kopierjob der T1-Blaupause (EIV × 2 % × Gebührenfaktor der Kopieranlage),
+Datacores zum Orderbuch des Main Hubs und Erfindungsjobgebühr (Gebührenfaktor
+der Erfindungsanlage). Geteilt wird durch die Erfolgschance mit den besten
+trainierten Skills über alle Charaktere und durch die Output-Runs. Das ergibt
+Kosten je Run, die mit den Runs der Zeile multipliziert werden. Es ist dieselbe
+Rechnung wie bei der Planner-Bewertung eigener T2-BPCs. Die Schätzungen werden
+beim Öffnen eines Hubs für dessen T2/T3-Blaupausen berechnet und eine Stunde
+wiederverwendet. Hat die Blaupause laut SDE keine Erfindungsquelle, gilt sie als
+normale Blaupause. Reverse Engineering (Tech III) oder fehlende Preise,
+Datacore-Orders oder Anlagen machen die Erfindungsroute unverfügbar. Bis eine
+Schätzung vorliegt, ist sie ebenfalls unverfügbar, nie kostenlos.
+
+Weitere Route ist der LP-Store. Kosten je Kauf: ISK-Kosten + Pflichtgegenstände
+(ESI-Durchschnittspreis) + LP × LP-Wert der anbietenden Corporation. Der
+LP-Wert wird selbst berechnet: Für jedes Angebot dieser Corporation mit
+bepreistem Produkt und bepreisten Pflichtgegenständen gilt
+`(Produktwert − ISK-Kosten − Pflichtgegenstände) / LP`; der LP-Wert ist der
+Median der fünf besten positiven Angebote, Blaupausen-Angebote ausgenommen.
+ESI nennt die Runs einer LP-Store-BPC nicht. Verwendet wird die häufigste
+Run-Zahl unerforschter BPC-Verträge (ME 0, TE 0) desselben Typs; ohne Beleg
+wird ein Run je BPC angenommen, was die Kosten höchstens überschätzt. Auch hier
+wird anteilig je genutztem Run gerechnet.
+
+Die LP-Route zählt nur, wenn ein Charakter bei der Corporation genug LP hat
+(ESI-Scope `esi-characters.read_loyalty.v1`, abgerufen bei jeder
+Charaktersynchronisierung, gespeichert in
+`market/character-loyalty-points.json`). Unbekannte LP (Scope fehlt oder noch
+nicht synchronisiert) sind kein Guthaben von null. Eingepreist wird die
+günstigste nutzbare Route (Erfindung, Vertrag oder LP-Store); ohne nutzbare
+Route bleiben Kosten, Gewinn und
+davon abhängige Kennzahlen unverfügbar. Der BPC-Kauf ersetzt die manuelle
+Blueprint-Umlage. Mit **Eigene BPCs vorhanden** unter Kosten und Budget wird
+der Kauf nicht eingepreist; dann gilt die optionale Blueprint-Umlage.
+
+Die Zeilendetails zeigen den Abschnitt **Blaupausenbeschaffung**: gewählte
+Route, Erfindung mit Kosten je Versuch, Erfolgschance, Runs je Erfolg und
+Gesamtbetrag, Vertragsroute, LP-Route mit Corporation, Käufen, Runs, LP, Store-Kosten,
+Pflichtgegenständen, LP-Wert und Gesamtanteil sowie ob der Charakter mit den
+meisten LP genug LP und genug Wallet-ISK für Store-Kosten und
+Pflichtgegenstände hat. Der Mouse-Over der Kostenzelle fasst den BPC-Anteil
+zusammen; die Kostenkennzahl heißt dann **BPC-Kauf**. Bei einem unvollständigen
+Vertragsindex ist der Vertragspreis vorläufig. Alle übrigen Blaupausen nutzen
+weiterhin die optionale Blueprint-Umlage.
+
+Jeder Spaltenkopf der Chancentabelle erklärt seine Berechnung im Mouse-Over.
 Der Bruttoerlös ist der niedrigste aktive Verkaufsorderpreis am exakten Main
 Hub mal vollständiger Szenarioausgabe. Verkaufssteuer und Brokergebühr stammen
 aus dem konfigurierten Main-Hub-Händlerprofil und werden vom Bruttoerlös
@@ -1226,8 +1289,14 @@ können frühere Tage nicht rückwirkend rekonstruieren; die Historie wächst ab
 den folgenden gültigen Aktualisierungen. Die großen Chancen-Snapshots speichern
 nur die abgeleiteten Zeilenwerte, nicht die vollständigen Tageswörterbücher.
 
-Der lokal gespeicherte Snapshot öffentlicher LP-Shop-Angebote bleibt für
-die unterstützten Bauplanquellen verfügbar. Der
+Der LP-Store-Katalog wird beim Start automatisch geladen, wenn er fehlt,
+noch keine Angebotsdetails enthält oder älter als ein Tag ist
+(`market/loyalty-store-catalog.json`). Er speichert alle Angebote der
+NPC-Corporations mit LP, ISK, Pflichtgegenständen und Menge, die
+Corporation-Namen und die ESI-Durchschnittspreise der angebotenen Produkte und
+Pflichtgegenstände. Die Seitenleiste zeigt unter **Automatische Daten** die
+Zeile **LP-Stores** mit Angebotszahl, Stand, Anzahl der Charaktere mit
+bekannten LP und Charakteren ohne LP-Scope. Der
 Main-Hub-Chancenfilter **Loyalty-Store-BPCs** samt Aktualisierungsschaltfläche
 ist derzeit ausgeblendet und schränkt die Main-Hub-Kandidaten nicht ein.
 
