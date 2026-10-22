@@ -174,4 +174,5 @@ Abnahme-Checkliste: [HANDEL_PLAN.md](Documentation/HANDEL_PLAN.md).
     Orders;
   - Eigentümerabnahme.
 
-  Nicht committet.
+  Der Stand ist auf Auftrag des Eigentümers als `9d8f224` auf `main` lokal
+  committet, nicht gepusht.
