@@ -311,6 +311,7 @@ struct PlannerView: View {
   @State private var allianceFeeText = ""
   @State private var allianceDeliveryHub: PlannerTargetMarket?
   @State private var allianceInputError: String?
+  @State private var allianceAutoApplyTask: Task<Void, Never>?
   @State private var historicalLoadError: String?
   @State private var plannerMaterialSort = AppTableSortDescriptor(
     column: PlannerMaterialSortColumn.item,
@@ -6287,18 +6288,35 @@ struct PlannerView: View {
     )
   }
 
+  /// Current field values as input; `nil` while a field is invalid.
+  private var allianceFieldInput: PlannerAllianceSaleInput? {
+    PlannerAllianceInputParser.input(
+      unitPrice: allianceUnitPriceText,
+      acceptedQuantity: allianceAcceptedText,
+      feePercent: allianceFeeText,
+      deliveryHub: allianceDeliveryHub,
+      producedQuantity: runtime.plan.flatMap(allianceProducedQuantity),
+      locale: AppLocalization.currentLanguage.locale
+    )
+  }
+
+  /// Saves valid field edits shortly after typing stops, so the card, the
+  /// target-market suggestion and the stored plan follow without a button.
+  private func scheduleAllianceAutoApply() {
+    allianceAutoApplyTask?.cancel()
+    allianceAutoApplyTask = Task { @MainActor in
+      try? await Task.sleep(for: .milliseconds(600))
+      guard !Task.isCancelled, let input = allianceFieldInput else { return }
+      if input != allianceInput || runtime.plan?.allianceSale?.input != input {
+        applyAllianceInput(reportsErrors: false)
+      }
+    }
+  }
+
   /// Applies the alliance fields to the draft and the active plan.
-  private func applyAllianceInput() {
-    guard
-      let input = PlannerAllianceInputParser.input(
-        unitPrice: allianceUnitPriceText,
-        acceptedQuantity: allianceAcceptedText,
-        feePercent: allianceFeeText,
-        deliveryHub: allianceDeliveryHub,
-        producedQuantity: runtime.plan.flatMap(allianceProducedQuantity),
-        locale: AppLocalization.currentLanguage.locale
-      )
-    else {
+  private func applyAllianceInput(reportsErrors: Bool = true) {
+    guard let input = allianceFieldInput else {
+      guard reportsErrors else { return }
       allianceInputError = AppLocalization.text(
         "Check the alliance fields: price and fee must be numbers, the accepted quantity a whole number of at least 1 and the fee below 100 %."
       )
@@ -6332,15 +6350,17 @@ struct PlannerView: View {
     _ plan: IndustryPlanSnapshot,
     isHistorical: Bool
   ) -> some View {
+    // The editable card always calculates from the current fields; only an
+    // invalid field falls back to the last applied input.
+    let liveInput = isHistorical ? nil : (allianceFieldInput ?? allianceInput)
     let result =
-      isHistorical
-      ? plan.allianceSale
-      : (plan.allianceSale
-        ?? PlannerAllianceSaleCalculator.calculate(
+      liveInput.map { input in
+        PlannerAllianceSaleCalculator.calculate(
           plan: plan,
-          input: allianceInput,
-          publicContractFeeRate: allianceContractFeeRate(for: allianceInput.deliveryHub)
-        ))
+          input: input,
+          publicContractFeeRate: allianceContractFeeRate(for: input.deliveryHub)
+        )
+      } ?? plan.allianceSale
     let producedQuantity = allianceProducedQuantity(plan)
     let deliveryContractFeeRate = allianceContractFeeRate(for: allianceDeliveryHub)
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
@@ -6377,6 +6397,22 @@ struct PlannerView: View {
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
+          if let totalCost = result.totalCost, let gross = result.grossRevenue {
+            Text(
+              AppLocalization.format(
+                "%@ revenue − %@ fee − %@ costs (production incl. materials, blueprints, installation and inbound logistics %@ + delivery %@) = %@ profit",
+                formatISK(gross),
+                formatISK(result.fee),
+                formatISK(totalCost),
+                formatISK(totalCost - (result.deliveryCost ?? 0)),
+                formatISK(result.deliveryCost),
+                formatISK(result.profit)
+              )
+            )
+            .font(.caption2)
+            .foregroundStyle(DesignTokens.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+          }
           if result.feeSource == .publicContract {
             Text(
               AppLocalization.format(
@@ -6435,7 +6471,7 @@ struct PlannerView: View {
             Text("Price per unit (ISK)").font(.caption)
             TextField("Required", text: $allianceUnitPriceText)
               .textFieldStyle(.roundedBorder)
-              .onSubmit(applyAllianceInput)
+              .onSubmit { applyAllianceInput() }
               .onChange(of: allianceUnitPriceText) { _, newValue in
                 let grouped = PlannerAllianceInputParser.groupedEditingText(
                   newValue,
@@ -6450,7 +6486,7 @@ struct PlannerView: View {
             HStack(spacing: DesignTokens.spacingXS) {
               TextField("All produced units", text: $allianceAcceptedText)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit(applyAllianceInput)
+                .onSubmit { applyAllianceInput() }
                 .onChange(of: allianceAcceptedText) { _, newValue in
                   let grouped = PlannerAllianceInputParser.groupedEditingText(
                     newValue,
@@ -6509,7 +6545,7 @@ struct PlannerView: View {
               text: $allianceFeeText
             )
             .textFieldStyle(.roundedBorder)
-            .onSubmit(applyAllianceInput)
+            .onSubmit { applyAllianceInput() }
             .accessibilityIdentifier("planner.alliance.fee")
           }
           if deliveryContractFeeRate == nil {
@@ -6541,10 +6577,14 @@ struct PlannerView: View {
               .foregroundStyle(DesignTokens.negative)
           }
           Spacer()
-          Button("Apply alliance sale", action: applyAllianceInput)
+          Button("Apply alliance sale") { applyAllianceInput() }
             .buttonStyle(.bordered)
         }
         .onAppear { prefillAllianceAcceptedUnits(producedQuantity) }
+        .onChange(of: allianceUnitPriceText) { scheduleAllianceAutoApply() }
+        .onChange(of: allianceAcceptedText) { scheduleAllianceAutoApply() }
+        .onChange(of: allianceFeeText) { scheduleAllianceAutoApply() }
+        .onChange(of: allianceDeliveryHub) { scheduleAllianceAutoApply() }
         .onChange(of: producedQuantity) { _, newValue in
           prefillAllianceAcceptedUnits(newValue)
         }

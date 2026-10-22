@@ -1257,7 +1257,10 @@ etwa nach Absprache in Slack.
 
 - **Eingaben:** Stückpreis (Pflicht), abgenommene Menge, Gebühr in Prozent und
   Lieferort (Produktionsort, Main, Home oder Coalition Hub).
-  **Allianzverkauf übernehmen** oder die Eingabetaste übernimmt sie.
+  Die Karte rechnet sofort mit den aktuellen Feldwerten; gültige Eingaben
+  werden kurz nach dem Tippen automatisch übernommen und gespeichert.
+  **Allianzverkauf übernehmen** oder die Eingabetaste übernimmt sofort und
+  meldet ungültige Felder.
   - Preis und Menge erhalten beim Tippen Tausenderpunkte der App-Sprache; der
     Preis erlaubt Nachkommastellen mit Dezimalkomma.
   - Die Menge ist mit der produzierten Stückzahl des Endprodukts vorbelegt
@@ -1273,6 +1276,9 @@ etwa nach Absprache in Slack.
     als manuelle Annahme mit Hinweis.
   - Kosten = Produktionskosten inklusive Lieferung Main Hub → Home Hub, plus
     der vorhandene Ausgangstransport des Lieferhubs aus dem Plan.
+  - Gewinn = Erlös − Gebühr − Kosten; ROI = Gewinn ÷ Kosten. Die Karte zeigt
+    diese Rechnung mit Produktionskosten (Material, Blaupausen, Installation,
+    Eingangslogistik) und Lieferung aufgeschlüsselt.
   - Nicht abgenommene Einheiten bleiben unverkauft; ihre Produktionskosten
     sind trotzdem enthalten.
 - **Wann die Karte unverfügbar bleibt:** ohne Preis, mit mehreren Endprodukten,

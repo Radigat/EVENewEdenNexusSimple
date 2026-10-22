@@ -2520,3 +2520,4 @@
 "Public-contract fee %@ if empty" = "Öffentliche Vertragsgebühr %@, wenn leer";
 "No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings." = "Für diesen Lieferort ist keine bestätigte öffentliche Vertragsgebühr hinterlegt. Trage die Gebühr manuell ein oder bestätige sie für den Handelsort unter Daten & Einstellungen → Markteinstellungen.";
 "of %@" = "von %@";
+"%@ revenue − %@ fee − %@ costs (production incl. materials, blueprints, installation and inbound logistics %@ + delivery %@) = %@ profit" = "%1$@ Erlös − %2$@ Gebühr − %3$@ Kosten (Produktion inkl. Material, Blaupausen, Installation und Eingangslogistik %4$@ + Lieferung %5$@) = %6$@ Gewinn";

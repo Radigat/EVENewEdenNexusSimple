@@ -1922,3 +1922,4 @@
 "Public-contract fee %@ if empty" = "Public-contract fee %@ if empty";
 "No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings." = "No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings.";
 "of %@" = "of %@";
+"%@ revenue − %@ fee − %@ costs (production incl. materials, blueprints, installation and inbound logistics %@ + delivery %@) = %@ profit" = "%@ revenue − %@ fee − %@ costs (production incl. materials, blueprints, installation and inbound logistics %@ + delivery %@) = %@ profit";

@@ -6127,3 +6127,19 @@ Prüfung: Neue Tests `allianceSaleUsesTheDeliveryHubContractFeeUnlessAManualRate
 Parser-Test; `swift test` und `xcodebuild … test` (Debug, arm64) grün.
 Nicht geprüft: Sichtkontrolle in der laufenden App, insbesondere Pfeiltasten im
 Mengenfeld und Cursorverhalten beim Gruppieren; Eigentümerabnahme offen.
+
+## 22.10.2026 – Allianzmarkt rechnet live
+
+Befund (Eigentümer-Screenshot): Preis eingetragen, Karte zeigte trotzdem
+„Nicht verfügbar – Trage einen Allianzpreis ein“. Ursache: Die Karte rechnete
+nur mit dem zuletzt per Button übernommenen Stand, nicht mit den Feldern.
+Die Kostenbasis selbst (`totalProductionCost` = Material + Blaupausen +
+Installation + Eingangslogistik, plus Lieferung) war korrekt.
+
+Änderung: Die editierbare Karte rechnet aus den aktuellen Feldwerten; gültige
+Eingaben werden nach 600 ms automatisch übernommen und gespeichert. Neue
+Rechenzeile Erlös − Gebühr − Kosten (Produktion + Lieferung) = Gewinn.
+Rechenregeln unverändert.
+
+Prüfung: `swift test` und `xcodebuild … test` (Debug, arm64) grün. Nicht
+geprüft: Sichtkontrolle in der laufenden App; Eigentümerabnahme offen.
