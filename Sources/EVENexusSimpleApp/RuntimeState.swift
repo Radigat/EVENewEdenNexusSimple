@@ -222,6 +222,26 @@ struct CharacterBatchSyncResult: Equatable, Sendable {
   let synchronizedCount: Int
   let totalCount: Int
   let failedCharacterNames: [String]
+  /// Reason per failed character, in synchronization order.
+  var failures: [CharacterSyncFailure] = []
+
+  /// Failed characters grouped by identical reason, in first-seen order.
+  var failureGroups: [(reason: String, characterNames: [String])] {
+    var groups: [(reason: String, characterNames: [String])] = []
+    for failure in failures {
+      if let index = groups.firstIndex(where: { $0.reason == failure.reason }) {
+        groups[index].characterNames.append(failure.characterName)
+      } else {
+        groups.append((failure.reason, [failure.characterName]))
+      }
+    }
+    return groups
+  }
+}
+
+struct CharacterSyncFailure: Equatable, Sendable {
+  let characterName: String
+  let reason: String
 }
 
 /// Owner decision 2026-10-20: every app start loads the ESI-backed data once.

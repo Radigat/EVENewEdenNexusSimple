@@ -553,12 +553,323 @@ public struct IndustryPlanner: Sendable {
       )
     }
 
+    try await reconcileJobPieces(context: context, state: &state)
     return try await finish(
       requests: requests,
       context: context,
       state: state,
       reusableMakeOrBuyAnalyses: reusableMakeOrBuyAnalyses
     )
+  }
+
+  /// Rebuilds the job list and all material quantities from the final job
+  /// pieces. The expansion above records demand per production-tree branch;
+  /// here every produced product gets one aggregated demand, its jobs are
+  /// split by the scheduling rules (`splitRuns`), and every input is rounded
+  /// per piece exactly as EVE rounds per installed job. Products are
+  /// processed after all of their consumers, so rounding changes propagate
+  /// to intermediates. Jobs bound to a concrete supplied Blueprint (BPO or
+  /// BPC) stay whole; only jobs without a concrete Blueprint are split, which
+  /// assumes enough copies are available. The production tree keeps its
+  /// per-branch quantities.
+  private func reconcileJobPieces(
+    context: IndustryPlanningContext,
+    state: inout BuildState
+  ) async throws {
+    guard !state.jobDefinitions.isEmpty else { return }
+    let scheduling = context.productionBasis?.scheduling ?? .init()
+    let slotGroups = scheduling.resolvedSlotGroups(
+      capabilities: context.characterCapabilities
+    ).groups
+    func compatibleSlots(_ activity: IndustrySlotActivity) -> Int {
+      slotGroups.filter { $0.activities.contains(activity) }
+        .reduce(0) { $0 + $1.count }
+    }
+    func pieces(of job: JobDefinition) -> [JobDefinition] {
+      let runs =
+        job.blueprintSupplyJobID == nil
+        ? scheduling.splitRuns(
+          runs: job.runs,
+          durationSeconds: Self.jobDurationSeconds(job, context: context),
+          activity: job.slotActivity,
+          compatibleSlots: compatibleSlots(job.slotActivity)
+        )
+        : [job.runs]
+      return runs.enumerated().map { index, pieceRuns in
+        job.withRuns(pieceRuns, piece: index + 1, pieceCount: runs.count)
+      }
+    }
+    var need: [Int64: Int64] = [:]
+    func consume(_ job: JobDefinition) {
+      for material in job.definition.activity.materials {
+        need[material.typeID] = Self.saturatedAdd(
+          need[material.typeID, default: 0],
+          Self.pieceMaterialQuantity(job, material: material, context: context)
+        )
+      }
+    }
+
+    var supply = BuildState(stock: [:])
+    supply.installBlueprintSupplyPlans(context.blueprintSupplyPlans)
+    var reconciled: [JobDefinition] = []
+    let topLevelJobs = state.jobDefinitions.filter(\.isTopLevel)
+    // Top-level runs come from the request lines; replaying their Blueprint
+    // consumption keeps the supply cursor aligned for the intermediates.
+    var topLevelRuns: [Int64: (definition: BlueprintDefinition, runs: Int)] = [:]
+    for job in topLevelJobs where job.definition.activity.kind != .reaction {
+      let current = topLevelRuns[job.definition.blueprintTypeID]
+      topLevelRuns[job.definition.blueprintTypeID] = (
+        job.definition,
+        (current?.runs ?? 0).addingReportingOverflow(job.runs).partialValue
+      )
+    }
+    for (blueprintTypeID, entry) in topLevelRuns.sorted(by: { $0.key < $1.key }) {
+      _ = supply.consumeBlueprintJobs(
+        blueprintTypeID: blueprintTypeID,
+        blueprintName: try await context.catalog.typeName(id: blueprintTypeID),
+        requiredRuns: entry.runs,
+        fallbackME: 0,
+        fallbackTE: 0
+      )
+    }
+    for job in topLevelJobs {
+      for piece in pieces(of: job) {
+        reconciled.append(piece)
+        consume(piece)
+      }
+    }
+
+    // Produced intermediates: the expansion's products plus every material
+    // whose procurement is "produce" and that has a supported definition.
+    var definitions: [Int64: BlueprintDefinition] = [:]
+    for job in state.jobDefinitions where !job.isTopLevel {
+      definitions[job.definition.productTypeID] = job.definition
+    }
+    var pending = Array(Set(topLevelJobs.map(\.definition)
+      .flatMap { $0.activity.materials.map(\.typeID) })
+      .union(definitions.values.flatMap { $0.activity.materials.map(\.typeID) }))
+      .sorted()
+    var inspected: Set<Int64> = Set(definitions.keys)
+    while let typeID = pending.popLast() {
+      guard inspected.insert(typeID).inserted,
+        state.procurement[typeID]?.supplyMode == .produce,
+        let definition = try await context.catalog.productionDefinition(
+          productTypeID: typeID
+        ),
+        definition.activity.kind != .invention
+      else { continue }
+      definitions[typeID] = definition
+      pending.append(contentsOf: definition.activity.materials.map(\.typeID))
+    }
+    var consumers: [Int64: Int] = [:]
+    for (typeID, definition) in definitions {
+      for input in Set(definition.activity.materials.map(\.typeID))
+      where input != typeID && definitions[input] != nil {
+        consumers[input, default: 0] += 1
+      }
+    }
+    var ready = definitions.keys.filter { consumers[$0, default: 0] == 0 }.sorted()
+    var stockUsed: [Int64: Int64] = [:]
+    var toProduce: [Int64: Int64] = [:]
+    func stockShare(_ typeID: Int64, demand: Int64) -> Int64 {
+      guard let preference = state.procurement[typeID],
+        preference.supplyMode == .warehouse
+          || preference.usesAvailableStockFirst
+      else { return 0 }
+      return min(max(0, context.availableStock[typeID, default: 0]), demand)
+    }
+    while !ready.isEmpty {
+      let typeID = ready.removeFirst()
+      guard let definition = definitions[typeID] else { continue }
+      let demand = need[typeID, default: 0]
+      let fromStock = stockShare(typeID, demand: demand)
+      if fromStock > 0 { stockUsed[typeID] = fromStock }
+      let output = max(1, definition.activity.products.first?.quantity ?? 1)
+      let runs = Self.runsRequired(
+        wantedQuantity: demand - fromStock,
+        outputPerRun: output
+      )
+      if runs > 0 {
+        toProduce[typeID] = Self.saturatedMultiply(Int64(runs), output)
+        let template = try await intermediateJobTemplate(
+          definition: definition,
+          context: context
+        )
+        let slices =
+          definition.activity.kind == .reaction
+          ? [BlueprintJobSlice.fallback(runs: runs, me: 0, te: 0)]
+          : supply.consumeBlueprintJobs(
+            blueprintTypeID: definition.blueprintTypeID,
+            blueprintName: try await context.catalog.typeName(
+              id: definition.blueprintTypeID
+            ),
+            requiredRuns: runs,
+            fallbackME: template.me,
+            fallbackTE: template.te
+          )
+        for slice in Self.mergedSlices(slices) {
+          let job = JobDefinition(
+            definition: definition,
+            runs: slice.runs,
+            me: slice.me,
+            te: slice.te,
+            isTopLevel: false,
+            facilitySelection: template.facilitySelection,
+            selectedStructure: template.selectedStructure,
+            blueprintSupplyJobID: slice.supplyJobID,
+            blueprintSource: slice.source
+          )
+          for piece in pieces(of: job) {
+            reconciled.append(piece)
+            consume(piece)
+          }
+        }
+      }
+      for input in Set(definition.activity.materials.map(\.typeID))
+      where input != typeID && definitions[input] != nil {
+        consumers[input, default: 0] -= 1
+        if consumers[input] == 0 { ready.append(input) }
+      }
+      ready.sort()
+    }
+
+    var toBuy: [Int64: Int64] = [:]
+    for (typeID, demand) in need where definitions[typeID] == nil {
+      let fromStock = stockShare(typeID, demand: demand)
+      if fromStock > 0 { stockUsed[typeID] = fromStock }
+      if demand > fromStock { toBuy[typeID] = demand - fromStock }
+      if state.procurement[typeID] == nil {
+        state.procurement[typeID] = MaterialProcurementPreference(
+          supplyMode: .buy,
+          purchaseLocation: context.defaultPurchaseLocation
+        )
+      }
+    }
+    var stock = context.availableStock
+    for (typeID, used) in stockUsed {
+      stock[typeID] = max(0, stock[typeID, default: 0] - used)
+    }
+    state.required = need
+    state.stockUsed = stockUsed
+    state.toBuy = toBuy
+    state.toProduce = toProduce
+    state.stock = stock
+    state.jobDefinitions = reconciled
+    let shortfallCode = "industry.blueprint-supply-insufficient-runs"
+    state.warnings.removeAll { $0.code == shortfallCode }
+    state.warnings.append(
+      contentsOf: supply.warnings.filter { $0.code == shortfallCode }
+    )
+  }
+
+  /// Facility and fallback ME/TE of an intermediate job, as in `expand`.
+  private func intermediateJobTemplate(
+    definition: BlueprintDefinition,
+    context: IndustryPlanningContext
+  ) async throws -> (
+    facilitySelection: ProductionFacilitySelection?,
+    selectedStructure: ConfiguredIndustryStructure?,
+    me: Int,
+    te: Int
+  ) {
+    let isReaction = definition.activity.kind == .reaction
+    let classification = try await context.catalog.industryClassification(
+      productTypeID: definition.productTypeID
+    )
+    let manufacturingCategory =
+      isReaction ? nil : classification?.manufacturingCategory ?? .module
+    let facilitySelection = manufacturingCategory.flatMap {
+      context.productionBasis?.selection(for: $0)
+    }
+    let selectedStructure = facilitySelection.flatMap {
+      context.productionBasis?.structure(id: $0.structureID)
+    }
+    let efficiency = context.productionEfficiencies[definition.productTypeID]
+    let me =
+      isReaction
+      ? 0
+      : efficiency?.materialEfficiency
+        ?? context.productionBasis?.defaultIntermediateME
+        ?? context.manufacturingProfile.defaultIntermediateME
+    let te =
+      isReaction
+      ? 0
+      : efficiency?.timeEfficiency
+        ?? context.productionBasis?.defaultIntermediateTE
+        ?? context.manufacturingProfile.defaultIntermediateTE
+    return (facilitySelection, selectedStructure, me, te)
+  }
+
+  /// Joins slices of the same supplied Blueprint job (an original can
+  /// receive the remaining demand as a second slice).
+  private static func mergedSlices(
+    _ slices: [BlueprintJobSlice]
+  ) -> [BlueprintJobSlice] {
+    var result: [BlueprintJobSlice] = []
+    for slice in slices {
+      if let id = slice.supplyJobID,
+        let index = result.firstIndex(where: { $0.supplyJobID == id })
+      {
+        let existing = result[index]
+        result[index] = BlueprintJobSlice(
+          supplyJobID: id,
+          source: existing.source,
+          runs: existing.runs.addingReportingOverflow(slice.runs).partialValue,
+          me: existing.me,
+          te: existing.te
+        )
+      } else {
+        result.append(slice)
+      }
+    }
+    return result
+  }
+
+  /// Input quantity of one installed job (per-job rounding).
+  private static func pieceMaterialQuantity(
+    _ job: JobDefinition,
+    material: BlueprintMaterial,
+    context: IndustryPlanningContext
+  ) -> Int64 {
+    if job.definition.activity.kind == .reaction {
+      return scaledReactionQuantity(
+        rawRequired: saturatedMultiply(Int64(job.runs), material.quantity),
+        runs: job.runs,
+        multiplier: context.reactionProfile?.effectiveMaterialMultiplier ?? 1
+      )
+    }
+    return manufacturingMaterialQuantity(
+      baseQuantity: material.quantity,
+      runs: job.runs,
+      materialEfficiency: job.me,
+      facilityMultiplier:
+        job.facilitySelection?.materialMultiplier
+        ?? context.manufacturingProfile.effectiveMaterialMultiplier
+    )
+  }
+
+  /// Effective job duration: SDE base time × runs × facility time multiplier
+  /// × manufacturing TE (reactions have no TE).
+  private static func jobDurationSeconds(
+    _ job: JobDefinition,
+    context: IndustryPlanningContext
+  ) -> Int64 {
+    let timeMultiplier =
+      job.definition.activity.kind == .reaction
+      ? (context.reactionProfile?.effectiveTimeMultiplier ?? 1)
+      : job.facilitySelection?.timeMultiplier
+        ?? context.manufacturingProfile.effectiveTimeMultiplier
+    let runDuration =
+      Double(job.definition.activity.durationSeconds) * Double(job.runs)
+    let teMultiplier =
+      job.definition.activity.kind == .reaction
+      ? 1.0 : (1.0 - Double(job.te) / 100.0)
+    let effectiveDuration = runDuration * timeMultiplier * teMultiplier
+    if effectiveDuration <= 0 { return 0 }
+    if !effectiveDuration.isFinite || effectiveDuration >= Double(Int64.max) {
+      return Int64.max
+    }
+    return max(0, Int64(ceil(effectiveDuration)))
   }
 
   private func preloadPlanningMetadata(
@@ -994,10 +1305,10 @@ public struct IndustryPlanner: Sendable {
 
     var jobs: [IndustryJobCost] = []
     var totalSeconds: Int64 = 0
-    var manufacturingDurations: [Int64] = []
-    var reactionDurations: [Int64] = []
+    var productionScheduleEntries: [ProductionScheduleEntry] = []
     var installationCostComplete = true
-    let consolidatedJobs = consolidateIntermediateJobs(state.jobDefinitions)
+    // `reconcileJobPieces` already aggregated every product into its pieces.
+    let consolidatedJobs = state.jobDefinitions
     if consolidatedJobs.contains(where: {
       $0.definition.activity.kind == .reaction
     }) && context.reactionProfile == nil {
@@ -1012,36 +1323,24 @@ public struct IndustryPlanner: Sendable {
       installationCostComplete = false
     }
     for job in consolidatedJobs {
-      let timeMultiplier =
-        job.definition.activity.kind == .reaction
-        ? (context.reactionProfile?.effectiveTimeMultiplier ?? 1)
-        : job.facilitySelection?.timeMultiplier
-          ?? context.manufacturingProfile.effectiveTimeMultiplier
-      let baseDuration = Double(
-        job.definition.activity.durationSeconds
-      )
-      let runDuration = baseDuration * Double(job.runs)
-      let teMultiplier =
-        job.definition.activity.kind == .reaction
-        ? 1.0 : (1.0 - Double(job.te) / 100.0)
-      let effectiveDuration =
-        runDuration * timeMultiplier * teMultiplier
-      let durationSeconds: Int64
-      if effectiveDuration <= 0 {
-        durationSeconds = 0
-      } else if !effectiveDuration.isFinite
-        || effectiveDuration >= Double(Int64.max)
-      {
-        durationSeconds = Int64.max
-      } else {
-        durationSeconds = max(0, Int64(ceil(effectiveDuration)))
-      }
+      let durationSeconds = Self.jobDurationSeconds(job, context: context)
       totalSeconds = Self.saturatedAdd(totalSeconds, durationSeconds)
-      if job.definition.activity.kind == .reaction {
-        reactionDurations.append(durationSeconds)
-      } else {
-        manufacturingDurations.append(durationSeconds)
-      }
+      productionScheduleEntries.append(
+        ProductionScheduleEntry(
+          productTypeID: job.definition.productTypeID,
+          name: try await context.catalog.typeName(
+            id: job.definition.productTypeID
+          ),
+          runs: job.runs,
+          piece: job.piece,
+          pieceCount: job.pieceCount,
+          materialTypeIDs: Set(job.definition.activity.materials.map(\.typeID)),
+          blueprintSupplyJobID: job.blueprintSupplyJobID,
+          activity: job.definition.activity.kind == .reaction
+            ? .reaction : .manufacturing,
+          durationSeconds: durationSeconds
+        )
+      )
       var missingAdjustedPrice = false
       let eiv = job.definition.activity.materials.reduce(0.0) {
         partial, material in
@@ -1193,44 +1492,99 @@ public struct IndustryPlanner: Sendable {
           manufacturingCategory: job.facilitySelection?.category,
           blueprintSupplyJobID: job.blueprintSupplyJobID,
           blueprintSource: job.blueprintSource,
-          durationSeconds: durationSeconds
+          durationSeconds: durationSeconds,
+          piece: job.piece,
+          pieceCount: job.pieceCount
         )
       )
     }
     var scienceSeconds: Int64 = 0
     let concreteScienceJobs = Set(context.blueprintSupplyPlans.values.flatMap(\.scienceJobs))
     for job in concreteScienceJobs {
-      let duration: Int64?
-      switch job {
-      case .copying(let value): duration = value.durationSeconds
-      case .research(let value): duration = value.durationSeconds
-      case .invention(let value): duration = value.durationSeconds
-      }
-      if let duration { scienceSeconds = Self.saturatedAdd(scienceSeconds, duration) }
+      if let duration = job.durationSeconds { scienceSeconds = Self.saturatedAdd(scienceSeconds, duration) }
       else { warnings.append(DomainWarning(code: "science.duration-unavailable", message: "Die Dauer eines vorgeschalteten Wissenschaftsauftrags ist nicht verfügbar.", severity: .blocking)) }
     }
     if !concreteScienceJobs.isEmpty {
       totalSeconds = Self.saturatedAdd(totalSeconds, scienceSeconds)
-      warnings.append(DomainWarning(code: "science.sequential-prerequisites", message: "Geplante Wissenschaftsaufträge werden konservativ nacheinander vor der Fertigung eingeplant; tatsächliche Slot-Belegung und Invention-Erfolge können abweichen.", severity: .information))
     }
-    let configuredScheduling = context.productionBasis?.scheduling
-    let productionMakespan = max(
-      Self.slotMakespan(
-        durations: manufacturingDurations,
-        slots: configuredScheduling?.manufacturingSlots ?? 1
-      ),
-      Self.slotMakespan(
-        durations: reactionDurations,
-        slots: configuredScheduling?.reactionSlots ?? 1
-      )
+    let schedulingConfiguration =
+      context.productionBasis?.scheduling ?? .init()
+    let slotResolution = schedulingConfiguration.resolvedSlotGroups(
+      capabilities: context.characterCapabilities
     )
-    let makespan = Self.saturatedAdd(scienceSeconds, productionMakespan)
-    if consolidatedJobs.count > 1 {
+    warnings.append(contentsOf: slotResolution.warnings)
+    var supplyBlueprintNames: [Int64: String?] = [:]
+    for plan in context.blueprintSupplyPlans.values
+    where supplyBlueprintNames[plan.blueprintTypeID] == nil {
+      supplyBlueprintNames[plan.blueprintTypeID] =
+        try await context.catalog.typeName(id: plan.blueprintTypeID)
+    }
+    let scheduleGraph = Self.scheduleGraph(
+      production: productionScheduleEntries,
+      supplyPlans: Array(context.blueprintSupplyPlans.values),
+      blueprintNames: supplyBlueprintNames
+    )
+    let scheduledJobs = scheduleGraph.jobs
+    let slotSchedule = IndustrySlotScheduler.schedule(
+      jobs: scheduledJobs,
+      groups: slotResolution.groups
+    )
+    let makespan = slotSchedule.makespanSeconds ?? 0
+    var slotScheduleSummary = IndustrySlotScheduleSummary(
+      source: slotResolution.source,
+      enabledCharacterCount: slotResolution.enabledCharacterCount,
+      manufacturingSlots: slotResolution.slotCount(for: .manufacturing),
+      reactionSlots: slotResolution.slotCount(for: .reaction),
+      scienceSlots: slotResolution.slotCount(for: .science),
+      jobCount: scheduledJobs.count,
+      unschedulableActivities: slotSchedule.unschedulableActivities
+    )
+    slotScheduleSummary.doNotSplitShorterThanDays =
+      schedulingConfiguration.doNotSplitShorterThanDays
+    slotScheduleSummary.maximumJobDays = schedulingConfiguration.maximumJobDays
+    slotScheduleSummary.reactionRunsPerJob =
+      schedulingConfiguration.reactionRunsPerJob
+    if slotSchedule.makespanSeconds != nil {
+      slotScheduleSummary.entries = scheduleGraph.pieces.indices.map { index in
+        let piece = scheduleGraph.pieces[index]
+        return IndustryScheduleEntry(
+          id: index,
+          typeID: piece.typeID,
+          name: piece.name,
+          activity: scheduledJobs[index].activity,
+          runs: piece.runs,
+          piece: piece.piece,
+          pieceCount: piece.pieceCount,
+          startSeconds: slotSchedule.startSeconds[index],
+          finishSeconds: slotSchedule.finishSeconds[index]
+        )
+      }
+    }
+    if !slotSchedule.unschedulableActivities.isEmpty {
+      warnings.append(
+        DomainWarning(
+          code: "industry.slots.activity-without-slot",
+          message:
+            "No enabled character may run \(slotSchedule.unschedulableActivities.map(\.rawValue).joined(separator: ", ")) jobs; the estimated job time is unavailable.",
+          severity: .warning
+        )
+      )
+    } else if slotSchedule.hasDependencyCycle {
+      warnings.append(
+        DomainWarning(
+          code: "industry.slots.dependency-cycle",
+          message:
+            "The job dependencies form a cycle; the estimated job time is unavailable.",
+          severity: .warning
+        )
+      )
+    }
+    if scheduledJobs.count > 1 {
       warnings.append(
         DomainWarning(
           code: "industry.slot-estimated-makespan",
           message:
-            "Makespan uses the configured manufacturing and reaction slot counts; actual character availability can change it.",
+            "Estimated job time places every split job on the available manufacturing, reaction and science slots and starts a job once its share of produced inputs and its blueprint jobs are finished; actual availability can change it.",
           severity: .information
         )
       )
@@ -2121,6 +2475,7 @@ public struct IndustryPlanner: Sendable {
       compressedOreRefining: compressedOreRefiningPlan,
       blueprintSupplyPlans:
         persistedBlueprintSupplyPlans,
+      slotSchedule: slotScheduleSummary,
       immediateSale: mainSaleResults.0,
       listedSale: mainSaleResults.1,
       mainContractSale: mainSaleResults.2,
@@ -4057,43 +4412,6 @@ public struct IndustryPlanner: Sendable {
     return result.overflow ? nil : result.partialValue
   }
 
-  private func consolidateIntermediateJobs(
-    _ jobs: [JobDefinition]
-  ) -> [JobDefinition] {
-    var result = jobs.filter(\.isTopLevel)
-    var grouped: [JobKey: JobDefinition] = [:]
-    for job in jobs where !job.isTopLevel {
-      let key = JobKey(
-        productTypeID: job.definition.productTypeID,
-        activity: job.definition.activity.kind,
-        me: job.me,
-        te: job.te,
-        facilityID: job.facilitySelection?.structureID,
-        blueprintSupplyJobID: job.blueprintSupplyJobID
-      )
-      if let existing = grouped[key] {
-        let (combinedRuns, overflow) = existing.runs.addingReportingOverflow(
-          job.runs
-        )
-        grouped[key] = JobDefinition(
-          definition: existing.definition,
-          runs: overflow ? Int.max : combinedRuns,
-          me: existing.me,
-          te: existing.te,
-          isTopLevel: false,
-          facilitySelection: existing.facilitySelection,
-          selectedStructure: existing.selectedStructure,
-          blueprintSupplyJobID: existing.blueprintSupplyJobID,
-          blueprintSource: existing.blueprintSource
-        )
-      } else {
-        grouped[key] = job
-      }
-    }
-    result.append(contentsOf: grouped.values)
-    return result
-  }
-
   public static func manufacturingMaterialQuantity(
     baseQuantity: Int64,
     runs: Int,
@@ -4162,6 +4480,132 @@ public struct IndustryPlanner: Sendable {
     return (lhs >= 0) == (rhs >= 0) ? Int64.max : Int64.min
   }
 
+  /// Builds the job graph of the elapsed-time schedule.
+  ///
+  /// The production entries are the installed (already split) jobs. Inputs
+  /// are consumed at job start, and a producer's output is shared
+  /// proportionally by its consumers: a job that completes the fraction `f`
+  /// of its product's runs waits for the producer jobs up to fraction `f` of
+  /// the producer's runs. Production of different products therefore overlaps as soon as the
+  /// first batches are finished. Science jobs run in their listed order, and
+  /// every piece of a supplied manufacturing job waits for all of them.
+  static func scheduleGraph(
+    production: [ProductionScheduleEntry],
+    supplyPlans: [BlueprintSupplyPlan],
+    blueprintNames: [Int64: String?]
+  ) -> ScheduleGraph {
+    var scienceIndices: [BlueprintScienceJob: Int] = [:]
+    var scienceJobs: [(job: BlueprintScienceJob, blueprintTypeID: Int64)] = []
+    var scienceDependencies: [Int: Set<Int>] = [:]
+    var lastScienceBySupplyJobID: [UUID: Int] = [:]
+    let orderedPlans = supplyPlans.sorted { $0.id.uuidString < $1.id.uuidString }
+    for plan in orderedPlans {
+      var previous: Int?
+      for job in plan.scienceJobs {
+        let index: Int
+        if let existing = scienceIndices[job] {
+          index = existing
+        } else {
+          index = scienceJobs.count
+          scienceIndices[job] = index
+          scienceJobs.append((job, plan.blueprintTypeID))
+        }
+        if let previous, previous != index {
+          scienceDependencies[index, default: []].insert(previous)
+        }
+        previous = index
+      }
+      if let previous {
+        for manufacturingJob in plan.manufacturingJobs {
+          lastScienceBySupplyJobID[manufacturingJob.id] = previous
+        }
+      }
+    }
+    var jobs: [IndustryScheduledJob] = []
+    var pieces: [ScheduleGraph.Piece] = []
+    for (index, science) in scienceJobs.enumerated() {
+      jobs.append(
+        IndustryScheduledJob(
+          activity: science.job.slotActivity,
+          durationSeconds: science.job.durationSeconds ?? 0,
+          dependencies: Array(scienceDependencies[index] ?? []).sorted()
+        )
+      )
+      pieces.append(
+        ScheduleGraph.Piece(
+          typeID: science.blueprintTypeID,
+          name: blueprintNames[science.blueprintTypeID] ?? nil,
+          runs: science.job.scheduledRuns,
+          piece: 1,
+          pieceCount: 1
+        )
+      )
+    }
+    // The entries are the installed jobs (already split). All jobs of one
+    // product form its supply in entry order; cumulative runs give each job
+    // its share for the proportional dependencies.
+    var jobsByProduct: [Int64: [Int]] = [:]
+    for (index, entry) in production.enumerated() {
+      jobsByProduct[entry.productTypeID, default: []].append(index)
+    }
+    var cumulativeShare: [Int64] = Array(repeating: 0, count: production.count)
+    var productRuns: [Int64: Int64] = [:]
+    for (typeID, indices) in jobsByProduct {
+      var total: Int64 = 0
+      for index in indices {
+        total = total.addingReportingOverflow(Int64(max(0, production[index].runs)))
+          .partialValue
+        cumulativeShare[index] = total
+      }
+      productRuns[typeID] = max(1, total)
+    }
+    let offset = jobs.count
+    for (index, entry) in production.enumerated() {
+      var dependencies: Set<Int> = []
+      let consumedRuns = cumulativeShare[index]
+      let consumerTotal = productRuns[entry.productTypeID] ?? 1
+      for input in entry.materialTypeIDs.sorted()
+      where input != entry.productTypeID {
+        guard let producerJobs = jobsByProduct[input],
+          let producerTotal = productRuns[input]
+        else { continue }
+        // First producer job whose cumulative share covers this job's share.
+        let needed =
+          producerJobs.firstIndex {
+            cumulativeShare[$0].multipliedReportingOverflow(by: consumerTotal)
+              .partialValue
+              >= consumedRuns.multipliedReportingOverflow(by: producerTotal)
+                .partialValue
+          } ?? (producerJobs.count - 1)
+        for producer in producerJobs[0...max(0, needed)] {
+          dependencies.insert(offset + producer)
+        }
+      }
+      if let supplyJobID = entry.blueprintSupplyJobID,
+        let science = lastScienceBySupplyJobID[supplyJobID]
+      {
+        dependencies.insert(science)
+      }
+      jobs.append(
+        IndustryScheduledJob(
+          activity: entry.activity,
+          durationSeconds: entry.durationSeconds,
+          dependencies: dependencies.sorted()
+        )
+      )
+      pieces.append(
+        ScheduleGraph.Piece(
+          typeID: entry.productTypeID,
+          name: entry.name,
+          runs: entry.runs,
+          piece: entry.piece,
+          pieceCount: entry.pieceCount
+        )
+      )
+    }
+    return ScheduleGraph(jobs: jobs, pieces: pieces)
+  }
+
   public static func slotMakespan(
     durations: [Int64],
     slots: Int
@@ -4226,6 +4670,58 @@ public struct IndustryPlanner: Sendable {
   }
 }
 
+struct ScheduleGraph: Sendable {
+  struct Piece: Sendable {
+    let typeID: Int64?
+    let name: String?
+    let runs: Int
+    let piece: Int
+    let pieceCount: Int
+  }
+
+  let jobs: [IndustryScheduledJob]
+  let pieces: [Piece]
+}
+
+struct ProductionScheduleEntry: Sendable {
+  let productTypeID: Int64
+  let name: String?
+  let runs: Int
+  var piece: Int = 1
+  var pieceCount: Int = 1
+  let materialTypeIDs: Set<Int64>
+  let blueprintSupplyJobID: UUID?
+  let activity: IndustrySlotActivity
+  let durationSeconds: Int64
+}
+
+extension BlueprintScienceJob {
+  var durationSeconds: Int64? {
+    switch self {
+    case .copying(let value): value.durationSeconds
+    case .research(let value): value.durationSeconds
+    case .invention(let value): value.durationSeconds
+    }
+  }
+
+  /// Runs shown in the schedule: copies × runs, research levels, attempts.
+  var scheduledRuns: Int {
+    switch self {
+    case .copying(let value): value.totalLicensedRuns
+    case .research(let value): max(0, value.targetLevel - value.currentLevel)
+    case .invention(let value): value.confidenceInputBPCRuns
+    }
+  }
+
+  var slotActivity: IndustrySlotActivity {
+    switch self {
+    case .copying: .copying
+    case .research: .research
+    case .invention: .invention
+    }
+  }
+}
+
 private struct JobDefinition: Sendable {
   let definition: BlueprintDefinition
   let runs: Int
@@ -4236,6 +4732,9 @@ private struct JobDefinition: Sendable {
   let selectedStructure: ConfiguredIndustryStructure?
   let blueprintSupplyJobID: UUID?
   let blueprintSource: BlueprintSourceReference?
+  /// 1-based piece of the split job and the number of pieces.
+  let piece: Int
+  let pieceCount: Int
 
   init(
     definition: BlueprintDefinition,
@@ -4246,7 +4745,9 @@ private struct JobDefinition: Sendable {
     facilitySelection: ProductionFacilitySelection?,
     selectedStructure: ConfiguredIndustryStructure?,
     blueprintSupplyJobID: UUID? = nil,
-    blueprintSource: BlueprintSourceReference? = nil
+    blueprintSource: BlueprintSourceReference? = nil,
+    piece: Int = 1,
+    pieceCount: Int = 1
   ) {
     self.definition = definition
     self.runs = runs
@@ -4257,6 +4758,28 @@ private struct JobDefinition: Sendable {
     self.selectedStructure = selectedStructure
     self.blueprintSupplyJobID = blueprintSupplyJobID
     self.blueprintSource = blueprintSource
+    self.piece = piece
+    self.pieceCount = pieceCount
+  }
+
+  var slotActivity: IndustrySlotActivity {
+    definition.activity.kind == .reaction ? .reaction : .manufacturing
+  }
+
+  func withRuns(_ runs: Int, piece: Int, pieceCount: Int) -> JobDefinition {
+    JobDefinition(
+      definition: definition,
+      runs: runs,
+      me: me,
+      te: te,
+      isTopLevel: isTopLevel,
+      facilitySelection: facilitySelection,
+      selectedStructure: selectedStructure,
+      blueprintSupplyJobID: blueprintSupplyJobID,
+      blueprintSource: blueprintSource,
+      piece: piece,
+      pieceCount: pieceCount
+    )
   }
 }
 
@@ -4270,15 +4793,6 @@ private struct MakeOrBuyFacility: Sendable {
   let facilityTaxRate: Double?
   let needsReview: Bool
   let warnings: [DomainWarning]
-}
-
-private struct JobKey: Hashable, Sendable {
-  let productTypeID: Int64
-  let activity: BlueprintActivityDefinition.Kind
-  let me: Int
-  let te: Int
-  let facilityID: UUID?
-  let blueprintSupplyJobID: UUID?
 }
 
 private struct BlueprintJobSlice: Sendable {

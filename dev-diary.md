@@ -1,5 +1,154 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 22. Oktober 2026 – Fehlergrund je Charakter im Startablauf
+
+Anlass: Am 21.10. scheiterte beim Programmstart der Abgleich aller Charaktere
+(„Charaktere: Nicht verfügbar“, authentifizierte Analysen „Unvollständig“),
+ohne dass ein Grund sichtbar war; der Batch-Abgleich verwarf die Fehlermeldung.
+Nach einem manuellen Abgleich lief wieder alles. Die Ursache ist nicht mehr
+feststellbar; die Planner-Änderungen berühren diesen Ablauf nicht.
+
+Änderung:
+
+- `CharacterBatchSyncResult.failures` hält den Grund je Charakter;
+  `failureGroups` fasst gleiche Gründe zusammen.
+- `CharacterBatchSynchronizer` trennt die Schritte: Autorisierung lesen,
+  SSO/ESI-Abgleich, Zuordnung des Ergebnisses, lokales Speichern.
+- Die bisherigen Fehlertexte der Charakterverwaltung liegen gemeinsam in
+  `EVEConnectionErrorText`.
+- Dashboard „Automatische Daten“ zeigt die Gründe unter der Zeile
+  Charaktere; der manuelle Dashboard-Abgleich nennt sie in der Fehlermeldung.
+
+Prüfung (isolierte Pfade unter `/private/tmp/eve-functional/sync-reasons-20261022`):
+
+- `swift test`: 471 Swift-Testing-Tests in 31 Suites, 61 Tests in 3 Suites
+  (neu: `characterSyncFailuresAreGroupedByReasonWithReadableTexts`).
+- `swift test` in `Packages/EVEStaticDataKit`: 8 Tests.
+- `xcodebuild test` unsigniert: `TEST SUCCEEDED`.
+
+Offen: Sichtprüfung beim nächsten echten Fehlerfall.
+
+## 21. Oktober 2026 – Teilaufträge in der Bauauftragsliste mit Rundung je Auftrag
+
+Ziel (Eigentümerauftrag): Die Teilaufträge nicht nur für die Zeitschätzung,
+sondern als echte Aufträge der Bauauftragsliste verwenden, mit korrekter
+Materialrundung je Auftrag.
+
+Änderung:
+
+- **Planner:** Neuer Abgleich `reconcileJobPieces` nach dem Aufbau des
+  Produktionsbaums. Je hergestelltem Produkt Gesamtbedarf über alle Zweige,
+  Lageranteil, Runs, Bauplan-Zuordnung (`consumeBlueprintJobs`), Aufteilung
+  nach `splitRuns` und Rundung jedes Inputs je Teilauftrag; Verarbeitung nach
+  allen Verbrauchern (topologisch), damit Rundungsänderungen an Vorprodukte
+  weitergehen. Bedarf, Lager, Einkauf, Herstellungsmengen und Aufträge kommen
+  aus diesem Abgleich; die frühere Zusammenfassung gleicher Zwischenprodukte
+  (`consolidateIntermediateJobs`) entfällt. An eine ausgewählte BPO/BPC
+  gebundene Aufträge bleiben ganz. Der Produktionsbaum zeigt weiter den
+  Zweigbedarf.
+- **Modell:** `IndustryJobCost.piece`/`pieceCount` (optional, alte Pläne ohne).
+- **Zeitplan:** arbeitet auf den echten Teilaufträgen (keine zweite
+  Aufteilung); anteilige Abhängigkeiten je Produkt.
+- **Produktionsübersicht:** Materialkosten je Planzeile werden nach Zweigwerten
+  gewichtet und auf den Planwert skaliert (Summe exakt gleich).
+- **UI:** Bauauftragsliste mit „Auftrag k von n“ und Dauer, Texte angepasst.
+
+Geänderte Erwartungen: Zwei Planzeilen mit gemeinsamem Zwischenprodukt rechnen
+jetzt einen 3-Run-Auftrag (ME 10: 11 statt 4 + 8 = 12 Rohstoffe); die Tests
+`stockFirstSharedDemandAgreesWithEveryRequestProjection` und
+`recordingStockFirstPlanPreservesPlannerAndRequestCosts` sind entsprechend
+angepasst. Neu: `splitIntermediateJobsRoundMaterialsPerInstalledJob`.
+
+Prüfung (isolierte Pfade unter `/private/tmp/eve-functional/job-pieces-20261021`):
+
+- `swift test`: 471 Swift-Testing-Tests in 31 Suites, 60 Tests in 3 Suites.
+- `swift test` in `Packages/EVEStaticDataKit`: 8 Tests.
+- `xcodebuild test` unsigniert: `TEST SUCCEEDED`.
+
+Offen:
+
+- Ein Produkt, das erst durch die Neurundung über den Lagerbestand hinaus
+  benötigt wird und dessen Inputs im Baum nie besucht wurden, kauft diese
+  Inputs ohne eigene Bezugswahl.
+- Eigentümerabnahme mit der Rhea offen.
+
+## 21. Oktober 2026 – Auftragsaufteilung, Reaktionsstapel und Zeitplan
+
+Ziel: Die vorhandenen Einstellungen „Don't split jobs shorter than“ und „No jobs
+longer than“ in der Auftragsdauer nutzen, Reaktionen standardmäßig in Stapeln zu
+100 Runs rechnen und die Zeitlogik nachvollziehbar machen. Alles, was nicht
+aufeinander wartet, soll gleichzeitig laufen.
+
+Änderung:
+
+- **Core:** `ProductionSchedulingConfiguration.reactionRunsPerJob` (Standard 100,
+  alte Daten ebenfalls 100) und `splitRuns(...)`: Fertigung nach Tage-Fenster
+  plus Verteilung auf freie Slots, Reaktionen in Stapeln von mindestens der
+  Stapelgröße (ein Rest verlängert die Stapel), Wissenschaft ungeteilt.
+- **Scheduler:** Der Planer baut Teilaufträge mit anteiligen Abhängigkeiten
+  (ein Teil wartet nur auf seinen Anteil am Vorprodukt) und liefert Start/Ende
+  je Teil. Der Plan speichert die Aufteilung und die Einträge im
+  `slotSchedule`.
+- **UI:** Feld „Reaktions-Runs je Auftrag“ mit Erklärung der Aufteilung; im
+  Planner die Aufteilungsangabe unter der Dauer und die sortierbare
+  Aufklappliste „Zeitplan“.
+- Die Teilaufträge betreffen nur die Zeitschätzung; Materialien, Kosten und die
+  Bauauftragsliste bleiben ungeteilt.
+
+Prüfung (isolierte Pfade unter `/private/tmp/eve-functional/slots-split-20261021`):
+
+- `swift test`: 470 Swift-Testing-Tests in 31 Suites, 60 Tests in 3 Suites
+  (neu: 3 Tests zu Reaktionsstapeln, Tage-Fenster und anteiligen Abhängigkeiten).
+- `swift test` in `Packages/EVEStaticDataKit`: 8 Tests.
+- `xcodebuild test` unsigniert: `TEST SUCCEEDED`.
+
+Offen:
+
+- Materialrundung je geteiltem Auftrag: im folgenden Eintrag umgesetzt.
+- Eigentümerabnahme mit der Rhea und echten Charakteren offen.
+
+## 21. Oktober 2026 – Slot-basierte Auftragsdauer und Industrie-Charaktere
+
+Ziel: Die voraussichtliche Auftragsdauer des Planners aus den tatsächlich
+verfügbaren Slots der Charaktere berechnen, statt aus einer pauschalen Slot-Zahl
+ohne Abhängigkeiten; je Charakter festlegen, ob, wofür und mit wie vielen Slots
+er eingesetzt wird.
+
+Änderung:
+
+- **Core:** `ProductionSchedulingConfiguration` um `scienceSlots` und
+  `characterAssignments` (`CharacterIndustryAssignment`: Freigabe, erlaubte
+  Tätigkeiten, optionale Grenze je Slot-Art) erweitert; ältere gespeicherte
+  Konfigurationen dekodieren mit Standardwerten. `IndustrySkillSlotLimits`
+  leitet das Skill-Maximum aus den aktiven Skillstufen ab (SDE-geprüfte IDs
+  3387/24625, 45746/45748/45749, 3406/24624). `IndustrySlotScheduler` plant
+  alle Aufträge deterministisch mit Abhängigkeiten (Vorprodukt vor Verbraucher,
+  Kopie/Forschung/Invention vor dem versorgten Fertigungsauftrag).
+  Wissenschaftsaufträge laufen nicht mehr pauschal nacheinander vor der
+  gesamten Fertigung.
+- **Plan:** `IndustryPlanSnapshot.slotSchedule` speichert Quelle und Slot-Zahlen;
+  fehlt für eine benötigte Tätigkeit jeder Slot, ist die Dauer „Nicht
+  verfügbar“ statt 0. Alte Pläne bleiben unverändert.
+- **UI:** Neuer Bereich „Industrie-Charaktere“ in den Industrieeinstellungen;
+  manuelles Feld „Wissenschafts-Slots“; der Planner nennt unter der Dauer Quelle
+  und Slot-Zahlen.
+
+Prüfung:
+
+- `swift test`: 466 Swift-Testing-Tests in 30 Suites (5 neue Tests für
+  Skill-Maxima, Slot-Auflösung, Scheduler, Legacy-Dekodierung und
+  Planner-Abhängigkeit).
+- `swift test` in `Packages/EVEStaticDataKit`: 8 Tests.
+- `xcodebuild test` unsigniert, isolierte Pfade: `TEST SUCCEEDED`
+  (466 Swift-Testing-Tests, 8 XCTest-Fälle).
+
+Offen:
+
+- Aufteilen langer Aufträge: im folgenden Eintrag umgesetzt.
+- Industry-/Advanced-Industry-Zeitboni der Charaktere fließen weiterhin nicht
+  in die Auftragsdauer ein.
+- Visuelle und fachliche Eigentümerabnahme mit echten Charakteren offen.
+
 ## 21. Oktober 2026 – Commit und Push des Hub-Chancen-Ausbaus
 
 Auf Auftrag des Eigentümers ist der Stand P0–P13 als `9000f3f` auf `main`

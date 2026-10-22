@@ -9,6 +9,38 @@ import Testing
 @MainActor
 struct RuntimeFeatureStateTests {
   @Test
+  func characterSyncFailuresAreGroupedByReasonWithReadableTexts() {
+    let keychain = EVEConnectionErrorText.message(for: AuthError.keychain(-25_300))
+    let missing = EVEConnectionErrorText.message(for: AuthError.noStoredAuthorization)
+    let offline = EVEConnectionErrorText.message(
+      for: URLError(.notConnectedToInternet)
+    )
+    #expect(keychain != missing)
+    #expect(offline != keychain)
+    let result = CharacterBatchSyncResult(
+      synchronizedCount: 1,
+      totalCount: 4,
+      failedCharacterNames: ["Pilot A", "Pilot B", "Pilot C"],
+      failures: [
+        CharacterSyncFailure(characterName: "Pilot A", reason: keychain),
+        CharacterSyncFailure(characterName: "Pilot B", reason: offline),
+        CharacterSyncFailure(characterName: "Pilot C", reason: keychain),
+      ]
+    )
+    let groups = result.failureGroups
+    #expect(groups.map(\.reason) == [keychain, offline])
+    #expect(groups.map(\.characterNames) == [["Pilot A", "Pilot C"], ["Pilot B"]])
+    // Results built without reasons keep working and show no group.
+    #expect(
+      CharacterBatchSyncResult(
+        synchronizedCount: 0,
+        totalCount: 1,
+        failedCharacterNames: ["Pilot D"]
+      ).failureGroups.isEmpty
+    )
+  }
+
+  @Test
   func dashboardCardWidthsKeepRatiosAndStackOnNarrowWindows() {
     let finance = DashboardCardLayout(weights: [1, 2], minimumWidths: [280, 560])
     let wide = finance.widths(for: 1200)

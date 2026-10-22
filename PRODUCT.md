@@ -321,7 +321,15 @@ Laufend, Aktuell, Teilweise, Veraltet, Verboten, Nicht verfügbar) und, falls
 bekannt, die Uhrzeit des letzten Datenstands.
 
 - **Charaktere:** Grundlage ist das Sync-Ergebnis des Startablaufs. Scheitern
-  einzelne Charaktere, gilt der Stand als Teilweise.
+  einzelne Charaktere, gilt der Stand als Teilweise, scheitern alle, als Nicht
+  verfügbar. Unter der Zeile steht dann der Grund je Charakter, gleiche Gründe
+  zusammengefasst und die Namen kopierbar. Unterschieden werden: gespeicherte
+  Autorisierung nicht lesbar, Fehler bei EVE SSO oder ESI (zum Beispiel
+  Schlüsselbund nicht lesbar, fehlende Autorisierung, Berechtigung abgelehnt,
+  Ratenlimit, Serverfehler, Dienst nicht erreichbar), Ergebnis eines anderen
+  Charakters verworfen und lokales Speichern fehlgeschlagen. Der manuelle
+  Dashboard-Abgleich nennt dieselben Gründe in seiner Fehlermeldung. Es werden
+  keine Token-Inhalte angezeigt.
 - **Lager & Baupläne:** Grundlage sind die gespeicherten ESI-Metadaten der
   Domänen `assets` und `blueprints`. Fehlt für einen Charakter eine davon, ist
   der Stand nicht Aktuell, sondern Teilweise.
@@ -897,6 +905,84 @@ Nachfragefehler und andere fachliche Warnungen bleiben außerhalb dieser Gruppe
 immer sichtbar. Die sortierbaren Kennzahlen erklären weiterhin ihre Quelle und
 Formel, insbesondere Gesamtkosten, Bruttoerlös, Verkaufssteuer, Brokergebühr,
 Gewinn, tägliches Gewinnpotenzial, ROI, ISK/h und ISK/m³.
+
+**Auftragsdauer und Industrie-Charaktere.** Der Planner weist zwei Zeiten aus:
+Der **Gesamte Auftragszeitaufwand** addiert die Dauer aller Aufträge. Die
+**Voraussichtliche Auftragsdauer** teilt die Aufträge zunächst auf und verteilt
+dann alle Teilaufträge gleichzeitig auf die verfügbaren Fertigungs-, Reaktions-
+und Wissenschafts-Slots (Kopieren, Forschung, Invention). Reaktionen,
+Forschung und Fertigung von Teilen mit gekauften oder gelagerten Materialien
+laufen damit parallel ab Planbeginn.
+
+Aufteilung (Industrieeinstellungen → **Job Mode, Slots & Account**):
+
+- **Fertigung** nutzt das Tage-Fenster. Ein Auftrag bis „Don't split jobs
+  shorter than“ (Standard 1 Tag) bleibt ganz. Ein längerer Auftrag wird so
+  geteilt, dass kein Teil „No jobs longer than“ (Standard 3 Tage) überschreitet,
+  und darüber hinaus auf freie passende Slots verteilt, solange jeder Teil
+  mindestens die Mindestdauer behält. Ein einzelner Run, der länger als die
+  Höchstdauer ist, bleibt ein längerer Auftrag. Widersprechen sich Minimum und
+  Maximum, gilt das Maximum.
+- **Reaktionen** laufen in Stapeln von mindestens „Reaktions-Runs je Auftrag“
+  (Standard 100 Runs, etwa 5–6 Tage). Ein Rest verlängert die Stapel
+  gleichmäßig, statt einen kurzen Stapel zu erzeugen (250 Runs → 2 × 125,
+  120 Runs → 1 × 120). Mit 0 Runs gilt auch für Reaktionen das Tage-Fenster.
+- **Wissenschaftsaufträge** werden nicht geteilt.
+- Runs werden gleichmäßig verteilt, frühere Teile erhalten die Zusatz-Runs; je
+  Auftrag höchstens 500 Teile.
+- Aufträge, die an eine ausgewählte BPO oder BPC gebunden sind, bleiben ganz.
+  Geteilt werden nur Aufträge ohne konkreten Bauplan; das setzt voraus, dass
+  genügend Kopien vorhanden oder gekauft sind.
+
+**Bauauftragsliste und Materialrundung.** Die Teilaufträge sind die echten
+Aufträge des Plans. Nach dem Aufbau des Produktionsbaums bildet der Planner je
+hergestelltem Produkt den Gesamtbedarf über alle Zweige, teilt den Auftrag nach
+den obigen Regeln und rundet jeden Input je Teilauftrag, wie EVE es je
+installiertem Job tut (Fertigung: ME und Struktur-Multiplikator, mindestens ein
+Stück je Run; Reaktionen: Struktur-Multiplikator). Produkte werden nach allen
+ihren Verbrauchern berechnet, sodass Rundungsänderungen an die Vorprodukte
+weitergegeben werden. Lagerbestand, Einkaufsliste, Herstellungsmengen, Kosten,
+Installationskosten und Bauauftragsliste verwenden diese Werte; die
+Bauauftragsliste zeigt je Teil „Auftrag k von n“ und die Dauer. Der
+Produktionsbaum zeigt weiter den Bedarf je Zweig. Die Materialkosten je
+Planzeile in der Produktionsübersicht werden nach den Zweigwerten gewichtet und
+auf die Materialkosten des Plans skaliert, sodass ihre Summe dem Planwert
+entspricht.
+
+Abhängigkeiten: EVE verbraucht Materialien beim Start. Ein Teilauftrag wartet
+deshalb nur auf seinen **Anteil** an im Plan selbst hergestellten Vorprodukten:
+Ein Teil, der den Anteil f der Runs seines Produkts abschließt, wartet auf die
+Teile des Vorprodukts bis zum Anteil f von dessen Runs. Sobald die ersten
+Reaktionsstapel fertig sind, kann so die erste Komponente beginnen. Jeder Teil
+eines mit Kopie, Forschung oder Invention versorgten Fertigungsauftrags wartet
+auf diese Wissenschaftsaufträge, die untereinander in ihrer Reihenfolge laufen.
+Gekaufte und gelagerte Materialien sowie vorhandene oder gekaufte BPCs stehen
+sofort bereit. Vergeben wird deterministisch nach frühestmöglichem Start, dann
+nach längstem verbleibendem kritischem Pfad.
+
+Unter der Dauer nennt der Planner Slot-Quelle, Slot-Zahlen und die verwendete
+Aufteilung. Die Aufklappliste **Zeitplan** zeigt jeden eingeplanten Teilauftrag
+mit Produkt, Tätigkeit, Runs, Teil, Start, Ende und Dauer (Abstände ab
+Planbeginn); alle Spalten sind sortierbar, Standard ist der Start.
+
+Die Slots kommen aus **Industrieeinstellungen → Industrie-Charaktere**. Für jeden
+verbundenen Charakter wird festgelegt, ob er für die Industrie verwendet wird,
+welche Tätigkeiten er übernehmen darf (Fertigung, Reaktionen, Kopieren,
+Forschung, Invention) und optional eine Slot-Grenze je Slot-Art. Das
+Skill-Maximum ergibt sich aus den synchronisierten aktiven Skillstufen:
+Fertigung 1 + Mass Production + Advanced Mass Production, Wissenschaft
+1 + Laboratory Operation + Advanced Laboratory Operation (gemeinsam für Kopieren,
+Forschung und Invention), Reaktionen 1 + Mass Reactions + Advanced Mass
+Reactions, ohne den Skill Reactions jedoch 0. Wirksam ist das Minimum aus
+Skill-Maximum und Grenze; eine leere Grenze bedeutet Skill-Maximum. Sind die
+Skills eines Charakters nicht verfügbar, zählt nur eine ausdrücklich
+eingetragene Grenze (mit Warnung), sonst trägt er keine Slots bei. Solange kein
+Charakter freigegeben ist, gelten die manuellen Slot-Zahlen für Fertigung,
+Reaktionen und Wissenschaft unter **Job Mode, Slots & Account**. Darf kein
+freigegebener Charakter eine benötigte Tätigkeit ausführen, bleibt die
+Auftragsdauer ausdrücklich **Nicht verfügbar**. Pläne, die vor dieser Rechnung
+gespeichert wurden, zeigen ihre damals berechnete Dauer unverändert und keinen
+Zeitplan.
 
 Die Warnungsliste des Planners zeigt nur entscheidende Meldungen: blockierende
 Warnungen zuerst, danach Warnungen mit Einfluss auf Ergebnis oder Handlung.

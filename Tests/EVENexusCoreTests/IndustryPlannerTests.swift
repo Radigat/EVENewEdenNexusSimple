@@ -132,6 +132,188 @@ struct IndustryPlannerTests {
   }
 
   @Test
+  func makespanWaitsForComponentJobsEvenWithFreeSlots() async throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    func definition(
+      blueprint: Int64,
+      product: Int64,
+      seconds: Int64,
+      materials: [BlueprintMaterial]
+    ) -> BlueprintDefinition {
+      BlueprintDefinition(
+        blueprintTypeID: blueprint,
+        productTypeID: product,
+        maxProductionLimit: nil,
+        activity: BlueprintActivityDefinition(
+          kind: .manufacturing,
+          durationSeconds: seconds,
+          materials: materials,
+          products: [
+            BlueprintProduct(typeID: product, quantity: 1, probability: nil)
+          ]
+        ),
+        source: source
+      )
+    }
+    let catalog = FixtureCatalog(
+      names: [1: "Ship", 2: "Component A", 4: "Component B", 3: "Mineral"],
+      definitions: [
+        1: definition(
+          blueprint: 100,
+          product: 1,
+          seconds: 100,
+          materials: [
+            BlueprintMaterial(typeID: 2, quantity: 1),
+            BlueprintMaterial(typeID: 4, quantity: 1),
+          ]
+        ),
+        2: definition(
+          blueprint: 101,
+          product: 2,
+          seconds: 50,
+          materials: [BlueprintMaterial(typeID: 3, quantity: 1)]
+        ),
+        4: definition(
+          blueprint: 102,
+          product: 4,
+          seconds: 50,
+          materials: [BlueprintMaterial(typeID: 3, quantity: 1)]
+        ),
+      ]
+    )
+    let market = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: EVEConstants.theForgeRegionID,
+      locationID: EVEConstants.jitaIV4StationID,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [3: [makeOrder(typeID: 3, side: .sell, price: 5)]],
+      source: source
+    )
+    func plan(slots: Int) async throws -> IndustryPlanSnapshot {
+      try await IndustryPlanner().plan(
+        input: "Ship 1 0 0",
+        context: IndustryPlanningContext(
+          manufacturingProfile: ManufacturingProfile(),
+          productionBasis: ProductionBasis(
+            scheduling: ProductionSchedulingConfiguration(
+              manufacturingSlots: slots
+            )
+          ),
+          catalog: catalog,
+          market: market,
+          adjustedPrices: [:],
+          systemIndices: [],
+          sdeBuild: 1
+        )
+      )
+    }
+    let single = try await plan(slots: 1)
+    let parallel = try await plan(slots: 5)
+    #expect(single.jobs.count == 3)
+    #expect(single.makespanSeconds == single.totalJobSeconds)
+    // Both components run in parallel, the ship starts after the longer one.
+    let ship = try #require(
+      parallel.jobs.first { $0.typeID == 1 }?.durationSeconds
+    )
+    let component = try #require(
+      parallel.jobs.first { $0.typeID == 2 }?.durationSeconds
+    )
+    #expect(parallel.makespanSeconds == ship + component)
+    #expect(parallel.makespanSeconds < parallel.totalJobSeconds)
+    #expect(parallel.slotSchedule?.source == .manual)
+    #expect(parallel.slotSchedule?.manufacturingSlots == 5)
+    #expect(parallel.estimatedMakespanSeconds == parallel.makespanSeconds)
+  }
+
+  @Test
+  func splitIntermediateJobsRoundMaterialsPerInstalledJob() async throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let part = BlueprintDefinition(
+      blueprintTypeID: 201,
+      productTypeID: 2,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 86_400,
+        materials: [BlueprintMaterial(typeID: 3, quantity: 7)],
+        products: [BlueprintProduct(typeID: 2, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let module = BlueprintDefinition(
+      blueprintTypeID: 200,
+      productTypeID: 1,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 60,
+        materials: [BlueprintMaterial(typeID: 2, quantity: 10)],
+        products: [BlueprintProduct(typeID: 1, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let market = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: EVEConstants.theForgeRegionID,
+      locationID: EVEConstants.jitaIV4StationID,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [3: [makeOrder(typeID: 3, side: .sell, price: 5)]],
+      source: source
+    )
+    var basis = ProductionBasis(
+      scheduling: ProductionSchedulingConfiguration(
+        manufacturingSlots: 5,
+        doNotSplitShorterThanDays: 1,
+        maximumJobDays: 3
+      )
+    )
+    basis.defaultIntermediateME = 10
+    basis.defaultIntermediateTE = 0
+    let plan = try await IndustryPlanner().plan(
+      input: "Module 1 0 0",
+      context: IndustryPlanningContext(
+        manufacturingProfile: ManufacturingProfile(),
+        productionBasis: basis,
+        catalog: FixtureCatalog(
+          names: [1: "Module", 2: "Part", 3: "Mineral"],
+          definitions: [1: module, 2: part]
+        ),
+        market: market,
+        adjustedPrices: [:],
+        systemIndices: [],
+        sdeBuild: 1
+      )
+    )
+    let partJobs = plan.jobs.filter { $0.typeID == 2 }
+    // 10 runs × 1 day: no job above 3 days, and the five free slots are
+    // filled while every piece keeps at least one day.
+    #expect(partJobs.map(\.runs) == [2, 2, 2, 2, 2])
+    #expect(partJobs.map(\.piece) == [1, 2, 3, 4, 5])
+    #expect(partJobs.allSatisfy { $0.pieceCount == 5 })
+    let perJob = IndustryPlanner.manufacturingMaterialQuantity(
+      baseQuantity: 7,
+      runs: 2,
+      materialEfficiency: 10,
+      facilityMultiplier:
+        ManufacturingProfile().effectiveMaterialMultiplier
+    )
+    let mineral = try #require(plan.materials.first { $0.typeID == 3 })
+    #expect(mineral.required == 5 * perJob)
+    #expect(mineral.toBuy == 5 * perJob)
+    let part2 = try #require(plan.materials.first { $0.typeID == 2 })
+    #expect(part2.toProduce == 10)
+    // Five parallel 2-day pieces, then the 1-minute module.
+    let moduleSeconds = try #require(
+      plan.jobs.first { $0.typeID == 1 }?.durationSeconds
+    )
+    let pieceSeconds = try #require(partJobs.first?.durationSeconds)
+    #expect(plan.makespanSeconds == pieceSeconds + moduleSeconds)
+    #expect(plan.slotSchedule?.entries?.count == 6)
+  }
+
+  @Test
   func buysIntermediateInsteadOfCreatingItsProductionJob() async throws {
     let context = intermediateChoiceContext(
       preference: MaterialProcurementPreference(
@@ -376,16 +558,21 @@ struct IndustryPlannerTests {
     #expect(intermediate.toProduce == 3)
     #expect(intermediate.replacementQuote?.total == 70)
     #expect(intermediate.replacementQuote?.weightedUnitPrice == 17.5)
-    #expect(plan.costBreakdown?.purchasedMaterialCost == 24)
+    // One aggregated 3-run job at ME 10 rounds 4 × 3 × 0.9 = 10.8 to 11 raw
+    // units (2 ISK each); separate branch jobs would need 4 + 8 = 12.
+    #expect(plan.materials.first { $0.typeID == 83 }?.required == 11)
+    #expect(plan.costBreakdown?.purchasedMaterialCost == 22)
     #expect(plan.costBreakdown?.stockMaterialCost == 17.5)
-    #expect(plan.materialCost == 41.5)
+    #expect(plan.materialCost == 39.5)
     let costs = try plan.requests.map { request in
       try #require(
         ProductionOverviewProjector.projection(for: request.id, in: plan)?
           .materialCost
       )
     }
-    #expect(costs == [25.5, 16])
+    // Branch values 25.5 and 16 weight the requests; the shares are scaled
+    // to the plan's material cost.
+    #expect(abs(costs[0] - 39.5 * 25.5 / 41.5) < 1e-9)
     #expect(costs.reduce(0, +) == plan.materialCost)
   }
 

@@ -268,9 +268,12 @@ public enum ProductionOverviewProjector {
         $0.id == requestID
       })
     else { return nil }
-    let materialCosts: [Double?] = plan.requests.map { request in
-      materialCost(for: request.id, in: plan)
-    }
+    let materialCosts = scaledMaterialCosts(
+      plan.requests.map { request in
+        materialCost(for: request.id, in: plan)
+      },
+      planTotal: plan.materialCost
+    )
     let knownMaterialTotal = materialCosts.compactMap { $0 }.reduce(0, +)
     let projectedMaterialCost = materialCosts[requestIndex]
     let requestCount = plan.requests.count
@@ -346,6 +349,30 @@ public enum ProductionOverviewProjector {
       brokerFeeIsApplicable: brokerFeeIsApplicable,
       suggestedSalePricePerUnit: suggestedSalePricePerUnit
     )
+  }
+
+  /// The production tree records demand per request branch, while the plan
+  /// rounds inputs per installed (aggregated, split) job. The branch values
+  /// therefore only weight the requests; they are scaled to the plan's
+  /// material cost so the request shares add up to it exactly. Without a
+  /// complete set of branch values or a plan total they stay unscaled.
+  static func scaledMaterialCosts(
+    _ branchCosts: [Double?],
+    planTotal: Double?
+  ) -> [Double?] {
+    let known = branchCosts.compactMap { $0 }
+    guard known.count == branchCosts.count,
+      let planTotal, planTotal.isFinite, planTotal >= 0
+    else { return branchCosts }
+    let branchTotal = known.reduce(0, +)
+    guard branchTotal > 0, branchTotal.isFinite else { return branchCosts }
+    var scaled = known.map { planTotal * $0 / branchTotal }
+    // The last share takes the remainder so the sum is exact.
+    if let last = scaled.indices.last {
+      let others = scaled.dropLast().reduce(0, +)
+      scaled[last] = max(0, planTotal - others)
+    }
+    return scaled
   }
 
   private static func materialCost(

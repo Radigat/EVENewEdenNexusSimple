@@ -2294,3 +2294,377 @@ struct ProductionBasisTests {
     #expect(restored.inventionSystem.id == inventionA.id)
   }
 }
+
+@Suite("Industry slot scheduling")
+struct IndustrySlotSchedulingTests {
+  private func capability(
+    id: Int64,
+    skills: [Int64: Int],
+    state: DataFreshness = .fresh
+  ) -> CharacterCapabilitySnapshot {
+    let source = SourceIdentity(provider: "ESI", version: "fixture")
+    return CharacterCapabilitySnapshot(
+      character: CharacterIdentity(id: id, name: "Pilot \(id)"),
+      cloneState: .omega,
+      skills: Sourced(
+        state: state,
+        value: state == .unavailable
+          ? nil
+          : skills.map {
+            TrainedSkill(
+              skillID: $0.key,
+              trainedLevel: $0.value,
+              activeLevel: $0.value,
+              skillpoints: 1
+            )
+          },
+        source: source
+      ),
+      standings: Sourced(state: .fresh, value: [:], source: source)
+    )
+  }
+
+  @Test
+  func skillsDeriveSlotMaximumsPerPool() {
+    let limits = IndustrySkillSlotLimits(
+      snapshot: capability(
+        id: 1,
+        skills: [
+          IndustrySkillSlotLimits.massProduction: 5,
+          IndustrySkillSlotLimits.advancedMassProduction: 4,
+          IndustrySkillSlotLimits.laboratoryOperation: 5,
+          IndustrySkillSlotLimits.advancedLaboratoryOperation: 5,
+          IndustrySkillSlotLimits.massReactions: 5,
+        ]
+      )
+    )
+    #expect(limits.manufacturing == 10)
+    #expect(limits.science == 11)
+    // Mass Reactions without the Reactions skill grants no reaction slot.
+    #expect(limits.reaction == 0)
+
+    let reactor = IndustrySkillSlotLimits(
+      snapshot: capability(
+        id: 2,
+        skills: [
+          IndustrySkillSlotLimits.reactions: 1,
+          IndustrySkillSlotLimits.massReactions: 3,
+        ]
+      )
+    )
+    #expect(reactor.reaction == 4)
+    #expect(reactor.manufacturing == 1)
+
+    let unknown = IndustrySkillSlotLimits(
+      snapshot: capability(id: 3, skills: [:], state: .unavailable)
+    )
+    #expect(unknown.manufacturing == nil)
+    #expect(IndustrySkillSlotLimits(snapshot: nil).science == nil)
+  }
+
+  @Test
+  func enabledCharactersReplaceManualSlotsWithinTheirLimits() {
+    var scheduling = ProductionSchedulingConfiguration(
+      reactionSlots: 2,
+      manufacturingSlots: 3,
+      scienceSlots: 4
+    )
+    let manual = scheduling.resolvedSlotGroups(capabilities: [])
+    #expect(manual.source == .manual)
+    #expect(manual.slotCount(for: .manufacturing) == 3)
+    #expect(manual.slotCount(for: .reaction) == 2)
+    #expect(manual.slotCount(for: .science) == 4)
+
+    scheduling.setAssignment(
+      CharacterIndustryAssignment(
+        characterID: 1,
+        characterName: "Builder",
+        isEnabled: true,
+        allowedActivities: [.manufacturing, .copying],
+        manufacturingSlotLimit: 3
+      )
+    )
+    scheduling.setAssignment(
+      CharacterIndustryAssignment(
+        characterID: 2,
+        characterName: "Unsynced",
+        isEnabled: true,
+        allowedActivities: [.reaction]
+      )
+    )
+    scheduling.setAssignment(
+      CharacterIndustryAssignment(
+        characterID: 3,
+        characterName: "Disabled",
+        isEnabled: false
+      )
+    )
+    let resolved = scheduling.resolvedSlotGroups(
+      capabilities: [
+        capability(
+          id: 1,
+          skills: [
+            IndustrySkillSlotLimits.massProduction: 5,
+            IndustrySkillSlotLimits.advancedMassProduction: 5,
+            IndustrySkillSlotLimits.laboratoryOperation: 2,
+          ]
+        ),
+        capability(
+          id: 3,
+          skills: [IndustrySkillSlotLimits.massProduction: 5]
+        ),
+      ]
+    )
+    #expect(resolved.source == .characters)
+    #expect(resolved.enabledCharacterCount == 2)
+    #expect(resolved.slotCount(for: .manufacturing) == 3)
+    #expect(resolved.slotCount(for: .science) == 3)
+    #expect(resolved.slotCount(for: .reaction) == 0)
+    #expect(
+      resolved.groups.first { $0.pool == .science }?.activities == [.copying]
+    )
+    #expect(
+      resolved.warnings.contains {
+        $0.code == "industry.slots.skills-unavailable"
+      }
+    )
+  }
+
+  @Test
+  func schedulerWaitsForProducedInputsAndUsesParallelSlots() {
+    let jobs = [
+      IndustryScheduledJob(activity: .reaction, durationSeconds: 30),
+      IndustryScheduledJob(activity: .manufacturing, durationSeconds: 10),
+      IndustryScheduledJob(
+        activity: .manufacturing,
+        durationSeconds: 10,
+        dependencies: [0]
+      ),
+      IndustryScheduledJob(
+        activity: .manufacturing,
+        durationSeconds: 5,
+        dependencies: [1, 2]
+      ),
+    ]
+    func groups(manufacturing: Int) -> [IndustrySlotGroup] {
+      [
+        IndustrySlotGroup(
+          characterID: 1,
+          pool: .manufacturing,
+          count: manufacturing,
+          activities: [.manufacturing]
+        ),
+        IndustrySlotGroup(
+          characterID: 1,
+          pool: .reaction,
+          count: 1,
+          activities: [.reaction]
+        ),
+      ]
+    }
+    // Reaction 30 s → component 10 s → final 5 s; the other component runs
+    // in parallel.
+    #expect(
+      IndustrySlotScheduler.schedule(
+        jobs: jobs,
+        groups: groups(manufacturing: 2)
+      ).makespanSeconds == 45
+    )
+    #expect(
+      IndustrySlotScheduler.schedule(
+        jobs: jobs,
+        groups: groups(manufacturing: 1)
+      ).makespanSeconds == 45
+    )
+    let withoutReactionSlot = IndustrySlotScheduler.schedule(
+      jobs: jobs,
+      groups: [groups(manufacturing: 2)[0]]
+    )
+    #expect(withoutReactionSlot.makespanSeconds == nil)
+    #expect(withoutReactionSlot.unschedulableActivities == [.reaction])
+
+    let independent = (0..<4).map { _ in
+      IndustryScheduledJob(activity: .manufacturing, durationSeconds: 10)
+    }
+    #expect(
+      IndustrySlotScheduler.schedule(
+        jobs: independent,
+        groups: groups(manufacturing: 2)
+      ).makespanSeconds == 20
+    )
+    let cycle = IndustrySlotScheduler.schedule(
+      jobs: [
+        IndustryScheduledJob(
+          activity: .manufacturing,
+          durationSeconds: 1,
+          dependencies: [1]
+        ),
+        IndustryScheduledJob(
+          activity: .manufacturing,
+          durationSeconds: 1,
+          dependencies: [0]
+        ),
+      ],
+      groups: groups(manufacturing: 1)
+    )
+    #expect(cycle.makespanSeconds == nil)
+    #expect(cycle.hasDependencyCycle)
+  }
+
+  @Test
+  func legacySchedulingConfigurationDecodesWithoutCharacterAssignments()
+    throws
+  {
+    let legacy = Data(
+      """
+      {"reactionSlots":2,"manufacturingSlots":5,"doNotSplitShorterThanDays":1,\
+      "maximumJobDays":3,"alwaysUseDefaultMode":false}
+      """.utf8
+    )
+    let decoded = try JSONDecoder().decode(
+      ProductionSchedulingConfiguration.self,
+      from: legacy
+    )
+    #expect(decoded.manufacturingSlots == 5)
+    #expect(decoded.scienceSlots == 1)
+    #expect(decoded.characterAssignments.isEmpty)
+
+    var configured = decoded
+    configured.setAssignment(
+      CharacterIndustryAssignment(
+        characterID: 7,
+        characterName: "Pilot",
+        isEnabled: true,
+        allowedActivities: [.invention],
+        scienceSlotLimit: 2
+      )
+    )
+    let roundTrip = try JSONDecoder().decode(
+      ProductionSchedulingConfiguration.self,
+      from: JSONEncoder().encode(configured)
+    )
+    #expect(roundTrip == configured)
+  }
+}
+
+@Suite("Industry job splitting")
+struct IndustryJobSplittingTests {
+  private let day: Int64 = 86_400
+
+  @Test
+  func reactionsRunInStandardBatchesAndRemaindersLengthenBatches() {
+    let scheduling = ProductionSchedulingConfiguration()
+    #expect(scheduling.reactionRunsPerJob == 100)
+    func split(_ runs: Int) -> [Int] {
+      scheduling.splitRuns(
+        runs: runs,
+        durationSeconds: Int64(runs) * 4_500,
+        activity: .reaction,
+        compatibleSlots: 20
+      )
+    }
+    #expect(split(300) == [100, 100, 100])
+    #expect(split(250) == [125, 125])
+    #expect(split(120) == [120])
+    #expect(split(60) == [60])
+  }
+
+  @Test
+  func manufacturingUsesTheDayWindowAndFreeSlots() {
+    let scheduling = ProductionSchedulingConfiguration(
+      doNotSplitShorterThanDays: 1,
+      maximumJobDays: 3
+    )
+    func split(runs: Int, days: Int64, slots: Int) -> [Int] {
+      scheduling.splitRuns(
+        runs: runs,
+        durationSeconds: days * day,
+        activity: .manufacturing,
+        compatibleSlots: slots
+      )
+    }
+    // Shorter than the minimum: stays whole even with free slots.
+    #expect(split(runs: 10, days: 1, slots: 10) == [10])
+    // 9 days, one slot: maximum 3 days forces three pieces.
+    #expect(split(runs: 9, days: 9, slots: 1) == [3, 3, 3])
+    // 9 days, many slots: fills slots down to the 1-day minimum.
+    #expect(split(runs: 9, days: 9, slots: 20).count == 9)
+    // 10 runs over 4 slots: the even split puts the extra runs first.
+    #expect(split(runs: 10, days: 10, slots: 4) == [3, 3, 2, 2])
+    // A single run longer than the maximum stays one longer job.
+    #expect(split(runs: 1, days: 20, slots: 5) == [1])
+    // Science is never split.
+    #expect(
+      scheduling.splitRuns(
+        runs: 10,
+        durationSeconds: 10 * day,
+        activity: .copying,
+        compatibleSlots: 5
+      ) == [10]
+    )
+  }
+
+  @Test
+  func consumerBatchesStartWithTheirShareOfProducedInputs() {
+    // 300 reaction runs as three 100-run batches (2 days each) feed
+    // 6 component runs as two 3-run jobs (3 days each).
+    func component(_ piece: Int) -> ProductionScheduleEntry {
+      ProductionScheduleEntry(
+        productTypeID: 1,
+        name: "Component",
+        runs: 3,
+        piece: piece,
+        pieceCount: 2,
+        materialTypeIDs: [2],
+        blueprintSupplyJobID: nil,
+        activity: .manufacturing,
+        durationSeconds: 3 * day
+      )
+    }
+    func composite(_ piece: Int) -> ProductionScheduleEntry {
+      ProductionScheduleEntry(
+        productTypeID: 2,
+        name: "Composite",
+        runs: 100,
+        piece: piece,
+        pieceCount: 3,
+        materialTypeIDs: [3],
+        blueprintSupplyJobID: nil,
+        activity: .reaction,
+        durationSeconds: 2 * day
+      )
+    }
+    let graph = IndustryPlanner.scheduleGraph(
+      production: [component(1), component(2), composite(1), composite(2), composite(3)],
+      supplyPlans: [],
+      blueprintNames: [:]
+    )
+    #expect(graph.jobs.count == 5)
+    #expect(graph.pieces.map(\.runs) == [3, 3, 100, 100, 100])
+    // First component piece (half of the runs) needs the first 1.5 batches,
+    // i.e. reaction batches 1 and 2; the second piece needs all three.
+    #expect(graph.jobs[0].dependencies == [2, 3])
+    #expect(graph.jobs[1].dependencies == [2, 3, 4])
+    let schedule = IndustrySlotScheduler.schedule(
+      jobs: graph.jobs,
+      groups: [
+        IndustrySlotGroup(
+          characterID: nil,
+          pool: .manufacturing,
+          count: 1,
+          activities: [.manufacturing]
+        ),
+        IndustrySlotGroup(
+          characterID: nil,
+          pool: .reaction,
+          count: 3,
+          activities: [.reaction]
+        ),
+      ]
+    )
+    // All three reaction batches run in parallel (2 days), then both
+    // component pieces run back to back on the single slot (3 + 3 days).
+    #expect(schedule.makespanSeconds == 8 * day)
+    #expect(schedule.startSeconds[0] == 2 * day)
+  }
+}

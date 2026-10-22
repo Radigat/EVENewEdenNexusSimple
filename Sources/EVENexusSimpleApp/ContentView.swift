@@ -251,23 +251,51 @@ enum CharacterBatchSynchronizer {
         == .orderedAscending
     }
     var synchronizedCount = 0
-    var failures: [String] = []
+    var failures: [CharacterSyncFailure] = []
     for character in orderedCharacters {
       guard !Task.isCancelled else { break }
-      do {
-        let authorization = try JSONDecoder().decode(
+      func fail(_ reason: String) {
+        modelContext.rollback()
+        failures.append(
+          CharacterSyncFailure(
+            characterName: character.characterName,
+            reason: reason
+          )
+        )
+      }
+      guard
+        let authorization = try? JSONDecoder().decode(
           AuthorizationSnapshot.self,
           from: character.authorizationSnapshot
         )
+      else {
+        fail(
+          AppLocalization.text(
+            "The stored authorization could not be read. Authorize this character again."
+          )
+        )
+        continue
+      }
+      do {
         try await runtime.syncCharacter(
           authorization: authorization,
           clientID: clientID
         )
-        guard let latest = runtime.lastCharacterSync,
-          latest.authorization.characterID == character.characterID
-        else {
-          throw ESIError.notFound
-        }
+      } catch {
+        fail(EVEConnectionErrorText.message(for: error))
+        continue
+      }
+      guard let latest = runtime.lastCharacterSync,
+        latest.authorization.characterID == character.characterID
+      else {
+        fail(
+          AppLocalization.text(
+            "The synchronization result belonged to another character and was discarded."
+          )
+        )
+        continue
+      }
+      do {
         try CharacterSyncPersistence.apply(
           latest,
           to: character,
@@ -276,14 +304,18 @@ enum CharacterBatchSynchronizer {
         try modelContext.save()
         synchronizedCount += 1
       } catch {
-        modelContext.rollback()
-        failures.append(character.characterName)
+        fail(
+          AppLocalization.text(
+            "The synchronized data could not be saved locally; the previous data was kept."
+          )
+        )
       }
     }
     return CharacterBatchSyncResult(
       synchronizedCount: synchronizedCount,
       totalCount: orderedCharacters.count,
-      failedCharacterNames: failures
+      failedCharacterNames: failures.map(\.characterName),
+      failures: failures
     )
   }
 }
@@ -2701,12 +2733,15 @@ struct DashboardView: View {
           Int64(synchronizedCount)
         )
     } else {
+      let reasons = result.failureGroups.map {
+        "\($0.reason) (\($0.characterNames.joined(separator: ", ")))"
+      }
       dashboardDataRefreshError = AppLocalization.format(
         "%lld of %lld characters updated; unavailable characters kept their previous data: %@",
         Int64(synchronizedCount),
         Int64(result.totalCount),
         failures.joined(separator: ", ")
-      )
+      ) + (reasons.isEmpty ? "" : " " + reasons.joined(separator: " "))
     }
   }
 
@@ -4375,6 +4410,12 @@ struct StartupDataStatusSection: View {
           color: Self.color(for: row.status),
           progress: nil
         )
+        if row.area == .characters,
+          let groups = startupLoad.characterResult?.failureGroups,
+          !groups.isEmpty
+        {
+          characterFailureReasons(groups)
+        }
       }
     }
     .accessibilityElement(children: .contain)
@@ -4419,6 +4460,39 @@ struct StartupDataStatusSection: View {
         timestamp: inputs.mineralTimestamp
       ),
     ]
+  }
+
+  /// Why characters failed at app start, grouped by identical reason.
+  private func characterFailureReasons(
+    _ groups: [(reason: String, characterNames: [String])]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+        VStack(alignment: .leading, spacing: 1) {
+          Text(group.reason)
+            .foregroundStyle(DesignTokens.negative)
+          LazyVGrid(
+            columns: [
+              GridItem(
+                .adaptive(minimum: 90),
+                spacing: DesignTokens.spacingXS,
+                alignment: .leading
+              )
+            ],
+            alignment: .leading,
+            spacing: 1
+          ) {
+            ForEach(group.characterNames, id: \.self) { name in
+              EVEEntityText(value: name, font: .caption2, lineLimit: 1)
+            }
+          }
+        }
+      }
+    }
+    .font(.caption2)
+    .padding(.leading, 24)
+    .fixedSize(horizontal: false, vertical: true)
+    .accessibilityIdentifier("dashboard.startup-data-status.character-failures")
   }
 
   static func detail(for row: StartupDataStatusRow) -> String {

@@ -183,6 +183,7 @@ struct PlannerView: View {
   @State private var parseResult = ProductionInputParser.parse("")
   @AppStorage("planner.disclosure.warnings", store: AppDefaults.store)
   private var areWarningsExpanded = false
+  @State private var isJobScheduleExpanded = false
   @State private var hasRestoredState = false
   @State private var persistenceMessage: String?
   @State private var persistenceError: String?
@@ -1202,12 +1203,32 @@ struct PlannerView: View {
       LabeledContent("Jobs", value: "\(plan.jobs.count)")
       ExplainedPlannerMetricRow(
         label: "Estimated job time",
-        value: formatJobDuration(plan.makespanSeconds),
+        value: plan.estimatedMakespanSeconds.map(formatJobDuration)
+          ?? AppLocalization.text("Unavailable"),
         explanation: AppLocalization.text(
-          "Estimated elapsed time uses the configured manufacturing and reaction slot counts. Manufacturing and reaction work can run in parallel; within each activity, jobs are distributed across the available slots."
+          "Estimated elapsed time splits jobs by the configured day window (manufacturing) and reaction batch size, then distributes all pieces across the available manufacturing, reaction and science slots at the same time. A piece starts as soon as its share of produced inputs and its blueprint copy, research or invention jobs are finished; bought and warehouse materials are available immediately. Enabled industry characters provide the slots (skill maximum or configured limit); without enabled characters the manual slot counts apply."
         ),
         highlightsValue: true
       )
+      if let slotSchedule = plan.slotSchedule {
+        Text(Self.slotScheduleDescription(slotSchedule))
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        if let entries = slotSchedule.entries, !entries.isEmpty {
+          FullWidthDisclosure(isExpanded: $isJobScheduleExpanded) {
+            Text(
+              AppLocalization.format(
+                "Job schedule (%lld scheduled jobs)",
+                Int64(entries.count)
+              )
+            )
+          } content: {
+            PlannerJobScheduleTable(entries: entries)
+              .padding(.top, DesignTokens.spacingSM)
+          }
+          .accessibilityIdentifier("planner.job-schedule.disclosure")
+        }
+      }
       ExplainedPlannerMetricRow(
         label: "Total job workload",
         value: formatJobDuration(plan.totalJobSeconds),
@@ -4400,10 +4421,14 @@ struct PlannerView: View {
       if lhs.isTopLevel != rhs.isTopLevel {
         return lhs.isTopLevel == true
       }
-      return (lhs.productName ?? "Unknown item".localizedUI)
+      let order = (lhs.productName ?? "Unknown item".localizedUI)
         .localizedCaseInsensitiveCompare(
           rhs.productName ?? "Unknown item".localizedUI
-        ) == .orderedAscending
+        )
+      if order != .orderedSame { return order == .orderedAscending }
+      // Pieces of one split job stay in their piece order.
+      if lhs.typeID != rhs.typeID { return lhs.typeID < rhs.typeID }
+      return (lhs.piece ?? 1) < (rhs.piece ?? 1)
     }
 
     return Panel(title: "Production job list") {
@@ -4429,7 +4454,7 @@ struct PlannerView: View {
             .foregroundStyle(DesignTokens.textSecondary)
           } else {
             Text(
-              "These are the production jobs from the recalculated plan. Purchased items are excluded and appear in the Main Hub shopping list instead."
+              "These are the production jobs from the recalculated plan, already split by the job-splitting settings; materials are rounded per job. Purchased items are excluded and appear in the Main Hub shopping list instead."
             )
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
@@ -4492,6 +4517,23 @@ struct PlannerView: View {
                   {
                     Text("ME \(materialEfficiency) · TE \(timeEfficiency)")
                       .font(.body.monospacedDigit())
+                  }
+                  if let piece = job.piece, let pieceCount = job.pieceCount,
+                    pieceCount > 1
+                  {
+                    Text(
+                      AppLocalization.format(
+                        "Job %lld of %lld",
+                        Int64(piece),
+                        Int64(pieceCount)
+                      )
+                    )
+                    .font(.body.monospacedDigit())
+                  }
+                  if let durationSeconds = job.durationSeconds {
+                    Text(formatJobDuration(durationSeconds))
+                      .font(.body.monospacedDigit())
+                      .foregroundStyle(DesignTokens.textSecondary)
                   }
                   Spacer()
                 }
@@ -4713,7 +4755,53 @@ struct PlannerView: View {
     )
   }
 
+  static func slotScheduleDescription(
+    _ summary: IndustrySlotScheduleSummary
+  ) -> String {
+    let base = slotSourceDescription(summary)
+    guard let minimum = summary.doNotSplitShorterThanDays,
+      let maximum = summary.maximumJobDays,
+      let batch = summary.reactionRunsPerJob
+    else { return base }
+    let reactionRule =
+      batch > 0
+      ? AppLocalization.format("reactions in batches of %lld runs", Int64(batch))
+      : AppLocalization.text("reactions by the day window")
+    return base + " · "
+      + AppLocalization.format(
+        "Split: whole below %@ days, at most %@ days per job, %@",
+        minimum.formatted(.number.precision(.fractionLength(0...2))),
+        maximum.formatted(.number.precision(.fractionLength(0...2))),
+        reactionRule
+      )
+  }
+
+  static func slotSourceDescription(
+    _ summary: IndustrySlotScheduleSummary
+  ) -> String {
+    let slots = AppLocalization.format(
+      "Manufacturing %lld · Reactions %lld · Science %lld",
+      Int64(summary.manufacturingSlots),
+      Int64(summary.reactionSlots),
+      Int64(summary.scienceSlots)
+    )
+    switch summary.source {
+    case .characters:
+      return AppLocalization.format(
+        "Slots of %lld enabled characters: %@",
+        Int64(summary.enabledCharacterCount),
+        slots
+      )
+    case .manual:
+      return AppLocalization.format("Manual slot counts: %@", slots)
+    }
+  }
+
   private func formatJobDuration(_ seconds: Int64) -> String {
+    Self.formatJobDuration(seconds)
+  }
+
+  static func formatJobDuration(_ seconds: Int64) -> String {
     guard seconds >= 0, seconds < Int64.max else {
       return AppLocalization.text("Unavailable")
     }
@@ -8734,88 +8822,7 @@ struct CharactersView: View {
   }
 
   private func userMessage(for error: Error) -> String {
-    if case AuthError.unexpectedCharacter(
-      let expected,
-      let received
-    ) = error {
-      return
-        "The wrong EVE character was selected (expected \(expected), received \(received)). No token was saved."
-    }
-    if let authError = error as? AuthError {
-      switch authError {
-      case .missingClientID, .invalidClientID:
-        return AppLocalization.text(
-          "The EVE client ID is missing or invalid."
-        )
-      case .noStoredAuthorization:
-        return AppLocalization.text(
-          "The local EVE authorization is missing. Authorize this character again."
-        )
-      case .tokenExchangeFailed(let status):
-        return String(
-          format: AppLocalization.text(
-            "EVE SSO rejected the token request (HTTP %lld)."
-          ),
-          Int64(status)
-        )
-      case .keychain(_), .keychainFallback:
-        return AppLocalization.text(
-          "The EVE refresh token could not be read from the macOS Keychain. Use Update permissions for this character; Sync and Sync all cannot replace a missing or inaccessible token."
-        )
-      case .callbackDenied(_):
-        return AppLocalization.text(
-          "EVE SSO authorization was cancelled or denied."
-        )
-      case .invalidIdentityToken:
-        return AppLocalization.text(
-          "EVE SSO returned an identity token that could not be verified."
-        )
-      default:
-        return AppLocalization.text(
-          "EVE SSO authorization could not be completed."
-        )
-      }
-    }
-    if let esiError = error as? ESIError {
-      switch esiError {
-      case .rateLimited(_):
-        return AppLocalization.text(
-          "EVE ESI is rate-limiting requests. Wait briefly and try again."
-        )
-      case .server(_):
-        return AppLocalization.text(
-          "EVE ESI reported a temporary server error."
-        )
-      case .forbidden, .missingScope(_), .authorizationRequired:
-        return AppLocalization.text(
-          "EVE ESI rejected the authorization or a required permission is missing."
-        )
-      case .cancelled:
-        return AppLocalization.text("Synchronization was cancelled.")
-      default:
-        return AppLocalization.text(
-          "EVE ESI data could not be synchronized."
-        )
-      }
-    }
-    if let urlError = error as? URLError {
-      switch urlError.code {
-      case .timedOut:
-        return AppLocalization.text(
-          "The EVE service did not respond in time. Check the CCP status and try again."
-        )
-      case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
-        .networkConnectionLost:
-        return AppLocalization.text(
-          "The EVE service is currently unreachable. Check the network and CCP status."
-        )
-      default:
-        break
-      }
-    }
-    return AppLocalization.text(
-      "The EVE connection failed for an unknown reason."
-    )
+    EVEConnectionErrorText.message(for: error)
   }
 
   private func keychainSaveMessage(for error: Error) -> String {
@@ -9745,5 +9752,187 @@ struct PlannerPurchaseLocationHintPanel: View {
     guard let value, value.isFinite else { return "—" }
     let formatted = formatISK(abs(value))
     return value > 0 ? "+\(formatted)" : value < 0 ? "−\(formatted)" : formatted
+  }
+}
+
+/// Sortable estimated schedule of the Planner's split job pieces.
+struct PlannerJobScheduleTable: View {
+  let entries: [IndustryScheduleEntry]
+  @State private var order = [KeyPathComparator(\PlannerJobScheduleRow.start)]
+
+  private var rows: [PlannerJobScheduleRow] {
+    entries.map(PlannerJobScheduleRow.init)
+      .sorted(using: order + [KeyPathComparator(\PlannerJobScheduleRow.id)])
+  }
+
+  var body: some View {
+    Table(rows, sortOrder: $order) {
+      TableColumn("Product", value: \.nameKey) { row in
+        if let name = row.entry.name {
+          EVEEntityText(value: name, lineLimit: 1)
+        } else {
+          Text(
+            row.entry.typeID.map {
+              AppLocalization.format("Unresolved type %lld", $0)
+            } ?? AppLocalization.text("Unresolved")
+          )
+          .foregroundStyle(DesignTokens.caution)
+        }
+      }
+      TableColumn("Activity", value: \.activityRank) { row in
+        Text(row.activityName)
+      }
+      TableColumn("Runs", value: \.runs) { row in
+        Text(row.entry.runs.formatted()).monospacedDigit()
+      }
+      TableColumn("Piece", value: \.piece) { row in
+        Text("\(row.entry.piece) / \(row.entry.pieceCount)").monospacedDigit()
+      }
+      TableColumn("Start", value: \.start) { row in
+        Text(PlannerView.formatJobDuration(row.start)).monospacedDigit()
+      }
+      TableColumn("Finish", value: \.finish) { row in
+        Text(PlannerView.formatJobDuration(row.finish)).monospacedDigit()
+      }
+      TableColumn("Duration", value: \.duration) { row in
+        Text(PlannerView.formatJobDuration(row.duration)).monospacedDigit()
+      }
+    }
+    .frame(minHeight: 260, idealHeight: 360)
+    Text(
+      "Start and finish are offsets from the start of the plan. The pieces are the jobs of the production job list."
+    )
+    .font(.caption)
+    .foregroundStyle(DesignTokens.textSecondary)
+  }
+}
+
+struct PlannerJobScheduleRow: Identifiable {
+  /// Missing names sort after known names in ascending order.
+  struct NameKey: Comparable {
+    let name: String?
+
+    static func < (lhs: NameKey, rhs: NameKey) -> Bool {
+      switch (lhs.name, rhs.name) {
+      case let (left?, right?):
+        left.localizedStandardCompare(right) == .orderedAscending
+      case (.some, .none): true
+      default: false
+      }
+    }
+  }
+
+  let entry: IndustryScheduleEntry
+  var id: Int { entry.id }
+  var nameKey: NameKey { NameKey(name: entry.name) }
+  /// Documented rank: manufacturing, reaction, copying, research, invention.
+  var activityRank: Int {
+    IndustrySlotActivity.allCases.firstIndex(of: entry.activity) ?? 0
+  }
+  var runs: Int { entry.runs }
+  var piece: Int { entry.piece }
+  var start: Int64 { entry.startSeconds }
+  var finish: Int64 { entry.finishSeconds }
+  var duration: Int64 { entry.durationSeconds }
+
+  var activityName: String {
+    switch entry.activity {
+    case .manufacturing: AppLocalization.text("Manufacturing")
+    case .reaction: AppLocalization.text("Reactions")
+    case .copying: AppLocalization.text("Copying")
+    case .research: AppLocalization.text("Research")
+    case .invention: AppLocalization.text("Invention")
+    }
+  }
+}
+
+/// Owner-facing reason for a failed EVE SSO or ESI step, shared by the
+/// character settings and the batch synchronization. Never contains token
+/// content.
+@MainActor
+enum EVEConnectionErrorText {
+  static func message(for error: Error) -> String {
+    if case AuthError.unexpectedCharacter(
+      let expected,
+      let received
+    ) = error {
+      return
+        "The wrong EVE character was selected (expected \(expected), received \(received)). No token was saved."
+    }
+    if let authError = error as? AuthError {
+      switch authError {
+      case .missingClientID, .invalidClientID:
+        return AppLocalization.text(
+          "The EVE client ID is missing or invalid."
+        )
+      case .noStoredAuthorization:
+        return AppLocalization.text(
+          "The local EVE authorization is missing. Authorize this character again."
+        )
+      case .tokenExchangeFailed(let status):
+        return String(
+          format: AppLocalization.text(
+            "EVE SSO rejected the token request (HTTP %lld)."
+          ),
+          Int64(status)
+        )
+      case .keychain(_), .keychainFallback:
+        return AppLocalization.text(
+          "The EVE refresh token could not be read from the macOS Keychain. Use Update permissions for this character; Sync and Sync all cannot replace a missing or inaccessible token."
+        )
+      case .callbackDenied(_):
+        return AppLocalization.text(
+          "EVE SSO authorization was cancelled or denied."
+        )
+      case .invalidIdentityToken:
+        return AppLocalization.text(
+          "EVE SSO returned an identity token that could not be verified."
+        )
+      default:
+        return AppLocalization.text(
+          "EVE SSO authorization could not be completed."
+        )
+      }
+    }
+    if let esiError = error as? ESIError {
+      switch esiError {
+      case .rateLimited(_):
+        return AppLocalization.text(
+          "EVE ESI is rate-limiting requests. Wait briefly and try again."
+        )
+      case .server(_):
+        return AppLocalization.text(
+          "EVE ESI reported a temporary server error."
+        )
+      case .forbidden, .missingScope(_), .authorizationRequired:
+        return AppLocalization.text(
+          "EVE ESI rejected the authorization or a required permission is missing."
+        )
+      case .cancelled:
+        return AppLocalization.text("Synchronization was cancelled.")
+      default:
+        return AppLocalization.text(
+          "EVE ESI data could not be synchronized."
+        )
+      }
+    }
+    if let urlError = error as? URLError {
+      switch urlError.code {
+      case .timedOut:
+        return AppLocalization.text(
+          "The EVE service did not respond in time. Check the CCP status and try again."
+        )
+      case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
+        .networkConnectionLost:
+        return AppLocalization.text(
+          "The EVE service is currently unreachable. Check the network and CCP status."
+        )
+      default:
+        break
+      }
+    }
+    return AppLocalization.text(
+      "The EVE connection failed for an unknown reason."
+    )
   }
 }

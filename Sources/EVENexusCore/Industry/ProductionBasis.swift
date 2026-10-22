@@ -1697,22 +1697,399 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
 public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
   public var reactionSlots: Int
   public var manufacturingSlots: Int
+  /// Manual science slot count shared by copying, research and invention.
+  /// Used only while no character is enabled for industry work.
+  public var scienceSlots: Int
   public var doNotSplitShorterThanDays: Double
   public var maximumJobDays: Double
+  /// Standard reaction batch for the time schedule. A reaction job is split
+  /// into batches of at least this many runs; `0` uses the day window.
+  public var reactionRunsPerJob: Int
   public var alwaysUseDefaultMode: Bool
+  /// Per-character industry permissions. As soon as one assignment is
+  /// enabled, the enabled characters' slots replace the manual slot counts.
+  public var characterAssignments: [CharacterIndustryAssignment]
 
   public init(
     reactionSlots: Int = 1,
     manufacturingSlots: Int = 1,
+    scienceSlots: Int = 1,
     doNotSplitShorterThanDays: Double = 1,
     maximumJobDays: Double = 3,
-    alwaysUseDefaultMode: Bool = false
+    reactionRunsPerJob: Int = 100,
+    alwaysUseDefaultMode: Bool = false,
+    characterAssignments: [CharacterIndustryAssignment] = []
   ) {
     self.reactionSlots = reactionSlots
     self.manufacturingSlots = manufacturingSlots
+    self.scienceSlots = scienceSlots
     self.doNotSplitShorterThanDays = doNotSplitShorterThanDays
     self.maximumJobDays = maximumJobDays
+    self.reactionRunsPerJob = max(0, reactionRunsPerJob)
     self.alwaysUseDefaultMode = alwaysUseDefaultMode
+    self.characterAssignments = characterAssignments
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case reactionSlots, manufacturingSlots, scienceSlots
+    case doNotSplitShorterThanDays, maximumJobDays, reactionRunsPerJob
+    case alwaysUseDefaultMode, characterAssignments
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    reactionSlots = try container.decode(Int.self, forKey: .reactionSlots)
+    manufacturingSlots = try container.decode(
+      Int.self,
+      forKey: .manufacturingSlots
+    )
+    scienceSlots =
+      try container.decodeIfPresent(Int.self, forKey: .scienceSlots) ?? 1
+    doNotSplitShorterThanDays = try container.decode(
+      Double.self,
+      forKey: .doNotSplitShorterThanDays
+    )
+    maximumJobDays = try container.decode(Double.self, forKey: .maximumJobDays)
+    reactionRunsPerJob = max(
+      0,
+      try container.decodeIfPresent(Int.self, forKey: .reactionRunsPerJob)
+        ?? 100
+    )
+    alwaysUseDefaultMode = try container.decode(
+      Bool.self,
+      forKey: .alwaysUseDefaultMode
+    )
+    characterAssignments =
+      try container.decodeIfPresent(
+        [CharacterIndustryAssignment].self,
+        forKey: .characterAssignments
+      ) ?? []
+  }
+
+  /// Maximum number of schedule pieces of one job; keeps the estimate cheap.
+  public static let maximumPiecesPerJob = 500
+
+  /// Splits one planned job into the runs of its scheduled pieces.
+  ///
+  /// - Reactions with `reactionRunsPerJob > 0` become `runs / batch` batches
+  ///   (at least one), so every batch has at least the standard run count; a
+  ///   remainder makes batches longer instead of creating a short batch.
+  /// - Manufacturing (and reactions without a batch size) uses the day window:
+  ///   a job up to "don't split shorter than" stays whole; otherwise it is
+  ///   split so no piece is longer than "no jobs longer than" and, to fill
+  ///   free compatible slots, into more pieces as long as each piece keeps at
+  ///   least the minimum length. A single run longer than the maximum stays a
+  ///   longer job.
+  /// - Science jobs are never split.
+  ///
+  /// Runs are distributed evenly; earlier pieces take the extra runs.
+  public func splitRuns(
+    runs: Int,
+    durationSeconds: Int64,
+    activity: IndustrySlotActivity,
+    compatibleSlots: Int
+  ) -> [Int] {
+    guard runs > 1, durationSeconds > 0, activity.pool != .science else {
+      return [max(0, runs)]
+    }
+    let pieces: Int
+    if activity == .reaction, reactionRunsPerJob > 0 {
+      pieces = max(1, runs / reactionRunsPerJob)
+    } else {
+      let day = 86_400.0
+      let duration = Double(durationSeconds)
+      let minimum =
+        doNotSplitShorterThanDays.isFinite
+        ? max(0, doNotSplitShorterThanDays) * day : 0
+      let maximum =
+        maximumJobDays.isFinite && maximumJobDays > 0
+        ? maximumJobDays * day : .infinity
+      guard duration > minimum else { return [runs] }
+      let forcedByMaximum =
+        maximum.isFinite ? Int(min(1e9, ceil(duration / maximum))) : 1
+      let slotLimit = max(1, compatibleSlots)
+      let fillingSlots =
+        minimum > 0
+        ? min(slotLimit, Int(min(1e9, floor(duration / minimum))))
+        : slotLimit
+      pieces = max(1, forcedByMaximum, fillingSlots)
+    }
+    let count = min(pieces, runs, Self.maximumPiecesPerJob)
+    let base = runs / count
+    let extra = runs % count
+    return (0..<count).map { $0 < extra ? base + 1 : base }
+  }
+
+  public func assignment(for characterID: Int64) -> CharacterIndustryAssignment? {
+    characterAssignments.first { $0.characterID == characterID }
+  }
+
+  /// Inserts or replaces the assignment of one character.
+  public mutating func setAssignment(_ assignment: CharacterIndustryAssignment) {
+    if let index = characterAssignments.firstIndex(where: {
+      $0.characterID == assignment.characterID
+    }) {
+      characterAssignments[index] = assignment
+    } else {
+      characterAssignments.append(assignment)
+    }
+  }
+
+  /// Resolves the slot pools used for the elapsed-time estimate. Enabled
+  /// characters contribute `min(skill maximum, configured limit)` per pool;
+  /// without any enabled character the manual slot counts apply.
+  public func resolvedSlotGroups(
+    capabilities: [CharacterCapabilitySnapshot]
+  ) -> IndustrySlotResolution {
+    let enabled = characterAssignments.filter(\.isEnabled)
+    guard !enabled.isEmpty else {
+      return IndustrySlotResolution(
+        source: .manual,
+        groups: [
+          IndustrySlotGroup(
+            characterID: nil,
+            pool: .manufacturing,
+            count: max(1, manufacturingSlots),
+            activities: [.manufacturing]
+          ),
+          IndustrySlotGroup(
+            characterID: nil,
+            pool: .reaction,
+            count: max(1, reactionSlots),
+            activities: [.reaction]
+          ),
+          IndustrySlotGroup(
+            characterID: nil,
+            pool: .science,
+            count: max(1, scienceSlots),
+            activities: [.copying, .research, .invention]
+          ),
+        ],
+        enabledCharacterCount: 0,
+        warnings: []
+      )
+    }
+    var groups: [IndustrySlotGroup] = []
+    var warnings: [DomainWarning] = []
+    for assignment in enabled.sorted(by: { $0.characterID < $1.characterID }) {
+      let snapshot = capabilities.first {
+        $0.character.id == assignment.characterID
+      }
+      let maximum = IndustrySkillSlotLimits(snapshot: snapshot)
+      for pool in IndustrySlotPool.allCases {
+        let activities = assignment.allowedActivities.filter {
+          $0.pool == pool
+        }
+        guard !activities.isEmpty else { continue }
+        let limit = assignment.slotLimit(for: pool)
+        let count: Int
+        if let skillMaximum = maximum.slots(for: pool) {
+          count = min(skillMaximum, limit ?? skillMaximum)
+        } else if let limit {
+          count = limit
+          warnings.append(
+            DomainWarning(
+              code: "industry.slots.skills-unavailable-manual-limit",
+              message:
+                "Skills of \(assignment.characterName) are unavailable; the configured \(pool.rawValue) slot limit \(limit) is used without skill verification.",
+              severity: .warning
+            )
+          )
+        } else {
+          count = 0
+          warnings.append(
+            DomainWarning(
+              code: "industry.slots.skills-unavailable",
+              message:
+                "Skills of \(assignment.characterName) are unavailable; this character contributes no \(pool.rawValue) slots until skills are synchronized or a slot limit is entered.",
+              severity: .warning
+            )
+          )
+        }
+        guard count > 0 else { continue }
+        groups.append(
+          IndustrySlotGroup(
+            characterID: assignment.characterID,
+            pool: pool,
+            count: count,
+            activities: activities
+          )
+        )
+      }
+    }
+    return IndustrySlotResolution(
+      source: .characters,
+      groups: groups,
+      enabledCharacterCount: enabled.count,
+      warnings: warnings
+    )
+  }
+}
+
+/// Industry activities that occupy a character job slot.
+public enum IndustrySlotActivity: String, Codable, CaseIterable, Hashable,
+  Identifiable, Sendable
+{
+  case manufacturing
+  case reaction
+  case copying
+  case research
+  case invention
+
+  public var id: String { rawValue }
+
+  public var pool: IndustrySlotPool {
+    switch self {
+    case .manufacturing: .manufacturing
+    case .reaction: .reaction
+    case .copying, .research, .invention: .science
+    }
+  }
+}
+
+/// EVE slot pools: copying, research and invention share the science slots.
+public enum IndustrySlotPool: String, Codable, CaseIterable, Hashable,
+  Identifiable, Sendable
+{
+  case manufacturing
+  case reaction
+  case science
+
+  public var id: String { rawValue }
+}
+
+public struct CharacterIndustryAssignment: Codable, Equatable, Identifiable,
+  Sendable
+{
+  public var id: Int64 { characterID }
+  public let characterID: Int64
+  /// Last known name, kept for display while no capability snapshot exists.
+  public var characterName: String
+  public var isEnabled: Bool
+  public var allowedActivities: Set<IndustrySlotActivity>
+  /// `nil` uses the skill maximum of the pool.
+  public var manufacturingSlotLimit: Int?
+  public var reactionSlotLimit: Int?
+  public var scienceSlotLimit: Int?
+
+  public init(
+    characterID: Int64,
+    characterName: String,
+    isEnabled: Bool = false,
+    allowedActivities: Set<IndustrySlotActivity> = Set(
+      IndustrySlotActivity.allCases
+    ),
+    manufacturingSlotLimit: Int? = nil,
+    reactionSlotLimit: Int? = nil,
+    scienceSlotLimit: Int? = nil
+  ) {
+    self.characterID = characterID
+    self.characterName = characterName
+    self.isEnabled = isEnabled
+    self.allowedActivities = allowedActivities
+    self.manufacturingSlotLimit = manufacturingSlotLimit.map { max(0, $0) }
+    self.reactionSlotLimit = reactionSlotLimit.map { max(0, $0) }
+    self.scienceSlotLimit = scienceSlotLimit.map { max(0, $0) }
+  }
+
+  public func slotLimit(for pool: IndustrySlotPool) -> Int? {
+    switch pool {
+    case .manufacturing: manufacturingSlotLimit.map { max(0, $0) }
+    case .reaction: reactionSlotLimit.map { max(0, $0) }
+    case .science: scienceSlotLimit.map { max(0, $0) }
+    }
+  }
+
+  public mutating func setSlotLimit(_ limit: Int?, for pool: IndustrySlotPool) {
+    let value = limit.map { max(0, $0) }
+    switch pool {
+    case .manufacturing: manufacturingSlotLimit = value
+    case .reaction: reactionSlotLimit = value
+    case .science: scienceSlotLimit = value
+    }
+  }
+}
+
+/// Slot maximums derived from trained skills (active level):
+/// manufacturing 1 + Mass Production + Advanced Mass Production,
+/// reactions 1 + Mass Reactions + Advanced Mass Reactions (0 without the
+/// Reactions skill), science 1 + Laboratory Operation + Advanced Laboratory
+/// Operation. `nil` means the skills are unavailable.
+public struct IndustrySkillSlotLimits: Equatable, Sendable {
+  public static let massProduction: Int64 = 3_387
+  public static let advancedMassProduction: Int64 = 24_625
+  public static let reactions: Int64 = 45_746
+  public static let massReactions: Int64 = 45_748
+  public static let advancedMassReactions: Int64 = 45_749
+  public static let laboratoryOperation: Int64 = 3_406
+  public static let advancedLaboratoryOperation: Int64 = 24_624
+
+  public let manufacturing: Int?
+  public let reaction: Int?
+  public let science: Int?
+
+  public init(snapshot: CharacterCapabilitySnapshot?) {
+    guard let snapshot,
+      snapshot.skills.state != .forbidden,
+      snapshot.skills.state != .unavailable,
+      snapshot.skills.value != nil
+    else {
+      manufacturing = nil
+      reaction = nil
+      science = nil
+      return
+    }
+    func level(_ typeID: Int64) -> Int {
+      min(5, max(0, snapshot.skillLevel(typeID) ?? 0))
+    }
+    manufacturing =
+      1 + level(Self.massProduction) + level(Self.advancedMassProduction)
+    reaction =
+      level(Self.reactions) == 0
+      ? 0
+      : 1 + level(Self.massReactions) + level(Self.advancedMassReactions)
+    science =
+      1 + level(Self.laboratoryOperation)
+      + level(Self.advancedLaboratoryOperation)
+  }
+
+  public func slots(for pool: IndustrySlotPool) -> Int? {
+    switch pool {
+    case .manufacturing: manufacturing
+    case .reaction: reaction
+    case .science: science
+    }
+  }
+}
+
+public struct IndustrySlotGroup: Equatable, Sendable {
+  /// `nil` for the manual slot counts.
+  public let characterID: Int64?
+  public let pool: IndustrySlotPool
+  public let count: Int
+  public let activities: Set<IndustrySlotActivity>
+
+  public init(
+    characterID: Int64?,
+    pool: IndustrySlotPool,
+    count: Int,
+    activities: Set<IndustrySlotActivity>
+  ) {
+    self.characterID = characterID
+    self.pool = pool
+    self.count = max(0, count)
+    self.activities = activities
+  }
+}
+
+public struct IndustrySlotResolution: Equatable, Sendable {
+  public let source: IndustrySlotScheduleSummary.Source
+  public let groups: [IndustrySlotGroup]
+  public let enabledCharacterCount: Int
+  public let warnings: [DomainWarning]
+
+  public func slotCount(for pool: IndustrySlotPool) -> Int {
+    groups.filter { $0.pool == pool }.reduce(0) { $0 + $1.count }
   }
 }
 

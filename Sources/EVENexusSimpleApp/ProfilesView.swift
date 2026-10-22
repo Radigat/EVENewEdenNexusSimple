@@ -48,6 +48,7 @@ struct ProfilesView: View {
         productionMatrix
         marketAndBlueprintConfiguration
         schedulingConfiguration
+        characterIndustryConfiguration
         blacklistAndInvention
         inventionSkillsOverview
       }
@@ -216,6 +217,15 @@ struct ProfilesView: View {
             title: "Reaction slots",
             value: basisBinding(\.scheduling.reactionSlots)
           )
+          SlotCountField(
+            title: "Science slots",
+            value: basisBinding(\.scheduling.scienceSlots)
+          )
+          Text(
+            "Manual slot counts apply only while no character is enabled for industry below."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
           LabeledContent("Don't split jobs shorter than") {
             HStack(spacing: DesignTokens.spacingSM) {
               TextField(
@@ -242,6 +252,29 @@ struct ProfilesView: View {
               Text("days").foregroundStyle(DesignTokens.textSecondary)
             }
           }
+          LabeledContent("Reaction runs per job") {
+            HStack(spacing: DesignTokens.spacingSM) {
+              TextField(
+                "Runs",
+                value: Binding(
+                  get: { runtime.productionBasis.scheduling.reactionRunsPerJob },
+                  set: {
+                    runtime.productionBasis.scheduling.reactionRunsPerJob =
+                      max(0, $0)
+                  }
+                ),
+                format: .number
+              )
+              .multilineTextAlignment(.trailing)
+              .frame(width: DesignTokens.compactNumberWidth)
+              Text("runs").foregroundStyle(DesignTokens.textSecondary)
+            }
+          }
+          Text(
+            "Job splitting for the production job list and the estimated job time: manufacturing jobs up to the minimum stay whole; longer jobs are split so that no job exceeds the maximum and free slots are used, while every piece keeps at least the minimum length. A single run longer than the maximum stays one longer job. Reactions run in batches of at least the configured runs (default 100, about 5–6 days); a remainder makes batches longer instead of adding a short batch. 0 runs uses the day window for reactions too. Jobs bound to a selected BPO or BPC stay whole; materials are rounded per job."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
           Toggle(
             "Always use default mode",
             isOn: basisBinding(\.scheduling.alwaysUseDefaultMode)
@@ -249,6 +282,84 @@ struct ProfilesView: View {
         }
       }
     }
+  }
+
+  private var characterIndustryConfiguration: some View {
+    let resolution = runtime.productionBasis.scheduling.resolvedSlotGroups(
+      capabilities: capabilitySnapshots
+    )
+    return Panel(title: "Industry Characters") {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        Text(
+          "Choose which characters may run industry jobs, which activities they may take and how many slots they may use. Empty limits use the skill maximum. Enabled characters replace the manual slot counts for the estimated job time."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        if characters.isEmpty {
+          Text("Connect a character under Data & Settings to assign industry slots.")
+            .foregroundStyle(DesignTokens.textSecondary)
+        } else {
+          ForEach(characters, id: \.characterID) { character in
+            CharacterIndustryAssignmentRow(
+              characterName: character.characterName,
+              limits: IndustrySkillSlotLimits(
+                snapshot: capabilitySnapshots.first {
+                  $0.character.id == character.characterID
+                }
+              ),
+              assignment: characterAssignmentBinding(
+                characterID: character.characterID,
+                characterName: character.characterName
+              )
+            )
+            Divider()
+          }
+        }
+        LabeledContent("Effective slots") {
+          Text(
+            AppLocalization.format(
+              "Manufacturing %lld · Reactions %lld · Science %lld",
+              Int64(resolution.slotCount(for: .manufacturing)),
+              Int64(resolution.slotCount(for: .reaction)),
+              Int64(resolution.slotCount(for: .science))
+            )
+          )
+          .monospacedDigit()
+        }
+        Text(
+          resolution.source == .characters
+            ? "Source: enabled characters."
+            : "Source: manual slot counts (no character enabled)."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        ForEach(resolution.warnings) { warning in
+          Label(warning.message, systemImage: "exclamationmark.triangle")
+            .font(.caption)
+            .foregroundStyle(DesignTokens.caution)
+        }
+      }
+    }
+  }
+
+  private func characterAssignmentBinding(
+    characterID: Int64,
+    characterName: String
+  ) -> Binding<CharacterIndustryAssignment> {
+    Binding(
+      get: {
+        runtime.productionBasis.scheduling.assignment(for: characterID)
+          ?? CharacterIndustryAssignment(
+            characterID: characterID,
+            characterName: characterName
+          )
+      },
+      set: { newValue in
+        var value = newValue
+        value.characterName = characterName
+        runtime.productionBasis.scheduling.setAssignment(value)
+      }
+    )
   }
 
   private var marketAndBlueprintConfiguration: some View {
@@ -4361,6 +4472,108 @@ private struct SystemFacilityPicker: View {
       notes.append("No selectable station or structure was found in this system.")
     }
     message = notes.isEmpty ? nil : notes.joined(separator: " ")
+  }
+}
+
+private struct CharacterIndustryAssignmentRow: View {
+  let characterName: String
+  let limits: IndustrySkillSlotLimits
+  @Binding var assignment: CharacterIndustryAssignment
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        EVEEntityText(value: characterName, lineLimit: 1)
+        Spacer()
+        Toggle("Use for industry", isOn: $assignment.isEnabled)
+          .toggleStyle(.switch)
+      }
+      if assignment.isEnabled {
+        HStack(spacing: DesignTokens.spacingMD) {
+          ForEach(IndustrySlotActivity.allCases) { activity in
+            Toggle(activity.displayName, isOn: activityBinding(activity))
+              .toggleStyle(.checkbox)
+          }
+        }
+        ForEach(IndustrySlotPool.allCases) { pool in
+          if assignment.allowedActivities.contains(where: { $0.pool == pool }) {
+            LabeledContent(pool.displayName) {
+              HStack(spacing: DesignTokens.spacingSM) {
+                Text(skillMaximumText(pool))
+                  .foregroundStyle(DesignTokens.textSecondary)
+                  .monospacedDigit()
+                TextField(
+                  "Skill maximum",
+                  value: limitBinding(pool),
+                  format: .number
+                )
+                .multilineTextAlignment(.trailing)
+                .frame(width: DesignTokens.compactNumberWidth)
+                .accessibilityLabel(
+                  Text(
+                    AppLocalization.format(
+                      "Slot limit for %@",
+                      pool.displayName
+                    )
+                  )
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private func skillMaximumText(_ pool: IndustrySlotPool) -> String {
+    guard let maximum = limits.slots(for: pool) else {
+      return AppLocalization.text("Skills unavailable")
+    }
+    return AppLocalization.format("Skill maximum %lld", Int64(maximum))
+  }
+
+  private func activityBinding(
+    _ activity: IndustrySlotActivity
+  ) -> Binding<Bool> {
+    Binding(
+      get: { assignment.allowedActivities.contains(activity) },
+      set: { isAllowed in
+        if isAllowed {
+          assignment.allowedActivities.insert(activity)
+        } else {
+          assignment.allowedActivities.remove(activity)
+        }
+      }
+    )
+  }
+
+  private func limitBinding(_ pool: IndustrySlotPool) -> Binding<Int?> {
+    Binding(
+      get: { assignment.slotLimit(for: pool) },
+      set: { assignment.setSlotLimit($0, for: pool) }
+    )
+  }
+}
+
+extension IndustrySlotActivity {
+  fileprivate var displayName: String {
+    switch self {
+    case .manufacturing: "Manufacturing".localizedUI
+    case .reaction: "Reactions".localizedUI
+    case .copying: "Copying".localizedUI
+    case .research: "Research".localizedUI
+    case .invention: "Invention".localizedUI
+    }
+  }
+}
+
+extension IndustrySlotPool {
+  fileprivate var displayName: String {
+    switch self {
+    case .manufacturing: "Manufacturing slots".localizedUI
+    case .reaction: "Reaction slots".localizedUI
+    case .science: "Science slots".localizedUI
+    }
   }
 }
 

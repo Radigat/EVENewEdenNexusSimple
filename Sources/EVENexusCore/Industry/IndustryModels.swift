@@ -753,6 +753,10 @@ public struct IndustryJobCost: Identifiable, Codable, Sendable {
   public let blueprintSupplyJobID: UUID?
   public let blueprintSource: BlueprintSourceReference?
   public var durationSeconds: Int64? = nil
+  /// 1-based piece of a split job and the piece count; `nil` before job
+  /// splitting existed or for unsplit jobs of old plans.
+  public var piece: Int? = nil
+  public var pieceCount: Int? = nil
 
   public init(
     id: UUID,
@@ -775,7 +779,9 @@ public struct IndustryJobCost: Identifiable, Codable, Sendable {
     manufacturingCategory: ManufacturingCategory? = nil,
     blueprintSupplyJobID: UUID? = nil,
     blueprintSource: BlueprintSourceReference? = nil,
-    durationSeconds: Int64? = nil
+    durationSeconds: Int64? = nil,
+    piece: Int? = nil,
+    pieceCount: Int? = nil
   ) {
     self.id = id
     self.typeID = typeID
@@ -798,6 +804,8 @@ public struct IndustryJobCost: Identifiable, Codable, Sendable {
     self.blueprintSupplyJobID = blueprintSupplyJobID
     self.blueprintSource = blueprintSource
     self.durationSeconds = durationSeconds
+    self.piece = piece
+    self.pieceCount = pieceCount
   }
 }
 
@@ -1417,6 +1425,275 @@ public enum PlannerTargetMarketSuggestion {
   }
 }
 
+public struct IndustrySlotScheduleSummary: Codable, Equatable, Sendable {
+  public enum Source: String, Codable, Sendable {
+    /// Enabled characters with their skill-derived and limited slots.
+    case characters
+    /// Manual slot counts of the production configuration.
+    case manual
+  }
+
+  public let source: Source
+  public let enabledCharacterCount: Int
+  public let manufacturingSlots: Int
+  public let reactionSlots: Int
+  public let scienceSlots: Int
+  public let jobCount: Int
+  /// Activities with jobs but without any slot allowed to run them.
+  public let unschedulableActivities: [IndustrySlotActivity]
+  /// Split rule used for the schedule.
+  public var doNotSplitShorterThanDays: Double? = nil
+  public var maximumJobDays: Double? = nil
+  public var reactionRunsPerJob: Int? = nil
+  /// Scheduled pieces (after splitting), empty without a complete schedule.
+  public var entries: [IndustryScheduleEntry]? = nil
+
+  public var isComplete: Bool { unschedulableActivities.isEmpty }
+
+  public init(
+    source: Source,
+    enabledCharacterCount: Int,
+    manufacturingSlots: Int,
+    reactionSlots: Int,
+    scienceSlots: Int,
+    jobCount: Int,
+    unschedulableActivities: [IndustrySlotActivity]
+  ) {
+    self.source = source
+    self.enabledCharacterCount = enabledCharacterCount
+    self.manufacturingSlots = manufacturingSlots
+    self.reactionSlots = reactionSlots
+    self.scienceSlots = scienceSlots
+    self.jobCount = jobCount
+    self.unschedulableActivities = unschedulableActivities
+  }
+}
+
+public struct IndustryScheduleEntry: Codable, Equatable, Identifiable,
+  Sendable
+{
+  /// Position in the schedule input; stable tie-breaker for sorting.
+  public let id: Int
+  public let typeID: Int64?
+  /// `nil` keeps an unresolved product name explicit.
+  public let name: String?
+  public let activity: IndustrySlotActivity
+  public let runs: Int
+  /// 1-based piece number and piece count of the split planned job.
+  public let piece: Int
+  public let pieceCount: Int
+  public let startSeconds: Int64
+  public let finishSeconds: Int64
+
+  public var durationSeconds: Int64 { max(0, finishSeconds - startSeconds) }
+
+  public init(
+    id: Int,
+    typeID: Int64?,
+    name: String?,
+    activity: IndustrySlotActivity,
+    runs: Int,
+    piece: Int,
+    pieceCount: Int,
+    startSeconds: Int64,
+    finishSeconds: Int64
+  ) {
+    self.id = id
+    self.typeID = typeID
+    self.name = name
+    self.activity = activity
+    self.runs = runs
+    self.piece = piece
+    self.pieceCount = pieceCount
+    self.startSeconds = startSeconds
+    self.finishSeconds = finishSeconds
+  }
+}
+
+public struct IndustryScheduledJob: Equatable, Sendable {
+  public let activity: IndustrySlotActivity
+  public let durationSeconds: Int64
+  /// Indices of jobs whose outputs must be finished before this job starts.
+  public let dependencies: [Int]
+
+  public init(
+    activity: IndustrySlotActivity,
+    durationSeconds: Int64,
+    dependencies: [Int] = []
+  ) {
+    self.activity = activity
+    self.durationSeconds = max(0, durationSeconds)
+    self.dependencies = dependencies
+  }
+}
+
+public struct IndustrySlotScheduleResult: Equatable, Sendable {
+  /// `nil` when a job cannot be placed (no compatible slot or a cycle).
+  public let makespanSeconds: Int64?
+  public let unschedulableActivities: [IndustrySlotActivity]
+  public let hasDependencyCycle: Bool
+  /// Start and finish offsets per input job; empty without a schedule.
+  public let startSeconds: [Int64]
+  public let finishSeconds: [Int64]
+
+  init(
+    makespanSeconds: Int64?,
+    unschedulableActivities: [IndustrySlotActivity],
+    hasDependencyCycle: Bool,
+    startSeconds: [Int64] = [],
+    finishSeconds: [Int64] = []
+  ) {
+    self.makespanSeconds = makespanSeconds
+    self.unschedulableActivities = unschedulableActivities
+    self.hasDependencyCycle = hasDependencyCycle
+    self.startSeconds = startSeconds
+    self.finishSeconds = finishSeconds
+  }
+}
+
+/// Deterministic list scheduling: a job starts only after every dependency
+/// has finished (EVE consumes inputs at job start), jobs are taken by longest
+/// remaining critical path and placed on the compatible slot that lets them
+/// start first. Jobs are not split into several runs.
+public enum IndustrySlotScheduler {
+  public static func schedule(
+    jobs: [IndustryScheduledJob],
+    groups: [IndustrySlotGroup]
+  ) -> IndustrySlotScheduleResult {
+    guard !jobs.isEmpty else {
+      return IndustrySlotScheduleResult(
+        makespanSeconds: 0,
+        unschedulableActivities: [],
+        hasDependencyCycle: false
+      )
+    }
+    let needed = Set(jobs.map(\.activity))
+    let unschedulable = IndustrySlotActivity.allCases.filter { activity in
+      needed.contains(activity)
+        && !groups.contains { $0.count > 0 && $0.activities.contains(activity) }
+    }
+    // More slots of one group than compatible jobs cannot shorten the plan.
+    var slotActivities: [Set<IndustrySlotActivity>] = []
+    for group in groups where group.count > 0 {
+      let compatibleJobs = jobs.filter { group.activities.contains($0.activity) }
+        .count
+      let count = min(group.count, compatibleJobs)
+      slotActivities.append(
+        contentsOf: Array(repeating: group.activities, count: count)
+      )
+    }
+    var successors = Array(repeating: [Int](), count: jobs.count)
+    var remainingDependencies = Array(repeating: 0, count: jobs.count)
+    for (index, job) in jobs.enumerated() {
+      let dependencies = Set(job.dependencies).filter {
+        $0 != index && jobs.indices.contains($0)
+      }
+      remainingDependencies[index] = dependencies.count
+      for dependency in dependencies { successors[dependency].append(index) }
+    }
+    // Topological order (Kahn) for the critical-path priorities.
+    var order: [Int] = []
+    var pending = remainingDependencies
+    var queue = jobs.indices.filter { pending[$0] == 0 }
+    while let next = queue.first {
+      queue.removeFirst()
+      order.append(next)
+      for successor in successors[next] {
+        pending[successor] -= 1
+        if pending[successor] == 0 { queue.append(successor) }
+      }
+    }
+    guard order.count == jobs.count else {
+      return IndustrySlotScheduleResult(
+        makespanSeconds: nil,
+        unschedulableActivities: unschedulable,
+        hasDependencyCycle: true
+      )
+    }
+    guard unschedulable.isEmpty else {
+      return IndustrySlotScheduleResult(
+        makespanSeconds: nil,
+        unschedulableActivities: unschedulable,
+        hasDependencyCycle: false
+      )
+    }
+    var priority = Array(repeating: Int64(0), count: jobs.count)
+    for index in order.reversed() {
+      let tail = successors[index].map { priority[$0] }.max() ?? 0
+      priority[index] = saturatedAdd(jobs[index].durationSeconds, tail)
+    }
+    var slotFree = Array(repeating: Int64(0), count: slotActivities.count)
+    let slotsByActivity = Dictionary(
+      uniqueKeysWithValues: IndustrySlotActivity.allCases.map { activity in
+        (
+          activity,
+          slotActivities.indices.filter { slotActivities[$0].contains(activity) }
+        )
+      }
+    )
+    var readyAt = Array(repeating: Int64(0), count: jobs.count)
+    var startSeconds = Array(repeating: Int64(0), count: jobs.count)
+    var finishSeconds = Array(repeating: Int64(0), count: jobs.count)
+    var ready = Set(jobs.indices.filter { remainingDependencies[$0] == 0 })
+    var makespan: Int64 = 0
+    while !ready.isEmpty {
+      // Earliest possible start first, then the longest critical path, then
+      // the input order; slots are compared by index for determinism.
+      var choice: (job: Int, slot: Int, start: Int64)?
+      for candidate in ready.sorted() {
+        for slot in slotsByActivity[jobs[candidate].activity] ?? [] {
+          let start = max(readyAt[candidate], slotFree[slot])
+          guard let current = choice else {
+            choice = (candidate, slot, start)
+            continue
+          }
+          if start < current.start
+            || (start == current.start
+              && priority[candidate] > priority[current.job])
+          {
+            choice = (candidate, slot, start)
+          }
+        }
+      }
+      guard let choice else {
+        let activities = Set(ready.map { jobs[$0].activity })
+        return IndustrySlotScheduleResult(
+          makespanSeconds: nil,
+          unschedulableActivities: IndustrySlotActivity.allCases.filter {
+            activities.contains($0)
+          },
+          hasDependencyCycle: false
+        )
+      }
+      let job = choice.job
+      let slot = choice.slot
+      ready.remove(job)
+      let finish = saturatedAdd(choice.start, jobs[job].durationSeconds)
+      startSeconds[job] = choice.start
+      finishSeconds[job] = finish
+      slotFree[slot] = finish
+      makespan = max(makespan, finish)
+      for successor in successors[job] {
+        readyAt[successor] = max(readyAt[successor], finish)
+        remainingDependencies[successor] -= 1
+        if remainingDependencies[successor] == 0 { ready.insert(successor) }
+      }
+    }
+    return IndustrySlotScheduleResult(
+      makespanSeconds: makespan,
+      unschedulableActivities: [],
+      hasDependencyCycle: false,
+      startSeconds: startSeconds,
+      finishSeconds: finishSeconds
+    )
+  }
+
+  private static func saturatedAdd(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+    let (result, overflow) = lhs.addingReportingOverflow(rhs)
+    return overflow ? Int64.max : result
+  }
+}
+
 public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public let id: UUID
   public let createdAt: Date
@@ -1438,6 +1715,9 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public var targetMarket: PlannerTargetMarket? = nil
   /// Manual alliance-market scenario (P11); `nil` when never entered.
   public var allianceSale: PlannerAllianceSaleResult? = nil
+  /// Slot basis of `makespanSeconds`; `nil` for snapshots saved before the
+  /// dependency-aware slot schedule existed.
+  public var slotSchedule: IndustrySlotScheduleSummary? = nil
   public let immediateSale: SaleScenarioResult
   public let listedSale: SaleScenarioResult
   public let mainContractSale: SaleScenarioResult?
@@ -1449,6 +1729,11 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public let coalitionContractSale: SaleScenarioResult?
   public let totalJobSeconds: Int64
   public let makespanSeconds: Int64
+
+  /// Elapsed time, or `nil` when an activity of the plan has no usable slot.
+  public var estimatedMakespanSeconds: Int64? {
+    slotSchedule?.isComplete == false ? nil : makespanSeconds
+  }
   public let warnings: [DomainWarning]
   public let explanations: [ExplanationEdge]
   public let provenance: PlanProvenance
