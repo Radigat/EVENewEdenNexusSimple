@@ -131,7 +131,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 
 | Bereich | Zweck und wesentliche Grenze |
 | --- | --- |
-| Dashboard | verdichteter Überblick über Jobs, persönliche Wallet-Salden, Finanzen, Markt und Automatisierungszustände; übernimmt die Charakterdaten aus dem zentralen Startablauf |
+| Dashboard | verdichteter Überblick über Jobs, persönliche Wallet-Salden, Finanzen und Markt; übernimmt die Charakterdaten aus dem zentralen Startablauf |
 | Planner | Produktionsgraph, Build/Buy/Warehouse-Auswahl, Installation, Logistik, Gebühren, Erlös, Profit und ROI |
 | Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen und festen Capital-Routen im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Bauen** übergibt die konkrete Charge an den Planner |
@@ -190,7 +190,17 @@ frei verschieb- und skalierbar, seine Mindestinhaltsgröße beträgt weiterhin
 SwiftUI-Ausgangsgröße erhalten, falls beim Anlegen noch kein Bildschirmrahmen
 verfügbar ist.
 
-Die Vertragsstatus-Fußleiste verwendet auch bei der Berechnung der minimalen
+Die Fußleiste der Navigationsseitenleiste zeigt von oben nach unten die Karte
+**Automatic data** (Stand der automatischen Datenabrufe), den Vertragsimport und
+das Logo. **Automatic data** lässt sich über die Kopfzeile ein- und ausklappen;
+der Zustand bleibt gespeichert, im eingeklappten Zustand zeigt ein kleiner
+Fortschrittsindikator laufende Vertrags- oder Hub-Markt-Abrufe. Das Menü der
+Karte pausiert oder setzt die Main-Hub-Aktualisierungen fort. Ist die
+Seitenleiste zu schmal, rückt der Zeilenstatus unter den Zeilentitel statt
+abgeschnitten zu werden. Das Dashboard selbst zeigt oben nur noch Titel und
+Untertitel.
+
+Die Fußleiste verwendet auch bei der Berechnung der minimalen
 Fenstergröße die Mindestbreite der Seitenleiste (180 Punkte). Mehrzeilige
 Statusmeldungen vergrößern dadurch nicht den gesamten Navigationsbereich über
 die Fensterhöhe hinaus. Kopfmenüs, oberster Navigationseintrag und Logo bleiben
@@ -313,7 +323,7 @@ Bereich weiter. Das Dashboard wartet beim ersten Aufruf auf das Sync-Ergebnis
 dieses Ablaufs und synchronisiert nicht ein zweites Mal; ohne Hintergrunddienste
 synchronisiert es wie bisher selbst.
 
-Die Dashboard-Karte **Automatic data** zeigt unter **Programmstart** den Stand
+Die Seitenleisten-Karte **Automatic data** zeigt unter **Programmstart** den Stand
 dieses Ablaufs. Es gibt je eine Zeile für Charaktere, Lager & Baupläne,
 Reaktionen, Mondmaterialien und Mineralien; darunter folgen wie bisher die
 Zeilen für Verträge und Main-Hub-Markt. Jede Zeile nennt einen Zustand (Wartet,
@@ -765,7 +775,7 @@ Der **Home-Hub-Scan** läuft direkt im Anschluss an jeden Main-Hub-Scan.
     bleibt als veraltet erhalten.
   - Ein Home-Hub-Fehler verändert die Main-Hub-Ergebnisse nicht.
 
-Die Dashboard-Karte **Automatic data** zeigt den Stand in der Zeile
+Die Seitenleisten-Karte **Automatic data** zeigt den Stand in der Zeile
 **Home-Hub-Markt**.
 
 Der Navigationsbereich **Home-Hub-Chancen** steht direkt unter den
@@ -2081,7 +2091,7 @@ Standardsatz getrennt.
    Trader- und Gebührennachweise (inklusive bestätigtem Vertragsgebührensatz)
    festlegen.
 8. Nach jedem Start lädt die App Charaktere, Analysen und die Hub-Scans
-   automatisch; den Stand zeigt die Dashboard-Karte **Automatic data**.
+   automatisch; den Stand zeigt die Seitenleisten-Karte **Automatic data**.
 9. Auf dem Dashboard (**Top-Chancen**) oder in den Main-, Home- und
    Coalition-Hub-Chancen ein Produkt nach Gewinn, ROI, Bedarf oder eigener
    Entscheidung wählen und mit **Bauen** an den Planner übergeben.

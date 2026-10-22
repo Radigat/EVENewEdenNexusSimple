@@ -1,5 +1,33 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 22. Oktober 2026 – „Automatische Daten“ in die Seitenleiste verlegt
+
+Ziel (Eigentümerauftrag): Dashboard grafisch entlasten; die Karte
+„Automatische Daten“ links unten in der Navigation oberhalb des
+Vertragsimports einordnen.
+
+Änderung:
+
+- Neue View `SidebarAutomaticDataStatus` in `ContentView.swift` mit den
+  bisherigen Zeilen (Programmstart, Verträge, Main-/Home-/Coalition-Hub-Markt)
+  und dem Menü zum Pausieren/Fortsetzen der Main-Hub-Aktualisierungen.
+  Statusberechnung unverändert aus `DashboardView` übernommen.
+- Einklappbar über die Kopfzeile (`sidebar.automatic-data-expanded`,
+  Standard ausgeklappt); Mini-Fortschritt bei laufenden Abrufen.
+- `AutomaticStatusRow` setzt den Status bei zu geringer Breite unter den
+  Titel. Die bisherige Fußzeile „Marktanalysen“ entfällt.
+- Dashboard-Kopf zeigt nur noch Titel und Untertitel; dadurch entfällt die
+  große Leerfläche über „Industrie & Jobs“.
+
+Prüfung:
+
+- `swift build`, `swift test`: 471 Swift-Testing-Tests in 31 Suites, 61 Tests in 3 Suites und 8 XCTest-Tests bestanden.
+- `xcodebuild test` unsigniert: `TEST SUCCEEDED`.
+- `EVEStaticDataKit` nicht berührt, nicht erneut getestet.
+
+Offen: Sichtprüfung in der laufenden App (Höhe der Seitenleiste bei kleinen
+Fenstern) durch den Eigentümer.
+
 ## 22. Oktober 2026 – Fehlergrund je Charakter im Startablauf
 
 Anlass: Am 21.10. scheiterte beim Programmstart der Abgleich aller Charaktere

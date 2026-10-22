@@ -357,6 +357,7 @@ struct ContentView: View {
       )
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
+          SidebarAutomaticDataStatus(runtime: runtime)
           PublicContractSidebarStatus(runtime: runtime)
           Image("BrandLogo")
             .resizable()
@@ -709,6 +710,408 @@ struct PublicContractBackgroundPresentation: Equatable {
     default:
       progressFraction = nil
     }
+  }
+}
+
+/// Sidebar card "Automatic data": startup loads plus the recurring contract
+/// and hub market refreshes, placed directly above the contract import.
+struct SidebarAutomaticDataStatus: View {
+  @ObservedObject var runtime: RuntimeState
+  @Query(sort: \StoredCharacter.characterName)
+  private var characters: [StoredCharacter]
+  @Query private var esiSnapshotMetadata: [StoredESISnapshotMetadata]
+  @AppStorage("sidebar.automatic-data-expanded", store: AppDefaults.store)
+  private var isExpanded = true
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack(spacing: DesignTokens.spacingXS) {
+        FullWidthDisclosureButton(
+          isExpanded: isExpanded,
+          action: { isExpanded.toggle() }
+        ) {
+          HStack(spacing: DesignTokens.spacingXS) {
+            Label("Automatic data", systemImage: "arrow.triangle.2.circlepath")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(DesignTokens.textPrimary)
+            if isUpdatingMarketsOrContracts {
+              ProgressView()
+                .controlSize(.mini)
+                .accessibilityLabel("Updating")
+            }
+          }
+        }
+        optionsMenu
+      }
+      if isExpanded {
+        StartupDataStatusSection(
+          startupLoad: runtime.startupDataLoad,
+          inputs: startupDataStatusInputs
+        )
+        Divider()
+        automaticStatusRow(
+          title: "Contracts",
+          detail: contractAutomaticStatus,
+          systemImage: "doc.text.magnifyingglass",
+          color: contractAutomaticStatusColor,
+          progress: contractAutomaticProgress
+        )
+        automaticStatusRow(
+          title: "Main Hub market",
+          detail: mainHubAutomaticStatus,
+          systemImage: "building.columns",
+          color: mainHubAutomaticStatusColor,
+          progress: mainHubAutomaticProgress
+        )
+        automaticStatusRow(
+          title: "Home Hub market",
+          detail: secondaryHubAutomaticStatus(.home),
+          systemImage: "house",
+          color: secondaryHubAutomaticStatusColor(.home),
+          progress: secondaryHubAutomaticProgress(.home)
+        )
+        automaticStatusRow(
+          title: "Coalition Hub market",
+          detail: secondaryHubAutomaticStatus(.coalition),
+          systemImage: "flag",
+          color: secondaryHubAutomaticStatusColor(.coalition),
+          progress: secondaryHubAutomaticProgress(.coalition)
+        )
+      }
+    }
+    .padding(.horizontal, DesignTokens.spacingMD)
+    .padding(.vertical, DesignTokens.spacingSM)
+    // Same bounded wrapping width as the contract import status below.
+    .frame(
+      minWidth: DesignTokens.sidebarMinimum,
+      maxWidth: .infinity,
+      alignment: .leading
+    )
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("navigation.automatic-data-status")
+  }
+
+  private var isUpdatingMarketsOrContracts: Bool {
+    runtime.isSynchronizingPublicContracts
+      || runtime.isAnalyzingManufacturingOpportunities
+      || runtime.opportunityState(for: .home).isAnalyzing
+      || runtime.opportunityState(for: .coalition).isAnalyzing
+  }
+
+  private var optionsMenu: some View {
+    Menu {
+      if runtime.mainHubMarketAutomaticUpdatesEnabled {
+        Button {
+          runtime.setMainHubMarketAutomaticUpdatesEnabled(false)
+        } label: {
+          Label("Pause Main Hub updates", systemImage: "pause.circle")
+        }
+      } else {
+        Button {
+          runtime.setMainHubMarketAutomaticUpdatesEnabled(true)
+        } label: {
+          Label("Resume Main Hub updates", systemImage: "play.circle")
+        }
+      }
+    } label: {
+      Image(systemName: "ellipsis.circle")
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .help("Automatic data options")
+    .accessibilityLabel("Automatic data options")
+  }
+
+  private func automaticStatusRow(
+    title: LocalizedStringKey,
+    detail: String,
+    systemImage: String,
+    color: Color,
+    progress: Double?
+  ) -> some View {
+    AutomaticStatusRow(
+      title: title,
+      detail: detail,
+      systemImage: systemImage,
+      color: color,
+      progress: progress
+    )
+  }
+
+  private var startupDataStatusInputs: StartupDataStatusSection.Inputs {
+    let characterIDs = Set(characters.map(\.characterID))
+    let observations = esiSnapshotMetadata.compactMap {
+      metadata -> StartupDataStatusProjector.SourceObservation? in
+      guard characterIDs.contains(metadata.characterID),
+        metadata.domain == "assets" || metadata.domain == "blueprints",
+        let freshness = DataFreshness(rawValue: metadata.freshness)
+      else { return nil }
+      return StartupDataStatusProjector.SourceObservation(
+        freshness: freshness,
+        capturedAt: metadata.capturedAt
+      )
+    }
+    return StartupDataStatusSection.Inputs(
+      lastSyncDates: characters.map(\.lastSyncAt),
+      warehouseObservations: observations,
+      isAnalyzingReactions: runtime.isAnalyzingReactions,
+      reactionMarketStates: runtime.reactionAnalysis.map { _ in [.fresh] },
+      reactionHasError: runtime.reactionAnalysisError != nil,
+      reactionTimestamp: runtime.reactionAnalysis?.createdAt,
+      isRefreshingMoon: runtime.isRefreshingMoonMaterialAnalysis,
+      moonMarketStates: runtime.moonMaterialAnalysis.map {
+        $0.configuredMarkets.values.map(\.state)
+      },
+      moonHasError: runtime.moonMaterialAnalysisError != nil,
+      moonTimestamp: runtime.moonMaterialAnalysis?.refreshedAt,
+      isRefreshingMinerals: runtime.isRefreshingMineralPurchaseAnalysis,
+      mineralMarketStates: runtime.mineralPurchaseAnalysis.map {
+        $0.configuredMarkets.values.map(\.state)
+      },
+      mineralHasError: runtime.mineralPurchaseAnalysisError != nil,
+      mineralTimestamp: runtime.mineralPurchaseAnalysis?.refreshedAt
+    )
+  }
+
+  private var contractAutomaticProgress: Double? {
+    guard runtime.isSynchronizingPublicContracts,
+      runtime.publicContractProgress.regionCount > 0
+    else { return nil }
+    let completed =
+      runtime.publicContractProgress.remainingInitialRegions > 0
+      ? runtime.publicContractProgress.completedRegions
+      : runtime.publicContractProgress.freshRegions
+    return min(
+      1,
+      max(
+        0,
+        Double(completed)
+          / Double(runtime.publicContractProgress.regionCount)
+      )
+    )
+  }
+
+  private var contractAutomaticStatus: String {
+    let progress = runtime.publicContractProgress
+    if runtime.isSynchronizingPublicContracts {
+      if let activeRegionName = progress.activeRegionName {
+        return AppLocalization.format("Updating · %@", activeRegionName)
+      }
+      return AppLocalization.format(
+        "Updating · %lld/%lld regions",
+        Int64(progress.completedRegions),
+        Int64(progress.regionCount)
+      )
+    }
+    if progress.phase == .failed || runtime.publicContractError != nil {
+      return AppLocalization.text("Update failed")
+    }
+    if progress.phase == .partial || progress.failedRegions > 0 {
+      return AppLocalization.text("Partial index retained")
+    }
+    if let next = runtime.publicContractNextAutomaticRunAt {
+      return AppLocalization.format(
+        "Next %@",
+        next.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    if let completed = progress.lastCompletedAt {
+      return AppLocalization.format(
+        "Updated %@",
+        completed.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    return runtime.publicContractAutomaticUpdatesEnabled
+      ? AppLocalization.text("Preparing")
+      : AppLocalization.text("Paused")
+  }
+
+  private var contractAutomaticStatusColor: Color {
+    if runtime.isSynchronizingPublicContracts { return DesignTokens.accent }
+    if runtime.publicContractProgress.phase == .failed
+      || runtime.publicContractError != nil
+    {
+      return DesignTokens.negative
+    }
+    if runtime.publicContractProgress.phase == .partial
+      || runtime.publicContractProgress.failedRegions > 0
+    {
+      return DesignTokens.caution
+    }
+    return runtime.publicContractAutomaticUpdatesEnabled
+      ? DesignTokens.positive : DesignTokens.textSecondary
+  }
+
+  private var mainHubAutomaticProgress: Double? {
+    guard runtime.isAnalyzingManufacturingOpportunities else { return nil }
+    return runtime.manufacturingOpportunityProgress.fractionCompleted
+  }
+
+  private var mainHubAutomaticStatus: String {
+    if runtime.isAnalyzingManufacturingOpportunities {
+      let progress = runtime.manufacturingOpportunityProgress
+      if progress.totalPages > 0 {
+        return AppLocalization.format(
+          "Updating · page %lld/%lld",
+          Int64(progress.completedPages),
+          Int64(progress.totalPages)
+        )
+      }
+      return AppLocalization.text("Preparing market pages")
+    }
+    guard let location = runtime.productionBasis.mainTradingLocation?.location,
+      location.kind == .npcTradeHub
+    else { return AppLocalization.text("Main Hub not configured") }
+    if runtime.manufacturingOpportunityError != nil {
+      return AppLocalization.text("Update failed")
+    }
+    guard runtime.mainHubMarketAutomaticUpdatesEnabled else {
+      return AppLocalization.text("Paused")
+    }
+    if let next = runtime.mainHubMarketNextAutomaticRunAt {
+      return AppLocalization.format(
+        "Next %@",
+        next.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    if let capturedAt = matchingMainHubMarketCapturedAt {
+      return AppLocalization.format(
+        "Updated %@",
+        capturedAt.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    return AppLocalization.text("Preparing")
+  }
+
+  private var mainHubAutomaticStatusColor: Color {
+    if runtime.isAnalyzingManufacturingOpportunities {
+      return DesignTokens.accent
+    }
+    if runtime.manufacturingOpportunityError != nil {
+      return DesignTokens.negative
+    }
+    guard
+      runtime.productionBasis.mainTradingLocation?.location.kind
+        == .npcTradeHub
+    else { return DesignTokens.caution }
+    return runtime.mainHubMarketAutomaticUpdatesEnabled
+      ? DesignTokens.positive : DesignTokens.textSecondary
+  }
+
+  private func secondaryHubAutomaticProgress(
+    _ role: OpportunityHubRole
+  ) -> Double? {
+    let state = runtime.opportunityState(for: role)
+    guard state.isAnalyzing else { return nil }
+    return state.progress.fractionCompleted
+  }
+
+  private func secondaryHubAutomaticStatus(
+    _ role: OpportunityHubRole
+  ) -> String {
+    let coalition = role == .coalition
+    switch runtime.opportunityScanTarget(for: role) {
+    case .notConfigured:
+      return AppLocalization.text(
+        coalition ? "Coalition Hub not configured" : "Home Hub not configured"
+      )
+    case .sharesMainHub:
+      return AppLocalization.text("Uses Main Hub data")
+    case .sharesHomeHub:
+      return AppLocalization.text("Uses Home Hub data")
+    case .unresolved:
+      return AppLocalization.text(
+        coalition
+          ? "Coalition Hub location incomplete" : "Home Hub location incomplete"
+      )
+    case .npcStation, .playerStructure:
+      break
+    }
+    let state = runtime.opportunityState(for: role)
+    if state.isAnalyzing {
+      if state.progress.totalPages > 0 {
+        return AppLocalization.format(
+          "Updating · page %lld/%lld",
+          Int64(state.progress.completedPages),
+          Int64(state.progress.totalPages)
+        )
+      }
+      return AppLocalization.text("Preparing market pages")
+    }
+    if state.error != nil {
+      if state.marketState?.state == .forbidden {
+        return StartupDataStatusSection.freshnessText(.forbidden)
+      }
+      return AppLocalization.text("Update failed")
+    }
+    guard runtime.mainHubMarketAutomaticUpdatesEnabled else {
+      return AppLocalization.text("Paused")
+    }
+    if let capturedAt = matchingSecondaryHubCapturedAt(role) {
+      return AppLocalization.format(
+        "Updated %@",
+        capturedAt.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    if let next = runtime.mainHubMarketNextAutomaticRunAt {
+      return AppLocalization.format(
+        "Next %@",
+        next.formatted(date: .omitted, time: .shortened)
+      )
+    }
+    return AppLocalization.text("Preparing")
+  }
+
+  private func secondaryHubAutomaticStatusColor(
+    _ role: OpportunityHubRole
+  ) -> Color {
+    switch runtime.opportunityScanTarget(for: role) {
+    case .notConfigured, .sharesMainHub, .sharesHomeHub:
+      return DesignTokens.textSecondary
+    case .unresolved:
+      return DesignTokens.caution
+    case .npcStation, .playerStructure:
+      break
+    }
+    let state = runtime.opportunityState(for: role)
+    if state.isAnalyzing { return DesignTokens.accent }
+    if state.error != nil { return DesignTokens.negative }
+    if state.marketState?.state == .stale { return DesignTokens.caution }
+    return runtime.mainHubMarketAutomaticUpdatesEnabled
+      ? DesignTokens.positive : DesignTokens.textSecondary
+  }
+
+  /// Only a capture of the currently configured exact hub counts.
+  private func matchingSecondaryHubCapturedAt(
+    _ role: OpportunityHubRole
+  ) -> Date? {
+    let configured =
+      role == .coalition
+      ? runtime.productionBasis.coalitionTradingLocation
+      : runtime.productionBasis.homeTradingLocation
+    guard let locationID = configured?.location.locationID else { return nil }
+    let state = runtime.opportunityState(for: role)
+    if let market = state.marketState?.value, market.locationID == locationID {
+      return market.capturedAt
+    }
+    guard let analysis = state.analysis,
+      analysis.resolvedSaleHub.locationID == locationID
+    else { return nil }
+    return analysis.createdAt
+  }
+
+  private var matchingMainHubMarketCapturedAt: Date? {
+    if let capturedAt = runtime.mainHubMarketState?.source.capturedAt {
+      return capturedAt
+    }
+    guard
+      let configuredLocationID =
+        runtime.productionBasis.mainTradingLocation?.location.locationID,
+      let analysis = runtime.manufacturingOpportunityAnalysis,
+      analysis.mainHub.locationID == configuredLocationID
+    else { return nil }
+    return analysis.createdAt
   }
 }
 
@@ -1156,7 +1559,6 @@ struct DashboardView: View {
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
-  @Query private var esiSnapshotMetadata: [StoredESISnapshotMetadata]
   @Query(sort: \AppSetting.key)
   private var settings: [AppSetting]
   @State private var blueprintNames: [Int64: String] = [:]
@@ -1297,408 +1699,12 @@ struct DashboardView: View {
   }
 
   private var header: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(alignment: .top, spacing: DesignTokens.spacingLG) {
-        dashboardHeading
-        Spacer(minLength: DesignTokens.spacingMD)
-        automaticDataStatus
-      }
-      VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-        dashboardHeading
-        automaticDataStatus
-          .frame(maxWidth: .infinity, alignment: .trailing)
-      }
-    }
-  }
-
-  private var dashboardHeading: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text("Dashboard")
         .font(.largeTitle.bold())
       Text("Operations, finances and market movement at a glance.")
         .foregroundStyle(DesignTokens.textSecondary)
     }
-  }
-
-  private var automaticDataStatus: some View {
-    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      HStack {
-        Text("Automatic data")
-          .font(.caption.weight(.semibold))
-          .textCase(.uppercase)
-          .tracking(1.1)
-          .foregroundStyle(DesignTokens.textSecondary)
-        Spacer()
-        Menu {
-          if runtime.mainHubMarketAutomaticUpdatesEnabled {
-            Button {
-              runtime.setMainHubMarketAutomaticUpdatesEnabled(false)
-            } label: {
-              Label("Pause Main Hub updates", systemImage: "pause.circle")
-            }
-          } else {
-            Button {
-              runtime.setMainHubMarketAutomaticUpdatesEnabled(true)
-            } label: {
-              Label("Resume Main Hub updates", systemImage: "play.circle")
-            }
-          }
-        } label: {
-          Image(systemName: "ellipsis.circle")
-        }
-        .menuStyle(.borderlessButton)
-        .help("Automatic data options")
-        .accessibilityLabel("Automatic data options")
-      }
-      StartupDataStatusSection(
-        startupLoad: runtime.startupDataLoad,
-        inputs: startupDataStatusInputs
-      )
-      Divider()
-      automaticStatusRow(
-        title: "Contracts",
-        detail: contractAutomaticStatus,
-        systemImage: "doc.text.magnifyingglass",
-        color: contractAutomaticStatusColor,
-        progress: contractAutomaticProgress
-      )
-      automaticStatusRow(
-        title: "Main Hub market",
-        detail: mainHubAutomaticStatus,
-        systemImage: "building.columns",
-        color: mainHubAutomaticStatusColor,
-        progress: mainHubAutomaticProgress
-      )
-      automaticStatusRow(
-        title: "Home Hub market",
-        detail: secondaryHubAutomaticStatus(.home),
-        systemImage: "house",
-        color: secondaryHubAutomaticStatusColor(.home),
-        progress: secondaryHubAutomaticProgress(.home)
-      )
-      automaticStatusRow(
-        title: "Coalition Hub market",
-        detail: secondaryHubAutomaticStatus(.coalition),
-        systemImage: "flag",
-        color: secondaryHubAutomaticStatusColor(.coalition),
-        progress: secondaryHubAutomaticProgress(.coalition)
-      )
-      Text("Market analyses")
-        .font(.caption2)
-        .foregroundStyle(DesignTokens.textSecondary)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-    }
-    .padding(DesignTokens.spacingSM)
-    .frame(
-      minWidth: 260,
-      idealWidth: 340,
-      maxWidth: 340,
-      alignment: .leading
-    )
-    .background(DesignTokens.panel)
-    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
-    .shadow(
-      color: DesignTokens.panelShadow,
-      radius: DesignTokens.panelShadowRadius,
-      y: DesignTokens.panelShadowOffset
-    )
-    .overlay {
-      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
-        .stroke(DesignTokens.border)
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("dashboard.automatic-data-status")
-  }
-
-  private func automaticStatusRow(
-    title: LocalizedStringKey,
-    detail: String,
-    systemImage: String,
-    color: Color,
-    progress: Double?
-  ) -> some View {
-    AutomaticStatusRow(
-      title: title,
-      detail: detail,
-      systemImage: systemImage,
-      color: color,
-      progress: progress
-    )
-  }
-
-  private var startupDataStatusInputs: StartupDataStatusSection.Inputs {
-    let characterIDs = Set(characters.map(\.characterID))
-    let observations = esiSnapshotMetadata.compactMap {
-      metadata -> StartupDataStatusProjector.SourceObservation? in
-      guard characterIDs.contains(metadata.characterID),
-        metadata.domain == "assets" || metadata.domain == "blueprints",
-        let freshness = DataFreshness(rawValue: metadata.freshness)
-      else { return nil }
-      return StartupDataStatusProjector.SourceObservation(
-        freshness: freshness,
-        capturedAt: metadata.capturedAt
-      )
-    }
-    return StartupDataStatusSection.Inputs(
-      lastSyncDates: characters.map(\.lastSyncAt),
-      warehouseObservations: observations,
-      isAnalyzingReactions: runtime.isAnalyzingReactions,
-      reactionMarketStates: runtime.reactionAnalysis.map { _ in [.fresh] },
-      reactionHasError: runtime.reactionAnalysisError != nil,
-      reactionTimestamp: runtime.reactionAnalysis?.createdAt,
-      isRefreshingMoon: runtime.isRefreshingMoonMaterialAnalysis,
-      moonMarketStates: runtime.moonMaterialAnalysis.map {
-        $0.configuredMarkets.values.map(\.state)
-      },
-      moonHasError: runtime.moonMaterialAnalysisError != nil,
-      moonTimestamp: runtime.moonMaterialAnalysis?.refreshedAt,
-      isRefreshingMinerals: runtime.isRefreshingMineralPurchaseAnalysis,
-      mineralMarketStates: runtime.mineralPurchaseAnalysis.map {
-        $0.configuredMarkets.values.map(\.state)
-      },
-      mineralHasError: runtime.mineralPurchaseAnalysisError != nil,
-      mineralTimestamp: runtime.mineralPurchaseAnalysis?.refreshedAt
-    )
-  }
-
-  private var contractAutomaticProgress: Double? {
-    guard runtime.isSynchronizingPublicContracts,
-      runtime.publicContractProgress.regionCount > 0
-    else { return nil }
-    let completed =
-      runtime.publicContractProgress.remainingInitialRegions > 0
-      ? runtime.publicContractProgress.completedRegions
-      : runtime.publicContractProgress.freshRegions
-    return min(
-      1,
-      max(
-        0,
-        Double(completed)
-          / Double(runtime.publicContractProgress.regionCount)
-      )
-    )
-  }
-
-  private var contractAutomaticStatus: String {
-    let progress = runtime.publicContractProgress
-    if runtime.isSynchronizingPublicContracts {
-      if let activeRegionName = progress.activeRegionName {
-        return AppLocalization.format("Updating · %@", activeRegionName)
-      }
-      return AppLocalization.format(
-        "Updating · %lld/%lld regions",
-        Int64(progress.completedRegions),
-        Int64(progress.regionCount)
-      )
-    }
-    if progress.phase == .failed || runtime.publicContractError != nil {
-      return AppLocalization.text("Update failed")
-    }
-    if progress.phase == .partial || progress.failedRegions > 0 {
-      return AppLocalization.text("Partial index retained")
-    }
-    if let next = runtime.publicContractNextAutomaticRunAt {
-      return AppLocalization.format(
-        "Next %@",
-        next.formatted(date: .omitted, time: .shortened)
-      )
-    }
-    if let completed = progress.lastCompletedAt {
-      return AppLocalization.format(
-        "Updated %@",
-        completed.formatted(date: .omitted, time: .shortened)
-      )
-    }
-    return runtime.publicContractAutomaticUpdatesEnabled
-      ? AppLocalization.text("Preparing")
-      : AppLocalization.text("Paused")
-  }
-
-  private var contractAutomaticStatusColor: Color {
-    if runtime.isSynchronizingPublicContracts { return DesignTokens.accent }
-    if runtime.publicContractProgress.phase == .failed
-      || runtime.publicContractError != nil
-    {
-      return DesignTokens.negative
-    }
-    if runtime.publicContractProgress.phase == .partial
-      || runtime.publicContractProgress.failedRegions > 0
-    {
-      return DesignTokens.caution
-    }
-    return runtime.publicContractAutomaticUpdatesEnabled
-      ? DesignTokens.positive : DesignTokens.textSecondary
-  }
-
-  private var mainHubAutomaticProgress: Double? {
-    guard runtime.isAnalyzingManufacturingOpportunities else { return nil }
-    return runtime.manufacturingOpportunityProgress.fractionCompleted
-  }
-
-  private var mainHubAutomaticStatus: String {
-    if runtime.isAnalyzingManufacturingOpportunities {
-      let progress = runtime.manufacturingOpportunityProgress
-      if progress.totalPages > 0 {
-        return AppLocalization.format(
-          "Updating · page %lld/%lld",
-          Int64(progress.completedPages),
-          Int64(progress.totalPages)
-        )
-      }
-      return AppLocalization.text("Preparing market pages")
-    }
-    guard let location = runtime.productionBasis.mainTradingLocation?.location,
-      location.kind == .npcTradeHub
-    else { return AppLocalization.text("Main Hub not configured") }
-    if runtime.manufacturingOpportunityError != nil {
-      return AppLocalization.text("Update failed")
-    }
-    guard runtime.mainHubMarketAutomaticUpdatesEnabled else {
-      return AppLocalization.text("Paused")
-    }
-    if let next = runtime.mainHubMarketNextAutomaticRunAt {
-      return AppLocalization.format(
-        "Next %@",
-        next.formatted(date: .omitted, time: .shortened)
-      )
-    }
-    if let capturedAt = matchingMainHubMarketCapturedAt {
-      return AppLocalization.format(
-        "Updated %@",
-        capturedAt.formatted(date: .omitted, time: .shortened)
-      )
-    }
-    return AppLocalization.text("Preparing")
-  }
-
-  private var mainHubAutomaticStatusColor: Color {
-    if runtime.isAnalyzingManufacturingOpportunities {
-      return DesignTokens.accent
-    }
-    if runtime.manufacturingOpportunityError != nil {
-      return DesignTokens.negative
-    }
-    guard
-      runtime.productionBasis.mainTradingLocation?.location.kind
-        == .npcTradeHub
-    else { return DesignTokens.caution }
-    return runtime.mainHubMarketAutomaticUpdatesEnabled
-      ? DesignTokens.positive : DesignTokens.textSecondary
-  }
-
-  private func secondaryHubAutomaticProgress(
-    _ role: OpportunityHubRole
-  ) -> Double? {
-    let state = runtime.opportunityState(for: role)
-    guard state.isAnalyzing else { return nil }
-    return state.progress.fractionCompleted
-  }
-
-  private func secondaryHubAutomaticStatus(
-    _ role: OpportunityHubRole
-  ) -> String {
-    let coalition = role == .coalition
-    switch runtime.opportunityScanTarget(for: role) {
-    case .notConfigured:
-      return AppLocalization.text(
-        coalition ? "Coalition Hub not configured" : "Home Hub not configured"
-      )
-    case .sharesMainHub:
-      return AppLocalization.text("Uses Main Hub data")
-    case .sharesHomeHub:
-      return AppLocalization.text("Uses Home Hub data")
-    case .unresolved:
-      return AppLocalization.text(
-        coalition
-          ? "Coalition Hub location incomplete" : "Home Hub location incomplete"
-      )
-    case .npcStation, .playerStructure:
-      break
-    }
-    let state = runtime.opportunityState(for: role)
-    if state.isAnalyzing {
-      if state.progress.totalPages > 0 {
-        return AppLocalization.format(
-          "Updating · page %lld/%lld",
-          Int64(state.progress.completedPages),
-          Int64(state.progress.totalPages)
-        )
-      }
-      return AppLocalization.text("Preparing market pages")
-    }
-    if state.error != nil {
-      if state.marketState?.state == .forbidden {
-        return StartupDataStatusSection.freshnessText(.forbidden)
-      }
-      return AppLocalization.text("Update failed")
-    }
-    guard runtime.mainHubMarketAutomaticUpdatesEnabled else {
-      return AppLocalization.text("Paused")
-    }
-    if let capturedAt = matchingSecondaryHubCapturedAt(role) {
-      return AppLocalization.format(
-        "Updated %@",
-        capturedAt.formatted(date: .omitted, time: .shortened)
-      )
-    }
-    if let next = runtime.mainHubMarketNextAutomaticRunAt {
-      return AppLocalization.format(
-        "Next %@",
-        next.formatted(date: .omitted, time: .shortened)
-      )
-    }
-    return AppLocalization.text("Preparing")
-  }
-
-  private func secondaryHubAutomaticStatusColor(
-    _ role: OpportunityHubRole
-  ) -> Color {
-    switch runtime.opportunityScanTarget(for: role) {
-    case .notConfigured, .sharesMainHub, .sharesHomeHub:
-      return DesignTokens.textSecondary
-    case .unresolved:
-      return DesignTokens.caution
-    case .npcStation, .playerStructure:
-      break
-    }
-    let state = runtime.opportunityState(for: role)
-    if state.isAnalyzing { return DesignTokens.accent }
-    if state.error != nil { return DesignTokens.negative }
-    if state.marketState?.state == .stale { return DesignTokens.caution }
-    return runtime.mainHubMarketAutomaticUpdatesEnabled
-      ? DesignTokens.positive : DesignTokens.textSecondary
-  }
-
-  /// Only a capture of the currently configured exact hub counts.
-  private func matchingSecondaryHubCapturedAt(
-    _ role: OpportunityHubRole
-  ) -> Date? {
-    let configured =
-      role == .coalition
-      ? runtime.productionBasis.coalitionTradingLocation
-      : runtime.productionBasis.homeTradingLocation
-    guard let locationID = configured?.location.locationID else { return nil }
-    let state = runtime.opportunityState(for: role)
-    if let market = state.marketState?.value, market.locationID == locationID {
-      return market.capturedAt
-    }
-    guard let analysis = state.analysis,
-      analysis.resolvedSaleHub.locationID == locationID
-    else { return nil }
-    return analysis.createdAt
-  }
-
-  private var matchingMainHubMarketCapturedAt: Date? {
-    if let capturedAt = runtime.mainHubMarketState?.source.capturedAt {
-      return capturedAt
-    }
-    guard
-      let configuredLocationID =
-        runtime.productionBasis.mainTradingLocation?.location.locationID,
-      let analysis = runtime.manufacturingOpportunityAnalysis,
-      analysis.mainHub.locationID == configuredLocationID
-    else { return nil }
-    return analysis.createdAt
   }
 
   private var mineralTickerPanel: some View {
@@ -4343,7 +4349,8 @@ struct FullWidthDisclosure<Label: View, Content: View>: View {
   }
 }
 
-/// One compact row of the Dashboard card "Automatic data".
+/// One compact row of the sidebar card "Automatic data". In the narrow
+/// sidebar the detail moves below the title instead of being truncated.
 struct AutomaticStatusRow: View {
   let title: LocalizedStringKey
   let detail: String
@@ -4353,17 +4360,20 @@ struct AutomaticStatusRow: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 3) {
-      HStack(spacing: DesignTokens.spacingSM) {
-        Image(systemName: systemImage)
-          .foregroundStyle(color)
-          .frame(width: 16)
-        Text(title)
-          .font(.caption.weight(.semibold))
-        Spacer()
-        Text(detail.localizedUI)
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(DesignTokens.textSecondary)
-          .lineLimit(1)
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: DesignTokens.spacingSM) {
+          icon
+          titleText
+          Spacer(minLength: DesignTokens.spacingXS)
+          detailText
+        }
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
+          icon
+          VStack(alignment: .leading, spacing: 1) {
+            titleText
+            detailText
+          }
+        }
       }
       if let progress {
         ProgressView(value: progress)
@@ -4372,9 +4382,28 @@ struct AutomaticStatusRow: View {
       }
     }
   }
+
+  private var icon: some View {
+    Image(systemName: systemImage)
+      .foregroundStyle(color)
+      .frame(width: 16)
+  }
+
+  private var titleText: some View {
+    Text(title)
+      .font(.caption.weight(.semibold))
+      .lineLimit(1)
+  }
+
+  private var detailText: some View {
+    Text(detail.localizedUI)
+      .font(.caption.monospacedDigit())
+      .foregroundStyle(DesignTokens.textSecondary)
+      .lineLimit(1)
+  }
 }
 
-/// Startup-load rows of the Dashboard card "Automatic data". Observes the
+/// Startup-load rows of the sidebar card "Automatic data". Observes the
 /// runtime-owned load so phase changes refresh only this section.
 struct StartupDataStatusSection: View {
   struct Inputs {
