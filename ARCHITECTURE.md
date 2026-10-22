@@ -449,6 +449,83 @@ Manufacturing-system labels are persisted user annotations and are deliberately
 excluded from facility-selection rules. The automatic production matrix shows
 the system resolved through the selected facility assignment.
 
+Catalog adapter 5 also stores the SDE market browser tree (`marketGroups.jsonl`,
+mapped by `EVEStaticDataKit` into `StaticMarketGroupSnapshot`) in the
+`market_groups` table, indexed by parent and joined through
+`item_types.market_group_id`. `SQLiteStaticCatalog` exposes it through
+`MarketGroupCatalogQuerying`.
+- `marketGroups()` returns the tree.
+- `tradeItems(inMarketGroupSubtree:)` returns the published types of a
+  subtree, using a recursive CTE with `UNION`, so a malformed cycle cannot
+  loop.
+- Both queries check that the table exists. An older adapter file returns
+  `requiresSDEReimport` instead of failing or presenting an empty tree as fact.
+
+The Trade area (`TradeView`, `NavigationSection.trade`) is pure
+presentation. It reads hub market summaries, demand snapshots, fees and
+resolved transport legs through `RuntimeState` (`tradeMarketState`,
+`tradeDemand`, `tradeHubFees`, `tradeTransportBases`, and the catalog
+pass-throughs `tradeMarketGroups` / `tradeItems`).
+
+Tile formation, the Diff % indicator and sorting are tested core types in
+`TradeTiles.swift`:
+- `TradeTileBuilder`
+- `TradeDifferenceIndicator`
+- `TradeRowSorter`
+
+Market summaries stay in memory. The view's refresh starts the shared Hub
+opportunity scan instead of a second loader.
+
+The trade logbook is a sidecar SQLite file
+(`dataRoot/trade/trade-logbook.sqlite`) owned by the `TradeLogbookStore`
+actor. It follows the `PublicContractStore` pattern: detached open, WAL and
+foreign keys, schema migrations via `PRAGMA user_version`. A newer version is
+refused untouched.
+- `TradeLogbookEntry` freezes rates and computes cost, planned and realized
+  profit, open quantity and the price reminder. `nil` means unknown.
+- `TradeLogbookSorter` sorts typed.
+- Schema 2 adds `wallet_transactions`, `wallet_journal` and
+  `wallet_sync_status`, keyed by character and ESI ID.
+  - `RuntimeState.syncCharacter` hands every personal wallet snapshot to
+    `TradeLogbookStore.recordWallet`, which is idempotent and records the
+    status even without data.
+  - A wallet failure never fails the character sync.
+- Schema 3 adds `wallet_orders`, the wallet links and value sources on
+  purchases and sales, and `trade_settings`, which holds the import start.
+  - `TradeWalletReconciler` is pure: imports, FIFO assignment, journal tax,
+    own-order detection and manual assignment.
+  - `RuntimeState.reconcileTradeLogbook(manufacturingTypeIDs:)` feeds it. Only
+    callers with SwiftData access to the active Planner plans run it
+    (`CharacterBatchSynchronizer`, `TradeLogbookView`), so manufacturing
+    purchases are never imported as trade by mistake.
+- `RuntimeState` opens the store lazily (`loadTradeLogbook`) and publishes
+  the entries.
+- `TradeLogbookView` and the Trade row action write through
+  `saveTradeLogbookEntry`.
+
+`TradeHubMarketService.structureOrderSnapshot(typeIDs:)` accepts `nil` for a
+complete structure book. Home and Coalition opportunity scans of player
+structures use it, so the shared demand ledger and the stored market summary
+cover every listed item.
+- `RuntimeState.opportunityAnalysisMarket` hands the analyzer the book
+  restricted to product types, so opportunity rows and coverage are unchanged.
+- The demand ledger compares orders by ID, so the product history continues
+  without a reset.
+
+`EVENexusCore/Trade` holds the pure trade valuation for the Trade
+area:
+- `TradeModels` defines the mode, quote sides, hub fees, transport legs and
+  `TradeRow`.
+- `TradeCalculator` turns `MarketOrderTypeSummary` pairs into rows.
+- `MarketPriceTick` holds the four-significant-digit order price step.
+
+`TradeRow` also carries the order depth at the displayed prices, taken from
+the `bestSellVolume` / `bestBuyVolume` fields of `MarketOrderTypeSummary`. The
+calculator owns no I/O and no persistence. Exact courier costs for a
+quantity are delegated to `LogisticsCostCalculator`. Jump Freighter legs take
+a resolved cost per flight and the usable capacity. That keeps route, DOTLAN
+and isotope resolution in `RuntimeState`.
+
 The target-owned catalog adapter streams the active SDE package's `typeDogma`
 records for structures, Standup service modules and rigs. It publishes
 immutable definitions to Industry; SwiftUI cannot edit Manufacturing ME/TE,

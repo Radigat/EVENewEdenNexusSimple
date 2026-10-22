@@ -1,6 +1,6 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Projektstatus
 
-Stand: 21.10.2026. Modellvorgaben je Werkzeug: [MODEL_POLICY.md](MODEL_POLICY.md).
+Stand: 22.10.2026. Modellvorgaben je Werkzeug: [MODEL_POLICY.md](MODEL_POLICY.md).
 Es gibt nur einen aktiven Projektstand: `/Users/svenstolze/Developer/EVE New Eden Nexus - Assets, Industry, Markets`.
 Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
 
@@ -133,3 +133,45 @@ Checkliste, Prompts und Owner-Testleitfaden:
 
   Der Stand ist auf Auftrag des Eigentümers als `9000f3f` auf `main`
   committet und nach `origin/main` gepusht (Fast-Forward, kein Tag).
+
+## Bereich Handel (22.10.2026)
+
+Auf Auftrag des Eigentümers ist nach seinem Referenzbild ein Handelsbereich in
+den Schritten P0–P8 umgesetzt. Plan, Entscheidungen, Formeln, Prompts und
+Abnahme-Checkliste: [HANDEL_PLAN.md](Documentation/HANDEL_PLAN.md).
+
+- **Implementiert:**
+  - SDE-Marktgruppen (Datensatz `marketGroups`, Katalogadapter 5) als Kacheln.
+  - Handelsrechner mit 4-Stellen-Preisschritt, Steuern, Broker und Transport
+    (Kurier, Jump Freighter).
+  - Volles Orderbuch für Home-/Coalition-Strukturscans samt Ordertiefe;
+    Bedarfsledger und Hub-Chancen-Ergebnisse unverändert.
+  - Bereich **Handel** mit fünf Modi (Main → Home, Main → Coalition, Station
+    Trading je Hub), Tagesbedarf, Pfeilschwellen und „Ins Logbuch“.
+  - **Handelslogbuch** in eigener SQLite-Datei
+    `dataRoot/trade/trade-logbook.sqlite`, Schema 3. Es enthält Einkäufe,
+    Verkäufe, Erinnerung, die Wallet-Daten aller Charaktere und den
+    automatischen Abgleich (FIFO, belegte Steuer, berechneter Broker,
+    erkannte Orderart).
+
+  Bestehende Rechenregeln sind unverändert. SwiftData-Schema und
+  Migrationskette sind unberührt. Bewusste Regeländerungen und Annahmen stehen
+  in den [Entscheidungen](Documentation/Consolidation/DECISIONS.md).
+- **Automatisch geprüft (22.10.2026):**
+  - `swift test`: 521 Swift-Testing-Tests in 35 Suites plus 66 Tests in 3
+    Suites;
+  - `xcodebuild build` und `test` unsigniert: `BUILD SUCCEEDED`,
+    `TEST SUCCEEDED` (521 Swift-Testing-Tests, 8 XCTest-Fälle);
+  - `EVEStaticDataKit`: 11 Tests;
+  - `git diff --check` fehlerfrei.
+
+  Nachweise: [ACCEPTANCE.md](Documentation/ACCEPTANCE.md).
+- **Visuell geprüft:** in einer isolierten Debug-App mit synthetischem Katalog
+  und ohne Marktpreise, ohne Nutzerdaten.
+- **Offen:**
+  - SDE-Neuimport mit dem echten Archiv;
+  - Live-Prüfung mit echten Hub-Märkten, Strukturen, DOTLAN, Wallets und
+    Orders;
+  - Eigentümerabnahme.
+
+  Nicht committet.

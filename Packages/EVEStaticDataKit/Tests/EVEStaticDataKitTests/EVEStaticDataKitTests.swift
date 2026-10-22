@@ -184,3 +184,76 @@ func mapsOptInCurrentRealSDEPackage() async throws {
   #expect(result.counts.itemTypes > 0)
   #expect(result.counts.blueprints > 0)
 }
+
+@Test
+func mapsMarketGroupsWithOptionalParent() async throws {
+  let mapper = JSONLinesSDECatalogMapper()
+  let child = try await mapper.mapMarketGroup(
+    [
+      "_key": NSNumber(value: 1_038),
+      "parentGroupID": NSNumber(value: 1_031),
+      "name": ["en": "Harvest Equipment", "de": "Abbauausrüstung"],
+      "hasTypes": NSNumber(value: false),
+    ],
+    line: 1
+  )
+  let root = try await mapper.mapMarketGroup(
+    [
+      "_key": NSNumber(value: 9),
+      "name": ["en": "Ship Equipment"],
+      "hasTypes": NSNumber(value: true),
+    ],
+    line: 2
+  )
+
+  #expect(
+    child
+      == StaticMarketGroupSnapshot(
+        externalID: 1_038,
+        parentExternalID: 1_031,
+        name: "Harvest Equipment",
+        hasTypes: false
+      )
+  )
+  #expect(root.parentExternalID == nil)
+  #expect(root.hasTypes)
+}
+
+@Test
+func rejectsMarketGroupsWithoutEnglishNameOrTypeFlag() async throws {
+  let mapper = JSONLinesSDECatalogMapper()
+  await #expect(
+    throws: StaticDataMappingError.invalidField(
+      dataset: .marketGroups,
+      line: 3,
+      field: "name.en"
+    )
+  ) {
+    _ = try await mapper.mapMarketGroup(
+      [
+        "_key": NSNumber(value: 4),
+        "name": ["de": "Nur Deutsch"],
+        "hasTypes": NSNumber(value: true),
+      ],
+      line: 3
+    )
+  }
+  await #expect(
+    throws: StaticDataMappingError.invalidField(
+      dataset: .marketGroups,
+      line: 4,
+      field: "hasTypes"
+    )
+  ) {
+    _ = try await mapper.mapMarketGroup(
+      ["_key": NSNumber(value: 5), "name": ["en": "No Flag"]],
+      line: 4
+    )
+  }
+}
+
+@Test
+func marketGroupsAreAnImportedDataset() {
+  #expect(SDEDatasetKind.allCases.contains(.marketGroups))
+  #expect(SDEDatasetKind.marketGroups.fileName == "marketGroups.jsonl")
+}

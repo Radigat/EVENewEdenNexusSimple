@@ -68,7 +68,7 @@ Quelle: archivierte Feature-Matrix; Status gegen vorhandenen Quellcode und die a
 | SSO-001 | EVE SSO PKCE und Keychain | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | ESI-001 | Öffentliche Charakterdaten und persönliche Assets/Blueprints/Jobs | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | MKT-001 | Live-Marktpreise | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
-| WAL-001 | Wallet, Transaktionen und historische Projektzuordnungen | Zurückgezogene Legacy-Ansicht bleibt entfernt; bestehende aktuelle Rechnung/Wallet und erforderliche Belegdienste bleiben nutzbar. |
+| WAL-001 | Wallet, Transaktionen und historische Projektzuordnungen | Zurückgezogene Legacy-Ansicht bleibt entfernt; bestehende aktuelle Rechnung/Wallet und erforderliche Belegdienste bleiben nutzbar. Seit 22.10.2026 speichert das Handelslogbuch persönliche Wallet-Transaktionen, Journal und Orders für den Handelsabgleich ([Handel-Plan](../HANDEL_PLAN.md)). |
 | REA-001 | Vollständiges Reaktionsmanagement | Kein zusätzlicher Legacy-Ausbau: nur geplant, zurückgestellt oder nicht freigegeben. Bereits vorhandene aktuelle Teilfunktionen bleiben erhalten. |
 | PI-001 | PI, Logistik, Kalender, Kapazität | Kein zusätzlicher Legacy-Ausbau: nur geplant, zurückgestellt oder nicht freigegeben. Bereits vorhandene aktuelle Teilfunktionen bleiben erhalten. |
 | COR-001 | Corp-Daten, Rollen, gemeinsame Projekte | Kein zusätzlicher Legacy-Ausbau: nur geplant, zurückgestellt oder nicht freigegeben. Bereits vorhandene aktuelle Teilfunktionen bleiben erhalten. |
@@ -96,3 +96,12 @@ Quellpfade beziehen sich auf den unveränderten Legacy-Ordner, Zielpfade auf den
 `ConsolidationTests.swift`, `ConsolidationCSVParserTests.swift` und
 `ConsolidationPersistenceTests.swift` sind die aktiven ergänzenden Testgruppen.
 Alte UI-/Architekturtests werden nach [Einzelfehlerbewertung](LEGACY_TEST_DISPOSITIONS.md) behandelt.
+
+## Ergänzungen der Weiterentwicklung
+
+Neue Funktionen nach der Konsolidierung ohne Legacy-Vorlage:
+
+| Funktion | Aktive Umsetzung | Prüfnachweis |
+| --- | --- | --- |
+| Handel: Marktgruppen-Kacheln, Import- und Station-Trading-Vergleich (22.10.2026) | `Sources/EVENexusCore/Trade` (`TradeCalculator`, `TradeTiles`), `TradeView`, SDE-Adapter 5 | `TradeCalculatorTests`, `SQLiteStaticCatalogTests`, `RuntimeFeatureStateTests`; [ACCEPTANCE](../ACCEPTANCE.md) |
+| Handelslogbuch mit Wallet-Abgleich (22.10.2026) | `TradeLogbook`, `TradeLogbookStore`, `TradeWallet`, `TradeWalletReconciler`, `TradeLogbookView` | `TradeLogbookTests` (Store, Migration, Abgleich), `RuntimeFeatureStateTests` |

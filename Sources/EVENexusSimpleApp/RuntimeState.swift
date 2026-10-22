@@ -16,6 +16,13 @@ enum PublicContractStoreState: Equatable {
   case failed
 }
 
+enum TradeLogbookLoadState: Equatable {
+  case notLoaded
+  case loading
+  case ready
+  case failed
+}
+
 enum AutomaticBackgroundWork: Hashable, Sendable {
   case mainHubMarket
   case publicContracts
@@ -440,6 +447,23 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var manufacturingOpportunityDemand:
     ManufacturingOpportunityDemandSnapshot?
   @Published private(set) var manufacturingOpportunityDemandError: String?
+  /// Resolved transport legs of the Trade import routes (HANDEL_PLAN P4).
+  @Published private(set) var tradeTransportBases:
+    [TradeImportTarget: TradeTransportBasis] = [:]
+  /// Purchase logbook of the Trade area (HANDEL_PLAN P5); opened on first use.
+  @Published private(set) var tradeLogbookEntries: [TradeLogbookEntry] = []
+  @Published private(set) var tradeLogbookState: TradeLogbookLoadState =
+    .notLoaded
+  @Published private(set) var tradeLogbookError: String?
+  private var tradeLogbookStore: TradeLogbookStore?
+  /// Last wallet hand-over per character (HANDEL_PLAN P6).
+  @Published private(set) var tradeWalletStatuses: [TradeWalletSyncStatus] = []
+  @Published private(set) var tradeWalletError: String?
+  /// Wallet reconciliation (HANDEL_PLAN P7).
+  @Published private(set) var tradeUnassignedSales: [TradeUnassignedSale] = []
+  @Published private(set) var tradeWalletImportStart: Date?
+  @Published private(set) var tradeUnresolvedPurchaseCount = 0
+  @Published private(set) var isReconcilingTradeLogbook = false
   @Published private(set) var loyaltyStoreCatalog: LoyaltyStoreCatalogSnapshot?
   @Published private(set) var isRefreshingLoyaltyStoreCatalog = false
   @Published private(set) var loyaltyStoreCatalogError: String?
@@ -4951,6 +4975,9 @@ final class RuntimeState: ObservableObject {
       authorization: authorization,
       lease: lease
     )
+    if let lastCharacterSync {
+      await recordTradeWallet(from: lastCharacterSync)
+    }
     await syncLoyaltyPoints(authorization: authorization, lease: lease)
   }
 
@@ -5274,7 +5301,6 @@ final class RuntimeState: ObservableObject {
       let saleMarket = try await secondaryHubMarketSnapshot(
         role: role,
         target: target,
-        productTypeIDs: productTypeIDs,
         preferredTraderID: hub.marketTaxes.traderCharacterID
       )
       try Task.checkCancellation()
@@ -5306,6 +5332,11 @@ final class RuntimeState: ObservableObject {
       let salesTaxRate = hub.marketTaxes.effectiveSalesTaxRate
       let brokerFeeRate = hub.marketTaxes.effectiveBrokerFeeRate
       let saleHub = hub.location
+      let analysisMarket = Self.opportunityAnalysisMarket(
+        saleMarket,
+        target: target,
+        productTypeIDs: productTypeIDs
+      )
       let analysisTask = Task.detached(
         priority: context.isAutomatic ? .utility : .userInitiated
       ) {
@@ -5327,7 +5358,7 @@ final class RuntimeState: ObservableObject {
           brokerFeeRate: brokerFeeRate,
           hubRole: role,
           saleHub: saleHub,
-          saleMarket: saleMarket,
+          saleMarket: analysisMarket,
           coalitionTransport: coalitionTransport
         )
       }
@@ -5439,10 +5470,21 @@ final class RuntimeState: ObservableObject {
     )
   }
 
+  /// A player-structure book is loaded completely so the shared demand
+  /// ledger and the Trade area cover every listed item (HANDEL_PLAN P3, U3).
+  /// The opportunity analysis keeps its former product scope.
+  nonisolated static func opportunityAnalysisMarket(
+    _ market: MarketOrderSnapshot,
+    target: HubOpportunityScanTarget,
+    productTypeIDs: Set<Int64>
+  ) -> MarketOrderSnapshot {
+    guard case .playerStructure = target else { return market }
+    return market.restricted(to: productTypeIDs)
+  }
+
   private func secondaryHubMarketSnapshot(
     role: OpportunityHubRole,
     target: HubOpportunityScanTarget,
-    productTypeIDs: Set<Int64>,
     preferredTraderID: Int64?
   ) async throws -> MarketOrderSnapshot {
     let service = TradeHubMarketService(esi: esi)
@@ -5498,7 +5540,7 @@ final class RuntimeState: ObservableObject {
       for lease in orderedLeases {
         do {
           return try await service.structureOrderSnapshot(
-            typeIDs: productTypeIDs,
+            typeIDs: nil,
             regionID: regionID,
             systemID: systemID,
             structureID: structureID,
@@ -5854,5 +5896,423 @@ private actor ManufacturingOpportunityDemandStore {
       withIntermediateDirectories: true
     )
     try data.write(to: summaryFileURL, options: .atomic)
+  }
+}
+
+// MARK: Trade (HANDEL_PLAN P4)
+
+extension RuntimeState {
+  func tradeMarketGroups() async throws -> MarketGroupCatalogSnapshot {
+    try await catalog.marketGroups()
+  }
+
+  func tradeItems(
+    inMarketGroupSubtree marketGroupID: Int64
+  ) async throws -> TradeCatalogItemsSnapshot {
+    try await catalog.tradeItems(inMarketGroupSubtree: marketGroupID)
+  }
+
+  func tradeLocation(for role: OpportunityHubRole) -> ProcurementLocation? {
+    switch role {
+    case .main: productionBasis.mainTradingLocation?.location
+    case .home: productionBasis.homeTradingLocation?.location
+    case .coalition: productionBasis.coalitionTradingLocation?.location
+    }
+  }
+
+  /// The hub whose stored scan data applies to `role`; a hub that equals the
+  /// Main or Home Hub reuses that hub's data. `nil` when the role is not
+  /// configured or its location is incomplete.
+  func tradeDataRole(for role: OpportunityHubRole) -> OpportunityHubRole? {
+    switch opportunityScanTarget(for: role) {
+    case .notConfigured, .unresolved: nil
+    case .sharesMainHub: .main
+    case .sharesHomeHub: .home
+    case .npcStation, .playerStructure: role
+    }
+  }
+
+  func tradeMarketState(
+    for role: OpportunityHubRole
+  ) -> Sourced<MarketOrderSummarySnapshot>? {
+    switch tradeDataRole(for: role) {
+    case nil: nil
+    case .main: mainHubMarketState
+    case let dataRole?: opportunityState(for: dataRole).marketState
+    }
+  }
+
+  func tradeDemand(
+    for role: OpportunityHubRole
+  ) -> ManufacturingOpportunityDemandSnapshot? {
+    switch tradeDataRole(for: role) {
+    case nil: nil
+    case .main: manufacturingOpportunityDemand
+    case let dataRole?: opportunityState(for: dataRole).demand
+    }
+  }
+
+  /// Fees of the role's own trading-location settings; unknown stays nil.
+  func tradeHubFees(for role: OpportunityHubRole) -> TradeHubFees {
+    let configuration: TradingLocationConfiguration? =
+      switch role {
+      case .main: productionBasis.mainTradingLocation
+      case .home: productionBasis.homeTradingLocation
+      case .coalition: productionBasis.coalitionTradingLocation
+      }
+    guard let configuration else {
+      return TradeHubFees(salesTaxRate: nil, brokerFeeRate: nil)
+    }
+    return TradeHubFees(configuration.marketTaxes)
+  }
+
+  func refreshTradeTransportBasis(for target: TradeImportTarget) async {
+    tradeTransportBases[target] = await tradeTransportBasis(for: target)
+  }
+
+  /// Main → Home is one courier leg. Main → Coalition adds the Home →
+  /// Coalition leg of the Hub opportunities: Jump Freighter when enabled,
+  /// otherwise the Profile courier (owner decision 22.10.2026).
+  private func tradeTransportBasis(
+    for target: TradeImportTarget
+  ) async -> TradeTransportBasis {
+    let logistics = productionBasis.logistics
+    guard let main = tradeLocation(for: .main),
+      let home = tradeLocation(for: .home)
+    else {
+      return TradeTransportBasis(
+        legs: [.unavailable(code: "trade.home-hub-missing")]
+      )
+    }
+    var legs: [TradeTransportLeg] = []
+    if !main.representsSameLocation(as: home) {
+      legs.append(tradeCourierLeg(from: main, to: home, logistics: logistics))
+    }
+    guard target == .coalition else { return TradeTransportBasis(legs: legs) }
+    guard let coalition = tradeLocation(for: .coalition) else {
+      return TradeTransportBasis(
+        legs: legs + [.unavailable(code: "trade.coalition-hub-missing")]
+      )
+    }
+    guard !coalition.representsSameLocation(as: home) else {
+      return TradeTransportBasis(legs: legs)
+    }
+    guard logistics.jumpFreighter.isEnabled else {
+      legs.append(
+        tradeCourierLeg(from: home, to: coalition, logistics: logistics)
+      )
+      return TradeTransportBasis(legs: legs)
+    }
+    let load = await plannerJumpFreighterRouteLoad(
+      configuration: logistics.jumpFreighter,
+      homeHub: home,
+      coalitionHub: coalition,
+      capabilities: rememberedCapabilities,
+      capitalProducts: []
+    )
+    guard let routeState = load.route, routeState.state == .fresh,
+      let route = routeState.value,
+      route.request.hull == logistics.jumpFreighter.hull,
+      let capacity = logistics.jumpFreighter.effectiveUsableCargoCapacityM3
+    else {
+      legs.append(
+        .unavailable(
+          code: load.warnings.first?.code ?? "jump-freighter.route-unavailable"
+        )
+      )
+      return TradeTransportBasis(legs: legs)
+    }
+    // Same fuel basis as the Hub opportunities: the average lowest Main-Hub
+    // sell price of the four racial isotopes.
+    let prices = JumpFuelIsotope.allCases.compactMap { isotope -> Double? in
+      guard
+        let price = mainHubMarketState?.value?.pricesByType[isotope.typeID]?
+          .bestSellPrice,
+        price.isFinite, price > 0
+      else { return nil }
+      return price
+    }
+    guard prices.count == JumpFuelIsotope.allCases.count else {
+      legs.append(.unavailable(code: "jump-freighter.isotope-price-unavailable"))
+      return TradeTransportBasis(legs: legs)
+    }
+    let average = prices.reduce(0, +) / Double(prices.count)
+    legs.append(
+      .jumpFreighter(
+        TradeJumpFreighterLeg(
+          origin: home.name,
+          destination: coalition.name,
+          costPerFlight: Double(route.isotopeQuantityPerFlight) * average,
+          usableCargoCapacityM3: capacity
+        )
+      )
+    )
+    return TradeTransportBasis(legs: legs)
+  }
+
+  var tradeLogbookURL: URL {
+    dataRoot
+      .appendingPathComponent("trade", isDirectory: true)
+      .appendingPathComponent("trade-logbook.sqlite")
+  }
+
+  /// Opens the logbook file on first use and reloads all entries. A failure
+  /// keeps the last loaded entries visible.
+  func loadTradeLogbook() async {
+    guard tradeLogbookState != .loading else { return }
+    tradeLogbookState = .loading
+    do {
+      let store = try await openedTradeLogbookStore()
+      tradeLogbookEntries = try await store.entries()
+      tradeWalletStatuses = try await store.walletSyncStatuses()
+      tradeWalletImportStart = try await tradeImportStart(in: store)
+      tradeLogbookState = .ready
+      tradeLogbookError = nil
+    } catch {
+      tradeLogbookState = .failed
+      tradeLogbookError =
+        "The trade logbook could not be read. Existing entries were not changed."
+    }
+  }
+
+  private func openedTradeLogbookStore() async throws -> TradeLogbookStore {
+    if let tradeLogbookStore { return tradeLogbookStore }
+    let store = try await TradeLogbookStore.open(url: tradeLogbookURL)
+    tradeLogbookStore = store
+    return store
+  }
+
+  /// Keeps the personal wallet data of a character sync in the logbook so
+  /// it outlives the ESI 30-day window. A failure never fails the sync.
+  func recordTradeWallet(from snapshot: CharacterSyncSnapshot) async {
+    await recordTradeWallet(
+      characterID: snapshot.authorization.characterID,
+      characterName: snapshot.authorization.characterName,
+      transactions: snapshot.walletTransactions,
+      journal: snapshot.walletJournal,
+      orders: [snapshot.openOrders, snapshot.orderHistory]
+    )
+  }
+
+  func recordTradeWallet(
+    characterID: Int64,
+    characterName: String,
+    transactions: Sourced<[ESIWalletTransactionDTO]>,
+    journal: Sourced<[ESIWalletJournalDTO]>,
+    orders: [Sourced<[ESICharacterOrderDTO]>] = []
+  ) async {
+    do {
+      let store = try await openedTradeLogbookStore()
+      try await store.recordWallet(
+        characterID: characterID,
+        characterName: characterName,
+        transactions: transactions,
+        journal: journal,
+        orders: orders
+      )
+      tradeWalletStatuses = try await store.walletSyncStatuses()
+      tradeWalletError = nil
+    } catch {
+      tradeWalletError =
+        "The wallet data could not be stored in the trade logbook. Previously stored wallet data was not changed."
+    }
+  }
+
+  private static let walletImportStartKey = "wallet-import-start"
+
+  /// Purchases before this date are never imported. The first use stores
+  /// the start of the current UTC day ("day of setup", HANDEL_PLAN P7).
+  private func tradeImportStart(in store: TradeLogbookStore) async throws -> Date {
+    if let stored = try await store.setting(Self.walletImportStartKey)
+      .flatMap(Double.init)
+    {
+      return Date(timeIntervalSince1970: stored)
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+    let start = calendar.startOfDay(for: .now)
+    try await store.setSetting(
+      Self.walletImportStartKey,
+      value: String(start.timeIntervalSince1970)
+    )
+    return start
+  }
+
+  func setTradeWalletImportStart(_ date: Date) async {
+    do {
+      let store = try await openedTradeLogbookStore()
+      try await store.setSetting(
+        Self.walletImportStartKey,
+        value: String(date.timeIntervalSince1970)
+      )
+      tradeWalletImportStart = date
+    } catch {
+      tradeWalletError =
+        "The import start date could not be saved. The previous date still applies."
+    }
+  }
+
+  /// Matches the stored wallet data with the logbook. Only callers that know
+  /// the active Planner plans run it, so manufacturing purchases are never
+  /// mistaken for trade.
+  func reconcileTradeLogbook(manufacturingTypeIDs: Set<Int64>) async {
+    guard !isReconcilingTradeLogbook else { return }
+    isReconcilingTradeLogbook = true
+    defer { isReconcilingTradeLogbook = false }
+    do {
+      let store = try await openedTradeLogbookStore()
+      let start = try await tradeImportStart(in: store)
+      tradeWalletImportStart = start
+      let transactions = try await store.walletTransactions()
+      let journal = try await store.walletJournal()
+      let orders = try await store.walletOrders()
+      let statuses = try await store.walletSyncStatuses()
+      let entries = try await store.entries()
+
+      var hubLocations: [OpportunityHubRole: Int64] = [:]
+      var hubNames: [OpportunityHubRole: String] = [:]
+      var fees: [OpportunityHubRole: TradeHubFees] = [:]
+      for role in OpportunityHubRole.allCases where tradeDataRole(for: role) != nil {
+        guard let location = tradeLocation(for: role), let id = location.locationID
+        else { continue }
+        hubLocations[role] = id
+        hubNames[role] = location.name
+        fees[role] = tradeHubFees(for: role)
+      }
+      for target in TradeImportTarget.allCases
+      where hubLocations[target.hubRole] != nil && tradeTransportBases[target] == nil {
+        await refreshTradeTransportBasis(for: target)
+      }
+      let purchaseTypes = Set(
+        transactions.filter { $0.isBuy && $0.date >= start }.map(\.typeID)
+      )
+      // Without a readable catalog purchases stay unimported and are counted
+      // as unresolved instead of getting invented names.
+      let names = (try? await catalog.typeNames(ids: purchaseTypes)) ?? [:]
+      let volumes = (try? await catalog.packagedVolumes(typeIDs: purchaseTypes)) ?? [:]
+      let result = TradeWalletReconciler.reconcile(
+        entries: entries,
+        transactions: transactions,
+        journal: journal,
+        orders: orders,
+        context: TradeReconciliationContext(
+          startDate: start,
+          hubLocations: hubLocations,
+          hubNames: hubNames,
+          fees: fees,
+          manufacturingTypeIDs: manufacturingTypeIDs,
+          transportBases: tradeTransportBases,
+          packagedVolumes: volumes,
+          typeNames: names,
+          charactersWithOrders: Set(
+            statuses.filter { $0.ordersSyncedAt != nil }.map(\.characterID)
+          )
+        )
+      )
+      if !result.changedEntries.isEmpty {
+        try await store.save(result.changedEntries)
+      }
+      tradeLogbookEntries = try await store.entries()
+      tradeUnassignedSales = result.unassignedSales
+      tradeUnresolvedPurchaseCount = result.unresolvedTypePurchases
+      tradeWalletError = nil
+    } catch {
+      tradeWalletError =
+        "The wallet data could not be matched with the trade logbook. Existing entries were not changed."
+    }
+  }
+
+  /// Assigns the rest of an unassigned sale to one entry, as far as both
+  /// still have units.
+  func assignTradeSale(_ sale: TradeUnassignedSale, to entryID: UUID) async {
+    guard let entry = tradeLogbookEntries.first(where: { $0.id == entryID }),
+      let updated = TradeWalletReconciler.assign(sale, to: entry)
+    else { return }
+    guard await saveTradeLogbookEntry(updated) else { return }
+    tradeUnassignedSales = tradeUnassignedSales.compactMap { current in
+      guard current.link == sale.link else { return current }
+      let assigned = updated.sales.filter { $0.walletLink == sale.link }
+        .reduce(0) { $0 + $1.quantity }
+        - entry.sales.filter { $0.walletLink == sale.link }
+        .reduce(0) { $0 + $1.quantity }
+      let remaining = current.remainingQuantity - assigned
+      guard remaining > 0 else { return nil }
+      return TradeUnassignedSale(
+        link: current.link,
+        date: current.date,
+        typeID: current.typeID,
+        remainingQuantity: remaining,
+        totalQuantity: current.totalQuantity,
+        unitPrice: current.unitPrice,
+        locationID: current.locationID,
+        hubRoles: current.hubRoles,
+        kind: current.kind,
+        kindSource: current.kindSource,
+        salesTaxPaid: current.salesTaxPaid
+      )
+    }
+  }
+
+  /// Saves one entry; returns false and keeps the stored data on failure.
+  @discardableResult
+  func saveTradeLogbookEntry(_ entry: TradeLogbookEntry) async -> Bool {
+    if tradeLogbookStore == nil { await loadTradeLogbook() }
+    guard let tradeLogbookStore else { return false }
+    var updated = entry
+    updated.updatedAt = .now
+    do {
+      try await tradeLogbookStore.save(updated)
+      tradeLogbookEntries = try await tradeLogbookStore.entries()
+      tradeLogbookError = nil
+      return true
+    } catch is TradeLogbookValidationError {
+      tradeLogbookError =
+        "The logbook entry is incomplete or inconsistent and was not saved."
+      return false
+    } catch {
+      tradeLogbookError =
+        "The logbook entry could not be saved. Existing entries were not changed."
+      return false
+    }
+  }
+
+  func deleteTradeLogbookEntry(id: UUID) async {
+    guard let tradeLogbookStore else { return }
+    do {
+      try await tradeLogbookStore.delete(entryID: id)
+      tradeLogbookEntries = try await tradeLogbookStore.entries()
+      tradeLogbookError = nil
+    } catch {
+      tradeLogbookError =
+        "The logbook entry could not be deleted. Existing entries were not changed."
+    }
+  }
+
+  /// Item search for manual logbook entries.
+  func tradeSearchItemTypes(matching query: String) async -> [ItemTypeSearchResult] {
+    (try? await catalog.searchItemTypes(matching: query)) ?? []
+  }
+
+  private func tradeCourierLeg(
+    from origin: ProcurementLocation,
+    to destination: ProcurementLocation,
+    logistics: LogisticsConfiguration
+  ) -> TradeTransportLeg {
+    guard logistics.isEnabled else {
+      return .unavailable(code: "trade.logistics-disabled")
+    }
+    guard let rate = logistics.effectiveISKPerCubicMeter,
+      let maximumVolume = logistics.effectiveMaximumContractVolumeM3
+    else {
+      return .unavailable(code: "logistics.missing-volume-rate")
+    }
+    return .courier(
+      TradeCourierLeg(
+        origin: origin.name,
+        destination: destination.name,
+        iskPerCubicMeter: rate,
+        maximumContractVolumeM3: maximumVolume
+      )
+    )
   }
 }

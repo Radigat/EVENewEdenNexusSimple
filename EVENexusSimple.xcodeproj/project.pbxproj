@@ -20,6 +20,17 @@
 		019FC10B0000000000000014 /* PublicContractsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC10B0000000000000004 /* PublicContractsView.swift */; };
 		019FC10B0000000000000015 /* PublicContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC10B0000000000000005 /* PublicContractTests.swift */; };
 		019FC2000000000000000011 /* LogisticsCostCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC2000000000000000001 /* LogisticsCostCalculator.swift */; };
+		01A0C0010000000000000011 /* TradeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000001 /* TradeModels.swift */; };
+		01A0C0010000000000000012 /* TradeCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000002 /* TradeCalculator.swift */; };
+		01A0C0010000000000000014 /* TradeTiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000004 /* TradeTiles.swift */; };
+		01A0C0010000000000000015 /* TradeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000005 /* TradeView.swift */; };
+		01A0C0010000000000000016 /* TradeLogbook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000006 /* TradeLogbook.swift */; };
+		01A0C0010000000000000017 /* TradeLogbookStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000007 /* TradeLogbookStore.swift */; };
+		01A0C001000000000000001A /* TradeWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C001000000000000000A /* TradeWallet.swift */; };
+		01A0C001000000000000001B /* TradeWalletReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C001000000000000000B /* TradeWalletReconciler.swift */; };
+		01A0C0010000000000000018 /* TradeLogbookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000008 /* TradeLogbookView.swift */; };
+		01A0C0010000000000000019 /* TradeLogbookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000009 /* TradeLogbookTests.swift */; };
+		01A0C0010000000000000013 /* TradeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000003 /* TradeCalculatorTests.swift */; };
 		019FC3000000000000000011 /* ProductionTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC3000000000000000001 /* ProductionTree.swift */; };
 		019FC95E0000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 019FC95E0000000000000001 /* Assets.xcassets */; };
 		019FC9890000000000000011 /* NetWorthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC9890000000000000001 /* NetWorthView.swift */; };
@@ -219,6 +230,17 @@
 		019FC10B0000000000000004 /* PublicContractsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicContractsView.swift; sourceTree = "<group>"; };
 		019FC10B0000000000000005 /* PublicContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicContractTests.swift; sourceTree = "<group>"; };
 		019FC2000000000000000001 /* LogisticsCostCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogisticsCostCalculator.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000001 /* TradeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeModels.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000002 /* TradeCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeCalculator.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000004 /* TradeTiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeTiles.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000005 /* TradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeView.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000006 /* TradeLogbook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbook.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000007 /* TradeLogbookStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbookStore.swift; sourceTree = "<group>"; };
+		01A0C001000000000000000A /* TradeWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeWallet.swift; sourceTree = "<group>"; };
+		01A0C001000000000000000B /* TradeWalletReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeWalletReconciler.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000008 /* TradeLogbookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbookView.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000009 /* TradeLogbookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbookTests.swift; sourceTree = "<group>"; };
+		01A0C0010000000000000003 /* TradeCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeCalculatorTests.swift; sourceTree = "<group>"; };
 		019FC3000000000000000001 /* ProductionTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionTree.swift; sourceTree = "<group>"; };
 		019FC95E0000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		019FC9890000000000000001 /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
@@ -430,6 +452,20 @@
 			path = Reactions;
 			sourceTree = "<group>";
 		};
+		01A0C0010000000000000020 /* Trade */ = {
+			isa = PBXGroup;
+			children = (
+				01A0C0010000000000000002 /* TradeCalculator.swift */,
+				01A0C0010000000000000001 /* TradeModels.swift */,
+				01A0C0010000000000000004 /* TradeTiles.swift */,
+				01A0C0010000000000000006 /* TradeLogbook.swift */,
+				01A0C0010000000000000007 /* TradeLogbookStore.swift */,
+				01A0C001000000000000000A /* TradeWallet.swift */,
+				01A0C001000000000000000B /* TradeWalletReconciler.swift */,
+			);
+			path = Trade;
+			sourceTree = "<group>";
+		};
 		51DBC7FEF4A13BC195483499 /* Market */ = {
 			isa = PBXGroup;
 			children = (
@@ -547,6 +583,7 @@
 				8C00666658917EAC29B7853B /* Persistence */,
 				4B4586BC5695874E69B96E1B /* Reactions */,
 				DA1EA4A5243116C02137A0CC /* SDE */,
+				01A0C0010000000000000020 /* Trade */,
 				4AF4E25A3F6A792D0513C7E3 /* Update */,
 			);
 			name = EVENexusCore;
@@ -580,6 +617,8 @@
 				E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */,
 				F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */,
 				019FC10B0000000000000004 /* PublicContractsView.swift */,
+				01A0C0010000000000000005 /* TradeView.swift */,
+				01A0C0010000000000000008 /* TradeLogbookView.swift */,
 				312D142B1E16A8C378F71587 /* RuntimeState.swift */,
 				B95C5D772248BAA6E187FCEE /* StoredAssetWarehouseProjection.swift */,
 				83ADF6F74477FE61397D3AEE /* Resources */,
@@ -606,6 +645,8 @@
 				E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */,
 				019FBE470000000000000004 /* MarketBrowserTests.swift */,
 				BBBDCD301666D06C8735887C /* MarketPricingTests.swift */,
+				01A0C0010000000000000003 /* TradeCalculatorTests.swift */,
+				01A0C0010000000000000009 /* TradeLogbookTests.swift */,
 				40B81E1970CDE5ECE390B481 /* PersistenceStabilityTests.swift */,
 				E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */,
 				01A0D7370000000000000001 /* LoyaltyStoreCatalogTests.swift */,
@@ -821,6 +862,8 @@
 				2F272FC5588FAFBD87D0ADED /* IndustryPlannerTests.swift in Sources */,
 				EA30DEE9EDC4BAFD7B575678 /* IndustryRulesTests.swift in Sources */,
 				01A0B0020000000000000011 /* JumpFreighterLogisticsTests.swift in Sources */,
+				01A0C0010000000000000013 /* TradeCalculatorTests.swift in Sources */,
+				01A0C0010000000000000019 /* TradeLogbookTests.swift in Sources */,
 				7F3AFE42523B5E194D8DA2C8 /* InventionReadinessTests.swift in Sources */,
 				019FBE470000000000000014 /* MarketBrowserTests.swift in Sources */,
 				356CA43B1852389B5D0DE060 /* MarketPricingTests.swift in Sources */,
@@ -872,6 +915,8 @@
 				29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */,
 				9492F8F84CA2B812F38B0730 /* ProfilesView.swift in Sources */,
 				019FC10B0000000000000014 /* PublicContractsView.swift in Sources */,
+				01A0C0010000000000000015 /* TradeView.swift in Sources */,
+				01A0C0010000000000000018 /* TradeLogbookView.swift in Sources */,
 				42BA88660D950E4031482CB1 /* RuntimeState.swift in Sources */,
 				D62B077B861F9F4B2F8E9A9E /* StoredAssetWarehouseProjection.swift in Sources */,
 			);
@@ -912,6 +957,13 @@
 				D0D842AFB26403A28F33D42C /* InventionReadiness.swift in Sources */,
 				01A0B0010000000000000011 /* JumpFreighterLogistics.swift in Sources */,
 				019FC2000000000000000011 /* LogisticsCostCalculator.swift in Sources */,
+				01A0C0010000000000000011 /* TradeModels.swift in Sources */,
+				01A0C0010000000000000012 /* TradeCalculator.swift in Sources */,
+				01A0C0010000000000000014 /* TradeTiles.swift in Sources */,
+				01A0C0010000000000000016 /* TradeLogbook.swift in Sources */,
+				01A0C0010000000000000017 /* TradeLogbookStore.swift in Sources */,
+				01A0C001000000000000001A /* TradeWallet.swift in Sources */,
+				01A0C001000000000000001B /* TradeWalletReconciler.swift in Sources */,
 				E5380BF0913F7CD882038A4E /* JitaMarketService.swift in Sources */,
 				BC8A106455EAE98782C571DE /* KeychainRefreshTokenStore.swift in Sources */,
 				C06F91A81025FE554EB56413 /* LoopbackCallbackServer.swift in Sources */,

@@ -44,6 +44,27 @@ public struct StaticItemGroupSnapshot: Equatable, Sendable {
   }
 }
 
+/// One node of the in-game market browser tree. `parentExternalID` is nil for
+/// a root group; `hasTypes` marks groups that directly list item types.
+public struct StaticMarketGroupSnapshot: Equatable, Sendable {
+  public let externalID: Int64
+  public let parentExternalID: Int64?
+  public let name: String
+  public let hasTypes: Bool
+
+  public init(
+    externalID: Int64,
+    parentExternalID: Int64?,
+    name: String,
+    hasTypes: Bool
+  ) {
+    self.externalID = externalID
+    self.parentExternalID = parentExternalID
+    self.name = name
+    self.hasTypes = hasTypes
+  }
+}
+
 public struct StaticItemTypeSnapshot: Equatable, Sendable {
   public let externalID: Int64
   public let groupExternalID: Int64
@@ -281,6 +302,7 @@ public enum StaticDataCatalogValidationError: Error, Equatable, Sendable {
   case duplicateGroupID(Int64)
   case duplicateItemTypeID(Int64)
   case duplicateBlueprintID(Int64)
+  case duplicateMarketGroupID(Int64)
   case missingCategory(groupID: Int64, categoryID: Int64)
   case missingGroup(typeID: Int64, groupID: Int64)
   case categoryMismatch(typeID: Int64)
@@ -332,6 +354,7 @@ public struct StaticDataCatalogSnapshot: Equatable, Sendable {
   public let typeMaterials: [StaticTypeMaterialSnapshot]
   public let blueprints: [StaticBlueprintSnapshot]
   public let decryptors: [StaticDecryptorSnapshot]
+  public let marketGroups: [StaticMarketGroupSnapshot]
   public let reactionRuleProfile: ReactionRuleProfile?
 
   public init(
@@ -345,6 +368,7 @@ public struct StaticDataCatalogSnapshot: Equatable, Sendable {
     typeMaterials: [StaticTypeMaterialSnapshot] = [],
     blueprints: [StaticBlueprintSnapshot],
     decryptors: [StaticDecryptorSnapshot] = [],
+    marketGroups: [StaticMarketGroupSnapshot] = [],
     reactionRuleProfile: ReactionRuleProfile? = nil
   ) throws {
     self.buildNumber = buildNumber
@@ -357,6 +381,7 @@ public struct StaticDataCatalogSnapshot: Equatable, Sendable {
     self.typeMaterials = typeMaterials
     self.blueprints = blueprints
     self.decryptors = decryptors
+    self.marketGroups = marketGroups
     self.reactionRuleProfile = reactionRuleProfile
     try validate()
   }
@@ -442,6 +467,18 @@ public struct StaticDataCatalogSnapshot: Equatable, Sendable {
         throw
           StaticDataCatalogValidationError
           .duplicateGroupID(group.externalID)
+      }
+    }
+
+    // Parent references are not enforced: the market tree is presentation
+    // data, and an unknown parent only detaches a subtree instead of
+    // invalidating the industry catalog.
+    var marketGroupIDs = Set<Int64>()
+    for marketGroup in marketGroups {
+      guard marketGroupIDs.insert(marketGroup.externalID).inserted else {
+        throw
+          StaticDataCatalogValidationError
+          .duplicateMarketGroupID(marketGroup.externalID)
       }
     }
 
@@ -630,10 +667,13 @@ public enum StaticDataCatalogBatch: Equatable, Sendable {
   case typeMaterials([StaticTypeMaterialSnapshot])
   case blueprints([StaticBlueprintSnapshot])
   case decryptors([StaticDecryptorSnapshot])
+  case marketGroups([StaticMarketGroupSnapshot])
   case reactionRuleProfile(ReactionRuleProfile)
 
   public var recordCount: Int {
     switch self {
+    case .marketGroups(let records):
+      records.count
     case .categories(let records):
       records.count
     case .groups(let records):

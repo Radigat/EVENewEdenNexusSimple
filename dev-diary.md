@@ -1,5 +1,464 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 22. Oktober 2026 – Handel P8: Gesamtprüfung und Abnahme-Checkliste
+
+Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P8):
+- Gesamtprüfung.
+- Abgleich der Steuerdateien.
+- Abnahme-Checkliste; die Live-Prüfung mit ESI bleibt opt-in.
+
+Prüfung (automatisch):
+- `git diff --check` fehlerfrei.
+- `swift build` ohne Warnungen in den Handelsdateien. Dabei behoben: eine
+  `where`-Warnung in `TradeLogbookView`.
+- `swift test`: 521 Swift-Testing-Tests in 35 Suites plus 66 Tests in 3
+  Suites bestanden.
+- `swift test --package-path Packages/EVEStaticDataKit`: 11 Tests bestanden.
+- `xcodebuild … -configuration Debug … build`: `BUILD SUCCEEDED`.
+- `xcodebuild … test`: `TEST SUCCEEDED`, 521 Swift-Testing-Tests (darunter
+  die Handels-Suites) und 8 XCTest-Fälle.
+- Alle 11 neuen Quell- und Testdateien haben genau eine Datei- und eine
+  Build-Referenz im Xcode-Projekt.
+- Lokale Dokumentlinks in den geänderten Dateien sind gültig.
+
+Dokumentation:
+- `PROJECT_STATE.md` (Stand, neuer Abschnitt Handel).
+- `DECISIONS.md` (Regeländerungen und Annahmen).
+- `FEATURE_COVERAGE.md` (WAL-001, Ergänzungen der Weiterentwicklung).
+- `ACCEPTANCE.md` (Nachweistabelle P1–P8).
+- `ROADMAP.md`: von „Geplant“ nach „Umgesetzt, Abnahme offen“.
+- `PRODUCT.md` und `ARCHITECTURE.md`: veraltete „geplant“-Formulierungen
+  bereinigt.
+- Handel-Plan Abschnitt H: Abnahme-Checkliste.
+
+Live-Prüfung: nicht ausgeführt (opt-in, Eigentümer).
+
+Offen:
+- SDE-Neuimport mit dem echten Archiv; die Annahme `marketGroups.jsonl` im
+  Archiv ist nur über das Community-Schema belegt.
+- Live-Prüfung mit Märkten, Strukturen, DOTLAN, Wallets und Orders.
+- 4-Stellen-Preisschritt ingame bestätigen.
+- Eigentümerabnahme.
+- Nichts committet.
+
+## 22. Oktober 2026 – Handel P7: Automatischer Wallet-Abgleich
+
+Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P7):
+Käufe aus den Wallets automatisch ins Logbuch übernehmen, Verkäufe nach FIFO
+zuordnen, Steuer belegen und Broker berechnen, die Orderart erkennen, Ist- und
+Planwerte gegenüberstellen.
+
+Änderung:
+- `ESICharacterOrderDTO`: optional `issued` und `duration` (additiv).
+- `TradeLogbookStore` Schema 3:
+  - Neu sind `wallet_orders` und `trade_settings` (Startdatum).
+  - Einkäufe und Verkäufe bekommen Wallet-Verknüpfung und Herkunft
+    (manuell, erkannt, angenommen); Einkäufe zusätzlich „Transport geschätzt“,
+    Verkäufe die belegte Steuer.
+  - Ein eindeutiger Index verhindert doppelte Übernahmen.
+  - Neu `save([...])` als Stapel in einer Transaktion.
+- `TradeLogbookEntry` und `TradeLogbookSale` um diese Felder erweitert. Der
+  realisierte Gewinn nutzt die belegte Steuer vor dem Satz; neu sind Ø Ist-VK
+  und Abweichung vom Plan.
+- Neu `TradeWalletReconciler.swift`, eine reine Funktion für:
+  - Import ab Startdatum, je Transaktion,
+  - Ziel Main → Home,
+  - Fertigung aus aktiven Plänen,
+  - geschätzten Transport,
+  - FIFO je Item und Ziel-Hub,
+  - Journal-Steuer anteilig,
+  - Orderart aus Orders,
+  - nicht zugeordnete Verkäufe und manuelle Zuordnung.
+- `RuntimeState`:
+  - `reconcileTradeLogbook`, `setTradeWalletImportStart`, `assignTradeSale`.
+  - Wallet-Übergabe inklusive offener Orders und Orderhistorie.
+  - Ohne lesbaren Katalog werden Käufe gezählt statt benannt.
+- `CharacterBatchSynchronizer` gleicht nach jeder Sammel-Synchronisierung mit
+  den Materialien aktiver Pläne ab (`TradePlannerMaterials`).
+- `TradeLogbookView`:
+  - Startdatum und Erklärung, Abschnitt „Nicht zugeordnete Verkäufe“ mit
+    „Zuordnen“.
+  - Spalten Ø Ist-VK (mit Hervorhebung unter Plan) und Plan-Gewinn,
+    Hinweis-Symbole.
+  - Der Editor zeigt die Herkunft; eigene Änderungen setzen sie auf manuell.
+- Lokalisierung en/de; `TradeWalletReconciler.swift` im Xcode-Projekt.
+
+Prüfung (automatisch):
+- `swift test`: 521 Tests in 35 Suites plus 66 App-Tests bestanden.
+- Neue Abgleich-Tests:
+  - Importregeln: Startdatum, Hub, unbenannter Typ, Fertigung, Station
+    Trading.
+  - Orderart erkannt bzw. angenommen.
+  - FIFO über zwei Einkäufe mit anteiliger Steuer und Gewinnrechnung.
+  - Nicht zugeordnet nur für erfasste Gegenstände.
+  - Zweiter Lauf ohne Änderungen, manuelle Zuordnung.
+- Neue Store-Tests:
+  - Verknüpfungen, Herkunft und Steuer bleiben erhalten.
+  - Doppelte Wallet-Verknüpfung wird abgewiesen.
+  - Einstellungen und Orders werden gespeichert.
+  - Echte Schema-1-Datei migriert auf Schema 3.
+- App-Test: kein erfundener Name ohne Katalog, Startdatum bleibt erhalten.
+- `swift test --package-path Packages/EVEStaticDataKit` bestanden.
+- Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`.
+
+Prüfung (visuell, isoliert): Das Logbuch zeigt Startdatum, Erklärung und die
+neuen Spalten. Ein veralteter Satz („Zuordnung folgt später“) wurde ersetzt.
+
+Offen:
+- Live-Abgleich mit echten Wallets, Orders und Journal ist nicht ausgeführt.
+- Die Erkennung der Orderart vergleicht nur Charakter, Gegenstand, Ort, Seite
+  und Laufzeitfenster, nicht den Preis (Orders können umgepreist werden).
+- Transport und Broker bleiben Schätzung bzw. Berechnung.
+- Eigentümerabnahme offen.
+
+## 22. Oktober 2026 – Handel P6: Wallet-Daten aller Charaktere
+
+Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P6, U5
+entschieden):
+- Persönliche Wallet-Transaktionen und Journal aller Charaktere dauerhaft im
+  Logbuch speichern.
+- Knopf „Wallets abgleichen“ und Statuszeile je Charakter.
+- Keine Corporation-Wallet.
+
+Änderung:
+- `ESIWalletTransactionDTO`: optional `locationID`, `journalRefID`,
+  `isPersonal`. Ältere gespeicherte Snapshots dekodieren weiter.
+- Neu `Sources/EVENexusCore/Trade/TradeWallet.swift`: Transaktion,
+  Journal-Eintrag, Abgleichsstatus, Ergebnis eines Abgleichs.
+- `TradeLogbookStore` Schema 2:
+  - Tabellen `wallet_transactions`, `wallet_journal` und `wallet_sync_status`.
+  - `recordWallet` ist idempotent über Charakter und ESI-ID, ergänzt fehlende
+    Felder per COALESCE und überspringt ungültige Transaktionen.
+  - Der Status wird auch ohne Daten gespeichert; die letzte erfolgreiche Zeit
+    bleibt erhalten.
+  - Lesemethoden: `walletSyncStatuses`, `walletTransactions`, `walletJournal`.
+- `RuntimeState.syncCharacter` übergibt jede Synchronisierung an
+  `recordTradeWallet`; ein Fehler bricht die Synchronisierung nicht ab.
+- `TradeLogbookView`: Abschnitt „Wallet-Daten“ mit Knopf (über
+  `CharacterBatchSynchronizer`) und Statuszeile je Charakter, auch für noch
+  nicht abgeglichene Charaktere.
+- Lokalisierung en/de; `TradeWallet.swift` im Xcode-Projekt eingetragen.
+
+Prüfung (automatisch):
+- `swift test`: 515 Tests in 34 Suites plus 65 App-Tests bestanden.
+- Neue Store-Tests:
+  - Idempotenz, ältere Zeilen bleiben, ungültige werden übersprungen.
+  - Fehlender Scope ohne Verlust des letzten Erfolgs; unbekannte Felder
+    bleiben `nil`.
+  - Migration einer Schema-1-Datei ohne Datenverlust.
+  - DTO-Dekodierung mit und ohne neue Felder.
+- App-Test: Übernahme für zwei Charaktere (frisch und verboten); Status
+  sortiert und nach dem Wiederöffnen lesbar.
+- `swift test --package-path Packages/EVEStaticDataKit` bestanden.
+- Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`.
+
+Prüfung (visuell, isoliert):
+- Die Logbuch-Datei aus P5 wurde beim Start auf Schema 2 migriert; der
+  Eintrag blieb erhalten.
+- Ohne Charaktere ist „Wallets abgleichen“ deaktiviert und ein Hinweis
+  erscheint.
+
+Offen:
+- Live-Abgleich mit echten Charakteren und ESI: nicht ausgeführt, weil dafür
+  keine produktiven Daten genutzt werden.
+- Zuordnung zum Logbuch folgt mit P7.
+- Eigentümerabnahme offen.
+
+## 22. Oktober 2026 – Handel P5: Handelslogbuch
+
+Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P5):
+- Einkaufs-Logbuch in einer eigenen SQLite-Datei mit eigenem
+  Seitenleisteneintrag.
+- Erinnerung in der App (geplanter VK gegen aktuellen Zielpreis).
+- „Ins Logbuch“ aus Kachelzeilen sowie manuelle Einträge.
+- Spalte für die offene Logbuch-Menge im Handel.
+
+Entscheidungen vor dem Start: Erinnerung nur in der App, keine
+macOS-Mitteilung; eigener Seitenleisteneintrag „Handelslogbuch“.
+
+Änderung:
+- Neu `Sources/EVENexusCore/Trade/TradeLogbook.swift`:
+  - Status mit Rang und `isOpen`, Verkaufsarten, `TradeLogbookEntry` mit
+    eingefrorenen Sätzen.
+  - Kosten, geplanter und realisierter Gewinn, offene Menge, Erinnerung und
+    Validierung.
+  - `TradeLogbookSummary.openQuantities` und `TradeLogbookSorter`.
+- Neu `TradeLogbookStore.swift`:
+  - Actor nach dem Muster von `PublicContractStore`, Tabellen
+    `trade_purchases` und `trade_sales` (CASCADE).
+  - `user_version` 1; eine neuere Version wird abgewiesen und nicht verändert.
+- `RuntimeState`: `loadTradeLogbook`, `saveTradeLogbookEntry`,
+  `deleteTradeLogbookEntry`, `tradeSearchItemTypes`; die Datei wird erst bei
+  Bedarf geöffnet.
+- Neu `TradeLogbookView.swift`:
+  - Logbuch-Tabelle mit Filter, Sortierung, Erinnerung und Hervorhebung.
+  - Bearbeiten- und Löschknöpfe vorn; Löschen nur nach Bestätigung.
+  - Editor mit Gegenstandssuche, Verkäufen und Prozentfeldern für Sätze.
+    Leere Felder bleiben unbekannt.
+- `NavigationSection.tradeLogbook` nach `.trade`.
+- Im Handel:
+  - Plus-Knopf „Ins Logbuch“ je Zeile, vorbefüllt; der exakte Transport
+    folgt der eingegebenen Menge.
+  - Detailspalte „Offen (Logbuch)“ und Buch-Symbol in der Kompaktansicht.
+- Lokalisierung en/de; Dateien im Xcode-Projekt eingetragen.
+
+Prüfung (automatisch):
+- `swift test`: 511 Tests in 34 Suites plus 64 App-Tests bestanden.
+- Neu `TradeLogbookTests` (8 Tests):
+  - Roundtrip mit Wiederöffnen; NULL bleibt unbekannt.
+  - Upsert ersetzt Verkäufe, Löschen entfernt Einträge.
+  - Validierung, Abweisung einer neueren Schemaversion.
+  - Gewinnrechnung, Erinnerung, offene Mengen je Ziel-Hub, Sortierung.
+- App-Test: Navigationsreihenfolge sowie Laden, Speichern, Abweisen und
+  Löschen über RuntimeState in einem temporären Datenordner.
+- Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`.
+- `git diff --check` ohne Befund.
+
+Prüfung (visuell, isoliert):
+- Debug-App mit eigenem Datenordner, eigener Defaults-Suite und synthetischem
+  Katalog.
+- Geprüft: Editor aus der Zeile „Miner I“ geöffnet, Menge und Preis gesetzt,
+  gespeichert. Der Eintrag erscheint im Handelslogbuch und überlebt einen
+  Neustart; der Handel zeigt „Offen (Logbuch) 25“.
+- Dabei korrigiert:
+  - Logbuch-Tabelle zu breit (Aktionen außer Sicht, jetzt vorn).
+  - Detailtabelle des Handels schob die Kachel unter die Seitenleiste (P4),
+    jetzt scrollt sie innerhalb der Kachel.
+
+Offen:
+- Wallet-Abgleich folgt mit P6 und P7.
+- Erinnerung nur mit Marktdaten der laufenden Sitzung.
+- Eigentümerabnahme offen.
+
+## 22. Oktober 2026 – Handel P4: Handelsbereich in der App
+
+Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P4, U4
+entschieden): ein Bereich Handel nach dem Referenzbild mit Modusleiste,
+Knoten-Kacheln, einstellbaren Pfeilschwellen, Detailspalten, Tagesbedarf,
+Tiefe und Transportbasis aus RuntimeState.
+
+Änderung:
+- Neu `Sources/EVENexusCore/Trade/TradeTiles.swift`:
+  - `TradeTileBuilder` mit Kinder-Kacheln, Zusatzkachel für eigene Items und
+    zyklenfestem Pfad.
+  - `TradeDifferenceIndicator` mit den Schwellen 25 %/30 % und Abwärtspfeil.
+  - `TradeDisplayRow` und `TradeRowSorter` mit typisierter Sortierung,
+    unbekannten Werten nach der Regel und `typeID` als Tie-Breaker.
+- `RuntimeState`, Abschnitt Trade:
+  - Katalog-Durchreichungen sowie Marktdaten, Bedarf und Gebühren je Rolle.
+    Geteilte Hubs nutzen die Daten des Haupt-Hubs.
+  - `refreshTradeTransportBasis`: Kurier Main→Home, für Coalition zusätzlich
+    Home→Coalition per Jump Freighter (Flugkosten = Isotope je Flug × Ø
+    Isotopenpreis) oder Kurier.
+- Neu `Sources/EVENexusSimpleApp/TradeView.swift` und
+  `NavigationSection.trade` („Handel“, nach Coalition-Hub-Chancen). Die
+  Einstellungen liegen in `AppDefaults.store` (`trade.*`).
+  - Leerzustände: kein Katalog, SDE-Neuimport nötig, Hub fehlt oder ist
+    identisch, keine Marktdaten, Gebühren oder Transport fehlen.
+  - Der Knopf **Hub-Märkte aktualisieren** startet den bestehenden Hub-Scan.
+    Grund: Marktübersichten liegen nur im Speicher und fehlen nach einem
+    Neustart bis zum nächsten Scan, der innerhalb der 6-Stunden-Sperre nicht
+    automatisch läuft.
+- Lokalisierung en/de; neue Dateien im Xcode-Projekt eingetragen.
+
+Prüfung (automatisch):
+- `swift build` erfolgreich.
+- `swift test`: 503 Tests in 33 Suites plus 63 App-Tests bestanden.
+- Neue Tests:
+  - Kachelbildung mit Untergruppen, eigenen Items und ohne leere Kacheln.
+  - Pfad mit Zyklus.
+  - Pfeilschwellen inklusive Grenzwerten.
+  - Sortierung mit unbekannten Werten in beiden Richtungen.
+  - Navigationsreihenfolge, die fünf Modi und keine erfundenen Daten ohne
+    Hubs.
+- Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`.
+- `git diff --check` ohne Befund.
+
+Prüfung (visuell, isoliert):
+- Debug-App mit `EVE_NEXUS_APPLICATION_SUPPORT_ROOT`, eigener Defaults-Suite
+  und `EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1` gestartet.
+- Synthetischer v5-Katalog mit Marktgruppen, keine Nutzerdaten.
+- Geprüft wurden Seitenleiste, Modusleiste, Warnungen, Pfadleiste,
+  Wurzelliste, Kachel „Harvest Equipment“ und Detailspalten.
+- Ohne Marktdaten zeigt die Kachel durchgehend „—“.
+- Dabei korrigiert:
+  - Endloser Ladezustand ohne Katalog, jetzt „Kein SDE-Katalog“.
+  - Doppelt belegte Übersetzungen der Umschalter („Bezug“, „Zielbestand“ →
+    „Quelle“, „Ziel“).
+
+Offen:
+- Anzeige mit echten Hub-Preisen (Live-Scan) ist nicht geprüft; die
+  Preisrechnung ist nur durch Unit-Tests belegt.
+- Logbuch folgt mit P5 bis P7.
+- Eigentümerabnahme offen.
+
+## 22. Oktober 2026 – Handel P3: Volles Strukturorderbuch, Bedarf und Ordertiefe
+
+Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P3, U3
+entschieden):
+- Home- und Coalition-Scans laden bei Spielerstrukturen immer das volle
+  Orderbuch.
+- Der Bedarfsledger wird damit weitergeführt.
+- Die Marktübersicht erhält die Ordertiefe am Bestpreis.
+- Die Hub-Chancen bleiben unverändert.
+
+Änderung:
+- `TradeHubMarketService.structureOrderSnapshot(typeIDs:)`: Der Parameter ist
+  jetzt optional. `nil` behält alle Typen der Struktur; mit Typmenge bleibt das
+  Verhalten unverändert (angefragte Typen ohne Orders als leere Liste).
+- `RuntimeState`:
+  - Der Home-/Coalition-Strukturscan lädt mit `typeIDs: nil`.
+  - Bedarfsledger und `marketState` erhalten das volle Buch.
+  - Die Analyse bekommt über `opportunityAnalysisMarket` das auf
+    Produkttypen beschränkte Buch (NPC-Stationen unverändert, sie lieferten
+    schon immer das volle Buch).
+- `MarketOrderTypeSummary`: optional `bestSellVolume` / `bestBuyVolume`
+  (Stückzahl genau zum Bestpreis). Ältere JSON-Daten bleiben dekodierbar.
+- `TradeRow`: `sourceVolumeAtPrice` / `targetVolumeAtPrice` passend zu den
+  Umschaltern.
+
+Prüfung (automatisch):
+- `swift build` erfolgreich.
+- `swift test`: 499 Tests in 32 Suites plus 62 App-Tests bestanden.
+- Neu:
+  - Der Strukturabruf ohne Typfilter behält das ganze Buch.
+  - Die Summary-Tiefe wird summiert, ungültige Orders sind ausgeschlossen,
+    alte JSON-Daten bleiben lesbar.
+  - Regressionstest: Chancenzeilen und Abdeckung sind mit dem eingeschränkten
+    vollen Buch identisch zum bisherigen Produktbuch.
+  - Der Produktbedarf im Ledger ist mit dem vollen Buch unverändert, und neue
+    Items messen eigenen Bedarf.
+  - Die Tiefe in `TradeRow` folgt den Umschaltern.
+  - App-Test: Produkt-Scope nur bei Strukturen.
+- `swift test --package-path Packages/EVEStaticDataKit`: 11 Tests bestanden.
+- Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`.
+- In `RuntimeFeatureStateTests` ist der Import von `EVENexusCore` jetzt
+  `@testable`, damit der Test `MarketOrder`-Fixtures bauen kann.
+
+Offen:
+- Live-Scan einer echten Struktur: Dauer und Größe der Bedarfsdatei sind noch
+  nicht gemessen.
+- Anzeige im Handel folgt mit P4.
+- Eigentümerabnahme offen.
+
+## 22. Oktober 2026 – Handel P2: Handelsrechner
+
+Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P2): Ein
+reiner Rechner mit allen Formeln aus Abschnitt C.
+
+Entscheidungen vor dem Start:
+- U1: Max-Regel, Collateral auf Basis des Einkaufswerts.
+- U2: Eigene Orders liegen einen zulässigen Preisschritt nach der
+  4-Stellen-Regel besser. Relist-Gebühren sind nicht enthalten.
+- Nachfrage: Main→Coalition besteht aus zwei Etappen (Kurier Main→Home plus
+  Home→Coalition wie bei den Hub-Chancen).
+- Nachfrage: Der Jump Freighter je Einheit wird bei voller Ladung angesetzt.
+
+Änderung:
+- Neu `Sources/EVENexusCore/Trade/TradeModels.swift`:
+  - `TradeMode` mit fünf Modi und `TradeQuoteSide` (Min-Sell/Max-Buy).
+  - `TradeHubFees` (direkt aus `MarketTaxConfiguration`).
+  - Transport-Etappen (Kurier, Jump Freighter, nicht verfügbar).
+  - `TradeItemInput`, `TradeRow`, `TradeRowIssue`, `TradeTransportQuote`.
+- Neu `TradeCalculator.swift`:
+  - `MarketPriceTick` (`nextBelow` / `nextAbove`).
+  - `TradeCalculator.row/rows` mit Diff %, Einkauf, Transport, Netto, Gewinn,
+    Marge, ROI und Ziel-Spread.
+  - `transportPerUnit` (Kachel-Richtwert) und `transportQuote` (Menge;
+    Kurier über `LogisticsCostCalculator`).
+- Neue Dateien und Tests in `EVENexusSimple.xcodeproj` eingetragen
+  (Gruppe `Trade`).
+
+Prüfung (automatisch):
+- `swift build` erfolgreich; `swift test` mit 495 Tests in 32 Suites plus 61
+  App-Tests bestanden.
+- Neue `TradeCalculatorTests` (9 Tests) decken ab:
+  - Preisschritte und Grenzfälle (Zehnerpotenzen, 0,01-Untergrenze).
+  - Importroute mit Sofortkauf und Sell-Order.
+  - Buy-Order und Direktverkauf.
+  - Übereinstimmung mit `MarketPriceEngine` bei listedSale.
+  - Station Trading.
+  - Fehlende Werte: unbekannt statt 0.
+  - Zwei-Etappen-Transport sowie Jump-Freighter- und Vertragslimit.
+  - Mengenrechnung mit Vertragsrundung und angefangenen Flügen.
+- `swift test --package-path Packages/EVEStaticDataKit`: 11 Tests bestanden.
+- Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`.
+
+Offen:
+- Die 4-Stellen-Preisregel ist nicht gegen eine CCP-Quelle belegt; die
+  Live-Prüfung steht aus.
+- Ordertiefe kommt mit P3.
+- RuntimeState-Anbindung und Oberfläche kommen mit P4.
+- Eigentümerabnahme offen.
+
+## 22. Oktober 2026 – Handel P1: SDE-Marktgruppen
+
+Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P1): Die
+Marktgruppen aus dem SDE importieren. Sie sind die Grundlage für die
+Handelskacheln nach dem Referenzbild.
+
+Änderung:
+
+- EVEStaticDataKit:
+  - Neuer Datensatz `SDEDatasetKind.marketGroups` (`marketGroups.jsonl`, als
+    letzter Fall angehängt, damit die Hash-Reihenfolge stabil bleibt).
+  - Neuer Typ `StaticMarketGroupSnapshot`, Batch `.marketGroups` und Collector.
+  - Mapper `mapMarketGroup`: `_key`, `name.en` und `hasTypes` sind Pflicht,
+    `parentGroupID` ist optional.
+  - Die Snapshot-Validierung weist doppelte Marktgruppen-IDs ab. Unbekannte
+    Elterngruppen werden dagegen nicht erzwungen.
+  - Feldnamen geprüft gegen das Community-Schema `sde.riftforeve.online`
+    (Build 3632936). CCP veröffentlicht kein offizielles Schema;
+    `types.marketGroupID` ist in der lokal vorhandenen `types.jsonl` belegt.
+- `SQLiteStaticCatalog`:
+  - Katalogadapter 5 mit der Tabelle `market_groups`, einem Index auf
+    `parent_id` und `item_types.market_group_id`, in beiden Writern
+    (Snapshot und Streaming).
+  - Neues Protokoll `MarketGroupCatalogQuerying` mit `marketGroups()` und
+    `tradeItems(inMarketGroupSubtree:)` (rekursives CTE). Beide prüfen, ob die
+    Tabelle existiert, und melden sonst `requiresSDEReimport`.
+
+Prüfung (automatisch):
+- `swift build` erfolgreich; `swift test` bestanden (486 Tests in 31 Suites
+  plus 61 App-Tests in 3 Suites).
+- Neue Katalogtests: Baum und Teilbaum aus beiden Writern, unveröffentlichte
+  Items ausgeschlossen, fehlendes Packvolumen bleibt `nil`, Altkatalog ohne
+  Tabelle meldet Neuimport, doppelte IDs werden abgewiesen.
+- `swift test --package-path Packages/EVEStaticDataKit`: 11 Tests bestanden
+  (neu: Mapper-Pflicht- und Optionalfelder).
+- Natives `xcodebuild … -configuration Debug … test` mit `** TEST SUCCEEDED **`.
+
+Hinweise:
+- Der installierte Katalog bleibt bis zum ausdrücklichen Neuimport ein
+  v4-Katalog.
+- Ältere bereitgestellte SDE-Pakete mit acht Dateien lassen sich nicht erneut
+  mappen. Der Neuimport lädt das offizielle Archiv ohnehin neu.
+
+Offen:
+- Neuimport mit dem echten Archiv; die Live-Prüfung, dass `marketGroups.jsonl`
+  im offiziellen ZIP enthalten ist, steht noch aus.
+- Keine Oberfläche (folgt mit P4).
+- Eigentümerabnahme offen.
+
+## 22. Oktober 2026 – Plan für den Bereich Handel (P0)
+
+Ziel (Eigentümerauftrag): Ein Handelsbereich nach dem Referenzbild. Er vergleicht
+Marktgruppen-Kacheln Main-Hub gegen Ziel-Hub, bietet Import Main→Home und
+Main→Coalition sowie Station Trading getrennt je Hub. Steuern, Logistik und
+Tagesbedarf fließen ein. Dazu kommt ein Einkaufs-Logbuch, das mit den
+Wallet-Transaktionen der Charaktere abgeglichen wird.
+
+Ergebnis: [Documentation/HANDEL_PLAN.md](Documentation/HANDEL_PLAN.md) enthält
+die Entscheidungen, Code-Befunde, Formeln und die Prompts P1–P8. Die offenen
+Punkte U1–U8 werden im jeweiligen Prompt erfragt. Ein Verweis steht in
+`ROADMAP.md`.
+
+Prüfung: nur Dokumentation, kein Code geändert. Deshalb kein Build und kein
+Testlauf.
+
+Offen: P1–P8 sind nicht implementiert. `PRODUCT.md` bleibt unverändert, weil
+sich das Verhalten der App nicht geändert hat.
+
 ## 22. Oktober 2026 – Erfindungskosten in den Hub-Chancen
 
 Ziel (Eigentümerauftrag): Prüfen, ob Erfindungskosten für T2-Gegenstände in

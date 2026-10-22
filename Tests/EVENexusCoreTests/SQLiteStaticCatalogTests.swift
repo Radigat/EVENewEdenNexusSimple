@@ -1,3 +1,4 @@
+import CSQLite
 import EVEStaticDataKit
 import Foundation
 import Testing
@@ -265,7 +266,7 @@ struct SQLiteStaticCatalogTests {
 
     let hashPrefix = snapshot.contentSHA256.prefix(12)
     let currentName =
-      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v4.sqlite"
+      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v5.sqlite"
     let legacyName =
       "sde-\(snapshot.buildNumber)-\(hashPrefix).sqlite"
     let catalogsURL = root.appendingPathComponent(
@@ -339,9 +340,9 @@ struct SQLiteStaticCatalogTests {
 
     let hashPrefix = snapshot.contentSHA256.prefix(12)
     let currentName =
-      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v4.sqlite"
+      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v5.sqlite"
     let previousName =
-      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v3.sqlite"
+      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v4.sqlite"
     let catalogsURL = root.appendingPathComponent(
       "catalogs",
       isDirectory: true
@@ -566,6 +567,202 @@ struct SQLiteStaticCatalogTests {
       throws: StaticCatalogError.database("missing-minerals")
     ) {
       try await catalog.minerals()
+    }
+  }
+
+  @Test
+  func bothWritersStoreTheMarketTreeAndItsSubtreeItems() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-market-groups-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = try marketGroupFixture(build: 4)
+
+    let snapshotCatalog = SQLiteStaticCatalog(
+      rootURL: root.appendingPathComponent("snapshot", isDirectory: true)
+    )
+    _ = try await snapshotCatalog.activate(snapshot)
+    let streamingCatalog = SQLiteStaticCatalog(
+      rootURL: root.appendingPathComponent("streaming", isDirectory: true)
+    )
+    _ = try await streamingCatalog.activateStreaming(
+      packageURL: root.appendingPathComponent("fixture-package"),
+      mapper: FixtureStreamingMapper(snapshot: snapshot),
+      batchSize: 2
+    )
+
+    for catalog in [snapshotCatalog, streamingCatalog] {
+      let tree = try await catalog.marketGroups()
+      #expect(tree.availability == .available)
+      #expect(tree.source.version == "4")
+      #expect(
+        tree.groups.map(\.name)
+          == ["Harvest Equipment", "Materials", "Mining Lasers", "Ship Equipment"]
+      )
+      let harvest = try #require(tree.groups.first { $0.id == 1_001 })
+      #expect(harvest.parentID == 1_000)
+      #expect(harvest.hasTypes)
+      #expect(tree.groups.first { $0.id == 1_000 }?.parentID == nil)
+
+      let equipment = try await catalog.tradeItems(inMarketGroupSubtree: 1_000)
+      #expect(equipment.availability == .available)
+      #expect(equipment.rootMarketGroupID == 1_000)
+      // Published descendants only, ordered by name; the unpublished type in
+      // the same leaf group is excluded and the sibling root is not included.
+      #expect(equipment.items.map(\.id) == [100, 1])
+      #expect(equipment.items.map(\.marketGroupID) == [1_001, 1_002])
+      #expect(equipment.items.first?.packagedVolume == 1)
+      // A missing packaged volume stays unknown instead of using the
+      // assembled volume.
+      #expect(equipment.items.last?.packagedVolume == nil)
+
+      let leaf = try await catalog.tradeItems(inMarketGroupSubtree: 1_002)
+      #expect(leaf.items.map(\.id) == [1])
+      let materials = try await catalog.tradeItems(inMarketGroupSubtree: 2_000)
+      #expect(materials.items.map(\.id) == [2])
+      let unknown = try await catalog.tradeItems(inMarketGroupSubtree: 9_999)
+      #expect(unknown.availability == .available)
+      #expect(unknown.items.isEmpty)
+    }
+  }
+
+  @Test
+  func catalogWithoutMarketTreeReportsReimportInsteadOfFailing() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-legacy-market-groups-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = try marketGroupFixture(build: 5)
+    _ = try await SQLiteStaticCatalog(rootURL: root).activate(snapshot)
+    let fileName =
+      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v5.sqlite"
+    try dropMarketGroupTable(
+      at: root.appendingPathComponent("catalogs", isDirectory: true)
+        .appendingPathComponent(fileName)
+    )
+
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    let tree = try await catalog.marketGroups()
+    let items = try await catalog.tradeItems(inMarketGroupSubtree: 1_000)
+
+    #expect(tree.availability == .requiresSDEReimport)
+    #expect(tree.groups.isEmpty)
+    #expect(items.availability == .requiresSDEReimport)
+    #expect(items.items.isEmpty)
+    #expect(try await catalog.typeID(named: "Market Ship") == 1)
+  }
+
+  @Test
+  func duplicateMarketGroupsAreRejected() throws {
+    let group = StaticMarketGroupSnapshot(
+      externalID: 7,
+      parentExternalID: nil,
+      name: "Duplicate",
+      hasTypes: true
+    )
+    #expect(
+      throws: StaticDataCatalogValidationError.duplicateMarketGroupID(7)
+    ) {
+      _ = try withMarketGroups(
+        try fixture(build: 9, productName: "Market Ship"),
+        groups: [group, group],
+        assignments: [:]
+      )
+    }
+  }
+
+  private func marketGroupFixture(build: Int) throws
+    -> StaticDataCatalogSnapshot
+  {
+    try withMarketGroups(
+      try fixture(
+        build: build,
+        productName: "Market Ship",
+        productPackagedVolume: nil
+      ),
+      groups: [
+        StaticMarketGroupSnapshot(
+          externalID: 1_000,
+          parentExternalID: nil,
+          name: "Ship Equipment",
+          hasTypes: false
+        ),
+        StaticMarketGroupSnapshot(
+          externalID: 1_001,
+          parentExternalID: 1_000,
+          name: "Harvest Equipment",
+          hasTypes: true
+        ),
+        StaticMarketGroupSnapshot(
+          externalID: 1_002,
+          parentExternalID: 1_001,
+          name: "Mining Lasers",
+          hasTypes: true
+        ),
+        StaticMarketGroupSnapshot(
+          externalID: 2_000,
+          parentExternalID: nil,
+          name: "Materials",
+          hasTypes: true
+        ),
+      ],
+      assignments: [1: 1_002, 99: 1_002, 100: 1_001, 2: 2_000]
+    )
+  }
+
+  private func withMarketGroups(
+    _ base: StaticDataCatalogSnapshot,
+    groups: [StaticMarketGroupSnapshot],
+    assignments: [Int64: Int64]
+  ) throws -> StaticDataCatalogSnapshot {
+    try StaticDataCatalogSnapshot(
+      buildNumber: base.buildNumber,
+      contentSHA256: base.contentSHA256,
+      officialArchiveURL: base.officialArchiveURL,
+      sourceFormat: base.sourceFormat,
+      categories: base.categories,
+      groups: base.groups,
+      itemTypes: base.itemTypes.map { type in
+        StaticItemTypeSnapshot(
+          externalID: type.externalID,
+          groupExternalID: type.groupExternalID,
+          categoryExternalID: type.categoryExternalID,
+          marketGroupExternalID: assignments[type.externalID]
+            ?? type.marketGroupExternalID,
+          name: type.name,
+          description: type.description,
+          volume: type.volume,
+          packagedVolume: type.packagedVolume,
+          basePrice: type.basePrice,
+          portionSize: type.portionSize,
+          published: type.published,
+          iconExternalID: type.iconExternalID,
+          metaGroupExternalID: type.metaGroupExternalID,
+          techLevel: type.techLevel
+        )
+      },
+      typeMaterials: base.typeMaterials,
+      blueprints: base.blueprints,
+      decryptors: base.decryptors,
+      marketGroups: groups,
+      reactionRuleProfile: base.reactionRuleProfile
+    )
+  }
+
+  private func dropMarketGroupTable(at url: URL) throws {
+    var database: OpaquePointer?
+    guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+      sqlite3_close(database)
+      throw StaticCatalogError.database("fixture-open")
+    }
+    defer { sqlite3_close(database) }
+    guard
+      sqlite3_exec(database, "DROP TABLE market_groups", nil, nil, nil)
+        == SQLITE_OK
+    else {
+      throw StaticCatalogError.database("fixture-drop")
     }
   }
 
@@ -1101,6 +1298,9 @@ private struct FixtureStreamingMapper: StaticDataCatalogStreamingMapping {
   ) async throws -> StaticDataCatalogStreamResult {
     try await consume(.categories(snapshot.categories))
     try await consume(.groups(snapshot.groups))
+    if !snapshot.marketGroups.isEmpty {
+      try await consume(.marketGroups(snapshot.marketGroups))
+    }
     try await consume(.itemTypes(snapshot.itemTypes))
     if !snapshot.typeMaterials.isEmpty {
       try await consume(.typeMaterials(snapshot.typeMaterials))

@@ -52,15 +52,99 @@ public struct ManufacturingProductSearchResult: Identifiable, Equatable,
   }
 }
 
+/// Catalogs built before adapter v5 carry no market tree. They remain fully
+/// usable for industry; only the market groups need a same-build reimport.
+public enum MarketGroupCatalogAvailability: String, Equatable, Sendable {
+  case available
+  case requiresSDEReimport
+}
+
+/// One node of the SDE market browser tree.
+public struct MarketGroupDefinition: Identifiable, Equatable, Sendable {
+  public let id: Int64
+  public let parentID: Int64?
+  public let name: String
+  public let hasTypes: Bool
+
+  public init(id: Int64, parentID: Int64?, name: String, hasTypes: Bool) {
+    self.id = id
+    self.parentID = parentID
+    self.name = name
+    self.hasTypes = hasTypes
+  }
+}
+
+public struct MarketGroupCatalogSnapshot: Equatable, Sendable {
+  public let availability: MarketGroupCatalogAvailability
+  public let groups: [MarketGroupDefinition]
+  public let source: SourceIdentity
+
+  public init(
+    availability: MarketGroupCatalogAvailability,
+    groups: [MarketGroupDefinition],
+    source: SourceIdentity
+  ) {
+    self.availability = availability
+    self.groups = groups
+    self.source = source
+  }
+}
+
+/// A published, market-listed item type. `packagedVolume` stays nil when the
+/// SDE has no packaged volume; the assembled volume is never substituted.
+public struct TradeCatalogItem: Identifiable, Equatable, Sendable {
+  public let id: Int64
+  public let name: String
+  public let marketGroupID: Int64
+  public let packagedVolume: Double?
+
+  public init(
+    id: Int64,
+    name: String,
+    marketGroupID: Int64,
+    packagedVolume: Double?
+  ) {
+    self.id = id
+    self.name = name
+    self.marketGroupID = marketGroupID
+    self.packagedVolume = packagedVolume
+  }
+}
+
+public struct TradeCatalogItemsSnapshot: Equatable, Sendable {
+  public let availability: MarketGroupCatalogAvailability
+  public let rootMarketGroupID: Int64
+  public let items: [TradeCatalogItem]
+  public let source: SourceIdentity
+
+  public init(
+    availability: MarketGroupCatalogAvailability,
+    rootMarketGroupID: Int64,
+    items: [TradeCatalogItem],
+    source: SourceIdentity
+  ) {
+    self.availability = availability
+    self.rootMarketGroupID = rootMarketGroupID
+    self.items = items
+    self.source = source
+  }
+}
+
+public protocol MarketGroupCatalogQuerying: Sendable {
+  func marketGroups() async throws -> MarketGroupCatalogSnapshot
+  func tradeItems(inMarketGroupSubtree rootID: Int64) async throws
+    -> TradeCatalogItemsSnapshot
+}
+
 public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   MaterialPurchaseCatalogQuerying, MoonMaterialCatalogQuerying,
-  MineralMaterialCatalogQuerying,
+  MineralMaterialCatalogQuerying, MarketGroupCatalogQuerying,
   StaticDataCatalogStoring, StaticDataCatalogStaging,
   StaticDataCatalogStreamingStaging, StaticDataCatalogStreamingStoring,
   ActiveSDEVersionReading, StaticDataCatalogRollingBack,
   SDEPromotionSafetyBackingUp
 {
-  private static let catalogAdapterVersion = 4
+  private static let catalogAdapterVersion = 5
 
   private struct ActivePointer: Codable, Sendable {
     let buildNumber: Int
@@ -1546,6 +1630,115 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     }
   }
 
+  public func marketGroups() async throws -> MarketGroupCatalogSnapshot {
+    let database = try activeDatabase()
+    let source = try await catalogSource()
+    guard try Self.hasTable("market_groups", in: database) else {
+      return MarketGroupCatalogSnapshot(
+        availability: .requiresSDEReimport,
+        groups: [],
+        source: source
+      )
+    }
+    let groups = try database.rows(
+      """
+      SELECT id, parent_id, name, has_types
+      FROM market_groups
+      ORDER BY name COLLATE NOCASE, id
+      """
+    ).compactMap { values -> MarketGroupDefinition? in
+      guard values.count == 4,
+        let id = Int64(values[0] ?? ""),
+        let name = values[2], !name.isEmpty,
+        let hasTypes = Int(values[3] ?? "")
+      else { return nil }
+      return MarketGroupDefinition(
+        id: id,
+        parentID: values[1].flatMap { Int64($0) },
+        name: name,
+        hasTypes: hasTypes != 0
+      )
+    }
+    return MarketGroupCatalogSnapshot(
+      availability: .available,
+      groups: groups,
+      source: source
+    )
+  }
+
+  /// Published item types in the market group `rootID` and all of its
+  /// descendants. `UNION` keeps a malformed cyclic tree from looping.
+  public func tradeItems(inMarketGroupSubtree rootID: Int64) async throws
+    -> TradeCatalogItemsSnapshot
+  {
+    let database = try activeDatabase()
+    let source = try await catalogSource()
+    guard try Self.hasTable("market_groups", in: database) else {
+      return TradeCatalogItemsSnapshot(
+        availability: .requiresSDEReimport,
+        rootMarketGroupID: rootID,
+        items: [],
+        source: source
+      )
+    }
+    let items = try database.rows(
+      """
+      WITH RECURSIVE subtree(id) AS (
+        SELECT id FROM market_groups WHERE id = \(rootID)
+        UNION
+        SELECT g.id FROM market_groups g JOIN subtree s ON g.parent_id = s.id
+      )
+      SELECT t.id, t.name, t.market_group_id, t.packaged_volume
+      FROM item_types t
+      JOIN subtree s ON t.market_group_id = s.id
+      WHERE t.published = 1
+      ORDER BY t.name COLLATE NOCASE, t.id
+      """
+    ).compactMap { values -> TradeCatalogItem? in
+      guard values.count == 4,
+        let id = Int64(values[0] ?? ""),
+        let name = values[1], !name.isEmpty,
+        let marketGroupID = Int64(values[2] ?? "")
+      else { return nil }
+      let volume = values[3].flatMap(Double.init).flatMap {
+        $0.isFinite && $0 >= 0 ? $0 : nil
+      }
+      return TradeCatalogItem(
+        id: id,
+        name: name,
+        marketGroupID: marketGroupID,
+        packagedVolume: volume
+      )
+    }
+    return TradeCatalogItemsSnapshot(
+      availability: .available,
+      rootMarketGroupID: rootID,
+      items: items,
+      source: source
+    )
+  }
+
+  private func catalogSource() async throws -> SourceIdentity {
+    let active = try await activeSDEVersion()
+    return SourceIdentity(
+      provider: "CCP SDE",
+      version: String(active?.buildNumber ?? 0)
+    )
+  }
+
+  private static func hasTable(
+    _ name: String,
+    in database: SQLiteDatabase
+  ) throws -> Bool {
+    try !database.rows(
+      """
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = \(sql(name))
+      LIMIT 1
+      """
+    ).isEmpty
+  }
+
   private func scienceActivityKind(
     _ rawValue: String
   ) -> BlueprintActivityDefinition.Kind? {
@@ -1999,6 +2192,12 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         ON blueprint_materials(blueprint_type_id, activity);
       CREATE INDEX idx_type_material_output
         ON type_materials(material_type_id, source_type_id);
+      CREATE TABLE market_groups (
+        id INTEGER PRIMARY KEY, parent_id INTEGER,
+        name TEXT NOT NULL, has_types INTEGER NOT NULL
+      );
+      CREATE INDEX idx_market_group_parent ON market_groups(parent_id);
+      CREATE INDEX idx_item_type_market_group ON item_types(market_group_id);
       """
     )
     try db.execute("BEGIN IMMEDIATE")
@@ -2111,6 +2310,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
             )
           }
         }
+      }
+      for marketGroup in snapshot.marketGroups {
+        try db.execute(marketGroupInsert(marketGroup))
       }
       for decryptor in snapshot.decryptors {
         try db.execute(
@@ -2341,6 +2543,10 @@ private actor SQLiteBatchWriter {
             }
           }
         }
+      case .marketGroups(let records):
+        for marketGroup in records {
+          try database.execute(marketGroupInsert(marketGroup))
+        }
       case .decryptors(let records):
         for decryptor in records {
           try database.execute(
@@ -2473,7 +2679,17 @@ private actor SQLiteBatchWriter {
       ON blueprint_materials(blueprint_type_id, activity);
     CREATE INDEX idx_type_material_output
       ON type_materials(material_type_id, source_type_id);
+    CREATE TABLE market_groups (
+      id INTEGER PRIMARY KEY, parent_id INTEGER,
+      name TEXT NOT NULL, has_types INTEGER NOT NULL
+    );
+    CREATE INDEX idx_market_group_parent ON market_groups(parent_id);
+    CREATE INDEX idx_item_type_market_group ON item_types(market_group_id);
     """
+}
+
+private func marketGroupInsert(_ group: StaticMarketGroupSnapshot) -> String {
+  "INSERT INTO market_groups VALUES (\(group.externalID), \(sql(group.parentExternalID)), \(sql(group.name)), \(group.hasTypes ? 1 : 0))"
 }
 
 private func sql(_ value: String?) -> String {

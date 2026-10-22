@@ -3,6 +3,23 @@
 Aktueller Konsolidierungsnachweis: [Prüfbericht 25.09.2026](Consolidation/VALIDATION.md).
 Die folgenden Einträge bleiben datierte Fach-, Live- und Eigentümernachweise.
 
+## Bereich Handel P1–P8, 2026-10-22
+
+Plan, Prompts und Abnahme-Checkliste: [HANDEL_PLAN.md](HANDEL_PLAN.md),
+Abschnitt H. Lokale Prüfungen liefen ausschließlich in einer isolierten
+Debug-App mit synthetischem Katalog; produktive Daten wurden nicht verwendet.
+
+| Area | Automated evidence | Local-data evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| P1 SDE-Marktgruppen | pass: Mapper (Pflicht-/Optionalfelder), beide Writer, Teilbaum per CTE, unveröffentlichte Items ausgeschlossen, fehlendes Packvolumen bleibt unbekannt, Altkatalog meldet Neuimport, doppelte IDs abgewiesen | synthetischer v5-Katalog; echter Archiv-Import nicht ausgeführt | open: SDE-Neuimport und Marktgruppen-Stichprobe |
+| P2 Handelsrechner | pass: Preisschritte inklusive Grenzfällen, Import/Station Trading, Buy-Order/Direktverkauf, Übereinstimmung mit `MarketPriceEngine`, fehlende Werte, Zwei-Etappen-Transport, Vertrags- und Flugrundung | not run | open: Stichprobe gegen Ingame-Gebühren und den 4-Stellen-Preisschritt |
+| P3 Volles Strukturorderbuch | pass: Struktur ohne Typfilter, Ordertiefe, identische Hub-Chancen-Zeilen und Abdeckung, unveränderter Produktbedarf | not run; Scan-Dauer und Dateigröße nicht gemessen | open |
+| P4 Handels-UI | pass: Kachelbildung, Pfad, Pfeilschwellen, Sortierung mit fehlenden Werten, Navigation, keine erfundenen Daten ohne Hubs | isolierte App: Modusleiste, Warnungen, Pfad, Kacheln, Detailspalten; keine Marktpreise | open (visuell mit echten Preisen) |
+| P5 Handelslogbuch | pass: Roundtrip, Wiederöffnen, NULL ≠ 0, Upsert, Validierung, neuere Schemaversion abgewiesen, Gewinn, Erinnerung, offene Menge, Sortierung | isolierte App: Eintrag aus Kachelzeile, Neustart, offene Menge im Handel | open |
+| P6 Wallet-Daten | pass: idempotente Übernahme, ältere Zeilen bleiben, fehlender Scope ohne Verlust, Migration, DTO alt/neu, Statuszeilen | isolierte App: Panel ohne Charaktere; Schema-1-Datei auf 3 migriert | open: echter Abgleich mit Charakteren |
+| P7 Automatischer Abgleich | pass: Importregeln, Orderart erkannt/angenommen, FIFO mit anteiliger Steuer, zweiter Lauf ohne Änderungen, manuelle Zuordnung, Verknüpfungen, doppelte Übernahme abgewiesen, kein erfundener Name | not run with wallets | open |
+| Abschlusslauf 2026-10-22 | pass: `swift test` 521 Swift-Testing-Tests in 35 Suites plus 66 Tests in 3 Suites; `xcodebuild build` `BUILD SUCCEEDED`; `xcodebuild test` unsigniert `TEST SUCCEEDED` (521 Swift-Testing-Tests, 8 XCTest-Fälle); `swift test --package-path Packages/EVEStaticDataKit` 11 Tests; `git diff --check` fehlerfrei; alle neuen Dateien im Xcode-Projekt; lokale Dokumentlinks gültig | — | — |
+
 ## Hub-Chancen-Ausbau P1–P12, 2026-10-20/21
 
 Plan und Prompts: [HUB_CHANCEN_PLAN.md](HUB_CHANCEN_PLAN.md). Live- und

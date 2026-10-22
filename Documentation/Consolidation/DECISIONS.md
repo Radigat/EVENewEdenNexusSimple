@@ -123,3 +123,55 @@ Schritt P1.
   werden unverändert dekodiert und wieder gespeichert, aber nicht mehr validiert. Format
   (`formatVersion` 1), SwiftData-Schema, Migrationskette und Sicherungen sind unverändert. Die
   Diagnose zählt Profile unter den Altdaten.
+
+## 22.10.2026 – Bereich Handel
+
+- **Anlass:** Eigentümerauftrag mit Referenzbild. Plan und Rückfragen stehen im
+  [Handel-Plan](../HANDEL_PLAN.md), Abschnitte A und E.
+- **SDE:**
+  - Neuer Pflichtdatensatz `marketGroups.jsonl` und Katalogadapter 5.
+  - Der Inhalts-Hash eines Builds ändert sich dadurch. Bestehende Kataloge
+    bleiben gültig und melden für Marktgruppen „SDE-Neuimport nötig“.
+  - Annahme: Die Datei liegt im offiziellen JSONL-Archiv. Belegt ist das nur
+    über das Community-Schema `sde.riftforeve.online`, Build 3632936. Fehlt sie
+    im Archiv, scheitert ein SDE-Import, bis der Datensatz optional gemacht
+    wird.
+- **Regeländerung Hub-Scans:**
+  - Home- und Coalition-Scans von Spielerstrukturen laden immer das volle
+    Orderbuch statt nur der Fertigungsprodukte. Das macht sie länger und die
+    Bedarfsdatei größer.
+  - Die Chancenanalyse erhält weiterhin nur die Produkttypen.
+  - Die bisherige Bedarfshistorie läuft weiter.
+- **Handelsrechner:**
+  - Die bestehende Kurier-Max-Regel bleibt; Collateral ist der Einkaufswert.
+  - Main → Coalition: Kurier Main → Home plus Home → Coalition wie bei den
+    Hub-Chancen.
+  - Jump Freighter je Einheit bei voller Ladung, mit Menge je angefangenem
+    Flug.
+  - Eigene Orders liegen einen Preisschritt nach der 4-Stellen-Regel besser.
+    Die Regel stammt aus dem Wissensstand des Assistenten und ist nicht gegen
+    eine CCP-Quelle belegt.
+  - Relist-Gebühren sind nicht enthalten.
+- **Speicher:** Das Handelslogbuch nutzt eine eigene SQLite-Datei mit
+  `user_version`-Migrationen und keine SwiftData-Schemaänderung. Die
+  Datensicherung erfasst die Datei mit, weil sie den ganzen Datenordner
+  sichert.
+- **Wallet:**
+  - Nur persönliche Charakter-Wallets, keine Corporation-Wallet.
+  - Gespeichert wird nach jeder Charakter-Synchronisierung, idempotent über
+    die 30 ESI-Tage hinaus.
+  - Die DTOs von Transaktionen und Orders sind additiv erweitert (Ort,
+    Journal-Referenz, Ausgabedatum, Laufzeit).
+- **Abgleich:**
+  - Ein Eintrag je Kauftransaktion ab einem Startdatum (Standard: Tag der
+    Einrichtung).
+  - Ziel Main → Home, sonst der Kauf-Hub.
+  - Fertigungsmaterial = Materialien aktiver Planner-Pläne.
+  - FIFO je Item und Ziel-Hub.
+  - Steuer belegt aus dem Journal, Broker berechnet.
+  - Die Orderart wird aus eigenen Orders erkannt (Charakter, Item, Ort, Seite,
+    Laufzeitfenster, ohne Preis). Ohne Orderdaten gilt Sofortkauf bzw. eigene
+    Sell-Order, markiert als angenommen. Diese Regel ist ohne Rückfrage
+    abgeleitet aus „Direktverkauf ist selten“.
+- **Unverändert:** Bundle-ID, Datenpfade bestehender Dateien, SwiftData-Kette,
+  Hub-Chancen-Rechnung und alle bestehenden Marktszenarien.

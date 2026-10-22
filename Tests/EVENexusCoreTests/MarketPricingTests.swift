@@ -516,6 +516,69 @@ struct MarketPricingTests {
   }
 
   @Test
+  func playerStructureMarketWithoutTypeFilterKeepsTheWholeBook() async throws {
+    let structureID: Int64 = 1_046_664_001_931
+    let transport = StructureMarketTransport(structureID: structureID)
+    let service = TradeHubMarketService(esi: ESIClient(transport: transport))
+    let lease = AccessTokenLease(
+      characterID: 91,
+      accessToken: "fixture-token",
+      expiresAt: .now.addingTimeInterval(3_600),
+      scopes: [TradeHubMarketService.structureMarketScope]
+    )
+
+    let full = try await service.structureOrderSnapshot(
+      typeIDs: nil,
+      regionID: 10_000_061,
+      systemID: 30_004_807,
+      structureID: structureID,
+      lease: lease
+    )
+    let filtered = try await service.structureOrderSnapshot(
+      typeIDs: [16_634, 99],
+      regionID: 10_000_061,
+      systemID: 30_004_807,
+      structureID: structureID,
+      lease: lease
+    )
+
+    #expect(Set(full.ordersByType.keys) == [16_634, 34])
+    #expect(full.ordersByType[34]?.first?.price == 5.0)
+    // A requested type without orders stays an explicit empty list.
+    #expect(Set(filtered.ordersByType.keys) == [16_634, 99])
+    #expect(filtered.ordersByType[99]?.isEmpty == true)
+  }
+
+  @Test
+  func orderSummaryAddsTheVolumeListedAtTheBestPrice() throws {
+    let snapshot = makeSnapshot(orders: [
+      order(id: 1, side: .sell, price: 10, volume: 5),
+      order(id: 2, side: .sell, price: 10, volume: 7),
+      order(id: 3, side: .sell, price: 11, volume: 100),
+      order(id: 4, side: .buy, price: 9, volume: 3),
+      order(id: 5, side: .buy, price: 8, volume: 50),
+      order(id: 6, side: .buy, price: 9, volume: 0),
+    ])
+    let summary = try #require(
+      MarketOrderSummarySnapshot(snapshot: snapshot).pricesByType[34]
+    )
+
+    #expect(summary.bestSellPrice == 10)
+    #expect(summary.bestSellVolume == 12)
+    #expect(summary.bestBuyPrice == 9)
+    #expect(summary.bestBuyVolume == 3)
+
+    // Summaries saved before the depth fields existed stay readable.
+    let legacy = try JSONDecoder().decode(
+      MarketOrderTypeSummary.self,
+      from: Data(#"{"bestSellPrice":10,"bestBuyPrice":9}"#.utf8)
+    )
+    #expect(legacy.bestSellPrice == 10)
+    #expect(legacy.bestSellVolume == nil)
+    #expect(legacy.bestBuyVolume == nil)
+  }
+
+  @Test
   func playerStructureMarketRejectsMissingScopeBeforeNetwork() async {
     let structureID: Int64 = 1_049_588_174_021
     let regionID: Int64 = 10_000_009

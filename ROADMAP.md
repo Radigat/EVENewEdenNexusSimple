@@ -26,6 +26,12 @@ Noch keine weiteren Vorhaben festgelegt.
 
 ## Umgesetzt, Abnahme offen
 
+- [Handel-Plan](Documentation/HANDEL_PLAN.md) (22.10.2026, implementiert und
+  automatisch geprüft):
+  - Bereich Handel mit SDE-Marktgruppen-Kacheln, Import Main→Home/Coalition
+    und Station Trading je Hub, Steuern, Logistik und Tagesbedarf.
+  - Handelslogbuch mit Wallet-Abgleich.
+  - Live- und Eigentümerabnahme offen (Checkliste in Abschnitt H).
 - [Hub-Chancen-Plan](Documentation/HUB_CHANCEN_PLAN.md) (20./21.10.2026,
   implementiert und automatisch geprüft): zentraler Startablauf, Home- und
   Coalition-Hub-Chancen, Verträge in den Chancen, Top-Chancen, Zielmarkt und

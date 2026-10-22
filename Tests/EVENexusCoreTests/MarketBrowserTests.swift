@@ -2008,13 +2008,17 @@ struct MarketBrowserTests {
     )
   }
 
-  private func roleTestHomeMarket(productPrice: Double) -> MarketOrderSnapshot {
+  private func roleTestHomeMarket(
+    productPrice: Double,
+    remaining: Int64 = 40,
+    capturedAt: Date = Date(timeIntervalSince1970: 1_800_000_000)
+  ) -> MarketOrderSnapshot {
     let home = Self.roleTestHomeHub
     return MarketOrderSnapshot(
       id: UUID(),
       regionID: home.regionID ?? 0,
       locationID: home.locationID ?? 0,
-      capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+      capturedAt: capturedAt,
       state: .fresh,
       ordersByType: [
         100: [
@@ -2025,7 +2029,7 @@ struct MarketBrowserTests {
             systemID: home.solarSystemID ?? 0,
             side: .sell,
             price: productPrice,
-            volumeRemaining: 40,
+            volumeRemaining: remaining,
             minimumVolume: 1,
             issued: .now
           )
@@ -2111,6 +2115,111 @@ struct MarketBrowserTests {
     )
     #expect(decoded.resolvedHubRole == .home)
     #expect(decoded.resolvedSaleHub == Self.roleTestHomeHub)
+  }
+
+  @Test
+  func fullStructureBookKeepsHubOpportunityResultsAndProductDemand() throws {
+    let inputs = roleTestInputs()
+    let productOnly = roleTestHomeMarket(productPrice: 300)
+    let fullBook = roleTestFullStructureBook(productPrice: 300)
+    // The structure scan now loads the whole book (HANDEL_PLAN P3); the
+    // analysis receives it restricted to the product types it had before.
+    let before = try roleTestAnalyze(
+      hubRole: .home,
+      saleHub: Self.roleTestHomeHub,
+      saleMarket: productOnly,
+      inputs: inputs
+    )
+    let after = try roleTestAnalyze(
+      hubRole: .home,
+      saleHub: Self.roleTestHomeHub,
+      saleMarket: fullBook.restricted(to: [100]),
+      inputs: inputs
+    )
+    func facts(_ row: ManufacturingOpportunityRow) -> [String] {
+      [
+        "\(row.productTypeID)", "\(row.activeBuyDemand)",
+        "\(row.activeSellSupply)", "\(String(describing: row.grossRevenue))",
+        "\(String(describing: row.netRevenue))",
+        "\(String(describing: row.contributionProfit))",
+        "\(String(describing: row.returnOnInvestment))",
+        "\(row.warnings.map(\.code))",
+      ]
+    }
+    #expect(before.rows.map(facts) == after.rows.map(facts))
+    #expect(before.coverage == after.coverage)
+    // Without the restriction the extra trade items would change coverage.
+    let unrestricted = try roleTestAnalyze(
+      hubRole: .home,
+      saleHub: Self.roleTestHomeHub,
+      saleMarket: fullBook,
+      inputs: inputs
+    )
+    #expect(
+      unrestricted.coverage.mainHubActiveOrderTypeCount
+        > before.coverage.mainHubActiveOrderTypeCount
+    )
+
+    // The demand ledger is keyed by order: extra items add their own demand
+    // without changing the product's measured units.
+    var productLedger = ManufacturingOpportunityDemandLedger()
+    var fullLedger = ManufacturingOpportunityDemandLedger()
+    productLedger.observe(productOnly)
+    fullLedger.observe(fullBook)
+    let later = Date(timeIntervalSince1970: 1_800_003_600)
+    let productDemand = productLedger.observe(
+      roleTestHomeMarket(productPrice: 300, remaining: 25, capturedAt: later)
+    )
+    let fullDemand = fullLedger.observe(
+      roleTestFullStructureBook(productPrice: 300, remaining: 25, capturedAt: later)
+    )
+    #expect(productDemand.observedUnits(for: 100) == 15)
+    #expect(fullDemand.observedUnits(for: 100) == 15)
+    #expect(fullDemand.observedUnits(for: 777) == 3)
+    #expect(productDemand.observedUnits(for: 777) == nil)
+  }
+
+  private func roleTestFullStructureBook(
+    productPrice: Double,
+    remaining: Int64 = 40,
+    capturedAt: Date = Date(timeIntervalSince1970: 1_800_000_000)
+  ) -> MarketOrderSnapshot {
+    let home = Self.roleTestHomeHub
+    let product = roleTestHomeMarket(
+      productPrice: productPrice,
+      remaining: remaining,
+      capturedAt: capturedAt
+    )
+    func order(_ id: Int64, _ typeID: Int64, _ side: MarketOrderSide, _ volume: Int64)
+      -> MarketOrder
+    {
+      MarketOrder(
+        id: id,
+        typeID: typeID,
+        locationID: home.locationID ?? 0,
+        systemID: home.solarSystemID ?? 0,
+        side: side,
+        price: side == .sell ? 50 : 40,
+        volumeRemaining: volume,
+        minimumVolume: 1,
+        issued: .now
+      )
+    }
+    var orders = product.ordersByType
+    orders[777] = [
+      order(70, 777, .sell, remaining == 40 ? 10 : 7),
+      order(71, 777, .buy, 5),
+    ]
+    orders[778] = [order(72, 778, .buy, 9)]
+    return MarketOrderSnapshot(
+      id: UUID(),
+      regionID: product.regionID,
+      locationID: product.locationID,
+      capturedAt: capturedAt,
+      state: .fresh,
+      ordersByType: orders,
+      source: SourceIdentity(provider: "Home fixture", version: "1")
+    )
   }
 
   @Test

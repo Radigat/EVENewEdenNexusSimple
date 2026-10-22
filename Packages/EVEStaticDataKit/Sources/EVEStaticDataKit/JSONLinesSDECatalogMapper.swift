@@ -62,6 +62,7 @@ public actor JSONLinesSDECatalogMapper:
       typeMaterials: values.typeMaterials,
       blueprints: values.blueprints,
       decryptors: values.decryptors,
+      marketGroups: values.marketGroups,
       reactionRuleProfile: values.reactionRuleProfile
     )
   }
@@ -145,6 +146,29 @@ public actor JSONLinesSDECatalogMapper:
       groupDescriptor,
       with: expectedDescriptors[.groups],
       kind: .groups
+    )
+
+    var marketGroupBatch: [StaticMarketGroupSnapshot] = []
+    let marketGroupDescriptor = try await readDataset(
+      .marketGroups,
+      packageURL: packageURL,
+      consume: consume
+    ) { object, line in
+      marketGroupBatch.append(try self.mapMarketGroup(object, line: line))
+      if marketGroupBatch.count >= batchLimit {
+        let batch = marketGroupBatch
+        marketGroupBatch.removeAll(keepingCapacity: true)
+        return .marketGroups(batch)
+      }
+      return nil
+    }
+    if !marketGroupBatch.isEmpty {
+      try await consume(.marketGroups(marketGroupBatch))
+    }
+    try compare(
+      marketGroupDescriptor,
+      with: expectedDescriptors[.marketGroups],
+      kind: .marketGroups
     )
 
     var knownTypeIDs = Set<Int64>()
@@ -431,6 +455,7 @@ public actor JSONLinesSDECatalogMapper:
       typeDogmaDescriptor,
       dogmaAttributeDescriptor,
       dogmaEffectDescriptor,
+      marketGroupDescriptor,
     ]
     let actualContentHash = SDEContentHash.make(
       buildNumber: metadata.buildNumber,
@@ -571,6 +596,38 @@ public actor JSONLinesSDECatalogMapper:
         dataset: .groups,
         line: line,
         field: "published"
+      )
+    )
+  }
+
+  func mapMarketGroup(
+    _ object: [String: Any],
+    line: Int
+  ) throws -> StaticMarketGroupSnapshot {
+    StaticMarketGroupSnapshot(
+      externalID: try requiredNonnegativeInteger(
+        object["_key"],
+        dataset: .marketGroups,
+        line: line,
+        field: "_key"
+      ),
+      parentExternalID: try optionalNonnegativeInteger(
+        object["parentGroupID"],
+        dataset: .marketGroups,
+        line: line,
+        field: "parentGroupID"
+      ),
+      name: try requiredEnglishText(
+        object["name"],
+        dataset: .marketGroups,
+        line: line,
+        field: "name.en"
+      ),
+      hasTypes: try requiredBoolean(
+        object["hasTypes"],
+        dataset: .marketGroups,
+        line: line,
+        field: "hasTypes"
       )
     )
   }
@@ -1751,10 +1808,13 @@ private actor StaticDataCatalogSnapshotCollector {
   private var typeMaterials: [StaticTypeMaterialSnapshot] = []
   private var blueprints: [StaticBlueprintSnapshot] = []
   private var decryptors: [StaticDecryptorSnapshot] = []
+  private var marketGroups: [StaticMarketGroupSnapshot] = []
   private var reactionRuleProfile: ReactionRuleProfile?
 
   func append(_ batch: StaticDataCatalogBatch) {
     switch batch {
+    case .marketGroups(let records):
+      marketGroups.append(contentsOf: records)
     case .categories(let records):
       categories.append(contentsOf: records)
     case .groups(let records):
@@ -1779,6 +1839,7 @@ private actor StaticDataCatalogSnapshotCollector {
     typeMaterials: [StaticTypeMaterialSnapshot],
     blueprints: [StaticBlueprintSnapshot],
     decryptors: [StaticDecryptorSnapshot],
+    marketGroups: [StaticMarketGroupSnapshot],
     reactionRuleProfile: ReactionRuleProfile?
   ) {
     (
@@ -1788,6 +1849,7 @@ private actor StaticDataCatalogSnapshotCollector {
       typeMaterials,
       blueprints,
       decryptors,
+      marketGroups,
       reactionRuleProfile
     )
   }

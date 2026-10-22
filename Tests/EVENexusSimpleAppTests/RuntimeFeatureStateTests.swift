@@ -1,6 +1,6 @@
 import AppKit
 import Combine
-import EVENexusCore
+@testable import EVENexusCore
 import SwiftUI
 import Testing
 
@@ -8,6 +8,199 @@ import Testing
 
 @MainActor
 struct RuntimeFeatureStateTests {
+  @Test
+  func structureHubAnalysisKeepsItsProductScopeOnTheFullBook() {
+    func order(_ id: Int64, _ typeID: Int64) -> MarketOrder {
+      MarketOrder(
+        id: id,
+        typeID: typeID,
+        locationID: 1_000,
+        systemID: 1,
+        side: .sell,
+        price: 10,
+        volumeRemaining: 1,
+        minimumVolume: 1,
+        issued: .now
+      )
+    }
+    let book = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: 10,
+      locationID: 1_000,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [100: [order(1, 100)], 777: [order(2, 777)]],
+      source: SourceIdentity(provider: "fixture", version: "1")
+    )
+    let structure = RuntimeState.opportunityAnalysisMarket(
+      book,
+      target: .playerStructure(structureID: 1_000, systemID: 1, regionID: 10),
+      productTypeIDs: [100]
+    )
+    let station = RuntimeState.opportunityAnalysisMarket(
+      book,
+      target: .npcStation(regionID: 10, locationID: 1_000),
+      productTypeIDs: [100]
+    )
+
+    #expect(Set(structure.ordersByType.keys) == [100])
+    #expect(structure.source.snapshotID == book.source.snapshotID)
+    #expect(Set(station.ordersByType.keys) == [100, 777])
+  }
+
+  @Test
+  func tradeFollowsCoalitionHubOpportunitiesWithFiveModes() {
+    let sections = NavigationSection.allCases
+    let coalition = sections.firstIndex(of: .coalitionHubOpportunities)
+    let trade = sections.firstIndex(of: .trade)
+    #expect(coalition != nil && trade == coalition.map { $0 + 1 })
+    #expect(NavigationSection.establishedCases.contains(.trade))
+    #expect(TradeModeOption.allCases.map(\.mode) == TradeMode.allCases)
+    let runtime = RuntimeState(startBackgroundServices: false)
+    // Without configured hubs no market data or fees are invented.
+    #expect(runtime.tradeDataRole(for: .home) == nil)
+    #expect(runtime.tradeMarketState(for: .home) == nil)
+    #expect(runtime.tradeHubFees(for: .coalition).salesTaxRate == nil)
+  }
+
+  @Test
+  func tradeLogbookFollowsTradeAndPersistsInItsOwnFile() async throws {
+    let sections = NavigationSection.allCases
+    let trade = sections.firstIndex(of: .trade)
+    #expect(trade != nil && sections.firstIndex(of: .tradeLogbook) == trade.map { $0 + 1 })
+
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("trade-logbook-runtime-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtime = RuntimeState(dataRoot: root, startBackgroundServices: false)
+    await runtime.loadTradeLogbook()
+    #expect(runtime.tradeLogbookState == .ready)
+    #expect(runtime.tradeLogbookEntries.isEmpty)
+    #expect(
+      runtime.tradeLogbookURL.path
+        == root.appendingPathComponent("trade/trade-logbook.sqlite").path
+    )
+
+    let entry = TradeLogbookEntry(
+      typeID: 482,
+      typeName: "Miner II",
+      quantity: 10,
+      buyUnitPrice: 500_000,
+      buySide: .minSell,
+      buyBrokerFeeRate: nil,
+      sourceRole: .main,
+      sourceLocationName: nil,
+      targetRole: .home,
+      targetLocationName: nil,
+      plannedSellUnitPrice: 690_000,
+      transportCostTotal: nil,
+      salesTaxRate: nil,
+      sellBrokerFeeRate: nil
+    )
+    #expect(await runtime.saveTradeLogbookEntry(entry))
+    #expect(runtime.tradeLogbookEntries.map(\.id) == [entry.id])
+    #expect(FileManager.default.fileExists(atPath: runtime.tradeLogbookURL.path))
+
+    var invalid = entry
+    invalid.quantity = 0
+    #expect(!(await runtime.saveTradeLogbookEntry(invalid)))
+    #expect(runtime.tradeLogbookError != nil)
+    #expect(runtime.tradeLogbookEntries.first?.quantity == 10)
+
+    await runtime.deleteTradeLogbookEntry(id: entry.id)
+    #expect(runtime.tradeLogbookEntries.isEmpty)
+  }
+
+  @Test
+  func characterWalletDataIsKeptInTheTradeLogbook() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("trade-wallet-runtime-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtime = RuntimeState(dataRoot: root, startBackgroundServices: false)
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let transaction = ESIWalletTransactionDTO(
+      clientID: 1,
+      date: Date(timeIntervalSince1970: 1_800_000_000),
+      isBuy: true,
+      quantity: 3,
+      transactionID: 42,
+      typeID: 34,
+      unitPrice: 5,
+      locationID: 60_003_760,
+      journalRefID: 7,
+      isPersonal: true
+    )
+    await runtime.recordTradeWallet(
+      characterID: 91,
+      characterName: "Trader",
+      transactions: Sourced(state: .fresh, value: [transaction], source: source),
+      journal: Sourced(state: .fresh, value: [], source: source)
+    )
+    await runtime.recordTradeWallet(
+      characterID: 92,
+      characterName: "Alt",
+      transactions: Sourced(state: .forbidden, value: nil, source: source),
+      journal: Sourced(state: .forbidden, value: nil, source: source)
+    )
+
+    #expect(runtime.tradeWalletError == nil)
+    #expect(runtime.tradeWalletStatuses.map(\.characterName) == ["Alt", "Trader"])
+    #expect(runtime.tradeWalletStatuses.first?.transactionsState == .forbidden)
+    #expect(runtime.tradeWalletStatuses.last?.storedTransactionCount == 1)
+
+    // A fresh runtime reads the same file and its statuses.
+    let reopened = RuntimeState(dataRoot: root, startBackgroundServices: false)
+    await reopened.loadTradeLogbook()
+    #expect(reopened.tradeWalletStatuses.count == 2)
+  }
+
+  @Test
+  func reconciliationNeverInventsNamesAndKeepsTheImportStart() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("trade-reconcile-runtime-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtime = RuntimeState(dataRoot: root, startBackgroundServices: false)
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let mainLocation = try #require(runtime.tradeLocation(for: .main)?.locationID)
+    await runtime.recordTradeWallet(
+      characterID: 91,
+      characterName: "Trader",
+      transactions: Sourced(
+        state: .fresh,
+        value: [
+          ESIWalletTransactionDTO(
+            clientID: 1,
+            date: .now,
+            isBuy: true,
+            quantity: 3,
+            transactionID: 42,
+            typeID: 34,
+            unitPrice: 5,
+            locationID: mainLocation,
+            journalRefID: nil,
+            isPersonal: true
+          )
+        ],
+        source: source
+      ),
+      journal: Sourced(state: .fresh, value: [], source: source)
+    )
+    await runtime.reconcileTradeLogbook(manufacturingTypeIDs: [])
+
+    // No catalog in this data root: the purchase is counted, not named.
+    #expect(runtime.tradeWalletError == nil)
+    #expect(runtime.tradeLogbookEntries.isEmpty)
+    #expect(runtime.tradeUnresolvedPurchaseCount == 1)
+    let start = try #require(runtime.tradeWalletImportStart)
+    #expect(start <= .now)
+
+    let earlier = start.addingTimeInterval(-7 * 86_400)
+    await runtime.setTradeWalletImportStart(earlier)
+    let reopened = RuntimeState(dataRoot: root, startBackgroundServices: false)
+    await reopened.loadTradeLogbook()
+    #expect(reopened.tradeWalletImportStart == earlier)
+  }
+
   @Test
   func characterSyncFailuresAreGroupedByReasonWithReadableTexts() {
     let keychain = EVEConnectionErrorText.message(for: AuthError.keychain(-25_300))

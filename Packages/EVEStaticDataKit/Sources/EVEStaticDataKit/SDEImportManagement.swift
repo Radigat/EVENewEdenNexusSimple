@@ -9,6 +9,7 @@ public enum SDEDatasetKind: String, CaseIterable, Codable, Equatable, Sendable {
   case typeDogma
   case dogmaAttributes
   case dogmaEffects
+  case marketGroups
 
   public var fileName: String {
     "\(rawValue).jsonl"

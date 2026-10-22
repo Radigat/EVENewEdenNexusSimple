@@ -10,6 +10,8 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case manufacturingOpportunities
   case homeHubOpportunities
   case coalitionHubOpportunities
+  case trade
+  case tradeLogbook
   case publicContracts
   case reactions
   case moonMaterialAnalysis
@@ -34,6 +36,8 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .manufacturingOpportunities: "Main Hub Opportunities"
     case .homeHubOpportunities: "Home Hub Opportunities"
     case .coalitionHubOpportunities: "Coalition Hub Opportunities"
+    case .trade: "Trade"
+    case .tradeLogbook: "Trade logbook"
     case .publicContracts: "Public Contracts"
     case .reactions: "Reactions"
     case .moonMaterialAnalysis: "Moon purchase analysis"
@@ -54,6 +58,8 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .manufacturingOpportunities: "chart.line.uptrend.xyaxis"
     case .homeHubOpportunities: "house.fill"
     case .coalitionHubOpportunities: "flag.fill"
+    case .trade: "arrow.left.arrow.right"
+    case .tradeLogbook: "book.closed.fill"
     case .publicContracts: "doc.text.magnifyingglass"
     case .reactions: "atom"
     case .moonMaterialAnalysis: "chart.xyaxis.line"
@@ -311,6 +317,10 @@ enum CharacterBatchSynchronizer {
         )
       }
     }
+    // Fresh wallet data is matched with the trade logbook (HANDEL_PLAN P7).
+    await runtime.reconcileTradeLogbook(
+      manufacturingTypeIDs: TradePlannerMaterials.typeIDs(in: modelContext)
+    )
     return CharacterBatchSyncResult(
       synchronizedCount: synchronizedCount,
       totalCount: orderedCharacters.count,
@@ -435,6 +445,23 @@ struct ContentView: View {
               plannerLaunchRequest = request
               selection = .planner
             }
+          case .trade:
+            TradeView(
+              onOpenMarketSettings: {
+                guardedDataSettingsSelection.wrappedValue = .marketSettings
+                guardedSelection.wrappedValue = .data
+              },
+              onOpenLogistics: {
+                guardedDataSettingsSelection.wrappedValue = .logistics
+                guardedSelection.wrappedValue = .data
+              },
+              onOpenSDESettings: {
+                guardedDataSettingsSelection.wrappedValue = .sde
+                guardedSelection.wrappedValue = .data
+              }
+            )
+          case .tradeLogbook:
+            TradeLogbookView()
           case .publicContracts:
             PublicContractsView()
           case .reactions:

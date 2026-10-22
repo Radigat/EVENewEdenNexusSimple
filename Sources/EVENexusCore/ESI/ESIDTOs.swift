@@ -228,6 +228,10 @@ public struct ESICharacterOrderDTO: Codable, Identifiable, Sendable {
   public let price: Double
   public let typeID: Int64
   public let volumeRemain: Int64
+  /// Issue time and duration in days; optional because snapshots stored
+  /// before HANDEL_PLAN P7 lack them.
+  public let issued: Date?
+  public let duration: Int?
 
   enum CodingKeys: String, CodingKey {
     case escrow
@@ -237,6 +241,8 @@ public struct ESICharacterOrderDTO: Codable, Identifiable, Sendable {
     case price
     case typeID = "type_id"
     case volumeRemain = "volume_remain"
+    case issued
+    case duration
   }
 
   public init(from decoder: Decoder) throws {
@@ -250,6 +256,8 @@ public struct ESICharacterOrderDTO: Codable, Identifiable, Sendable {
     price = try values.decode(Double.self, forKey: .price)
     typeID = try values.decode(Int64.self, forKey: .typeID)
     volumeRemain = try values.decode(Int64.self, forKey: .volumeRemain)
+    issued = try values.decodeIfPresent(Date.self, forKey: .issued)
+    duration = try values.decodeIfPresent(Int.self, forKey: .duration)
   }
 }
 
@@ -646,6 +654,12 @@ public struct ESIWalletTransactionDTO: Codable, Identifiable, Sendable {
   public let transactionID: Int64
   public let typeID: Int64
   public let unitPrice: Double
+  /// Station or structure of the trade. Optional because snapshots stored
+  /// before HANDEL_PLAN P6 lack these fields; they stay unknown, not zero.
+  public let locationID: Int64?
+  /// Wallet journal entry that carries the payment (and its sales tax).
+  public let journalRefID: Int64?
+  public let isPersonal: Bool?
 
   enum CodingKeys: String, CodingKey {
     case clientID = "client_id"
@@ -655,6 +669,9 @@ public struct ESIWalletTransactionDTO: Codable, Identifiable, Sendable {
     case transactionID = "transaction_id"
     case typeID = "type_id"
     case unitPrice = "unit_price"
+    case locationID = "location_id"
+    case journalRefID = "journal_ref_id"
+    case isPersonal = "is_personal"
   }
 }
 

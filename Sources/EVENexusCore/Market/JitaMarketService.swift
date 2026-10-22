@@ -106,8 +106,11 @@ public struct TradeHubMarketService: Sendable {
     )
   }
 
+  /// Loads every page of a player-structure market. `typeIDs` keeps only the
+  /// requested types and records an empty order list for each of them;
+  /// `nil` keeps the complete order book of the structure (HANDEL_PLAN P3).
   public func structureOrderSnapshot(
-    typeIDs: Set<Int64>,
+    typeIDs: Set<Int64>?,
     regionID: Int64,
     systemID: Int64,
     structureID: Int64,
@@ -124,10 +127,10 @@ public struct TradeHubMarketService: Sendable {
       lease: lease
     )
     var ordersByType = Dictionary(
-      uniqueKeysWithValues: typeIDs.map { ($0, [MarketOrder]()) }
+      uniqueKeysWithValues: (typeIDs ?? []).map { ($0, [MarketOrder]()) }
     )
     for order in response.value
-    where typeIDs.contains(order.typeID)
+    where typeIDs.map({ $0.contains(order.typeID) }) ?? true
       && order.locationID == structureID
     {
       ordersByType[order.typeID, default: []].append(

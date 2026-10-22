@@ -1786,10 +1786,21 @@ public struct MarketOrderSnapshot: Identifiable, Codable, Sendable {
 public struct MarketOrderTypeSummary: Codable, Equatable, Sendable {
   public let bestSellPrice: Double?
   public let bestBuyPrice: Double?
+  /// Units remaining across all valid orders at exactly the best price. `nil`
+  /// when no such order exists or the summary predates this field.
+  public let bestSellVolume: Int64?
+  public let bestBuyVolume: Int64?
 
-  public init(bestSellPrice: Double?, bestBuyPrice: Double?) {
+  public init(
+    bestSellPrice: Double?,
+    bestBuyPrice: Double?,
+    bestSellVolume: Int64? = nil,
+    bestBuyVolume: Int64? = nil
+  ) {
     self.bestSellPrice = bestSellPrice
     self.bestBuyPrice = bestBuyPrice
+    self.bestSellVolume = bestSellVolume
+    self.bestBuyVolume = bestBuyVolume
   }
 }
 
@@ -1818,11 +1829,33 @@ public struct MarketOrderSummarySnapshot: Codable, Sendable {
           && $0.minimumVolume > 0
       }
       guard !valid.isEmpty else { return }
+      let bestSell = valid.lazy.filter { $0.side == .sell }.map(\.price).min()
+      let bestBuy = valid.lazy.filter { $0.side == .buy }.map(\.price).max()
       result[entry.key] = MarketOrderTypeSummary(
-        bestSellPrice: valid.lazy.filter { $0.side == .sell }.map(\.price).min(),
-        bestBuyPrice: valid.lazy.filter { $0.side == .buy }.map(\.price).max()
+        bestSellPrice: bestSell,
+        bestBuyPrice: bestBuy,
+        bestSellVolume: bestSell.flatMap { price in
+          Self.volume(in: valid, side: .sell, price: price)
+        },
+        bestBuyVolume: bestBuy.flatMap { price in
+          Self.volume(in: valid, side: .buy, price: price)
+        }
       )
     }
+  }
+
+  private static func volume(
+    in orders: [MarketOrder],
+    side: MarketOrderSide,
+    price: Double
+  ) -> Int64? {
+    var total: Int64 = 0
+    for order in orders where order.side == side && order.price == price {
+      let (sum, overflow) = total.addingReportingOverflow(order.volumeRemaining)
+      guard !overflow else { return nil }
+      total = sum
+    }
+    return total > 0 ? total : nil
   }
 }
 

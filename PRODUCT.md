@@ -450,6 +450,186 @@ Ersatz für eine unvollständige Marktquote. Kosten, Ersatzwert, unmittelbarer
 Zahlungsbedarf, Logistik, Steuern/Gebühren, Erlös, Wertschöpfung, Profit, Marge
 und ROI bleiben getrennt nachvollziehbar.
 
+### Handel
+
+Der Bereich **Handel** steht in der Seitenleiste direkt unter den
+Coalition-Hub-Chancen. Er vergleicht Marktgruppen zwischen den Hubs nach dem
+Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
+[Handel-Plan, Abschnitt C](Documentation/HANDEL_PLAN.md).
+
+- **Modi:** Main → Home, Main → Coalition, Station Trading Main, Station
+  Trading Home und Station Trading Coalition. Die Modi sind getrennt, der
+  zuletzt gewählte wird gespeichert.
+- **Marktgruppen:**
+  - Der Nutzer wählt einen Knoten im SDE-Marktgruppenbaum, über die Wurzelliste,
+    die Suche oder die Pfadleiste.
+  - Jede direkte Untergruppe wird zu einer Kachel mit allen Items ihres
+    Teilbaums. Eigene Items des Knotens bilden eine Zusatzkachel.
+  - Der gewählte Knoten wird gespeichert und gilt für alle Modi.
+  - Ein Katalog ohne Marktgruppen (Adapter 1–4) zeigt „SDE-Neuimport nötig“.
+    Ohne aktiven Katalog erscheint „Kein SDE-Katalog“. Beide Zustände verlinken
+    die SDE-Einstellungen.
+- **Kachel:**
+  - Kopfzeile mit Chips für Quelle, Ziel und Anzahl der Items.
+  - Umschalter Min-Sell/Max-Buy für Quelle und Ziel. Quelle Min-Sell bedeutet
+    Sofortkauf, Max-Buy eine eigene Buy-Order. Ziel Min-Sell bedeutet eine
+    eigene Sell-Order, Max-Buy einen Direktverkauf.
+  - Tabelle mit Name, Quellpreis, Zielpreis und Diff %.
+  - Pfeile: ab einstellbaren 25 % ein Pfeil nach oben (gelb), ab 30 % ein
+    Doppelpfeil (rot), bei negativer Differenz ein Pfeil nach unten (grün).
+  - **Details anzeigen** ergänzt die Spalten Einkauf, Transport (nur Import),
+    Netto-Verkauf, Gewinn, Marge, ROI, Ø Bedarf/Tag, Nachfrage heute und Tiefe
+    (Stückzahl zum Zielpreis) und Offen (Logbuch). Die Detailtabelle scrollt
+    innerhalb der Kachel horizontal.
+  - Ohne Details zeigt ein Buch-Symbol neben dem Namen die offene
+    Logbuch-Menge.
+  - **Ins Logbuch** (Plus-Symbol neben dem Namen, getrennt vom Kopier-Klick)
+    öffnet einen vorbefüllten Logbuch-Eintrag mit:
+    - eigenem Orderpreis,
+    - eingefrorenen Gebühren,
+    - geplantem VK einen Preisschritt unter dem besten Sell bzw. dem besten Buy
+      bei Direktverkauf,
+    - exaktem Transport für die eingegebene Menge.
+  - Alle Spalten sind sortierbar, die Sortierung gilt für alle Kacheln.
+    Unbekannte Werte stehen aufsteigend hinten und absteigend vorn.
+  - Item- und Ortsnamen sind per Klick kopierbar. Fehlende Werte zeigen „—“, ein
+    Info-Symbol nennt den Grund.
+- **Datenquellen:**
+  - Preise und Tiefe: Main Hub aus dem Main-Hub-Scan, Home und Coalition aus
+    der Marktübersicht der Hub-Chancen-Scans. Ein Hub, der einem anderen
+    entspricht, nutzt dessen Daten.
+  - Tagesbedarf: die Bedarfssnapshots der Hub-Chancen.
+  - Gebühren: das Händlerprofil der jeweiligen Hub-Rolle.
+- **Marktdaten nur im Speicher:** Sie entstehen mit den Hub-Scans und liegen
+  nur im Arbeitsspeicher. Nach einem Neustart fehlen sie bis zum nächsten Scan;
+  die App sagt das ausdrücklich. **Hub-Märkte aktualisieren** startet denselben
+  Main-, Home- und Coalition-Scan wie die Hub-Chancen.
+- **Transport:**
+  - Main → Home ist eine Kurier-Etappe.
+  - Main → Coalition besteht aus dieser Etappe plus Home → Coalition. Dafür
+    nutzt die App den Jump Freighter, wenn er aktiviert ist (DOTLAN-Route,
+    Ø Isotopenpreis im Main Hub), sonst den Profil-Kurier.
+  - Die Etappen werden mit ihren Sätzen angezeigt; fehlende Angaben verlinken
+    die Logistikeinstellungen.
+- **Rechenregeln:**
+  - Eigene Orders liegen einen zulässigen Preisschritt besser als die beste
+    Order. Zulässig sind höchstens 4 signifikante Stellen und mindestens
+    0,01 ISK. Diese Regel stammt aus dem Wissensstand des Assistenten und ist
+    nicht gegen eine CCP-Quelle belegt.
+  - Gebühren für Relist oder Orderänderung sind nicht enthalten.
+  - Kurier je Einheit: der höhere Wert aus Volumen × ISK/m³ und
+    Collateral × 0,5 %, ohne 1-Mio.-Rundung. Collateral ist der Einkaufswert.
+  - Jump Freighter je Einheit: Kosten bei voller Ladung.
+  - Fehlende Preise, Gebühren, Packvolumen oder Transportwege bleiben
+    unbekannt und werden nie als 0 angesetzt.
+
+### Handelslogbuch
+
+Das **Handelslogbuch** steht in der Seitenleiste direkt unter „Handel“. Es
+speichert Einkäufe in einer eigenen SQLite-Datei
+`dataRoot/trade/trade-logbook.sqlite` (Migrationen über `user_version`). Die
+SwiftData-Datenbank bleibt unberührt.
+- Die App-Sicherung erfasst die Datei mit, weil sie den gesamten Datenordner
+  einschließlich SQLite-Snapshots sichert.
+- Eine Datei einer neueren App-Version wird nicht geöffnet und nicht
+  verändert.
+
+- **Eintrag:**
+  - Gegenstand, Kaufzeitpunkt, Menge, Preis je Einheit (ohne Broker),
+    Kaufart (Sofortkauf oder eigene Buy-Order) mit eingefrorener
+    Broker-Gebühr, Kauf- und Ziel-Hub.
+  - Geplanter VK, Transport für die gesamte Menge, eingefrorene Umsatzsteuer
+    und Sell-Broker, Status und Notizen.
+  - Leere Felder bleiben unbekannt, nie 0.
+- **Status:** gekauft, im Transport, gelistet, verkauft, Fertigung ignoriert,
+  ausgeschlossen. Nur die ersten drei zählen als offen.
+- **Verkäufe:** Datum, Menge, Preis und Art (eigene Sell-Order oder
+  Direktverkauf). Sind alle Einheiten verkauft, wechselt ein offener Eintrag
+  beim Speichern auf „verkauft“.
+- **Berechnung:**
+  - Kosten je Einheit = Preis × (1 + Broker bei Buy-Order) + Transport ÷
+    Menge.
+  - Realisierter Gewinn = Σ verkaufte Menge × Preis × (1 − Steuer −
+    Broker bei Sell-Order) − verkaufte Menge × Kosten je Einheit.
+  - Fehlt ein Satz, bleibt das Ergebnis unbekannt.
+- **Erinnerung (nur in der App):** Je Eintrag stehen der geplante VK und der
+  aktuelle beste Sell-Preis am Ziel-Hub nebeneinander. Er kommt aus der
+  Marktübersicht der laufenden Sitzung. Offene Einträge mit erreichtem
+  Zielpreis werden grün hervorgehoben, sonst zeigt die Zeile die Abweichung
+  in Prozent. Es gibt keine Systembenachrichtigung.
+- **Tabelle:** Filter für offene Einträge, alle Einträge oder einen Status.
+  Alle Spalten sind typisiert sortierbar; unbekannte Werte stehen aufsteigend
+  hinten, Status nach Lebenszyklus, Hubs Main/Home/Coalition. Bearbeiten und
+  Löschen sitzen vorn in jeder Zeile; Löschen nur nach Bestätigung.
+- **Manueller Eintrag:** **Neuer Eintrag** mit Gegenstandssuche über den
+  SDE-Katalog (mindestens 3 Zeichen).
+- **Wallet-Daten:**
+  - Nach jeder Charakter-Synchronisierung speichert die App die persönlichen
+    Wallet-Transaktionen und das Wallet-Journal dieses Charakters in der
+    Logbuch-Datei. Die Synchronisierung läuft beim Start für alle Charaktere,
+    sonst über das Dashboard oder die Charaktereinstellungen.
+  - Schlüssel sind Charakter und ESI-ID. Wiederholte Abgleiche fügen nichts
+    doppelt hinzu, und ältere Daten bleiben über das 30-Tage-Fenster von ESI
+    hinaus erhalten.
+  - Ungültige Transaktionen (Menge ≤ 0, ungültiger Preis) werden nicht
+    gespeichert.
+  - Ort, Journal-Referenz und „persönlich“ sind neue, optionale Felder. Ältere
+    gespeicherte Synchronisierungen ohne diese Angaben bleiben lesbar, die
+    Felder sind dann unbekannt.
+  - Corporation-Wallets werden bewusst nicht einbezogen
+    (Eigentümerentscheid 22.10.2026).
+  - Der Abschnitt **Wallet-Daten** im Handelslogbuch zeigt je Charakter:
+    - den Zustand des letzten Abgleichs, etwa „Wallet-Berechtigung fehlt“ oder
+      veraltet,
+    - den letzten Abgleich, der Daten geliefert hat,
+    - die Zahl der gespeicherten Transaktionen und Journal-Einträge.
+  - Ein Fehlschlag überschreibt den letzten erfolgreichen Stand nicht.
+  - **Wallets abgleichen** synchronisiert alle autorisierten Charaktere über
+    die bestehende Charakter-Synchronisierung.
+  - Gespeichert werden auch die offenen Orders und die Orderhistorie des
+    Charakters (mit Ausgabedatum und Laufzeit), für die Erkennung der
+    Orderart.
+- **Automatischer Abgleich** (Handel-Plan P7). Er läuft nach jeder
+  Sammel-Synchronisierung der Charaktere (Start, Dashboard, „Wallets
+  abgleichen“) und beim Öffnen des Handelslogbuchs.
+  - **Käufe:**
+    - Kauftransaktionen ab dem Datum **Käufe übernehmen ab** werden zu je
+      einem eigenen Eintrag, wenn sie in einem der drei Hubs liegen. Das
+      Startdatum ist beim ersten Abgleich der Beginn des aktuellen UTC-Tags.
+    - Gespeichert wird je Charakter und Transaktions-ID; ein erneuter Abgleich
+      legt nichts doppelt an.
+    - Ziel-Hub: Main → Home, wenn der Home Hub ein eigener Ort ist, sonst der
+      Kauf-Hub (Station Trading).
+    - Käufe von Materialien aktiver Planner-Pläne erhalten „Fertigung,
+      ignoriert“.
+    - Der Transport wird für die Menge mit der aktuellen Transportbasis
+      geschätzt und als geschätzt markiert. Beim Station Trading ist er 0.
+    - Kann der SDE-Katalog einen Gegenstand nicht benennen, wird der Kauf
+      nicht übernommen und gezählt, statt einen Namen zu erfinden.
+  - **Orderart:** Eine eigene Order wird erkannt, wenn ein Order desselben
+    Charakters, Gegenstands, Orts und derselben Seite zum Zeitpunkt aktiv war.
+    - Treffer: Kauf per Buy-Order mit berechnetem Broker, Verkauf per
+      Sell-Order.
+    - Bekannte Orders ohne Treffer: Sofortkauf bzw. Direktverkauf.
+    - Ohne Orderdaten: Sofortkauf bzw. eigene Sell-Order, markiert als
+      angenommen.
+  - **Verkäufe:** Verkaufstransaktionen werden nach FIFO je Gegenstand und
+    Ziel-Hub den ältesten offenen Einkäufen zugeordnet. Sind alle Einheiten
+    verkauft, wechselt der Eintrag auf „verkauft“.
+  - **Steuer und Broker:** Die Umsatzsteuer gilt als belegt, aus dem Journal
+    (`transaction_tax` zur Transaktion, anteilig je Menge). Die Broker-Gebühr
+    bleibt berechnet.
+  - **Nicht zugeordnet:** Verkäufe erfasster Gegenstände ohne passenden
+    offenen Einkauf, auch an Orten außerhalb der Hubs, erscheinen im Abschnitt
+    „Nicht zugeordnete Verkäufe“ und lassen sich per **Zuordnen** einem
+    offenen Einkauf zuweisen.
+- **Ist neben Plan:** Die Tabelle zeigt Ø Ist-VK neben dem geplanten VK. Ein
+  Ist-Preis unter Plan wird gelb hervorgehoben, ein Tooltip zeigt die
+  Abweichung. Plan-Gewinn steht neben dem realisierten Gewinn.
+- **Hinweis-Symbole:** aus der Wallet übernommen, Orderart angenommen,
+  Transport geschätzt, Steuer belegt. Eigene Änderungen an Kaufart oder
+  Transport im Editor setzen die Herkunft auf manuell.
+
 ### Assets und Warehouse
 
 `All items` zeigt faktischen Bestand. `Warehouse` ist eine Planungsprojektion
@@ -837,6 +1017,24 @@ mit denselben Regeln.
   der Planner bestimmt.
 - **Fehler:** Fehlender Scope oder ACL-Zugriff bleibt sichtbar unverfügbar und
   verändert weder Main- noch Home-Ergebnisse.
+- **Strukturmärkte (Home und Coalition):** Ist der Hub eine Spielerstruktur,
+  lädt jeder Scan, auch der automatische beim Start, das **vollständige**
+  Orderbuch der Struktur.
+  - Bedarfsledger und Marktübersicht erfassen damit alle dort gelisteten Items,
+    nicht nur Fertigungsprodukte. Das ist die Grundlage für den
+    Bereich Handel.
+  - Die Chancenanalyse erhält das Orderbuch weiterhin auf die
+    Fertigungsprodukte beschränkt; ihre Ergebnisse und Abdeckungszahlen bleiben
+    unverändert.
+  - Die bisherige Bedarfshistorie der Produkte läuft weiter. Neu erfasste Items
+    starten ohne Historie und zeigen keinen Tagesbedarf, bis zwei Scans im
+    Abstand von mindestens 30 Minuten vorliegen.
+  - Der Scan dauert dadurch länger, und die Bedarfsdatei wird größer
+    (Eigentümerentscheid 22.10.2026).
+- **Marktübersicht:** Sie enthält je Item neben dem besten Sell- und Buy-Preis
+  auch die Stückzahl, die genau zu diesem Bestpreis gelistet ist (Ordertiefe).
+  Ältere gespeicherte Übersichten ohne diese Angabe bleiben lesbar; die Tiefe
+  ist dort unbekannt, nicht 0.
 
 Die Karte **Automatic data** zeigt dazu die Zeile **Coalition-Hub-Markt**.
 
@@ -1855,12 +2053,29 @@ Der ausführliche Produktionsvertrag steht in
   ungültige Effekt-ID oder eine Dublette bleibt ein Importfehler. Fachlich
   vorgeschriebene Reaktionsskill- und Rig-Effekte werden anschließend weiterhin
   ausdrücklich geprüft und dürfen nicht fehlen.
+- Der SDE-Import übernimmt zusätzlich den offiziellen Datensatz
+  `marketGroups.jsonl`. Das ist der Marktgruppen-Baum mit englischem Namen,
+  optionaler Elterngruppe und `hasTypes`.
+  - Katalogadapter 5 speichert ihn in der Tabelle `market_groups`.
+  - Die Kernabfrage `marketGroups()` liefert den Baum.
+  - `tradeItems(inMarketGroupSubtree:)` liefert die veröffentlichten Items einer
+    Gruppe und aller Untergruppen mit gepacktem Volumen. Ein fehlendes
+    Packvolumen bleibt unbekannt; das zusammengebaute Volumen wird nicht
+    ersatzweise verwendet.
+  - Ein mit Adapter 1–4 aktivierter Katalog bleibt für alle übrigen Bereiche
+    voll nutzbar. Für Marktgruppen meldet er ausdrücklich den Zustand „SDE-Neuimport
+    nötig“ (`requiresSDEReimport`), statt leere Daten als Ergebnis
+    auszugeben. Abhilfe ist der **Neuimport des aktuellen Katalogs**.
+  - Durch den zusätzlichen Datensatz ändert sich der Inhalts-Hash eines Builds.
+    Ein Neuimport erzeugt daher eine neue Katalogdatei.
+  - Der Bereich **Handel** nutzt die Marktgruppen für seine Kacheln
+    ([Handel-Plan](Documentation/HANDEL_PLAN.md)).
 - Der aktive SDE-Zeiger akzeptiert den historischen Legacy-Dateinamen und
   kanonische, bereits aktivierte `catalog-vN`-Dateien bis einschließlich der
-  aktuellen Adapterversion. Dadurch bleibt ein gültiger Adapter-v2-Katalog
-  nach der Einführung von Adapter 3 als installierter Build erkennbar und kann
-  sicher neu importiert werden. Neue Aktivierungen schreiben weiterhin nur
-  Adapter 3; fremde Pfade, nichtkanonische Versionsangaben und zukünftige
+  aktuellen Adapterversion 5. Dadurch bleibt ein gültiger Katalog einer
+  älteren Adapterversion als installierter Build erkennbar und kann sicher neu
+  importiert werden. Neue Aktivierungen schreiben ausschließlich Adapter 5;
+  fremde Pfade, nichtkanonische Versionsangaben und zukünftige
   Adapterversionen werden abgewiesen. Ein ungültiger Zeiger wird in der
   Oberfläche als verständlicher Wiederherstellungszustand statt als interner
   Fehlername angezeigt, und vorhandene Katalogdateien werden nicht gelöscht.
