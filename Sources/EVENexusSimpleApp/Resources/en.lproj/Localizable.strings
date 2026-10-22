@@ -2013,9 +2013,6 @@
 "Trade" = "Trade";
 "Main → Home" = "Main → Home";
 "Main → Coalition" = "Main → Coalition";
-"Station trading Main" = "Station trading Main";
-"Station trading Home" = "Station trading Home";
-"Station trading Coalition" = "Station trading Coalition";
 "No usable price at the source hub." = "No usable price at the source hub.";
 "No usable price at the target hub." = "No usable price at the target hub.";
 "The broker fee of the source hub is unknown." = "The broker fee of the source hub is unknown.";
@@ -2039,7 +2036,6 @@
 "Own orders are placed one valid price step (four significant digits) better than the best order. Order modification and relist fees are not included." = "Own orders are placed one valid price step (four significant digits) better than the best order. Order modification and relist fees are not included.";
 "No %@ is configured. Select it in Market Settings." = "No %@ is configured. Select it in Market Settings.";
 "The %@ has no exact station or structure identifier. Select it again in Market Settings." = "The %@ has no exact station or structure identifier. Select it again in Market Settings.";
-"The %@ equals the Main Hub, so there is no import route." = "The %@ equals the Main Hub, so there is no import route.";
 "Market data of the %@: %@." = "Market data of the %1$@: %2$@.";
 "The broker fee of the %@ is unknown; Max-Buy purchase costs stay unavailable." = "The broker fee of the %@ is unknown; Max-Buy purchase costs stay unavailable.";
 "Sales tax or broker fee of the %@ is unknown; net sales stay unavailable." = "Sales tax or broker fee of the %@ is unknown; net sales stay unavailable.";
@@ -2193,3 +2189,8 @@
 "The import start date could not be saved. The previous date still applies." = "The import start date could not be saved. The previous date still applies.";
 "The wallet data could not be matched with the trade logbook. Existing entries were not changed." = "The wallet data could not be matched with the trade logbook. Existing entries were not changed.";
 "Personal wallet transactions, the wallet journal and own orders of every authorized character are stored after each character sync, beyond the 30-day ESI window." = "Personal wallet transactions, the wallet journal and own orders of every authorized character are stored after each character sync, beyond the 30-day ESI window.";
+
+/* Trade routes Home ↔ Coalition (22.10.2026) */
+"Coalition → Home" = "Coalition → Home";
+"Home Hub and Coalition Hub must both be configured for this route." = "Home Hub and Coalition Hub must both be configured for this route.";
+"The %@ and the %@ are the same place, so there is no trade route." = "The %1$@ and the %2$@ are the same place, so there is no trade route.";

@@ -1,5 +1,53 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 22. Oktober 2026 – Handel: Routen statt Station Trading
+
+Ziel (Eigentümerauftrag):
+- Station Trading Main, Home und Coalition entfernen. Auf Rückfrage: alle drei.
+- Handel zwischen Home und Coalition Hub in beide Richtungen ergänzen.
+
+Entscheidung auf Rückfrage: Wallet-Käufe im Home bzw. Coalition Hub bekommen
+den jeweils anderen Hub als Ziel.
+
+Änderung:
+- `TradeModels`:
+  - `TradeMode` mit den Fällen `mainToHome`, `mainToCoalition`,
+    `homeToCoalition` und `coalitionToHome`.
+  - Neu `TradeRoute` (Quelle/Ziel).
+  - `TradeImportTarget` entfällt.
+- `RuntimeState`: Transportbasis je `TradeRoute`. Die Home-↔-Coalition-Etappe
+  ist als `homeCoalitionLeg` herausgelöst; für Coalition → Home werden Start
+  und Ziel getauscht. Der Abgleich löst alle Routen zwischen eingerichteten
+  Hubs auf.
+- `TradeWalletReconciler`:
+  - Ziel Main → Home, Home → Coalition, Coalition → Home, sofern der andere Hub
+    ein eigener Ort ist, sonst der Kauf-Hub.
+  - Transport je Route.
+- `TradeView`: Modusleiste mit vier Routen. Der generelle Hinweis „derselbe Ort,
+  keine Handelsroute“ ersetzt den bisherigen Import-Hinweis.
+- Lokalisierung: Station-Trading-Texte entfernt, neue Routen und Meldungen
+  ergänzt.
+
+Prüfung (automatisch):
+- `swift test`: 522 Tests in 35 Suites plus 66 App-Tests bestanden.
+- Neu bzw. angepasst:
+  - Rechnertest Home → Coalition und Coalition → Home mit Etappe und ohne
+    Etappe.
+  - Abgleich: Home-Kauf mit Ziel Coalition, FIFO am Coalition Hub,
+    nicht zugeordneter Rest am Home Hub, geteilter Ort bleibt im Kauf-Hub.
+  - Moduszusammensetzung.
+- `swift test --package-path Packages/EVEStaticDataKit`: 11 Tests bestanden.
+- Natives `xcodebuild … test` mit `** TEST SUCCEEDED **`.
+- `git diff --check` fehlerfrei.
+
+Prüfung (visuell, isoliert): Die Modusleiste zeigt die vier Routen, Home →
+Coalition mit Chips und Hinweisen.
+
+Offen:
+- Die Annahme symmetrischer Jump-Freighter-Kosten ist nicht live geprüft.
+- Eigentümerabnahme offen.
+- Nicht committet.
+
 ## 22. Oktober 2026 – Handel P8: Gesamtprüfung und Abnahme-Checkliste
 
 Ziel (Eigentümerauftrag, [Handel-Plan](Documentation/HANDEL_PLAN.md) P8):

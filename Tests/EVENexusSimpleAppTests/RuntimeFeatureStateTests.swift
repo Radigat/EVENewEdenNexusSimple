@@ -49,7 +49,7 @@ struct RuntimeFeatureStateTests {
   }
 
   @Test
-  func tradeFollowsCoalitionHubOpportunitiesWithFiveModes() {
+  func tradeFollowsCoalitionHubOpportunitiesWithFourRoutes() {
     let sections = NavigationSection.allCases
     let coalition = sections.firstIndex(of: .coalitionHubOpportunities)
     let trade = sections.firstIndex(of: .trade)

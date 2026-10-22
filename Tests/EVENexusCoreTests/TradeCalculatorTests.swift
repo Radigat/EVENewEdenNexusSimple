@@ -33,7 +33,7 @@ struct TradeCalculatorTests {
         source: summary(sell: 1_000_000, buy: 900_000),
         target: summary(sell: 1_500_000, buy: 1_200_000)
       ),
-      mode: .importRoute(.home),
+      mode: .mainToHome,
       sourceSide: .minSell,
       targetSide: .minSell,
       sourceFees: noFees,
@@ -65,7 +65,7 @@ struct TradeCalculatorTests {
         source: summary(sell: 1_000_000, buy: 900_000),
         target: summary(sell: 1_500_000, buy: 1_200_000)
       ),
-      mode: .importRoute(.home),
+      mode: .mainToHome,
       sourceSide: .maxBuy,
       targetSide: .maxBuy,
       sourceFees: TradeHubFees(salesTaxRate: 0.036, brokerFeeRate: 0.0135),
@@ -125,7 +125,7 @@ struct TradeCalculatorTests {
         source: summary(sell: 1_000_000, buy: nil),
         target: summary(sell: 1_500_000, buy: nil)
       ),
-      mode: .stationTrading(.main),
+      mode: .mainToHome,
       sourceSide: .minSell,
       targetSide: .minSell,
       sourceFees: homeFees,
@@ -137,33 +137,64 @@ struct TradeCalculatorTests {
   }
 
   @Test
-  func stationTradingNeedsNoTransportAndUsesOneStepOnBothSides() {
+  func homeCoalitionRoutesUseOneStepOnBothSidesAndTheirLeg() {
     let fees = TradeHubFees(salesTaxRate: 0.036, brokerFeeRate: 0.02)
-    let book = summary(sell: 110, buy: 100)
-    let row = TradeCalculator.row(
-      item: item(volume: nil, source: book, target: book),
-      mode: .stationTrading(.home),
+    let homeBook = summary(sell: 120, buy: 100)
+    let coalitionBook = summary(sell: 110, buy: 95)
+    let leg = TradeTransportBasis(legs: [freighterLeg])
+    let towardsCoalition = TradeCalculator.row(
+      item: item(volume: 1, source: homeBook, target: coalitionBook),
+      mode: .homeToCoalition,
       sourceSide: .maxBuy,
+      targetSide: .minSell,
+      sourceFees: fees,
+      targetFees: fees,
+      transport: leg
+    )
+
+    // Buy order at 100.1, sell order at 109.9, full-load freighter share.
+    let transport = 50_000_000.0 / 300_000
+    #expect(close(towardsCoalition.purchaseCost, 100.1 * 1.02))
+    #expect(close(towardsCoalition.transportCost, transport))
+    #expect(close(towardsCoalition.netSale, 109.9 * 0.944))
+    #expect(
+      close(towardsCoalition.profit, 109.9 * 0.944 - 100.1 * 1.02 - transport)
+    )
+    #expect(close(towardsCoalition.targetSpreadFraction, 15.0 / 95.0))
+    #expect(towardsCoalition.issues.isEmpty)
+
+    // The opposite direction swaps the books: Home is now the target.
+    let towardsHome = TradeCalculator.row(
+      item: item(volume: 1, source: coalitionBook, target: homeBook),
+      mode: .coalitionToHome,
+      sourceSide: .minSell,
+      targetSide: .minSell,
+      sourceFees: fees,
+      targetFees: fees,
+      transport: leg
+    )
+    #expect(towardsHome.sourcePrice == 110)
+    #expect(towardsHome.targetPrice == 120)
+    #expect(close(towardsHome.differenceFraction, 10.0 / 110.0))
+    // Without a resolved leg the transport stays unknown, never zero.
+    let unresolved = TradeCalculator.row(
+      item: item(volume: 1, source: coalitionBook, target: homeBook),
+      mode: .coalitionToHome,
+      sourceSide: .minSell,
       targetSide: .minSell,
       sourceFees: fees,
       targetFees: fees,
       transport: .none
     )
-
-    // Buy order at 100.1, sell order at 109.9.
-    #expect(close(row.purchaseCost, 100.1 * 1.02))
-    #expect(row.transportCost == 0)
-    #expect(close(row.netSale, 109.9 * 0.944))
-    #expect(close(row.profit, 109.9 * 0.944 - 100.1 * 1.02))
-    #expect(close(row.targetSpreadFraction, 0.1))
-    #expect(row.issues.isEmpty)
+    #expect(unresolved.transportCost == nil)
+    #expect(unresolved.issues == [.transportUnavailable])
   }
 
   @Test
   func missingInputsStayUnknownInsteadOfZero() {
     let noSource = TradeCalculator.row(
       item: item(volume: 10, source: nil, target: summary(sell: 100, buy: 90)),
-      mode: .importRoute(.home),
+      mode: .mainToHome,
       sourceSide: .minSell,
       targetSide: .minSell,
       sourceFees: noFees,
@@ -184,7 +215,7 @@ struct TradeCalculatorTests {
         source: summary(sell: 100, buy: 90),
         target: summary(sell: 150, buy: nil)
       ),
-      mode: .importRoute(.home),
+      mode: .mainToHome,
       sourceSide: .maxBuy,
       targetSide: .minSell,
       sourceFees: noFees,
@@ -205,7 +236,7 @@ struct TradeCalculatorTests {
         source: summary(sell: 100, buy: 90),
         target: summary(sell: 150, buy: 140)
       ),
-      mode: .importRoute(.home),
+      mode: .mainToHome,
       sourceSide: .minSell,
       targetSide: .minSell,
       sourceFees: noFees,
@@ -223,7 +254,7 @@ struct TradeCalculatorTests {
         source: summary(sell: 100, buy: 90),
         target: summary(sell: 150, buy: 140)
       ),
-      mode: .importRoute(.coalition),
+      mode: .mainToCoalition,
       sourceSide: .minSell,
       targetSide: .minSell,
       sourceFees: noFees,
@@ -340,7 +371,7 @@ struct TradeCalculatorTests {
     )
     let listed = TradeCalculator.row(
       item: item(volume: 1, source: source, target: target),
-      mode: .importRoute(.home),
+      mode: .mainToHome,
       sourceSide: .minSell,
       targetSide: .minSell,
       sourceFees: noFees,
@@ -352,7 +383,7 @@ struct TradeCalculatorTests {
 
     let direct = TradeCalculator.row(
       item: item(volume: 1, source: source, target: target),
-      mode: .importRoute(.home),
+      mode: .mainToHome,
       sourceSide: .maxBuy,
       targetSide: .maxBuy,
       sourceFees: homeFees,
@@ -365,12 +396,16 @@ struct TradeCalculatorTests {
 
   @Test
   func modesDescribeTheirHubsAndTransport() {
-    #expect(TradeMode.allCases.count == 5)
-    #expect(TradeMode.importRoute(.coalition).sourceRole == .main)
-    #expect(TradeMode.importRoute(.coalition).targetRole == .coalition)
-    #expect(TradeMode.importRoute(.home).requiresTransport)
-    #expect(TradeMode.stationTrading(.home).sourceRole == .home)
-    #expect(!TradeMode.stationTrading(.main).requiresTransport)
+    // Station trading was removed; Home ↔ Coalition exists both ways.
+    #expect(TradeMode.allCases == [
+      .mainToHome, .mainToCoalition, .homeToCoalition, .coalitionToHome,
+    ])
+    #expect(TradeMode.mainToCoalition.sourceRole == .main)
+    #expect(TradeMode.mainToCoalition.targetRole == .coalition)
+    #expect(TradeMode.homeToCoalition.route == TradeRoute(source: .home, target: .coalition))
+    #expect(TradeMode.coalitionToHome.route == TradeRoute(source: .coalition, target: .home))
+    #expect(TradeMode.allCases.allSatisfy { $0.requiresTransport })
+    #expect(!TradeRoute(source: .home, target: .home).requiresTransport)
     #expect(!TradeCalculator.includesOrderModificationFees)
   }
 

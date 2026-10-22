@@ -2645,9 +2645,6 @@
 "Trade" = "Handel";
 "Main → Home" = "Main → Home";
 "Main → Coalition" = "Main → Coalition";
-"Station trading Main" = "Station Trading Main";
-"Station trading Home" = "Station Trading Home";
-"Station trading Coalition" = "Station Trading Coalition";
 "No usable price at the source hub." = "Am Quell-Hub gibt es keinen verwendbaren Preis.";
 "No usable price at the target hub." = "Am Ziel-Hub gibt es keinen verwendbaren Preis.";
 "The broker fee of the source hub is unknown." = "Die Broker-Gebühr des Quell-Hubs ist unbekannt.";
@@ -2671,7 +2668,6 @@
 "Own orders are placed one valid price step (four significant digits) better than the best order. Order modification and relist fees are not included." = "Eigene Orders liegen einen gültigen Preisschritt (vier signifikante Stellen) besser als die beste Order. Gebühren für Orderänderungen und Relist sind nicht enthalten.";
 "No %@ is configured. Select it in Market Settings." = "Kein %@ eingerichtet. Wähle ihn in den Markteinstellungen.";
 "The %@ has no exact station or structure identifier. Select it again in Market Settings." = "Der %@ hat keine exakte Stations- oder Strukturkennung. Wähle ihn in den Markteinstellungen erneut.";
-"The %@ equals the Main Hub, so there is no import route." = "Der %@ ist identisch mit dem Main Hub, daher gibt es keine Importroute.";
 "Market data of the %@: %@." = "Marktdaten des %1$@: %2$@.";
 "The broker fee of the %@ is unknown; Max-Buy purchase costs stay unavailable." = "Die Broker-Gebühr des %@ ist unbekannt; Max-Buy-Einkaufskosten bleiben nicht verfügbar.";
 "Sales tax or broker fee of the %@ is unknown; net sales stay unavailable." = "Umsatzsteuer oder Broker-Gebühr des %@ ist unbekannt; Netto-Verkaufswerte bleiben nicht verfügbar.";
@@ -2823,3 +2819,8 @@
 "The import start date could not be saved. The previous date still applies." = "Das Startdatum konnte nicht gespeichert werden. Es gilt weiter das bisherige Datum.";
 "The wallet data could not be matched with the trade logbook. Existing entries were not changed." = "Die Wallet-Daten konnten nicht mit dem Handelslogbuch abgeglichen werden. Bestehende Einträge wurden nicht verändert.";
 "Personal wallet transactions, the wallet journal and own orders of every authorized character are stored after each character sync, beyond the 30-day ESI window." = "Persönliche Wallet-Transaktionen, das Wallet-Journal und eigene Orders aller autorisierten Charaktere werden nach jeder Charakter-Synchronisierung gespeichert, auch über das 30-Tage-Fenster von ESI hinaus.";
+
+/* Trade routes Home ↔ Coalition (22.10.2026) */
+"Coalition → Home" = "Coalition → Home";
+"Home Hub and Coalition Hub must both be configured for this route." = "Für diese Route müssen Home Hub und Coalition Hub eingerichtet sein.";
+"The %@ and the %@ are the same place, so there is no trade route." = "Der %1$@ und der %2$@ sind derselbe Ort, daher gibt es keine Handelsroute.";

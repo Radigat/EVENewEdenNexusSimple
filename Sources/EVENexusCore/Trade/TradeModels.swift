@@ -1,51 +1,39 @@
 import Foundation
 
-/// Where an import route ends. Imports always start at the Main Hub.
-public enum TradeImportTarget: String, Codable, CaseIterable, Sendable {
-  case home
-  case coalition
+/// A directed trade route: buy at `source`, haul, sell at `target`. Routes
+/// with the same hub on both ends need no transport.
+public struct TradeRoute: Hashable, Codable, Sendable {
+  public let source: OpportunityHubRole
+  public let target: OpportunityHubRole
 
-  public var hubRole: OpportunityHubRole {
-    switch self {
-    case .home: .home
-    case .coalition: .coalition
-    }
+  public init(source: OpportunityHubRole, target: OpportunityHubRole) {
+    self.source = source
+    self.target = target
   }
+
+  public var requiresTransport: Bool { source != target }
 }
 
-/// The five separately presented trade views (HANDEL_PLAN.md, section A).
-public enum TradeMode: Hashable, Codable, Sendable {
-  /// Buy at the Main Hub, haul, sell at the Home or Coalition Hub.
-  case importRoute(TradeImportTarget)
-  /// Buy and sell in the same hub; no transport.
-  case stationTrading(OpportunityHubRole)
+/// The separately presented trade views. Station trading was removed and
+/// Home ↔ Coalition added in both directions (owner decision 22.10.2026).
+public enum TradeMode: String, Hashable, Codable, CaseIterable, Sendable {
+  case mainToHome
+  case mainToCoalition
+  case homeToCoalition
+  case coalitionToHome
 
-  public static let allCases: [TradeMode] = [
-    .importRoute(.home),
-    .importRoute(.coalition),
-    .stationTrading(.main),
-    .stationTrading(.home),
-    .stationTrading(.coalition),
-  ]
-
-  public var sourceRole: OpportunityHubRole {
+  public var route: TradeRoute {
     switch self {
-    case .importRoute: .main
-    case .stationTrading(let role): role
+    case .mainToHome: TradeRoute(source: .main, target: .home)
+    case .mainToCoalition: TradeRoute(source: .main, target: .coalition)
+    case .homeToCoalition: TradeRoute(source: .home, target: .coalition)
+    case .coalitionToHome: TradeRoute(source: .coalition, target: .home)
     }
   }
 
-  public var targetRole: OpportunityHubRole {
-    switch self {
-    case .importRoute(let target): target.hubRole
-    case .stationTrading(let role): role
-    }
-  }
-
-  public var requiresTransport: Bool {
-    if case .importRoute = self { return true }
-    return false
-  }
+  public var sourceRole: OpportunityHubRole { route.source }
+  public var targetRole: OpportunityHubRole { route.target }
+  public var requiresTransport: Bool { route.requiresTransport }
 }
 
 /// The Min-Sell | Max-Buy switch of a tile. On the source side it selects an
@@ -131,8 +119,9 @@ public enum TradeTransportLeg: Equatable, Sendable {
 
 /// Ordered transport legs of a trade route. Main → Home is one courier leg;
 /// Main → Coalition is Main → Home by courier plus the Home → Coalition leg of
-/// the Hub opportunities (owner decision 22.10.2026). Station trading has no
-/// legs.
+/// the Hub opportunities; Home ↔ Coalition is that leg alone, reversed for
+/// Coalition → Home (owner decisions 22.10.2026). A route within one hub has
+/// no legs.
 public struct TradeTransportBasis: Equatable, Sendable {
   public let legs: [TradeTransportLeg]
 

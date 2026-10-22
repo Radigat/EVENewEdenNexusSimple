@@ -103,5 +103,5 @@ Neue Funktionen nach der Konsolidierung ohne Legacy-Vorlage:
 
 | Funktion | Aktive Umsetzung | Prüfnachweis |
 | --- | --- | --- |
-| Handel: Marktgruppen-Kacheln, Import- und Station-Trading-Vergleich (22.10.2026) | `Sources/EVENexusCore/Trade` (`TradeCalculator`, `TradeTiles`), `TradeView`, SDE-Adapter 5 | `TradeCalculatorTests`, `SQLiteStaticCatalogTests`, `RuntimeFeatureStateTests`; [ACCEPTANCE](../ACCEPTANCE.md) |
+| Handel: Marktgruppen-Kacheln, Routenvergleich Main → Home/Coalition und Home ↔ Coalition (22.10.2026) | `Sources/EVENexusCore/Trade` (`TradeCalculator`, `TradeTiles`), `TradeView`, SDE-Adapter 5 | `TradeCalculatorTests`, `SQLiteStaticCatalogTests`, `RuntimeFeatureStateTests`; [ACCEPTANCE](../ACCEPTANCE.md) |
 | Handelslogbuch mit Wallet-Abgleich (22.10.2026) | `TradeLogbook`, `TradeLogbookStore`, `TradeWallet`, `TradeWalletReconciler`, `TradeLogbookView` | `TradeLogbookTests` (Store, Migration, Abgleich), `RuntimeFeatureStateTests` |

@@ -146,8 +146,9 @@ Abnahme-Checkliste: [HANDEL_PLAN.md](Documentation/HANDEL_PLAN.md).
     (Kurier, Jump Freighter).
   - Volles Orderbuch für Home-/Coalition-Strukturscans samt Ordertiefe;
     Bedarfsledger und Hub-Chancen-Ergebnisse unverändert.
-  - Bereich **Handel** mit fünf Modi (Main → Home, Main → Coalition, Station
-    Trading je Hub), Tagesbedarf, Pfeilschwellen und „Ins Logbuch“.
+  - Bereich **Handel** mit vier Routen (Main → Home, Main → Coalition, Home →
+    Coalition, Coalition → Home; Station Trading am 22.10.2026 entfernt),
+    Tagesbedarf, Pfeilschwellen und „Ins Logbuch“.
   - **Handelslogbuch** in eigener SQLite-Datei
     `dataRoot/trade/trade-logbook.sqlite`, Schema 3. Es enthält Einkäufe,
     Verkäufe, Erinnerung, die Wallet-Daten aller Charaktere und den

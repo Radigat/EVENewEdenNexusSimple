@@ -599,9 +599,19 @@ struct TradeWalletReconcilerTests {
       ],
       manufacturingTypeIDs: [483],
       transportBases: [
-        .home: TradeTransportBasis(
+        TradeRoute(source: .main, target: .home): TradeTransportBasis(
           legs: [.courier(TradeCourierLeg(origin: "Jita", destination: "Home", iskPerCubicMeter: 1_000))]
-        )
+        ),
+        TradeRoute(source: .home, target: .coalition): TradeTransportBasis(
+          legs: [
+            .jumpFreighter(
+              TradeJumpFreighterLeg(
+                origin: "Home", destination: "Coalition",
+                costPerFlight: 30_000_000, usableCargoCapacityM3: 300_000
+              )
+            )
+          ]
+        ),
       ],
       packagedVolumes: [482: 10, 483: 1],
       typeNames: [482: "Miner II", 483: "Tritanium"],
@@ -675,11 +685,39 @@ struct TradeWalletReconcilerTests {
     #expect(material.buySide == .minSell)
     #expect(material.buySideSource == .assumed)
 
-    let station = try #require(entries.first { $0.walletLink?.transactionID == 5 })
-    #expect(station.sourceRole == .home)
-    #expect(station.targetRole == .home)
-    #expect(station.transportCostTotal == 0)
-    #expect(!station.transportEstimated)
+    // A Home purchase now goes to the Coalition Hub (no station trading).
+    let towardsCoalition = try #require(entries.first { $0.walletLink?.transactionID == 5 })
+    #expect(towardsCoalition.sourceRole == .home)
+    #expect(towardsCoalition.targetRole == .coalition)
+    // 5 × 10 m³ fit into one flight of 30,000,000 ISK.
+    #expect(towardsCoalition.transportCostTotal == 30_000_000)
+    #expect(towardsCoalition.transportEstimated)
+    #expect(towardsCoalition.salesTaxRate == 0.04)
+  }
+
+  @Test
+  func purchasesStayInTheirHubWhenTheOtherHubIsTheSamePlace() throws {
+    let shared = TradeReconciliationContext(
+      startDate: start,
+      hubLocations: [.main: jita, .home: home, .coalition: home],
+      fees: [:],
+      manufacturingTypeIDs: [],
+      transportBases: [:],
+      packagedVolumes: [:],
+      typeNames: [482: "Miner II"],
+      charactersWithOrders: [],
+      now: day(10)
+    )
+    let result = TradeWalletReconciler.reconcile(
+      entries: [],
+      transactions: [transaction(1, isBuy: true, quantity: 2, location: home, date: day(1))],
+      journal: [], orders: [], context: shared
+    )
+    let entry = try #require(result.changedEntries.first)
+    #expect(entry.sourceRole == .home)
+    #expect(entry.targetRole == .home)
+    #expect(entry.transportCostTotal == 0)
+    #expect(!entry.transportEstimated)
   }
 
   @Test
@@ -689,28 +727,31 @@ struct TradeWalletReconcilerTests {
       orders: orders, context: context
     )
     let imported = try #require(result.changedEntries.first { $0.walletLink?.transactionID == 1 })
-    let station = try #require(result.changedEntries.first { $0.walletLink?.transactionID == 5 })
+    let towardsCoalition = try #require(result.changedEntries.first { $0.walletLink?.transactionID == 5 })
     #expect(imported.soldQuantity == 10)
     #expect(imported.status == .sold)
-    #expect(station.soldQuantity == 2)
-    #expect(station.status == .bought)
+    // The Coalition sale goes to the Home purchase with target Coalition.
+    #expect(towardsCoalition.soldQuantity == 3)
+    #expect(towardsCoalition.status == .bought)
 
     let sale = try #require(imported.sales.first)
     #expect(sale.kind == .listedSellOrder)
     #expect(sale.kindSource == .detected)
     // 54 ISK tax for 12 units → 45 ISK for the 10 assigned units.
     #expect(sale.salesTaxPaid == 45)
-    #expect(station.sales.first?.salesTaxPaid == 9)
+    #expect(towardsCoalition.sales.first?.salesTaxPaid == nil)
     let profit = try #require(imported.realizedProfit)
     let revenue = 1_500.0 - 45 - 1_500 * 0.015
     let cost = 10 * (100 * 1.01 + 100_000)
     #expect(abs(profit - (revenue - cost)) < 1e-6)
 
-    // The Coalition sale finds no purchase for that hub; the unknown item's
-    // sale is not listed.
-    #expect(result.unassignedSales.map(\.link.transactionID) == [7])
-    #expect(result.unassignedSales.first?.hubRoles == [.coalition])
-    #expect(result.unassignedSales.first?.remainingQuantity == 3)
+    // Two units of the Home sale find no further purchase with target Home;
+    // the unknown item's sale is not listed.
+    #expect(result.unassignedSales.map(\.link.transactionID) == [6])
+    #expect(result.unassignedSales.first?.hubRoles == [.home])
+    #expect(result.unassignedSales.first?.remainingQuantity == 2)
+    // 54 ISK tax for 12 units → 9 ISK for the remaining 2.
+    #expect(result.unassignedSales.first?.salesTaxPaid == 54)
   }
 
   @Test
@@ -763,12 +804,16 @@ struct TradeWalletReconcilerTests {
       entries: [], transactions: transactions, journal: journal,
       orders: orders, context: context
     )
-    let station = try #require(first.changedEntries.first { $0.walletLink?.transactionID == 5 })
+    let towardsCoalition = try #require(first.changedEntries.first { $0.walletLink?.transactionID == 5 })
     let sale = try #require(first.unassignedSales.first)
-    let assigned = try #require(TradeWalletReconciler.assign(sale, to: station, now: day(11)))
+    let assigned = try #require(
+      TradeWalletReconciler.assign(sale, to: towardsCoalition, now: day(11))
+    )
     #expect(assigned.soldQuantity == 5)
     #expect(assigned.status == .sold)
     #expect(assigned.sales.last?.walletLink == sale.link)
+    // 54 ISK tax of the 12-unit sale → 9 ISK for the 2 assigned units.
+    #expect(assigned.sales.last?.salesTaxPaid == 9)
 
     let rerun = TradeWalletReconciler.reconcile(
       entries: first.changedEntries.map { $0.id == assigned.id ? assigned : $0 },

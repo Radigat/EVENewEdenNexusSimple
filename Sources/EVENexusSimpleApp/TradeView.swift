@@ -1,23 +1,23 @@
 import EVENexusCore
 import SwiftUI
 
-/// The five separately presented trade views (HANDEL_PLAN.md, P4).
+/// The separately presented trade routes (HANDEL_PLAN.md, P4 and the
+/// owner change of 22.10.2026: no station trading, Home ↔ Coalition added).
+/// Raw values are stored; an unknown stored value falls back to Main → Home.
 enum TradeModeOption: String, CaseIterable, Identifiable {
   case importHome
   case importCoalition
-  case stationMain
-  case stationHome
-  case stationCoalition
+  case homeToCoalition
+  case coalitionToHome
 
   var id: Self { self }
 
   var mode: TradeMode {
     switch self {
-    case .importHome: .importRoute(.home)
-    case .importCoalition: .importRoute(.coalition)
-    case .stationMain: .stationTrading(.main)
-    case .stationHome: .stationTrading(.home)
-    case .stationCoalition: .stationTrading(.coalition)
+    case .importHome: .mainToHome
+    case .importCoalition: .mainToCoalition
+    case .homeToCoalition: .homeToCoalition
+    case .coalitionToHome: .coalitionToHome
     }
   }
 
@@ -25,9 +25,8 @@ enum TradeModeOption: String, CaseIterable, Identifiable {
     switch self {
     case .importHome: "Main → Home"
     case .importCoalition: "Main → Coalition"
-    case .stationMain: "Station trading Main"
-    case .stationHome: "Station trading Home"
-    case .stationCoalition: "Station trading Coalition"
+    case .homeToCoalition: "Home → Coalition"
+    case .coalitionToHome: "Coalition → Home"
     }
   }
 }
@@ -79,6 +78,8 @@ enum TradeHubText {
       AppLocalization.text("Main Hub and Home Hub must be configured for an import route.")
     case "trade.coalition-hub-missing":
       AppLocalization.text("No Coalition Hub is configured.")
+    case "trade.route-hub-missing":
+      AppLocalization.text("Home Hub and Coalition Hub must both be configured for this route.")
     case "jump-freighter.isotope-price-unavailable":
       AppLocalization.text("A Main Hub isotope price is missing, so the Jump Freighter fuel cost is unavailable.")
     default:
@@ -145,8 +146,7 @@ struct TradeView: View {
     .task { await loadMarketGroups() }
     .task(id: selectedMarketGroupID) { await loadTiles() }
     .task(id: transportKey) {
-      guard case .importRoute(let target) = mode else { return }
-      await runtime.refreshTradeTransportBasis(for: target)
+      await runtime.refreshTradeTransportBasis(for: mode.route)
     }
     .task {
       if runtime.tradeLogbookState == .notLoaded {
@@ -293,10 +293,13 @@ struct TradeView: View {
         break
       }
     }
-    if case .importRoute = mode, runtime.tradeDataRole(for: mode.targetRole) == .main {
+    if let source = runtime.tradeDataRole(for: mode.sourceRole),
+      source == runtime.tradeDataRole(for: mode.targetRole)
+    {
       messages.append(
         AppLocalization.format(
-          "The %@ equals the Main Hub, so there is no import route.",
+          "The %@ and the %@ are the same place, so there is no trade route.",
+          TradeHubText.roleName(mode.sourceRole),
           TradeHubText.roleName(mode.targetRole)
         )
       )
@@ -357,8 +360,8 @@ struct TradeView: View {
 
   @ViewBuilder
   private var transportStatus: some View {
-    if case .importRoute(let target) = mode {
-      if let basis = runtime.tradeTransportBases[target] {
+    if mode.requiresTransport {
+      if let basis = runtime.tradeTransportBases[mode.route] {
         let unavailable = basis.legs.compactMap { leg -> String? in
           if case .unavailable(let code) = leg { return code }
           return nil
@@ -706,13 +709,7 @@ struct TradeView: View {
       runtime.tradeLogbookEntries,
       targetRole: mode.targetRole
     )
-    let transport: TradeTransportBasis =
-      switch mode {
-      case .importRoute(let importTarget):
-        runtime.tradeTransportBases[importTarget] ?? .none
-      case .stationTrading:
-        .none
-      }
+    let transport = runtime.tradeTransportBases[mode.route] ?? .none
     let inputs = tile.items.map { item in
       TradeItemInput(
         typeID: item.id,
@@ -956,11 +953,7 @@ struct TradeView: View {
     let plannedPrice =
       targetSide == .minSell
       ? row.targetPrice.flatMap(MarketPriceTick.nextBelow) : row.targetPrice
-    let transport: TradeTransportBasis =
-      switch mode {
-      case .importRoute(let target): runtime.tradeTransportBases[target] ?? .none
-      case .stationTrading: .none
-      }
+    let transport = runtime.tradeTransportBases[mode.route] ?? .none
     return TradeLogbookEditorRequest(
       entry: TradeLogbookEntry(
         typeID: row.typeID,

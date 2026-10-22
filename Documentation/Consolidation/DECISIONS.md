@@ -175,3 +175,16 @@ Schritt P1.
     abgeleitet aus „Direktverkauf ist selten“.
 - **Unverändert:** Bundle-ID, Datenpfade bestehender Dateien, SwiftData-Kette,
   Hub-Chancen-Rechnung und alle bestehenden Marktszenarien.
+
+## 22.10.2026 – Handel: Station Trading entfernt, Home ↔ Coalition ergänzt
+
+- **Anlass:** Eigentümerauftrag nach Abschluss des Handel-Plans
+  ([Abschnitt I](../HANDEL_PLAN.md)).
+- **Entfernt:** die Modi Station Trading Main, Home und Coalition.
+  Gespeicherte Auswahlwerte fallen auf Main → Home zurück.
+- **Neu:** die Routen Home → Coalition und Coalition → Home mit der
+  Home-↔-Coalition-Etappe, für Coalition → Home in umgekehrter Richtung.
+  Annahme: gleiche Jump-Freighter-Treibstoffkosten in beiden Richtungen.
+- **Geänderte Regel (Wallet-Abgleich):** Käufe im Home bzw. Coalition Hub
+  bekommen jetzt den jeweils anderen Hub als Ziel statt Station Trading im
+  Kauf-Hub. Bereits angelegte Logbuch-Einträge bleiben unverändert.

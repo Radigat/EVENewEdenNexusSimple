@@ -457,9 +457,11 @@ Coalition-Hub-Chancen. Er vergleicht Marktgruppen zwischen den Hubs nach dem
 Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
 [Handel-Plan, Abschnitt C](Documentation/HANDEL_PLAN.md).
 
-- **Modi:** Main → Home, Main → Coalition, Station Trading Main, Station
-  Trading Home und Station Trading Coalition. Die Modi sind getrennt, der
-  zuletzt gewählte wird gespeichert.
+- **Routen:** Main → Home, Main → Coalition, Home → Coalition und Coalition →
+  Home. Die Routen sind getrennt, die zuletzt gewählte wird gespeichert.
+  Station Trading innerhalb eines Hubs gibt es nicht (Eigentümerentscheid
+  22.10.2026). Sind Quell- und Ziel-Hub derselbe Ort, weist die Ansicht darauf
+  hin, dass es keine Handelsroute gibt.
 - **Marktgruppen:**
   - Der Nutzer wählt einen Knoten im SDE-Marktgruppenbaum, über die Wurzelliste,
     die Suche oder die Pfadleiste.
@@ -477,7 +479,7 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
   - Tabelle mit Name, Quellpreis, Zielpreis und Diff %.
   - Pfeile: ab einstellbaren 25 % ein Pfeil nach oben (gelb), ab 30 % ein
     Doppelpfeil (rot), bei negativer Differenz ein Pfeil nach unten (grün).
-  - **Details anzeigen** ergänzt die Spalten Einkauf, Transport (nur Import),
+  - **Details anzeigen** ergänzt die Spalten Einkauf, Transport,
     Netto-Verkauf, Gewinn, Marge, ROI, Ø Bedarf/Tag, Nachfrage heute und Tiefe
     (Stückzahl zum Zielpreis) und Offen (Logbuch). Die Detailtabelle scrollt
     innerhalb der Kachel horizontal.
@@ -509,6 +511,9 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
   - Main → Coalition besteht aus dieser Etappe plus Home → Coalition. Dafür
     nutzt die App den Jump Freighter, wenn er aktiviert ist (DOTLAN-Route,
     Ø Isotopenpreis im Main Hub), sonst den Profil-Kurier.
+  - Home → Coalition und Coalition → Home nutzen nur diese Etappe, für
+    Coalition → Home in umgekehrter Richtung. Die Treibstoffkosten je
+    Jump-Freighter-Flug gelten in beiden Richtungen als gleich.
   - Die Etappen werden mit ihren Sätzen angezeigt; fehlende Angaben verlinken
     die Logistikeinstellungen.
 - **Rechenregeln:**
@@ -598,12 +603,14 @@ SwiftData-Datenbank bleibt unberührt.
       Startdatum ist beim ersten Abgleich der Beginn des aktuellen UTC-Tags.
     - Gespeichert wird je Charakter und Transaktions-ID; ein erneuter Abgleich
       legt nichts doppelt an.
-    - Ziel-Hub: Main → Home, wenn der Home Hub ein eigener Ort ist, sonst der
-      Kauf-Hub (Station Trading).
+    - Ziel-Hub: Main → Home, Home → Coalition und Coalition → Home, jeweils
+      wenn der andere Hub ein eigener Ort ist; sonst bleibt der Kauf-Hub das
+      Ziel.
     - Käufe von Materialien aktiver Planner-Pläne erhalten „Fertigung,
       ignoriert“.
     - Der Transport wird für die Menge mit der aktuellen Transportbasis
-      geschätzt und als geschätzt markiert. Beim Station Trading ist er 0.
+      geschätzt und als geschätzt markiert. Bleibt das Ziel der Kauf-Hub, ist
+      er 0.
     - Kann der SDE-Katalog einen Gegenstand nicht benennen, wird der Kauf
       nicht übernommen und gezählt, statt einen Namen zu erfinden.
   - **Orderart:** Eine eigene Order wird erkannt, wenn ein Order desselben

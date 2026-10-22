@@ -10,7 +10,7 @@ public struct TradeReconciliationContext: Sendable {
   public let fees: [OpportunityHubRole: TradeHubFees]
   /// Materials of active Planner plans; their purchases are not trade.
   public let manufacturingTypeIDs: Set<Int64>
-  public let transportBases: [TradeImportTarget: TradeTransportBasis]
+  public let transportBases: [TradeRoute: TradeTransportBasis]
   public let packagedVolumes: [Int64: Double]
   public let typeNames: [Int64: String]
   /// Characters whose own open orders and order history were delivered.
@@ -23,7 +23,7 @@ public struct TradeReconciliationContext: Sendable {
     hubNames: [OpportunityHubRole: String] = [:],
     fees: [OpportunityHubRole: TradeHubFees],
     manufacturingTypeIDs: Set<Int64>,
-    transportBases: [TradeImportTarget: TradeTransportBasis],
+    transportBases: [TradeRoute: TradeTransportBasis],
     packagedVolumes: [Int64: Double],
     typeNames: [Int64: String],
     charactersWithOrders: Set<Int64>,
@@ -107,8 +107,9 @@ public struct TradeReconciliationResult: Equatable, Sendable {
 /// Pure wallet-to-logbook reconciliation (HANDEL_PLAN P7, U6–U8):
 /// - every purchase in a configured hub from the start date becomes one
 ///   entry, keyed by character and transaction so a rerun adds nothing;
-/// - target hub: Main → Home when the Home Hub is a separate place,
-///   otherwise the purchase hub;
+/// - target hub: Main → Home, Home → Coalition and Coalition → Home when the
+///   other hub is a separate place, otherwise the purchase hub (owner
+///   decision 22.10.2026, no station trading);
 /// - purchases of active-plan materials become "manufacturing, ignored";
 /// - transport is estimated for the quantity and marked as estimated;
 /// - sales are assigned first-in-first-out per item and target hub; the
@@ -140,9 +141,10 @@ public enum TradeWalletReconciler {
         isBuy: $0.isBuy
       )
     }
-    let homeIsSeparate =
-      context.hubLocations[.home] != nil
-      && context.hubLocations[.home] != context.hubLocations[.main]
+    func isSeparate(_ role: OpportunityHubRole, from other: OpportunityHubRole) -> Bool {
+      context.hubLocations[role] != nil
+        && context.hubLocations[role] != context.hubLocations[other]
+    }
     let sorted = transactions.sorted {
       if $0.date != $1.date { return $0.date < $1.date }
       if $0.characterID != $1.characterID { return $0.characterID < $1.characterID }
@@ -164,8 +166,13 @@ public enum TradeWalletReconciler {
         unresolved += 1
         continue
       }
-      let target: OpportunityHubRole =
-        source == .main ? (homeIsSeparate ? .home : .main) : source
+      let preferredTarget: OpportunityHubRole =
+        switch source {
+        case .main, .coalition: .home
+        case .home: .coalition
+        }
+      let target =
+        isSeparate(preferredTarget, from: source) ? preferredTarget : source
       let detection = ownOrder(transaction, ordersByKey, context)
       let buySide: TradeQuoteSide = detection.isOwnOrder ? .maxBuy : .minSell
       let brokerRate =
@@ -180,8 +187,9 @@ public enum TradeWalletReconciler {
         transport = 0
         estimated = false
       } else {
-        let importTarget: TradeImportTarget = target == .coalition ? .coalition : .home
-        transport = context.transportBases[importTarget].flatMap { basis in
+        transport = context.transportBases[
+          TradeRoute(source: source, target: target)
+        ].flatMap { basis in
           TradeCalculator.transportQuote(
             typeID: transaction.typeID,
             name: name,

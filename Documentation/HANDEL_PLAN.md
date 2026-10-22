@@ -1,4 +1,4 @@
-# Plan: Bereich „Handel“ (Hub-Preisvergleich, Station Trading, Logbuch mit Wallet-Abgleich)
+# Plan: Bereich „Handel“ (Hub-Preisvergleich, Handelsrouten, Logbuch mit Wallet-Abgleich)
 
 Stand: 22.10.2026 · Status: **implementiert, automatisch geprüft** (P0–P8).
 Live-Prüfung und Eigentümerabnahme sind offen, siehe Abschnitt H.
@@ -16,7 +16,8 @@ Ziel ist ein eigener Bereich **Handel**. Er soll beantworten, welche Items ich
 in Jita mitnehme und zu welchem Preis ich sie im Home- oder Coalition-Hub
 verkaufe. Dazu kommen:
 
-- Station Trading getrennt je Hub,
+- Station Trading getrennt je Hub (am 22.10.2026 ersetzt durch Home ↔ Coalition,
+  siehe Abschnitt I),
 - Steuern und Gebühren beim Ein- und Verkauf,
 - Logistik,
 - tägliche Bedarfe und Mengen,
@@ -27,7 +28,7 @@ verkaufe. Dazu kommen:
 
 | Thema | Entscheidung |
 |---|---|
-| Modi | Import Main→Home, Import Main→Coalition, Station Trading Main / Home / Coalition (alle getrennt) |
+| Modi | Ursprünglich Import Main→Home, Import Main→Coalition, Station Trading Main / Home / Coalition. Seit 22.10.2026: Main→Home, Main→Coalition, Home→Coalition, Coalition→Home (Abschnitt I) |
 | Kategorien | SDE-Marktgruppen werden importiert (Katalogadapter v5) |
 | Einkauf | umschaltbar: Min-Sell (Sofortkauf, keine Gebühr) oder Max-Buy (eigene Buy-Order mit Broker-Gebühr) |
 | Verkauf | Standard ist eine eingestellte Sell-Order (Steuer und Broker); Direktverkauf an eine Buy-Order ist eine Option (nur Steuer) |
@@ -92,7 +93,7 @@ Abkürzungen:
 | Transport T (Import) | `max(v × ISK/m³, C × collateralRate)` nach der bestehenden Kurier-Max-Regel; in der Kachel als Richtwert ohne Rundung. Mit Menge über `LogisticsCostCalculator.calculateLegs` bzw. `JumpFreighterLogisticsCalculator`. Fehlt ISK/m³, ist T `nil` |
 | Netto-Verkauf N | Sell-Order: `down(tS) × (1 − tax − brk)` · Direktverkauf: `tB × (1 − tax)` |
 | Gewinn / Marge / ROI | `P = N − C − T` / `P ÷ N` / `P ÷ (C + T)` |
-| Station Trading | `T = 0`, `P = down(S) × (1 − tax − brk) − up(B) × (1 + brk)`, Spread `(S − B) ÷ B` |
+| Station Trading (entfernt am 22.10.2026) | `T = 0`, `P = down(S) × (1 − tax − brk) − up(B) × (1 + brk)`, Spread `(S − B) ÷ B` |
 | Ist-Gewinn (Logbuch) | FIFO-Menge × (Ist-VK − belegte Steuer − berechneter Broker) − Ist-EK × (1 + brk) − Transportanteil |
 
 Zusätzliche Regeln (Entscheidung zu U1 und U2 vom 22.10.2026):
@@ -410,7 +411,8 @@ Befund zurückmelden.
 - [ ] **4-Stellen-Preisschritt:** Bei einer Order um 706.000 ISK rechnet die App
       eine eigene Sell-Order zu 705.900. Bitte ingame bestätigen, dass das der
       nächste zulässige Preis ist. Das ist eine Annahme ohne CCP-Beleg.
-- [ ] Station Trading Main, Home und Coalition liefern plausible Spreads.
+- [ ] Home → Coalition und Coalition → Home liefern plausible Werte; der
+      Transport nutzt die Home-↔-Coalition-Etappe in der jeweiligen Richtung.
 - [ ] Tagesbedarf und Tiefe erscheinen. Für neue Items braucht es dafür zwei
       Scans im Abstand von mindestens 30 Minuten.
 
@@ -445,3 +447,26 @@ Befund zurückmelden.
 **Rückmeldung**
 - [ ] Gefundene Abweichungen mit Item, Hub, erwartetem und angezeigtem Wert
       melden. Daraus werden gezielte Fehlerkorrekturen.
+
+## I. Nachtrag 22.10.2026: Routen statt Station Trading
+
+Eigentümerauftrag nach Abschluss von P8:
+- Station Trading Main, Home und Coalition wird entfernt (Rückfrage: alle drei).
+- Neu ist Handel zwischen Home und Coalition Hub in beide Richtungen.
+
+Entscheidungen:
+- **Routen:** Main → Home, Main → Coalition, Home → Coalition, Coalition → Home
+  (`TradeMode`, `TradeRoute`). Eine gespeicherte alte Auswahl fällt auf
+  Main → Home zurück.
+- **Transport:**
+  - Home ↔ Coalition nutzt die Home-→-Coalition-Etappe der Hub-Chancen (Jump
+    Freighter oder Profil-Kurier). Für Coalition → Home werden Start und Ziel
+    getauscht.
+  - Annahme: Die Treibstoffkosten je Jump-Freighter-Flug sind in beiden
+    Richtungen gleich. Die Sprungdistanz ist symmetrisch; abweichende
+    Routenprofile sind nicht berücksichtigt.
+- **Wallet-Abgleich (Rückfrage):** Käufe im Home Hub bekommen das Ziel
+  Coalition Hub, Käufe im Coalition Hub das Ziel Home Hub, jeweils mit
+  geschätztem Transport. Ist der andere Hub nicht eingerichtet oder derselbe
+  Ort, bleibt der Kauf-Hub das Ziel (Transport 0).
+- Die Station-Trading-Formel in Abschnitt C bleibt nur als Verlauf stehen.

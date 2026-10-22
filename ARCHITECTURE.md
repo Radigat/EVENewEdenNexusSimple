@@ -514,8 +514,9 @@ cover every listed item.
 
 `EVENexusCore/Trade` holds the pure trade valuation for the Trade
 area:
-- `TradeModels` defines the mode, quote sides, hub fees, transport legs and
-  `TradeRow`.
+- `TradeModels` defines the routes (`TradeMode`, `TradeRoute`: Main → Home,
+  Main → Coalition, Home ↔ Coalition; no station trading since 22.10.2026),
+  quote sides, hub fees, transport legs and `TradeRow`.
 - `TradeCalculator` turns `MarketOrderTypeSummary` pairs into rows.
 - `MarketPriceTick` holds the four-significant-digit order price step.
 

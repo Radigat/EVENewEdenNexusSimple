@@ -449,7 +449,7 @@ final class RuntimeState: ObservableObject {
   @Published private(set) var manufacturingOpportunityDemandError: String?
   /// Resolved transport legs of the Trade import routes (HANDEL_PLAN P4).
   @Published private(set) var tradeTransportBases:
-    [TradeImportTarget: TradeTransportBasis] = [:]
+    [TradeRoute: TradeTransportBasis] = [:]
   /// Purchase logbook of the Trade area (HANDEL_PLAN P5); opened on first use.
   @Published private(set) var tradeLogbookEntries: [TradeLogbookEntry] = []
   @Published private(set) var tradeLogbookState: TradeLogbookLoadState =
@@ -5966,42 +5966,86 @@ extension RuntimeState {
     return TradeHubFees(configuration.marketTaxes)
   }
 
-  func refreshTradeTransportBasis(for target: TradeImportTarget) async {
-    tradeTransportBases[target] = await tradeTransportBasis(for: target)
+  func refreshTradeTransportBasis(for route: TradeRoute) async {
+    tradeTransportBases[route] = await tradeTransportBasis(for: route)
   }
 
-  /// Main → Home is one courier leg. Main → Coalition adds the Home →
-  /// Coalition leg of the Hub opportunities: Jump Freighter when enabled,
-  /// otherwise the Profile courier (owner decision 22.10.2026).
+  /// Transport legs per route (owner decisions 22.10.2026):
+  /// - Main → Home: Profile courier;
+  /// - Main → Coalition: that courier plus the Home → Coalition leg;
+  /// - Home ↔ Coalition: the Home → Coalition leg of the Hub opportunities
+  ///   (Jump Freighter when enabled, otherwise the Profile courier), for
+  ///   Coalition → Home with origin and destination swapped. Jump fuel per
+  ///   flight is taken as equal in both directions.
   private func tradeTransportBasis(
-    for target: TradeImportTarget
+    for route: TradeRoute
   ) async -> TradeTransportBasis {
+    guard route.requiresTransport else { return .none }
     let logistics = productionBasis.logistics
-    guard let main = tradeLocation(for: .main),
-      let home = tradeLocation(for: .home)
-    else {
-      return TradeTransportBasis(
-        legs: [.unavailable(code: "trade.home-hub-missing")]
-      )
-    }
-    var legs: [TradeTransportLeg] = []
-    if !main.representsSameLocation(as: home) {
-      legs.append(tradeCourierLeg(from: main, to: home, logistics: logistics))
-    }
-    guard target == .coalition else { return TradeTransportBasis(legs: legs) }
-    guard let coalition = tradeLocation(for: .coalition) else {
-      return TradeTransportBasis(
-        legs: legs + [.unavailable(code: "trade.coalition-hub-missing")]
-      )
-    }
-    guard !coalition.representsSameLocation(as: home) else {
+    switch (route.source, route.target) {
+    case (.main, .home), (.main, .coalition):
+      guard let main = tradeLocation(for: .main),
+        let home = tradeLocation(for: .home)
+      else {
+        return TradeTransportBasis(
+          legs: [.unavailable(code: "trade.home-hub-missing")]
+        )
+      }
+      var legs: [TradeTransportLeg] = []
+      if !main.representsSameLocation(as: home) {
+        legs.append(tradeCourierLeg(from: main, to: home, logistics: logistics))
+      }
+      guard route.target == .coalition else {
+        return TradeTransportBasis(legs: legs)
+      }
+      guard let coalition = tradeLocation(for: .coalition) else {
+        return TradeTransportBasis(
+          legs: legs + [.unavailable(code: "trade.coalition-hub-missing")]
+        )
+      }
+      if let leg = await homeCoalitionLeg(
+        home: home,
+        coalition: coalition,
+        towardsCoalition: true,
+        logistics: logistics
+      ) {
+        legs.append(leg)
+      }
       return TradeTransportBasis(legs: legs)
+    case (.home, .coalition), (.coalition, .home):
+      guard let home = tradeLocation(for: .home),
+        let coalition = tradeLocation(for: .coalition)
+      else {
+        return TradeTransportBasis(
+          legs: [.unavailable(code: "trade.route-hub-missing")]
+        )
+      }
+      let leg = await homeCoalitionLeg(
+        home: home,
+        coalition: coalition,
+        towardsCoalition: route.target == .coalition,
+        logistics: logistics
+      )
+      return TradeTransportBasis(legs: leg.map { [$0] } ?? [])
+    default:
+      return TradeTransportBasis(
+        legs: [.unavailable(code: "trade.route-hub-missing")]
+      )
     }
+  }
+
+  /// The Home ↔ Coalition leg; `nil` when both hubs are the same place.
+  private func homeCoalitionLeg(
+    home: ProcurementLocation,
+    coalition: ProcurementLocation,
+    towardsCoalition: Bool,
+    logistics: LogisticsConfiguration
+  ) async -> TradeTransportLeg? {
+    guard !coalition.representsSameLocation(as: home) else { return nil }
+    let origin = towardsCoalition ? home : coalition
+    let destination = towardsCoalition ? coalition : home
     guard logistics.jumpFreighter.isEnabled else {
-      legs.append(
-        tradeCourierLeg(from: home, to: coalition, logistics: logistics)
-      )
-      return TradeTransportBasis(legs: legs)
+      return tradeCourierLeg(from: origin, to: destination, logistics: logistics)
     }
     let load = await plannerJumpFreighterRouteLoad(
       configuration: logistics.jumpFreighter,
@@ -6015,12 +6059,9 @@ extension RuntimeState {
       route.request.hull == logistics.jumpFreighter.hull,
       let capacity = logistics.jumpFreighter.effectiveUsableCargoCapacityM3
     else {
-      legs.append(
-        .unavailable(
-          code: load.warnings.first?.code ?? "jump-freighter.route-unavailable"
-        )
+      return .unavailable(
+        code: load.warnings.first?.code ?? "jump-freighter.route-unavailable"
       )
-      return TradeTransportBasis(legs: legs)
     }
     // Same fuel basis as the Hub opportunities: the average lowest Main-Hub
     // sell price of the four racial isotopes.
@@ -6033,21 +6074,17 @@ extension RuntimeState {
       return price
     }
     guard prices.count == JumpFuelIsotope.allCases.count else {
-      legs.append(.unavailable(code: "jump-freighter.isotope-price-unavailable"))
-      return TradeTransportBasis(legs: legs)
+      return .unavailable(code: "jump-freighter.isotope-price-unavailable")
     }
     let average = prices.reduce(0, +) / Double(prices.count)
-    legs.append(
-      .jumpFreighter(
-        TradeJumpFreighterLeg(
-          origin: home.name,
-          destination: coalition.name,
-          costPerFlight: Double(route.isotopeQuantityPerFlight) * average,
-          usableCargoCapacityM3: capacity
-        )
+    return .jumpFreighter(
+      TradeJumpFreighterLeg(
+        origin: origin.name,
+        destination: destination.name,
+        costPerFlight: Double(route.isotopeQuantityPerFlight) * average,
+        usableCargoCapacityM3: capacity
       )
     )
-    return TradeTransportBasis(legs: legs)
   }
 
   var tradeLogbookURL: URL {
@@ -6179,9 +6216,14 @@ extension RuntimeState {
         hubNames[role] = location.name
         fees[role] = tradeHubFees(for: role)
       }
-      for target in TradeImportTarget.allCases
-      where hubLocations[target.hubRole] != nil && tradeTransportBases[target] == nil {
-        await refreshTradeTransportBasis(for: target)
+      // Every route a purchase can take (Main → Home, Main → Coalition,
+      // Home ↔ Coalition) between configured hubs.
+      for mode in TradeMode.allCases
+      where hubLocations[mode.sourceRole] != nil
+        && hubLocations[mode.targetRole] != nil
+        && tradeTransportBases[mode.route] == nil
+      {
+        await refreshTradeTransportBasis(for: mode.route)
       }
       let purchaseTypes = Set(
         transactions.filter { $0.isBuy && $0.date >= start }.map(\.typeID)
