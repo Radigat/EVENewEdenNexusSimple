@@ -476,7 +476,10 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
   - Umschalter Min-Sell/Max-Buy für Quelle und Ziel. Quelle Min-Sell bedeutet
     Sofortkauf, Max-Buy eine eigene Buy-Order. Ziel Min-Sell bedeutet eine
     eigene Sell-Order, Max-Buy einen Direktverkauf.
-  - Tabelle mit Name, Quellpreis, Zielpreis und Diff %.
+  - Tabelle mit Name, Quellpreis, Zielpreis, Diff % und Gewinn/m³, auch ohne
+    Details. Gewinn/m³ setzt den Gewinn ins Verhältnis zum Packvolumen; die
+    Formel steht im [Handel-Plan, Abschnitt C](Documentation/HANDEL_PLAN.md).
+    Fehlen Gewinn oder Packvolumen, zeigt die Spalte „—“.
   - Pfeile: ab einstellbaren 25 % ein Pfeil nach oben (gelb), ab 30 % ein
     Doppelpfeil (rot), bei negativer Differenz ein Pfeil nach unten (grün).
   - **Details anzeigen** ergänzt die Spalten Einkauf, Transport,
@@ -492,10 +495,30 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     - geplantem VK einen Preisschritt unter dem besten Sell bzw. dem besten Buy
       bei Direktverkauf,
     - exaktem Transport für die eingegebene Menge.
-  - Alle Spalten sind sortierbar, die Sortierung gilt für alle Kacheln.
-    Unbekannte Werte stehen aufsteigend hinten und absteigend vorn.
+  - Alle Spalten sind sortierbar, die Sortierung gilt für alle Kacheln außer
+    der Top-20-Kachel. Unbekannte Werte stehen aufsteigend hinten und absteigend
+    vorn.
   - Item- und Ortsnamen sind per Klick kopierbar. Fehlende Werte zeigen „—“, ein
     Info-Symbol nennt den Grund.
+- **Top-20-Kachel** (Regeln im [Handel-Plan, Abschnitt J](Documentation/HANDEL_PLAN.md)):
+  - Sie steht als erste Kachel über den Untergruppen-Kacheln und umfasst alle
+    Items der gewählten Marktgruppe.
+  - Sie erscheint nur, wenn die Gruppe mehr als eine Kachel oder mehr als 20
+    Items hat.
+  - **Rangfolge nach** Diff % oder Gewinn/m³. Die Auswahl wird gespeichert.
+  - Eigene Umschalter Min-Sell/Max-Buy für Quelle und Ziel.
+  - Gerankt werden nur Items mit positivem Wert, höchstens 20. Gibt es weniger,
+    ist die Liste kürzer; der Chip nennt „Top N von M Items“.
+  - Eine Fußzeile nennt getrennt, wie viele Items ohne bekannten Wert und wie
+    viele mit Wert ≤ 0 nicht gerankt sind.
+  - Hat kein Item einen positiven Wert, sagt die Kachel das ausdrücklich. Bei
+    Gewinn/m³ nennt sie die nötigen Daten: Preise, Gebühren, Transport und
+    Packvolumen.
+  - Eigene Sortierung: Beim Öffnen und bei jedem Wechsel der Kennzahl steht sie
+    auf der Kennzahl absteigend. Klicks auf die Spaltenköpfe sortieren nur diese
+    Kachel.
+  - Spalten, Details, Kopier-Klick und **Ins Logbuch** wie in jeder Kachel; die
+    Vorbefüllung nutzt die Umschalter der Top-20-Kachel.
 - **Datenquellen:**
   - Preise und Tiefe: Main Hub aus dem Main-Hub-Scan, Home und Coalition aus
     der Marktübersicht der Hub-Chancen-Scans. Ein Hub, der einem anderen

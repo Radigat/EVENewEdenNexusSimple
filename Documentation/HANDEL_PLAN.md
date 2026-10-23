@@ -93,6 +93,7 @@ Abkürzungen:
 | Transport T (Import) | `max(v × ISK/m³, C × collateralRate)` nach der bestehenden Kurier-Max-Regel; in der Kachel als Richtwert ohne Rundung. Mit Menge über `LogisticsCostCalculator.calculateLegs` bzw. `JumpFreighterLogisticsCalculator`. Fehlt ISK/m³, ist T `nil` |
 | Netto-Verkauf N | Sell-Order: `down(tS) × (1 − tax − brk)` · Direktverkauf: `tB × (1 − tax)` |
 | Gewinn / Marge / ROI | `P = N − C − T` / `P ÷ N` / `P ÷ (C + T)` |
+| Gewinn/m³ | `P ÷ v`; `nil`, wenn P fehlt oder v fehlt bzw. ≤ 0 ist (Abschnitt J) |
 | Station Trading (entfernt am 22.10.2026) | `T = 0`, `P = down(S) × (1 − tax − brk) − up(B) × (1 + brk)`, Spread `(S − B) ÷ B` |
 | Ist-Gewinn (Logbuch) | FIFO-Menge × (Ist-VK − belegte Steuer − berechneter Broker) − Ist-EK × (1 + brk) − Transportanteil |
 
@@ -470,3 +471,37 @@ Entscheidungen:
   geschätztem Transport. Ist der andere Hub nicht eingerichtet oder derselbe
   Ort, bleibt der Kauf-Hub das Ziel (Transport 0).
 - Die Station-Trading-Formel in Abschnitt C bleibt nur als Verlauf stehen.
+
+## J. Nachtrag 23.10.2026: Top-20-Kachel
+
+Eigentümerauftrag: In einer gewählten Marktgruppe soll vor den
+Untergruppen-Kacheln (Battlecruisers usw.) ein erster Block mit den 20 Items
+stehen, die gemäß der Auswahl von Quelle und Ziel die höchste Differenz haben.
+Wahlweise soll die Rangfolge nach ISK pro m³ gelten, damit das Volumen
+einfließt. So muss man nicht erst alle Kacheln durchsehen.
+
+Eigentümerentscheidungen (Rückfragen vom 23.10.2026):
+1. Die Rangfolge ist umschaltbar zwischen Diff % und Gewinn/m³. Gewinn/m³ ist
+   der Gewinn nach Steuer, Broker und Transport ÷ Packvolumen (Abschnitt C),
+   nicht die Rohdifferenz.
+2. Die Top-20-Kachel gilt nur innerhalb der gewählten Marktgruppe. Auf der
+   Ebene „Alle Marktgruppen“ gibt es keine.
+3. Die Spalte Gewinn/m³ steht in allen Kacheln, immer sichtbar, direkt nach
+   Diff %.
+4. Gerankt werden nur Items mit positivem Wert. Gibt es weniger als 20, ist die
+   Liste kürzer. Unbekannte Werte und Werte ≤ 0 werden getrennt als Anzahl
+   ausgewiesen.
+5. Die Top-Kachel hat eine eigene Sortierung. Beim Start und bei jedem Wechsel
+   der Kennzahl gilt: Kennzahl absteigend. Klicks auf die Spaltenköpfe sortieren
+   nur sie; die übrigen Kacheln teilen ihre gemeinsame Sortierung.
+6. Die Kachel erscheint nur, wenn die gewählte Gruppe mehr als eine Kachel oder
+   mehr als 20 Items hat.
+
+Rechenkern: `TradeRow.profitPerCubicMeter`, `TradeSortColumn.profitPerCubicMeter`,
+`TradeTopRankingMetric` (gespeicherte Raw-Werte `difference`,
+`profitPerCubicMeter`) und `TradeTopRanking` (Grenze 20, Gleichstand nach
+Type-ID).
+
+Umsetzung in vier Teilen: (1) Rechenkern und Tests, (2) Spalte Gewinn/m³,
+(3) Top-20-Kachel, (4) Gesamtprüfung. Stand und Prüfnachweise je Teil stehen im
+[Entwicklungstagebuch](../dev-diary.md).

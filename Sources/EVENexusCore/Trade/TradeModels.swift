@@ -235,6 +235,17 @@ public struct TradeRow: Identifiable, Equatable, Sendable {
   }
 }
 
+extension TradeRow {
+  /// `profit ÷ packagedVolume` in ISK per m³ (HANDEL_PLAN.md, section J).
+  /// Unknown without a profit or a positive, finite packaged volume.
+  public var profitPerCubicMeter: Double? {
+    guard let profit, let volume = packagedVolume, volume.isFinite, volume > 0
+    else { return nil }
+    let value = profit / volume
+    return value.isFinite ? value : nil
+  }
+}
+
 /// Exact route cost for a concrete quantity.
 public struct TradeTransportQuote: Equatable, Sendable {
   public let total: Double?

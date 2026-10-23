@@ -582,4 +582,119 @@ struct TradeTileTests {
         == [4, 3, 2, 1]
     )
   }
+
+  private func rankingRow(
+    _ id: Int64,
+    difference: Double? = nil,
+    profit: Double? = nil,
+    volume: Double? = nil
+  ) -> TradeDisplayRow {
+    TradeDisplayRow(
+      row: TradeRow(
+        typeID: id,
+        name: "Item \(id)",
+        packagedVolume: volume,
+        sourcePrice: nil,
+        targetPrice: nil,
+        differenceFraction: difference,
+        purchaseCost: nil,
+        transportCost: nil,
+        netSale: nil,
+        profit: profit,
+        margin: nil,
+        returnOnInvestment: nil,
+        targetSpreadFraction: nil,
+        issues: []
+      ),
+      currentDailyDemand: nil,
+      averageDailyDemand: nil
+    )
+  }
+
+  @Test
+  func profitPerCubicMeterNeedsProfitAndAPositiveVolume() {
+    #expect(rankingRow(1, profit: 100, volume: 4).row.profitPerCubicMeter == 25)
+    #expect(rankingRow(1, profit: -100, volume: 4).row.profitPerCubicMeter == -25)
+    #expect(rankingRow(1, profit: 100, volume: nil).row.profitPerCubicMeter == nil)
+    #expect(rankingRow(1, profit: 100, volume: 0).row.profitPerCubicMeter == nil)
+    #expect(rankingRow(1, profit: 100, volume: -1).row.profitPerCubicMeter == nil)
+    #expect(rankingRow(1, profit: 100, volume: .infinity).row.profitPerCubicMeter == nil)
+    #expect(rankingRow(1, profit: nil, volume: 4).row.profitPerCubicMeter == nil)
+  }
+
+  @Test
+  func topRankingByDifferenceRanksOnlyKnownPositiveValues() {
+    let result = TradeTopRanking.ranked(
+      [
+        rankingRow(5, difference: 0.4),
+        rankingRow(3, difference: 0.2),
+        rankingRow(4, difference: 0.4),
+        rankingRow(1, difference: 0),
+        rankingRow(2, difference: -0.1),
+        rankingRow(6, difference: nil),
+        rankingRow(7, difference: 0.1),
+      ],
+      by: .difference
+    )
+
+    // Equal values keep the type ID order; fewer than 20 positive values
+    // give a shorter list instead of filling it with the rest.
+    #expect(result.rows.map(\.id) == [4, 5, 3, 7])
+    #expect(result.unknownCount == 1)
+    #expect(result.nonPositiveCount == 2)
+    #expect(result.candidateCount == 7)
+  }
+
+  @Test
+  func topRankingByProfitPerCubicMeterIgnoresTheDifference() {
+    let result = TradeTopRanking.ranked(
+      [
+        rankingRow(1, difference: 0.9, profit: 100, volume: 4),
+        rankingRow(2, difference: 0.1, profit: 100, volume: 1),
+        rankingRow(3, difference: 0.5, profit: 100, volume: nil),
+        rankingRow(4, difference: 0.5, profit: -10, volume: 1),
+        rankingRow(5, difference: 0.5, profit: nil, volume: 1),
+        rankingRow(6, difference: 0.5, profit: 50, volume: 2),
+      ],
+      by: .profitPerCubicMeter
+    )
+
+    #expect(result.rows.map(\.id) == [2, 1, 6])
+    #expect(result.unknownCount == 2)
+    #expect(result.nonPositiveCount == 1)
+    #expect(result.candidateCount == 6)
+    #expect(TradeTopRankingMetric.profitPerCubicMeter.sortColumn == .profitPerCubicMeter)
+    #expect(TradeTopRankingMetric.difference.sortColumn == .difference)
+  }
+
+  @Test
+  func topRankingStopsAtTheLimit() {
+    let rows = (1...25).map { rankingRow(Int64($0), difference: Double($0) / 100) }
+
+    let result = TradeTopRanking.ranked(rows, by: .difference)
+    #expect(TradeTopRanking.limit == 20)
+    #expect(result.rows.map(\.id) == Array((6...25).reversed()).map(Int64.init))
+    #expect(result.candidateCount == 25)
+    #expect(
+      TradeTopRanking.ranked(rows, by: .difference, limit: 3).rows.map(\.id)
+        == [25, 24, 23]
+    )
+  }
+
+  @Test
+  func sortingByProfitPerCubicMeterKeepsUnknownValuesApart() {
+    let rows = [
+      rankingRow(1, profit: 100, volume: 4),
+      rankingRow(2, profit: 100, volume: nil),
+      rankingRow(3, profit: 100, volume: 1),
+    ]
+    #expect(
+      TradeRowSorter.sorted(rows, by: .profitPerCubicMeter, ascending: true).map(\.id)
+        == [1, 3, 2]
+    )
+    #expect(
+      TradeRowSorter.sorted(rows, by: .profitPerCubicMeter, ascending: false).map(\.id)
+        == [2, 3, 1]
+    )
+  }
 }

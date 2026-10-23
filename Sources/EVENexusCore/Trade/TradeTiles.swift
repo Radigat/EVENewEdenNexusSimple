@@ -188,6 +188,7 @@ public enum TradeSortColumn: String, CaseIterable, Hashable, Sendable {
   case sourcePrice
   case targetPrice
   case difference
+  case profitPerCubicMeter
   case purchaseCost
   case transportCost
   case netSale
@@ -232,7 +233,7 @@ public enum TradeRowSorter {
     }
   }
 
-  private static func value(
+  static func value(
     _ display: TradeDisplayRow,
     _ column: TradeSortColumn
   ) -> Double? {
@@ -242,6 +243,7 @@ public enum TradeRowSorter {
     case .sourcePrice: row.sourcePrice
     case .targetPrice: row.targetPrice
     case .difference: row.differenceFraction
+    case .profitPerCubicMeter: row.profitPerCubicMeter
     case .purchaseCost: row.purchaseCost
     case .transportCost: row.transportCost
     case .netSale: row.netSale
@@ -253,5 +255,78 @@ public enum TradeRowSorter {
     case .targetDepth: row.targetVolumeAtPrice.map(Double.init)
     case .openLogbookQuantity: Double(display.openLogbookQuantity)
     }
+  }
+}
+
+/// Metric of the Top-20 tile. Raw values are stored.
+public enum TradeTopRankingMetric: String, CaseIterable, Sendable {
+  case difference
+  case profitPerCubicMeter
+
+  public var sortColumn: TradeSortColumn {
+    switch self {
+    case .difference: .difference
+    case .profitPerCubicMeter: .profitPerCubicMeter
+    }
+  }
+}
+
+public struct TradeTopRankingResult: Equatable, Sendable {
+  /// At most the ranking limit, highest value first.
+  public let rows: [TradeDisplayRow]
+  /// Candidates whose metric is unknown.
+  public let unknownCount: Int
+  /// Candidates whose metric is known but zero or negative.
+  public let nonPositiveCount: Int
+  /// Every candidate handed to the ranking.
+  public let candidateCount: Int
+
+  public init(
+    rows: [TradeDisplayRow],
+    unknownCount: Int,
+    nonPositiveCount: Int,
+    candidateCount: Int
+  ) {
+    self.rows = rows
+    self.unknownCount = unknownCount
+    self.nonPositiveCount = nonPositiveCount
+    self.candidateCount = candidateCount
+  }
+}
+
+/// Ranking of the Top-20 tile (owner decisions 23.10.2026, HANDEL_PLAN.md
+/// section J): only known positive values rank, highest first with the type
+/// ID as tie-breaker. Unknown and non-positive values are counted, never
+/// ranked and never treated as zero.
+public enum TradeTopRanking {
+  public static let limit = 20
+
+  public static func ranked(
+    _ rows: [TradeDisplayRow],
+    by metric: TradeTopRankingMetric,
+    limit: Int = TradeTopRanking.limit
+  ) -> TradeTopRankingResult {
+    var positive: [TradeDisplayRow] = []
+    var unknownCount = 0
+    var nonPositiveCount = 0
+    for row in rows {
+      guard let value = TradeRowSorter.value(row, metric.sortColumn), value.isFinite
+      else {
+        unknownCount += 1
+        continue
+      }
+      if value > 0 {
+        positive.append(row)
+      } else {
+        nonPositiveCount += 1
+      }
+    }
+    let ranked = TradeRowSorter.sorted(positive, by: metric.sortColumn, ascending: false)
+    return TradeTopRankingResult(
+      rows: Array(ranked.prefix(max(0, limit))),
+      unknownCount: unknownCount,
+      nonPositiveCount: nonPositiveCount,
+      candidateCount: rows.count
+    )
   }
 }

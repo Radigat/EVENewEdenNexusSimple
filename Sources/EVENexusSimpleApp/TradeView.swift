@@ -105,6 +105,9 @@ struct TradeView: View {
   private var strongIncreasePercent = 30
   @AppStorage("trade.shows-details", store: AppDefaults.store)
   private var showsDetails = false
+  /// Ranking metric of the Top-20 tile (HANDEL_PLAN.md, section J).
+  @AppStorage("trade.top-ranking", store: AppDefaults.store)
+  private var topRankingRawValue = TradeTopRankingMetric.difference.rawValue
 
   @State private var marketGroups: MarketGroupCatalogSnapshot?
   @State private var marketGroupsFailed = false
@@ -119,6 +122,11 @@ struct TradeView: View {
     direction: .ascending
   )
   @State private var logbookRequest: TradeLogbookEditorRequest?
+  @State private var topSourceSide = TradeQuoteSide.minSell
+  @State private var topTargetSide = TradeQuoteSide.minSell
+  /// The Top-20 tile's own sort; `nil` follows the metric, descending
+  /// (owner decision 5, HANDEL_PLAN.md section J).
+  @State private var topSort: AppTableSortDescriptor<TradeSortColumn>?
 
   private var option: TradeModeOption {
     TradeModeOption(rawValue: modeRawValue) ?? .importHome
@@ -129,6 +137,32 @@ struct TradeView: View {
   private var selectedNode: MarketGroupDefinition? {
     guard selectedMarketGroupID != 0 else { return nil }
     return marketGroups?.groups.first { $0.id == Int64(selectedMarketGroupID) }
+  }
+
+  private var topRanking: TradeTopRankingMetric {
+    TradeTopRankingMetric(rawValue: topRankingRawValue) ?? .difference
+  }
+
+  /// Switching the metric restarts the Top-20 sort at that metric,
+  /// descending; any other change keeps the chosen sort.
+  private var topRankingSelection: Binding<TradeTopRankingMetric> {
+    Binding(
+      get: { topRanking },
+      set: {
+        topRankingRawValue = $0.rawValue
+        topSort = nil
+      }
+    )
+  }
+
+  private var topSortSelection: Binding<AppTableSortDescriptor<TradeSortColumn>> {
+    Binding(
+      get: {
+        topSort
+          ?? AppTableSortDescriptor(column: topRanking.sortColumn, direction: .descending)
+      },
+      set: { topSort = $0 }
+    )
   }
 
   var body: some View {
@@ -574,26 +608,134 @@ struct TradeView: View {
         )
         .frame(maxWidth: .infinity, minHeight: 200)
       } else {
-        LazyVGrid(
-          columns: showsDetails
-            ? [GridItem(.flexible(), alignment: .top)]
-            : [GridItem(.adaptive(minimum: 560), alignment: .top)],
-          alignment: .leading,
-          spacing: DesignTokens.spacingMD
-        ) {
-          ForEach(tiles) { tile in
-            tileView(tile)
+        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          topTile
+          // Compact tiles need the name (200) plus four number columns
+          // (4 × 96 + spacing) and the tile padding, about 632 pt.
+          LazyVGrid(
+            columns: showsDetails
+              ? [GridItem(.flexible(), alignment: .top)]
+              : [GridItem(.adaptive(minimum: 660), alignment: .top)],
+            alignment: .leading,
+            spacing: DesignTokens.spacingMD
+          ) {
+            ForEach(tiles) { tile in
+              tileView(tile)
+            }
           }
         }
       }
     }
   }
 
+  /// First tile over every item of the selected node (owner decisions
+  /// 23.10.2026, HANDEL_PLAN.md section J). It is left out when it would only
+  /// repeat a single tile.
+  @ViewBuilder
+  private var topTile: some View {
+    let items = tiles.flatMap(\.items)
+    if tiles.count > 1 || items.count > TradeTopRanking.limit {
+      let result = TradeTopRanking.ranked(
+        calculatedRows(items: items, sourceSide: topSourceSide, targetSide: topTargetSide),
+        by: topRanking
+      )
+      let order = topSortSelection.wrappedValue
+      let rows = TradeRowSorter.sorted(
+        result.rows,
+        by: order.column,
+        ascending: order.direction == .ascending
+      )
+      tileFrame(identifier: "trade.top-tile") {
+        HStack(spacing: DesignTokens.spacingSM) {
+          Text(AppLocalization.format("Top %lld", Int64(TradeTopRanking.limit)))
+            .font(.title3.weight(.semibold))
+          Spacer()
+          Text("Ranked by").font(.caption.weight(.semibold))
+          Picker("Ranked by", selection: topRankingSelection) {
+            Text("Diff %").tag(TradeTopRankingMetric.difference)
+            Text("Profit/m³").tag(TradeTopRankingMetric.profitPerCubicMeter)
+          }
+          .pickerStyle(.segmented)
+          .labelsHidden()
+          .fixedSize()
+          .accessibilityIdentifier("trade.top-tile.ranking")
+        }
+        HStack(spacing: DesignTokens.spacingSM) {
+          hubChip(role: mode.sourceRole, prefix: "Source:", tint: DesignTokens.highlight)
+          hubChip(role: mode.targetRole, prefix: "Target:", tint: DesignTokens.accent)
+          countChip(
+            AppLocalization.format(
+              "Top %lld of %lld items",
+              Int64(result.rows.count),
+              Int64(result.candidateCount)
+            )
+          )
+        }
+        sidePickers(
+          source: $topSourceSide,
+          target: $topTargetSide,
+          identifierPrefix: "trade.top-tile"
+        )
+        Text("Only items with a positive value are ranked.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        if rows.isEmpty {
+          VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+            Label("No item has a positive value for this ranking.", systemImage: "tray")
+            if topRanking == .profitPerCubicMeter {
+              Text("Profit/m³ needs prices, fees, transport and the packaged volume.")
+                .font(.caption)
+            }
+          }
+          .foregroundStyle(DesignTokens.textSecondary)
+          .padding(.vertical, DesignTokens.spacingSM)
+        } else {
+          tileTable(
+            rows: rows,
+            sourceSide: topSourceSide,
+            targetSide: topTargetSide,
+            sort: topSortSelection,
+            rowIdentifierPrefix: "trade.top-tile.row"
+          )
+        }
+        let unranked = unrankedTexts(result)
+        if !unranked.isEmpty {
+          Text(
+            AppLocalization.format("Not ranked: %@", unranked.joined(separator: " · "))
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
+      }
+    }
+  }
+
+  private func unrankedTexts(_ result: TradeTopRankingResult) -> [String] {
+    var texts: [String] = []
+    if result.unknownCount > 0 {
+      texts.append(
+        AppLocalization.format(
+          "%lld items without a known value",
+          Int64(result.unknownCount)
+        )
+      )
+    }
+    if result.nonPositiveCount > 0 {
+      texts.append(
+        AppLocalization.format(
+          "%lld items with a value ≤ 0",
+          Int64(result.nonPositiveCount)
+        )
+      )
+    }
+    return texts
+  }
+
   private func tileView(_ tile: TradeTile) -> some View {
     let sourceSide = sourceSides[tile.id] ?? .minSell
     let targetSide = targetSides[tile.id] ?? .minSell
     let rows = displayRows(for: tile, sourceSide: sourceSide, targetSide: targetSide)
-    return VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+    return tileFrame(identifier: "trade.tile.\(tile.id)") {
       HStack(spacing: DesignTokens.spacingSM) {
         EVEEntityText(value: tile.name, font: .title3.weight(.semibold), lineLimit: 1)
         if tile.hasSubgroups {
@@ -612,40 +754,37 @@ struct TradeView: View {
       HStack(spacing: DesignTokens.spacingSM) {
         hubChip(role: mode.sourceRole, prefix: "Source:", tint: DesignTokens.highlight)
         hubChip(role: mode.targetRole, prefix: "Target:", tint: DesignTokens.accent)
-        Text(AppLocalization.format("Items: %lld", Int64(tile.items.count)))
-          .font(.caption)
-          .padding(.horizontal, DesignTokens.spacingSM)
-          .padding(.vertical, DesignTokens.spacingXS)
-          .overlay(Capsule().stroke(DesignTokens.border))
+        countChip(AppLocalization.format("Items: %lld", Int64(tile.items.count)))
       }
-      HStack(spacing: DesignTokens.spacingMD) {
-        sidePicker(
-          title: "Source side",
-          selection: Binding(
-            get: { sourceSides[tile.id] ?? .minSell },
-            set: { sourceSides[tile.id] = $0 }
-          ),
-          identifier: "trade.tile.\(tile.id).source-side"
-        )
-        sidePicker(
-          title: "Target side",
-          selection: Binding(
-            get: { targetSides[tile.id] ?? .minSell },
-            set: { targetSides[tile.id] = $0 }
-          ),
-          identifier: "trade.tile.\(tile.id).target-side"
-        )
-      }
-      if showsDetails {
-        // The detail columns are wider than the window; they scroll inside
-        // the tile instead of pushing the layout under the sidebar.
-        ScrollView(.horizontal) {
-          table(rows: rows, sourceSide: sourceSide, targetSide: targetSide)
-        }
-      } else {
-        table(rows: rows, sourceSide: sourceSide, targetSide: targetSide)
-      }
+      sidePickers(
+        source: Binding(
+          get: { sourceSides[tile.id] ?? .minSell },
+          set: { sourceSides[tile.id] = $0 }
+        ),
+        target: Binding(
+          get: { targetSides[tile.id] ?? .minSell },
+          set: { targetSides[tile.id] = $0 }
+        ),
+        identifierPrefix: "trade.tile.\(tile.id)"
+      )
+      tileTable(
+        rows: rows,
+        sourceSide: sourceSide,
+        targetSide: targetSide,
+        sort: $sort
+      )
     }
+  }
+
+  /// Panel, padding and the source-to-target gradient of every tile.
+  private func tileFrame<Content: View>(
+    identifier: String,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      content()
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(DesignTokens.spacingMD)
     .background(DesignTokens.panel, in: RoundedRectangle(cornerRadius: 10))
     .overlay(alignment: .top) {
@@ -658,20 +797,85 @@ struct TradeView: View {
       .clipShape(RoundedRectangle(cornerRadius: 2))
     }
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("trade.tile.\(tile.id)")
+    .accessibilityIdentifier(identifier)
+  }
+
+  private func countChip(_ text: String) -> some View {
+    Text(verbatim: text)
+      .font(.caption)
+      .padding(.horizontal, DesignTokens.spacingSM)
+      .padding(.vertical, DesignTokens.spacingXS)
+      .overlay(Capsule().stroke(DesignTokens.border))
+  }
+
+  private func sidePickers(
+    source: Binding<TradeQuoteSide>,
+    target: Binding<TradeQuoteSide>,
+    identifierPrefix: String
+  ) -> some View {
+    HStack(spacing: DesignTokens.spacingMD) {
+      sidePicker(
+        title: "Source side",
+        selection: source,
+        identifier: "\(identifierPrefix).source-side"
+      )
+      sidePicker(
+        title: "Target side",
+        selection: target,
+        identifier: "\(identifierPrefix).target-side"
+      )
+    }
+  }
+
+  @ViewBuilder
+  private func tileTable(
+    rows: [TradeDisplayRow],
+    sourceSide: TradeQuoteSide,
+    targetSide: TradeQuoteSide,
+    sort: Binding<AppTableSortDescriptor<TradeSortColumn>>,
+    rowIdentifierPrefix: String = "trade.row"
+  ) -> some View {
+    if showsDetails {
+      // The detail columns are wider than the window; they scroll inside
+      // the tile instead of pushing the layout under the sidebar.
+      ScrollView(.horizontal) {
+        table(
+          rows: rows,
+          sourceSide: sourceSide,
+          targetSide: targetSide,
+          sort: sort,
+          rowIdentifierPrefix: rowIdentifierPrefix
+        )
+      }
+    } else {
+      table(
+        rows: rows,
+        sourceSide: sourceSide,
+        targetSide: targetSide,
+        sort: sort,
+        rowIdentifierPrefix: rowIdentifierPrefix
+      )
+    }
   }
 
   private func table(
     rows: [TradeDisplayRow],
     sourceSide: TradeQuoteSide,
-    targetSide: TradeQuoteSide
+    targetSide: TradeQuoteSide,
+    sort: Binding<AppTableSortDescriptor<TradeSortColumn>>,
+    rowIdentifierPrefix: String
   ) -> some View {
     VStack(alignment: .leading, spacing: 0) {
-      tableHeader(sourceSide: sourceSide, targetSide: targetSide)
+      tableHeader(sourceSide: sourceSide, targetSide: targetSide, sort: sort)
       Divider()
       LazyVStack(alignment: .leading, spacing: 0) {
         ForEach(rows) { row in
-          tableRow(row, sourceSide: sourceSide, targetSide: targetSide)
+          tableRow(
+            row,
+            sourceSide: sourceSide,
+            targetSide: targetSide,
+            identifierPrefix: rowIdentifierPrefix
+          )
           Divider().opacity(0.4)
         }
       }
@@ -702,6 +906,19 @@ struct TradeView: View {
     sourceSide: TradeQuoteSide,
     targetSide: TradeQuoteSide
   ) -> [TradeDisplayRow] {
+    TradeRowSorter.sorted(
+      calculatedRows(items: tile.items, sourceSide: sourceSide, targetSide: targetSide),
+      by: sort.column,
+      ascending: sort.direction == .ascending
+    )
+  }
+
+  /// Rows of `items` for the current route, unsorted.
+  private func calculatedRows(
+    items: [TradeCatalogItem],
+    sourceSide: TradeQuoteSide,
+    targetSide: TradeQuoteSide
+  ) -> [TradeDisplayRow] {
     let source = runtime.tradeMarketState(for: mode.sourceRole)?.value
     let target = runtime.tradeMarketState(for: mode.targetRole)?.value
     let demand = runtime.tradeDemand(for: mode.targetRole)
@@ -710,7 +927,7 @@ struct TradeView: View {
       targetRole: mode.targetRole
     )
     let transport = runtime.tradeTransportBases[mode.route] ?? .none
-    let inputs = tile.items.map { item in
+    let inputs = items.map { item in
       TradeItemInput(
         typeID: item.id,
         name: item.name,
@@ -719,7 +936,7 @@ struct TradeView: View {
         target: target?.pricesByType[item.id]
       )
     }
-    let rows = TradeCalculator.rows(
+    return TradeCalculator.rows(
       items: inputs,
       mode: mode,
       sourceSide: sourceSide,
@@ -736,11 +953,6 @@ struct TradeView: View {
         openLogbookQuantity: openQuantities[row.typeID] ?? 0
       )
     }
-    return TradeRowSorter.sorted(
-      rows,
-      by: sort.column,
-      ascending: sort.direction == .ascending
-    )
   }
 
   // MARK: Table
@@ -770,29 +982,38 @@ struct TradeView: View {
 
   private func tableHeader(
     sourceSide: TradeQuoteSide,
-    targetSide: TradeQuoteSide
+    targetSide: TradeQuoteSide,
+    sort: Binding<AppTableSortDescriptor<TradeSortColumn>>
   ) -> some View {
     HStack(spacing: DesignTokens.spacingXS) {
-      SortableTableHeader(title: "Name", column: TradeSortColumn.name, sort: $sort)
+      SortableTableHeader(title: "Name", column: TradeSortColumn.name, sort: sort)
         .frame(minWidth: nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
       numberHeader(
         LocalizedStringKey(
           "\(TradeHubText.roleName(mode.sourceRole)) \(TradeHubText.sideName(sourceSide))"
         ),
         column: .sourcePrice,
-        tint: DesignTokens.highlight
+        tint: DesignTokens.highlight,
+        sort: sort
       )
       numberHeader(
         LocalizedStringKey(
           "\(TradeHubText.roleName(mode.targetRole)) \(TradeHubText.sideName(targetSide))"
         ),
         column: .targetPrice,
-        tint: DesignTokens.accent
+        tint: DesignTokens.accent,
+        sort: sort
       )
-      numberHeader("Diff %", column: .difference, tint: DesignTokens.accent)
+      numberHeader("Diff %", column: .difference, tint: DesignTokens.accent, sort: sort)
+      numberHeader(
+        "Profit/m³",
+        column: .profitPerCubicMeter,
+        tint: DesignTokens.accent,
+        sort: sort
+      )
       if showsDetails {
         ForEach(detailColumns, id: \.0) { column, title in
-          numberHeader(title, column: column, tint: DesignTokens.textSecondary)
+          numberHeader(title, column: column, tint: DesignTokens.textSecondary, sort: sort)
         }
       }
     }
@@ -802,12 +1023,13 @@ struct TradeView: View {
   private func numberHeader(
     _ title: LocalizedStringKey,
     column: TradeSortColumn,
-    tint: Color
+    tint: Color,
+    sort: Binding<AppTableSortDescriptor<TradeSortColumn>>
   ) -> some View {
     SortableTableHeader(
       title: title,
       column: column,
-      sort: $sort,
+      sort: sort,
       defaultDirection: .descending,
       alignment: .trailing
     )
@@ -818,7 +1040,8 @@ struct TradeView: View {
   private func tableRow(
     _ display: TradeDisplayRow,
     sourceSide: TradeQuoteSide,
-    targetSide: TradeQuoteSide
+    targetSide: TradeQuoteSide,
+    identifierPrefix: String
   ) -> some View {
     let row = display.row
     return HStack(spacing: DesignTokens.spacingXS) {
@@ -849,7 +1072,7 @@ struct TradeView: View {
         .buttonStyle(.borderless)
         .help(AppLocalization.text("Add to logbook"))
         .accessibilityLabel("Add to logbook")
-        .accessibilityIdentifier("trade.row.\(row.typeID).add-to-logbook")
+        .accessibilityIdentifier("\(identifierPrefix).\(row.typeID).add-to-logbook")
         if !row.issues.isEmpty {
           Image(systemName: "info.circle")
             .foregroundStyle(DesignTokens.caution)
@@ -863,6 +1086,10 @@ struct TradeView: View {
       numberCell(formatNumber(row.sourcePrice), tint: DesignTokens.highlight)
       numberCell(formatNumber(row.targetPrice), tint: DesignTokens.accent)
       differenceCell(row.differenceFraction)
+      numberCell(
+        formatNumber(row.profitPerCubicMeter),
+        tint: signTint(row.profitPerCubicMeter)
+      )
       if showsDetails {
         ForEach(detailColumns, id: \.0) { column, _ in
           detailCell(display, column: column)

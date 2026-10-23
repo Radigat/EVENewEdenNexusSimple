@@ -1,5 +1,228 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 23. Oktober 2026 – Handel: Top-20-Kachel, Teil 4 (Gesamtprüfung)
+
+Ziel: Gesamtprüfung der Teile 1–3 gegen die sechs Eigentümerentscheidungen in
+[Handel-Plan, Abschnitt J](Documentation/HANDEL_PLAN.md) und gegen AGENTS.md.
+Keine neuen Funktionen.
+
+Durchsicht des Diffs (Core, Tests, `TradeView`, Lokalisierung, Dokumente):
+- Gewinn/m³ = `P ÷ v`. Ohne Gewinn oder ohne positives, endliches Volumen ist
+  der Wert `nil`, nie 0 oder unendlich.
+- Gerankt werden nur positive Werte. Unbekannte Werte und Werte ≤ 0 werden
+  getrennt gezählt und ausgewiesen.
+- Die Top-Kachel hat eine eigene Sortierung:
+  - Beim Start und beim Wechsel der Kennzahl gilt Kennzahl absteigend.
+  - Sonst bleibt die gewählte Sortierung erhalten.
+  - Die übrigen Kacheln teilen weiter `sort`.
+- Die Spalte Gewinn/m³ ist in allen Kacheln immer sichtbar.
+- Die Kachel erscheint nur bei mehr als einer Kachel oder mehr als 20 Items.
+- Alle Spalten sind sortierbar. Unbekannte Werte stehen deterministisch, der
+  Tie-Breaker ist die Type-ID.
+- Item-Namen werden über `EVEItemText` kopiert, Hub-Namen über
+  `EVEEntityText`. „Ins Logbuch“ bleibt ein getrenntes Bedienelement.
+- Befund: keine Abweichung, keine Korrektur nötig.
+
+Prüfung (automatisch, isoliert unter `/private/tmp/claude-501/…/scratchpad/full-check`):
+- `swift test --disable-sandbox --scratch-path …/build` mit
+  `EVE_NEXUS_APPLICATION_SUPPORT_ROOT`, eigener Preferences-Suite und
+  `EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1`:
+  - Ergebnis: 548 Tests in 35 Suites plus 70 Tests in 3 Suites bestanden.
+  - Der erste Lauf meldete 4 Fehler in „Build-specific SQLite SDE catalog“.
+    Ursache: Eine parallele Sitzung änderte während des Laufs
+    `SQLiteStaticCatalogTests.swift` (08:41:52, Laufbeginn 08:40:48).
+  - Die Wiederholung auf dem aktuellen Stand war grün.
+  - Die Handel-Dateien sind davon nicht betroffen.
+- `swift test --package-path Packages/EVEStaticDataKit`: 11 Tests bestanden.
+- `xcodebuild … -configuration Debug -destination 'platform=macOS,arch=arm64'
+  CODE_SIGNING_ALLOWED=NO test`:
+  - mit isolierten Daten, DerivedData und Modulcaches;
+  - Ergebnis `** TEST SUCCEEDED **`, 548 Tests.
+- `git diff --check` fehlerfrei. Die lokalen Dokumentlinks in PRODUCT.md,
+  dev-diary.md und HANDEL_PLAN.md sind vorhanden.
+
+Prüfung (visuell, isoliert):
+- Aufbau: Debug-App aus dem Xcode-Testlauf mit eigenem Datenordner und eigener
+  Preferences-Suite, ohne Hintergrunddienste.
+- Datenbasis: nur der aktive SDE-Katalog (statische CCP-Daten) als Kopie, keine
+  Nutzerdaten und keine Marktpreise.
+- Bedienung ausschließlich über die PID der Debug-App:
+  - Fenster über `CGWindowListCopyWindowInfo`, Aufnahme mit
+    `screencapture -l`;
+  - Bedienung über `AXUIElementCreateApplication(pid)`.
+  - Eine parallel laufende andere Instanz blieb unberührt.
+- Handel → Ships:
+  - Die Kachel „Top 20“ steht vor Battlecruisers.
+  - „Rangfolge nach“ schaltet zwischen Diff % und Gewinn/m³; gespeichert wird
+    `profitPerCubicMeter`.
+  - Leerzustand mit Hinweis und, bei Gewinn/m³, den nötigen Daten.
+  - Fußzeile „Nicht gerankt: 421 Items ohne bekannten Wert“.
+  - Die Spalte Gewinn/m³ steht in allen Kacheln.
+  - Ein Klick auf „Gewinn/m³“ sortiert die Untergruppen-Kacheln gemeinsam
+    absteigend; unbekannte Werte stehen nach Type-ID.
+- Nicht prüfbar ohne Live-Marktdaten:
+  - gerankte Zeilen, Werte und Farben;
+  - die Spaltensortierung innerhalb der Top-Kachel.
+
+Hinweis zur Darstellung: Ohne positive Werte zeigt der Chip „Top 0 von 421
+Items“.
+
+Offen:
+- Prüfung mit echten Hub-Marktdaten.
+- Eigentümerabnahme. Nicht committet.
+
+## 23. Oktober 2026 – Handel: Top-20-Kachel, Teil 3 (Kachel)
+
+Ziel (Eigentümerentscheide 1, 2 und 4–6, [Handel-Plan, Abschnitt J](Documentation/HANDEL_PLAN.md)):
+In einer gewählten Marktgruppe steht vor den Untergruppen-Kacheln die Kachel
+„Top 20“ über alle Items des Teilbaums.
+
+Änderung (`TradeView`):
+- Zustand:
+  - `trade.top-ranking` (AppStorage) speichert die Kennzahl; ein unbekannter
+    Wert fällt auf Diff % zurück.
+  - Eigene Umschalter für Quelle und Ziel (Standard Min-Sell).
+  - Eigene Sortierung `topSort`. `nil` bedeutet: Kennzahl absteigend.
+    - Der Wechsel der Kennzahl im Picker setzt sie zurück.
+    - Andere Änderungen, etwa an den Seiten oder an den Marktdaten, erhalten
+      sie.
+- `displayRows` ist geteilt in `calculatedRows` (unsortiert) und die
+  Sortierung. Die Untergruppen-Kacheln verhalten sich unverändert und teilen
+  weiter `sort`.
+- Gemeinsame Bausteine `tileFrame`, `countChip`, `sidePickers` und `tileTable`.
+  Tabellenkopf und Zahlenköpfe bekommen die Sortierung als Binding.
+- Die Zeilenkennung für „Ins Logbuch“ hat ein Präfix, damit Items in der
+  Top-Kachel und in ihrer Untergruppe eindeutige Kennungen haben:
+  `trade.row.<id>.add-to-logbook` bzw. `trade.top-tile.row.<id>.add-to-logbook`.
+- Top-Kachel in voller Breite vor dem Kachelraster:
+  - Bedingung: mehr als eine Kachel oder mehr als 20 Items;
+  - Picker „Rangfolge nach“ (Diff % | Gewinn/m³);
+  - Chips für Quelle und Ziel, Chip „Top N von M Items“;
+  - Hinweis „Nur Items mit positivem Wert werden gerankt.“;
+  - Leerzustand, bei Gewinn/m³ mit den nötigen Daten;
+  - Fußzeile „Nicht gerankt: …“ mit getrennten Anzahlen;
+  - Accessibility-IDs `trade.top-tile`, `.ranking`, `.source-side`,
+    `.target-side`.
+- Lokalisierung en/de für die neun neuen Texte.
+- PRODUCT.md, Abschnitt Handel: Top-20-Kachel beschrieben.
+
+Auslegung im Rahmen des Prompts:
+- Der Chip nennt die tatsächlich gerankte Anzahl, also „Top 7 von 412 Items“,
+  wenn nur 7 Items positiv sind. Im Normalfall lautet er „Top 20 von N Items“.
+- Der Titel bleibt „Top 20“.
+
+Rechenregeln unverändert.
+
+Prüfung (automatisch):
+- `swift build`: erfolgreich, keine Warnungen oder Fehler in `TradeView.swift`.
+- `swift test --filter TradeTileTests`: 9 Tests in 1 Suite bestanden.
+- Nativer Debug-Build (`xcodebuild … -configuration Debug -destination
+  'platform=macOS,arch=arm64' build`) mit isoliertem DerivedData und
+  Modulcaches unter `/private/tmp`: `** BUILD SUCCEEDED **`.
+- `plutil -lint` für beide `Localizable.strings` in Ordnung.
+- `git diff --check` fehlerfrei.
+- Für die Ansicht gibt es keine eigenen Tests. Die Rangfolge selbst ist durch
+  die Core-Tests aus Teil 1 abgedeckt.
+- Nicht geprüft:
+  - Sichtkontrolle in der laufenden App (Teil 4);
+  - volles `swift test` und `xcodebuild … test`.
+
+Offen:
+- Teil 4: Gesamtprüfung mit Sichtprüfung.
+- Eigentümerabnahme offen. Nicht committet.
+
+## 23. Oktober 2026 – Handel: Top-20-Kachel, Teil 2 (Spalte Gewinn/m³)
+
+Ziel (Eigentümerentscheid 3, [Handel-Plan, Abschnitt J](Documentation/HANDEL_PLAN.md)):
+Die Spalte Gewinn/m³ steht in allen Kacheln, immer sichtbar, direkt nach
+Diff %.
+
+Änderung:
+- `TradeView`:
+  - Neue sortierbare Spalte „Gewinn/m³“ nach Diff %, in der kompakten Ansicht
+    und mit Details.
+  - Sie sortiert über die gemeinsame Sortierung aller Kacheln
+    (`.profitPerCubicMeter`).
+  - Die Zelle ist bei Gewinn grün, bei Verlust rot und zeigt „—“, wenn der Wert
+    unbekannt ist.
+- Kompakte Kachel-Mindestbreite von 560 auf 660 pt:
+  - Name (200) + vier Zahlenspalten (4 × 96 + Abstände) + Innenabstand ergeben
+    etwa 632 pt.
+  - Damit bleibt die bisherige Reserve von rund 28 pt erhalten.
+- Lokalisierung: „Profit/m³“ / „Gewinn/m³“.
+- PRODUCT.md, Abschnitt Handel → Kachel: Spalte beschrieben, Formel per Link
+  auf Abschnitt C.
+
+Bestehende Rechenregeln und die übrigen Spalten sind unverändert.
+
+Prüfung (automatisch):
+- `swift build` erfolgreich, keine Warnungen oder Fehler in `TradeView.swift`.
+- `swift test --filter TradeTileTests`: 9 Tests in 1 Suite bestanden.
+- Nativer Debug-Build: `xcodebuild -project EVENexusSimple.xcodeproj -scheme
+  EVENexusSimple -configuration Debug -destination 'platform=macOS,arch=arm64'
+  build`. DerivedData und Modulcaches lagen isoliert unter `/private/tmp`;
+  Ergebnis `** BUILD SUCCEEDED **`.
+- `plutil -lint` für beide `Localizable.strings` in Ordnung.
+- `git diff --check` fehlerfrei.
+- Nicht geprüft:
+  - Sichtkontrolle in der laufenden App, vorgesehen für Teil 4;
+  - volles `swift test` und `xcodebuild … test`.
+
+Offen:
+- Teil 3: Top-20-Kachel.
+- Teil 4: Gesamtprüfung mit Sichtprüfung.
+- Eigentümerabnahme offen. Nicht committet.
+
+## 23. Oktober 2026 – Handel: Top-20-Kachel, Teil 1 (Rechenkern)
+
+Ziel (Eigentümerauftrag, [Handel-Plan, Abschnitt J](Documentation/HANDEL_PLAN.md)):
+- In einer gewählten Marktgruppe steht vor den Untergruppen-Kacheln eine
+  Kachel „Top 20“.
+- Die Rangfolge ist umschaltbar zwischen Diff % und Gewinn/m³.
+- Die Umsetzung ist in vier Teile geteilt. Teil 1 umfasst nur Rechenkern und
+  Tests, ohne Änderung an der Oberfläche.
+
+Entscheidungen auf Rückfrage: Abschnitt J, Punkte 1–6. Dazu gehören
+Gewinn/m³ statt Rohdifferenz und das Ranken nur positiver Werte.
+
+Änderung:
+- `TradeModels`: berechnete Eigenschaft `TradeRow.profitPerCubicMeter`
+  (`P ÷ v`). Ohne Gewinn oder ohne positives, endliches Packvolumen ist sie
+  `nil`; ein nicht endliches Ergebnis ist ebenfalls `nil`.
+- `TradeTiles`:
+  - `TradeSortColumn.profitPerCubicMeter` mit Zuordnung im Sortierer.
+  - `TradeTopRankingMetric` mit `difference` und `profitPerCubicMeter`; die
+    Raw-Werte sind zum Speichern bestimmt.
+  - `TradeTopRanking.ranked(_:by:limit:)` mit der Grenze 20. Gerankt werden nur
+    bekannte Werte > 0, absteigend, bei Gleichstand nach Type-ID.
+  - Unbekannte Werte und Werte ≤ 0 werden getrennt gezählt
+    (`TradeTopRankingResult`).
+  - `TradeRowSorter.value` ist dafür modulintern statt privat.
+- Handel-Plan: Formelzeile Gewinn/m³ in Abschnitt C, neuer Abschnitt J.
+
+Bestehende Rechenregeln, Kacheln und Ansicht sind unverändert. PRODUCT.md
+bleibt unverändert, weil es noch kein sichtbares Verhalten gibt.
+
+Prüfung (automatisch):
+- `swift build`: erfolgreich, keine Warnungen in `TradeModels.swift` und
+  `TradeTiles.swift`.
+- `swift test --filter TradeTileTests`: 9 Tests in 1 Suite bestanden, davon 5
+  neu:
+  - Gewinn/m³ mit fehlendem Gewinn und mit fehlendem, 0, negativem oder
+    unendlichem Volumen;
+  - Rangfolge nach Diff % und nach Gewinn/m³ mit getrennten Zählern;
+  - Grenze 20 und frei gewählte Grenze;
+  - Sortierung nach Gewinn/m³ mit unbekannten Werten.
+- `git diff --check` für die geänderten Dateien fehlerfrei.
+- Nicht ausgeführt: volles `swift test`, `EVEStaticDataKit` und `xcodebuild`.
+  Sie gehören zu Teil 4.
+
+Offen:
+- Teil 2: Spalte Gewinn/m³ in allen Kacheln.
+- Teil 3: Top-20-Kachel.
+- Teil 4: Gesamtprüfung mit Sichtprüfung.
+- Eigentümerabnahme offen. Nicht committet.
+
 ## 22. Oktober 2026 – Handel: Routen statt Station Trading
 
 Ziel (Eigentümerauftrag):

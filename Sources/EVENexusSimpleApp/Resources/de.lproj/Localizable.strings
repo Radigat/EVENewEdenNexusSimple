@@ -2691,6 +2691,16 @@
 "The selected market group lists no published items." = "Die gewählte Marktgruppe enthält keine veröffentlichten Items.";
 "Items: %lld" = "Items: %lld";
 "Diff %" = "Diff %";
+"Profit/m³" = "Gewinn/m³";
+"Top %lld" = "Top %lld";
+"Ranked by" = "Rangfolge nach";
+"Top %lld of %lld items" = "Top %lld von %lld Items";
+"Only items with a positive value are ranked." = "Nur Items mit positivem Wert werden gerankt.";
+"No item has a positive value for this ranking." = "Kein Item hat einen positiven Wert für diese Rangfolge.";
+"Profit/m³ needs prices, fees, transport and the packaged volume." = "Gewinn/m³ braucht Preise, Gebühren, Transport und das Packvolumen.";
+"Not ranked: %@" = "Nicht gerankt: %@";
+"%lld items without a known value" = "%lld Items ohne bekannten Wert";
+"%lld items with a value ≤ 0" = "%lld Items mit Wert ≤ 0";
 "Purchase" = "Einkauf";
 "Transport" = "Transport";
 "Net sale" = "Netto-Verkauf";

@@ -177,3 +177,29 @@ Abnahme-Checkliste: [HANDEL_PLAN.md](Documentation/HANDEL_PLAN.md).
 
   Der Stand ist auf Auftrag des Eigentümers als `9d8f224` auf `main` lokal
   committet, nicht gepusht.
+
+### Nachtrag 23.10.2026: Top-20-Kachel
+
+Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt J](Documentation/HANDEL_PLAN.md).
+
+- **Implementiert:**
+  - Spalte Gewinn/m³ in allen Kacheln.
+  - Erste Kachel „Top 20“ je gewählter Marktgruppe, Rangfolge nach Diff % oder
+    Gewinn/m³, nur positive Werte, eigene Sortierung.
+  - Rechenregeln unverändert.
+- **Automatisch geprüft:**
+  - `swift test`: 548 Tests in 35 Suites plus 70 Tests in 3 Suites;
+  - `EVEStaticDataKit`: 11 Tests;
+  - `xcodebuild test`: `TEST SUCCEEDED`, 548 Tests;
+  - `git diff --check` fehlerfrei.
+
+  Nachweise: [dev-diary.md](dev-diary.md).
+- **Visuell geprüft:** isolierte Debug-App mit dem SDE-Katalog, ohne
+  Marktpreise und ohne Nutzerdaten:
+  - Kachel, Umschalter und Leerzustände;
+  - Sortierung nach Gewinn/m³.
+- **Offen:**
+  - Prüfung mit echten Hub-Marktdaten, also Rangfolge, Werte und die Sortierung
+    der Top-Kachel bei vorhandenen Zeilen;
+  - Eigentümerabnahme;
+  - nicht committet.
