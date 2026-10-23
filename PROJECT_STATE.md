@@ -201,8 +201,10 @@ Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt J](Documentati
 - **Offen:**
   - Prüfung mit echten Hub-Marktdaten, also Rangfolge, Werte und die Sortierung
     der Top-Kachel bei vorhandenen Zeilen;
-  - Eigentümerabnahme;
-  - nicht committet.
+  - Eigentümerabnahme.
+
+  Der Stand ist auf Auftrag des Eigentümers als `9b4462f` auf `main` lokal
+  committet, nicht gepusht.
 
 ## Statische Daten lokal (23.10.2026)
 

@@ -69,7 +69,15 @@ Items“.
 
 Offen:
 - Prüfung mit echten Hub-Marktdaten.
-- Eigentümerabnahme. Nicht committet.
+- Eigentümerabnahme.
+
+Commit:
+- Auf Auftrag des Eigentümers ist die Reihe (Teile 1–4) als `9b4462f` auf
+  `main` lokal committet, nicht gepusht.
+- Gestagt wurden nur die eigenen Änderungen; Änderungen paralleler Sitzungen
+  in denselben Dateien blieben ungestagt.
+- Der gestagte Stand bestand für sich `swift test` mit 527 Tests in 35 Suites
+  plus 66 App-Tests.
 
 ## 23. Oktober 2026 – Handel: Top-20-Kachel, Teil 3 (Kachel)
 
