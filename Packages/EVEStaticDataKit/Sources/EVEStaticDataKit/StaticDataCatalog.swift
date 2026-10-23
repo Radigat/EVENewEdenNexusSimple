@@ -247,6 +247,19 @@ public struct StaticDecryptorSnapshot: Equatable, Sendable {
   }
 }
 
+/// Dogma attribute values of one type, kept for Industry facility
+/// definitions (structures, service modules and rigs). A type with an empty
+/// attribute list stays present.
+public struct StaticTypeDogmaSnapshot: Equatable, Sendable {
+  public let itemTypeID: Int64
+  public let attributeValues: [Int64: Double]
+
+  public init(itemTypeID: Int64, attributeValues: [Int64: Double]) {
+    self.itemTypeID = itemTypeID
+    self.attributeValues = attributeValues
+  }
+}
+
 public struct StaticBlueprintSnapshot: Equatable, Sendable {
   public let blueprintTypeID: Int64
   public let maxProductionLimit: Int64?
@@ -356,6 +369,7 @@ public struct StaticDataCatalogSnapshot: Equatable, Sendable {
   public let decryptors: [StaticDecryptorSnapshot]
   public let marketGroups: [StaticMarketGroupSnapshot]
   public let reactionRuleProfile: ReactionRuleProfile?
+  public let typeDogma: [StaticTypeDogmaSnapshot]
 
   public init(
     buildNumber: Int,
@@ -369,7 +383,8 @@ public struct StaticDataCatalogSnapshot: Equatable, Sendable {
     blueprints: [StaticBlueprintSnapshot],
     decryptors: [StaticDecryptorSnapshot] = [],
     marketGroups: [StaticMarketGroupSnapshot] = [],
-    reactionRuleProfile: ReactionRuleProfile? = nil
+    reactionRuleProfile: ReactionRuleProfile? = nil,
+    typeDogma: [StaticTypeDogmaSnapshot] = []
   ) throws {
     self.buildNumber = buildNumber
     self.contentSHA256 = contentSHA256
@@ -383,6 +398,7 @@ public struct StaticDataCatalogSnapshot: Equatable, Sendable {
     self.decryptors = decryptors
     self.marketGroups = marketGroups
     self.reactionRuleProfile = reactionRuleProfile
+    self.typeDogma = typeDogma
     try validate()
   }
 
@@ -669,9 +685,12 @@ public enum StaticDataCatalogBatch: Equatable, Sendable {
   case decryptors([StaticDecryptorSnapshot])
   case marketGroups([StaticMarketGroupSnapshot])
   case reactionRuleProfile(ReactionRuleProfile)
+  case typeDogma([StaticTypeDogmaSnapshot])
 
   public var recordCount: Int {
     switch self {
+    case .typeDogma(let records):
+      records.count
     case .marketGroups(let records):
       records.count
     case .categories(let records):

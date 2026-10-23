@@ -188,3 +188,22 @@ Schritt P1.
 - **Geänderte Regel (Wallet-Abgleich):** Käufe im Home bzw. Coalition Hub
   bekommen jetzt den jeweils anderen Hub als Ziel statt Station Trading im
   Kauf-Hub. Bereits angelegte Logbuch-Einträge bleiben unverändert.
+
+## 23.10.2026 – Verpacktes Volumen zuerst aus dem SDE
+
+- **Anlass:** Eigentümerfrage, ob sich Last durch lokal gespeicherte statische
+  EVE-Daten reduzieren lässt. Je Main-Hub-Scan fragte die App rund 5.700
+  einzelne ESI-Typdetails nur für das verpackte Volumen ab, nach jedem
+  Neustart erneut.
+- **Entscheidung (Eigentümer):** Das verpackte Transportvolumen kommt zuerst aus
+  dem tatsächlich importierten SDE-Feld `packagedVolume`. ESI wird nur noch für
+  Typen ohne SDE-Wert abgefragt.
+- **Begründung:** Die frühere Regel (Volumen nur aus ESI) stammte aus SDE-Build
+  3458726, in dem alle veröffentlichten Typen `packaged_volume = NULL` hatten.
+  Im aktiven Build 3632936 tragen 26.347 von 27.309 veröffentlichten Typen einen
+  Wert; Stichproben stimmen mit ESI überein (Hulk 3.750, Ark 1.300.000,
+  Rifter 2.500 m³).
+- **Unverändert:** Das entpackte `volume` ersetzt nie ein fehlendes verpacktes
+  Volumen. Fehlt der Wert in SDE und ESI, bleibt die Logistik unverfügbar.
+- **Umfang:** Nur statische Daten. Lasten auf dem Hauptthread und in den
+  Ansichten sind ein eigener späterer Auftrag.

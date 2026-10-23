@@ -285,11 +285,13 @@ station refresh resolves the owner corporation and faction through ESI before
 calculating the broker fee. A Player Structure's owner-defined broker fee is not
 exposed by ESI and therefore remains unavailable rather than becoming zero.
 The catalog exposes only an actually imported `packaged_volume`; it never
-coalesces a missing value with assembled SDE `volume`. Runtime resolves the
-bounded set of graph-relevant public `/universe/types/{type_id}/` records,
-freezes their `packaged_volume` values as a sourced snapshot and composes that
-snapshot with the static catalog before Industry calculates logistics. SwiftUI
-never performs type-volume joins or ESI requests.
+coalesces a missing value with assembled SDE `volume`. For the bounded set of
+graph-relevant types, `UniverseTypeVolumeService` takes that SDE value first
+(owner decision 2026-10-23) and requests public `/universe/types/{type_id}/`
+records only for types without one. It freezes the result as one sourced
+snapshot (`CCP SDE`, `ESI universe types` or both) and composes it with the
+static catalog before Industry calculates logistics. SwiftUI never performs
+type-volume joins or ESI requests.
 `EVEShoppingList` derives the deterministic, sorted set of purchase rows solely
 from material requirements whose frozen `toBuy` quantity is positive. It
 retains the exact quantity and the matching market quote for presentation;
@@ -461,6 +463,19 @@ mapped by `EVEStaticDataKit` into `StaticMarketGroupSnapshot`) in the
 - Both queries check that the table exists. An older adapter file returns
   `requiresSDEReimport` instead of failing or presenting an empty tree as fact.
 
+Catalog adapter 6 adds:
+- the `type_dogma` table: the dogma attribute list of every Structure (65)
+  and Structure Module (66) type, kept in the SDE's own `dogmaAttributes`
+  shape;
+- the `idx_product_blueprint` and `idx_skill_blueprint` indexes on
+  `(blueprint_type_id, activity)`.
+
+`manufacturingDefinitions()` and `reactionDefinitions()` load all complete
+definitions with three set-based queries. A product offered by more than one
+qualifying blueprint keeps the per-product `productionDefinition` selection.
+The result is held per activity for the active catalog file and replaced when
+that file changes.
+
 The Trade area (`TradeView`, `NavigationSection.trade`) is pure
 presentation. It reads hub market summaries, demand snapshots, fees and
 resolved transport legs through `RuntimeState` (`tradeMarketState`,
@@ -527,8 +542,10 @@ quantity are delegated to `LogisticsCostCalculator`. Jump Freighter legs take
 a resolved cost per flight and the usable capacity. That keeps route, DOTLAN
 and isotope resolution in `RuntimeState`.
 
-The target-owned catalog adapter streams the active SDE package's `typeDogma`
-records for structures, Standup service modules and rigs. It publishes
+The target-owned catalog adapter reads the dogma of structures, Standup
+service modules and rigs from the catalog's `type_dogma` table. A catalog
+from adapter 5 or older has no such table and still streams the active SDE
+package's `typeDogma` records instead. The adapter publishes
 immutable definitions to Industry; SwiftUI cannot edit Manufacturing ME/TE,
 Reaction material/time, Science job-cost/time or Reprocessing-yield
 modifiers. Each structure owns one physical solar-system location, while
@@ -1427,8 +1444,9 @@ not a separate calculation: each hub view publishes its visible rows as
 The selected tree forces complete logistics policy: purchased lines are grouped
 by the facility that consumes them for Main-Hub-to-facility legs, and every
 finished top-level output receives a facility-to-Main-Hub leg. Each leg retains
-sourced public-ESI packaged volume, replacement collateral, contract splitting
-and rounding. Missing ESI volume never falls back to assembled SDE `volume`.
+sourced packaged volume (SDE first, public ESI for gaps), replacement
+collateral, contract splitting and rounding. A volume missing from both the
+SDE and ESI never falls back to assembled SDE `volume`.
 Missing tariff, volume, collateral or complete Main-Hub depth makes logistics
 and dependent totals unavailable rather than zero. Cross-facility movement of
 an intermediate is not inferred when the current planner graph has no explicit

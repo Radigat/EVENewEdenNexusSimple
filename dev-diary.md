@@ -7254,3 +7254,99 @@ Rechenregeln unverändert.
 
 Prüfung: `swift test` und `xcodebuild … test` (Debug, arm64) grün. Nicht
 geprüft: Sichtkontrolle in der laufenden App; Eigentümerabnahme offen.
+
+## 23.10.2026 – Statische EVE-Daten: weniger ESI-Abrufe und Katalogabfragen
+
+Anlass: Eigentümerfrage, ob sich das Programm durch vorab lokal gespeicherte,
+unveränderliche EVE-Daten (Blueprints, Materialien, Items, Schiffe)
+beschleunigen lässt.
+
+Befund:
+- Das ist größtenteils bereits umgesetzt. Das SDE liegt als SQLite-Katalog
+  lokal vor (Build 3632936, 26 MB: 53.288 Typen, 5.100 Blueprints, 36.558
+  Materialzeilen). Blueprints und Items werden nie per ESI geholt.
+- Verbleibende statische Lasten:
+  - Für das verpackte Volumen fragte `UniverseTypeVolumeService` je Typ ein
+    ESI-Typdetail ab. Beim Main-Hub-Scan sind das 4.765 Typen, nach jedem
+    Neustart erneut. Das SDE enthält inzwischen für 26.347 von 27.309
+    veröffentlichten Typen ein echtes `packagedVolume`, darunter für alle
+    4.765. Die alte ESI-Regel stammt aus Build 3458726 (nur NULL-Werte).
+  - `manufacturingDefinitions()`/`reactionDefinitions()` liefen als eine
+    Abfragefolge je Produkt: 4.054 Produkte × 3 Abfragen, die
+    Produktabfrage je Blueprint ohne Index (`SCAN blueprint_products`).
+  - Beim Start dekodierte `industryFacilityReferences()` rund 74 % der
+    27,7 MB großen Paketdatei `typeDogma.jsonl` für 152 Typen.
+- Nicht statisch und daher nicht vorab speicherbar: Orderbücher, öffentliche
+  Verträge und Charakterdaten. Lasten auf dem Hauptthread und in den Ansichten
+  sind laut Eigentümer ein eigener späterer Auftrag.
+
+Änderung (Eigentümerentscheidung zur Volumenquelle in
+[DECISIONS.md](Documentation/Consolidation/DECISIONS.md)):
+- `UniverseTypeVolumeService` nimmt zuerst das SDE-`packagedVolume` über
+  `catalog.packagedVolumes(typeIDs:)` und fragt ESI nur noch für Typen ohne
+  SDE-Wert. Quelle des Snapshots: `CCP SDE`, `ESI universe types` oder beides;
+  Diagnose `sde.packaged-volume:<n>`. Ist das SDE nicht lesbar, bleibt der
+  ESI-Weg. Das entpackte `volume` ersetzt weiterhin nie einen fehlenden Wert.
+- `SQLiteStaticCatalog` lädt vollständige Definitionen mit drei
+  mengenbasierten Abfragen und hält sie je Aktivität für die aktive
+  Katalogdatei. Ein Produkt mit mehreren qualifizierten Blueprints nutzt die
+  bisherige Einzelabfrage (im aktiven SDE: 0 Fälle). Die Produktreihenfolge
+  ist auf dem aktiven Katalog lesend identisch geprüft.
+- Katalogadapter 6:
+  - Der Mapper übernimmt die Dogma-Attribute der Kategorien 65 und 66 in die
+    neue Tabelle `type_dogma`, eine JSON-Liste je Typ im SDE-eigenen Format.
+    So bleibt ein vorhandener Typ mit leerer Attributliste vorhanden, statt zu
+    fehlen. Das weicht im Detail vom Plan ab (eine Zeile je Attribut).
+  - Neu sind außerdem die Indizes `idx_product_blueprint` und
+    `idx_skill_blueprint`.
+  - Kataloge bis Adapter 5 lesen Dogma weiter aus der Paketdatei.
+- Dokumentation: `PRODUCT.md`, `ARCHITECTURE.md`, `DECISIONS.md`,
+  `PROJECT_STATE.md`.
+
+Prüfung (automatisch):
+- Neue Tests:
+  - vier Tests zur Volumenquelle: nur SDE ohne ESI-Anfrage, Mischfall, Lücke
+    in beiden Quellen, SDE nicht lesbar;
+  - Gleichheit der mengenbasierten und der Einzel-Definitionen samt Material-
+    und Produktreihenfolge, zweitem Produkt, Doppel-Blueprint und
+    unaufgelöstem Material;
+  - Cache bis zum Katalogwechsel;
+  - Indizes und Dogma-Tabelle in beiden Schreibwegen;
+  - Facility-Daten aus der Tabelle ohne Paketdatei sowie aus der Paketdatei
+    ohne Tabelle;
+  - Dogma-Auswahl im Mapper.
+- Bestehende Tests auf den Dateinamen `catalog-v6` angepasst.
+- Opt-in gegen das reale öffentliche SDE-Paket des Builds 3632936
+  (`EVE_STATIC_DATA_KIT_REAL_PACKAGE`):
+  - Der Mapper liefert die Raitaru-Dogma (23 s).
+  - Isolierter Import (50 s): die mengenbasierten Definitionen gleichen für
+    alle Fertigungs- und Reaktionsprodukte der Einzelabfrage.
+  - Die Facility-Referenz aus der Tabelle ist identisch mit der aus der
+    Paketdatei.
+- `swift test` 548 + 70 Tests bestanden; `EVEStaticDataKit` 12 Tests (1
+  Opt-in übersprungen); `xcodebuild … test` `TEST SUCCEEDED`.
+- `swift-format lint --strict` der geänderten Swift-Dateien ohne Befund;
+  `git diff --check` fehlerfrei.
+- Die Läufe umfassen auch die uncommitteten Änderungen paralleler Sitzungen.
+- Datenbankebene, Kopie des aktiven Katalogs mit `sqlite3`:
+  - alle 4.054 Fertigungsdefinitionen alt 0,60 s, neu 0,04 s;
+  - die Einzelabfrage je Blueprint mit den neuen Indizes 0,23 s statt 0,60 s;
+  - `EXPLAIN QUERY PLAN`: `SEARCH … USING INDEX` statt `SCAN`.
+
+Nicht geprüft:
+- Laufzeit in der echten App: Startzeit, Dauer des Main-Hub-Scans, ESI-Last.
+- Live-Vergleich SDE- gegen ESI-Volumen über die Stichproben hinaus.
+- Eigentümerabnahme.
+- Die Dogma-Beschleunigung braucht einmal „SDE → Neuimport des aktuellen
+  Katalogs“ (etwa 5 Minuten) und einen Neustart. Bis dahin arbeitet die App mit
+  dem v5-Katalog wie bisher.
+
+Offen (eigene Aufträge):
+- Universumsdaten lokal (kleiner Effekt).
+- Persistenter ESI-HTTP-Cache und Vertrags-304-Pfad.
+- UI- und Hauptthread-Lasten:
+  - O(n²) in der Lager-Tabelle;
+  - Dashboard-Dekodierung alle 60 s;
+  - große `StoredCharacter`-Blobs ohne `.externalStorage`;
+  - Synchronisationsspeicherung auf dem Hauptthread.
+- Alte SDE-Pakete: rund 1,3 GB Speicher, ohne Geschwindigkeitseffekt.

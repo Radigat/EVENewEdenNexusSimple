@@ -203,3 +203,28 @@ Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt J](Documentati
     der Top-Kachel bei vorhandenen Zeilen;
   - Eigentümerabnahme;
   - nicht committet.
+
+## Statische Daten lokal (23.10.2026)
+
+Eigentümerfrage nach vorab gespeicherten statischen EVE-Daten. Das SDE lag
+bereits als SQLite-Katalog vor; geschlossen wurden die verbleibenden Lücken.
+Details: [dev-diary.md](dev-diary.md), Entscheidung zur Volumenquelle:
+[DECISIONS.md](Documentation/Consolidation/DECISIONS.md).
+
+- **Implementiert:**
+  - Verpacktes Volumen kommt zuerst aus dem SDE, ESI nur für Lücken; beim
+    Main-Hub-Scan fallen damit 4.765 Einzelabrufe weg.
+  - Vollständige Blueprint-Definitionen werden mit drei Abfragen geladen und
+    für die Laufzeit gehalten.
+  - Katalogadapter 6 bringt Facility-Dogma in der Tabelle `type_dogma` und
+    zwei Blueprint-Indizes.
+- **Automatisch geprüft (23.10.2026):**
+  - `swift test` 548 + 70, `EVEStaticDataKit` 12, `xcodebuild test`
+    `TEST SUCCEEDED`;
+  - Opt-in gegen das reale SDE-Paket des Builds 3632936 bestanden.
+- **Offen:**
+  - „SDE → Neuimport des aktuellen Katalogs“ und Neustart, damit Adapter 6
+    aktiv wird;
+  - Messung in der laufenden App;
+  - Eigentümerabnahme;
+  - nicht committet.

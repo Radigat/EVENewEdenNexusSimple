@@ -175,14 +175,49 @@ func mapsOptInCurrentRealSDEPackage() async throws {
     return
   }
 
+  let collected = TypeDogmaBatchCollector()
   let result = try await JSONLinesSDECatalogMapper().streamStagingPackage(
     at: URL(fileURLWithPath: packagePath, isDirectory: true),
     batchSize: 500
-  ) { _ in }
+  ) { batch in
+    if case .typeDogma(let records) = batch {
+      await collected.append(records)
+    }
+  }
 
   #expect(result.metadata.buildNumber > 0)
   #expect(result.counts.itemTypes > 0)
   #expect(result.counts.blueprints > 0)
+  // Raitaru: structure size and rig slots for the Industry facility catalog.
+  let raitaru = await collected.records.first { $0.itemTypeID == 35_825 }
+  #expect(raitaru?.attributeValues[1_547] != nil)
+  #expect(raitaru?.attributeValues[1_137] != nil)
+}
+
+private actor TypeDogmaBatchCollector {
+  private(set) var records: [StaticTypeDogmaSnapshot] = []
+
+  func append(_ batch: [StaticTypeDogmaSnapshot]) {
+    records.append(contentsOf: batch)
+  }
+}
+
+@Test
+func facilityTypeDogmaKeepsOnlyRecordedTypesInTypeOrder() {
+  let records = JSONLinesSDECatalogMapper.facilityTypeDogma(
+    typeIDs: [35_891, 35_825, 99],
+    values: [
+      35_825: [1_547: 2, 1_137: 3],
+      35_891: [:],
+      12: [1: 1],
+    ]
+  )
+
+  #expect(records.map(\.itemTypeID) == [35_825, 35_891])
+  #expect(records[0].attributeValues == [1_547: 2, 1_137: 3])
+  // An empty attribute list is a recorded type, not a missing one.
+  #expect(records[1].attributeValues.isEmpty)
+  #expect(JSONLinesSDECatalogMapper.facilityDogmaCategoryIDs == [65, 66])
 }
 
 @Test

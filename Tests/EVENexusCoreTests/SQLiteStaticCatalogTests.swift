@@ -26,11 +26,12 @@ struct SQLiteStaticCatalogTests {
       Issue.record("The opt-in real SDE package path is missing.")
       return
     }
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent(
       "eve-simple-live-sde-\(UUID().uuidString)",
       isDirectory: true
     )
-    defer { try? FileManager.default.removeItem(at: root) }
+    defer { try? FileManager.default.removeItem(at: base) }
+    let root = base.appendingPathComponent("catalog-store", isDirectory: true)
 
     let catalog = SQLiteStaticCatalog(rootURL: root)
     let mapper = JSONLinesSDECatalogMapper()
@@ -59,6 +60,67 @@ struct SQLiteStaticCatalogTests {
     #expect(active.buildNumber == result.buildNumber)
     #expect(activation.buildNumber == result.buildNumber)
     #expect(activation.counts == result.counts)
+
+    // Set-based complete definitions equal the per-product lookups.
+    for definition in try await catalog.manufacturingDefinitions()
+      + catalog.reactionDefinitions()
+    {
+      let expected = try #require(
+        try await catalog.productionDefinition(
+          productTypeID: definition.productTypeID
+        )
+      )
+      guard expected.activity.kind == definition.activity.kind else {
+        continue
+      }
+      #expect(definition.blueprintTypeID == expected.blueprintTypeID)
+      #expect(definition.maxProductionLimit == expected.maxProductionLimit)
+      #expect(definition.activity == expected.activity)
+    }
+
+    // Adapter 6 reads facility dogma from the catalog. Without the table the
+    // same package's typeDogma file must yield the identical reference.
+    let fromCatalog = try await catalog.industryFacilityReferences()
+    #expect(fromCatalog.structures.contains { $0.typeID == 35_825 })
+    #expect(!fromCatalog.rigs.isEmpty)
+    #expect(!fromCatalog.serviceModules.isEmpty)
+    let packagesURL = base.appendingPathComponent("packages", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: packagesURL,
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createSymbolicLink(
+      at: packagesURL.appendingPathComponent("real.evesde"),
+      withDestinationURL: packageURL
+    )
+    let activeFileName =
+      "sde-\(active.buildNumber)-\(active.contentSHA256.prefix(12))-catalog-v6.sqlite"
+    try dropTable(
+      "type_dogma",
+      at: root.appendingPathComponent("catalogs", isDirectory: true)
+        .appendingPathComponent(activeFileName)
+    )
+    let fromPackage = try await SQLiteStaticCatalog(rootURL: root)
+      .industryFacilityReferences()
+    #expect(try withoutSources(fromCatalog) == withoutSources(fromPackage))
+  }
+
+  /// JSON form without `source` identities, whose capture time differs per
+  /// call.
+  private func withoutSources(_ value: some Encodable) throws -> NSObject {
+    func strip(_ value: Any) -> Any {
+      if let dictionary = value as? [String: Any] {
+        return dictionary.filter { $0.key != "source" }.mapValues(strip)
+      }
+      if let array = value as? [Any] {
+        return array.map(strip)
+      }
+      return value
+    }
+    let object = try JSONSerialization.jsonObject(
+      with: JSONEncoder().encode(value)
+    )
+    return try #require(strip(object) as? NSObject)
   }
 
   @Test
@@ -266,7 +328,7 @@ struct SQLiteStaticCatalogTests {
 
     let hashPrefix = snapshot.contentSHA256.prefix(12)
     let currentName =
-      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v5.sqlite"
+      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v6.sqlite"
     let legacyName =
       "sde-\(snapshot.buildNumber)-\(hashPrefix).sqlite"
     let catalogsURL = root.appendingPathComponent(
@@ -340,9 +402,9 @@ struct SQLiteStaticCatalogTests {
 
     let hashPrefix = snapshot.contentSHA256.prefix(12)
     let currentName =
-      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v5.sqlite"
+      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v6.sqlite"
     let previousName =
-      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v4.sqlite"
+      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v5.sqlite"
     let catalogsURL = root.appendingPathComponent(
       "catalogs",
       isDirectory: true
@@ -426,7 +488,49 @@ struct SQLiteStaticCatalogTests {
   }
 
   @Test
-  func readsFacilityAndRigRulesFromTheActiveValidatedPackage() async throws {
+  func readsFacilityAndRigRulesFromTheCatalogWithoutThePackageFile()
+    async throws
+  {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-facility-catalog-sde-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: base) }
+    let snapshot = try withTypeDogma(
+      try fixture(
+        build: 3,
+        productName: "Fixture Ship",
+        includeReprocessingReference: true
+      ),
+      try facilityTypeDogma()
+    )
+    let snapshotCatalog = SQLiteStaticCatalog(
+      rootURL: base.appendingPathComponent("snapshot", isDirectory: true)
+        .appendingPathComponent("catalog-store", isDirectory: true)
+    )
+    _ = try await snapshotCatalog.activate(snapshot)
+    let streamingCatalog = SQLiteStaticCatalog(
+      rootURL: base.appendingPathComponent("streaming", isDirectory: true)
+        .appendingPathComponent("catalog-store", isDirectory: true)
+    )
+    _ = try await streamingCatalog.activateStreaming(
+      packageURL: base.appendingPathComponent("fixture-package"),
+      mapper: FixtureStreamingMapper(snapshot: snapshot),
+      batchSize: 2
+    )
+
+    // No typeDogma package file exists: adapter 6 reads only the catalog.
+    for catalog in [snapshotCatalog, streamingCatalog] {
+      try expectFacilityReference(
+        try await catalog.industryFacilityReferences()
+      )
+    }
+  }
+
+  @Test
+  func readsFacilityAndRigRulesFromThePackageWhenTheCatalogPredatesAdapterSix()
+    async throws
+  {
     let base = FileManager.default.temporaryDirectory.appendingPathComponent(
       "eve-simple-facility-sde-\(UUID().uuidString)",
       isDirectory: true
@@ -436,17 +540,28 @@ struct SQLiteStaticCatalogTests {
       "catalog-store",
       isDirectory: true
     )
-    let catalog = SQLiteStaticCatalog(rootURL: root)
     let snapshot = try fixture(
       build: 3,
       productName: "Fixture Ship",
       includeReprocessingReference: true
     )
-    _ = try await catalog.activate(snapshot)
+    _ = try await SQLiteStaticCatalog(rootURL: root).activate(snapshot)
+    try dropTable(
+      "type_dogma",
+      at: root.appendingPathComponent("catalogs", isDirectory: true)
+        .appendingPathComponent(
+          "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v6.sqlite"
+        )
+    )
     try writeFacilityPackage(baseURL: base, snapshot: snapshot)
 
-    let reference = try await catalog.industryFacilityReferences()
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    try expectFacilityReference(try await catalog.industryFacilityReferences())
+  }
 
+  private func expectFacilityReference(
+    _ reference: IndustryFacilityReferenceSnapshot
+  ) throws {
     let structure = try #require(
       reference.structures.first { $0.typeID == 35_825 }
     )
@@ -571,6 +686,121 @@ struct SQLiteStaticCatalogTests {
   }
 
   @Test
+  func completeDefinitionsMatchPerProductLookupsInProductNameOrder()
+    async throws
+  {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-definitions-sde-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    _ = try await catalog.activate(try definitionFixture(build: 8))
+
+    let definitions = try await catalog.manufacturingDefinitions()
+
+    // Name order; the unresolved-material blueprint and the unpublished
+    // blueprint stay excluded.
+    #expect(definitions.map(\.productTypeID) == [601, 622, 1, 602, 600])
+    for definition in definitions {
+      let expected = try #require(
+        try await catalog.productionDefinition(
+          productTypeID: definition.productTypeID
+        )
+      )
+      #expect(definition.blueprintTypeID == expected.blueprintTypeID)
+      #expect(definition.maxProductionLimit == expected.maxProductionLimit)
+      #expect(definition.activity == expected.activity)
+      #expect(definition.source.provider == expected.source.provider)
+      #expect(definition.source.version == expected.source.version)
+    }
+    let zeta = try #require(definitions.first { $0.productTypeID == 600 })
+    #expect(zeta.activity.materials.map(\.typeID) == [620, 621, 622])
+    #expect(zeta.activity.durationSeconds == 300)
+    let charge = try #require(definitions.first { $0.productTypeID == 601 })
+    #expect(charge.activity.products.map(\.typeID) == [601, 622])
+    #expect(charge.activity.products.last?.probability == 0.5)
+    #expect(charge.maxProductionLimit == nil)
+
+    let reactions = try await catalog.reactionDefinitions()
+    #expect(reactions.map(\.productTypeID) == [3])
+    #expect(reactions.first?.activity.kind == .reaction)
+  }
+
+  @Test
+  func completeDefinitionsAreReusedUntilTheActiveCatalogChanges()
+    async throws
+  {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-definition-cache-sde-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    _ = try await catalog.activate(
+      try fixture(build: 8, productName: "First Ship")
+    )
+
+    let first = try await catalog.manufacturingDefinitions()
+    let second = try await catalog.manufacturingDefinitions()
+    #expect(
+      first.map(\.source.snapshotID) == second.map(\.source.snapshotID)
+    )
+
+    _ = try await catalog.activate(
+      try fixture(build: 9, productName: "Second Ship")
+    )
+    let replaced = try await catalog.manufacturingDefinitions()
+    #expect(replaced.map(\.source.version) == ["9"])
+    #expect(
+      try await catalog.typeName(id: replaced[0].productTypeID)
+        == "Second Ship"
+    )
+  }
+
+  @Test
+  func bothWritersCreateTheAdapterSixLookupIndexesAndDogmaTable()
+    async throws
+  {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-adapter-six-sde-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = try withTypeDogma(
+      try fixture(
+        build: 4,
+        productName: "Indexed Ship",
+        includeReprocessingReference: true
+      ),
+      try facilityTypeDogma()
+    )
+    let snapshotRoot = root.appendingPathComponent("snapshot")
+    _ = try await SQLiteStaticCatalog(rootURL: snapshotRoot).activate(snapshot)
+    let streamingRoot = root.appendingPathComponent("streaming")
+    _ = try await SQLiteStaticCatalog(rootURL: streamingRoot)
+      .activateStreaming(
+        packageURL: root.appendingPathComponent("fixture-package"),
+        mapper: FixtureStreamingMapper(snapshot: snapshot),
+        batchSize: 2
+      )
+
+    let fileName =
+      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v6.sqlite"
+    for storeRoot in [snapshotRoot, streamingRoot] {
+      let url = storeRoot.appendingPathComponent("catalogs")
+        .appendingPathComponent(fileName)
+      let indexes = try schemaNames(type: "index", at: url)
+      #expect(indexes.contains("idx_product_blueprint"))
+      #expect(indexes.contains("idx_skill_blueprint"))
+      #expect(try schemaNames(type: "table", at: url).contains("type_dogma"))
+      #expect(
+        try scalarCount("SELECT COUNT(*) FROM type_dogma", at: url) == 7
+      )
+    }
+  }
+
+  @Test
   func bothWritersStoreTheMarketTreeAndItsSubtreeItems() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "eve-simple-market-groups-\(UUID().uuidString)",
@@ -637,7 +867,7 @@ struct SQLiteStaticCatalogTests {
     let snapshot = try marketGroupFixture(build: 5)
     _ = try await SQLiteStaticCatalog(rootURL: root).activate(snapshot)
     let fileName =
-      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v5.sqlite"
+      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v6.sqlite"
     try dropMarketGroupTable(
       at: root.appendingPathComponent("catalogs", isDirectory: true)
         .appendingPathComponent(fileName)
@@ -747,11 +977,16 @@ struct SQLiteStaticCatalogTests {
       blueprints: base.blueprints,
       decryptors: base.decryptors,
       marketGroups: groups,
-      reactionRuleProfile: base.reactionRuleProfile
+      reactionRuleProfile: base.reactionRuleProfile,
+      typeDogma: base.typeDogma
     )
   }
 
   private func dropMarketGroupTable(at url: URL) throws {
+    try dropTable("market_groups", at: url)
+  }
+
+  private func dropTable(_ name: String, at url: URL) throws {
     var database: OpaquePointer?
     guard sqlite3_open(url.path, &database) == SQLITE_OK else {
       sqlite3_close(database)
@@ -759,11 +994,257 @@ struct SQLiteStaticCatalogTests {
     }
     defer { sqlite3_close(database) }
     guard
-      sqlite3_exec(database, "DROP TABLE market_groups", nil, nil, nil)
+      sqlite3_exec(database, "DROP TABLE \(name)", nil, nil, nil)
         == SQLITE_OK
     else {
       throw StaticCatalogError.database("fixture-drop")
     }
+  }
+
+  private func schemaNames(type: String, at url: URL) throws -> Set<String> {
+    var database: OpaquePointer?
+    guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+      sqlite3_close(database)
+      throw StaticCatalogError.database("fixture-open")
+    }
+    defer { sqlite3_close(database) }
+    var statement: OpaquePointer?
+    guard
+      sqlite3_prepare_v2(
+        database,
+        "SELECT name FROM sqlite_master WHERE type = '\(type)'",
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK
+    else {
+      throw StaticCatalogError.database("fixture-prepare")
+    }
+    defer { sqlite3_finalize(statement) }
+    var names = Set<String>()
+    while sqlite3_step(statement) == SQLITE_ROW {
+      if let text = sqlite3_column_text(statement, 0) {
+        names.insert(String(cString: text))
+      }
+    }
+    return names
+  }
+
+  private func scalarCount(_ query: String, at url: URL) throws -> Int {
+    var database: OpaquePointer?
+    guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+      sqlite3_close(database)
+      throw StaticCatalogError.database("fixture-open")
+    }
+    defer { sqlite3_close(database) }
+    var statement: OpaquePointer?
+    guard
+      sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
+      sqlite3_step(statement) == SQLITE_ROW
+    else {
+      sqlite3_finalize(statement)
+      throw StaticCatalogError.database("fixture-count")
+    }
+    defer { sqlite3_finalize(statement) }
+    return Int(sqlite3_column_int64(statement, 0))
+  }
+
+  private func withTypeDogma(
+    _ base: StaticDataCatalogSnapshot,
+    _ typeDogma: [StaticTypeDogmaSnapshot]
+  ) throws -> StaticDataCatalogSnapshot {
+    try StaticDataCatalogSnapshot(
+      buildNumber: base.buildNumber,
+      contentSHA256: base.contentSHA256,
+      officialArchiveURL: base.officialArchiveURL,
+      sourceFormat: base.sourceFormat,
+      categories: base.categories,
+      groups: base.groups,
+      itemTypes: base.itemTypes,
+      typeMaterials: base.typeMaterials,
+      blueprints: base.blueprints,
+      decryptors: base.decryptors,
+      marketGroups: base.marketGroups,
+      reactionRuleProfile: base.reactionRuleProfile,
+      typeDogma: typeDogma
+    )
+  }
+
+  /// The same records the package fixture writes to `typeDogma.jsonl`.
+  private func facilityTypeDogma() throws -> [StaticTypeDogmaSnapshot] {
+    struct Record: Decodable {
+      struct Attribute: Decodable {
+        let attributeID: Int64
+        let value: Double
+      }
+      let _key: Int64
+      let dogmaAttributes: [Attribute]
+    }
+    return try Self.facilityDogmaLines.split(separator: "\n").map { line in
+      let record = try JSONDecoder().decode(
+        Record.self,
+        from: Data(line.utf8)
+      )
+      return StaticTypeDogmaSnapshot(
+        itemTypeID: record._key,
+        attributeValues: Dictionary(
+          uniqueKeysWithValues: record.dogmaAttributes.map {
+            ($0.attributeID, $0.value)
+          }
+        )
+      )
+    }
+  }
+
+  /// Manufacturing variants around the base fixture: several ordered
+  /// materials, a second product, one product offered by two blueprints and
+  /// one blueprint with an unresolved material.
+  private func definitionFixture(build: Int) throws
+    -> StaticDataCatalogSnapshot
+  {
+    let base = try fixture(
+      build: build,
+      productName: "Parity Ship",
+      includeReaction: true
+    )
+    func material(_ typeID: Int64, _ quantity: Int64, _ sortOrder: Int)
+      -> StaticBlueprintMaterialSnapshot
+    {
+      StaticBlueprintMaterialSnapshot(
+        itemTypeID: typeID,
+        quantity: quantity,
+        sortOrder: sortOrder
+      )
+    }
+    func manufacturing(
+      _ blueprintTypeID: Int64,
+      maxProductionLimit: Int64? = 10,
+      seconds: Int64,
+      materials: [StaticBlueprintMaterialSnapshot],
+      products: [StaticBlueprintProductSnapshot]
+    ) -> StaticBlueprintSnapshot {
+      StaticBlueprintSnapshot(
+        blueprintTypeID: blueprintTypeID,
+        maxProductionLimit: maxProductionLimit,
+        activities: [
+          StaticBlueprintActivitySnapshot(
+            activity: .manufacturing,
+            timeSeconds: seconds,
+            materials: materials,
+            products: products
+          )
+        ]
+      )
+    }
+    let extraTypes = [
+      itemType(id: 600, name: "Zeta Module"),
+      itemType(id: 601, name: "alpha Charge"),
+      itemType(id: 602, name: "Twin Product"),
+      itemType(id: 603, name: "Broken Product"),
+      itemType(id: 610, name: "Zeta Module Blueprint"),
+      itemType(id: 611, name: "Alpha Charge Blueprint"),
+      itemType(id: 612, name: "Twin Blueprint A"),
+      itemType(id: 613, name: "Twin Blueprint B"),
+      itemType(id: 614, name: "Broken Blueprint"),
+      itemType(id: 620, name: "Material A"),
+      itemType(id: 621, name: "Material B"),
+      itemType(id: 622, name: "Material C"),
+    ]
+    let extraBlueprints = [
+      manufacturing(
+        610,
+        seconds: 300,
+        materials: [material(621, 5, 1), material(622, 9, 2), material(620, 3, 0)],
+        products: [
+          StaticBlueprintProductSnapshot(
+            itemTypeID: 600,
+            quantity: 1,
+            probability: nil,
+            sortOrder: 0
+          )
+        ]
+      ),
+      manufacturing(
+        611,
+        maxProductionLimit: nil,
+        seconds: 120,
+        materials: [material(620, 1, 0)],
+        products: [
+          StaticBlueprintProductSnapshot(
+            itemTypeID: 622,
+            quantity: 1,
+            probability: 0.5,
+            sortOrder: 1
+          ),
+          StaticBlueprintProductSnapshot(
+            itemTypeID: 601,
+            quantity: 100,
+            probability: nil,
+            sortOrder: 0
+          ),
+        ]
+      ),
+      manufacturing(
+        612,
+        seconds: 60,
+        materials: [material(620, 2, 0)],
+        products: [
+          StaticBlueprintProductSnapshot(
+            itemTypeID: 602,
+            quantity: 1,
+            probability: nil,
+            sortOrder: 0
+          )
+        ]
+      ),
+      manufacturing(
+        613,
+        seconds: 90,
+        materials: [material(621, 4, 0)],
+        products: [
+          StaticBlueprintProductSnapshot(
+            itemTypeID: 602,
+            quantity: 2,
+            probability: nil,
+            sortOrder: 0
+          )
+        ]
+      ),
+      manufacturing(
+        614,
+        seconds: 60,
+        materials: [
+          StaticBlueprintMaterialSnapshot(
+            itemTypeID: 9_999,
+            typeIsResolved: false,
+            quantity: 1,
+            sortOrder: 0
+          )
+        ],
+        products: [
+          StaticBlueprintProductSnapshot(
+            itemTypeID: 603,
+            quantity: 1,
+            probability: nil,
+            sortOrder: 0
+          )
+        ]
+      ),
+    ]
+    return try StaticDataCatalogSnapshot(
+      buildNumber: base.buildNumber,
+      contentSHA256: base.contentSHA256,
+      officialArchiveURL: base.officialArchiveURL,
+      sourceFormat: base.sourceFormat,
+      categories: base.categories,
+      groups: base.groups,
+      itemTypes: base.itemTypes + extraTypes,
+      typeMaterials: base.typeMaterials,
+      blueprints: base.blueprints + extraBlueprints,
+      decryptors: base.decryptors,
+      marketGroups: base.marketGroups,
+      reactionRuleProfile: base.reactionRuleProfile
+    )
   }
 
   private func fixture(
@@ -1261,20 +1742,21 @@ struct SQLiteStaticCatalogTests {
     try Data(manifest.utf8).write(
       to: package.appendingPathComponent("manifest.json")
     )
-    let dogma =
-      """
-      {"_key":35825,"dogmaAttributes":[{"attributeID":1137,"value":3},{"attributeID":1547,"value":2},{"attributeID":2600,"value":0.99},{"attributeID":2601,"value":0.97},{"attributeID":2602,"value":0.85}]}
-      {"_key":43855,"dogmaAttributes":[{"attributeID":1547,"value":2},{"attributeID":2356,"value":1.9},{"attributeID":2357,"value":2.1},{"attributeID":2593,"value":0},{"attributeID":2594,"value":-2}]}
-      {"_key":43722,"dogmaAttributes":[{"attributeID":1547,"value":3},{"attributeID":2356,"value":1.9},{"attributeID":2357,"value":2.1},{"attributeID":2593,"value":-20},{"attributeID":2595,"value":-10}]}
-      {"_key":35891,"dogmaAttributes":[{"attributeID":1298,"value":1657},{"attributeID":1299,"value":1404},{"attributeID":1300,"value":1406}]}
-      {"_key":35836,"dogmaAttributes":[{"attributeID":1137,"value":3},{"attributeID":1547,"value":3},{"attributeID":2722,"value":5.5}]}
-      {"_key":46640,"dogmaAttributes":[{"attributeID":717,"value":0.53},{"attributeID":1547,"value":3},{"attributeID":2356,"value":1.06},{"attributeID":2357,"value":1.12}]}
-      {"_key":35899,"dogmaAttributes":[{"attributeID":717,"value":0.5},{"attributeID":2444,"value":0.5},{"attributeID":2445,"value":0.5},{"attributeID":2448,"value":0.5},{"attributeID":3262,"value":0.8}]}
-      """
-    try Data(dogma.utf8).write(
+    try Data(Self.facilityDogmaLines.utf8).write(
       to: package.appendingPathComponent("typeDogma.jsonl")
     )
   }
+
+  private static let facilityDogmaLines =
+    """
+    {"_key":35825,"dogmaAttributes":[{"attributeID":1137,"value":3},{"attributeID":1547,"value":2},{"attributeID":2600,"value":0.99},{"attributeID":2601,"value":0.97},{"attributeID":2602,"value":0.85}]}
+    {"_key":43855,"dogmaAttributes":[{"attributeID":1547,"value":2},{"attributeID":2356,"value":1.9},{"attributeID":2357,"value":2.1},{"attributeID":2593,"value":0},{"attributeID":2594,"value":-2}]}
+    {"_key":43722,"dogmaAttributes":[{"attributeID":1547,"value":3},{"attributeID":2356,"value":1.9},{"attributeID":2357,"value":2.1},{"attributeID":2593,"value":-20},{"attributeID":2595,"value":-10}]}
+    {"_key":35891,"dogmaAttributes":[{"attributeID":1298,"value":1657},{"attributeID":1299,"value":1404},{"attributeID":1300,"value":1406}]}
+    {"_key":35836,"dogmaAttributes":[{"attributeID":1137,"value":3},{"attributeID":1547,"value":3},{"attributeID":2722,"value":5.5}]}
+    {"_key":46640,"dogmaAttributes":[{"attributeID":717,"value":0.53},{"attributeID":1547,"value":3},{"attributeID":2356,"value":1.06},{"attributeID":2357,"value":1.12}]}
+    {"_key":35899,"dogmaAttributes":[{"attributeID":717,"value":0.5},{"attributeID":2444,"value":0.5},{"attributeID":2445,"value":0.5},{"attributeID":2448,"value":0.5},{"attributeID":3262,"value":0.8}]}
+    """
 }
 
 private struct FixtureStreamingMapper: StaticDataCatalogStreamingMapping {
@@ -1308,6 +1790,9 @@ private struct FixtureStreamingMapper: StaticDataCatalogStreamingMapping {
     try await consume(.blueprints(snapshot.blueprints))
     if let profile = snapshot.reactionRuleProfile {
       try await consume(.reactionRuleProfile(profile))
+    }
+    if !snapshot.typeDogma.isEmpty {
+      try await consume(.typeDogma(snapshot.typeDogma))
     }
     return StaticDataCatalogStreamResult(
       metadata: try await packageMetadata(at: packageURL),

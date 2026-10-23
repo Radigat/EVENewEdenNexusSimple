@@ -26,6 +26,9 @@ public actor JSONLinesSDECatalogMapper:
   private static let reactionRelevantEffectIDs: Set<Int64> = [
     6_892, 6_969, 6_970, 6_971, 6_973, 6_974, 6_975, 6_976,
   ]
+  /// Structure (65) and Structure Module (66): the Industry facility
+  /// catalog reads structure, service-module and rig dogma from these.
+  static let facilityDogmaCategoryIDs: Set<Int64> = [65, 66]
   private let fileManager: FileManager
   private let readChunkSize: Int
   private let maximumLineBytes: Int
@@ -63,8 +66,22 @@ public actor JSONLinesSDECatalogMapper:
       blueprints: values.blueprints,
       decryptors: values.decryptors,
       marketGroups: values.marketGroups,
-      reactionRuleProfile: values.reactionRuleProfile
+      reactionRuleProfile: values.reactionRuleProfile,
+      typeDogma: values.typeDogma
     )
+  }
+
+  /// Facility dogma in type order. Types without a typeDogma record stay
+  /// absent; a record with an empty attribute list stays present.
+  static func facilityTypeDogma(
+    typeIDs: Set<Int64>,
+    values: [Int64: [Int64: Double]]
+  ) -> [StaticTypeDogmaSnapshot] {
+    typeIDs.sorted().compactMap { typeID in
+      values[typeID].map {
+        StaticTypeDogmaSnapshot(itemTypeID: typeID, attributeValues: $0)
+      }
+    }
   }
 
   public func packageMetadata(
@@ -174,6 +191,7 @@ public actor JSONLinesSDECatalogMapper:
     var knownTypeIDs = Set<Int64>()
     var reactionTypeGroupIDs: [Int64: Int64] = [:]
     var decryptorTypeIDs = Set<Int64>()
+    var facilityDogmaTypeIDs = Set<Int64>()
     var itemTypeBatch: [StaticItemTypeSnapshot] = []
     let typeDescriptor = try await readDataset(
       .types,
@@ -194,6 +212,11 @@ public actor JSONLinesSDECatalogMapper:
       }
       if itemType.groupExternalID == 1_304, itemType.published {
         decryptorTypeIDs.insert(itemType.externalID)
+      }
+      if Self.facilityDogmaCategoryIDs.contains(
+        itemType.categoryExternalID
+      ) {
+        facilityDogmaTypeIDs.insert(itemType.externalID)
       }
       itemTypeBatch.append(itemType)
       if itemTypeBatch.count >= batchLimit {
@@ -298,7 +321,7 @@ public actor JSONLinesSDECatalogMapper:
           line: line,
           relevant: Self.reactionRelevantTypeIDs.union(
             reprocessableTypeIDs
-          ).union(decryptorTypeIDs)
+          ).union(decryptorTypeIDs).union(facilityDogmaTypeIDs)
         )
       else {
         return nil
@@ -372,6 +395,22 @@ public actor JSONLinesSDECatalogMapper:
     }
     if !decryptors.isEmpty {
       try await consume(.decryptors(decryptors))
+    }
+
+    let facilityTypeDogma = Self.facilityTypeDogma(
+      typeIDs: facilityDogmaTypeIDs,
+      values: typeDogmaValues
+    )
+    for start in stride(from: 0, to: facilityTypeDogma.count, by: batchLimit) {
+      try await consume(
+        .typeDogma(
+          Array(
+            facilityTypeDogma[
+              start..<min(start + batchLimit, facilityTypeDogma.count)
+            ]
+          )
+        )
+      )
     }
 
     var dogmaAttributeNames: [Int64: String] = [:]
@@ -1810,9 +1849,12 @@ private actor StaticDataCatalogSnapshotCollector {
   private var decryptors: [StaticDecryptorSnapshot] = []
   private var marketGroups: [StaticMarketGroupSnapshot] = []
   private var reactionRuleProfile: ReactionRuleProfile?
+  private var typeDogma: [StaticTypeDogmaSnapshot] = []
 
   func append(_ batch: StaticDataCatalogBatch) {
     switch batch {
+    case .typeDogma(let records):
+      typeDogma.append(contentsOf: records)
     case .marketGroups(let records):
       marketGroups.append(contentsOf: records)
     case .categories(let records):
@@ -1840,7 +1882,8 @@ private actor StaticDataCatalogSnapshotCollector {
     blueprints: [StaticBlueprintSnapshot],
     decryptors: [StaticDecryptorSnapshot],
     marketGroups: [StaticMarketGroupSnapshot],
-    reactionRuleProfile: ReactionRuleProfile?
+    reactionRuleProfile: ReactionRuleProfile?,
+    typeDogma: [StaticTypeDogmaSnapshot]
   ) {
     (
       categories,
@@ -1850,7 +1893,8 @@ private actor StaticDataCatalogSnapshotCollector {
       blueprints,
       decryptors,
       marketGroups,
-      reactionRuleProfile
+      reactionRuleProfile,
+      typeDogma
     )
   }
 }

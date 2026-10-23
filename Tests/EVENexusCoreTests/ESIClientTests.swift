@@ -42,6 +42,102 @@ struct ESIClientTests {
   }
 
   @Test
+  func universeTypeVolumesPreferSDEPackagedValuesWithoutESIRequests()
+    async throws
+  {
+    let transport = UniverseTypeVolumeTransport()
+    let service = UniverseTypeVolumeService(
+      esi: ESIClient(transport: transport),
+      staticPackagedVolumes: { typeIDs in
+        Sourced(
+          state: .fresh,
+          value: [22_544: 3_750, 28_850: 1_300_000].filter {
+            typeIDs.contains($0.key)
+          },
+          source: SourceIdentity(provider: "CCP SDE", version: "3632936")
+        )
+      }
+    )
+
+    let snapshot = try await service.volumes(for: [22_544, 28_850])
+
+    #expect(snapshot.state == .fresh)
+    #expect(snapshot.value == [22_544: 3_750, 28_850: 1_300_000])
+    #expect(snapshot.source.provider == "CCP SDE")
+    #expect(snapshot.source.version == "3632936")
+    #expect(snapshot.diagnostics == ["sde.packaged-volume:2"])
+    #expect(await transport.requestCount == 0)
+  }
+
+  @Test
+  func universeTypeVolumesRequestOnlyTypesMissingFromTheSDE()
+    async throws
+  {
+    let transport = UniverseTypeVolumeTransport()
+    let service = UniverseTypeVolumeService(
+      esi: ESIClient(transport: transport),
+      staticPackagedVolumes: { _ in
+        Sourced(
+          state: .fresh,
+          value: [22_544: 3_750],
+          source: SourceIdentity(provider: "CCP SDE", version: "3632936")
+        )
+      }
+    )
+
+    let snapshot = try await service.volumes(for: [22_544, 28_850])
+
+    #expect(snapshot.state == .fresh)
+    #expect(snapshot.value == [22_544: 3_750, 28_850: 1_300_000])
+    #expect(snapshot.source.provider == "CCP SDE + ESI universe types")
+    #expect(await transport.requestedTypeIDs == [28_850])
+  }
+
+  @Test
+  func universeTypeVolumesKeepGapsMissingWhenSDEAndESILackAValue()
+    async throws
+  {
+    let transport = UniverseTypeVolumeTransport()
+    let service = UniverseTypeVolumeService(
+      esi: ESIClient(transport: transport),
+      staticPackagedVolumes: { _ in
+        Sourced(
+          state: .fresh,
+          value: [22_544: 3_750],
+          source: SourceIdentity(provider: "CCP SDE", version: "3632936")
+        )
+      }
+    )
+
+    let snapshot = try await service.volumes(for: [22_544, 34])
+
+    #expect(snapshot.state == .partial)
+    #expect(snapshot.value == [22_544: 3_750])
+    #expect(snapshot.value?[34] == nil)
+    #expect(await transport.requestedTypeIDs == [34])
+  }
+
+  @Test
+  func universeTypeVolumesFallBackToESIWhenTheSDEIsUnreadable()
+    async throws
+  {
+    let transport = UniverseTypeVolumeTransport()
+    let service = UniverseTypeVolumeService(
+      esi: ESIClient(transport: transport),
+      staticPackagedVolumes: { _ in
+        throw StaticCatalogError.noActiveCatalog
+      }
+    )
+
+    let snapshot = try await service.volumes(for: [22_544])
+
+    #expect(snapshot.state == .fresh)
+    #expect(snapshot.value == [22_544: 3_750])
+    #expect(snapshot.source.provider == "ESI universe types")
+    #expect(await transport.requestedTypeIDs == [22_544])
+  }
+
+  @Test
   func currentAssetSchemaUsesIsSingleton() throws {
     let fixture = Data(
       """
@@ -2908,6 +3004,7 @@ private struct SolarSystemDetailsTransport: ESIHTTPTransporting {
 
 private actor UniverseTypeVolumeTransport: ESIHTTPTransporting {
   private(set) var requestCount = 0
+  private(set) var requestedTypeIDs: [Int64] = []
   private(set) var sawCompatibilityDate = true
 
   func data(for request: URLRequest) async throws
@@ -2919,6 +3016,7 @@ private actor UniverseTypeVolumeTransport: ESIHTTPTransporting {
       && request.value(forHTTPHeaderField: "X-Compatibility-Date")
         == EVEConstants.esiCompatibilityDate
     let typeID = request.url?.pathComponents.last.flatMap(Int64.init)
+    if let typeID { requestedTypeIDs.append(typeID) }
     let body: String
     switch typeID {
     case 22_544:

@@ -98,8 +98,8 @@ Die zentrale Trennung lautet:
 
 | Schicht | Verantwortung | Darf nicht übernehmen |
 | --- | --- | --- |
-| SDE | statische Typen, Blueprints, Aktivitäten, Dogma- und allgemeine Volumendaten | Live-Marktdaten, verpacktes Transportvolumen oder Anmeldung |
-| öffentliches ESI-Typdetail | verpacktes Transportvolumen für die konkret benötigten Typen | Produktionsgraph oder Transportkostenentscheidung |
+| SDE | statische Typen, Blueprints, Aktivitäten, Dogma- und Volumendaten einschließlich des tatsächlich importierten verpackten Transportvolumens | Live-Marktdaten oder Anmeldung; das entpackte Volumen ersetzt nie ein fehlendes verpacktes |
+| öffentliches ESI-Typdetail | verpacktes Transportvolumen nur für benötigte Typen ohne SDE-Wert | Produktionsgraph oder Transportkostenentscheidung |
 | Auth | SSO, PKCE, Scopes, Token-Lebenszyklus und Keychain | ESI-Fachdaten |
 | ESI | HTTP-Transport, Paging, Cache, Rate Limits und Antwortprovenienz | fachliche Persistenz oder UI |
 | Domänen | Charaktere, Assets, Blueprints, Markt, Contracts, Reaktionen und Industrie | Token- oder Netzwerkimplementierung |
@@ -913,9 +913,10 @@ Ausgabetyp wider Erwarten nicht benennen, bleiben Type-ID und Menge mit einer
 ausdrücklichen Warnung erhalten; sie werden nicht als null oder als erfundener
 Name dargestellt.
 
-Das öffentliche ESI-`packaged_volume` wird dabei nicht nur für normale
-Materialpositionen, sondern auch unmittelbar für jede geprüfte komprimierte
-Erzoption verwendet. Das SDE bleibt für Chargengröße, Mineralausgabe und den
+Das verpackte Transportvolumen (SDE zuerst, öffentliches ESI-`packaged_volume`
+für Lücken) wird dabei nicht nur für normale Materialpositionen, sondern auch
+unmittelbar für jede geprüfte komprimierte Erzoption verwendet. Das SDE
+bleibt für Chargengröße, Mineralausgabe und den
 erzspezifischen Processing-Skill zuständig. Dadurch geht ein vorhandenes
 autoritativeres Transportvolumen zwischen Marktladen und Ore-Vergleich nicht
 verloren.
@@ -1738,14 +1739,17 @@ Weitere Eigenschaften:
   ESI-Abruf. Plankosten, Einkaufsliste und Main-Hub-Multibuy bleiben
   unverändert Main-Hub-basiert.
 
-Für jede transportierte Einheit gilt ausschließlich das öffentliche
-ESI-Typfeld `packaged_volume`. Die aktuelle clientbasierte CCP-SDE-Datei
-`types` enthält bei Schiffen nur das entpackte `volume`; dieses darf deshalb
-niemals als Ersatz dienen. Der Planner ermittelt zunächst die begrenzte Menge
-aller für den Produktionsgraph benötigten Typen, lädt deren öffentliche
-ESI-Typdetails mit begrenzter Parallelität und friert die Werte als eigenen
-Quellensnapshot ein. Fehlt ein verpacktes Volumen, bleibt die betroffene
-Logistik unverfügbar. Für die am 13. August 2026 live geprüfte Hulk liefert CCP
+Für jede transportierte Einheit gilt ausschließlich das verpackte Volumen.
+Quelle ist zuerst das tatsächlich importierte `packagedVolume` des aktiven SDE
+(Eigentümerentscheidung vom 23.10.2026; im Build 3632936 vorhanden für 26.347
+von 27.309 veröffentlichten Typen). Nur für Typen ohne SDE-Wert lädt der
+Planner das öffentliche ESI-Typfeld `packaged_volume`, mit begrenzter
+Parallelität. Das entpackte `volume` dient niemals als Ersatz. Der Planner
+ermittelt die begrenzte Menge aller für den Produktionsgraph benötigten Typen
+und friert die Werte als eigenen Quellensnapshot ein (`CCP SDE`,
+`ESI universe types` oder beides). Fehlt ein verpacktes Volumen in beiden
+Quellen, bleibt die betroffene Logistik unverfügbar. Für die am 13. August
+2026 live geprüfte Hulk liefert CCP
 3.750 m³ je verpacktem Schiff: zehn Hulks ergeben somit 37.500 m³ und passen in
 einen 350.000-m³-Vertrag. Das entpackte Volumen von 150.000 m³ je Hulk wird
 nicht mehr verwendet.
@@ -2100,9 +2104,25 @@ Der ausführliche Produktionsvertrag steht in
     Ein Neuimport erzeugt daher eine neue Katalogdatei.
   - Der Bereich **Handel** nutzt die Marktgruppen für seine Kacheln
     ([Handel-Plan](Documentation/HANDEL_PLAN.md)).
+- Katalogadapter 6 legt beim Import zusätzlich ab:
+  - die Dogma-Attribute aller Strukturen und Strukturmodule (Kategorien 65
+    und 66) in der Tabelle `type_dogma`. Strukturen, Service-Module und Rigs
+    der Industrieprofile werden beim Start daraus gelesen statt aus der rund
+    28 MB großen Paketdatei `typeDogma.jsonl`;
+  - Indizes für die Produkt- und Skillzeilen je Blueprint und Aktivität.
+  - Ein mit Adapter 1–5 aktivierter Katalog funktioniert unverändert weiter
+    und liest die Dogma-Werte dann wie bisher aus der Paketdatei. Die
+    Beschleunigung greift erst nach einem **Neuimport des aktuellen Katalogs**
+    und anschließendem Neustart der App. Der Inhalts-Hash des Builds ändert
+    sich dadurch nicht; es entsteht eine neue Datei `catalog-v6`.
+- Vollständige Fertigungs- und Reaktionsdefinitionen (Main-Hub-Chancen,
+  Reaktionsanalyse) werden mit drei Katalogabfragen statt einer Abfragefolge je
+  Produkt geladen und für den aktiven Katalog während der Laufzeit
+  wiederverwendet. Die Auswahl des Blueprints je Produkt ist dieselbe wie bei
+  der Einzelabfrage.
 - Der aktive SDE-Zeiger akzeptiert den historischen Legacy-Dateinamen und
   kanonische, bereits aktivierte `catalog-vN`-Dateien bis einschließlich der
-  aktuellen Adapterversion 5. Dadurch bleibt ein gültiger Katalog einer
+  aktuellen Adapterversion 6. Dadurch bleibt ein gültiger Katalog einer
   älteren Adapterversion als installierter Build erkennbar und kann sicher neu
   importiert werden. Neue Aktivierungen schreiben ausschließlich Adapter 5;
   fremde Pfade, nichtkanonische Versionsangaben und zukünftige

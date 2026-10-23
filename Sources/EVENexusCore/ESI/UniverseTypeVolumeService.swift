@@ -22,13 +22,21 @@ public struct ESIUniverseTypeVolumeDTO: Decodable, Equatable, Sendable {
   }
 }
 
-/// Resolves the authoritative repackaged cargo volume exposed by the public
-/// ESI universe-type endpoint. The current client-driven SDE may contain only
-/// the assembled `volume`, which must never be substituted for transport.
+/// Resolves repackaged cargo volumes. A real `packagedVolume` of the active
+/// SDE is used first (owner decision 2026-10-23); only types without one are
+/// requested from the public ESI universe-type endpoint. The assembled
+/// `volume` must never be substituted for transport.
 public actor UniverseTypeVolumeService {
+  /// Returns only actually imported SDE `packagedVolume` values.
+  public typealias StaticPackagedVolumes =
+    @Sendable (Set<Int64>) async throws -> Sourced<[Int64: Double]>
+
+  private static let esiProvider = "ESI universe types"
+
   private struct CachedVolume: Sendable {
     let volume: Double
     let source: SourceIdentity
+    var isStatic = false
   }
 
   private enum FetchResult: Sendable {
@@ -38,34 +46,32 @@ public actor UniverseTypeVolumeService {
 
   private let esi: ESIClient
   private let maximumConcurrentRequests: Int
+  private let staticPackagedVolumes: StaticPackagedVolumes?
   private var cachedVolumes: [Int64: CachedVolume] = [:]
 
   public init(
     esi: ESIClient,
-    maximumConcurrentRequests: Int = 4
+    maximumConcurrentRequests: Int = 4,
+    staticPackagedVolumes: StaticPackagedVolumes? = nil
   ) {
     self.esi = esi
     self.maximumConcurrentRequests = min(
       8,
       max(1, maximumConcurrentRequests)
     )
+    self.staticPackagedVolumes = staticPackagedVolumes
   }
 
   public func volumes(for typeIDs: Set<Int64>) async throws
     -> Sourced<[Int64: Double]>
   {
     let acceptedTypeIDs = typeIDs.filter { $0 > 0 }
+    try await loadStaticVolumes(
+      for: acceptedTypeIDs.filter { cachedVolumes[$0] == nil }
+    )
     let missingTypeIDs = acceptedTypeIDs.filter {
       cachedVolumes[$0] == nil
     }.sorted()
-    var latestSource =
-      acceptedTypeIDs.compactMap {
-        cachedVolumes[$0]?.source
-      }.max(by: { $0.capturedAt < $1.capturedAt })
-      ?? SourceIdentity(
-        provider: "ESI universe types",
-        version: EVEConstants.esiCompatibilityDate
-      )
     var failedTypeIDs: [Int64] = []
 
     try await withThrowingTaskGroup(of: FetchResult.self) { group in
@@ -86,9 +92,6 @@ public actor UniverseTypeVolumeService {
             volume: volume,
             source: source
           )
-          if source.capturedAt > latestSource.capturedAt {
-            latestSource = source
-          }
         case .unavailable(let typeID):
           failedTypeIDs.append(typeID)
         }
@@ -116,7 +119,13 @@ public actor UniverseTypeVolumeService {
     } else {
       state = .partial
     }
+    let used = acceptedTypeIDs.compactMap { cachedVolumes[$0] }
+    let usedSources = used.map(\.source)
+    let staticSources = used.filter(\.isStatic).map(\.source)
     var diagnostics: [String] = []
+    if !staticSources.isEmpty {
+      diagnostics.append("sde.packaged-volume:\(staticSources.count)")
+    }
     if !failedTypeIDs.isEmpty {
       diagnostics.append(
         "esi.universe-type-volume.failed:\(failedTypeIDs.count)"
@@ -127,16 +136,61 @@ public actor UniverseTypeVolumeService {
         "esi.universe-type-volume.unresolved:\(unresolvedCount)"
       )
     }
-    let snapshotSource = SourceIdentity(
-      provider: "ESI universe types",
-      version: EVEConstants.esiCompatibilityDate,
-      capturedAt: latestSource.capturedAt
-    )
     return Sourced(
       state: state,
       value: values,
-      source: snapshotSource,
+      source: Self.snapshotSource(
+        used: usedSources,
+        staticSources: staticSources
+      ),
       diagnostics: diagnostics
+    )
+  }
+
+  private func loadStaticVolumes(for typeIDs: Set<Int64>) async throws {
+    guard let staticPackagedVolumes, !typeIDs.isEmpty else { return }
+    let snapshot: Sourced<[Int64: Double]>
+    do {
+      snapshot = try await staticPackagedVolumes(typeIDs)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      // Without a readable SDE every type keeps the ESI path.
+      return
+    }
+    for (typeID, volume) in snapshot.value ?? [:]
+    where typeIDs.contains(typeID) && volume.isFinite && volume >= 0 {
+      cachedVolumes[typeID] = CachedVolume(
+        volume: volume,
+        source: snapshot.source,
+        isStatic: true
+      )
+    }
+  }
+
+  private static func snapshotSource(
+    used: [SourceIdentity],
+    staticSources: [SourceIdentity]
+  ) -> SourceIdentity {
+    let capturedAt = used.map(\.capturedAt).max() ?? .now
+    guard let staticSource = staticSources.first else {
+      return SourceIdentity(
+        provider: esiProvider,
+        version: EVEConstants.esiCompatibilityDate,
+        capturedAt: capturedAt
+      )
+    }
+    if staticSources.count == used.count {
+      return SourceIdentity(
+        provider: staticSource.provider,
+        version: staticSource.version,
+        capturedAt: capturedAt
+      )
+    }
+    return SourceIdentity(
+      provider: "\(staticSource.provider) + \(esiProvider)",
+      version: "\(staticSource.version) + \(EVEConstants.esiCompatibilityDate)",
+      capturedAt: capturedAt
     )
   }
 

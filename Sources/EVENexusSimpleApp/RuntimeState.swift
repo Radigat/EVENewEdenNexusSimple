@@ -605,7 +605,6 @@ final class RuntimeState: ObservableObject {
     self.playerStructureSearch = PlayerStructureSearchService(esi: esi)
     self.tradingLocationSearch = TradingLocationSearchService(esi: esi)
     self.universeNameService = UniverseNameService(esi: esi)
-    self.universeTypeVolumeService = UniverseTypeVolumeService(esi: esi)
     self.dotlanJumpRouteService = DOTLANJumpRouteService()
     self.loyaltyStoreCatalogService = LoyaltyStoreCatalogService(esi: esi)
     let resolvedDataRoot = providedDataRoot ?? Self.fallbackDataRoot()
@@ -674,6 +673,21 @@ final class RuntimeState: ObservableObject {
         .appendingPathComponent("catalog-store", isDirectory: true)
     )
     self.catalog = catalog
+    self.universeTypeVolumeService = UniverseTypeVolumeService(
+      esi: esi,
+      staticPackagedVolumes: { typeIDs in
+        let volumes = try await catalog.packagedVolumes(typeIDs: typeIDs)
+        let build = try await catalog.activeSDEVersion()?.buildNumber
+        return Sourced(
+          state: .fresh,
+          value: volumes,
+          source: SourceIdentity(
+            provider: "CCP SDE",
+            version: build.map(String.init) ?? "unknown"
+          )
+        )
+      }
+    )
     let contractStoreURL =
       resolvedDataRoot
       .appendingPathComponent("contracts", isDirectory: true)

@@ -144,7 +144,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   ActiveSDEVersionReading, StaticDataCatalogRollingBack,
   SDEPromotionSafetyBackingUp
 {
-  private static let catalogAdapterVersion = 5
+  private static let catalogAdapterVersion = 6
 
   private struct ActivePointer: Codable, Sendable {
     let buildNumber: Int
@@ -160,6 +160,12 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       fileName: String, database: SQLiteDatabase
     )?
   private var rollbackPointerCache: ActivePointer?
+  /// Complete manufacturing/reaction definitions of one immutable catalog
+  /// file; a different active file replaces the entry.
+  private var completeDefinitionsCache:
+    [BlueprintActivityDefinition.Kind: (
+      fileName: String, definitions: [BlueprintDefinition]
+    )] = [:]
 
   public init(
     rootURL: URL,
@@ -1334,6 +1340,48 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     typeIDs: Set<Int64>,
     pointer: ActivePointer
   ) async throws -> [Int64: [Int64: Double]] {
+    let database = try activeDatabase()
+    let hasTypeDogmaTable = try !database.rows(
+      """
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'type_dogma'
+      LIMIT 1
+      """
+    ).isEmpty
+    guard hasTypeDogmaTable else {
+      // Catalog adapters before 6 keep reading the package's typeDogma file.
+      return try await streamTypeDogma(typeIDs: typeIDs, pointer: pointer)
+    }
+    let accepted = typeIDs.sorted()
+    let decoder = JSONDecoder()
+    var result: [Int64: [Int64: Double]] = [:]
+    for start in stride(from: 0, to: accepted.count, by: 500) {
+      let ids = accepted[start..<min(start + 500, accepted.count)]
+        .map(String.init).joined(separator: ",")
+      for row in try database.rows(
+        "SELECT type_id, attributes_json FROM type_dogma WHERE type_id IN (\(ids))"
+      ) {
+        guard row.count == 2, let typeID = Int64(row[0] ?? ""),
+          let json = row[1]
+        else { continue }
+        let attributes = try decoder.decode(
+          [TypeDogmaRecord.Attribute].self,
+          from: Data(json.utf8)
+        )
+        result[typeID] = Dictionary(
+          uniqueKeysWithValues: attributes.map {
+            ($0.attributeID, $0.value)
+          }
+        )
+      }
+    }
+    return result
+  }
+
+  private func streamTypeDogma(
+    typeIDs: Set<Int64>,
+    pointer: ActivePointer
+  ) async throws -> [Int64: [Int64: Double]] {
     let packageURL = try activePackageURL(pointer: pointer)
     let typeDogmaURL = packageURL.appendingPathComponent("typeDogma.jsonl")
     let handle = try FileHandle(forReadingFrom: typeDogmaURL)
@@ -1865,10 +1913,32 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   private func completeDefinitions(
     activity: BlueprintActivityDefinition.Kind
   ) async throws -> [BlueprintDefinition] {
+    guard let pointer = try loadPointer() else {
+      throw StaticCatalogError.noActiveCatalog
+    }
+    if let cached = completeDefinitionsCache[activity],
+      cached.fileName == pointer.fileName
+    {
+      return cached.definitions
+    }
+    let definitions = try await loadCompleteDefinitions(activity: activity)
+    completeDefinitionsCache[activity] = (pointer.fileName, definitions)
+    return definitions
+  }
+
+  /// Loads every complete definition of one activity with three set-based
+  /// queries instead of one `productionDefinition` lookup per product. A
+  /// product offered by more than one qualifying blueprint keeps the
+  /// per-product selection, so both paths choose the same blueprint.
+  private func loadCompleteDefinitions(
+    activity: BlueprintActivityDefinition.Kind
+  ) async throws -> [BlueprintDefinition] {
     let database = try activeDatabase()
-    let productRows = try database.rows(
+    let activitySQL = sql(activity.rawValue)
+    let headerRows = try database.rows(
       """
-      SELECT p.item_type_id
+      SELECT p.item_type_id, b.blueprint_type_id, b.max_production_limit,
+             a.time_seconds
       FROM blueprint_activities a
       JOIN blueprints b
         ON b.blueprint_type_id = a.blueprint_type_id
@@ -1879,7 +1949,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         ON blueprint_type.id = b.blueprint_type_id
       JOIN item_types product_type
         ON product_type.id = p.item_type_id
-      WHERE a.activity = \(sql(activity.rawValue))
+      WHERE a.activity = \(activitySQL)
         AND p.resolved = 1
         AND blueprint_type.published = 1
         AND product_type.published = 1
@@ -1890,29 +1960,110 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
             AND unresolved_material.activity = a.activity
             AND unresolved_material.resolved = 0
         )
-      GROUP BY p.item_type_id
-      ORDER BY product_type.name COLLATE NOCASE
+      ORDER BY product_type.name COLLATE NOCASE, p.item_type_id,
+               b.blueprint_type_id
       """
     )
-    var productTypeIDs: [Int64] = []
-    productTypeIDs.reserveCapacity(productRows.count)
-    for row in productRows {
-      guard let raw = row.first ?? nil else { continue }
-      guard let productTypeID = Int64(raw) else { continue }
-      productTypeIDs.append(productTypeID)
+    struct Header {
+      let productTypeID: Int64
+      var blueprintTypeIDs: Set<Int64>
+      let blueprintTypeID: Int64
+      let maxProductionLimit: Int64?
+      let durationSeconds: Int64
     }
-    var definitions: [BlueprintDefinition] = []
-    definitions.reserveCapacity(productTypeIDs.count)
-    for productTypeID in productTypeIDs {
-      try Task.checkCancellation()
-      guard
-        let definition = try await productionDefinition(
-          productTypeID: productTypeID,
-          requiredActivity: activity
-        ),
-        definition.activity.kind == activity
+    var headers: [Header] = []
+    for row in headerRows {
+      guard row.count == 4,
+        let productTypeID = Int64(row[0] ?? ""),
+        let blueprintTypeID = Int64(row[1] ?? ""),
+        let duration = Int64(row[3] ?? "")
       else { continue }
-      definitions.append(definition)
+      if headers.last?.productTypeID == productTypeID {
+        headers[headers.count - 1].blueprintTypeIDs.insert(blueprintTypeID)
+        continue
+      }
+      headers.append(
+        Header(
+          productTypeID: productTypeID,
+          blueprintTypeIDs: [blueprintTypeID],
+          blueprintTypeID: blueprintTypeID,
+          maxProductionLimit: row[2].flatMap(Int64.init),
+          durationSeconds: duration
+        )
+      )
+    }
+
+    var materialsByBlueprint: [Int64: [BlueprintMaterial]] = [:]
+    for values in try database.rows(
+      """
+      SELECT blueprint_type_id, item_type_id, quantity
+      FROM blueprint_materials
+      WHERE activity = \(activitySQL)
+        AND resolved = 1
+      ORDER BY blueprint_type_id, sort_order
+      """
+    ) {
+      guard values.count == 3,
+        let blueprintTypeID = Int64(values[0] ?? ""),
+        let typeID = Int64(values[1] ?? ""),
+        let quantity = Int64(values[2] ?? "")
+      else { continue }
+      materialsByBlueprint[blueprintTypeID, default: []].append(
+        BlueprintMaterial(typeID: typeID, quantity: quantity)
+      )
+    }
+    var productsByBlueprint: [Int64: [BlueprintProduct]] = [:]
+    for values in try database.rows(
+      """
+      SELECT blueprint_type_id, item_type_id, quantity, probability
+      FROM blueprint_products
+      WHERE activity = \(activitySQL)
+        AND resolved = 1
+      ORDER BY blueprint_type_id, sort_order
+      """
+    ) {
+      guard values.count == 4,
+        let blueprintTypeID = Int64(values[0] ?? ""),
+        let typeID = Int64(values[1] ?? ""),
+        let quantity = Int64(values[2] ?? "")
+      else { continue }
+      productsByBlueprint[blueprintTypeID, default: []].append(
+        BlueprintProduct(
+          typeID: typeID,
+          quantity: quantity,
+          probability: values[3].flatMap(Double.init)
+        )
+      )
+    }
+
+    let version = String(try await activeSDEVersion()?.buildNumber ?? 0)
+    var definitions: [BlueprintDefinition] = []
+    definitions.reserveCapacity(headers.count)
+    for header in headers {
+      try Task.checkCancellation()
+      guard header.blueprintTypeIDs.count == 1 else {
+        if let definition = try await productionDefinition(
+          productTypeID: header.productTypeID,
+          requiredActivity: activity
+        ), definition.activity.kind == activity {
+          definitions.append(definition)
+        }
+        continue
+      }
+      definitions.append(
+        BlueprintDefinition(
+          blueprintTypeID: header.blueprintTypeID,
+          productTypeID: header.productTypeID,
+          maxProductionLimit: header.maxProductionLimit,
+          activity: BlueprintActivityDefinition(
+            kind: activity,
+            durationSeconds: header.durationSeconds,
+            materials: materialsByBlueprint[header.blueprintTypeID] ?? [],
+            products: productsByBlueprint[header.blueprintTypeID] ?? []
+          ),
+          source: SourceIdentity(provider: "CCP SDE", version: version)
+        )
+      )
     }
     return definitions
   }
@@ -2198,6 +2349,13 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       );
       CREATE INDEX idx_market_group_parent ON market_groups(parent_id);
       CREATE INDEX idx_item_type_market_group ON item_types(market_group_id);
+      CREATE INDEX idx_product_blueprint
+        ON blueprint_products(blueprint_type_id, activity);
+      CREATE INDEX idx_skill_blueprint
+        ON blueprint_skills(blueprint_type_id, activity);
+      CREATE TABLE type_dogma (
+        type_id INTEGER PRIMARY KEY, attributes_json TEXT NOT NULL
+      );
       """
     )
     try db.execute("BEGIN IMMEDIATE")
@@ -2326,6 +2484,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
           """
         )
       }
+      for record in snapshot.typeDogma {
+        try db.execute(typeDogmaInsert(record))
+      }
       try db.execute("COMMIT")
     } catch {
       try? db.execute("ROLLBACK")
@@ -2347,7 +2508,7 @@ private struct TypeDogmaRecord: Decodable {
   let typeID: Int64
   let attributes: [Attribute]
 
-  struct Attribute: Decodable {
+  struct Attribute: Codable {
     let attributeID: Int64
     let value: Double
   }
@@ -2560,6 +2721,10 @@ private actor SQLiteBatchWriter {
             """
           )
         }
+      case .typeDogma(let records):
+        for record in records {
+          try database.execute(typeDogmaInsert(record))
+        }
       case .reactionRuleProfile(let profile):
         let data = try JSONEncoder().encode(profile)
         guard let json = String(data: data, encoding: .utf8) else {
@@ -2685,7 +2850,36 @@ private actor SQLiteBatchWriter {
     );
     CREATE INDEX idx_market_group_parent ON market_groups(parent_id);
     CREATE INDEX idx_item_type_market_group ON item_types(market_group_id);
+    CREATE INDEX idx_product_blueprint
+      ON blueprint_products(blueprint_type_id, activity);
+    CREATE INDEX idx_skill_blueprint
+      ON blueprint_skills(blueprint_type_id, activity);
+    CREATE TABLE type_dogma (
+      type_id INTEGER PRIMARY KEY, attributes_json TEXT NOT NULL
+    );
     """
+}
+
+/// Stores the attribute list in the SDE's own `dogmaAttributes` shape so the
+/// reader decodes exactly the values the package's typeDogma file carried.
+private func typeDogmaInsert(_ record: StaticTypeDogmaSnapshot) throws
+  -> String
+{
+  let attributes = record.attributeValues
+    .sorted { $0.key < $1.key }
+    .map { TypeDogmaRecord.Attribute(attributeID: $0.key, value: $0.value) }
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = .sortedKeys
+  guard
+    let json = String(
+      data: try encoder.encode(attributes),
+      encoding: .utf8
+    )
+  else {
+    throw StaticCatalogError.database("type-dogma-encoding")
+  }
+  return
+    "INSERT INTO type_dogma VALUES (\(record.itemTypeID), \(sql(json)))"
 }
 
 private func marketGroupInsert(_ group: StaticMarketGroupSnapshot) -> String {
