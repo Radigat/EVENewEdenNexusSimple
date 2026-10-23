@@ -503,7 +503,8 @@ public actor PlayerStructureSearchService {
       path: "/universe/structures/\(structureID)",
       requiresAuthorization: true,
       requiredScope: detailScope,
-      rememberedFailureDuration: inaccessibleRecheckInterval
+      rememberedFailureDuration: inaccessibleRecheckInterval,
+      sharesResponsesAcrossCharacters: true
     )
   }
 

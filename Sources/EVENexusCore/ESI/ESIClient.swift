@@ -9,19 +9,26 @@ public struct ESIEndpoint: Hashable, Sendable {
   /// per authorization partition and answered locally instead of asking ESI
   /// again (CCP discourages repeated 4xx).
   public var rememberedFailureDuration: TimeInterval?
+  /// When set, a fresh authenticated response of this GET also serves every
+  /// other character until its `Expires` (owner decision 2026-10-24), e.g.
+  /// structure details and structure order books that are identical for all
+  /// characters with access. Remembered 403/404 stay per character.
+  public var sharesResponsesAcrossCharacters: Bool
 
   public init(
     path: String,
     query: [URLQueryItem] = [],
     requiresAuthorization: Bool = false,
     requiredScope: String? = nil,
-    rememberedFailureDuration: TimeInterval? = nil
+    rememberedFailureDuration: TimeInterval? = nil,
+    sharesResponsesAcrossCharacters: Bool = false
   ) {
     self.path = path
     self.query = query
     self.requiresAuthorization = requiresAuthorization
     self.requiredScope = requiredScope
     self.rememberedFailureDuration = rememberedFailureDuration
+    self.sharesResponsesAcrossCharacters = sharesResponsesAcrossCharacters
   }
 }
 
@@ -837,6 +844,18 @@ public actor ESIClient {
         query: endpoint.query,
         partition: authorizationPartition
       ) ? responseStore : nil
+    let sharedKey =
+      endpoint.sharesResponsesAcrossCharacters && lease != nil
+      ? "shared|\(url.absoluteString)" : nil
+    if let sharedKey,
+      let shared = await freshSharedResponse(
+        Value.self,
+        forKey: sharedKey,
+        store: durableStore
+      )
+    {
+      return shared
+    }
     let failureDuration = endpoint.rememberedFailureDuration
     if failureDuration != nil, !revalidatingRememberedFailure,
       let failure = await rememberedFailure(
@@ -994,6 +1013,10 @@ public actor ESIClient {
           )
           storeCachedResponse(validator, forKey: cacheKey)
           await durableStore?.store(validator.stored, forKey: cacheKey)
+          if let sharedKey {
+            storeCachedResponse(validator, forKey: sharedKey)
+            await durableStore?.store(validator.stored, forKey: sharedKey)
+          }
         } else {
           removeCachedResponse(forKey: cacheKey)
           await durableStore?.removeResponse(forKey: cacheKey)
@@ -1070,6 +1093,35 @@ public actor ESIClient {
         throw error
       }
     }
+  }
+
+  /// A still-fresh copy that another character loaded, or `nil`.
+  private func freshSharedResponse<Value: Decodable & Sendable>(
+    _ type: Value.Type,
+    forKey key: String,
+    store: (any ESIResponseStoring)?
+  ) async -> ESIResponse<Value>? {
+    var cached = cachedValidator(for: key)
+    if cached == nil, let stored = await store?.response(forKey: key) {
+      let restored = Validator(stored)
+      storeCachedResponse(restored, forKey: key)
+      cached = restored
+    }
+    guard let cached,
+      let expiresAt = cached.expiresAt,
+      expiresAt > now(),
+      let decoded = try? decoder.decode(Value.self, from: cached.data)
+    else { return nil }
+    return ESIResponse(
+      value: decoded,
+      source: cached.source,
+      statusCode: cached.statusCode,
+      expiresAt: expiresAt,
+      etag: cached.etag,
+      lastModified: cached.lastModified,
+      pages: cached.pages,
+      errorLimitRemain: nil
+    )
   }
 
   private func rememberedFailure(
@@ -1302,10 +1354,15 @@ public actor ESIClient {
     for page in 1...max(1, pageCount) {
       guard let url = try? makeURL(Self.pageEndpoint(endpoint, page: page))
       else { continue }
-      let key = "\(partition)|\(url.absoluteString)"
-      keys.append(key)
-      if let cached = validators[key], cached.lastModified != lastModified {
-        removeCachedResponse(forKey: key)
+      var pageKeys = ["\(partition)|\(url.absoluteString)"]
+      if endpoint.sharesResponsesAcrossCharacters, lease != nil {
+        pageKeys.append("shared|\(url.absoluteString)")
+      }
+      for key in pageKeys {
+        keys.append(key)
+        if let cached = validators[key], cached.lastModified != lastModified {
+          removeCachedResponse(forKey: key)
+        }
       }
     }
     await responseStore?.removeResponses(

@@ -236,3 +236,16 @@ Schritt P1.
   - Neu geprüft wird nach 24 Stunden, je Charakter und dauerhaft über
     Neustarts.
   - Eine ausdrücklich gestartete Struktursuche fragt immer neu bei ESI.
+
+## 24.10.2026 – Strukturdaten für alle Charaktere teilen
+
+- **Anlass:** Im Live-Lauf luden mehrere Charaktere dieselbe Struktur einzeln:
+  210 Strukturdetail-Einträge für 71 Strukturen. Die vier Aufrufer der
+  Strukturmärkte wählten verschiedene Charaktere für dasselbe Orderbuch.
+- **Entscheidung (Eigentümer):**
+  - Frisch geladene Strukturdetails und Strukturmarkt-Orderbücher gelten bis
+    `Expires` für alle Charaktere.
+  - Ein Charakter ohne Andockrecht sieht damit Daten, die ein anderer eigener
+    Charakter geladen hat.
+  - Die Charakterwahl der Aufrufer bleibt unverändert.
+- **Außerdem:** Der Messzähler „early“ zählt je Charakter statt je URL.

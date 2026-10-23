@@ -7867,3 +7867,58 @@ Offen:
   berechtigten Charakter geladen werden sollen (weniger Abrufe).
 - Zähler `early` je Charakter-Partition statt je URL.
 - Abnahme der beiden Fixes durch den Eigentümer.
+
+## 24.10.2026 – Strukturdaten teilen, Messzähler je Charakter, Startdauer untersucht
+
+Änderung (Entscheidungen in [DECISIONS.md](Documentation/Consolidation/DECISIONS.md)):
+- `ESIEndpoint.sharesResponsesAcrossCharacters`: Eine frische
+  authentifizierte Antwort liegt zusätzlich unter `shared|url`, im Speicher
+  und dauerhaft.
+  - Jeder Charakter bekommt sie bis `Expires`, und zwar vor der Prüfung
+    seiner gemerkten 403/404.
+  - Das Neulesen bei einem Seiten-Snapshot-Wechsel entfernt auch die
+    geteilten Seiten.
+- Gesetzt für Strukturdetails (`PlayerStructureSearchService.detailEndpoint`)
+  und Strukturmarkt-Orderbücher (`structureOrderSnapshot`).
+- Ursache der frühen Strukturmarkt-Abrufe: Mond-/Mineralanalysen (Händler je
+  Hub), Reaktionen (niedrigste Charakter-ID) und Home-/Coalition-Scans (eigener
+  Händler) wählten für dasselbe Buch verschiedene Charaktere.
+- `MeasuringESITransport` zählt frühe Abrufe je Charakter. Den Charakter
+  liest er aus dem `sub` des Access-Tokens, nur im Speicher und nie
+  protokolliert.
+
+Prüfung (automatisch):
+- Vier neue Tests:
+  - Strukturdetails eines Charakters dienen allen, auch nach einem Neustart,
+    und werden nach Ablauf je Charakter neu geladen;
+  - die geteilte Kopie bedient auch einen Charakter mit gemerktem 403;
+  - ein Snapshot-Wechsel verwirft die geteilte Seite;
+  - frühe Abrufe werden je Charakter gezählt.
+- `swift test` 577 + 70 Tests; `EVEStaticDataKit` 12; `xcodebuild … test`
+  577 Tests, `TEST SUCCEEDED`.
+- Lint ohne Befund, `git diff --check` fehlerfrei.
+
+Untersuchung der Startdauer (Start B am 23.10.2026, 23:07, Cache rund 1,5 h
+alt):
+- 15 Charaktere wurden nacheinander abgeglichen, von 23:07:20 bis 23:08:22.
+  - Im Schnitt gut 4 s je Charakter, einzelne 8–10 s.
+  - Danach 7 s Nacharbeiten (LP, Handelslogbuch, Abgleich) und 5 s Analysen.
+- Erster Start mit leerem Cache (21:29): Charaktere nach 26,6 s.
+  - Der Start mit abgelaufenem Cache war also langsamer als der mit leerem.
+  - Das widerspricht der Erwartung, denn 304 sind kleiner als 200.
+- Kandidaten, nicht belegt:
+  1. Jede 304-Antwort schreibt den vollen Inhalt erneut in die Cache-Datei
+     (591 Schreibvorgänge). Der ESI-Client wartet auf jeden Schreibvorgang,
+     und diese laufen nacheinander über einen Actor.
+  2. Die Marktanalysen beim Start konkurrieren mit dem Abgleich um die sechs
+     Transportplätze: 243 Einzeltyp-Orders und 175 Strukturbuch-Abrufe; die
+     Strukturbücher halbieren sich jetzt durch das Teilen.
+  3. Die Antwortzeiten von ESI zur späten Abendzeit.
+- Die vorhandene Messung zeigt keine Dauer je Charakter und keine
+  Antwortzeiten. Vorschlag:
+  - Meilenstein je Charakter-Abgleich;
+  - Antwortzeiten je Routenfamilie im Messprotokoll;
+  - Schreibdauer der Cache-Datei;
+  - danach zwei Starts mit abgelaufenem Cache vergleichen.
+
+Nicht geprüft: Live-Wirkung des Teilens, Abnahme.

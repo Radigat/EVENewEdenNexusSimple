@@ -182,6 +182,87 @@ struct ESIRememberedFailureTests {
     #expect(await store.rememberedFailure(forKey: "character:1|x") == failure)
   }
 
+  @Test
+  func freshStructureDetailsLoadedByOneCharacterServeAllCharacters() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("esi-responses.sqlite")
+    let clock = Clock(start)
+    let transport = StatusTransport([200, 200], expires: start.addingTimeInterval(3_600))
+    let service = PlayerStructureSearchService(esi: client(transport, url: url, clock: clock))
+
+    let first = await service.resolveKnownStructures(
+      structureIDs: [structureID],
+      lease: lease(91)
+    )
+    let second = await service.resolveKnownStructures(
+      structureIDs: [structureID],
+      lease: lease(92)
+    )
+
+    #expect(first.value?.map(\.id) == [structureID])
+    #expect(second.value?.map(\.id) == [structureID])
+    #expect(await transport.requestCount == 1)
+
+    // The shared copy survives a restart until it expires.
+    let restarted = StatusTransport([])
+    _ = await PlayerStructureSearchService(
+      esi: client(restarted, url: url, clock: clock)
+    ).resolveKnownStructures(structureIDs: [structureID], lease: lease(93))
+    #expect(await restarted.requestCount == 0)
+
+    // After expiry each character asks again with its own token.
+    clock.now = start.addingTimeInterval(3_601)
+    _ = await service.resolveKnownStructures(
+      structureIDs: [structureID],
+      lease: lease(92)
+    )
+    #expect(await transport.requestCount == 2)
+  }
+
+  @Test
+  func aSharedCopyAlsoServesACharacterWithARememberedForbidden() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("esi-responses.sqlite")
+    let clock = Clock(start)
+    let transport = StatusTransport([403, 200], expires: start.addingTimeInterval(3_600))
+    let service = PlayerStructureSearchService(esi: client(transport, url: url, clock: clock))
+    _ = await service.resolveKnownStructures(structureIDs: [structureID], lease: lease(92))
+    _ = await service.resolveKnownStructures(structureIDs: [structureID], lease: lease(91))
+
+    let result = await service.resolveKnownStructures(
+      structureIDs: [structureID],
+      lease: lease(92)
+    )
+
+    #expect(result.value?.map(\.id) == [structureID])
+    #expect(await transport.requestCount == 2)
+  }
+
+  @Test
+  func pagesOfAnotherSnapshotAlsoDropTheSharedCopy() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("esi-responses.sqlite")
+    let clock = Clock(start)
+    let transport = StatusTransport([200, 200], expires: start.addingTimeInterval(3_600))
+    let esi = client(transport, url: url, clock: clock)
+    let endpoint = PlayerStructureSearchService.detailEndpoint(structureID: structureID)
+    let firstPage = ESIClient.pageEndpoint(endpoint, page: 1)
+    _ = try await esi.get(StructureType.self, endpoint: firstPage, lease: lease(91))
+
+    await esi.removeCachedPages(
+      of: endpoint,
+      pageCount: 1,
+      lease: lease(92),
+      exceptLastModified: "newer snapshot"
+    )
+    _ = try await esi.get(StructureType.self, endpoint: firstPage, lease: lease(92))
+
+    #expect(await transport.requestCount == 2)
+  }
+
   private func client(
     _ transport: StatusTransport,
     url: URL,
@@ -241,10 +322,12 @@ private final class Clock: @unchecked Sendable {
 /// Answers structure-detail requests with the scripted status codes in order.
 private actor StatusTransport: ESIHTTPTransporting {
   private var statuses: [Int]
+  private let expires: Date?
   private(set) var requestCount = 0
 
-  init(_ statuses: [Int]) {
+  init(_ statuses: [Int], expires: Date? = nil) {
     self.statuses = statuses
+    self.expires = expires
   }
 
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -260,7 +343,13 @@ private actor StatusTransport: ESIHTTPTransporting {
         url: request.url!,
         statusCode: status,
         httpVersion: "HTTP/1.1",
-        headerFields: [:]
+        headerFields: expires.map { date in
+          let formatter = DateFormatter()
+          formatter.locale = Locale(identifier: "en_US_POSIX")
+          formatter.timeZone = TimeZone(secondsFromGMT: 0)
+          formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+          return ["Expires": formatter.string(from: date)]
+        } ?? [:]
       )!
     )
   }

@@ -2331,6 +2331,13 @@ mit kurzen, wiederverwendbaren Prompts steht in
   ausdrücklich gestartete Struktursuche fragt immer direkt bei ESI und
   aktualisiert den Merker; ein erfolgreicher Abruf löscht ihn
   (Eigentümerentscheidung vom 23.10.2026).
+- Strukturdetails (Name, Typ, System, Besitzer) und Strukturmarkt-Orderbücher
+  gelten bis zu ihrem `Expires` für alle Charaktere, sobald ein Charakter sie
+  geladen hat. Das gilt auch über Neustarts (Eigentümerentscheidung vom
+  24.10.2026).
+  - Ein Charakter ohne eigenes Andockrecht sieht damit den Namen, den ein
+    anderer Charakter geladen hat.
+  - Die gemerkten 403/404 gelten weiter je Charakter.
   - Ist die Datei nicht nutzbar, arbeitet die App für diesen Lauf ohne den
     dauerhaften Cache weiter.
 - Fortschrittswerte lang laufender Contract- und Main-Hub-Importe werden für
@@ -2450,7 +2457,9 @@ mit kurzen, wiederverwendbaren Prompts steht in
   - Dazu kommt eine passive Prüfung der CCP-Vorgaben:
     - fehlender `User-Agent` oder fehlendes `X-Compatibility-Date`;
     - ein Compatibility-Date in der Zukunft;
-    - GET-Abrufe vor dem `Expires` der vorherigen Antwort („early“);
+    - GET-Abrufe desselben Charakters vor dem `Expires` der vorherigen
+      Antwort („early“; der Charakter wird nur im Speicher aus dem
+      Access-Token abgeleitet);
     - 420- und 429-Antworten;
     - die niedrigsten gemeldeten Fehler- und Token-Budgets.
   - Eine Zusammenfassung seit App-Start erscheint höchstens einmal je Minute,

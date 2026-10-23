@@ -111,6 +111,47 @@ struct MeasuringESITransportTests {
   }
 
   @Test
+  func earlyRequestsAreCountedPerCharacterNotPerURL() async throws {
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let expires = "Fri, 15 Jan 2027 08:05:00 GMT"
+    let base = RecordingTransport(
+      responses: Array(
+        repeating: .init(status: 200, body: "{}", headers: ["Expires": expires]),
+        count: 3
+      )
+    )
+    let transport = MeasuringESITransport(
+      base: base,
+      now: { clock.now },
+      summaryInterval: nil
+    )
+    func structureRequest(character: Int64) -> URLRequest {
+      var request = esiRequest("/markets/structures/1035466617946/")
+      request.setValue("Bearer \(token(character: character))", forHTTPHeaderField: "Authorization")
+      return request
+    }
+
+    _ = try await transport.data(for: structureRequest(character: 91))
+    _ = try await transport.data(for: structureRequest(character: 92))
+    _ = try await transport.data(for: structureRequest(character: 91))
+
+    #expect(transport.snapshot().earlyRequests == 1)
+    #expect(
+      MeasuringESITransport.partition(of: structureRequest(character: 91))
+        == "character:91"
+    )
+    #expect(MeasuringESITransport.partition(of: esiRequest("/status/")) == "public")
+  }
+
+  /// An unsigned JWT-shaped fixture with only the `sub` claim.
+  private func token(character: Int64) -> String {
+    let payload = Data(#"{"sub":"CHARACTER:EVE:\#(character)"}"#.utf8)
+      .base64EncodedString()
+      .replacingOccurrences(of: "=", with: "")
+    return "e30.\(payload).signature"
+  }
+
+  @Test
   func countsMissingHeadersAndFutureCompatibilityDates() async throws {
     let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
     let base = RecordingTransport(

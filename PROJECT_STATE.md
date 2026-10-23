@@ -318,7 +318,11 @@ Verhalten: [PRODUCT.md](PRODUCT.md), Nachweise: [dev-diary.md](dev-diary.md).
     Fehlerbudget 89 von 100. Offen ist die Abnahme.
   - Befund: frühe Strukturmarkt- und Strukturdetail-Abrufe. Aufgeklärt:
     dieselbe URL für verschiedene Charaktere mit eigenem Cache-Eintrag.
-    Offen ist die Entscheidung, ob nur ein Charakter je Struktur laden soll;
+    Umgesetzt am 24.10.2026: Strukturdetails und -bücher gelten für alle
+    Charaktere; „early“ zählt je Charakter. Automatisch geprüft (577 + 70),
+    live offen;
+  - Startdauer mit abgelaufenem Cache (79 s) untersucht. Die Ursache ist nicht
+    belegt; vorgeschlagen sind weitere Messpunkte (siehe dev-diary);
   - Behoben am 23.10.2026: gleichzeitige Token-Erneuerung desselben
     Charakters (Meldung „Autorisierung fehlt“ bei Donna Aumer). Automatisch
     geprüft (572 + 70, `xcodebuild test`). Live bestätigt am 23.10.2026:

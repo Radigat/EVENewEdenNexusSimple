@@ -149,6 +149,11 @@ or 404 per character and URL in memory and in the durable store
 does not repeat the same 4xx against CCP's error budget. A success clears the
 marker; the explicit structure search passes `revalidatingRememberedFailure`
 and always asks ESI. Character disconnect forgets the markers.
+`ESIEndpoint.sharesResponsesAcrossCharacters` (structure details and structure
+order books) additionally stores a fresh authenticated response under
+`shared|url` in memory and durably; any character's request returns it until
+`Expires`, before the per-character remembered-failure check. Snapshot-change
+page removal also drops the shared pages.
 
 The projection builds one item index and resolves each root once. Target
 composition caches the latest projection by persisted snapshot identity so
@@ -608,7 +613,8 @@ segments as `{id}`, no query) it counts requests, bytes, status classes and
 failures. As a passive check of CCP's ESI guidance it also counts:
 - requests without `User-Agent` or `X-Compatibility-Date`;
 - compatibility dates after the 11:00-UTC rollover date;
-- GETs sent again before the previous response's `Expires`, tracked per URL in
+- GETs sent again for the same character (decoded from the bearer token's
+  `sub`, in memory only) before the previous response's `Expires`, tracked in
   a bounded in-memory table;
 - 420/429 responses;
 - the lowest reported error and rate-limit budgets.

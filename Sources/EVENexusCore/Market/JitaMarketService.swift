@@ -158,7 +158,8 @@ public struct TradeHubMarketService: Sendable {
       endpoint: ESIEndpoint(
         path: "/markets/structures/\(structureID)/",
         requiresAuthorization: true,
-        requiredScope: Self.structureMarketScope
+        requiredScope: Self.structureMarketScope,
+        sharesResponsesAcrossCharacters: true
       ),
       lease: lease
     )

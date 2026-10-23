@@ -155,7 +155,12 @@ public final class MeasuringESITransport: ESIHTTPTransporting,
     -> (Data, HTTPURLResponse)
   {
     let route = Self.routeFamily(of: request.url)
-    let cacheKey = Self.isGET(request) ? request.url?.absoluteString : nil
+    // Each character has its own cached representation, so an early request
+    // is a repeat for the same character, not merely the same URL.
+    let cacheKey =
+      Self.isGET(request)
+      ? request.url.map { "\(Self.partition(of: request))|\($0.absoluteString)" }
+      : nil
     recordRequest(request, route: route, cacheKey: cacheKey)
     do {
       let (data, response) = try await base.data(for: request)
@@ -186,6 +191,26 @@ public final class MeasuringESITransport: ESIHTTPTransporting,
       }
     let path = segments.joined(separator: "/")
     return path.isEmpty ? "/" : path
+  }
+
+  /// `character:<id>` from the bearer token's `sub` claim, `authenticated`
+  /// when it cannot be read, or `public`. Used only as an in-memory key.
+  static func partition(of request: URLRequest) -> String {
+    guard
+      let authorization = request.value(forHTTPHeaderField: "Authorization"),
+      authorization.hasPrefix("Bearer ")
+    else { return "public" }
+    let parts = authorization.dropFirst("Bearer ".count).split(separator: ".")
+    guard parts.count == 3 else { return "authenticated" }
+    var payload = parts[1].replacingOccurrences(of: "-", with: "+")
+      .replacingOccurrences(of: "_", with: "/")
+    payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+    guard let data = Data(base64Encoded: payload),
+      let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let subject = claims["sub"] as? String,
+      let characterID = subject.split(separator: ":").last.flatMap({ Int64($0) })
+    else { return "authenticated" }
+    return "character:\(characterID)"
   }
 
   /// ESI changes its date at 11:00 UTC; a later compatibility date is invalid.
