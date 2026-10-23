@@ -7645,3 +7645,77 @@ Nicht geprüft:
 
 Offen: Auftrag 3, der Live-Lauf mit Auswertung (Startzeit, Main-Hub-Scan,
 ESI-Last, CCP-Zähler) und Abnahmeliste.
+
+## 23.10.2026 – Live-Lauf: Start, Main-Hub-Scan und ESI-Last
+
+Ablauf:
+- Der Eigentümer hat die App beendet und in Xcode neu gebaut und gestartet
+  (Stand `3236ae9`): erster Start mit leerem dauerhaftem Cache um 21:29.
+- Danach folgten ein zweiter Start um 21:31 und um 21:34 ein manueller
+  Main-Hub-Scan über **Update**.
+- Aufgezeichnet wurde mit `/usr/bin/log stream` (Kategorie `performance`). Die
+  echte App wurde nicht ferngesteuert.
+
+Ergebnisse (live geprüft, echte Daten):
+
+| Messung | 1. Start (Cache leer) | 2. Start (Cache gefüllt) |
+|---|---|---|
+| Konfiguration bereit | 6,0 s | 5,3 s |
+| Charaktere synchronisiert | 26,6 s | 17,8 s |
+| Start abgeschlossen | 26,9 s | 18,2 s |
+| Dauerhafter Cache beim Öffnen | 0 Einträge | 818 Einträge, 41 MB |
+
+- Facility-Dogma kam beide Male aus der Katalogtabelle: 152 Typen in 4–5 ms.
+- Zweiter Start bis zum Scan (2,8 min):
+  - 780 Antworten von der Platte statt von ESI;
+  - 343 Netzabrufe, davon 163 als 304.
+  - Für den ersten Start fehlt die Anzahl der Netzabrufe, weil die
+    ESI-Zusammenfassung erst beim nächsten Abruf nach 60 s erscheint und die
+    App vorher beendet wurde (Messlücke).
+- Main-Hub-Scan manuell, 24,5 s gesamt:
+
+  | Phase | Dauer |
+  |---|---|
+  | Definitionen, Orderbuch, Preise, Systeme | 9,8 s |
+  | Nachfrage | 0,9 s |
+  | Namen, Klassifikationen, Volumen | 0,08 s (4.765 Volumen aus dem SDE, kein `/universe/types`-Abruf) |
+  | Analyse | 1,0 s |
+  | Speichern | 0,8 s |
+  | Home-Hub | 1,5 s |
+  | Coalition-Hub | 10,3 s |
+
+  - Die ESI-Last des Scans: 458 Anfragen, davon 404 Seiten des
+    Regions-Orderbuchs und 54 Strukturmarkt-Abrufe, rund 102 MB.
+- Cache-Ordner danach: 55 MB.
+
+CCP-Regelprüfung (live):
+- Erfüllt:
+  - User-Agent und Compatibility-Date bei allen Anfragen vorhanden, kein
+    Datum in der Zukunft;
+  - keine 420 und keine 429;
+  - Token-Budgets weit im grünen Bereich (niedrigster Restwert `char-wallet`
+    142);
+  - im Scan selbst kein früher Abruf.
+- Befund 1: 51 Antworten mit 4xx vor dem Scan, rechnerisch genau die 51
+  Strukturdetail-Abrufe `/universe/structures/{id}` ohne 304.
+  `PlayerStructureSearchService` fragt nicht zugängliche Strukturen bei jedem
+  Start erneut ab (403, „inaccessible“) und merkt sich das nicht.
+  - Folge: Das Fehlerbudget sank auf 49 von 100. Die App bremst erst bei 20;
+    CCP rät von wiederholten 4xx ab, die je 5 Tokens kosten.
+- Befund 2: Sechs frühe Abrufe des Strukturmarkt-Orderbuchs
+  `/markets/structures/{id}/` vor dem Scan. Die Ursache ist nicht geklärt.
+  Möglich sind ein zweiter Abruf derselben URL mit einem anderen Charakter
+  oder ein Neulesen nach einem Snapshot-Wechsel. Der Zähler erkennt Abrufe
+  nur je URL.
+
+Eigentümerabnahme: am 23.10.2026 erteilt, für die statischen Daten aus dem
+SDE, das Messprotokoll und den dauerhaften ESI-Cache. Grundlage war die
+Abnahmeliste: Industrieprofile (Strukturen, Service-Module, Rigs),
+Main-/Home-/Coalition-Hub-Chancen nach dem Scan, verpackte Volumen im Planner,
+Charakterdaten nach dem Neustart und Geschwindigkeit.
+
+Offen:
+- Folgeaufträge:
+  - nicht zugängliche Strukturen merken statt bei jedem Start erneut abfragen;
+  - Ursache der frühen Strukturmarkt-Abrufe klären;
+  - ESI-Zusammenfassung zusätzlich beim Startende schreiben.

@@ -263,10 +263,9 @@ Details: [dev-diary.md](dev-diary.md), Entscheidung zur Volumenquelle:
   - Commit `3100021`;
   - „SDE → Neuimport des aktuellen Katalogs“ um 09:12–09:13 Uhr: aktiv ist
     `catalog-v6` mit 491 Dogma-Typen und beiden Indizes;
-  - Neustart der Debug-App um 10:17 Uhr.
-- **Offen:**
-  - Messung in der laufenden App (Startzeit, Main-Hub-Scan, ESI-Last);
-  - Eigentümerabnahme.
+  - Neustart der Debug-App um 10:17 Uhr;
+  - Messung in der laufenden App (siehe „Dauerhafter ESI-Antwortcache“).
+- **Vom Eigentümer abgenommen (23.10.2026).**
 
 ## Messprotokoll und CCP-Regelprüfung (23.10.2026)
 
@@ -286,8 +285,8 @@ Lesart: [PRODUCT.md](PRODUCT.md), Abschnitt „Laufzeit und Hintergrundarbeit“
     - Dogma 529 → 58 ms;
     - Fertigungsdefinitionen 655 → 53 ms;
     - ESI-Volumenabrufe je Scan 4.765 → 0.
-- **Offen:** Live-Lauf mit Auswertung und Abnahmeliste; danach die
-  Eigentümerabnahme.
+- **Live geprüft und vom Eigentümer abgenommen (23.10.2026):** siehe
+  „Dauerhafter ESI-Antwortcache“.
 
 ## Dauerhafter ESI-Antwortcache (23.10.2026)
 
@@ -301,7 +300,17 @@ Verhalten: [PRODUCT.md](PRODUCT.md), Nachweise: [dev-diary.md](dev-diary.md).
   - 512 MB, nicht in der Datensicherung.
 - **Automatisch geprüft (23.10.2026):** `swift test` 564 + 70,
   `EVEStaticDataKit` 12, `xcodebuild test` `TEST SUCCEEDED` (564).
-- **Offen:**
-  - Live-Lauf (Auftrag 3): Neustart, Main-Hub-Scan, Zähler `early`, Dauer und
-    Dateigröße;
-  - Eigentümerabnahme.
+- **Live geprüft (23.10.2026, echte Daten):**
+  - Start 26,9 s mit leerem, 18,2 s mit gefülltem Cache (780 Antworten von
+    der Platte);
+  - Main-Hub-Scan 24,5 s, Volumen ohne ESI-Abruf;
+  - keine 420/429, Header vollständig.
+  - Details im [dev-diary.md](dev-diary.md).
+- **Vom Eigentümer abgenommen (23.10.2026)** anhand der Abnahmeliste
+  (Industrieprofile, Hub-Chancen, Planner-Volumen, Charakterdaten,
+  Geschwindigkeit).
+- **Offen (Folgeaufträge):**
+  - Befund: 51 wiederholte 403 bei nicht zugänglichen Strukturen je Start
+    (Fehlerbudget sank auf 49 von 100);
+  - Befund: sechs frühe Strukturmarkt-Abrufe, Ursache offen;
+  - Messlücke: ESI-Zusammenfassung beim Startende fehlt.
