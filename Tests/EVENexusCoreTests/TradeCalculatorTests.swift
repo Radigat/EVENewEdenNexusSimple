@@ -587,7 +587,8 @@ struct TradeTileTests {
     _ id: Int64,
     difference: Double? = nil,
     profit: Double? = nil,
-    volume: Double? = nil
+    volume: Double? = nil,
+    roi: Double? = nil
   ) -> TradeDisplayRow {
     TradeDisplayRow(
       row: TradeRow(
@@ -602,7 +603,7 @@ struct TradeTileTests {
         netSale: nil,
         profit: profit,
         margin: nil,
-        returnOnInvestment: nil,
+        returnOnInvestment: roi,
         targetSpreadFraction: nil,
         issues: []
       ),
@@ -623,18 +624,18 @@ struct TradeTileTests {
   }
 
   @Test
-  func topRankingByDifferenceRanksOnlyKnownPositiveValues() {
+  func topRankingByReturnOnInvestmentRanksOnlyKnownPositiveValues() {
     let result = TradeTopRanking.ranked(
       [
-        rankingRow(5, difference: 0.4),
-        rankingRow(3, difference: 0.2),
-        rankingRow(4, difference: 0.4),
-        rankingRow(1, difference: 0),
-        rankingRow(2, difference: -0.1),
-        rankingRow(6, difference: nil),
-        rankingRow(7, difference: 0.1),
+        rankingRow(5, profit: 10, roi: 0.4),
+        rankingRow(3, profit: 10, roi: 0.2),
+        rankingRow(4, profit: 10, roi: 0.4),
+        rankingRow(1, profit: 0, roi: 0),
+        rankingRow(2, profit: -10, roi: -0.1),
+        rankingRow(6, profit: 10, roi: nil),
+        rankingRow(7, profit: 10, roi: 0.1),
       ],
-      by: .difference
+      by: .returnOnInvestment
     )
 
     // Equal values keep the type ID order; fewer than 20 positive values
@@ -643,6 +644,31 @@ struct TradeTileTests {
     #expect(result.unknownCount == 1)
     #expect(result.nonPositiveCount == 2)
     #expect(result.candidateCount == 7)
+    #expect(TradeTopRankingMetric.returnOnInvestment.sortColumn == .returnOnInvestment)
+  }
+
+  @Test
+  func topRankingNeverRanksAHighDifferenceWithoutPositiveProfit() {
+    let rows = [
+      rankingRow(1, difference: 2.0, profit: -50, volume: 1, roi: -0.5),
+      rankingRow(2, difference: 1.5, profit: nil, volume: 1, roi: nil),
+      rankingRow(3, difference: 0.05, profit: 20, volume: 1, roi: 0.1),
+      // A positive metric with an unknown or zero profit is inconsistent
+      // input; it counts as not positive instead of ranking.
+      rankingRow(4, difference: 1.0, profit: nil, volume: 1, roi: 0.3),
+      rankingRow(5, difference: 1.0, profit: 0, volume: 1, roi: 0.3),
+    ]
+
+    let byROI = TradeTopRanking.ranked(rows, by: .returnOnInvestment)
+    #expect(byROI.rows.map(\.id) == [3])
+    #expect(byROI.unknownCount == 1)
+    #expect(byROI.nonPositiveCount == 3)
+
+    let byVolume = TradeTopRanking.ranked(rows, by: .profitPerCubicMeter)
+    #expect(byVolume.rows.map(\.id) == [3])
+    #expect(byVolume.unknownCount == 2)
+    #expect(byVolume.nonPositiveCount == 2)
+    #expect(TradeTopRankingMetric(rawValue: "difference") == nil)
   }
 
   @Test
@@ -664,19 +690,18 @@ struct TradeTileTests {
     #expect(result.nonPositiveCount == 1)
     #expect(result.candidateCount == 6)
     #expect(TradeTopRankingMetric.profitPerCubicMeter.sortColumn == .profitPerCubicMeter)
-    #expect(TradeTopRankingMetric.difference.sortColumn == .difference)
   }
 
   @Test
   func topRankingStopsAtTheLimit() {
-    let rows = (1...25).map { rankingRow(Int64($0), difference: Double($0) / 100) }
+    let rows = (1...25).map { rankingRow(Int64($0), profit: Double($0), volume: 1) }
 
-    let result = TradeTopRanking.ranked(rows, by: .difference)
+    let result = TradeTopRanking.ranked(rows, by: .profitPerCubicMeter)
     #expect(TradeTopRanking.limit == 20)
     #expect(result.rows.map(\.id) == Array((6...25).reversed()).map(Int64.init))
     #expect(result.candidateCount == 25)
     #expect(
-      TradeTopRanking.ranked(rows, by: .difference, limit: 3).rows.map(\.id)
+      TradeTopRanking.ranked(rows, by: .profitPerCubicMeter, limit: 3).rows.map(\.id)
         == [25, 24, 23]
     )
   }

@@ -107,7 +107,7 @@ struct TradeView: View {
   private var showsDetails = false
   /// Ranking metric of the Top-20 tile (HANDEL_PLAN.md, section J).
   @AppStorage("trade.top-ranking", store: AppDefaults.store)
-  private var topRankingRawValue = TradeTopRankingMetric.difference.rawValue
+  private var topRankingRawValue = TradeTopRankingMetric.profitPerCubicMeter.rawValue
 
   @State private var marketGroups: MarketGroupCatalogSnapshot?
   @State private var marketGroupsFailed = false
@@ -140,7 +140,7 @@ struct TradeView: View {
   }
 
   private var topRanking: TradeTopRankingMetric {
-    TradeTopRankingMetric(rawValue: topRankingRawValue) ?? .difference
+    TradeTopRankingMetric(rawValue: topRankingRawValue) ?? .profitPerCubicMeter
   }
 
   /// Switching the metric restarts the Top-20 sort at that metric,
@@ -652,8 +652,8 @@ struct TradeView: View {
           Spacer()
           Text("Ranked by").font(.caption.weight(.semibold))
           Picker("Ranked by", selection: topRankingSelection) {
-            Text("Diff %").tag(TradeTopRankingMetric.difference)
             Text("Profit/m³").tag(TradeTopRankingMetric.profitPerCubicMeter)
+            Text("ROI").tag(TradeTopRankingMetric.returnOnInvestment)
           }
           .pickerStyle(.segmented)
           .labelsHidden()
@@ -676,14 +676,18 @@ struct TradeView: View {
           target: $topTargetSide,
           identifierPrefix: "trade.top-tile"
         )
-        Text("Only items with a positive value are ranked.")
+        Text("Only items with a positive profit and a positive value are ranked.")
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         if rows.isEmpty {
           VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
             Label("No item has a positive value for this ranking.", systemImage: "tray")
-            if topRanking == .profitPerCubicMeter {
+            switch topRanking {
+            case .profitPerCubicMeter:
               Text("Profit/m³ needs prices, fees, transport and the packaged volume.")
+                .font(.caption)
+            case .returnOnInvestment:
+              Text("ROI needs prices, fees and transport.")
                 .font(.caption)
             }
           }
@@ -695,7 +699,8 @@ struct TradeView: View {
             sourceSide: topSourceSide,
             targetSide: topTargetSide,
             sort: topSortSelection,
-            rowIdentifierPrefix: "trade.top-tile.row"
+            rowIdentifierPrefix: "trade.top-tile.row",
+            showsReturnOnInvestment: topRanking == .returnOnInvestment
           )
         }
         let unranked = unrankedTexts(result)
@@ -723,7 +728,7 @@ struct TradeView: View {
     if result.nonPositiveCount > 0 {
       texts.append(
         AppLocalization.format(
-          "%lld items with a value ≤ 0",
+          "%lld items without a positive profit or value",
           Int64(result.nonPositiveCount)
         )
       )
@@ -833,7 +838,8 @@ struct TradeView: View {
     sourceSide: TradeQuoteSide,
     targetSide: TradeQuoteSide,
     sort: Binding<AppTableSortDescriptor<TradeSortColumn>>,
-    rowIdentifierPrefix: String = "trade.row"
+    rowIdentifierPrefix: String = "trade.row",
+    showsReturnOnInvestment: Bool = false
   ) -> some View {
     if showsDetails {
       // The detail columns are wider than the window; they scroll inside
@@ -844,7 +850,8 @@ struct TradeView: View {
           sourceSide: sourceSide,
           targetSide: targetSide,
           sort: sort,
-          rowIdentifierPrefix: rowIdentifierPrefix
+          rowIdentifierPrefix: rowIdentifierPrefix,
+          showsReturnOnInvestment: showsReturnOnInvestment
         )
       }
     } else {
@@ -853,7 +860,8 @@ struct TradeView: View {
         sourceSide: sourceSide,
         targetSide: targetSide,
         sort: sort,
-        rowIdentifierPrefix: rowIdentifierPrefix
+        rowIdentifierPrefix: rowIdentifierPrefix,
+        showsReturnOnInvestment: showsReturnOnInvestment
       )
     }
   }
@@ -863,10 +871,16 @@ struct TradeView: View {
     sourceSide: TradeQuoteSide,
     targetSide: TradeQuoteSide,
     sort: Binding<AppTableSortDescriptor<TradeSortColumn>>,
-    rowIdentifierPrefix: String
+    rowIdentifierPrefix: String,
+    showsReturnOnInvestment: Bool
   ) -> some View {
     VStack(alignment: .leading, spacing: 0) {
-      tableHeader(sourceSide: sourceSide, targetSide: targetSide, sort: sort)
+      tableHeader(
+        sourceSide: sourceSide,
+        targetSide: targetSide,
+        sort: sort,
+        showsReturnOnInvestment: showsReturnOnInvestment
+      )
       Divider()
       LazyVStack(alignment: .leading, spacing: 0) {
         ForEach(rows) { row in
@@ -874,7 +888,8 @@ struct TradeView: View {
             row,
             sourceSide: sourceSide,
             targetSide: targetSide,
-            identifierPrefix: rowIdentifierPrefix
+            identifierPrefix: rowIdentifierPrefix,
+            showsReturnOnInvestment: showsReturnOnInvestment
           )
           Divider().opacity(0.4)
         }
@@ -980,10 +995,19 @@ struct TradeView: View {
     return columns
   }
 
+  /// Detail columns without the ones a table already shows up front.
+  private func visibleDetailColumns(
+    showsReturnOnInvestment: Bool
+  ) -> [(TradeSortColumn, LocalizedStringKey)] {
+    showsReturnOnInvestment
+      ? detailColumns.filter { $0.0 != .returnOnInvestment } : detailColumns
+  }
+
   private func tableHeader(
     sourceSide: TradeQuoteSide,
     targetSide: TradeQuoteSide,
-    sort: Binding<AppTableSortDescriptor<TradeSortColumn>>
+    sort: Binding<AppTableSortDescriptor<TradeSortColumn>>,
+    showsReturnOnInvestment: Bool
   ) -> some View {
     HStack(spacing: DesignTokens.spacingXS) {
       SortableTableHeader(title: "Name", column: TradeSortColumn.name, sort: sort)
@@ -1011,8 +1035,12 @@ struct TradeView: View {
         tint: DesignTokens.accent,
         sort: sort
       )
+      if showsReturnOnInvestment {
+        numberHeader("ROI", column: .returnOnInvestment, tint: DesignTokens.accent, sort: sort)
+      }
       if showsDetails {
-        ForEach(detailColumns, id: \.0) { column, title in
+        ForEach(visibleDetailColumns(showsReturnOnInvestment: showsReturnOnInvestment), id: \.0) {
+          column, title in
           numberHeader(title, column: column, tint: DesignTokens.textSecondary, sort: sort)
         }
       }
@@ -1041,7 +1069,8 @@ struct TradeView: View {
     _ display: TradeDisplayRow,
     sourceSide: TradeQuoteSide,
     targetSide: TradeQuoteSide,
-    identifierPrefix: String
+    identifierPrefix: String,
+    showsReturnOnInvestment: Bool
   ) -> some View {
     let row = display.row
     return HStack(spacing: DesignTokens.spacingXS) {
@@ -1090,8 +1119,12 @@ struct TradeView: View {
         formatNumber(row.profitPerCubicMeter),
         tint: signTint(row.profitPerCubicMeter)
       )
+      if showsReturnOnInvestment {
+        detailCell(display, column: .returnOnInvestment)
+      }
       if showsDetails {
-        ForEach(detailColumns, id: \.0) { column, _ in
+        ForEach(visibleDetailColumns(showsReturnOnInvestment: showsReturnOnInvestment), id: \.0) {
+          column, _ in
           detailCell(display, column: column)
         }
       }

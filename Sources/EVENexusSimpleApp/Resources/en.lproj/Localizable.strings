@@ -2064,12 +2064,13 @@
 "Top %lld" = "Top %lld";
 "Ranked by" = "Ranked by";
 "Top %lld of %lld items" = "Top %lld of %lld items";
-"Only items with a positive value are ranked." = "Only items with a positive value are ranked.";
+"Only items with a positive profit and a positive value are ranked." = "Only items with a positive profit and a positive value are ranked.";
 "No item has a positive value for this ranking." = "No item has a positive value for this ranking.";
 "Profit/m³ needs prices, fees, transport and the packaged volume." = "Profit/m³ needs prices, fees, transport and the packaged volume.";
+"ROI needs prices, fees and transport." = "ROI needs prices, fees and transport.";
 "Not ranked: %@" = "Not ranked: %@";
 "%lld items without a known value" = "%lld items without a known value";
-"%lld items with a value ≤ 0" = "%lld items with a value ≤ 0";
+"%lld items without a positive profit or value" = "%lld items without a positive profit or value";
 "Purchase" = "Purchase";
 "Transport" = "Transport";
 "Net sale" = "Net sale";

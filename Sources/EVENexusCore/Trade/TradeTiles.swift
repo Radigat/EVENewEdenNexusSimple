@@ -258,15 +258,16 @@ public enum TradeRowSorter {
   }
 }
 
-/// Metric of the Top-20 tile. Raw values are stored.
+/// Metric of the Top-20 tile. Raw values are stored; the former raw value
+/// `difference` no longer resolves (HANDEL_PLAN.md section K).
 public enum TradeTopRankingMetric: String, CaseIterable, Sendable {
-  case difference
   case profitPerCubicMeter
+  case returnOnInvestment
 
   public var sortColumn: TradeSortColumn {
     switch self {
-    case .difference: .difference
     case .profitPerCubicMeter: .profitPerCubicMeter
+    case .returnOnInvestment: .returnOnInvestment
     }
   }
 }
@@ -276,7 +277,8 @@ public struct TradeTopRankingResult: Equatable, Sendable {
   public let rows: [TradeDisplayRow]
   /// Candidates whose metric is unknown.
   public let unknownCount: Int
-  /// Candidates whose metric is known but zero or negative.
+  /// Candidates whose metric is known but whose metric or profit is zero,
+  /// negative or unknown.
   public let nonPositiveCount: Int
   /// Every candidate handed to the ranking.
   public let candidateCount: Int
@@ -295,9 +297,10 @@ public struct TradeTopRankingResult: Equatable, Sendable {
 }
 
 /// Ranking of the Top-20 tile (owner decisions 23.10.2026, HANDEL_PLAN.md
-/// section J): only known positive values rank, highest first with the type
-/// ID as tie-breaker. Unknown and non-positive values are counted, never
-/// ranked and never treated as zero.
+/// sections J and K): only rows with a known positive profit and a known
+/// positive metric rank, highest first with the type ID as tie-breaker.
+/// Unknown and non-positive values are counted, never ranked and never
+/// treated as zero.
 public enum TradeTopRanking {
   public static let limit = 20
 
@@ -315,7 +318,7 @@ public enum TradeTopRanking {
         unknownCount += 1
         continue
       }
-      if value > 0 {
+      if value > 0, let profit = row.row.profit, profit.isFinite, profit > 0 {
         positive.append(row)
       } else {
         nonPositiveCount += 1

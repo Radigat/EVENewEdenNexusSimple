@@ -505,3 +505,29 @@ Type-ID).
 Umsetzung in vier Teilen: (1) Rechenkern und Tests, (2) Spalte Gewinn/m³,
 (3) Top-20-Kachel, (4) Gesamtprüfung. Stand und Prüfnachweise je Teil stehen im
 [Entwicklungstagebuch](../dev-diary.md).
+
+## K. Nachtrag 23.10.2026: Top-20 nach Gewinn/m³ oder ROI
+
+Eigentümerauftrag: Die Rangfolge nach Diff % ergibt keinen Sinn, weil eine hohe
+Preisdifferenz allein nichts über den Gewinn sagt. Entscheidend ist der Gewinn
+nach Steuer, Broker und Transport: Er muss positiv sein, und Gewinn/m³ oder ROI
+sollen möglichst hoch sein. Die Rangfolge nach Diff % entfällt.
+
+Eigentümerentscheidungen (Rückfragen vom 23.10.2026), ersetzen Punkt 1 und
+ergänzen Punkt 4 aus Abschnitt J:
+1. Die Rangfolge ist umschaltbar zwischen Gewinn/m³ und ROI. ROI ist der
+   Gewinn ÷ (Einkauf + Transport) aus Abschnitt C.
+2. Nur die Rangfolge nach Diff % entfällt. Die Spalte Diff % bleibt in allen
+   Kacheln, auch in der Top-20-Kachel.
+3. Gerankt wird nur, wer einen bekannten Gewinn > 0 und einen bekannten
+   Kennzahlwert > 0 hat. Unbekannter Kennzahlwert zählt als „ohne bekannten
+   Wert“; bekannter Kennzahlwert mit Gewinn oder Wert ≤ 0 bzw. unbekanntem
+   Gewinn zählt als „ohne positiven Gewinn oder Wert“.
+4. Bei Rangfolge nach ROI zeigt die Top-20-Kachel die Spalte ROI immer, auch
+   ohne Details, direkt nach Gewinn/m³. In den Detailspalten dieser Tabelle
+   steht ROI dann nicht ein zweites Mal.
+
+Rechenkern: `TradeTopRankingMetric` mit den gespeicherten Raw-Werten
+`profitPerCubicMeter` und `returnOnInvestment`. Ein gespeicherter Altwert
+`difference` wird nicht mehr erkannt und fällt auf Gewinn/m³ zurück; der
+UserDefaults-Schlüssel `trade.top-ranking` bleibt unverändert.

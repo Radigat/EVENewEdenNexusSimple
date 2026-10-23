@@ -184,8 +184,9 @@ Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt J](Documentati
 
 - **Implementiert:**
   - Spalte Gewinn/m³ in allen Kacheln.
-  - Erste Kachel „Top 20“ je gewählter Marktgruppe, Rangfolge nach Diff % oder
-    Gewinn/m³, nur positive Werte, eigene Sortierung.
+  - Erste Kachel „Top 20“ je gewählter Marktgruppe, Rangfolge nach Gewinn/m³
+    oder ROI (Diff % als Rangfolge entfernt, Abschnitt K), nur Items mit
+    positivem Gewinn und positivem Wert, eigene Sortierung.
   - Rechenregeln unverändert.
 - **Automatisch geprüft:**
   - `swift test`: 548 Tests in 35 Suites plus 70 Tests in 3 Suites;

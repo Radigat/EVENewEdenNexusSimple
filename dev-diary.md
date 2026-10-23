@@ -1,5 +1,41 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 23. Oktober 2026 – Handel: Top-20 nach Gewinn/m³ oder ROI statt Diff %
+
+Ziel: Eigentümerauftrag, die Rangfolge nach Diff % aus der Top-20-Kachel zu
+entfernen. Eine hohe Preisdifferenz allein sagt nichts über den Gewinn. Regeln
+und Rückfrage-Entscheidungen: [Handel-Plan, Abschnitt K](Documentation/HANDEL_PLAN.md).
+
+Umfang:
+- `TradeTopRankingMetric`: `profitPerCubicMeter` und neu `returnOnInvestment`;
+  `difference` entfernt. Ein gespeicherter Altwert fällt auf Gewinn/m³ zurück.
+- `TradeTopRanking`: gerankt wird nur bei bekanntem Gewinn > 0 und bekanntem
+  Kennzahlwert > 0; die Zählung „ohne bekannten Wert“ bzw. „ohne positiven
+  Gewinn oder Wert“ bleibt getrennt.
+- `TradeView`: Umschalter Gewinn/m³ | ROI; bei ROI eine immer sichtbare,
+  sortierbare ROI-Spalte nach Gewinn/m³ (nicht doppelt in den Details). Die
+  Spalte Diff % bleibt in allen Kacheln. Hinweistexte en/de angepasst.
+- Rechenregeln für Gewinn, ROI und Gewinn/m³ unverändert.
+
+Prüfung (automatisch, isoliert unter `/private/tmp/claude-501/…/scratchpad/full-check`
+mit eigenem Datenordner, Preferences-Suite, Modulcaches und
+`EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1`):
+- `swift test --disable-sandbox`: 573 Tests in 39 Suites plus 70 Tests in 3
+  Suites bestanden, darunter die neuen Tests
+  `topRankingByReturnOnInvestmentRanksOnlyKnownPositiveValues` und
+  `topRankingNeverRanksAHighDifferenceWithoutPositiveProfit`.
+- `swift test --package-path Packages/EVEStaticDataKit`: 12 Tests bestanden.
+- `xcodebuild … -configuration Debug -destination 'platform=macOS,arch=arm64'
+  CODE_SIGNING_ALLOWED=NO test`: `** TEST SUCCEEDED **`, 573 Tests.
+- `git diff --check` für die geänderten Pfade fehlerfrei.
+- Die Testzahlen enthalten die ESI-/Auth-Änderungen einer parallelen Sitzung,
+  die inzwischen als `f0b5343` und `440b6fd` committet sind.
+
+Offen:
+- Keine GUI-Sichtprüfung: Mit isolierten Daten gibt es keine Marktdaten und
+  damit keine Top-20-Kachel. Sichtabnahme mit echten Daten durch den Eigentümer.
+- Auf Auftrag des Eigentümers lokal auf `main` committet, nicht gepusht.
+
 ## 23. Oktober 2026 – Handel: Top-20-Kachel, Teil 4 (Gesamtprüfung)
 
 Ziel: Gesamtprüfung der Teile 1–3 gegen die sechs Eigentümerentscheidungen in

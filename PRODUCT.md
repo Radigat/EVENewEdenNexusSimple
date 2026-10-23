@@ -500,20 +500,24 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     vorn.
   - Item- und Ortsnamen sind per Klick kopierbar. Fehlende Werte zeigen „—“, ein
     Info-Symbol nennt den Grund.
-- **Top-20-Kachel** (Regeln im [Handel-Plan, Abschnitt J](Documentation/HANDEL_PLAN.md)):
+- **Top-20-Kachel** (Regeln im [Handel-Plan, Abschnitte J und K](Documentation/HANDEL_PLAN.md)):
   - Sie steht als erste Kachel über den Untergruppen-Kacheln und umfasst alle
     Items der gewählten Marktgruppe.
   - Sie erscheint nur, wenn die Gruppe mehr als eine Kachel oder mehr als 20
     Items hat.
-  - **Rangfolge nach** Diff % oder Gewinn/m³. Die Auswahl wird gespeichert.
+  - **Rangfolge nach** Gewinn/m³ oder ROI. Die Auswahl wird gespeichert; ohne
+    gültige Auswahl gilt Gewinn/m³. Eine Rangfolge nach Diff % gibt es nicht.
   - Eigene Umschalter Min-Sell/Max-Buy für Quelle und Ziel.
-  - Gerankt werden nur Items mit positivem Wert, höchstens 20. Gibt es weniger,
-    ist die Liste kürzer; der Chip nennt „Top N von M Items“.
+  - Gerankt werden nur Items mit bekanntem positivem Gewinn und positivem
+    Kennzahlwert, höchstens 20. Gibt es weniger, ist die Liste kürzer; der Chip
+    nennt „Top N von M Items“.
+  - Bei Rangfolge nach ROI steht die Spalte ROI immer sichtbar direkt nach
+    Gewinn/m³, auch ohne Details. Die Spalte Diff % bleibt als Information.
   - Eine Fußzeile nennt getrennt, wie viele Items ohne bekannten Wert und wie
-    viele mit Wert ≤ 0 nicht gerankt sind.
-  - Hat kein Item einen positiven Wert, sagt die Kachel das ausdrücklich. Bei
-    Gewinn/m³ nennt sie die nötigen Daten: Preise, Gebühren, Transport und
-    Packvolumen.
+    viele ohne positiven Gewinn oder Wert nicht gerankt sind.
+  - Hat kein Item einen positiven Wert, sagt die Kachel das ausdrücklich und
+    nennt die nötigen Daten: bei Gewinn/m³ Preise, Gebühren, Transport und
+    Packvolumen, bei ROI Preise, Gebühren und Transport.
   - Eigene Sortierung: Beim Öffnen und bei jedem Wechsel der Kennzahl steht sie
     auf der Kennzahl absteigend. Klicks auf die Spaltenköpfe sortieren nur diese
     Kachel.
