@@ -604,6 +604,51 @@ public actor ESIClient {
     let source: SourceIdentity
     let statusCode: Int
     var lastAccess: UInt64
+
+    init(
+      etag: String?,
+      lastModified: String?,
+      data: Data,
+      expiresAt: Date?,
+      pages: Int?,
+      source: SourceIdentity,
+      statusCode: Int,
+      lastAccess: UInt64
+    ) {
+      self.etag = etag
+      self.lastModified = lastModified
+      self.data = data
+      self.expiresAt = expiresAt
+      self.pages = pages
+      self.source = source
+      self.statusCode = statusCode
+      self.lastAccess = lastAccess
+    }
+
+    init(_ stored: ESIStoredResponse) {
+      self.init(
+        etag: stored.etag,
+        lastModified: stored.lastModified,
+        data: stored.data,
+        expiresAt: stored.expiresAt,
+        pages: stored.pages,
+        source: stored.source,
+        statusCode: stored.statusCode,
+        lastAccess: 0
+      )
+    }
+
+    var stored: ESIStoredResponse {
+      ESIStoredResponse(
+        etag: etag,
+        lastModified: lastModified,
+        data: data,
+        expiresAt: expiresAt,
+        pages: pages,
+        statusCode: statusCode,
+        source: source
+      )
+    }
   }
 
   private let transport: any ESIHTTPTransporting
@@ -614,6 +659,8 @@ public actor ESIClient {
   private let maximumCachedBytes: Int
   private let requestCoordinator: ESIRequestCoordinator
   private let userAgent: String
+  /// Durable second cache level; `nil` keeps responses in memory only.
+  private let responseStore: (any ESIResponseStoring)?
   private let now: @Sendable () -> Date
   private let sleep: @Sendable (TimeInterval) async throws -> Void
   private var validators: [String: Validator] = [:]
@@ -629,6 +676,7 @@ public actor ESIClient {
     maximumConcurrentRequests: Int = 6,
     maximumAutomaticConcurrentRequests: Int = 2,
     userAgent: String = CCPUserAgentConfiguration.genericValue,
+    responseStore: (any ESIResponseStoring)? = nil,
     now: @escaping @Sendable () -> Date = { Date() },
     sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
       try await Task.sleep(for: .seconds($0))
@@ -646,6 +694,7 @@ public actor ESIClient {
       sleep: sleep
     )
     self.userAgent = userAgent
+    self.responseStore = responseStore
     self.now = now
     self.sleep = sleep
     let decoder = JSONDecoder()
@@ -668,7 +717,8 @@ public actor ESIClient {
 
   /// Retains the most recently used cached response bodies up to the supplied
   /// byte target. Removing a body also removes its validator so a later 304 can
-  /// never be decoded against missing data.
+  /// never be decoded against missing data. Only the in-memory level is
+  /// trimmed; the durable store keeps its copies.
   @discardableResult
   public func trimCachedResponses(
     toMaximumBytes requestedMaximumBytes: Int
@@ -685,11 +735,16 @@ public actor ESIClient {
     return cachedResponseUsage()
   }
 
-  public func removeCachedResponses(forCharacterID characterID: Int64) {
+  /// Removes one character's responses from memory and from the durable
+  /// store, e.g. when the character is disconnected.
+  public func removeCachedResponses(forCharacterID characterID: Int64) async {
     let prefix = "character:\(characterID)|"
     removeCachedResponses { $0.hasPrefix(prefix) }
+    await responseStore?.removeResponses(inPartition: "character:\(characterID)")
   }
 
+  /// Drops the in-memory level only (memory pressure); the durable store keeps
+  /// its copies so later requests within `Expires` stay local.
   public func removeAllCachedResponses() {
     validators.removeAll(keepingCapacity: false)
     cachedResponseBytes = 0
@@ -704,10 +759,10 @@ public actor ESIClient {
   public func removeCachedPublicResponses(
     pathPrefix: String,
     sparingQueryItemNamed sparedName: String? = nil
-  ) {
+  ) async {
     guard pathPrefix.hasPrefix("/"), !pathPrefix.contains("://") else { return }
     let prefix = "public|https://esi.evetech.net\(pathPrefix)"
-    removeCachedResponses { key in
+    let matches: @Sendable (String) -> Bool = { key in
       guard key.hasPrefix(prefix) else { return false }
       guard let sparedName else { return true }
       let items =
@@ -715,6 +770,31 @@ public actor ESIClient {
         .queryItems ?? []
       return !items.contains { $0.name == sparedName }
     }
+    removeCachedResponses(where: matches)
+    await responseStore?.removeResponses(withKeyPrefix: prefix, where: matches)
+  }
+
+  /// Bulk reads that are consumed once and released after their durable or
+  /// compact projection stay in memory only (owner decision 2026-10-23): the
+  /// public catalog-wide regional order book (no `type_id`) and public
+  /// contracts. Everything else, including structure order books, is kept
+  /// durably.
+  static func persistsDurably(
+    path: String,
+    query: [URLQueryItem],
+    partition: String
+  ) -> Bool {
+    if path.hasPrefix("/contracts/public/") { return false }
+    let segments = path.split(separator: "/")
+    let isRegionalOrderBook =
+      segments.count == 3 && segments[0] == "markets"
+      && segments[1].allSatisfy(\.isNumber) && segments[2] == "orders"
+    if partition == "public", isRegionalOrderBook,
+      !query.contains(where: { $0.name == "type_id" })
+    {
+      return false
+    }
+    return true
   }
 
   public func get<Value: Decodable & Sendable>(
@@ -739,28 +819,45 @@ public actor ESIClient {
     let authorizationPartition =
       lease.map { "character:\($0.characterID)" } ?? "public"
     let cacheKey = "\(authorizationPartition)|\(url.absoluteString)"
-    let cachedAtRequest = cachedValidator(for: cacheKey)
-    if let cachedAtRequest,
-      let expiresAt = cachedAtRequest.expiresAt,
+    let durableStore =
+      Self.persistsDurably(
+        path: endpoint.path,
+        query: endpoint.query,
+        partition: authorizationPartition
+      ) ? responseStore : nil
+    var cachedAtRequest = cachedValidator(for: cacheKey)
+    var cachedFromDurableStore = false
+    if cachedAtRequest == nil,
+      let durableStore,
+      let stored = await durableStore.response(forKey: cacheKey)
+    {
+      let restored = Validator(stored)
+      storeCachedResponse(restored, forKey: cacheKey)
+      cachedAtRequest = cachedValidator(for: cacheKey) ?? restored
+      cachedFromDurableStore = true
+    }
+    if let cached = cachedAtRequest,
+      let expiresAt = cached.expiresAt,
       expiresAt > now()
     {
-      let decoded: Value
-      do {
-        decoded = try decoder.decode(Value.self, from: cachedAtRequest.data)
-      } catch {
-        removeCachedResponse(forKey: cacheKey)
-        throw ESIError.decoding
+      if let decoded = try? decoder.decode(Value.self, from: cached.data) {
+        return ESIResponse(
+          value: decoded,
+          source: cached.source,
+          statusCode: cached.statusCode,
+          expiresAt: expiresAt,
+          etag: cached.etag,
+          lastModified: cached.lastModified,
+          pages: cached.pages,
+          errorLimitRemain: nil
+        )
       }
-      return ESIResponse(
-        value: decoded,
-        source: cachedAtRequest.source,
-        statusCode: cachedAtRequest.statusCode,
-        expiresAt: expiresAt,
-        etag: cachedAtRequest.etag,
-        lastModified: cachedAtRequest.lastModified,
-        pages: cachedAtRequest.pages,
-        errorLimitRemain: nil
-      )
+      removeCachedResponse(forKey: cacheKey)
+      // A durable body written by an older app build may no longer decode;
+      // drop it and load the current representation instead of failing.
+      guard cachedFromDurableStore else { throw ESIError.decoding }
+      await durableStore?.removeResponse(forKey: cacheKey)
+      cachedAtRequest = nil
     }
     var request = URLRequest(url: url)
     request.timeoutInterval = 30
@@ -799,6 +896,7 @@ public actor ESIClient {
       path: endpoint.path,
       partition: authorizationPartition
     )
+    let validatorAtRequest = cachedAtRequest
     var attempt = 0
     while true {
       do {
@@ -815,7 +913,7 @@ public actor ESIClient {
         try validateSize(data, response: response)
         let usableData: Data
         if response.statusCode == 304,
-          let cached = cachedAtRequest
+          let cached = validatorAtRequest
         {
           usableData = cached.data
         } else {
@@ -832,19 +930,23 @@ public actor ESIClient {
             ? Data("[]".utf8) : usableData
           decoded = try decoder.decode(Value.self, from: decodingData)
         } catch {
+          if response.statusCode == 304, cachedFromDurableStore {
+            removeCachedResponse(forKey: cacheKey)
+            await durableStore?.removeResponse(forKey: cacheKey)
+          }
           throw ESIError.decoding
         }
         let expires =
           Self.httpDate(
             response.value(forHTTPHeaderField: "Expires")
-          ) ?? (response.statusCode == 304 ? cachedAtRequest?.expiresAt : nil)
+          ) ?? (response.statusCode == 304 ? validatorAtRequest?.expiresAt : nil)
         let etag =
           response.value(forHTTPHeaderField: "ETag")
-          ?? (response.statusCode == 304 ? cachedAtRequest?.etag : nil)
+          ?? (response.statusCode == 304 ? validatorAtRequest?.etag : nil)
         let modified =
           response.value(forHTTPHeaderField: "Last-Modified")
           ?? (response.statusCode == 304
-            ? cachedAtRequest?.lastModified : nil)
+            ? validatorAtRequest?.lastModified : nil)
         let pages = try pageCount(response)
         // A conditional 304 commonly omits representation headers such as
         // X-Pages. The cached body and its page count belong to the same
@@ -852,28 +954,28 @@ public actor ESIClient {
         // envelope. Otherwise a revalidated multi-page resource would look
         // like a one-page resource to its domain consumer.
         let effectivePages =
-          pages ?? (response.statusCode == 304 ? cachedAtRequest?.pages : nil)
+          pages ?? (response.statusCode == 304 ? validatorAtRequest?.pages : nil)
         let source = SourceIdentity(
           provider: "ESI",
           version: EVEConstants.esiCompatibilityDate,
           capturedAt: now()
         )
         if etag != nil || modified != nil || expires != nil {
-          storeCachedResponse(
-            Validator(
-              etag: etag,
-              lastModified: modified,
-              data: usableData,
-              expiresAt: expires,
-              pages: effectivePages,
-              source: source,
-              statusCode: response.statusCode,
-              lastAccess: 0
-            ),
-            forKey: cacheKey
+          let validator = Validator(
+            etag: etag,
+            lastModified: modified,
+            data: usableData,
+            expiresAt: expires,
+            pages: effectivePages,
+            source: source,
+            statusCode: response.statusCode,
+            lastAccess: 0
           )
+          storeCachedResponse(validator, forKey: cacheKey)
+          await durableStore?.store(validator.stored, forKey: cacheKey)
         } else {
           removeCachedResponse(forKey: cacheKey)
+          await durableStore?.removeResponse(forKey: cacheKey)
         }
         return ESIResponse(
           value: decoded,
@@ -1135,16 +1237,22 @@ public actor ESIClient {
     pageCount: Int,
     lease: AccessTokenLease? = nil,
     exceptLastModified lastModified: String
-  ) {
+  ) async {
     let partition = lease.map { "character:\($0.characterID)" } ?? "public"
+    var keys: [String] = []
     for page in 1...max(1, pageCount) {
       guard let url = try? makeURL(Self.pageEndpoint(endpoint, page: page))
       else { continue }
       let key = "\(partition)|\(url.absoluteString)"
+      keys.append(key)
       if let cached = validators[key], cached.lastModified != lastModified {
         removeCachedResponse(forKey: key)
       }
     }
+    await responseStore?.removeResponses(
+      forKeys: keys,
+      exceptLastModified: lastModified
+    )
   }
 
   public func getAllPages<Element: Decodable & Sendable>(
@@ -1157,7 +1265,7 @@ public actor ESIClient {
     } catch let change as ESIPageSnapshotChange {
       // ESI refreshed the resource during the read. Re-read once; the pages
       // that already belong to the new snapshot come from the cache.
-      removeCachedPages(
+      await removeCachedPages(
         of: endpoint,
         pageCount: change.pageCount,
         lease: lease,

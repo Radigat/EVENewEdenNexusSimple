@@ -207,3 +207,20 @@ Schritt P1.
   Volumen. Fehlt der Wert in SDE und ESI, bleibt die Logistik unverfügbar.
 - **Umfang:** Nur statische Daten. Lasten auf dem Hauptthread und in den
   Ansichten sind ein eigener späterer Auftrag.
+
+## 23.10.2026 – Dauerhafter ESI-Antwortcache
+
+- **Anlass:** CCP empfiehlt, Daten nicht vor `Expires` erneut abzurufen. Der
+  ESI-Cache lag nur im Arbeitsspeicher, also lud jeder App-Start noch gültige
+  Daten neu.
+- **Entscheidungen (Eigentümer):**
+  - Gespeichert werden öffentliche und private Antworten. Private Rohantworten
+    liegen unverschlüsselt im Datenordner, ohne Tokens; beim Trennen eines
+    Charakters werden sie gelöscht.
+  - Massenabrufe bleiben nur im Arbeitsspeicher: das öffentliche
+    Regions-Orderbuch ohne `type_id` und die Public-Contracts-Abrufe.
+  - Strukturmarkt-Orderbücher werden dauerhaft gespeichert.
+  - Obergrenze 512 MB auf der Platte.
+  - Der Ordner `caches` gehört nicht zur Datensicherung.
+- **Unverändert:** Rate- und Fehlerlimits, Warteschlange, Seitenkonsistenz und
+  alle fachlichen Regeln.

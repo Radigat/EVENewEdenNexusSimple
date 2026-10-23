@@ -15,6 +15,8 @@ public enum ConsolidationBackup {
   private static let family = "com.local.EVENexusSimple"
   private static let excluded = Set([
     "migration-backups", "backups", "restore-staging", "diagnostics",
+    // Derived ESI response cache; reloaded from ESI after a restore.
+    "caches",
   ])
   public static func hash(_ url: URL) throws -> String {
     let handle = try FileHandle(forReadingFrom: url)

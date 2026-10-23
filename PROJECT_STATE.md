@@ -286,7 +286,22 @@ Lesart: [PRODUCT.md](PRODUCT.md), Abschnitt „Laufzeit und Hintergrundarbeit“
     - Dogma 529 → 58 ms;
     - Fertigungsdefinitionen 655 → 53 ms;
     - ESI-Volumenabrufe je Scan 4.765 → 0.
-- **Offen, in dieser Reihenfolge:**
-  1. ESI-Cache, der Neustarts übersteht, damit kein Abruf vor `Expires`
-     erfolgt. Erst nach dem Commit der ESI-Sitzung.
-  2. Live-Lauf mit Auswertung und Abnahmeliste; danach die Eigentümerabnahme.
+- **Offen:** Live-Lauf mit Auswertung und Abnahmeliste; danach die
+  Eigentümerabnahme.
+
+## Dauerhafter ESI-Antwortcache (23.10.2026)
+
+ESI-Antworten überstehen App-Neustarts, damit nichts vor `Expires` erneut
+abgerufen wird. Entscheidungen: [DECISIONS.md](Documentation/Consolidation/DECISIONS.md),
+Verhalten: [PRODUCT.md](PRODUCT.md), Nachweise: [dev-diary.md](dev-diary.md).
+
+- **Implementiert:**
+  - `ESIResponseDiskCache` als zweite Stufe hinter dem Speicher-Cache;
+  - öffentliche und private Antworten, ohne Massenabrufe;
+  - 512 MB, nicht in der Datensicherung.
+- **Automatisch geprüft (23.10.2026):** `swift test` 564 + 70,
+  `EVEStaticDataKit` 12, `xcodebuild test` `TEST SUCCEEDED` (564).
+- **Offen:**
+  - Live-Lauf (Auftrag 3): Neustart, Main-Hub-Scan, Zähler `early`, Dauer und
+    Dateigröße;
+  - Eigentümerabnahme.

@@ -41,6 +41,7 @@
 		01A09B0C0000000000000012 /* LoyaltyStoreValuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09B0C0000000000000002 /* LoyaltyStoreValuation.swift */; };
 		01A09B090000000000000012 /* LoyaltyStoreCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */; };
 		01A09C090000000000000012 /* UniverseTypeVolumeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09C090000000000000002 /* UniverseTypeVolumeService.swift */; };
+		01A0D0020000000000000011 /* ESIResponseDiskCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0020000000000000001 /* ESIResponseDiskCache.swift */; };
 		01A0D0010000000000000012 /* MeasuringESITransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0010000000000000002 /* MeasuringESITransport.swift */; };
 		01A0D0010000000000000011 /* PerformanceLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0010000000000000001 /* PerformanceLog.swift */; };
 		01A09D090000000000000012 /* PackagedVolumeSnapshotCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */; };
@@ -50,6 +51,7 @@
 		0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */; };
 		0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */; };
 		12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */; };
+		01A0D0020000000000000012 /* ESIResponseDiskCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */; };
 		01A0D0010000000000000014 /* StaticCatalogBenchmarkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */; };
 		01A0D0010000000000000013 /* MeasuringESITransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0010000000000000003 /* MeasuringESITransportTests.swift */; };
 		12F1A7A8D6783124366E5F97 /* libCSQLite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */; };
@@ -255,6 +257,7 @@
 		01A09B0C0000000000000002 /* LoyaltyStoreValuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyStoreValuation.swift; sourceTree = "<group>"; };
 		01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyStoreCatalog.swift; sourceTree = "<group>"; };
 		01A09C090000000000000002 /* UniverseTypeVolumeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseTypeVolumeService.swift; sourceTree = "<group>"; };
+		01A0D0020000000000000001 /* ESIResponseDiskCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIResponseDiskCache.swift; sourceTree = "<group>"; };
 		01A0D0010000000000000002 /* MeasuringESITransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasuringESITransport.swift; sourceTree = "<group>"; };
 		01A09D090000000000000002 /* PackagedVolumeSnapshotCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackagedVolumeSnapshotCatalog.swift; sourceTree = "<group>"; };
 		01A0A0010000000000000001 /* OreRefining.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OreRefining.swift; sourceTree = "<group>"; };
@@ -304,6 +307,7 @@
 		A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetsWarehouseView.swift; sourceTree = "<group>"; };
 		A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAndBlueprintTests.swift; sourceTree = "<group>"; };
 		A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLiteStaticCatalogTests.swift; sourceTree = "<group>"; };
+		01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIResponseDiskCacheTests.swift; sourceTree = "<group>"; };
 		01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaticCatalogBenchmarkTests.swift; sourceTree = "<group>"; };
 		01A0D0010000000000000003 /* MeasuringESITransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasuringESITransportTests.swift; sourceTree = "<group>"; };
 		A555FBA531B59AA843FDF2BD /* ProductionJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionJournal.swift; sourceTree = "<group>"; };
@@ -434,6 +438,7 @@
 				2075A47C979DE7B546D22CEC /* ESIClient.swift */,
 				1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */,
 				01A09C090000000000000002 /* UniverseTypeVolumeService.swift */,
+				01A0D0020000000000000001 /* ESIResponseDiskCache.swift */,
 				01A0D0010000000000000002 /* MeasuringESITransport.swift */,
 				520CD44233AFF34B9A2A5C8F /* EVEOnlineServiceStatus.swift */,
 				0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */,
@@ -665,6 +670,7 @@
 				C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */,
 				ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */,
 				A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */,
+				01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */,
 				01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */,
 				01A0D0010000000000000003 /* MeasuringESITransportTests.swift */,
 			);
@@ -888,6 +894,7 @@
 				83ACBCF3A448CEFBA0AA0E3F /* ReactionContractTests.swift in Sources */,
 				0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */,
 				12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */,
+				01A0D0020000000000000012 /* ESIResponseDiskCacheTests.swift in Sources */,
 				01A0D0010000000000000014 /* StaticCatalogBenchmarkTests.swift in Sources */,
 				01A0D0010000000000000013 /* MeasuringESITransportTests.swift in Sources */,
 			);
@@ -958,6 +965,7 @@
 				C303BFC5D96562616A2E5B31 /* ESIClient.swift in Sources */,
 				5D6F2CE98F6969D5DF667A41 /* ESIDTOs.swift in Sources */,
 				01A09C090000000000000012 /* UniverseTypeVolumeService.swift in Sources */,
+				01A0D0020000000000000011 /* ESIResponseDiskCache.swift in Sources */,
 				01A0D0010000000000000012 /* MeasuringESITransport.swift in Sources */,
 				01A0D0010000000000000011 /* PerformanceLog.swift in Sources */,
 				57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */,

@@ -623,9 +623,23 @@ final class RuntimeState {
     let userAgent = CCPUserAgentConfiguration.value(
       ownerContact: self.ccpUserAgentOwnerContact
     )
+    let resolvedDataRoot = providedDataRoot ?? Self.fallbackDataRoot()
+    dataRoot = resolvedDataRoot
     let measuringESITransport = MeasuringESITransport()
     self.measuringESITransport = measuringESITransport
-    let esi = ESIClient(transport: measuringESITransport, userAgent: userAgent)
+    // Keeps ESI responses across restarts so nothing is requested again
+    // before its `Expires` (CCP ESI best practices, owner decision
+    // 2026-10-23). The `caches` folder is derived data outside the backup.
+    let esi = ESIClient(
+      transport: measuringESITransport,
+      userAgent: userAgent,
+      responseStore: ESIResponseDiskCache(
+        url:
+          resolvedDataRoot
+          .appendingPathComponent("caches", isDirectory: true)
+          .appendingPathComponent("esi-responses.sqlite")
+      )
+    )
     self.esi = esi
     self.solarSystemSearch = SolarSystemSearchService(esi: esi)
     self.playerStructureSearch = PlayerStructureSearchService(esi: esi)
@@ -633,8 +647,6 @@ final class RuntimeState {
     self.universeNameService = UniverseNameService(esi: esi)
     self.dotlanJumpRouteService = DOTLANJumpRouteService()
     self.loyaltyStoreCatalogService = LoyaltyStoreCatalogService(esi: esi)
-    let resolvedDataRoot = providedDataRoot ?? Self.fallbackDataRoot()
-    dataRoot = resolvedDataRoot
     manufacturingOpportunityDemandStore = ManufacturingOpportunityDemandStore(
       fileURL: Self.opportunityDemandFileURL(
         dataRoot: resolvedDataRoot,

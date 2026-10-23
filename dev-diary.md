@@ -7585,3 +7585,63 @@ Offen (Folgeaufträge in dieser Reihenfolge):
 1. ESI-Cache, der Neustarts übersteht (Ablaufzeiten, Validatoren, Antworten),
    damit kein Abruf vor `Expires` erfolgt.
 2. Live-Lauf mit Auswertung des Messprotokolls und Abnahmeliste.
+
+## 23.10.2026 – Dauerhafter ESI-Antwortcache
+
+Anlass: Laut CCP Best Practices soll vor `Expires` nicht aktualisiert werden.
+Der ESI-Cache lag nur im Arbeitsspeicher. Jeder App-Start und jede Verdrängung
+führte zu Abrufen noch gültiger Daten. Entscheidungen des Eigentümers in
+[DECISIONS.md](Documentation/Consolidation/DECISIONS.md).
+
+Änderung:
+- `ESIResponseDiskCache` (`ESIResponseStoring`) ist eine eigene SQLite-Datei
+  `caches/esi-responses.sqlite` mit Schema v1, WAL und einem eigenen kleinen
+  Wrapper mit BLOB-Spalten.
+  - Je Eintrag: Inhalt, ETag, Last-Modified, Expires, Seitenzahl, Status und
+    Herkunft. Der Schlüssel `partition|url` ist derselbe wie im Speicher.
+  - LRU-Grenze 512 MB, Räumung auf 90 %.
+  - Einträge eines anderen Compatibility-Date fallen beim Öffnen weg.
+  - Bei einem Datenbankfehler wird der Speicher für den Lauf abgeschaltet,
+    ohne dass ein Abruf scheitert.
+  - Ins Messprotokoll schreibt er Öffnen, Treffer, Speichern und Räumungen.
+- Einbindung in `ESIClient`:
+  - Bei einem Fehltreffer im Speicher wird zuerst die Platte gefragt.
+  - Frische Einträge kommen ohne Netz zurück; abgelaufene liefern die
+    Validatoren für einen bedingten Abruf.
+  - Neue Antworten werden durchgeschrieben.
+  - Ein nicht mehr lesbarer Inhalt von der Platte wird verworfen und neu
+    geladen.
+  - `persistsDurably` hält das öffentliche Regions-Orderbuch ohne `type_id`
+    und `/contracts/public/` nur im Speicher.
+  - Charakter-Trennung, Seitenwechsel bei neuem Snapshot und gezielte
+    Massenfreigabe löschen auch die dauerhaften Kopien. Speicher-Trim und
+    Speicherdruck tun das nicht.
+- `RuntimeState` übergibt den Speicher. Der Ordner `caches` steht auf der
+  Ausnahmeliste von `ConsolidationBackup`.
+- Zwei neue Dateien sind im Xcode-Projekt eingetragen (Präfix `01A0D002`).
+
+Prüfung (automatisch):
+- Neun neue Tests:
+  - Neustart mit frischem Eintrag ohne Netzabruf;
+  - Neustart mit abgelaufenem Eintrag: bedingter Abruf mit `If-None-Match`,
+    304 verlängert die Ablaufzeit;
+  - Massenabrufe nur im Speicher, Strukturbuch und Einzeltyp-Preise dauerhaft;
+  - Charakter-Trennung löscht nur dessen Einträge;
+  - LRU-Räumung;
+  - anderes Compatibility-Date verworfen;
+  - unlesbarer Inhalt wird aus dem Netz ersetzt;
+  - unbenutzbare Datei lässt Abrufe weiterlaufen;
+  - Seiten eines anderen Snapshots werden dauerhaft entfernt.
+- Der Sicherungstest prüft, dass `caches` nicht in der `.nexusbackup` landet.
+- `swift test` 564 + 70 Tests; `EVEStaticDataKit` 12; `xcodebuild … test`
+  564 Tests, `TEST SUCCEEDED`.
+- `swift-format lint --strict`: neue Dateien ohne Befund, keine neuen Befunde
+  in den geänderten Dateien. `git diff --check` fehlerfrei.
+
+Nicht geprüft:
+- Verhalten in der laufenden App: Zähler `early` nach einem Neustart, Dauer
+  und Dateigröße mit echten Charakteren.
+- Eigentümerabnahme.
+
+Offen: Auftrag 3, der Live-Lauf mit Auswertung (Startzeit, Main-Hub-Scan,
+ESI-Last, CCP-Zähler) und Abnahmeliste.

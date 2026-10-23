@@ -574,7 +574,21 @@ distinguishable diagnostics. ESI conditional caches are partitioned by
 character identity.
 Fresh cached bodies are reused until their server expiry. The in-memory cache
 is least-recently-used bounded to 512 entries and 64 MiB, and disconnecting a
-character purges only that character's private entries. Jita order-book fan-out
+character purges only that character's private entries. Behind it,
+`ESIResponseDiskCache` (`ESIResponseStoring`, SQLite file
+`caches/esi-responses.sqlite`) keeps every cacheable GET representation with
+its validators, expiry, page count and provenance across restarts, keyed like
+the memory cache (`partition|url`). A memory miss consults it before the
+network, so neither a restart nor a memory eviction or trim causes a request
+before `Expires`; expired entries remain validators for 304 revalidation.
+`ESIClient.persistsDurably` keeps the public catalog-wide regional order book
+(no `type_id`) and public contracts in memory only. The store is bounded to
+512 MiB (least recently used out, down to 90 %), discards entries of another
+compatibility date on open, and replaces a body that no longer decodes from
+the network. Character disconnect, snapshot-change page removal and bulk
+release also delete the durable copies; memory trims and pressure purges do
+not. Store failures disable it for the run without failing a request. The
+`caches` folder is excluded from `ConsolidationBackup`. Jita order-book fan-out
 is cancellable and limited to six concurrent per-type requests; it does not
 create unbounded tasks for a large plan. Each regional type response discards
 orders from every station except the exact configured location before it is

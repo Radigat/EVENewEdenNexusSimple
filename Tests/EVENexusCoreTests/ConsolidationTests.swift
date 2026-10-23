@@ -316,10 +316,17 @@ struct ConsolidationBackupTests {
         nil, nil, nil) == SQLITE_OK)
     let prefs = try PropertyListSerialization.data(
       fromPropertyList: ["planner.test": true], format: .binary, options: 0)
+    // The derived ESI response cache is not part of a backup.
+    let caches = paths.dataRoot.appendingPathComponent("caches", isDirectory: true)
+    try FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
+    try Data("cache".utf8).write(to: caches.appendingPathComponent("esi-responses.sqlite"))
     let target = root.appendingPathComponent("test.nexusbackup")
     try ConsolidationBackup.create(
       dataRoot: paths.dataRoot, destination: target, defaults: prefs, schema: 2)
     #expect(try ConsolidationBackup.verify(target).schema == 2)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: target.appendingPathComponent("data/caches").path))
     var backupDB: OpaquePointer?
     let file = target.appendingPathComponent("data/ApplicationData/EVENexusSimple.store")
     #expect(sqlite3_open(file.path, &backupDB) == SQLITE_OK)

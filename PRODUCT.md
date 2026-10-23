@@ -2052,6 +2052,10 @@ Der ausführliche Produktionsvertrag steht in
   Projekt-Kontaktadresse `projekt-st@gmx.de`. Sie ist keine Anmeldeinformation,
   wird im Build als Fallback mitgeführt und kann für lokale Entwicklung über
   `EVE_NEXUS_CCP_USER_AGENT_CONTACT` überschrieben werden.
+- Der dauerhafte ESI-Antwortcache (`caches/esi-responses.sqlite`) enthält
+  unverschlüsselte ESI-Rohantworten, auch private Charakterdaten wie Assets
+  oder Wallet. Er enthält keine Tokens und keine Anmeldedaten. Als abgeleitete
+  Daten gehört der Ordner `caches` nicht zur Datensicherung (`.nexusbackup`).
 - Die primäre SwiftData-Datenbank besitzt einen stabilen Pfad unter der
   Anwendungskennung. Schemaänderungen werden versioniert migriert.
 - Vor einer Migration wird eine Sicherheitskopie angelegt. Ein Legacy-Store
@@ -2290,6 +2294,28 @@ mit kurzen, wiederverwendbaren Prompts steht in
   genutzten ESI-Antworten erhalten; bei kritischem Speicherdruck wird dieser
   abgeleitete Cache vollständig verworfen. Persistierte Snapshots und explizite
   Teil-/Fehlerzustände bleiben bestehen und werden nicht als leer interpretiert.
+- Hinter dem Arbeitsspeicher liegt ein dauerhafter ESI-Antwortcache
+  (`<Datenordner>/caches/esi-responses.sqlite`, Eigentümerentscheidung vom
+  23.10.2026). Er speichert je Antwort Inhalt, `Expires`, `ETag`,
+  `Last-Modified`, Seitenzahl und Herkunft, getrennt nach öffentlichen Abrufen
+  und je Charakter.
+  - Nach einem App-Start, einer LRU-Verdrängung oder einer Speicherwarnung
+    werden noch gültige Antworten von der Platte bedient statt erneut von ESI
+    abgerufen (CCP-Vorgabe: nicht vor `Expires` aktualisieren).
+  - Abgelaufene Einträge dienen als Validator für einen bedingten Abruf;
+    ESI antwortet dann bei unveränderten Daten mit 304.
+  - Nur im Arbeitsspeicher bleiben das öffentliche Regions-Orderbuch eines
+    Hub-Scans (ohne `type_id`) und die Public-Contracts-Abrufe. Sie werden
+    nach ihrer Übernahme ohnehin verworfen. Einzeltyp-Preise und
+    Strukturmarkt-Orderbücher werden dauerhaft gespeichert.
+  - Obergrenze 512 MB auf der Platte; darüber fallen die am längsten nicht
+    genutzten Einträge heraus.
+  - Einträge eines anderen `X-Compatibility-Date` werden beim Öffnen
+    verworfen. Ein Inhalt, den eine neuere App-Version nicht mehr lesen kann,
+    wird gelöscht und neu von ESI geladen.
+  - Das Trennen eines Charakters löscht auch seine dauerhaften Einträge.
+  - Ist die Datei nicht nutzbar, arbeitet die App für diesen Lauf ohne den
+    dauerhaften Cache weiter.
 - Fortschrittswerte lang laufender Contract- und Main-Hub-Importe werden für
   die Oberfläche auf höchstens eine Aktualisierung alle zwei Sekunden
   gebündelt.
@@ -2412,9 +2438,9 @@ mit kurzen, wiederverwendbaren Prompts steht in
     - die niedrigsten gemeldeten Fehler- und Token-Budgets.
   - Eine Zusammenfassung seit App-Start erscheint höchstens einmal je Minute,
     wenn es neue Abrufe gab.
-  - Bekannte Lücke: Weil der ESI-Cache nur im Arbeitsspeicher liegt, ruft ein
-    App-Start Daten vor ihrem `Expires` erneut ab. Die Zähler machen das
-    sichtbar; die Behebung ist ein eigener Folgeauftrag.
+  - Der dauerhafte ESI-Antwortcache (oben) verhindert Abrufe vor `Expires`
+    auch über App-Neustarts hinweg. Der Zähler „early“ belegt das im
+    laufenden Betrieb.
 
 ## Installation und Entwicklung
 
