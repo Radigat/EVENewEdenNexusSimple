@@ -224,9 +224,14 @@ Details: [dev-diary.md](dev-diary.md), Entscheidung zur Volumenquelle:
   - `swift test` 548 + 70, `EVEStaticDataKit` 12, `xcodebuild test`
     `TEST SUCCEEDED`;
   - Opt-in gegen das reale SDE-Paket des Builds 3632936 bestanden.
+  - Isoliert nur der committete Stand (`02b61a2`, ohne uncommittete
+    Änderungen paralleler Sitzungen): `swift test` 535 + 66,
+    `EVEStaticDataKit` 12, `xcodebuild test` `TEST SUCCEEDED`.
+- **Erledigt (23.10.2026):**
+  - Commit `3100021`;
+  - „SDE → Neuimport des aktuellen Katalogs“ um 09:12–09:13 Uhr: aktiv ist
+    `catalog-v6` mit 491 Dogma-Typen und beiden Indizes;
+  - Neustart der Debug-App um 10:17 Uhr.
 - **Offen:**
-  - „SDE → Neuimport des aktuellen Katalogs“ und Neustart, damit Adapter 6
-    aktiv wird;
-  - Messung in der laufenden App;
-  - Eigentümerabnahme;
-  - nicht committet.
+  - Messung in der laufenden App (Startzeit, Main-Hub-Scan, ESI-Last);
+  - Eigentümerabnahme.

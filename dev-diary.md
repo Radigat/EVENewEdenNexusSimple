@@ -7358,3 +7358,22 @@ Offen (eigene Aufträge):
   - große `StoredCharacter`-Blobs ohne `.externalStorage`;
   - Synchronisationsspeicherung auf dem Hauptthread.
 - Alte SDE-Pakete: rund 1,3 GB Speicher, ohne Geschwindigkeitseffekt.
+
+Nachtrag 23.10.2026 – Neuimport und isolierte Prüfung:
+- Commit `3100021` (nur eigene Änderungen, nicht gepusht).
+- „SDE → Neuimport des aktuellen Katalogs“ lief laut Installationsprotokoll
+  von 09:12:09 bis 09:13:11 Uhr (Download 99 MB, Status `completed`).
+- Lesend geprüft: Der aktive Zeiger nennt
+  `sde-3632936-fd6749fdcf9c-catalog-v6.sqlite`. Der Katalog enthält:
+  - `type_dogma` mit 491 Typen, darunter Raitaru;
+  - `idx_product_blueprint` und `idx_skill_blueprint`;
+  - unverändert 53.288 Typen und 5.100 Blueprints.
+- Die Debug-App läuft seit 10:17 Uhr, also nach dem Neuimport.
+- Isolierter Testlauf nur des committeten Stands (`git archive` von
+  `02b61a2`, ohne uncommittete Änderungen paralleler Sitzungen, eigene
+  DerivedData): `swift test` 535 + 66 Tests, `EVEStaticDataKit` 12,
+  `xcodebuild … test` `TEST SUCCEEDED`.
+- Weiter offen:
+  - Messung in der laufenden App (Startzeit, Dauer des Main-Hub-Scans,
+    ESI-Last);
+  - Eigentümerabnahme.
