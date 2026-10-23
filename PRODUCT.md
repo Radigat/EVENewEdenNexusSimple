@@ -2041,6 +2041,12 @@ Der ausführliche Produktionsvertrag steht in
 
 - Refresh Tokens liegen ausschließlich im macOS-Schlüsselbund. Ein Client
   Secret wird nicht verwendet.
+- Je Charakter läuft höchstens eine Token-Erneuerung gleichzeitig. Weitere
+  Abrufe warten auf deren Ergebnis, statt den Token ein zweites Mal zu
+  erneuern. So kann ein paralleler Abgleich keine scheinbar fehlende
+  Autorisierung mehr melden.
+  - Ein Widerruf oder eine neue Anmeldung während einer laufenden
+    Erneuerung wird nicht mehr von deren Ergebnis überschrieben.
 - Die native PKCE-Anmeldung verwendet durchgängig den festen Loopback-Callback
   `http://localhost:52722/callback`: Anzeige, Autorisierungsanfrage,
   Rückrufserver und Rückrufprüfung teilen dieselbe Konstante. Die URL muss im

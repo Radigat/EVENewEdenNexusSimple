@@ -477,6 +477,14 @@ public actor EVESSOService {
   private let identityVerifier: any EVEIdentityVerifying
   private let now: @Sendable () -> Date
   private var leases: [Int64: AccessTokenLease] = [:]
+  /// At most one refresh per character runs at a time; concurrent callers
+  /// join it. A parallel refresh would rotate the refresh token twice and,
+  /// with the legacy keychain's delete-and-add replacement, let a reader see
+  /// no stored token at all.
+  private var leaseRefreshes: [Int64: Task<AccessTokenLease, Error>] = [:]
+  /// Raised on revocation and on a new authorization, so a refresh that
+  /// started earlier never writes its rotated token over the newer state.
+  private var credentialGenerations: [Int64: UInt64] = [:]
   private var authorizationAttempts: [String: AuthorizationAttempt] = [:]
 
   public init(
@@ -611,6 +619,8 @@ public actor EVESSOService {
         received: identity.characterID
       )
     }
+    credentialGenerations[identity.characterID, default: 0] &+= 1
+    leaseRefreshes.removeValue(forKey: identity.characterID)
     try tokenStore.save(
       response.refreshToken,
       characterID: identity.characterID
@@ -642,6 +652,28 @@ public actor EVESSOService {
     if let lease = leases[characterID], lease.isUsable {
       return lease
     }
+    if let running = leaseRefreshes[characterID] {
+      return try await running.value
+    }
+    let generation = credentialGenerations[characterID, default: 0]
+    // Unstructured, so a cancelled caller cannot abandon a token that EVE SSO
+    // has already rotated before it is stored.
+    let refresh = Task {
+      try await self.refreshLease(characterID: characterID, generation: generation)
+    }
+    leaseRefreshes[characterID] = refresh
+    defer {
+      if leaseRefreshes[characterID] == refresh {
+        leaseRefreshes.removeValue(forKey: characterID)
+      }
+    }
+    return try await refresh.value
+  }
+
+  private func refreshLease(
+    characterID: Int64,
+    generation: UInt64
+  ) async throws -> AccessTokenLease {
     guard let refreshToken = try tokenStore.load(characterID: characterID)
     else { throw AuthError.noStoredAuthorization }
     let response = try await exchange.refresh(
@@ -656,6 +688,10 @@ public actor EVESSOService {
       identity.scopes.isSubset(of: configuration.scopes)
     else {
       throw AuthError.invalidIdentityToken
+    }
+    // Revoked or newly authorized while this refresh was in flight.
+    guard credentialGenerations[characterID, default: 0] == generation else {
+      throw AuthError.noStoredAuthorization
     }
     try tokenStore.save(response.refreshToken, characterID: characterID)
     let lease = AccessTokenLease(
@@ -672,6 +708,8 @@ public actor EVESSOService {
   }
 
   public func revokeLocalAuthorization(characterID: Int64) throws {
+    credentialGenerations[characterID, default: 0] &+= 1
+    leaseRefreshes.removeValue(forKey: characterID)
     leases.removeValue(forKey: characterID)
     try tokenStore.delete(characterID: characterID)
   }

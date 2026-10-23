@@ -315,4 +315,7 @@ Verhalten: [PRODUCT.md](PRODUCT.md), Nachweise: [dev-diary.md](dev-diary.md).
     geprüft mit `swift test` 570 + 70 und `xcodebuild test`. Offen sind die
     Live-Bestätigung und die Abnahme.
   - Befund: sechs frühe Strukturmarkt-Abrufe, Ursache offen;
+  - Behoben am 23.10.2026: gleichzeitige Token-Erneuerung desselben
+    Charakters (Meldung „Autorisierung fehlt“ bei Donna Aumer). Automatisch
+    geprüft (572 + 70, `xcodebuild test`); Live-Bestätigung offen;
   - Messlücke: ESI-Zusammenfassung beim Startende fehlt.

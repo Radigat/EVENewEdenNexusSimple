@@ -790,6 +790,13 @@ prefers Apple's Data Protection Keychain with
 legacy file-based entries on first access. Ad-hoc local builds without the
 required signing entitlement fall back to the legacy Keychain rather than
 writing an unprotected token.
+Lease refresh is single-flight per character: concurrent
+`accessTokenLease` callers join one unstructured refresh task, so the refresh
+token is rotated once and no reader observes the legacy Keychain's
+delete-and-add replacement as a missing token. A cancelled caller does not
+abandon a token that EVE SSO already rotated. A per-character credential
+generation, raised by revocation and by a new authorization, stops an older
+in-flight refresh from writing its rotated token back.
 
 The Characters UI owns the explicit local disconnect command. It first removes
 the refresh token through the Auth boundary, then deletes the character's local

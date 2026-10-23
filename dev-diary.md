@@ -7755,3 +7755,43 @@ Prüfung (automatisch):
 
 Nicht geprüft: Live-Wirkung (4xx-Zähler und niedrigstes Fehlerbudget beim
 nächsten und übernächsten Start) und die Eigentümerabnahme.
+
+## 23.10.2026 – Token-Erneuerung je Charakter nur einmal gleichzeitig
+
+Anlass: Nach dem Neubau meldete die App um 21:50 bei Donna Aumer „Die lokale
+EVE-Autorisierung fehlt“, obwohl ihr Refresh-Token im Schlüsselbund lag. Er
+war um 21:50:27 neu geschrieben worden.
+
+Ursache:
+- `EVESSOService.accessTokenLease` hatte keinen Schutz gegen gleichzeitige
+  Aufrufe. Während `await exchange.refresh` konnte ein zweiter Aufruf für
+  denselben Charakter in den Actor eintreten und ebenfalls erneuern.
+- Die unsignierte Debug-App nutzt den Datei-Schlüsselbund. Nach einem Neubau
+  ersetzt sie fremd signierte Einträge durch Löschen und Neuanlegen. Ein
+  Lesen in dieser Lücke liefert „kein Token“.
+- Die Gegenprobe mit den neuen Tests am alten Code zeigte eine zweite Lücke:
+  Ein Widerruf während einer laufenden Erneuerung wurde von deren Ergebnis
+  überschrieben, der Token landete wieder im Schlüsselbund.
+
+Änderung:
+- Pro Charakter läuft höchstens ein Erneuerungs-Task. Weitere Aufrufe warten
+  auf dessen Ergebnis.
+- Der Task ist unstrukturiert, sodass ein abgebrochener Aufrufer einen schon
+  rotierten Token nicht verliert.
+- Eine Generationsnummer je Charakter, erhöht bei Widerruf und bei neuer
+  Anmeldung, verhindert, dass eine ältere Erneuerung speichert.
+- Rechenregeln, Scopes und Schlüsselbund-Ablage bleiben unverändert.
+
+Prüfung (automatisch):
+- Zwei neue Tests:
+  - fünf gleichzeitige Aufrufe: 1 Erneuerung, 1 Laden, 1 Speichern;
+  - Widerruf während der Erneuerung: kein Speichern, Token bleibt gelöscht.
+- Gegenprobe gegen den alten Code: Beide Tests scheitern dort, mit 6
+  Befunden.
+- Lint: keine neuen Befunde.
+- `swift test` 572 + 70 Tests; `EVEStaticDataKit` 12; `xcodebuild … test`
+  572 Tests, `TEST SUCCEEDED`. Nach der Lint-Korrektur der Testhilfe liefen
+  die Auth-Tests erneut grün (32).
+
+Nicht geprüft: Live-Wirkung beim nächsten Abgleich nach einem Neubau und die
+Eigentümerabnahme.

@@ -239,6 +239,57 @@ struct AuthAndBlueprintTests {
   }
 
   @Test
+  func concurrentLeaseRequestsForOneCharacterShareOneRefresh() async throws {
+    let store = CountingRefreshTokenStore(token: "refresh-token")
+    let exchange = GatedTokenExchange()
+    let service = EVESSOService(
+      configuration: SSOConfiguration(clientID: "fixture-client"),
+      tokenStore: store,
+      exchange: exchange,
+      identityVerifier: FixtureIdentityVerifier()
+    )
+
+    let callers = (0..<5).map { _ in
+      Task { try await service.accessTokenLease(characterID: 42) }
+    }
+    await exchange.waitForPendingRefresh()
+    for _ in 0..<20 { await Task.yield() }
+    await exchange.release()
+    var tokens: [String] = []
+    for caller in callers {
+      tokens.append(try await caller.value.accessToken)
+    }
+
+    #expect(tokens == Array(repeating: "access-token", count: 5))
+    #expect(await exchange.refreshCount == 1)
+    #expect(store.loadCount == 1)
+    #expect(store.saveCount == 1)
+  }
+
+  @Test
+  func revokingDuringARefreshKeepsTheRotatedTokenOut() async throws {
+    let store = CountingRefreshTokenStore(token: "refresh-token")
+    let exchange = GatedTokenExchange()
+    let service = EVESSOService(
+      configuration: SSOConfiguration(clientID: "fixture-client"),
+      tokenStore: store,
+      exchange: exchange,
+      identityVerifier: FixtureIdentityVerifier()
+    )
+
+    let caller = Task { try await service.accessTokenLease(characterID: 42) }
+    await exchange.waitForPendingRefresh()
+    try await service.revokeLocalAuthorization(characterID: 42)
+    await exchange.release()
+
+    await #expect(throws: AuthError.noStoredAuthorization) {
+      _ = try await caller.value
+    }
+    #expect(store.saveCount == 0)
+    #expect(try store.load(characterID: 42) == nil)
+  }
+
+  @Test
   func developmentKeychainNeverAddressesProductionCredentials() throws {
     let production = "com.local.EVENexusSimple.refresh-token"
     for identifier in [nil, "com.local.EVENexusSimple", "unrelated.test.bundle"] {
@@ -1069,6 +1120,50 @@ private actor SuccessfulTokenExchange: TokenExchanging {
     configuration: SSOConfiguration
   ) async throws -> SSOTokenResponse {
     throw AuthError.invalidTokenResponse
+  }
+}
+
+/// Holds every refresh until `release()`, so tests can overlap callers.
+private actor GatedTokenExchange: TokenExchanging {
+  private(set) var refreshCount = 0
+  private var isReleased = false
+  private var gate: [CheckedContinuation<Void, Never>] = []
+  private var pendingWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func exchange(
+    code: String,
+    verifier: String,
+    configuration: SSOConfiguration
+  ) async throws -> SSOTokenResponse {
+    throw AuthError.invalidTokenResponse
+  }
+
+  func refresh(
+    refreshToken: String,
+    configuration: SSOConfiguration
+  ) async throws -> SSOTokenResponse {
+    refreshCount += 1
+    for waiter in pendingWaiters { waiter.resume() }
+    pendingWaiters.removeAll()
+    if !isReleased {
+      await withCheckedContinuation { gate.append($0) }
+    }
+    return SSOTokenResponse(
+      accessToken: "access-token",
+      expiresIn: 3_600,
+      refreshToken: "rotated-refresh-token"
+    )
+  }
+
+  func waitForPendingRefresh() async {
+    guard refreshCount == 0 else { return }
+    await withCheckedContinuation { pendingWaiters.append($0) }
+  }
+
+  func release() {
+    isReleased = true
+    for waiter in gate { waiter.resume() }
+    gate.removeAll()
   }
 }
 
