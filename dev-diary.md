@@ -7831,3 +7831,39 @@ Prüfung (automatisch):
 
 Nicht geprüft: Live-Wirkung beim nächsten Abgleich nach einem Neubau und die
 Eigentümerabnahme.
+
+## 23.10.2026 – Live-Bestätigung: Strukturmerker und Token-Erneuerung
+
+Ablauf (Eigentümer startet, Aufzeichnung per `/usr/bin/log stream`):
+- Start A um 22:56 nach Neubau in Xcode (Stand `440b6fd` plus uncommittete
+  Handel-Änderungen einer anderen Sitzung).
+- Start B um 23:07 ohne Neubau.
+
+Ergebnisse (live geprüft, echte Daten):
+- **Token-Erneuerung:** Nach dem Neubau wurden alle 15 Charaktere um 22:57
+  synchronisiert, auch Donna Aumer. Keine Meldung „Autorisierung fehlt“.
+- **Strukturmerker:** Start A legte 51 Merker an (alle 403). Start B:
+  - `4xx=0` (vorher 51 je Start);
+  - niedrigstes Fehlerbudget 89 von 100 (vorher 49);
+  - keine 420/429;
+  - Header vollständig.
+- Start B lief mit 593 Netzabrufen, davon 340 als 304, und 770 Antworten von
+  der Platte. Der Cache war rund 1,5 Stunden alt; die meisten Einträge waren
+  abgelaufen und wurden bedingt geprüft.
+- Startdauer B: 79,5 s, Charaktere 74,5 s; zuvor gemessen 18,2 s.
+  - Ursache nicht belegt. Wahrscheinlich die bedingten Prüfabrufe der
+    abgelaufenen Einträge und die zur Startzeit laufenden Marktanalysen.
+  - Eine Verlangsamung durch die beiden Fixes ist nicht erkennbar: Beide
+    sparen nur Abrufe ein.
+- **Befund 2 aufgeklärt:** Die „frühen“ Abrufe (31 Strukturdetails, 13
+  Strukturmarkt) sind dieselbe URL für verschiedene Charaktere. Der Cache hält
+  210 Strukturdetail-Einträge für 71 Strukturen.
+  - Jeder Charakter fragt mit eigenem Token und hat einen eigenen
+    Cache-Eintrag. Es ist kein erneuter Abruf derselben Antwort vor `Expires`.
+  - Der Messzähler `early` erkennt nur die URL, nicht den Charakter.
+
+Offen:
+- Entscheidung, ob Strukturdetails und Strukturmärkte nur über einen
+  berechtigten Charakter geladen werden sollen (weniger Abrufe).
+- Zähler `early` je Charakter-Partition statt je URL.
+- Abnahme der beiden Fixes durch den Eigentümer.

@@ -314,9 +314,13 @@ Verhalten: [PRODUCT.md](PRODUCT.md), Nachweise: [dev-diary.md](dev-diary.md).
   - Befund: 51 wiederholte 403/404 bei Strukturen je Start. Behoben am
     23.10.2026: 403/404 werden je Charakter 24 Stunden gemerkt; automatisch
     geprüft mit `swift test` 570 + 70 und `xcodebuild test`. Offen sind die
-    Live-Bestätigung und die Abnahme.
-  - Befund: sechs frühe Strukturmarkt-Abrufe, Ursache offen;
+    Live bestätigt am 23.10.2026: `4xx=0` beim Folgestart, niedrigstes
+    Fehlerbudget 89 von 100. Offen ist die Abnahme.
+  - Befund: frühe Strukturmarkt- und Strukturdetail-Abrufe. Aufgeklärt:
+    dieselbe URL für verschiedene Charaktere mit eigenem Cache-Eintrag.
+    Offen ist die Entscheidung, ob nur ein Charakter je Struktur laden soll;
   - Behoben am 23.10.2026: gleichzeitige Token-Erneuerung desselben
     Charakters (Meldung „Autorisierung fehlt“ bei Donna Aumer). Automatisch
-    geprüft (572 + 70, `xcodebuild test`); Live-Bestätigung offen;
+    geprüft (572 + 70, `xcodebuild test`). Live bestätigt am 23.10.2026:
+    Nach einem Neubau wurden alle 15 Charaktere ohne Meldung synchronisiert;
   - Messlücke: ESI-Zusammenfassung beim Startende fehlt.
