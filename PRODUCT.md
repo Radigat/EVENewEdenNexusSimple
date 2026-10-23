@@ -2341,6 +2341,38 @@ mit kurzen, wiederverwendbaren Prompts steht in
   statisch horizontal scrollbare einfache Zeilenfolge. Der Umlauf dauert
   weiterhin 32 Sekunden. Die Inhalte verwenden die gemeinsame
   Mineralien-Kaufempfehlung und direkt kopierbare Material- und Ortsnamen.
+- Ein Messprotokoll schreibt Zeiten und Zähler ins macOS-Systemprotokoll
+  (Subsystem `com.local.EVENexusSimple`, Kategorie `performance`). Es enthält
+  nur Schrittnamen, Dauern und Anzahlen, keine Charakter-, Struktur- oder
+  Itemkennungen und keine Tokens. Gelesen wird es mit
+  `/usr/bin/log stream --predicate 'subsystem == "com.local.EVENexusSimple" AND category == "performance"'`
+  oder nachträglich mit `/usr/bin/log show --last 1h --predicate …`. Erfasst
+  werden:
+  - Startmeilensteine relativ zum Prozessstart: Startladen begonnen,
+    Charaktere synchronisiert, Konfiguration bereit, Analysen gestartet, Start
+    beendet;
+  - die Dauer der Profil-Referenzdaten sowie Quelle und Dauer der
+    Facility-Dogma (`table` oder `package`) und der Blueprint-Definitionen
+    (Cache-Treffer oder Neuladen);
+  - beim Main-Hub-Scan die Dauer jeder Phase einschließlich Home- und
+    Coalition-Hub, die Gesamtdauer, die Volumendiagnose und die ESI-Last des
+    Scans.
+- Die ESI-Last zählt ein rein beobachtender Transport unter dem ESI-Client.
+  Er verändert keine Anfrage und keine Antwort und sendet selbst nichts; die
+  Grenzen setzt weiter die gemeinsame Warteschlange durch.
+  - Je Routenfamilie (Kennungen als `{id}`) zählt er Anfragen, Datenmenge,
+    304-Antworten, 4xx/5xx und Fehler.
+  - Dazu kommt eine passive Prüfung der CCP-Vorgaben:
+    - fehlender `User-Agent` oder fehlendes `X-Compatibility-Date`;
+    - ein Compatibility-Date in der Zukunft;
+    - GET-Abrufe vor dem `Expires` der vorherigen Antwort („early“);
+    - 420- und 429-Antworten;
+    - die niedrigsten gemeldeten Fehler- und Token-Budgets.
+  - Eine Zusammenfassung seit App-Start erscheint höchstens einmal je Minute,
+    wenn es neue Abrufe gab.
+  - Bekannte Lücke: Weil der ESI-Cache nur im Arbeitsspeicher liegt, ruft ein
+    App-Start Daten vor ihrem `Expires` erneut ab. Die Zähler machen das
+    sichtbar; die Behebung ist ein eigener Folgeauftrag.
 
 ## Installation und Entwicklung
 

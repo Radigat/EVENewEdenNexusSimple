@@ -235,3 +235,26 @@ Details: [dev-diary.md](dev-diary.md), Entscheidung zur Volumenquelle:
 - **Offen:**
   - Messung in der laufenden App (Startzeit, Main-Hub-Scan, ESI-Last);
   - Eigentümerabnahme.
+
+## Messprotokoll und CCP-Regelprüfung (23.10.2026)
+
+Zeiten, Zähler und passive Prüfung der CCP-Vorgaben für ESI im
+Systemprotokoll. Details und Benchmarkwerte: [dev-diary.md](dev-diary.md),
+Lesart: [PRODUCT.md](PRODUCT.md), Abschnitt „Laufzeit und Hintergrundarbeit“.
+
+- **Implementiert:**
+  - `PerformanceLog` mit Startmeilensteinen, Profil-Referenzdaten,
+    SDE-Ladezeiten und allen Main-Hub-Scan-Phasen;
+  - `MeasuringESITransport`: ESI-Last je Routenfamilie und Zähler für
+    fehlende Header, frühe Abrufe vor `Expires`, 420/429 und Mindestbudgets.
+- **Automatisch geprüft (23.10.2026):**
+  - `swift test` 555 + 70, `EVEStaticDataKit` 12, `xcodebuild test`
+    `TEST SUCCEEDED` (555);
+  - Offline-Benchmark auf SDE 3632936:
+    - Dogma 529 → 58 ms;
+    - Fertigungsdefinitionen 655 → 53 ms;
+    - ESI-Volumenabrufe je Scan 4.765 → 0.
+- **Offen, in dieser Reihenfolge:**
+  1. ESI-Cache, der Neustarts übersteht, damit kein Abruf vor `Expires`
+     erfolgt. Erst nach dem Commit der ESI-Sitzung.
+  2. Live-Lauf mit Auswertung und Abnahmeliste; danach die Eigentümerabnahme.

@@ -1340,6 +1340,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     typeIDs: Set<Int64>,
     pointer: ActivePointer
   ) async throws -> [Int64: [Int64: Double]] {
+    let stopwatch = PerformanceStopwatch("sde.type-dogma")
     let database = try activeDatabase()
     let hasTypeDogmaTable = try !database.rows(
       """
@@ -1350,7 +1351,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     ).isEmpty
     guard hasTypeDogmaTable else {
       // Catalog adapters before 6 keep reading the package's typeDogma file.
-      return try await streamTypeDogma(typeIDs: typeIDs, pointer: pointer)
+      let result = try await streamTypeDogma(typeIDs: typeIDs, pointer: pointer)
+      stopwatch.finish("source=package types=\(result.count)")
+      return result
     }
     let accepted = typeIDs.sorted()
     let decoder = JSONDecoder()
@@ -1375,6 +1378,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         )
       }
     }
+    stopwatch.finish("source=table types=\(result.count)")
     return result
   }
 
@@ -1919,10 +1923,18 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     if let cached = completeDefinitionsCache[activity],
       cached.fileName == pointer.fileName
     {
+      PerformanceLog.event(
+        "sde.definitions",
+        "activity=\(activity.rawValue) cache=hit count=\(cached.definitions.count)"
+      )
       return cached.definitions
     }
+    let stopwatch = PerformanceStopwatch("sde.definitions")
     let definitions = try await loadCompleteDefinitions(activity: activity)
     completeDefinitionsCache[activity] = (pointer.fileName, definitions)
+    stopwatch.finish(
+      "activity=\(activity.rawValue) cache=miss count=\(definitions.count)"
+    )
     return definitions
   }
 

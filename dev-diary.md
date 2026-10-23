@@ -7333,8 +7333,11 @@ Prüfung (automatisch):
     Paketdatei.
 - `swift test` 548 + 70 Tests bestanden; `EVEStaticDataKit` 12 Tests (1
   Opt-in übersprungen); `xcodebuild … test` `TEST SUCCEEDED`.
-- `swift-format lint --strict` der geänderten Swift-Dateien ohne Befund;
-  `git diff --check` fehlerfrei.
+- `swift-format lint --strict`: keine neuen Befunde. `SQLiteStaticCatalog.swift`
+  (7) und `RuntimeState.swift` (72) hatten dieselben Befunde schon vor dem
+  Commit. Korrektur vom 23.10.2026: Der ursprüngliche Lint-Lauf hatte die
+  Dateiliste nicht richtig übergeben; der Vorher-/Nachher-Vergleich wurde
+  nachgeholt. `git diff --check` fehlerfrei.
 - Die Läufe umfassen auch die uncommitteten Änderungen paralleler Sitzungen.
 - Datenbankebene, Kopie des aktiven Katalogs mit `sqlite3`:
   - alle 4.054 Fertigungsdefinitionen alt 0,60 s, neu 0,04 s;
@@ -7377,3 +7380,80 @@ Nachtrag 23.10.2026 – Neuimport und isolierte Prüfung:
   - Messung in der laufenden App (Startzeit, Dauer des Main-Hub-Scans,
     ESI-Last);
   - Eigentümerabnahme.
+
+## 23.10.2026 – Messprotokoll mit CCP-Regelprüfung und Offline-Benchmark
+
+Anlass: Offene Messung von Startzeit, Main-Hub-Scan und ESI-Last. Vorgabe des
+Eigentümers: Alle CCP-Vorgaben für ESI müssen erfüllt sein.
+
+Entscheidungen des Eigentümers:
+- Ein kleines, dauerhaftes Messprotokoll ohne Charakterdaten.
+- Vorher-/Nachher-Werte kommen aus einem Offline-Benchmark.
+- Der Live-Lauf folgt erst nach einem ESI-Cache, der Neustarts übersteht. Der
+  ist ein eigener Auftrag, sobald die ESI-Sitzung ihre Änderungen an
+  `ESIClient.swift` committet hat.
+
+Quellen der CCP-Regeln (gelesen am 23.10.2026):
+[Best Practices](https://developers.eveonline.com/docs/services/esi/best-practices/),
+[Rate Limiting](https://developers.eveonline.com/docs/services/esi/rate-limiting/),
+[Overview](https://developers.eveonline.com/docs/services/esi/overview/),
+[X-Pages](https://developers.eveonline.com/docs/services/esi/pagination/x-pages/).
+Bekannte Lücke dazu: Laut Best Practices soll vor `Expires` nicht aktualisiert
+werden. Der Cache liegt aber nur im Arbeitsspeicher, also ruft jeder App-Start
+noch gültige Daten erneut ab.
+
+Änderung:
+- `PerformanceLog`/`PerformanceStopwatch` (Core) schreiben ins Systemprotokoll
+  (Subsystem `com.local.EVENexusSimple`, Kategorie `performance`, Stufe notice).
+  Erfasst werden:
+  - Startmeilensteine relativ zum Prozessstart;
+  - die Profil-Referenzdaten;
+  - Dogma- und Definitionsladen des SDE-Katalogs mit Quelle bzw.
+    Cache-Treffer;
+  - jede Phase des Main-Hub-Scans samt Home-/Coalition-Hub, die
+    Volumendiagnose und die ESI-Differenz des Scans.
+- `MeasuringESITransport` hängt rein beobachtend unter dem App-ESI-Client. Er
+  verändert nichts, sendet nichts selbst und wiederholt nichts. Er zählt je
+  Routenfamilie (`{id}` statt Kennungen) und prüft die CCP-Vorgaben passiv:
+  - fehlender User-Agent oder fehlendes Compatibility-Date;
+  - ein Compatibility-Date in der Zukunft;
+  - frühe GET-Abrufe vor `Expires`;
+  - 420/429;
+  - die niedrigsten Fehler- und Token-Budgets.
+- `ESIClient.swift` blieb unberührt.
+- Die vier neuen Dateien sind von Hand in `project.pbxproj` eingetragen
+  (ID-Präfix `01A0D001`), weil XcodeGen nicht verwendet wird.
+
+Prüfung (automatisch):
+- Sechs neue Transport-Tests:
+  - Routenvorlage;
+  - unveränderte Weitergabe von Anfrage, Antwort und Fehler;
+  - Statusklassen;
+  - früher Abruf vor bzw. nach `Expires`, POST zählt nicht;
+  - fehlende Header und Compatibility-Date in der Zukunft;
+  - 420/429 samt Mindestbudgets und Zusammenfassung ohne Kennungen.
+- `swift test` 555 + 70 Tests; `EVEStaticDataKit` 12; `xcodebuild … test`
+  555 Tests, `TEST SUCCEEDED`.
+- `swift-format lint --strict`: neue Dateien ohne Befund, in den geänderten
+  Dateien keine neuen Befunde. `git diff --check` fehlerfrei.
+- Das Systemprotokoll der Testläufe enthält 66 Zeilen der Kategorie
+  `performance`, nur mit Namen, Dauern und Anzahlen.
+- Opt-in-Benchmark `StaticCatalogBenchmarkTests` (`EVE_NEXUS_RUN_BENCHMARKS=1`,
+  echtes SDE-Paket 3632936, isolierter Import, ohne Netz, Debug-Build, Median
+  aus drei Läufen):
+
+  | Messung | alt | neu |
+  |---|---|---|
+  | Facility-Dogma | 529,3 ms aus der Paketdatei | 58,0 ms aus der Tabelle |
+  | 4.054 Fertigungsdefinitionen | 654,5 ms, Einzelabfragen ohne Indizes | 53,2 ms mengenbasiert kalt, 0,0 ms aus dem Cache |
+  | ESI-Volumenabrufe je Main-Hub-Scan | 4.765 | 0 |
+
+Nicht geprüft:
+- Live-Lauf in der echten App: Startzeit, Scan-Dauer, ESI-Last und
+  CCP-Zähler. Er ist bewusst zurückgestellt, bis der dauerhafte Cache steht.
+- Eigentümerabnahme.
+
+Offen (Folgeaufträge in dieser Reihenfolge):
+1. ESI-Cache, der Neustarts übersteht (Ablaufzeiten, Validatoren, Antworten),
+   damit kein Abruf vor `Expires` erfolgt.
+2. Live-Lauf mit Auswertung des Messprotokolls und Abnahmeliste.

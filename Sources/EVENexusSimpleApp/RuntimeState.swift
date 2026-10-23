@@ -292,14 +292,22 @@ final class StartupDataLoad: ObservableObject {
   func start(_ steps: Steps) -> Bool {
     guard task == nil else { return false }
     phase = .loadingCharactersAndConfiguration
+    PerformanceLog.milestone("startup.load-started")
     let synchronizeCharacters = steps.synchronizeCharacters
-    let characterTask = Task { await synchronizeCharacters() }
+    let characterTask = Task {
+      let result = await synchronizeCharacters()
+      PerformanceLog.milestone("startup.characters-synchronized")
+      return result
+    }
     self.characterTask = characterTask
     let waiters = startWaiters
     startWaiters = []
     waiters.forEach { $0.resume() }
     task = Task { [weak self] in
-      let configuration = Task { await steps.prepareConfiguration() }
+      let configuration = Task {
+        await steps.prepareConfiguration()
+        PerformanceLog.milestone("startup.configuration-ready")
+      }
       let result = await withTaskCancellationHandler {
         await characterTask.value
       } onCancel: {
@@ -314,10 +322,15 @@ final class StartupDataLoad: ObservableObject {
         return
       }
       self.phase = .refreshingAnalysesAndScans
+      PerformanceLog.milestone("startup.analyses-started")
       let analyses = Task { await steps.refreshMarketAnalyses() }
       await steps.releaseAutomaticScans()
       await analyses.value
       self.phase = Task.isCancelled ? .cancelled : .completed
+      PerformanceLog.milestone(
+        "startup.finished",
+        Task.isCancelled ? "cancelled" : "completed"
+      )
     }
     return true
   }
@@ -536,6 +549,8 @@ final class RuntimeState: ObservableObject {
   private let tradingLocationSearch: TradingLocationSearchService
   private let universeNameService: UniverseNameService
   private let universeTypeVolumeService: UniverseTypeVolumeService
+  /// Observes ESI load and CCP guidance counters for the performance log.
+  private let measuringESITransport: MeasuringESITransport
   private let dotlanJumpRouteService: DOTLANJumpRouteService
   private let catalog: SQLiteStaticCatalog
   private var publicContractIndexer: PublicContractIndexer?
@@ -599,7 +614,9 @@ final class RuntimeState: ObservableObject {
     let userAgent = CCPUserAgentConfiguration.value(
       ownerContact: self.ccpUserAgentOwnerContact
     )
-    let esi = ESIClient(userAgent: userAgent)
+    let measuringESITransport = MeasuringESITransport()
+    self.measuringESITransport = measuringESITransport
+    let esi = ESIClient(transport: measuringESITransport, userAgent: userAgent)
     self.esi = esi
     self.solarSystemSearch = SolarSystemSearchService(esi: esi)
     self.playerStructureSearch = PlayerStructureSearchService(esi: esi)
@@ -1412,7 +1429,9 @@ final class RuntimeState: ObservableObject {
           "The saved production configuration could not be loaded."
       }
     }
+    let referenceStopwatch = PerformanceStopwatch("planner.reference-data")
     await refreshProfileReferenceData()
+    referenceStopwatch.finish()
     isPlannerConfigurationReady = true
     prepareMainHubMarketAutomation()
   }
@@ -2901,6 +2920,15 @@ final class RuntimeState: ObservableObject {
       }
     }
     do {
+      var scanStopwatch = PerformanceStopwatch("main-hub-scan")
+      let esiBeforeScan = measuringESITransport.snapshot()
+      defer {
+        scanStopwatch.finish(
+          "automatic=\(isAutomatic) esi: "
+            + measuringESITransport.snapshot().subtracting(esiBeforeScan)
+            .summary()
+        )
+      }
       guard try await catalog.activeSDEVersion() != nil else {
         throw StaticCatalogError.noActiveCatalog
       }
@@ -2936,6 +2964,10 @@ final class RuntimeState: ObservableObject {
           adjustedValue,
           systemsValue
         )
+      scanStopwatch.lap(
+        "definitions-orderbook-prices-systems",
+        "definitions=\(manufacturingDefinitions.count + reactionDefinitions.count)"
+      )
       let definitions = manufacturingDefinitions + reactionDefinitions
       try Task.checkCancellation()
       await esi.removeCachedPublicResponses(
@@ -2962,6 +2994,7 @@ final class RuntimeState: ObservableObject {
         manufacturingOpportunityDemandError =
           "The Main Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced."
       }
+      scanStopwatch.lap("demand-observation")
       let productTypeIDs = Set(definitions.map(\.productTypeID))
       let allTypeIDs = Set(
         definitions.flatMap {
@@ -2979,6 +3012,11 @@ final class RuntimeState: ObservableObject {
       )
       let (names, classifications, packagedVolumeSnapshot) = try await (
         namesValue, classificationsValue, volumesValue
+      )
+      scanStopwatch.lap(
+        "names-classifications-volumes",
+        "types=\(allTypeIDs.count) "
+          + packagedVolumeSnapshot.diagnostics.joined(separator: ",")
       )
       let facilities = manufacturingOpportunityFacilities(
         systemIndices: systems
@@ -3015,6 +3053,7 @@ final class RuntimeState: ObservableObject {
       } onCancel: {
         analysisTask.cancel()
       }
+      scanStopwatch.lap("analysis")
       manufacturingOpportunityAnalysis = analysis
       do {
         try await manufacturingOpportunitySnapshotStore.save(analysis)
@@ -3024,6 +3063,7 @@ final class RuntimeState: ObservableObject {
         manufacturingOpportunitySnapshotError =
           "The current Main Hub item list is visible, but it could not be saved for the next app start. Existing saved data was not replaced."
       }
+      scanStopwatch.lap("save")
       let secondaryContext = SecondaryHubOpportunityScanContext(
           definitions: definitions,
           typeNames: names,
@@ -3043,10 +3083,12 @@ final class RuntimeState: ObservableObject {
         role: .home,
         context: secondaryContext
       )
+      scanStopwatch.lap("home-hub")
       try await analyzeSecondaryHubOpportunities(
         role: .coalition,
         context: secondaryContext
       )
+      scanStopwatch.lap("coalition-hub")
     } catch is CancellationError {
       return
     } catch ESIError.cancelled {

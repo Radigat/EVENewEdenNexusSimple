@@ -579,6 +579,25 @@ is cancellable and limited to six concurrent per-type requests; it does not
 create unbounded tasks for a large plan. Each regional type response discards
 orders from every station except the exact configured location before it is
 retained, reducing peak memory without changing location-bound depth pricing.
+The app's shared `ESIClient` sends through `MeasuringESITransport`, a purely
+observing decorator around `URLSessionESITransport`. It passes every request,
+response and error through unchanged, sends nothing itself and never retries;
+limits stay with the coordinator described below, which admits a request
+before it reaches the transport. Per route family (numeric path
+segments as `{id}`, no query) it counts requests, bytes, status classes and
+failures. As a passive check of CCP's ESI guidance it also counts:
+- requests without `User-Agent` or `X-Compatibility-Date`;
+- compatibility dates after the 11:00-UTC rollover date;
+- GETs sent again before the previous response's `Expires`, tracked per URL in
+  a bounded in-memory table;
+- 420/429 responses;
+- the lowest reported error and rate-limit budgets.
+
+`PerformanceLog` and `PerformanceStopwatch` (EVENexusCore) write these
+summaries, the startup milestones, the planner reference-data duration, the
+SDE dogma and definition loads and every Main-Hub scan phase to the unified log
+(subsystem `com.local.EVENexusSimple`, category `performance`, level notice).
+Messages carry only step names, durations and counts.
 Every network miss and POST additionally passes one `ESIRequestCoordinator`
 owned by the app's shared `ESIClient`. The coordinator admits at most six
 transports process-wide and at most two requests marked as automatic work;
