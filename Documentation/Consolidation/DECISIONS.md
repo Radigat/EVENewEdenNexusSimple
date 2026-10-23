@@ -224,3 +224,15 @@ Schritt P1.
   - Der Ordner `caches` gehört nicht zur Datensicherung.
 - **Unverändert:** Rate- und Fehlerlimits, Warteschlange, Seitenkonsistenz und
   alle fachlichen Regeln.
+
+## 23.10.2026 – Nicht zugängliche Strukturen merken
+
+- **Anlass:** Im Live-Lauf kamen je Start 51 wiederholte 4xx-Antworten der
+  Strukturdetails; das ESI-Fehlerbudget sank auf 49 von 100. CCP rät von
+  wiederholten 4xx ab, sie kosten je 5 Tokens.
+- **Entscheidungen (Eigentümer):**
+  - 403 (keine Andockberechtigung) und 404 (Struktur nicht vorhanden) werden
+    gemerkt.
+  - Neu geprüft wird nach 24 Stunden, je Charakter und dauerhaft über
+    Neustarts.
+  - Eine ausdrücklich gestartete Struktursuche fragt immer neu bei ESI.

@@ -310,7 +310,9 @@ Verhalten: [PRODUCT.md](PRODUCT.md), Nachweise: [dev-diary.md](dev-diary.md).
   (Industrieprofile, Hub-Chancen, Planner-Volumen, Charakterdaten,
   Geschwindigkeit).
 - **Offen (Folgeaufträge):**
-  - Befund: 51 wiederholte 403 bei nicht zugänglichen Strukturen je Start
-    (Fehlerbudget sank auf 49 von 100);
+  - Befund: 51 wiederholte 403/404 bei Strukturen je Start. Behoben am
+    23.10.2026: 403/404 werden je Charakter 24 Stunden gemerkt; automatisch
+    geprüft mit `swift test` 570 + 70 und `xcodebuild test`. Offen sind die
+    Live-Bestätigung und die Abnahme.
   - Befund: sechs frühe Strukturmarkt-Abrufe, Ursache offen;
   - Messlücke: ESI-Zusammenfassung beim Startende fehlt.

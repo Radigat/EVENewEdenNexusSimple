@@ -7719,3 +7719,39 @@ Offen:
   - nicht zugängliche Strukturen merken statt bei jedem Start erneut abfragen;
   - Ursache der frühen Strukturmarkt-Abrufe klären;
   - ESI-Zusammenfassung zusätzlich beim Startende schreiben.
+
+## 23.10.2026 – Wiederholte 403/404 bei Strukturdetails abgestellt
+
+Anlass: Befund aus dem Live-Lauf. Je Start kamen 51 Antworten mit 4xx von
+`/universe/structures/{id}`, und das Fehlerbudget sank auf 49 von 100.
+Entscheidungen in [DECISIONS.md](Documentation/Consolidation/DECISIONS.md).
+
+Änderung:
+- `ESIEndpoint.rememberedFailureDuration`: Ein 403/404 dieses GET wird je
+  Partition (Charakter) und URL gemerkt und bis zum Ablauf lokal als
+  `forbidden`/`notFound` beantwortet, ohne Netzabruf.
+- Gemerkt wird im Speicher von `ESIClient` und dauerhaft in
+  `caches/esi-responses.sqlite`: neue Tabelle `esi_failures`, Schema v2 mit
+  Migration von v1.
+- Ein Erfolg löscht den Merker. `get(..., revalidatingRememberedFailure:)`
+  fragt trotzdem neu; die Profil-Struktursuche nutzt das.
+- Die Charakter-Trennung löscht die Merker.
+- `PlayerStructureSearchService.detailEndpoint` setzt 24 Stunden für den
+  Abgleich (`resolveKnownStructures`) und die Suche.
+
+Prüfung (automatisch):
+- Sechs neue Tests:
+  - 403 innerhalb von 24 h ohne erneuten Abruf, danach erneute Prüfung mit
+    Erfolg;
+  - 404 bleibt über einen Neustart gemerkt, getrennt je Charakter;
+  - Suche fragt neu und löscht den Merker;
+  - andere 4xx und Endpunkte ohne Frist werden nicht gemerkt;
+  - Charakter-Trennung vergisst die Merker;
+  - Migration einer v1-Datei.
+- Der Lint ist für die geänderten Dateien ohne Befund, und
+  `git diff --check` ist fehlerfrei.
+- `swift test` 570 + 70 Tests; `EVEStaticDataKit` 12; `xcodebuild … test`
+  570 Tests, `TEST SUCCEEDED`.
+
+Nicht geprüft: Live-Wirkung (4xx-Zähler und niedrigstes Fehlerbudget beim
+nächsten und übernächsten Start) und die Eigentümerabnahme.

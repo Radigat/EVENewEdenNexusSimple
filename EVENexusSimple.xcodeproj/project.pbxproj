@@ -51,6 +51,7 @@
 		0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */; };
 		0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */; };
 		12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */; };
+		01A0D0030000000000000011 /* ESIRememberedFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */; };
 		01A0D0020000000000000012 /* ESIResponseDiskCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */; };
 		01A0D0010000000000000014 /* StaticCatalogBenchmarkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */; };
 		01A0D0010000000000000013 /* MeasuringESITransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0010000000000000003 /* MeasuringESITransportTests.swift */; };
@@ -307,6 +308,7 @@
 		A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetsWarehouseView.swift; sourceTree = "<group>"; };
 		A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAndBlueprintTests.swift; sourceTree = "<group>"; };
 		A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLiteStaticCatalogTests.swift; sourceTree = "<group>"; };
+		01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIRememberedFailureTests.swift; sourceTree = "<group>"; };
 		01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIResponseDiskCacheTests.swift; sourceTree = "<group>"; };
 		01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaticCatalogBenchmarkTests.swift; sourceTree = "<group>"; };
 		01A0D0010000000000000003 /* MeasuringESITransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasuringESITransportTests.swift; sourceTree = "<group>"; };
@@ -670,6 +672,7 @@
 				C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */,
 				ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */,
 				A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */,
+				01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */,
 				01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */,
 				01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */,
 				01A0D0010000000000000003 /* MeasuringESITransportTests.swift */,
@@ -894,6 +897,7 @@
 				83ACBCF3A448CEFBA0AA0E3F /* ReactionContractTests.swift in Sources */,
 				0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */,
 				12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */,
+				01A0D0030000000000000011 /* ESIRememberedFailureTests.swift in Sources */,
 				01A0D0020000000000000012 /* ESIResponseDiskCacheTests.swift in Sources */,
 				01A0D0010000000000000014 /* StaticCatalogBenchmarkTests.swift in Sources */,
 				01A0D0010000000000000013 /* MeasuringESITransportTests.swift in Sources */,

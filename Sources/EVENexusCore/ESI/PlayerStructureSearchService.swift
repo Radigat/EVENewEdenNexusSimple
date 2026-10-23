@@ -64,6 +64,10 @@ public actor PlayerStructureSearchService {
     "esi-markets.read_character_orders.v1"
   public static let maximumResolvedStructureCount = 500
   public static let maximumConcurrentStructureRequests = 6
+  /// A structure without docking access (403) or that no longer exists (404)
+  /// is asked again only after this interval per character (owner decision
+  /// 2026-10-23); an explicit search always asks ESI.
+  public static let inaccessibleRecheckInterval: TimeInterval = 24 * 60 * 60
 
   private let esi: ESIClient
   private struct SearchCacheKey: Hashable {
@@ -160,12 +164,9 @@ public actor PlayerStructureSearchService {
       do {
         let detail = try await esi.get(
           ESIPlayerStructureDetails.self,
-          endpoint: ESIEndpoint(
-            path: "/universe/structures/\(structureID)",
-            requiresAuthorization: true,
-            requiredScope: Self.detailScope
-          ),
-          lease: lease
+          endpoint: Self.detailEndpoint(structureID: structureID),
+          lease: lease,
+          revalidatingRememberedFailure: true
         )
         if let solarSystemID,
           detail.value.solarSystemID != solarSystemID
@@ -419,11 +420,7 @@ public actor PlayerStructureSearchService {
             do {
               let detail = try await esi.get(
                 ESIPlayerStructureDetails.self,
-                endpoint: ESIEndpoint(
-                  path: "/universe/structures/\(structureID)",
-                  requiresAuthorization: true,
-                  requiredScope: Self.detailScope
-                ),
+                endpoint: Self.detailEndpoint(structureID: structureID),
                 lease: lease
               )
               return .resolved(
@@ -496,12 +493,17 @@ public actor PlayerStructureSearchService {
   ) async throws -> ESIResponse<ESIPlayerStructureDetails> {
     try await esi.get(
       ESIPlayerStructureDetails.self,
-      endpoint: ESIEndpoint(
-        path: "/universe/structures/\(structureID)",
-        requiresAuthorization: true,
-        requiredScope: Self.detailScope
-      ),
+      endpoint: Self.detailEndpoint(structureID: structureID),
       lease: lease
+    )
+  }
+
+  static func detailEndpoint(structureID: Int64) -> ESIEndpoint {
+    ESIEndpoint(
+      path: "/universe/structures/\(structureID)",
+      requiresAuthorization: true,
+      requiredScope: detailScope,
+      rememberedFailureDuration: inaccessibleRecheckInterval
     )
   }
 

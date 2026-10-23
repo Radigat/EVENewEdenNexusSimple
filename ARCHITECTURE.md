@@ -142,7 +142,13 @@ synchronization resolves candidate names and type IDs through the ACL-protected
 structure-detail route and persists successful values in the immutable asset
 snapshot. Missing scope, forbidden docking ACL and stale structure details
 produce a partial source state but never remove the structure's assets;
-unresolved names remain explicit IDs.
+unresolved names remain explicit IDs. The structure-detail endpoint sets
+`ESIEndpoint.rememberedFailureDuration` (24 h): `ESIClient` remembers a 403
+or 404 per character and URL in memory and in the durable store
+(`esi_failures`, schema v2) and answers it locally until it expires, so a sync
+does not repeat the same 4xx against CCP's error budget. A success clears the
+marker; the explicit structure search passes `revalidatingRememberedFailure`
+and always asks ESI. Character disconnect forgets the markers.
 
 The projection builds one item index and resolves each root once. Target
 composition caches the latest projection by persisted snapshot identity so

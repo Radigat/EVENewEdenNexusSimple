@@ -5,17 +5,23 @@ public struct ESIEndpoint: Hashable, Sendable {
   public var query: [URLQueryItem]
   public var requiresAuthorization: Bool
   public var requiredScope: String?
+  /// When set, a 403 or 404 of this GET is remembered for this many seconds
+  /// per authorization partition and answered locally instead of asking ESI
+  /// again (CCP discourages repeated 4xx).
+  public var rememberedFailureDuration: TimeInterval?
 
   public init(
     path: String,
     query: [URLQueryItem] = [],
     requiresAuthorization: Bool = false,
-    requiredScope: String? = nil
+    requiredScope: String? = nil,
+    rememberedFailureDuration: TimeInterval? = nil
   ) {
     self.path = path
     self.query = query
     self.requiresAuthorization = requiresAuthorization
     self.requiredScope = requiredScope
+    self.rememberedFailureDuration = rememberedFailureDuration
   }
 }
 
@@ -664,6 +670,7 @@ public actor ESIClient {
   private let now: @Sendable () -> Date
   private let sleep: @Sendable (TimeInterval) async throws -> Void
   private var validators: [String: Validator] = [:]
+  private var rememberedFailures: [String: ESIRememberedFailure] = [:]
   private var cachedResponseBytes = 0
   private var cacheAccessSequence: UInt64 = 0
 
@@ -740,6 +747,7 @@ public actor ESIClient {
   public func removeCachedResponses(forCharacterID characterID: Int64) async {
     let prefix = "character:\(characterID)|"
     removeCachedResponses { $0.hasPrefix(prefix) }
+    rememberedFailures = rememberedFailures.filter { !$0.key.hasPrefix(prefix) }
     await responseStore?.removeResponses(inPartition: "character:\(characterID)")
   }
 
@@ -797,10 +805,14 @@ public actor ESIClient {
     return true
   }
 
+  /// - Parameter revalidatingRememberedFailure: asks ESI even when a 403/404
+  ///   of this endpoint is still remembered, e.g. for an explicit user search;
+  ///   the new outcome replaces the remembered one.
   public func get<Value: Decodable & Sendable>(
     _ type: Value.Type,
     endpoint: ESIEndpoint,
-    lease: AccessTokenLease? = nil
+    lease: AccessTokenLease? = nil,
+    revalidatingRememberedFailure: Bool = false
   ) async throws -> ESIResponse<Value> {
     try Task.checkCancellation()
     if endpoint.requiresAuthorization && lease == nil {
@@ -825,6 +837,15 @@ public actor ESIClient {
         query: endpoint.query,
         partition: authorizationPartition
       ) ? responseStore : nil
+    let failureDuration = endpoint.rememberedFailureDuration
+    if failureDuration != nil, !revalidatingRememberedFailure,
+      let failure = await rememberedFailure(
+        forKey: cacheKey,
+        store: durableStore
+      )
+    {
+      throw failure.statusCode == 403 ? ESIError.forbidden : ESIError.notFound
+    }
     var cachedAtRequest = cachedValidator(for: cacheKey)
     var cachedFromDurableStore = false
     if cachedAtRequest == nil,
@@ -977,6 +998,12 @@ public actor ESIClient {
           removeCachedResponse(forKey: cacheKey)
           await durableStore?.removeResponse(forKey: cacheKey)
         }
+        if failureDuration != nil,
+          rememberedFailures.removeValue(forKey: cacheKey) != nil
+            || revalidatingRememberedFailure
+        {
+          await durableStore?.forgetFailure(forKey: cacheKey)
+        }
         return ESIResponse(
           value: decoded,
           source: source,
@@ -1024,9 +1051,41 @@ public actor ESIClient {
           attempt += 1
           continue
         }
+        if let failureDuration {
+          let statusCode: Int? =
+            switch error {
+            case .forbidden: 403
+            case .notFound: 404
+            default: nil
+            }
+          if let statusCode {
+            let failure = ESIRememberedFailure(
+              statusCode: statusCode,
+              until: now().addingTimeInterval(failureDuration)
+            )
+            rememberedFailures[cacheKey] = failure
+            await durableStore?.rememberFailure(failure, forKey: cacheKey)
+          }
+        }
         throw error
       }
     }
+  }
+
+  private func rememberedFailure(
+    forKey key: String,
+    store: (any ESIResponseStoring)?
+  ) async -> ESIRememberedFailure? {
+    if let failure = rememberedFailures[key] {
+      if failure.until > now() { return failure }
+      rememberedFailures.removeValue(forKey: key)
+      return nil
+    }
+    guard let failure = await store?.rememberedFailure(forKey: key),
+      failure.until > now()
+    else { return nil }
+    rememberedFailures[key] = failure
+    return failure
   }
 
   private func cachedValidator(for key: String) -> Validator? {

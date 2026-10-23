@@ -2314,6 +2314,13 @@ mit kurzen, wiederverwendbaren Prompts steht in
     verworfen. Ein Inhalt, den eine neuere App-Version nicht mehr lesen kann,
     wird gelöscht und neu von ESI geladen.
   - Das Trennen eines Charakters löscht auch seine dauerhaften Einträge.
+- Strukturen ohne Andockberechtigung (403) oder ohne vorhandene Struktur (404)
+  merkt sich die App je Charakter 24 Stunden lang, auch über Neustarts. Der
+  Charakterabgleich fragt sie in dieser Zeit nicht erneut bei ESI ab und
+  zeigt sie weiter als nicht zugänglich. Danach wird einmal neu geprüft. Eine
+  ausdrücklich gestartete Struktursuche fragt immer direkt bei ESI und
+  aktualisiert den Merker; ein erfolgreicher Abruf löscht ihn
+  (Eigentümerentscheidung vom 23.10.2026).
   - Ist die Datei nicht nutzbar, arbeitet die App für diesen Lauf ohne den
     dauerhaften Cache weiter.
 - Fortschrittswerte lang laufender Contract- und Main-Hub-Importe werden für

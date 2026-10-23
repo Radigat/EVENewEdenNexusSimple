@@ -31,6 +31,17 @@ public struct ESIStoredResponse: Equatable, Sendable {
   }
 }
 
+/// A remembered 403/404 of one GET, valid until `until`.
+public struct ESIRememberedFailure: Equatable, Sendable {
+  public let statusCode: Int
+  public let until: Date
+
+  public init(statusCode: Int, until: Date) {
+    self.statusCode = statusCode
+    self.until = until
+  }
+}
+
 /// Durable second level behind the in-memory ESI cache. Keys are
 /// `ESIClient` cache keys (`partition|url`); a store never sees credentials.
 public protocol ESIResponseStoring: Sendable {
@@ -48,6 +59,11 @@ public protocol ESIResponseStoring: Sendable {
   /// `lastModified`.
   func removeResponses(forKeys keys: [String], exceptLastModified lastModified: String)
     async
+  /// A remembered failure that is still valid at the store's current time.
+  func rememberedFailure(forKey key: String) async -> ESIRememberedFailure?
+  func rememberFailure(_ failure: ESIRememberedFailure, forKey key: String)
+    async
+  func forgetFailure(forKey key: String) async
 }
 
 /// SQLite file that keeps ESI responses across app restarts so the app does
@@ -57,7 +73,7 @@ public protocol ESIResponseStoring: Sendable {
 /// are discarded on open. Any database failure disables the store for this run
 /// instead of failing an ESI request.
 public actor ESIResponseDiskCache: ESIResponseStoring {
-  public static let schemaVersion = 1
+  public static let schemaVersion = 2
   public static let defaultMaximumBytes = 512 * 1_024 * 1_024
 
   private let url: URL
@@ -185,6 +201,10 @@ public actor ESIResponseDiskCache: ESIResponseStoring {
         "DELETE FROM esi_responses WHERE partition = ?",
         [.text(partition)]
       )
+      try database.run(
+        "DELETE FROM esi_failures WHERE partition = ?",
+        [.text(partition)]
+      )
       try refreshStoredBytes(database)
     } catch {
       disable(after: error)
@@ -229,6 +249,71 @@ public actor ESIResponseDiskCache: ESIResponseStoring {
         }
       }
       removeKeys(stale)
+    } catch {
+      disable(after: error)
+    }
+  }
+
+  public func rememberedFailure(forKey key: String) -> ESIRememberedFailure? {
+    guard let database = openDatabase() else { return nil }
+    do {
+      guard
+        let row = try database.query(
+          """
+          SELECT status_code, remembered_until FROM esi_failures
+          WHERE cache_key = ?
+          """,
+          [.text(key)]
+        ).first,
+        let status = row["status_code"]?.integer,
+        let until = row["remembered_until"]?.real
+      else { return nil }
+      let failure = ESIRememberedFailure(
+        statusCode: Int(status),
+        until: Date(timeIntervalSince1970: until)
+      )
+      guard failure.until > now() else {
+        try database.run(
+          "DELETE FROM esi_failures WHERE cache_key = ?",
+          [.text(key)]
+        )
+        return nil
+      }
+      return failure
+    } catch {
+      disable(after: error)
+      return nil
+    }
+  }
+
+  public func rememberFailure(_ failure: ESIRememberedFailure, forKey key: String) {
+    guard let database = openDatabase() else { return }
+    do {
+      try database.run(
+        """
+        INSERT OR REPLACE INTO esi_failures (
+          cache_key, partition, status_code, remembered_until
+        ) VALUES (?, ?, ?, ?)
+        """,
+        [
+          .text(key),
+          .text(Self.partition(ofKey: key)),
+          .integer(Int64(failure.statusCode)),
+          .real(failure.until.timeIntervalSince1970),
+        ]
+      )
+    } catch {
+      disable(after: error)
+    }
+  }
+
+  public func forgetFailure(forKey key: String) {
+    guard let database = openDatabase() else { return }
+    do {
+      try database.run(
+        "DELETE FROM esi_failures WHERE cache_key = ?",
+        [.text(key)]
+      )
     } catch {
       disable(after: error)
     }
@@ -348,6 +433,25 @@ public actor ESIResponseDiskCache: ESIResponseStoring {
           """
         )
       }
+      if version < 2 {
+        try database.execute(
+          """
+          CREATE TABLE IF NOT EXISTS esi_failures (
+            cache_key TEXT PRIMARY KEY NOT NULL,
+            partition TEXT NOT NULL,
+            status_code INTEGER NOT NULL,
+            remembered_until REAL NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_esi_failures_partition
+            ON esi_failures(partition);
+          PRAGMA user_version = 2;
+          """
+        )
+      }
+      try database.run(
+        "DELETE FROM esi_failures WHERE remembered_until <= ?",
+        [.real(now().timeIntervalSince1970)]
+      )
       try database.run(
         "DELETE FROM esi_responses WHERE compatibility_date <> ?",
         [.text(compatibilityDate)]
