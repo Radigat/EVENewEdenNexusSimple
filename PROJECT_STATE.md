@@ -175,8 +175,8 @@ Abnahme-Checkliste: [HANDEL_PLAN.md](Documentation/HANDEL_PLAN.md).
     Orders;
   - Eigentümerabnahme.
 
-  Der Stand ist auf Auftrag des Eigentümers als `9d8f224` auf `main` lokal
-  committet, nicht gepusht.
+  Der Stand ist auf Auftrag des Eigentümers als `9d8f224` auf `main`
+  committet und nach `origin` gepusht.
 
 ### Nachtrag 23.10.2026: Top-20-Kachel
 
@@ -203,8 +203,8 @@ Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt J](Documentati
     der Top-Kachel bei vorhandenen Zeilen;
   - Eigentümerabnahme.
 
-  Der Stand ist auf Auftrag des Eigentümers als `9b4462f` auf `main` lokal
-  committet, nicht gepusht.
+  Der Stand ist auf Auftrag des Eigentümers als `9b4462f` auf `main`
+  committet und nach `origin` gepusht.
 
 ## Statische Daten lokal (23.10.2026)
 
