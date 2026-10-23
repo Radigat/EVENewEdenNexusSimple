@@ -4,7 +4,7 @@ import SwiftData
 import SwiftUI
 
 struct MarketBrowserView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Query private var characters: [StoredCharacter]
 
   @State private var itemQuery = ""
@@ -891,7 +891,7 @@ struct ManufacturingOpportunitiesView: View {
   var onOpenMainHubOpportunities: () -> Void = {}
   var onOpenHomeHubOpportunities: () -> Void = {}
 
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
   @Query(sort: \StoredStockTarget.typeName)
@@ -1166,17 +1166,22 @@ struct ManufacturingOpportunitiesView: View {
   private func visibleCandidates(
     _ candidates: [ManufacturingOpportunityCandidate]?
   ) -> [ManufacturingOpportunityCandidate]? {
-    candidates.map { candidates in
+    // Stored settings and the parsed budget are read once per pass instead
+    // of once per row.
+    let valueFilter = valueFilter
+    let maximumMaterialPurchaseISK = parsedMaximumMaterialPurchaseISK
+    let minimumAverageDailyDemand = Int64(minimumAverageDailyDemand)
+    return candidates.map { candidates in
       candidates
         .map(candidateApplyingRequestedParameters)
         .filter { candidate in
           valueFilter.accepts(candidate.costs)
             && ManufacturingOpportunityBudgetFilter.accepts(
-              maximumMaterialPurchaseISK: parsedMaximumMaterialPurchaseISK,
+              maximumMaterialPurchaseISK: maximumMaterialPurchaseISK,
               purchaseCashRequirement: candidate.purchaseCashRequirement
             )
             && ManufacturingOpportunityAverageDemandFilter.accepts(
-              minimumAverageDailyDemand: Int64(minimumAverageDailyDemand),
+              minimumAverageDailyDemand: minimumAverageDailyDemand,
               averageDailyDemand: candidate.row.averageDailyDemand
             )
         }
@@ -1184,7 +1189,7 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private var loyaltyStoreBlueprintTypeIDs: Set<Int64> {
-    Set(runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? [])
+    runtime.loyaltyStoreOfferedTypeIDSet
   }
 
   /// Localizes a Main-Hub text and names the shown hub instead.
@@ -4448,9 +4453,7 @@ struct ManufacturingOpportunitiesView: View {
           blueprintActions: treeBlueprintActions,
           blueprintManualCosts: parsedTreeBlueprintCosts,
           preferredBlueprintSources: treePreferredBlueprintSources,
-          loyaltyStoreBlueprintTypeIDs: Set(
-            runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? []
-          )
+          loyaltyStoreBlueprintTypeIDs: runtime.loyaltyStoreOfferedTypeIDSet
         )
         try Task.checkCancellation()
         guard expandedOpportunityTypeID == opportunity.productTypeID else {
@@ -5251,16 +5254,23 @@ struct ManufacturingOpportunitiesView: View {
       !Task.isCancelled,
       trigger == candidateProjectionTrigger
     else { return }
-    let sortedCandidates = candidates.sorted { lhs, rhs in
-      let projectedLHS = candidateApplyingRequestedParameters(lhs)
-      let projectedRHS = candidateApplyingRequestedParameters(rhs)
-      return activeCandidateSort.orderedBefore(
-        lhs: projectedLHS.row,
-        lhsCosts: projectedLHS.costs,
-        rhs: projectedRHS.row,
-        rhsCosts: projectedRHS.costs
-      )
-    }
+    // Project every row once before sorting; projecting inside the
+    // comparator repeated it for each of the n·log n comparisons.
+    let sort = activeCandidateSort
+    let sortedCandidates =
+      candidates
+      .map { candidate in
+        (candidate: candidate, projected: candidateApplyingRequestedParameters(candidate))
+      }
+      .sorted { lhs, rhs in
+        sort.orderedBefore(
+          lhs: lhs.projected.row,
+          lhsCosts: lhs.projected.costs,
+          rhs: rhs.projected.row,
+          rhsCosts: rhs.projected.costs
+        )
+      }
+      .map(\.candidate)
     preparedCandidateProjection = PreparedManufacturingOpportunityCandidates(
       trigger: trigger,
       candidates: sortedCandidates
@@ -5386,9 +5396,7 @@ struct ManufacturingOpportunitiesView: View {
       techLevel: row.techLevel,
       fallbackMaterialEfficiency: row.materialEfficiency,
       fallbackTimeEfficiency: row.timeEfficiency,
-      loyaltyStoreBlueprintTypeIDs: Set(
-        runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? []
-      )
+      loyaltyStoreBlueprintTypeIDs: runtime.loyaltyStoreOfferedTypeIDSet
     )
   }
 

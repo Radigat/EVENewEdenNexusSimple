@@ -93,7 +93,7 @@ struct TradeView: View {
   var onOpenLogistics: () -> Void = {}
   var onOpenSDESettings: () -> Void = {}
 
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @AppStorage("trade.mode", store: AppDefaults.store)
   private var modeRawValue = TradeModeOption.importHome.rawValue
   /// The selected market-group node, shared by all modes (U4); 0 = none.
@@ -189,7 +189,7 @@ struct TradeView: View {
     }
     .sheet(item: $logbookRequest) { request in
       TradeLogbookEditor(request: request)
-        .environmentObject(runtime)
+        .environment(runtime)
     }
   }
 

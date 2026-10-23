@@ -353,6 +353,96 @@ struct PlannerPersistencePerformanceTests {
     return try await IndustryPlanner().plan(input: input, context: planningContext)
   }
 
+  @Test
+  func characterSyncKeepsPreviousSnapshotsOnlyForFailedRefreshes() throws {
+    let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
+    let container = try ModelContainer(
+      for: schema,
+      configurations: [
+        ModelConfiguration(
+          "CharacterSyncRetention",
+          schema: schema,
+          isStoredInMemoryOnly: true
+        )
+      ]
+    )
+    let context = ModelContext(container)
+    let source = SourceIdentity(provider: "Fixture", version: "1")
+    func fresh<Value>(_ value: Value) -> Sourced<Value> {
+      Sourced(state: .fresh, value: value, source: source)
+    }
+    func unavailable<Value>() -> Sourced<Value> {
+      Sourced(
+        state: .unavailable,
+        value: nil,
+        source: source,
+        diagnostics: ["fixture.unavailable"]
+      )
+    }
+    let authorization = AuthorizationSnapshot(
+      characterID: 42,
+      characterName: "Fixture",
+      scopes: []
+    )
+    let character = StoredCharacter(
+      characterID: 42,
+      characterName: "Fixture",
+      authorizationSnapshot: try JSONEncoder().encode(authorization)
+    )
+    context.insert(character)
+    func snapshot(
+      assets: Sourced<AssetSnapshot>,
+      wallet: Sourced<Double>
+    ) -> CharacterSyncSnapshot {
+      CharacterSyncSnapshot(
+        id: UUID(),
+        authorization: authorization,
+        capabilities: CharacterCapabilitySnapshot(
+          character: CharacterIdentity(id: 42, name: "Fixture"),
+          cloneState: .omega,
+          skills: unavailable(),
+          standings: unavailable()
+        ),
+        assets: assets,
+        corporationAssets: unavailable(),
+        blueprints: unavailable(),
+        jobs: unavailable(),
+        openOrders: unavailable(),
+        orderHistory: unavailable(),
+        privateContracts: unavailable(),
+        walletBalance: wallet,
+        walletJournal: unavailable(),
+        walletTransactions: unavailable(),
+        corporationWallet: unavailable()
+      )
+    }
+    let firstAssets = AssetSnapshot(characterID: 42, state: .fresh, items: [])
+
+    try CharacterSyncPersistence.apply(
+      snapshot(assets: fresh(firstAssets), wallet: fresh(100)),
+      to: character,
+      in: context
+    )
+    try CharacterSyncPersistence.apply(
+      snapshot(assets: unavailable(), wallet: fresh(250)),
+      to: character,
+      in: context
+    )
+
+    let assets = try JSONDecoder().decode(
+      Sourced<AssetSnapshot>.self,
+      from: try #require(character.assetSnapshot)
+    )
+    #expect(assets.state == .stale)
+    #expect(assets.value?.id == firstAssets.id)
+    let wallet = try JSONDecoder().decode(
+      Sourced<Double>.self,
+      from: try #require(character.walletBalanceSnapshot)
+    )
+    #expect(wallet.state == .fresh)
+    #expect(wallet.value == 250)
+  }
+
   private func makeContainer() throws -> ModelContainer {
     let schema = Schema(versionedSchema: EVENexusSchemaV2.self)
     let configuration = ModelConfiguration(

@@ -10,7 +10,7 @@ enum AssetInventoryViewMode: Equatable, Sendable {
 struct AssetsWarehouseView: View {
   let mode: AssetInventoryViewMode
 
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
@@ -1502,7 +1502,7 @@ private struct WarehouseMinimumEditor: View {
 }
 
 private struct WarehouseItemSearchField: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Binding var selection: ItemTypeSearchResult?
 
   @State private var query = ""

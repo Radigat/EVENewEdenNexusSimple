@@ -2,7 +2,7 @@ import EVENexusCore
 import SwiftUI
 
 struct IndustryIndexSummary: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   let solarSystemID: Int64
 
   private var snapshot: IndustrySystemCostIndexSnapshot? {

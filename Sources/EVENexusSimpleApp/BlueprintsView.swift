@@ -11,7 +11,7 @@ private enum BlueprintListFilter: String, CaseIterable, Identifiable {
 }
 
 struct BlueprintsView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
 

@@ -110,7 +110,7 @@ struct EVENexusSimpleApp: App {
                 consolidation.error = error.localizedDescription
               }
             }
-            .environmentObject(runtimeOwner.runtime)
+            .environment(runtimeOwner.runtime)
             .environment(\.locale, appLanguage.locale)
             .environment(\.dynamicTypeSize, appTextSize.dynamicTypeSize)
             .preferredColorScheme(appAppearance.preferredColorScheme)
@@ -185,9 +185,9 @@ struct InitialWindowMaximization {
   }
 }
 
-/// Owns the runtime without subscribing the complete app scene to every
-/// domain publication. Only views that explicitly request RuntimeState are
-/// invalidated when background state changes.
+/// Owns the runtime for the app's lifetime without subscribing the scene to
+/// it. RuntimeState uses Observation, so a view is invalidated only by the
+/// runtime properties its body actually reads.
 @MainActor
 private final class RuntimeStateOwner: ObservableObject {
   let runtime: RuntimeState

@@ -7263,6 +7263,134 @@ Rechenregeln unverändert.
 Prüfung: `swift test` und `xcodebuild … test` (Debug, arm64) grün. Nicht
 geprüft: Sichtkontrolle in der laufenden App; Eigentümerabnahme offen.
 
+## 23.10.2026 – Laufzeit: weniger Neuzeichnen, keine Zeilen-Set-Bauten, parallele ESI-Seiten
+
+Auftrag (Eigentümer): Alle Berechnungsschritte und Abläufe auf Geschwindigkeit
+prüfen; die App fühlt sich durch die vielen Abrufe und Daten träge an.
+
+Befund (statische Durchsicht, keine Messung in der laufenden App):
+- `RuntimeState` war ein `ObservableObject` mit rund 90 `@Published`-Werten.
+  Jede Änderung (auch gedrosselter Fortschritt von Contracts und Hub-Scans)
+  zeichnete alle rund 40 beobachtenden Ansichten neu, darunter Dashboard,
+  Hub-Chancen und Handel.
+- Hub-Chancen: `defaultEfficiencyAssumption` baute für jede Zeile zweimal ein
+  Set aller LP-Store-Typen; im Sortiervergleich zusätzlich für jeden der
+  n·log n Vergleiche. Bei Tausenden Zeilen und Katalogen mit Tausenden Typen
+  entstanden so Millionen Hash-Operationen auf dem Hauptthread.
+- `marketAnalysisContextIdentity` kodierte die gesamte Produktionsbasis bei
+  jedem Lesen als JSON (Dashboard, Mond-/Mineralanalysen, Reaktionen).
+- Dashboard und Net Worth dekodierten den gespeicherten Vermögensverlauf (bis
+  365 Stände) bei jedem Zeichnen mehrfach, im Dashboard zusätzlich je
+  Charakterzeile.
+- `getAllPages` und das Regions-Orderbuch der NPC-Hub-Scans (The Forge rund
+  400 Seiten) luden strikt nacheinander; private Vertragsitems (bis 500 je
+  Charakter) ebenso.
+- Nach jedem Charakterabgleich wurden die vorherigen großen Snapshots auf dem
+  Hauptthread dekodiert, obwohl sie nur bei fehlgeschlagenem Abruf nötig sind.
+
+Änderung:
+- `RuntimeState` auf `@Observable` umgestellt; Ansichten verwenden
+  `@Environment(RuntimeState.self)`, die Profilbindungen `Bindable`. Der
+  Feature-Kanal des Planers bleibt.
+- `loyaltyStoreOfferedTypeIDSet` einmal je Katalog im Runtime-Zustand;
+  Chancenfilter liest Einstellungen einmal je Durchlauf; Sortierung projiziert
+  jede Zeile einmal (Decorate-Sort, gleicher Komparator mit Tie-Breaker).
+- Gecachte Markt-Kontextkennung (ungültig bei jeder Basisänderung, Lesezugriff
+  bleibt beobachtet); `DashboardWealthHistoryCache` für Dashboard und Net
+  Worth.
+- `ESIOrderedLoader` (höchstens vier offene Elemente, Auslieferung streng in
+  Reihenfolge) für `getAllPages`, `locationOrderSnapshot` und private
+  Vertragsitems; Seitenzahlprüfung, Fortschritt, Abbruch und Teilzustände
+  unverändert. Public-Contracts-Import unverändert gedrosselt.
+- `CharacterSyncPersistence` dekodiert vorherige Snapshots nur, wenn der neue
+  Abruf keinen Wert hat (identisch zu `retainingLastKnownValue`).
+
+Rechenregeln, Datenmodelle, Schema und Migrationskette sind unverändert.
+
+Prüfung (automatisch):
+- Neue Tests: Beobachtung nur gelesener Runtime-Werte, gecachte
+  Markt-Kontextkennung samt Invalidierung, Vermögensverlauf-Cache, geordneter
+  Loader mit Fensterbegrenzung, sechsseitiges `getAllPages` mit
+  Ausführung außer Reihenfolge, vierseitiger Orderbuchscan mit monotonem
+  Fortschritt, Weiterführung des letzten bekannten Standes nach
+  fehlgeschlagenem Abruf.
+- `swift test` isoliert: 525 Swift-Testing-Tests in 35 Suites plus 70 Tests in
+  3 Suites bestanden (ein vorgesehener Real-SDE-Skip).
+- `EVEStaticDataKit`: 11 Tests bestanden.
+- `xcodebuild … test` (Debug, arm64, unsigniert): 525 Tests, `TEST SUCCEEDED`.
+- `swift-format lint --strict` der geänderten Dateien: 320 statt zuvor 325
+  Befunde, keine neuen; `git diff --check` fehlerfrei.
+- Isolierter Start der Debug-App (eigener Datenordner und Preferences, ohne
+  Hintergrunddienste, nur per PID beendet): 15 Sekunden ohne Absturz. Die
+  Bereiche wurden dabei nicht visuell durchgeklickt.
+
+Nicht geprüft: Messung von Latenz, CPU und RSS in der laufenden App mit
+echten Daten (Instruments), Live-ESI-Laufzeit der parallelen Seiten,
+Eigentümerabnahme. Bewusst nicht umgesetzt: parallele Home-/Coalition-Scans
+(dokumentierte Reihenfolge, Token-Refresh ohne Single-Flight), Kodierung der
+Sync-Snapshots abseits des Hauptthreads, externe Speicherung großer
+SwiftData-Blobs (Schemaänderung).
+
+## 23.10.2026 – ESI-Regelprüfung: globale Limits und Seitenkonsistenz
+
+Auftrag (Eigentümer): Prüfen, dass alle ESI-Regeln eingehalten werden.
+
+Quellen (am 23.10.2026 gelesen): CCP-Seiten
+[Best Practices](https://developers.eveonline.com/docs/services/esi/best-practices/),
+[Rate Limiting](https://developers.eveonline.com/docs/services/esi/rate-limiting/),
+[X-Pages](https://developers.eveonline.com/docs/services/esi/pagination/x-pages/),
+[Overview](https://developers.eveonline.com/docs/services/esi/overview/), die
+CCP-Blogposts zu paralleler Paginierung und zum Fehlerlimit (2017) sowie die
+OpenAPI-Spezifikation für `2025-12-16` (Token-Gruppen der genutzten Routen,
+z. B. `char-contract` 600/15m, `char-wallet` 150/15m, `market-order`
+12000/15m).
+
+Befund:
+- Eingehalten: User-Agent mit App-Name, Version und Kontakt; gültiges
+  `X-Compatibility-Date` 2025-12-16 und `X-Tenant`; Wiederverwendung bis
+  `Expires`; `If-None-Match`/`If-Modified-Since`; Prüfung von `X-Pages`;
+  Automatikläufe planen ab Laufende statt im festen Takt; der Statusabruf geht
+  an status.eveonline.com, nicht an ESI.
+- Verletzt bzw. lückenhaft: Fehler- und Rate-Limit-Header wertete nur der
+  Public-Contracts-Import aus. Ein 420 oder 429 pausierte nur die eine Anfrage,
+  parallele Anfragen liefen weiter; knappe Token-Budgets bremsten nichts.
+  Besonders `char-contract`: bis zu 500 Vertragsitems je Abgleich kosten bis
+  1.000 Tokens bei 600 je 15 Minuten. `getAllPages` und der Regions-
+  Orderbuchscan prüften nicht, dass alle Seiten denselben `Last-Modified`
+  haben (offener Punkt SEC-OPEN-07 aus dem Sicherheitsaudit).
+- Paralleles Seitenladen ist von CCP ausdrücklich empfohlen (Blog 2017) und
+  ohne Obergrenze; die eigenen Grenzen (4 je Ressource, 6 global, 2
+  automatisch) bleiben.
+
+Änderung:
+- `ESIRequestCoordinator` zeichnet jede Antwort auf: Fehlerlimit ≤ 20 oder 420
+  hält alle neuen Anfragen bis Fensterende + 1 s; 429 hält das Bucket
+  (Gruppe × Charakter/öffentlich) bzw. die Routenfamilie bis `Retry-After`;
+  knappe Buckets werden auf Fenster ÷ Tokens × 2 Sekunden gestreckt. Warten
+  ohne Transportplatz, abbrechbar. Wiederholte 420/429 warten über diese
+  Sperren statt über einen eigenen Schlaf.
+- `firstPage` wartet bei Ablauf von Seite 1 innerhalb von 5 s auf die
+  Aktualisierung; `ESIPageSnapshotChange` erzwingt gleiche `Last-Modified`
+  über alle Seiten, mit einmaligem Neulesen nur der veralteten Seiten.
+- Nach Hub-Scans wird nur das Regions-Orderbuch aus dem Cache entfernt,
+  Einzeltyp-Preise (`type_id`) bleiben bis zu ihrem `Expires`.
+
+Prüfung (automatisch): zehn neue Tests (Fehlerlimit-Pause, 420-Wiederholung
+nach Reset, 429 nur im eigenen Bucket, Drosselung und Aufhebung, Parsen von
+`150/15m`, Routenfamilien, Neulesen nach Aktualisierung, Ablehnung dauerhaft
+gemischter Stände, Warten auf bevorstehende Aktualisierung, gezielter
+Cache-Abwurf). `swift test` isoliert: 535 + 70 Tests bestanden;
+`EVEStaticDataKit` 11; `xcodebuild … test` `TEST SUCCEEDED`;
+`swift-format lint --strict` der geänderten ESI-Dateien ohne Befund;
+`git diff --check` fehlerfrei.
+
+Nicht geprüft: Verhalten gegen Live-ESI (echte Limit-Header, 420/429),
+Laufzeit großer Vertragslisten unter Drosselung. Offen: Jitter beim Backoff
+(SEC-OPEN-07); nach einer Speicher-Verdrängung oder dem Freigeben großer
+Antworten kann ein späterer Abruf vor `Expires` erneut gesendet werden – ESI
+liefert dann seine zwischengespeicherte Antwort, es entstehen also nur
+vermeidbare Abrufe, keine Cache-Umgehung.
+
 ## 23.10.2026 – Statische EVE-Daten: weniger ESI-Abrufe und Katalogabfragen
 
 Anlass: Eigentümerfrage, ob sich das Programm durch vorab lokal gespeicherte,

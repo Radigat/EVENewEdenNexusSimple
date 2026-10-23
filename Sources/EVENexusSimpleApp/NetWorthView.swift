@@ -149,7 +149,7 @@ private enum NetWorthComponent: String, CaseIterable, Identifiable {
 }
 
 struct NetWorthView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
@@ -167,6 +167,7 @@ struct NetWorthView: View {
   @State private var captureMessage: String?
   @State private var localError: String?
   @State private var unpricedDetails: DashboardWealthCharacterValue?
+  @State private var wealthHistoryCache = DashboardWealthHistoryCache()
   @State private var characterSort = AppTableSortDescriptor(
     column: NetWorthCharacterSortColumn.character,
     direction: .ascending
@@ -934,17 +935,11 @@ struct NetWorthView: View {
   }
 
   private var wealthHistory: [DashboardWealthSnapshot] {
-    guard
-      let encoded = settings.first(where: {
+    wealthHistoryCache.history(
+      encoded: settings.first(where: {
         $0.key == AppSettingKey.dashboardWealthHistory
-      })?.value,
-      let data = Data(base64Encoded: encoded),
-      let history = try? JSONDecoder().decode(
-        [DashboardWealthSnapshot].self,
-        from: data
-      )
-    else { return [] }
-    return history.sorted { $0.capturedAt < $1.capturedAt }
+      })?.value
+    )
   }
 
   private var filteredHistory: [DashboardWealthSnapshot] {

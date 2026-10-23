@@ -46,7 +46,7 @@ struct ConsolidationWorkbenchView: View {
 
 struct ConsolidationChangeStatusView: View {
   @EnvironmentObject private var controller: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
 
   var body: some View {
     if let error = controller.error {
@@ -132,7 +132,7 @@ struct ConsolidationQuantityTable: View {
 
 private struct ConsolidationWarehousesView: View {
   @EnvironmentObject private var controller: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @State private var warehouseID: UUID?
   @State private var name = ""
   @State private var notes = ""
@@ -245,7 +245,7 @@ private struct ConsolidationWarehousesView: View {
 
 private struct ConsolidationCSVImportControls: View {
   @EnvironmentObject private var controller: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   let kind: ConsolidationImportKind
   @State private var conflict: ConsolidationImportConflict = .skip
   @State private var decisionText = ""
@@ -331,7 +331,7 @@ private struct ConsolidationCSVImportControls: View {
 
 private struct ConsolidationSalesView: View {
   @EnvironmentObject private var controller: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Environment(\.modelContext) private var context
   @Query(sort: \StoredProductionOverviewRow.recordedAt, order: .reverse) private var rows:
     [StoredProductionOverviewRow]

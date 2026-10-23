@@ -1,6 +1,6 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Projektstatus
 
-Stand: 22.10.2026. Modellvorgaben je Werkzeug: [MODEL_POLICY.md](MODEL_POLICY.md).
+Stand: 23.10.2026. Modellvorgaben je Werkzeug: [MODEL_POLICY.md](MODEL_POLICY.md).
 Es gibt nur einen aktiven Projektstand: `/Users/svenstolze/Developer/EVE New Eden Nexus - Assets, Industry, Markets`.
 Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
 
@@ -205,6 +205,38 @@ Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt J](Documentati
 
   Der Stand ist auf Auftrag des Eigentümers als `9b4462f` auf `main`
   committet und nach `origin` gepusht.
+
+## Laufzeitoptimierung (23.10.2026)
+
+Auf Auftrag des Eigentümers sind Berechnungs- und Abrufabläufe auf
+Geschwindigkeit geprüft. Details und Befunde: [dev-diary.md](dev-diary.md).
+
+- **Implementiert:** `RuntimeState` mit Swift Observation (Ansichten zeichnen
+  nur bei gelesenen Werten neu), LP-Store-Typmenge einmal je Katalog,
+  gecachte Markt-Kontextkennung und Vermögensverlauf, einmalige
+  Zeilenprojektion vor dem Sortieren der Hub-Chancen, begrenzt parallele
+  ESI-Seiten und private Vertragsitems in fester Reihenfolge, kein
+  unnötiges Dekodieren alter Snapshots nach dem Charakterabgleich.
+  Rechenregeln, Schema und Migrationskette unverändert.
+- **Automatisch geprüft (23.10.2026):** `swift test` 525 + 70 Tests,
+  `EVEStaticDataKit` 11 Tests, `xcodebuild test` `TEST SUCCEEDED` (525),
+  `git diff --check` fehlerfrei.
+- **Offen:** Messung in der laufenden App mit echten Daten, Live-ESI-Laufzeit,
+  Eigentümerabnahme.
+
+## ESI-Regelprüfung (23.10.2026)
+
+Abgleich mit CCPs aktueller ESI-Dokumentation und OpenAPI-Spezifikation;
+Befund, Quellen und Nachweise im [dev-diary.md](dev-diary.md).
+
+- **Implementiert:** globale Durchsetzung von Fehlerlimit, 420/429 und
+  Token-Budgets in der ESI-Warteschlange; gleicher `Last-Modified`-Stand über
+  alle Seiten mit einmaligem Neulesen; Warten auf eine unmittelbar
+  bevorstehende Aktualisierung; gezielte Cache-Freigabe nach Hub-Scans.
+- **Automatisch geprüft (23.10.2026):** `swift test` 535 + 70,
+  `EVEStaticDataKit` 11, `xcodebuild test` `TEST SUCCEEDED`.
+- **Offen:** Live-ESI-Prüfung, Jitter beim Backoff (SEC-OPEN-07),
+  Eigentümerabnahme.
 
 ## Statische Daten lokal (23.10.2026)
 

@@ -385,6 +385,243 @@ struct ESIClientTests {
   }
 
   @Test
+  func orderedLoaderDeliversInIndexOrderWithinItsWindow() async throws {
+    let probe = OrderedLoadProbe()
+    var delivered: [Int] = []
+
+    try await ESIOrderedLoader.load(
+      count: 12,
+      maximumConcurrent: 3,
+      load: { index in
+        await probe.begin()
+        // Earlier items finish later, so completion is out of order.
+        try await Task.sleep(for: .milliseconds((12 - index) * 3))
+        await probe.end()
+        return index * 10
+      },
+      deliver: { index, value in
+        #expect(value == index * 10)
+        delivered.append(index)
+      }
+    )
+
+    #expect(delivered == Array(0..<12))
+    #expect(await probe.maximumActive == 3)
+  }
+
+  @Test
+  func followsManyPagesConcurrentlyInPageOrder() async throws {
+    let transport = DelayedPagesTransport(pageCount: 6)
+    let client = ESIClient(transport: transport)
+
+    let response = try await client.getAllPages(
+      [Int].self,
+      endpoint: ESIEndpoint(path: "/delayed-pages/")
+    )
+
+    #expect(response.value == [1, 2, 3, 4, 5, 6])
+    #expect(response.pages == 6)
+    #expect(await transport.requestCount == 6)
+    #expect(await transport.maximumActiveRequests > 1)
+  }
+
+  @Test
+  func errorLimitFloorPausesEveryRouteUntilTheWindowResets() async throws {
+    let clock = ManualESIClock()
+    let transport = ScriptedLimitTransport(
+      clock: clock,
+      replies: [
+        .init(
+          status: 200,
+          headers: [
+            "X-ESI-Error-Limit-Remain": "12",
+            "X-ESI-Error-Limit-Reset": "30",
+          ]
+        )
+      ]
+    )
+    let client = clock.client(transport: transport)
+
+    _ = try await client.get([Int].self, endpoint: ESIEndpoint(path: "/first/"))
+    _ = try await client.get([Int].self, endpoint: ESIEndpoint(path: "/second/"))
+
+    let calls = await transport.calls
+    #expect(calls.map(\.path) == ["/first", "/second"])
+    #expect(calls[1].time.timeIntervalSince(calls[0].time) == 31)
+  }
+
+  @Test
+  func errorLimited420WaitsForTheResetBeforeRetrying() async throws {
+    let clock = ManualESIClock()
+    let transport = ScriptedLimitTransport(
+      clock: clock,
+      replies: [.init(status: 420, headers: ["X-ESI-Error-Limit-Reset": "25"])]
+    )
+    let client = clock.client(transport: transport)
+
+    let response = try await client.get(
+      [Int].self,
+      endpoint: ESIEndpoint(path: "/limited/")
+    )
+
+    let calls = await transport.calls
+    #expect(response.statusCode == 200)
+    #expect(calls.count == 2)
+    #expect(calls[1].time.timeIntervalSince(calls[0].time) == 26)
+  }
+
+  @Test
+  func tooManyRequestsBlocksOnlyTheAffectedBucket() async throws {
+    let clock = ManualESIClock()
+    let coordinator = clock.coordinator()
+    let first = ESIRequestRoute(path: "/characters/1/wallet/", partition: "character:1")
+    let second = ESIRequestRoute(path: "/characters/2/wallet/", partition: "character:2")
+    await coordinator.record(
+      ESIRateLimitObservation(statusCode: 429, rateLimitGroup: "char-wallet", retryAfter: 40),
+      route: first
+    )
+
+    _ = try await coordinator.perform(priority: .standard, route: second) { 0 }
+    #expect(clock.recordedSleeps.isEmpty)
+    _ = try await coordinator.perform(priority: .standard, route: first) { 0 }
+    #expect(clock.recordedSleeps == [40])
+  }
+
+  @Test
+  func lowTokenBudgetPacesOnlyItsBucketUntilTokensReturn() async throws {
+    let clock = ManualESIClock()
+    let coordinator = clock.coordinator()
+    let wallet = ESIRequestRoute(path: "/characters/1/wallet/", partition: "character:1")
+    let otherCharacter = ESIRequestRoute(
+      path: "/characters/2/wallet/",
+      partition: "character:2"
+    )
+    let low = ESIRateLimitObservation(
+      statusCode: 200,
+      rateLimitGroup: "char-wallet",
+      rateLimit: "150/15m",
+      rateLimitRemaining: 10
+    )
+    await coordinator.record(low, route: wallet)
+
+    for _ in 0..<3 {
+      _ = try await coordinator.perform(priority: .standard, route: wallet) { 0 }
+    }
+    _ = try await coordinator.perform(priority: .standard, route: otherCharacter) { 0 }
+    // 15 minutes / 150 tokens × 2 tokens per successful request = 12 s.
+    #expect(clock.recordedSleeps == [12, 12])
+
+    let recovered = ESIRateLimitObservation(
+      statusCode: 200,
+      rateLimitGroup: "char-wallet",
+      rateLimit: "150/15m",
+      rateLimitRemaining: 120
+    )
+    await coordinator.record(recovered, route: wallet)
+    _ = try await coordinator.perform(priority: .standard, route: wallet) { 0 }
+    #expect(clock.recordedSleeps == [12, 12])
+  }
+
+  @Test
+  func rateLimitWindowParsesCCPNotation() {
+    let window = ESIRateLimitWindow("600/15m")
+    #expect(window?.maximumTokens == 600)
+    #expect(window?.windowSeconds == 900)
+    #expect(window?.lowTokenThreshold == 60)
+    #expect(window?.pacedRequestInterval == 3)
+    #expect(ESIRateLimitWindow("12000/1h")?.windowSeconds == 3_600)
+    #expect(ESIRateLimitWindow("abc") == nil)
+    #expect(ESIRateLimitWindow(nil) == nil)
+  }
+
+  @Test
+  func requestRoutesShareAFamilyAcrossIdentifiers() {
+    let first = ESIRequestRoute(path: "/characters/1/assets/", partition: "character:1")
+    let second = ESIRequestRoute(path: "/characters/2/assets/", partition: "character:2")
+    #expect(first.family == "/characters/{}/assets/")
+    #expect(first.family == second.family)
+  }
+
+  @Test
+  func midReadRefreshReReadsOnlyTheOutdatedPages() async throws {
+    let transport = RefreshingPagesTransport(staleSecondReadOfPageOne: false)
+    let client = ESIClient(transport: transport)
+
+    let response = try await client.getAllPages(
+      [Int].self,
+      endpoint: ESIEndpoint(path: "/refreshing/")
+    )
+
+    // Page 1 was read from the earlier snapshot; pages 2 and 3 are reused.
+    #expect(response.value == [11, 2, 3])
+    #expect(response.lastModified == RefreshingPagesTransport.newer)
+    let requests = Dictionary(
+      grouping: await transport.requestedPages,
+      by: { $0 }
+    ).mapValues(\.count)
+    #expect(requests == [1: 2, 2: 1, 3: 1])
+  }
+
+  @Test
+  func persistentlyMixedSnapshotsAreRejected() async {
+    let transport = RefreshingPagesTransport(staleSecondReadOfPageOne: true)
+    let client = ESIClient(transport: transport)
+
+    await #expect(throws: ESIError.invalidPagination) {
+      _ = try await client.getAllPages(
+        [Int].self,
+        endpoint: ESIEndpoint(path: "/refreshing/")
+      )
+    }
+  }
+
+  @Test
+  func multiPageReadWaitsForAnImminentRefreshOfPageOne() async throws {
+    let clock = ManualESIClock()
+    let transport = ExpiringFirstPageTransport(clock: clock)
+    let client = clock.client(transport: transport)
+
+    let response = try await client.getAllPages(
+      [Int].self,
+      endpoint: ESIEndpoint(path: "/expiring/")
+    )
+
+    #expect(response.value == [1, 2])
+    #expect(clock.recordedSleeps == [4])
+    #expect(await transport.requestedPages == [1, 1, 2])
+  }
+
+  @Test
+  func orderBookPurgeSparesPerTypeQuotes() async throws {
+    let transport = PagingTransport()
+    let client = ESIClient(transport: transport)
+    _ = try await client.get(
+      [Int].self,
+      endpoint: ESIEndpoint(
+        path: "/markets/1/orders/",
+        query: [URLQueryItem(name: "order_type", value: "all")]
+      )
+    )
+    _ = try await client.get(
+      [Int].self,
+      endpoint: ESIEndpoint(
+        path: "/markets/1/orders/",
+        query: [
+          URLQueryItem(name: "order_type", value: "sell"),
+          URLQueryItem(name: "type_id", value: "34"),
+        ]
+      )
+    )
+
+    await client.removeCachedPublicResponses(
+      pathPrefix: "/markets/1/orders/",
+      sparingQueryItemNamed: "type_id"
+    )
+
+    #expect(await client.cachedResponseUsage().entries == 1)
+  }
+
+  @Test
   func rejectsOversizedResponsesBeforeDecoding() async {
     let client = ESIClient(
       transport: OversizedTransport(),
@@ -3063,6 +3300,196 @@ private actor PagingTransport: ESIHTTPTransporting {
       ]
     )!
     return (Data(body.utf8), response)
+  }
+}
+
+/// A clock whose `sleep` advances time instead of waiting.
+private final class ManualESIClock: @unchecked Sendable {
+  private let lock = NSLock()
+  private var current = Date(timeIntervalSince1970: 1_800_000_000)
+  private var sleeps: [TimeInterval] = []
+
+  var recordedSleeps: [TimeInterval] { lock.withLock { sleeps } }
+
+  func now() -> Date { lock.withLock { current } }
+
+  func sleep(_ seconds: TimeInterval) {
+    lock.withLock {
+      sleeps.append(seconds)
+      current = current.addingTimeInterval(seconds)
+    }
+  }
+
+  func client(transport: any ESIHTTPTransporting) -> ESIClient {
+    ESIClient(
+      transport: transport,
+      now: { self.now() },
+      sleep: { self.sleep($0) }
+    )
+  }
+
+  func coordinator() -> ESIRequestCoordinator {
+    ESIRequestCoordinator(now: { self.now() }, sleep: { self.sleep($0) })
+  }
+
+  static func httpDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+    return formatter.string(from: date)
+  }
+}
+
+/// Answers with scripted statuses and headers, then 200 `[]`.
+private actor ScriptedLimitTransport: ESIHTTPTransporting {
+  struct Reply: Sendable {
+    let status: Int
+    let headers: [String: String]
+  }
+  struct Call: Sendable {
+    let path: String
+    let time: Date
+  }
+
+  private let clock: ManualESIClock
+  private var replies: [Reply]
+  private(set) var calls: [Call] = []
+
+  init(clock: ManualESIClock, replies: [Reply]) {
+    self.clock = clock
+    self.replies = replies
+  }
+
+  func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    calls.append(Call(path: request.url!.path, time: clock.now()))
+    let reply = replies.isEmpty ? Reply(status: 200, headers: [:]) : replies.removeFirst()
+    let response = HTTPURLResponse(
+      url: request.url!,
+      statusCode: reply.status,
+      httpVersion: "HTTP/1.1",
+      headerFields: reply.headers
+    )!
+    return (Data("[]".utf8), response)
+  }
+}
+
+/// Three pages; page 1 is first served from an older snapshot.
+private actor RefreshingPagesTransport: ESIHTTPTransporting {
+  static let older = "Thu, 22 Oct 2026 10:00:00 GMT"
+  static let newer = "Thu, 22 Oct 2026 10:05:00 GMT"
+
+  private let staleSecondReadOfPageOne: Bool
+  private(set) var requestedPages: [Int] = []
+
+  init(staleSecondReadOfPageOne: Bool) {
+    self.staleSecondReadOfPageOne = staleSecondReadOfPageOne
+  }
+
+  func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    let page =
+      Int(
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first(where: { $0.name == "page" })?.value ?? "1"
+      ) ?? 1
+    let isFirstRead = !requestedPages.contains(page)
+    requestedPages.append(page)
+    let lastModified =
+      page == 1 && (isFirstRead || staleSecondReadOfPageOne)
+      ? Self.older : Self.newer
+    let body = page == 1 && !isFirstRead ? "[11]" : "[\(page)]"
+    let response = HTTPURLResponse(
+      url: request.url!,
+      statusCode: 200,
+      httpVersion: "HTTP/1.1",
+      headerFields: [
+        "X-Pages": "3",
+        "Last-Modified": lastModified,
+        "Expires": "Wed, 30 Jul 2036 08:00:00 GMT",
+      ]
+    )!
+    return (Data(body.utf8), response)
+  }
+}
+
+/// Page 1 first expires three seconds after the clock's start.
+private actor ExpiringFirstPageTransport: ESIHTTPTransporting {
+  private let clock: ManualESIClock
+  private(set) var requestedPages: [Int] = []
+
+  init(clock: ManualESIClock) {
+    self.clock = clock
+  }
+
+  func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    let page =
+      Int(
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first(where: { $0.name == "page" })?.value ?? "1"
+      ) ?? 1
+    let isFirstRequest = requestedPages.isEmpty
+    requestedPages.append(page)
+    let expires = clock.now().addingTimeInterval(isFirstRequest ? 3 : 300)
+    let response = HTTPURLResponse(
+      url: request.url!,
+      statusCode: 200,
+      httpVersion: "HTTP/1.1",
+      headerFields: [
+        "X-Pages": "2",
+        "Expires": ManualESIClock.httpDate(expires),
+      ]
+    )!
+    return (Data("[\(page)]".utf8), response)
+  }
+}
+
+private actor OrderedLoadProbe {
+  private var active = 0
+  private(set) var maximumActive = 0
+
+  func begin() {
+    active += 1
+    maximumActive = max(maximumActive, active)
+  }
+
+  func end() {
+    active -= 1
+  }
+}
+
+/// Serves page `n` as `[n]`; earlier pages answer more slowly.
+private actor DelayedPagesTransport: ESIHTTPTransporting {
+  let pageCount: Int
+  private var active = 0
+  private(set) var requestCount = 0
+  private(set) var maximumActiveRequests = 0
+
+  init(pageCount: Int) {
+    self.pageCount = pageCount
+  }
+
+  func data(for request: URLRequest) async throws
+    -> (Data, HTTPURLResponse)
+  {
+    requestCount += 1
+    active += 1
+    maximumActiveRequests = max(maximumActiveRequests, active)
+    let page =
+      Int(
+        URLComponents(
+          url: request.url!,
+          resolvingAgainstBaseURL: false
+        )?.queryItems?.first(where: { $0.name == "page" })?.value ?? "1"
+      ) ?? 1
+    try await Task.sleep(for: .milliseconds((pageCount - page) * 4))
+    active -= 1
+    let response = HTTPURLResponse(
+      url: request.url!,
+      statusCode: 200,
+      httpVersion: "HTTP/1.1",
+      headerFields: ["X-Pages": String(pageCount)]
+    )!
+    return (Data("[\(page)]".utf8), response)
   }
 }
 

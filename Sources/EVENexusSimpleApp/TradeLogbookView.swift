@@ -89,7 +89,7 @@ struct TradeLogbookEditorRequest: Identifiable {
 }
 
 struct TradeLogbookView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Environment(\.modelContext) private var modelContext
   @Query private var characters: [StoredCharacter]
   @State private var isSyncingWallets = false
@@ -130,7 +130,7 @@ struct TradeLogbookView: View {
     }
     .sheet(item: $editorRequest) { request in
       TradeLogbookEditor(request: request)
-        .environmentObject(runtime)
+        .environment(runtime)
     }
     .confirmationDialog(
       "Delete logbook entry?",
@@ -764,7 +764,7 @@ struct TradeLogbookView: View {
 
 struct TradeLogbookEditor: View {
   let request: TradeLogbookEditorRequest
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Environment(\.dismiss) private var dismiss
 
   @State private var typeID: Int64 = 0

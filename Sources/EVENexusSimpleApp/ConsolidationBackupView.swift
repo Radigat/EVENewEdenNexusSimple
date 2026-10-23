@@ -39,7 +39,7 @@ enum ConsolidationPreferences {
 
 struct ConsolidationBackupView: View {
   @EnvironmentObject private var controller: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Environment(\.modelContext) private var context
   @State private var busy = false
   @State private var message: String?

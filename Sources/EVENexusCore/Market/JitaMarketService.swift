@@ -43,16 +43,47 @@ public struct TradeHubMarketService: Sendable {
       @escaping @Sendable (_ completedPages: Int, _ totalPages: Int) async
       -> Void = { _, _ in }
   ) async throws -> MarketOrderSnapshot {
-    var firstEndpoint = ESIEndpoint(
+    let endpoint = ESIEndpoint(
       path: "/markets/\(regionID)/orders/",
-      query: [
-        URLQueryItem(name: "order_type", value: "all"),
-        URLQueryItem(name: "page", value: "1"),
-      ]
+      query: [URLQueryItem(name: "order_type", value: "all")]
     )
-    let first = try await esi.get(
+    do {
+      return try await readLocationOrders(
+        endpoint: endpoint,
+        regionID: regionID,
+        locationID: locationID,
+        progress: progress
+      )
+    } catch let change as ESIPageSnapshotChange {
+      // ESI refreshed the order book during the read. Re-read once; pages of
+      // the new snapshot come from the cache.
+      await esi.removeCachedPages(
+        of: endpoint,
+        pageCount: change.pageCount,
+        exceptLastModified: change.currentLastModified
+      )
+      do {
+        return try await readLocationOrders(
+          endpoint: endpoint,
+          regionID: regionID,
+          locationID: locationID,
+          progress: progress
+        )
+      } catch is ESIPageSnapshotChange {
+        throw ESIError.invalidPagination
+      }
+    }
+  }
+
+  private func readLocationOrders(
+    endpoint: ESIEndpoint,
+    regionID: Int64,
+    locationID: Int64,
+    progress: @escaping @Sendable (Int, Int) async -> Void
+  ) async throws -> MarketOrderSnapshot {
+    let first = try await esi.firstPage(
       [ESIMarketOrderDTO].self,
-      endpoint: firstEndpoint
+      endpoint: endpoint
     )
     let pageCount = max(first.pages ?? 1, 1)
     var ordersByType: [Int64: [MarketOrder]] = [:]
@@ -77,24 +108,29 @@ public struct TradeHubMarketService: Sendable {
 
     append(first.value)
     await progress(1, pageCount)
-    if pageCount > 1 {
-      for page in 2...pageCount {
-        try Task.checkCancellation()
-        firstEndpoint.query.removeAll { $0.name == "page" }
-        firstEndpoint.query.append(
-          URLQueryItem(name: "page", value: String(page))
-        )
-        let response = try await esi.get(
+    // Pages 2…n load concurrently; filtering and progress follow page order.
+    let esi = esi
+    try await ESIOrderedLoader.load(
+      count: pageCount - 1,
+      load: { index in
+        try await esi.get(
           [ESIMarketOrderDTO].self,
-          endpoint: firstEndpoint
+          endpoint: ESIClient.pageEndpoint(endpoint, page: index + 2)
         )
+      },
+      deliver: { index, response in
         if let reportedPages = response.pages, reportedPages != pageCount {
           throw ESIError.invalidPagination
         }
+        try ESIPageSnapshotChange.check(
+          response.lastModified,
+          firstPage: first.lastModified,
+          pageCount: pageCount
+        )
         append(response.value)
-        await progress(page, pageCount)
+        await progress(index + 2, pageCount)
       }
-    }
+    )
     return MarketOrderSnapshot(
       id: UUID(),
       regionID: regionID,

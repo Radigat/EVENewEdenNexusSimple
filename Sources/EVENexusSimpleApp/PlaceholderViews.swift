@@ -6032,9 +6032,7 @@ struct PlannerView: View {
         blueprintTree.map(
           plannerProductionEfficiencies
         ) ?? blueprintEfficiencies
-      let loyaltyStoreBlueprintTypeIDs = Set(
-        runtime.loyaltyStoreCatalog?.offeredTypeIDs ?? []
-      )
+      let loyaltyStoreBlueprintTypeIDs = runtime.loyaltyStoreOfferedTypeIDSet
       persistDraft()
       let workspaceRevision = consolidation.workspace.revision
       let previousPlan = runtime.plan
@@ -7206,7 +7204,7 @@ private struct PlannerShoppingListGroup: Identifiable {
 
 struct ReactionsView: View {
   @Binding var initialNegativeFilter: Bool
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Query private var characters: [StoredCharacter]
   @AppStorage("reactions.analysis-runs", store: AppDefaults.store)
   private var runs = 100
@@ -7943,7 +7941,7 @@ extension DomainWarningSeverity {
 }
 
 struct CharactersView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Environment(\.modelContext) private var modelContext
   @Query private var characters: [StoredCharacter]
   @Query private var settings: [AppSetting]
@@ -9203,7 +9201,7 @@ struct CharactersView: View {
 }
 
 struct DataSettingsView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Query private var activationPointers: [StoredSDEActivationPointer]
   @Environment(\.modelContext) private var modelContext
   @State private var showInstallConfirmation = false
@@ -9609,7 +9607,7 @@ enum PurchaseLocationHintSorting {
 struct PlannerPurchaseLocationHintPanel: View {
   let items: [EVEShoppingListItem]
   let onCopy: (EVEMultibuyExport) -> Void
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @State private var sort = AppTableSortDescriptor(
     column: PurchaseLocationHintColumn.material,
     direction: .ascending

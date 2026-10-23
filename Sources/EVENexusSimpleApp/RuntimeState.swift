@@ -1,6 +1,7 @@
 import AppKit
 import EVENexusCore
 import Foundation
+import Observation
 
 enum CharacterConnectionPhase: Equatable {
   case idle
@@ -356,35 +357,42 @@ final class StartupDataLoad: ObservableObject {
 }
 
 @MainActor
-final class RuntimeState: ObservableObject {
+@Observable
+final class RuntimeState {
   let plannerFeatureState = RuntimeFeatureState()
 
-  @Published var productionBasis = ProductionBasis() {
+  var productionBasis = ProductionBasis() {
+    didSet {
+      encodedProductionBasisIdentity = nil
+      plannerFeatureState.invalidate()
+    }
+  }
+  /// Sorted-key JSON of `productionBasis`, encoded once per basis change
+  /// instead of on every read of `marketAnalysisContextIdentity`.
+  @ObservationIgnored private var encodedProductionBasisIdentity: String?
+  var manufacturingProfile = ManufacturingProfile()
+  var reactionProfile: ReactionProfile?
+  var plan: IndustryPlanSnapshot? {
     didSet { plannerFeatureState.invalidate() }
   }
-  @Published var manufacturingProfile = ManufacturingProfile()
-  @Published var reactionProfile: ReactionProfile?
-  @Published var plan: IndustryPlanSnapshot? {
-    didSet { plannerFeatureState.invalidate() }
-  }
-  @Published private(set) var reactionAnalysis: ReactionAnalysisSnapshot?
-  @Published private(set) var isAnalyzingReactions = false
-  @Published private(set) var reactionAnalysisError: String?
-  @Published private(set) var reactionAnalysisDestinationName: String?
-  @Published private(set) var moonMaterialAnalysis: MoonMaterialPurchaseAnalysisSnapshot? {
+  private(set) var reactionAnalysis: ReactionAnalysisSnapshot?
+  private(set) var isAnalyzingReactions = false
+  private(set) var reactionAnalysisError: String?
+  private(set) var reactionAnalysisDestinationName: String?
+  private(set) var moonMaterialAnalysis: MoonMaterialPurchaseAnalysisSnapshot? {
     didSet {
       moonMaterialRecommendations = moonMaterialAnalysis.map(MaterialPurchaseRecommendationProjector.project) ?? []
     }
   }
-  @Published private(set) var moonMaterialRecommendations: [MaterialPurchaseRecommendation] = []
-  @Published private(set) var isRefreshingMoonMaterialAnalysis = false
-  @Published private(set) var moonMaterialAnalysisError: String?
-  @Published private(set) var mineralPurchaseAnalysis: MaterialPurchaseAnalysisSnapshot? {
+  private(set) var moonMaterialRecommendations: [MaterialPurchaseRecommendation] = []
+  private(set) var isRefreshingMoonMaterialAnalysis = false
+  private(set) var moonMaterialAnalysisError: String?
+  private(set) var mineralPurchaseAnalysis: MaterialPurchaseAnalysisSnapshot? {
     didSet {
       mineralPurchaseRecommendations = mineralPurchaseAnalysis.map(MaterialPurchaseRecommendationProjector.project) ?? []
     }
   }
-  @Published private(set) var mineralPurchaseRecommendations: [MaterialPurchaseRecommendation] = []
+  private(set) var mineralPurchaseRecommendations: [MaterialPurchaseRecommendation] = []
   private let sharedMoonRefresh = SharedAnalysisRefresh()
   private let sharedMineralRefresh = SharedAnalysisRefresh()
   private let sharedReactionRefresh = SharedAnalysisRefresh()
@@ -400,147 +408,148 @@ final class RuntimeState: ObservableObject {
   var hasCurrentMineralPurchaseAnalysis: Bool {
     mineralPurchaseAnalysis != nil && mineralPurchaseResultContext == marketAnalysisContextIdentity
   }
-  @Published private(set) var isRefreshingMineralPurchaseAnalysis = false
-  @Published private(set) var mineralPurchaseAnalysisError: String?
-  @Published private(set) var marketBrowserState: Sourced<MarketBrowserSnapshot>?
-  @Published private(set) var isRefreshingMarketBrowser = false
-  @Published private(set) var marketBrowserError: String?
-  @Published private(set) var mainHubMarketState: Sourced<MarketOrderSummarySnapshot>?
-  @Published private(set) var mainHubMarketAutomaticUpdatesEnabled = true
-  @Published private(set) var mainHubMarketNextAutomaticRunAt: Date?
-  @Published private(set) var isAutomaticallyRefreshingMainHubMarket = false
-  @Published private(set) var dashboardWealthSnapshot: DashboardWealthSnapshot?
-  @Published private(set) var dashboardWealthError: String?
-  @Published private(set) var dashboardIndustryJobValues: [DashboardIndustryJobValue] = []
-  @Published private(set) var dashboardIndustryProductNames: [Int64: String] = [:]
-  @Published private(set) var isRefreshingDashboardWealth = false
+  private(set) var isRefreshingMineralPurchaseAnalysis = false
+  private(set) var mineralPurchaseAnalysisError: String?
+  private(set) var marketBrowserState: Sourced<MarketBrowserSnapshot>?
+  private(set) var isRefreshingMarketBrowser = false
+  private(set) var marketBrowserError: String?
+  private(set) var mainHubMarketState: Sourced<MarketOrderSummarySnapshot>?
+  private(set) var mainHubMarketAutomaticUpdatesEnabled = true
+  private(set) var mainHubMarketNextAutomaticRunAt: Date?
+  private(set) var isAutomaticallyRefreshingMainHubMarket = false
+  private(set) var dashboardWealthSnapshot: DashboardWealthSnapshot?
+  private(set) var dashboardWealthError: String?
+  private(set) var dashboardIndustryJobValues: [DashboardIndustryJobValue] = []
+  private(set) var dashboardIndustryProductNames: [Int64: String] = [:]
+  private(set) var isRefreshingDashboardWealth = false
   private var hasReservedDashboardStartupRefresh = false
   let startupDataLoad: StartupDataLoad
   let startsBackgroundServices: Bool
   /// Automatic Main-Hub and Public-Contracts scans wait for the startup load,
   /// so they do not compete with the first character synchronization.
-  @Published private(set) var areStartupAutomaticScansReleased = false
-  @Published private(set) var manufacturingOpportunityAnalysis: ManufacturingOpportunitySnapshot?
-  @Published private(set) var manufacturingOpportunityProgress =
+  private(set) var areStartupAutomaticScansReleased = false
+  private(set) var manufacturingOpportunityAnalysis: ManufacturingOpportunitySnapshot?
+  private(set) var manufacturingOpportunityProgress =
     ManufacturingOpportunityScanProgress()
-  @Published private(set) var isAnalyzingManufacturingOpportunities = false
-  @Published private(set) var manufacturingOpportunityError: String?
-  @Published private(set) var manufacturingOpportunitySnapshotError: String?
+  private(set) var isAnalyzingManufacturingOpportunities = false
+  private(set) var manufacturingOpportunityError: String?
+  private(set) var manufacturingOpportunitySnapshotError: String?
   /// Home- and Coalition-Hub scan state (P4/P6); the Main Hub keeps its
   /// historical properties above.
-  @Published private(set) var secondaryHubOpportunities:
+  private(set) var secondaryHubOpportunities:
     [OpportunityHubRole: SecondaryHubOpportunityState] = [:]
   private var secondaryHubProgressThrottles:
     [OpportunityHubRole: ProgressPublicationThrottle] = [:]
   private var rememberedCapabilities: [CharacterCapabilitySnapshot] = []
   /// Local public-contract references for the opportunity lists (P8).
-  @Published private(set) var opportunityContractReferences:
-    PublicContractReferenceSnapshot?
-  @Published private(set) var opportunityContractReferenceError: String?
+  private(set) var opportunityContractReferences: PublicContractReferenceSnapshot?
+  private(set) var opportunityContractReferenceError: String?
   /// Included BPC offers for Loyalty Store, Faction and Storyline Blueprints
   /// of the opportunity rows, keyed by Blueprint type ID.
-  @Published private(set) var opportunityBlueprintOffers:
-    [Int64: [PublicContractSearchResult]] = [:]
+  private(set) var opportunityBlueprintOffers: [Int64: [PublicContractSearchResult]] = [:]
   /// Invention estimates per Tech II/III Blueprint type of the opportunity
   /// lists; a type without entry is not estimated yet.
-  @Published private(set) var opportunityInventionEstimates:
+  private(set) var opportunityInventionEstimates:
     [Int64: ManufacturingOpportunityInventionEstimate] = [:]
-  @Published private(set) var isEstimatingOpportunityInvention = false
-  @Published private(set) var opportunityInventionError: String?
+  private(set) var isEstimatingOpportunityInvention = false
+  private(set) var opportunityInventionError: String?
   private var opportunityInventionEstimatesLoadedAt: Date?
   private var pendingInventionTypeIDs: Set<Int64> = []
   /// Changes with every new set of invention estimates.
-  @Published private(set) var opportunityInventionRevision = UUID()
+  private(set) var opportunityInventionRevision = UUID()
   private var opportunityContractReferenceKey:
     (types: Set<Int64>, regions: Set<Int64>?, loadedAt: Date)?
   /// Latest authorizations handed over by the startup load or Dashboard; the
   /// Home-Hub structure market needs them outside any view.
   private var marketAuthorizations: [AuthorizationSnapshot] = []
   private var marketAuthorizationClientID = ""
-  @Published private(set) var manufacturingOpportunityDemand:
-    ManufacturingOpportunityDemandSnapshot?
-  @Published private(set) var manufacturingOpportunityDemandError: String?
+  private(set) var manufacturingOpportunityDemand: ManufacturingOpportunityDemandSnapshot?
+  private(set) var manufacturingOpportunityDemandError: String?
   /// Resolved transport legs of the Trade import routes (HANDEL_PLAN P4).
-  @Published private(set) var tradeTransportBases:
-    [TradeRoute: TradeTransportBasis] = [:]
+  private(set) var tradeTransportBases: [TradeRoute: TradeTransportBasis] = [:]
   /// Purchase logbook of the Trade area (HANDEL_PLAN P5); opened on first use.
-  @Published private(set) var tradeLogbookEntries: [TradeLogbookEntry] = []
-  @Published private(set) var tradeLogbookState: TradeLogbookLoadState =
+  private(set) var tradeLogbookEntries: [TradeLogbookEntry] = []
+  private(set) var tradeLogbookState: TradeLogbookLoadState =
     .notLoaded
-  @Published private(set) var tradeLogbookError: String?
+  private(set) var tradeLogbookError: String?
   private var tradeLogbookStore: TradeLogbookStore?
   /// Last wallet hand-over per character (HANDEL_PLAN P6).
-  @Published private(set) var tradeWalletStatuses: [TradeWalletSyncStatus] = []
-  @Published private(set) var tradeWalletError: String?
+  private(set) var tradeWalletStatuses: [TradeWalletSyncStatus] = []
+  private(set) var tradeWalletError: String?
   /// Wallet reconciliation (HANDEL_PLAN P7).
-  @Published private(set) var tradeUnassignedSales: [TradeUnassignedSale] = []
-  @Published private(set) var tradeWalletImportStart: Date?
-  @Published private(set) var tradeUnresolvedPurchaseCount = 0
-  @Published private(set) var isReconcilingTradeLogbook = false
-  @Published private(set) var loyaltyStoreCatalog: LoyaltyStoreCatalogSnapshot?
-  @Published private(set) var isRefreshingLoyaltyStoreCatalog = false
-  @Published private(set) var loyaltyStoreCatalogError: String?
+  private(set) var tradeUnassignedSales: [TradeUnassignedSale] = []
+  private(set) var tradeWalletImportStart: Date?
+  private(set) var tradeUnresolvedPurchaseCount = 0
+  private(set) var isReconcilingTradeLogbook = false
+  private(set) var loyaltyStoreCatalog: LoyaltyStoreCatalogSnapshot? {
+    didSet {
+      loyaltyStoreOfferedTypeIDSet = Set(loyaltyStoreCatalog?.offeredTypeIDs ?? [])
+    }
+  }
+  /// `loyaltyStoreCatalog.offeredTypeIDs` as a set, built once per catalog
+  /// instead of once per opportunity row.
+  private(set) var loyaltyStoreOfferedTypeIDSet: Set<Int64> = []
+  private(set) var isRefreshingLoyaltyStoreCatalog = false
+  private(set) var loyaltyStoreCatalogError: String?
   /// Saved Loyalty Points per character; `nil` until loaded.
-  @Published private(set) var characterLoyaltyPoints:
-    CharacterLoyaltyPointsSnapshot?
+  private(set) var characterLoyaltyPoints: CharacterLoyaltyPointsSnapshot?
   /// Characters whose token lacks the Loyalty Points scope.
-  @Published private(set) var loyaltyPointsMissingScopeCharacters: Set<String> =
+  private(set) var loyaltyPointsMissingScopeCharacters: Set<String> =
     []
-  @Published private(set) var loyaltyPointsError: String?
+  private(set) var loyaltyPointsError: String?
   /// Top opportunities as calculated by each hub view (Dashboard source).
-  @Published private(set) var hubTopOpportunities:
-    [OpportunityHubRole: HubTopOpportunityResult] = [:]
+  private(set) var hubTopOpportunities: [OpportunityHubRole: HubTopOpportunityResult] = [:]
   private let characterLoyaltyPointsStore: CharacterLoyaltyPointsStore
   private let hubTopOpportunityStore: HubTopOpportunityStore
-  @Published var isWorking = false {
+  var isWorking = false {
     didSet { plannerFeatureState.invalidate() }
   }
-  @Published var statusMessage = "Ready"
-  @Published var errorMessage: String? {
+  var statusMessage = "Ready"
+  var errorMessage: String? {
     didSet { plannerFeatureState.invalidate() }
   }
-  @Published var updatePreview: SDEUpdatePreview?
-  @Published private(set) var sdeLastCheckedAt: Date?
-  @Published var activeSDEBuild: Int?
-  @Published var activeSDEContentSHA256: String?
-  @Published var installationPhase: String?
-  @Published var lastCharacterSync: CharacterSyncSnapshot?
-  @Published var selectedAssetLocationID: Int64?
-  @Published var warehouseStockEnabled = true {
+  var updatePreview: SDEUpdatePreview?
+  private(set) var sdeLastCheckedAt: Date?
+  var activeSDEBuild: Int?
+  var activeSDEContentSHA256: String?
+  var installationPhase: String?
+  var lastCharacterSync: CharacterSyncSnapshot?
+  var selectedAssetLocationID: Int64?
+  var warehouseStockEnabled = true {
     didSet { plannerFeatureState.invalidate() }
   }
-  @Published var industrySystemIndices:
+  var industrySystemIndices:
     Sourced<
       [IndustrySystemCostIndexSnapshot]
     >?
-  @Published var scienceSkillDefinitions: Sourced<[ScienceSkillDefinition]>?
-  @Published var industryFacilityReferences:
+  var scienceSkillDefinitions: Sourced<[ScienceSkillDefinition]>?
+  var industryFacilityReferences:
     Sourced<
       IndustryFacilityReferenceSnapshot
     >?
-  @Published var isLoadingProfileReferenceData = false
-  @Published private(set) var isPlannerConfigurationReady = false {
+  var isLoadingProfileReferenceData = false
+  private(set) var isPlannerConfigurationReady = false {
     didSet { plannerFeatureState.invalidate() }
   }
-  @Published private(set) var eveOnlineServiceStatus: EVEOnlineServiceStatusSnapshot?
-  @Published private(set) var eveOnlineStatusCheckFailed = false
-  @Published private(set) var characterConnectionPhase: CharacterConnectionPhase = .idle
-  @Published private(set) var publicContractProgress = PublicContractSyncProgress()
-  @Published private(set) var publicContractResults: [PublicContractSearchResult] = []
-  @Published private(set) var publicContractCategories: [PublicContractFacet] = []
-  @Published private(set) var publicContractGroups: [PublicContractFacet] = []
-  @Published private(set) var publicContractError: String?
-  @Published private(set) var isSynchronizingPublicContracts = false
-  @Published private(set) var isCancellingPublicContracts = false
-  @Published private(set) var publicContractAutomaticUpdatesEnabled = false
-  @Published private(set) var publicContractNextAutomaticRunAt: Date?
-  @Published private(set) var publicContractStoreState: PublicContractStoreState =
+  private(set) var eveOnlineServiceStatus: EVEOnlineServiceStatusSnapshot?
+  private(set) var eveOnlineStatusCheckFailed = false
+  private(set) var characterConnectionPhase: CharacterConnectionPhase = .idle
+  private(set) var publicContractProgress = PublicContractSyncProgress()
+  private(set) var publicContractResults: [PublicContractSearchResult] = []
+  private(set) var publicContractCategories: [PublicContractFacet] = []
+  private(set) var publicContractGroups: [PublicContractFacet] = []
+  private(set) var publicContractError: String?
+  private(set) var isSynchronizingPublicContracts = false
+  private(set) var isCancellingPublicContracts = false
+  private(set) var publicContractAutomaticUpdatesEnabled = false
+  private(set) var publicContractNextAutomaticRunAt: Date?
+  private(set) var publicContractStoreState: PublicContractStoreState =
     .disabled
   /// Regions the contract import fetches and compares; `nil` is the entire
   /// universe. Persisted in the local Public Contracts index.
-  @Published private(set) var publicContractRegionScope: Set<Int64>?
-  @Published private(set) var publicContractKnownRegions: [PublicContractRegion] = []
-  @Published private(set) var publicContractRegionError: String?
+  private(set) var publicContractRegionScope: Set<Int64>?
+  private(set) var publicContractKnownRegions: [PublicContractRegion] = []
+  private(set) var publicContractRegionError: String?
 
   private let esi: ESIClient
   private let eveOnlineStatusClient = EVEOnlineStatusClient()
@@ -2679,10 +2688,20 @@ final class RuntimeState: ObservableObject {
   }
 
   var marketAnalysisContextIdentity: String {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = .sortedKeys
-    let basis = (try? encoder.encode(productionBasis)) ?? Data()
-    return "\(activeSDEBuild ?? -1):\(basis.base64EncodedString())"
+    // The cache is not observed, so register the basis read explicitly:
+    // views keyed by this identity must still follow basis changes.
+    access(keyPath: \.productionBasis)
+    let basis: String
+    if let cached = encodedProductionBasisIdentity {
+      basis = cached
+    } else {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = .sortedKeys
+      basis = ((try? encoder.encode(productionBasis)) ?? Data())
+        .base64EncodedString()
+      encodedProductionBasisIdentity = basis
+    }
+    return "\(activeSDEBuild ?? -1):\(basis)"
   }
 
   var configuredReactionMarketHub: MarketHubConfigurationSnapshot? {
@@ -2971,7 +2990,8 @@ final class RuntimeState: ObservableObject {
       let definitions = manufacturingDefinitions + reactionDefinitions
       try Task.checkCancellation()
       await esi.removeCachedPublicResponses(
-        pathPrefix: "/markets/\(regionID)/orders/"
+        pathPrefix: "/markets/\(regionID)/orders/",
+        sparingQueryItemNamed: "type_id"
       )
       let marketSummary = MarketOrderSummarySnapshot(snapshot: market)
       let latestMainHubMarket = Sourced(
@@ -5561,7 +5581,8 @@ final class RuntimeState: ObservableObject {
         }
       }
       await esi.removeCachedPublicResponses(
-        pathPrefix: "/markets/\(regionID)/orders/"
+        pathPrefix: "/markets/\(regionID)/orders/",
+        sparingQueryItemNamed: "type_id"
       )
       return snapshot
     case .playerStructure(let structureID, let systemID, let knownRegionID):

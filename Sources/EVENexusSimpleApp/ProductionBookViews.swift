@@ -149,7 +149,7 @@ struct RecentProductionsView: View {
 
 struct ProductionBookView: View {
   @Environment(\.modelContext) private var modelContext
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   let onOpenHistoricalPlan: (StoredProductionOverviewRow) -> Void
   @State private var rows: [StoredProductionOverviewRow] = []
   @State private var summary: ProductionOverviewSummary?
@@ -670,7 +670,7 @@ enum ProductionOverviewTargetMarketPresentation {
 
 private struct ProductionOverviewGrid: View {
   @EnvironmentObject private var consolidation: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   let rows: [StoredProductionOverviewRow]
   let isEditable: Bool
   let availableWidth: CGFloat

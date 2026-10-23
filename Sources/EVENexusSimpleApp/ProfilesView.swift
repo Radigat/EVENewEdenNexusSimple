@@ -3,7 +3,9 @@ import SwiftData
 import SwiftUI
 
 struct ProfilesView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
+  /// Editable bindings into the shared Profile basis.
+  private var bindableRuntime: Bindable<RuntimeState> { Bindable(runtime) }
   @EnvironmentObject private var profileNavigationGuard: ProfileNavigationGuard
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredProductionBasis.updatedAt, order: .reverse)
@@ -144,7 +146,7 @@ struct ProfilesView: View {
           rowTitle: "Manufacturing System",
           addTitle: "Add Manufacturing System",
           activity: .manufacturing,
-          configurations: $runtime.productionBasis.manufacturingSystems
+          configurations: bindableRuntime.productionBasis.manufacturingSystems
         )
         Text(
           "Type at least three letters; ESI supplies the matching solar systems."
@@ -162,31 +164,31 @@ struct ProfilesView: View {
             rowTitle: "Reaction System",
             addTitle: "Add Reaction System",
             activity: .reaction,
-            configurations: $runtime.productionBasis.reactionSystems
+            configurations: bindableRuntime.productionBasis.reactionSystems
           )
           ActivitySystemCollectionEditor(
             rowTitle: "Invention System",
             addTitle: "Add Invention System",
             activity: .invention,
-            configurations: $runtime.productionBasis.inventionSystems
+            configurations: bindableRuntime.productionBasis.inventionSystems
           )
           ActivitySystemCollectionEditor(
             rowTitle: "Blueprint Copying System",
             addTitle: "Add Blueprint Copying System",
             activity: .copying,
-            configurations: $runtime.productionBasis.copyingSystems
+            configurations: bindableRuntime.productionBasis.copyingSystems
           )
           ActivitySystemCollectionEditor(
             rowTitle: "Material Research System",
             addTitle: "Add Material Research System",
             activity: .materialResearch,
-            configurations: $runtime.productionBasis.materialResearchSystems
+            configurations: bindableRuntime.productionBasis.materialResearchSystems
           )
           ActivitySystemCollectionEditor(
             rowTitle: "Time Research System",
             addTitle: "Add Time Research System",
             activity: .timeResearch,
-            configurations: $runtime.productionBasis.timeResearchSystems
+            configurations: bindableRuntime.productionBasis.timeResearchSystems
           )
         }
         Text(
@@ -490,7 +492,7 @@ struct ProfilesView: View {
       )
       .foregroundStyle(DesignTokens.textSecondary)
 
-      ForEach($runtime.productionBasis.structures) { $structure in
+      ForEach(bindableRuntime.productionBasis.structures) { $structure in
         StructureEditor(
           structure: $structure,
           configuredSystems:
@@ -1212,7 +1214,7 @@ struct ProfilesView: View {
 }
 
 struct LogisticsSettingsView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @EnvironmentObject private var profileNavigationGuard: ProfileNavigationGuard
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredProductionBasis.updatedAt, order: .reverse)
@@ -1904,7 +1906,7 @@ private struct ActivitySystemCollectionEditor: View {
 }
 
 private struct ActivitySystemRow: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   let title: LocalizedStringKey
   @Binding var configuration: ActivitySystemConfiguration
   var canDelete = false
@@ -1992,7 +1994,7 @@ private struct ActivitySystemRow: View {
 }
 
 private struct SolarSystemPicker: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   let selectedName: String
   let selectedID: Int64
   let onSelect: (SolarSystemOption) -> Void
@@ -2120,7 +2122,7 @@ private struct SolarSystemPicker: View {
 }
 
 private struct StructureEditor: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Binding var structure: ConfiguredIndustryStructure
   let configuredSystems: [ActivitySystemConfiguration]
   let authorizations: [AuthorizationSnapshot]
@@ -3258,7 +3260,7 @@ private struct RigEditor: View {
 }
 
 struct MarketSettingsView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @EnvironmentObject private var profileNavigationGuard: ProfileNavigationGuard
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredProductionBasis.updatedAt, order: .reverse)
@@ -4057,7 +4059,7 @@ struct MarketSettingsView: View {
 }
 
 private struct TradingLocationESIPicker: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   let authorizations: [AuthorizationSnapshot]
   let clientID: String
   let title: String
@@ -4319,7 +4321,7 @@ private struct TradingLocationESIPicker: View {
 }
 
 private struct SystemFacilityPicker: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   let authorizations: [AuthorizationSnapshot]
   let clientID: String
   let solarSystemID: Int64

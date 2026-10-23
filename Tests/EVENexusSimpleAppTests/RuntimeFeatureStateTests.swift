@@ -1033,7 +1033,7 @@ struct RuntimeFeatureStateTests {
           }.background(DesignTokens.canvas)
         }
       }
-      .environmentObject(RuntimeState(startBackgroundServices: false))
+      .environment(RuntimeState(startBackgroundServices: false))
       .toolbar { Button("Settings action") {} }
       .environment(\.locale, Locale(identifier: "de"))
     )
@@ -1129,6 +1129,74 @@ struct RuntimeFeatureStateTests {
 
     runtime.plan = nil
     #expect(runtime.plannerFeatureState.revision == 3)
+  }
+
+  @Test
+  func runtimeObservationFollowsOnlyTheReadProperties() {
+    let runtime = RuntimeState(startBackgroundServices: false)
+    let flag = ObservationFlag()
+    withObservationTracking {
+      _ = runtime.manufacturingOpportunityAnalysis
+      _ = runtime.isWorking
+    } onChange: {
+      flag.fire()
+    }
+
+    runtime.statusMessage = "Public contracts are synchronizing"
+    runtime.activeSDEBuild = 123
+    runtime.cancelPublicContractSynchronization()
+    #expect(flag.count == 0)
+
+    runtime.isWorking = true
+    #expect(flag.count == 1)
+  }
+
+  @Test
+  func marketAnalysisIdentityIsCachedButFollowsBasisChanges() {
+    let runtime = RuntimeState(startBackgroundServices: false)
+    let initial = runtime.marketAnalysisContextIdentity
+    #expect(runtime.marketAnalysisContextIdentity == initial)
+
+    let flag = ObservationFlag()
+    withObservationTracking {
+      _ = runtime.marketAnalysisContextIdentity
+    } onChange: {
+      flag.fire()
+    }
+    runtime.productionBasis.name = "Changed basis"
+
+    #expect(flag.count == 1)
+    #expect(runtime.marketAnalysisContextIdentity != initial)
+    let changed = runtime.marketAnalysisContextIdentity
+    runtime.activeSDEBuild = 456
+    #expect(runtime.marketAnalysisContextIdentity != changed)
+  }
+
+  @Test
+  func wealthHistoryCacheDecodesOncePerStoredValue() throws {
+    func snapshot(day: Int) -> DashboardWealthSnapshot {
+      DashboardWealthSnapshot(
+        capturedAt: Date(timeIntervalSince1970: Double(day) * 86_400),
+        valuationPolicy: "fixture",
+        characters: [],
+        knownTotalValue: Double(day),
+        isComplete: true,
+        freshness: .fresh,
+        priceSource: SourceIdentity(provider: "Fixture", version: "1")
+      )
+    }
+    func encoded(_ values: [DashboardWealthSnapshot]) throws -> String {
+      try JSONEncoder().encode(values).base64EncodedString()
+    }
+    let cache = DashboardWealthHistoryCache()
+    let first = try encoded([snapshot(day: 2), snapshot(day: 1)])
+
+    #expect(cache.history(encoded: first).map(\.knownTotalValue) == [1, 2])
+    #expect(cache.history(encoded: first).map(\.knownTotalValue) == [1, 2])
+    let second = try encoded([snapshot(day: 3)])
+    #expect(cache.history(encoded: second).map(\.knownTotalValue) == [3])
+    #expect(cache.history(encoded: nil).isEmpty)
+    #expect(cache.history(encoded: "not base64").isEmpty)
   }
 
   @Test
@@ -1302,6 +1370,15 @@ struct RuntimeFeatureStateTests {
 
   private func drainMainRunLoop() {
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+  }
+}
+
+/// Observation fires `onChange` synchronously on the mutating (main) thread.
+private final class ObservationFlag: @unchecked Sendable {
+  private(set) var count = 0
+
+  func fire() {
+    count += 1
   }
 }
 

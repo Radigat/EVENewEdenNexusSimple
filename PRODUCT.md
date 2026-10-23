@@ -2124,7 +2124,7 @@ Der ausführliche Produktionsvertrag steht in
   kanonische, bereits aktivierte `catalog-vN`-Dateien bis einschließlich der
   aktuellen Adapterversion 6. Dadurch bleibt ein gültiger Katalog einer
   älteren Adapterversion als installierter Build erkennbar und kann sicher neu
-  importiert werden. Neue Aktivierungen schreiben ausschließlich Adapter 5;
+  importiert werden. Neue Aktivierungen schreiben ausschließlich Adapter 6;
   fremde Pfade, nichtkanonische Versionsangaben und zukünftige
   Adapterversionen werden abgewiesen. Ein ungültiger Zeiger wird in der
   Oberfläche als verständlicher Wiederherstellungszustand statt als interner
@@ -2274,6 +2274,15 @@ mit kurzen, wiederverwendbaren Prompts steht in
   wartenden Contract- und anderen Automatikabrufen gestartet. Ein laufender
   Request wird nicht gewaltsam verdrängt, und Retry-Wartezeit belegt keinen
   Transportplatz.
+- Dieselbe Warteschlange setzt CCPs ESI-Grenzen für alle Abrufe durch: Meldet
+  ESI höchstens 20 verbleibende Fehler im aktuellen Fehlerfenster oder
+  antwortet mit 420, startet bis zum gemeldeten Fensterende keine weitere
+  Anfrage. Ein 429 sperrt nur das betroffene Token-Budget (Gruppe und
+  Charakter bzw. öffentliche Abrufe) bis `Retry-After`. Wird ein Budget knapp
+  (höchstens ein Zehntel, mindestens zehn Tokens übrig), werden dessen
+  Anfragen auf die mittlere Rückgabegeschwindigkeit des Fensters verteilt,
+  etwa alle 12 Sekunden bei 150 Tokens je 15 Minuten. Wartende Anfragen
+  belegen keinen Transportplatz und lassen sich abbrechen.
 - Nach einem Planner-Lauf wird der LRU-Antwortcache nur bei Bedarf auf höchstens
   32 MiB reduziert. Gespeicherte Contract-Regions- und Item-Seiten sowie die
   große Main-Hub-Region werden nach ihrer fachlichen Übernahme gezielt
@@ -2286,17 +2295,50 @@ mit kurzen, wiederverwendbaren Prompts steht in
   gebündelt.
   Start, Phasenwechsel, Fehler, Abbruch und Abschluss werden weiterhin sofort
   veröffentlicht; die fachliche Hintergrundarbeit selbst wird nicht gedrosselt.
-- Die App-Szene und der Navigationscontainer besitzen den gemeinsamen
-  `RuntimeState`, abonnieren aber nicht mehr pauschal jede seiner Änderungen.
-  Dadurch zeichnet eine Fortschrittsmeldung nicht mehr die komplette
-  Navigation neu; nur Ansichten mit einem ausdrücklichen Runtime-Abonnement
-  werden invalidiert.
+- Der gemeinsame `RuntimeState` verwendet Swift Observation (`@Observable`).
+  Eine Ansicht wird nur noch neu gezeichnet, wenn sich einer der
+  Runtime-Werte ändert, die sie beim Zeichnen tatsächlich gelesen hat. Eine
+  Fortschrittsmeldung der Contracts oder des Main-Hub-Scans zeichnet deshalb
+  nur die Statusanzeigen neu, die diesen Fortschritt zeigen, nicht mehr
+  Dashboard, Hub-Chancen, Handel oder andere offene Bereiche. App-Szene und
+  Navigationscontainer besitzen den Runtime-Zustand weiterhin, ohne ihn
+  pauschal zu beobachten.
 - Der Planer liest Befehle und fachliche Werte weiterhin aus demselben
-  `RuntimeState`, beobachtet aber nur seinen schmalen Feature-Kanal. Dieser
-  Kanal wird durch Produktionsbasis, Plan, Rechenstatus, Rechenfehler,
+  `RuntimeState` und beobachtet zusätzlich seinen schmalen Feature-Kanal.
+  Dieser Kanal wird durch Produktionsbasis, Plan, Rechenstatus, Rechenfehler,
   Lagerfreigabe und Planer-Konfigurationsbereitschaft invalidiert. Änderungen
   an Public Contracts, Markt, Dashboard, SDE-Installation oder allgemeinem
   Status lösen deshalb keine Neuberechnung des großen Planer-View-Baums aus.
+- Abgeleitete Werte werden einmal je Quelländerung statt bei jedem Zeichnen
+  berechnet: Die Markt-Kontextkennung (sortiertes JSON der Produktionsbasis)
+  nur nach einer Basisänderung, die LP-Store-Typmenge einmal je geladenem
+  Katalog statt für jede Chancenzeile, und der gespeicherte Vermögensverlauf
+  im Dashboard und in **Net Worth** einmal je gespeichertem Stand.
+- Die Hub-Chancen lesen Filtereinstellungen und Budgetgrenze einmal je
+  Filterdurchlauf und projizieren angepasste Runs, ME und TE vor dem Sortieren
+  einmal je Zeile statt in jedem Sortiervergleich. Ergebnis und Reihenfolge
+  bleiben unverändert.
+- Mehrseitige ESI-Abrufe (Assets, Blaupausen, Jobs, Orders, Wallet,
+  Contracts, Strukturmärkte und das öffentliche Regions-Orderbuch der
+  NPC-Hub-Scans) laden die Seiten ab Seite 2 mit höchstens vier gleichzeitig
+  offenen Seiten und übernehmen sie streng in Seitenreihenfolge. Ebenso laden
+  die Itemlisten privater Item-Exchange- und Auktionsverträge begrenzt
+  parallel in Vertragsreihenfolge. Die gemeinsame Warteschlange bleibt die
+  obere Grenze (sechs Transporte, davon höchstens zwei automatische);
+  Seitenzahlprüfung, Fortschritt, Abbruch und Teilzustände bleiben erhalten.
+  Alle Seiten eines Abrufs müssen denselben `Last-Modified`-Stand haben.
+  Aktualisiert ESI die Daten während des Lesens, wird einmal neu gelesen;
+  dabei kommen nur die veralteten Seiten erneut von ESI. Ein zweiter
+  gemischter Stand wird als ungültige Seitenfolge abgelehnt. Läuft Seite 1
+  innerhalb von fünf Sekunden ab, wartet der Abruf auf ESIs Aktualisierung.
+  Nach einem Hub-Scan wird nur das vollständige Regions-Orderbuch aus dem
+  Zwischenspeicher entfernt; Einzeltyp-Preise behalten ihr Cache-Fenster.
+  Der Public-Contracts-Import behält seine bewusst gedrosselte Taktung.
+- Nach einem Charakterabgleich wird der vorherige gespeicherte Snapshot
+  eines Bereichs nur noch dekodiert, wenn der neue Abruf keinen Wert lieferte
+  und der letzte bekannte Stand als veraltet weitergeführt werden muss.
+  Erfolgreiche Abrufe ersetzen den Stand ohne diesen zusätzlichen
+  Hauptthread-Aufwand.
 - Das Dashboard dekodiert gespeicherte Industry-Job- und Skill-Snapshots nur
   noch dann neu, wenn sich diese Eingaben oder der aktive SDE-Build ändern. Die
   Dekodierung und Aggregation laufen außerhalb des Main-Actors; reine

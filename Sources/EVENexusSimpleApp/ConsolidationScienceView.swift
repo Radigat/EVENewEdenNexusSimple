@@ -4,7 +4,7 @@ import SwiftUI
 
 struct ConsolidationScienceView: View {
   @EnvironmentObject private var controller: ConsolidationController
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Query(sort: \StoredCharacter.characterName) private var characters: [StoredCharacter]
   @State private var instanceID: Int64?
   @State private var plannedCopyID: UUID?

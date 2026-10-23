@@ -743,7 +743,7 @@ struct PublicContractBackgroundPresentation: Equatable {
 /// Sidebar card "Automatic data": startup loads plus the recurring contract
 /// and hub market refreshes, placed directly above the contract import.
 struct SidebarAutomaticDataStatus: View {
-  @ObservedObject var runtime: RuntimeState
+  let runtime: RuntimeState
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
   @Query private var esiSnapshotMetadata: [StoredESISnapshotMetadata]
@@ -1198,7 +1198,7 @@ struct SidebarAutomaticDataStatus: View {
 }
 
 struct PublicContractSidebarStatus: View {
-  @ObservedObject var runtime: RuntimeState
+  let runtime: RuntimeState
 
   private var presentation: PublicContractBackgroundPresentation {
     PublicContractBackgroundPresentation(
@@ -1637,7 +1637,7 @@ enum StartupDataStatusProjector {
 
 struct DashboardView: View {
   var onNavigate: (DashboardNavigationRequest) -> Void = { _ in }
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
@@ -1653,6 +1653,7 @@ struct DashboardView: View {
   @State private var refreshingWalletCharacterIDs: Set<Int64> = []
   @State private var walletRefreshErrors: [Int64: String] = [:]
   @State private var selectedDashboardWealthSeries: DashboardWealthSeries = .total
+  @State private var wealthHistoryCache = DashboardWealthHistoryCache()
   @AppStorage("reactions.analysis-runs", store: AppDefaults.store)
   private var sharedReactionRuns = 100
   @AppStorage("reactions.market-hub-id", store: AppDefaults.store)
@@ -2689,17 +2690,11 @@ struct DashboardView: View {
   }
 
   private var wealthHistory: [DashboardWealthSnapshot] {
-    guard
-      let encoded = settings.first(where: {
+    wealthHistoryCache.history(
+      encoded: settings.first(where: {
         $0.key == AppSettingKey.dashboardWealthHistory
-      })?.value,
-      let data = Data(base64Encoded: encoded),
-      let history = try? JSONDecoder().decode(
-        [DashboardWealthSnapshot].self,
-        from: data
-      )
-    else { return [] }
-    return history.sorted { $0.capturedAt < $1.capturedAt }
+      })?.value
+    )
   }
 
   private var wealthTotalText: String {
@@ -3099,6 +3094,31 @@ struct DashboardView: View {
 struct DashboardWealthChartSample {
   let date: Date
   let value: Double
+}
+
+/// Decodes the persisted net-worth history once per stored value instead of
+/// on every read during view evaluation. The cache is not observed; views
+/// keep one instance in `@State` and stay driven by their settings query.
+final class DashboardWealthHistoryCache {
+  private var encodedHistory: String?
+  private var history: [DashboardWealthSnapshot] = []
+
+  func history(encoded: String?) -> [DashboardWealthSnapshot] {
+    if encoded == encodedHistory { return history }
+    encodedHistory = encoded
+    guard let encoded,
+      let data = Data(base64Encoded: encoded),
+      let decoded = try? JSONDecoder().decode(
+        [DashboardWealthSnapshot].self,
+        from: data
+      )
+    else {
+      history = []
+      return history
+    }
+    history = decoded.sorted { $0.capturedAt < $1.capturedAt }
+    return history
+  }
 }
 
 struct DashboardWealthChart: View {
@@ -3643,7 +3663,7 @@ private struct GeneralSettingsView: View {
 }
 
 struct EVEOnlineServiceBanner: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
 
   private struct Notice {
     let title: String
@@ -4647,7 +4667,7 @@ struct StartupDataStatusSection: View {
 /// with its own filters, Warehouse, cost, contract and Loyalty Store basis.
 struct DashboardTopOpportunitiesPanel: View {
   let onNavigate: (DashboardNavigationRequest) -> Void
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
 
   private static let roles: [OpportunityHubRole] = [.main, .home, .coalition]
 

@@ -157,6 +157,27 @@ struct MarketBrowserTests {
   }
 
   @Test
+  func catalogWideLocationSnapshotKeepsPageOrderAcrossConcurrentPages()
+    async throws
+  {
+    let progress = MarketScanProgressRecorder()
+    let service = TradeHubMarketService(
+      esi: ESIClient(transport: PagedRegionalOrdersTransport(pageCount: 4))
+    )
+
+    let snapshot = try await service.locationOrderSnapshot(
+      regionID: 10_000_001,
+      locationID: 60_000_001
+    ) { completed, total in
+      await progress.record(completed: completed, total: total)
+    }
+
+    // One order per page at the hub, one elsewhere that must be dropped.
+    #expect(snapshot.ordersByType[34]?.map(\.id) == [1, 2, 3, 4])
+    #expect(await progress.values == [[1, 4], [2, 4], [3, 4], [4, 4]])
+  }
+
+  @Test
   func manufacturingOpportunitySeparatesDemandFeesAndContribution() throws {
     let source = SourceIdentity(provider: "Fixture", version: "1")
     let definition = BlueprintDefinition(
@@ -3327,6 +3348,38 @@ private struct LegacyDemandLedgerFixture: Codable {
   let demand: ManufacturingOpportunityDemandSnapshot?
   let previousOrdersByID: [Int64: LegacyOrderBaselineFixture]
   let previousSourceSnapshotID: UUID?
+}
+
+/// Regional order pages whose earlier pages answer more slowly.
+private struct PagedRegionalOrdersTransport: ESIHTTPTransporting {
+  let pageCount: Int
+
+  func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    let page =
+      Int(
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first(where: { $0.name == "page" })?.value ?? "1"
+      ) ?? 1
+    try await Task.sleep(for: .milliseconds((pageCount - page) * 4))
+    func order(id: Int, locationID: Int64) -> String {
+      """
+      {"duration":30,"is_buy_order":false,"issued":"2026-07-30T10:00:00Z",\
+      "location_id":\(locationID),"min_volume":1,"order_id":\(id),\
+      "price":5.5,"range":"station","system_id":30000002,"type_id":34,\
+      "volume_remain":25,"volume_total":100}
+      """
+    }
+    let body =
+      "[" + order(id: page, locationID: 60_000_001) + ","
+      + order(id: 100 + page, locationID: 60_000_002) + "]"
+    let response = HTTPURLResponse(
+      url: request.url!,
+      statusCode: 200,
+      httpVersion: "HTTP/1.1",
+      headerFields: ["X-Pages": String(pageCount)]
+    )!
+    return (Data(body.utf8), response)
+  }
 }
 
 private actor MarketScanProgressRecorder {

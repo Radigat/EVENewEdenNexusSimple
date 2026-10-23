@@ -540,9 +540,15 @@ enum CharacterSyncPersistence {
     to character: StoredCharacter,
     in modelContext: ModelContext
   ) throws {
-    let previousCapabilities = character.capabilitySnapshot.flatMap {
-      try? JSONDecoder().decode(CharacterCapabilitySnapshot.self, from: $0)
-    }
+    // The previous snapshot only matters when a refresh returned no value.
+    let needsPreviousCapabilities =
+      latest.capabilities.skills.value == nil
+      || latest.capabilities.standings.value == nil
+    let previousCapabilities =
+      needsPreviousCapabilities
+      ? character.capabilitySnapshot.flatMap {
+        try? JSONDecoder().decode(CharacterCapabilitySnapshot.self, from: $0)
+      } : nil
     character.capabilitySnapshot = try JSONEncoder().encode(
       CharacterCapabilitySnapshot(
         id: latest.capabilities.id,
@@ -614,9 +620,13 @@ enum CharacterSyncPersistence {
     _ latest: Sourced<Value>,
     previousData: Data?
   ) throws -> Data {
-    let previous = previousData.flatMap {
-      try? JSONDecoder().decode(Sourced<Value>.self, from: $0)
-    }
+    // `retainingLastKnownValue` ignores the previous snapshot whenever the
+    // latest refresh has a value, so large blobs are decoded only on failure.
+    let previous =
+      latest.value == nil
+      ? previousData.flatMap {
+        try? JSONDecoder().decode(Sourced<Value>.self, from: $0)
+      } : nil
     return try JSONEncoder().encode(
       latest.retainingLastKnownValue(from: previous)
     )
@@ -627,11 +637,13 @@ enum CharacterSyncPersistence {
     key: String,
     in modelContext: ModelContext
   ) throws {
-    let previous = try modelContext.appSettingValue(for: key).flatMap {
-      Data(base64Encoded: $0)
-    }.flatMap {
-      try? JSONDecoder().decode(Sourced<Value>.self, from: $0)
-    }
+    let previous =
+      latest.value == nil
+      ? try modelContext.appSettingValue(for: key).flatMap {
+        Data(base64Encoded: $0)
+      }.flatMap {
+        try? JSONDecoder().decode(Sourced<Value>.self, from: $0)
+      } : nil
     let data = try JSONEncoder().encode(
       latest.retainingLastKnownValue(from: previous)
     )
@@ -649,14 +661,16 @@ enum CharacterSyncPersistence {
     in modelContext: ModelContext
   ) throws {
     let key = AppSettingKey.corporationWallet(characterID: characterID)
-    let storedPrevious = try modelContext.appSettingValue(for: key).flatMap {
-      Data(base64Encoded: $0)
-    }.flatMap {
-      try? JSONDecoder().decode(
-        Sourced<CorporationWalletSnapshot>.self,
-        from: $0
-      )
-    }
+    let storedPrevious =
+      latest.value == nil
+      ? try modelContext.appSettingValue(for: key).flatMap {
+        Data(base64Encoded: $0)
+      }.flatMap {
+        try? JSONDecoder().decode(
+          Sourced<CorporationWalletSnapshot>.self,
+          from: $0
+        )
+      } : nil
     let previous =
       canRetainPrevious && storedPrevious?.value?.corporationID == corporationID
       ? storedPrevious : nil

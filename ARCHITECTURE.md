@@ -609,6 +609,36 @@ cannot stall unrelated work. Paging order, compatibility and conditional-cache
 headers, response provenance, 420/429 mapping, idempotent GET retry and the
 non-retrying POST contract remain in the transport layer unchanged.
 
+The coordinator also enforces CCP's ESI limits for every request. Each
+response (success or error) is recorded: `X-ESI-Error-Limit-Remain` at or
+below 20, or a 420, holds all new requests until `X-ESI-Error-Limit-Reset`
+(or `Retry-After`) plus one second. Floating-window buckets are keyed like
+CCP's: rate-limit group (learned per route family from `X-Ratelimit-Group`)
+and partition (character for authenticated routes, `public` otherwise). A 429
+holds that bucket, or the route family when the limiter sent no group, for
+`Retry-After` (60 s if absent). When `X-Ratelimit-Remaining` falls to the
+larger of ten tokens and a tenth of `X-Ratelimit-Limit`, requests in that
+bucket are spaced by window ÷ tokens × 2, the average time to return the two
+tokens of a successful request, until a later response reports more tokens.
+Waiting happens before a transport permit is taken and is cancellable; a
+retried 420/429 relies on these holds instead of its own sleep.
+
+Multi-page reads (`ESIClient.getAllPages` and the catalog-wide regional
+order book of `TradeHubMarketService.locationOrderSnapshot`) fetch page 1
+first, then pages 2…n through `ESIOrderedLoader`: at most four pages are in
+flight or completed but undelivered, and each page is consumed strictly in
+page order, so concatenation, `X-Pages` consistency checks and monotonic
+progress are unchanged. Every page must share page 1's `Last-Modified`. If a
+page belongs to a newer snapshot, the read is repeated once after dropping
+only the cached pages of the older snapshot; a second mismatch is
+`invalidPagination`. When page 1 expires within five seconds, the read waits
+for ESI's refresh and reloads page 1 first. Private item-exchange and auction contract items use
+the same loader in contract order; cancellation still returns the recorded
+contracts as partial data. The coordinator above remains the global bound.
+After a Hub scan only the complete regional order book is released from the
+cache; per-type quotes (`type_id`) keep their running cache window.
+The Public Contracts indexer keeps its own paced, sequential paging.
+
 Cache release follows ownership boundaries. Persisted Public Contract region
 and item pages and the consumed catalog-wide Main-Hub order family discard only
 their matching public response bodies. Planner completion trims the shared LRU
@@ -637,6 +667,15 @@ Planner calculations cancel scheduled or running automatic Main-Hub and Public
 Contracts work, preserve their last complete or resumable state, and restore
 their schedules only after the last overlapping calculation finishes. Explicit
 manual scans are not cancelled by this automatic-work rule.
+
+`RuntimeState` is a main-actor `@Observable` coordinator. SwiftUI views
+read it through `@Environment(RuntimeState.self)` and are invalidated only by
+the stored runtime properties their body reads; the Planner keeps its
+additional `RuntimeFeatureState` channel. Values derived from runtime state
+for identities or row filters (the sorted-key Production-basis identity, the
+Loyalty Store offered-type set) are computed once per source change, and an
+unobserved cache registers its source read explicitly so dependent views
+still follow that source.
 
 Planner input discovery is a separate bounded preparation boundary. One pass
 parses the input, resolves each repeated root name once, traverses each shared

@@ -803,40 +803,54 @@ public struct PrivateContractSyncService: Sendable {
     var itemContracts: [PrivateContractItems] = []
     var failedItemContractIDs: [Int64] = []
 
-    for contract in valuedContracts {
-      guard !Task.isCancelled else {
-        return Sourced(
-          state: .partial,
-          value: PrivateContractSnapshot(
-            characterID: authorization.characterID,
-            itemContracts: itemContracts,
-            inTransitCouriers: couriers,
-            failedItemContractIDs: failedItemContractIDs,
-            omittedItemContractCount: omittedCount
-          ),
-          source: contractResponse.source,
-          diagnostics: ["esi.private-contracts.cancelled"]
-        )
-      }
-      let items = await capture {
-        try await esi.get(
-          [ESIPrivateContractItemDTO].self,
-          endpoint: ESIEndpoint(
-            path:
-              "/characters/\(authorization.characterID)/contracts/\(contract.contractID)/items/",
-            requiresAuthorization: true,
-            requiredScope: Self.requiredScope
-          ),
-          lease: lease
-        )
-      }
-      if let response = items.value {
-        itemContracts.append(
-          PrivateContractItems(contract: contract, items: response.value)
-        )
-      } else {
-        failedItemContractIDs.append(contract.contractID)
-      }
+    // Item lists load concurrently but are recorded in contract order.
+    let esi = esi
+    let characterID = authorization.characterID
+    do {
+      try await ESIOrderedLoader.load(
+        count: valuedContracts.count,
+        load: { index in
+          let contractID = valuedContracts[index].contractID
+          return await capture {
+            try await esi.get(
+              [ESIPrivateContractItemDTO].self,
+              endpoint: ESIEndpoint(
+                path:
+                  "/characters/\(characterID)/contracts/\(contractID)/items/",
+                requiresAuthorization: true,
+                requiredScope: Self.requiredScope
+              ),
+              lease: lease
+            )
+          }
+        },
+        deliver: { index, items in
+          try Task.checkCancellation()
+          let contract = valuedContracts[index]
+          if let response = items.value {
+            itemContracts.append(
+              PrivateContractItems(contract: contract, items: response.value)
+            )
+          } else {
+            failedItemContractIDs.append(contract.contractID)
+          }
+        }
+      )
+    } catch {
+      // Item failures are captured per contract, so only cancellation ends
+      // the load early; the contracts recorded so far remain partial data.
+      return Sourced(
+        state: .partial,
+        value: PrivateContractSnapshot(
+          characterID: authorization.characterID,
+          itemContracts: itemContracts,
+          inTransitCouriers: couriers,
+          failedItemContractIDs: failedItemContractIDs,
+          omittedItemContractCount: omittedCount
+        ),
+        source: contractResponse.source,
+        diagnostics: ["esi.private-contracts.cancelled"]
+      )
     }
 
     var diagnostics: [String] = []

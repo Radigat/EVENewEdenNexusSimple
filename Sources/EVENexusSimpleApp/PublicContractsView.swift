@@ -2,7 +2,7 @@ import EVENexusCore
 import SwiftUI
 
 struct PublicContractsView: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
 
   @State private var itemQuery = ""
   @State private var selectedCategoryID: Int64?
@@ -741,7 +741,7 @@ enum PublicContractSearchPolicy {
 /// the entire universe or an explicit selection. Configured hub roles,
 /// production sites and the built-in trade hubs are marked and listed first.
 struct PublicContractRegionSettingsPanel: View {
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
 
   @State private var didLoad = false
   @State private var isLoading = false

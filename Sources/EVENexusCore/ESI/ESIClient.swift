@@ -132,10 +132,151 @@ public struct ESIRequestCoordinatorUsage: Equatable, Sendable {
   }
 }
 
+/// The route family and rate-limit partition of one request. CCP keeps one
+/// floating-window bucket per rate-limit group and user: the character for
+/// authenticated routes, the source IP for public ones.
+public struct ESIRequestRoute: Hashable, Sendable {
+  public let family: String
+  public let partition: String
+
+  public init(path: String, partition: String) {
+    // Identifiers do not change the route, so `/characters/1/assets/` and
+    // `/characters/2/assets/` share the family `/characters/{}/assets/`.
+    self.family = path.split(separator: "/", omittingEmptySubsequences: false)
+      .map { segment in
+        !segment.isEmpty && segment.allSatisfy(\.isNumber) ? "{}" : String(segment)
+      }
+      .joined(separator: "/")
+    self.partition = partition
+  }
+}
+
+/// The limit headers of one ESI response (CCP ESI rate limiting).
+public struct ESIRateLimitObservation: Equatable, Sendable {
+  public let statusCode: Int
+  public let errorLimitRemain: Int?
+  public let errorLimitReset: Int?
+  public let rateLimitGroup: String?
+  public let rateLimit: String?
+  public let rateLimitRemaining: Int?
+  public let retryAfter: Int?
+
+  public init(
+    statusCode: Int,
+    errorLimitRemain: Int? = nil,
+    errorLimitReset: Int? = nil,
+    rateLimitGroup: String? = nil,
+    rateLimit: String? = nil,
+    rateLimitRemaining: Int? = nil,
+    retryAfter: Int? = nil
+  ) {
+    self.statusCode = statusCode
+    self.errorLimitRemain = errorLimitRemain
+    self.errorLimitReset = errorLimitReset
+    self.rateLimitGroup = rateLimitGroup
+    self.rateLimit = rateLimit
+    self.rateLimitRemaining = rateLimitRemaining
+    self.retryAfter = retryAfter
+  }
+
+  public init(response: HTTPURLResponse) {
+    func integer(_ name: String) -> Int? {
+      response.value(forHTTPHeaderField: name).flatMap {
+        Int($0.trimmingCharacters(in: .whitespaces))
+      }
+    }
+    self.init(
+      statusCode: response.statusCode,
+      errorLimitRemain: integer("X-ESI-Error-Limit-Remain"),
+      errorLimitReset: integer("X-ESI-Error-Limit-Reset"),
+      rateLimitGroup: response.value(forHTTPHeaderField: "X-Ratelimit-Group"),
+      rateLimit: response.value(forHTTPHeaderField: "X-Ratelimit-Limit"),
+      rateLimitRemaining: integer("X-Ratelimit-Remaining"),
+      retryAfter: integer("Retry-After")
+    )
+  }
+}
+
+/// A floating-window limit such as `150/15m` from `X-Ratelimit-Limit`.
+public struct ESIRateLimitWindow: Equatable, Sendable {
+  public let maximumTokens: Int
+  public let windowSeconds: TimeInterval
+
+  public init?(_ value: String?) {
+    guard let parts = value?.split(separator: "/"), parts.count == 2,
+      let tokens = Int(parts[0]), tokens > 0,
+      let unit = parts[1].last,
+      let amount = Double(parts[1].dropLast()), amount > 0
+    else { return nil }
+    let unitSeconds: TimeInterval
+    switch unit {
+    case "s": unitSeconds = 1
+    case "m": unitSeconds = 60
+    case "h": unitSeconds = 3_600
+    default: return nil
+    }
+    maximumTokens = tokens
+    windowSeconds = amount * unitSeconds
+  }
+
+  /// Below this many tokens a client should "start to slow down".
+  public var lowTokenThreshold: Int { max(10, maximumTokens / 10) }
+
+  /// The average time the window needs to return the two tokens a successful
+  /// request costs.
+  public var pacedRequestInterval: TimeInterval {
+    windowSeconds / Double(maximumTokens) * 2
+  }
+}
+
 /// One cancellation-aware admission queue for every HTTP request made by an
 /// `ESIClient`. Endpoint services may keep their narrower domain limits, while
 /// this coordinator prevents their overlapping task groups from multiplying
 /// the process-wide transport load.
+/// Loads `count` independent items with bounded concurrency and hands them to
+/// `deliver` strictly in index order. At most `maximumConcurrent` items are in
+/// flight or completed but not yet delivered, so one slow item cannot make
+/// finished results pile up. The global `ESIRequestCoordinator` still bounds
+/// the transports; this only removes the strictly sequential wait.
+public enum ESIOrderedLoader {
+  public static let defaultMaximumConcurrent = 4
+
+  public static func load<Value: Sendable>(
+    count: Int,
+    maximumConcurrent: Int = defaultMaximumConcurrent,
+    isolation: isolated (any Actor)? = #isolation,
+    load: @escaping @Sendable (Int) async throws -> Value,
+    deliver: (Int, Value) async throws -> Void
+  ) async throws {
+    guard count > 0 else { return }
+    let window = max(1, maximumConcurrent)
+    try await withThrowingTaskGroup(of: (Int, Value).self) { group in
+      var nextRequested = 0
+      var nextDelivered = 0
+      var completed: [Int: Value] = [:]
+      while nextRequested < count, nextRequested - nextDelivered < window {
+        try Task.checkCancellation()
+        let index = nextRequested
+        group.addTask { (index, try await load(index)) }
+        nextRequested += 1
+      }
+      while let (index, value) = try await group.next() {
+        completed[index] = value
+        while let ready = completed.removeValue(forKey: nextDelivered) {
+          try await deliver(nextDelivered, ready)
+          nextDelivered += 1
+        }
+        while nextRequested < count, nextRequested - nextDelivered < window {
+          try Task.checkCancellation()
+          let index = nextRequested
+          group.addTask { (index, try await load(index)) }
+          nextRequested += 1
+        }
+      }
+    }
+  }
+}
+
 public actor ESIRequestCoordinator {
   private struct Waiter {
     let id: UUID
@@ -144,16 +285,35 @@ public actor ESIRequestCoordinator {
     let continuation: CheckedContinuation<Void, any Error>
   }
 
+  private struct RateLimitBucket {
+    var blockedUntil: Date?
+    var pacedInterval: TimeInterval?
+    var nextPacedStart: Date?
+  }
+
+  /// New requests stop while ESI reports this many or fewer remaining errors
+  /// in the current error window; at zero it answers every route with 420.
+  public static let errorLimitFloor = 20
+
   private let maximumConcurrent: Int
   private let maximumAutomaticConcurrent: Int
+  private let now: @Sendable () -> Date
+  private let sleep: @Sendable (TimeInterval) async throws -> Void
   private var active = 0
   private var activeAutomatic = 0
   private var sequence: UInt64 = 0
   private var waiters: [Waiter] = []
+  private var errorLimitBlockedUntil: Date?
+  private var groupsByFamily: [String: String] = [:]
+  private var buckets: [String: RateLimitBucket] = [:]
 
   public init(
     maximumConcurrent: Int = 6,
-    maximumAutomaticConcurrent: Int = 2
+    maximumAutomaticConcurrent: Int = 2,
+    now: @escaping @Sendable () -> Date = { Date() },
+    sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+      try await Task.sleep(for: .seconds($0))
+    }
   ) {
     let acceptedMaximum = min(32, max(1, maximumConcurrent))
     self.maximumConcurrent = acceptedMaximum
@@ -161,6 +321,8 @@ public actor ESIRequestCoordinator {
       acceptedMaximum,
       max(1, maximumAutomaticConcurrent)
     )
+    self.now = now
+    self.sleep = sleep
   }
 
   public func usage() -> ESIRequestCoordinatorUsage {
@@ -175,9 +337,11 @@ public actor ESIRequestCoordinator {
 
   public func perform<Result: Sendable>(
     priority: ESIRequestPriority,
+    route: ESIRequestRoute? = nil,
     operation: @Sendable () async throws -> Result
   ) async throws -> Result {
     let id = UUID()
+    try await awaitLimitClearance(for: route)
     try await acquire(id: id, priority: priority)
     do {
       try Task.checkCancellation()
@@ -187,6 +351,91 @@ public actor ESIRequestCoordinator {
     } catch {
       release(priority: priority)
       throw error
+    }
+  }
+
+  /// Applies the limit headers of a response to every later request: the
+  /// legacy error limit for all routes, the floating-window bucket for its
+  /// rate-limit group and partition.
+  public func record(
+    _ observation: ESIRateLimitObservation,
+    route: ESIRequestRoute?
+  ) {
+    let current = now()
+    if observation.statusCode == 420 {
+      blockAllRequests(
+        for: observation.retryAfter ?? observation.errorLimitReset ?? 60,
+        from: current
+      )
+    } else if let remain = observation.errorLimitRemain,
+      remain <= Self.errorLimitFloor
+    {
+      blockAllRequests(for: observation.errorLimitReset ?? 60, from: current)
+    }
+    guard let route else { return }
+    if let group = observation.rateLimitGroup, !group.isEmpty {
+      groupsByFamily[route.family] = group
+    }
+    let key = bucketKey(for: route)
+    if observation.statusCode == 429 {
+      // Some routes answer 429 from deeper limiters without bucket headers;
+      // the route family is then paused on its own.
+      let resume = current.addingTimeInterval(
+        TimeInterval(max(observation.retryAfter ?? 60, 1))
+      )
+      buckets[key, default: RateLimitBucket()].blockedUntil = max(
+        buckets[key]?.blockedUntil ?? resume,
+        resume
+      )
+      return
+    }
+    guard let remaining = observation.rateLimitRemaining,
+      let window = ESIRateLimitWindow(observation.rateLimit)
+    else { return }
+    if remaining <= window.lowTokenThreshold {
+      buckets[key, default: RateLimitBucket()].pacedInterval =
+        window.pacedRequestInterval
+    } else if buckets[key] != nil {
+      buckets[key]?.pacedInterval = nil
+      buckets[key]?.nextPacedStart = nil
+    }
+  }
+
+  private func bucketKey(for route: ESIRequestRoute) -> String {
+    let group =
+      groupsByFamily[route.family].map { "group:\($0)" }
+      ?? "route:\(route.family)"
+    return "\(group)|\(route.partition)"
+  }
+
+  private func blockAllRequests(for seconds: Int, from current: Date) {
+    // One second of margin for clock skew to the ESI window boundary.
+    let resume = current.addingTimeInterval(TimeInterval(max(seconds, 0) + 1))
+    errorLimitBlockedUntil = max(errorLimitBlockedUntil ?? resume, resume)
+  }
+
+  /// Waits without holding a transport permit while the error limit or the
+  /// route's bucket is blocked, and spaces requests while a bucket is low.
+  private func awaitLimitClearance(for route: ESIRequestRoute?) async throws {
+    var hasPacedStart = false
+    while true {
+      try Task.checkCancellation()
+      let current = now()
+      var resume = errorLimitBlockedUntil.flatMap { $0 > current ? $0 : nil }
+      let key = route.map(bucketKey)
+      if let key, let blocked = buckets[key]?.blockedUntil, blocked > current {
+        resume = max(resume ?? blocked, blocked)
+      }
+      if resume == nil, !hasPacedStart, let key,
+        let interval = buckets[key]?.pacedInterval
+      {
+        hasPacedStart = true
+        let start = max(buckets[key]?.nextPacedStart ?? current, current)
+        buckets[key]?.nextPacedStart = start.addingTimeInterval(interval)
+        if start > current { resume = start }
+      }
+      guard let resume else { return }
+      try await sleep(resume.timeIntervalSince(current))
     }
   }
 
@@ -320,6 +569,31 @@ public struct URLSessionESITransport: ESIHTTPTransporting, Sendable {
   }
 }
 
+/// A page of a paginated resource carried another `Last-Modified` than page
+/// 1, so ESI refreshed the resource during the read. CCP requires every page
+/// of one read to share the same `Last-Modified`.
+public struct ESIPageSnapshotChange: Error, Equatable, Sendable {
+  public let pageCount: Int
+  /// The newer of the two values, i.e. the snapshot ESI serves now.
+  public let currentLastModified: String
+
+  public static func check(
+    _ lastModified: String?,
+    firstPage: String?,
+    pageCount: Int
+  ) throws {
+    guard let lastModified, let firstPage, lastModified != firstPage else {
+      return
+    }
+    let pageDate = ESIClient.httpDate(lastModified) ?? .distantPast
+    let firstDate = ESIClient.httpDate(firstPage) ?? .distantPast
+    throw ESIPageSnapshotChange(
+      pageCount: pageCount,
+      currentLastModified: pageDate >= firstDate ? lastModified : firstPage
+    )
+  }
+}
+
 public actor ESIClient {
   private struct Validator: Sendable {
     let etag: String?
@@ -341,6 +615,7 @@ public actor ESIClient {
   private let requestCoordinator: ESIRequestCoordinator
   private let userAgent: String
   private let now: @Sendable () -> Date
+  private let sleep: @Sendable (TimeInterval) async throws -> Void
   private var validators: [String: Validator] = [:]
   private var cachedResponseBytes = 0
   private var cacheAccessSequence: UInt64 = 0
@@ -354,7 +629,10 @@ public actor ESIClient {
     maximumConcurrentRequests: Int = 6,
     maximumAutomaticConcurrentRequests: Int = 2,
     userAgent: String = CCPUserAgentConfiguration.genericValue,
-    now: @escaping @Sendable () -> Date = { Date() }
+    now: @escaping @Sendable () -> Date = { Date() },
+    sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+      try await Task.sleep(for: .seconds($0))
+    }
   ) {
     self.transport = transport
     self.maximumResponseBytes = max(1_024, maximumResponseBytes)
@@ -363,10 +641,13 @@ public actor ESIClient {
     self.maximumCachedBytes = max(0, maximumCachedBytes)
     self.requestCoordinator = ESIRequestCoordinator(
       maximumConcurrent: maximumConcurrentRequests,
-      maximumAutomaticConcurrent: maximumAutomaticConcurrentRequests
+      maximumAutomaticConcurrent: maximumAutomaticConcurrentRequests,
+      now: now,
+      sleep: sleep
     )
     self.userAgent = userAgent
     self.now = now
+    self.sleep = sleep
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     self.decoder = decoder
@@ -417,10 +698,23 @@ public actor ESIClient {
   /// Releases public cached bodies for one endpoint family after a bulk
   /// consumer has produced its durable or compact projection. Other public and
   /// all character-partitioned validators remain available.
-  public func removeCachedPublicResponses(pathPrefix: String) {
+  /// `sparingQueryItemNamed` keeps responses whose query has that item, e.g.
+  /// per-type quotes (`type_id`) below a regional order book whose own cache
+  /// window is still running.
+  public func removeCachedPublicResponses(
+    pathPrefix: String,
+    sparingQueryItemNamed sparedName: String? = nil
+  ) {
     guard pathPrefix.hasPrefix("/"), !pathPrefix.contains("://") else { return }
     let prefix = "public|https://esi.evetech.net\(pathPrefix)"
-    removeCachedResponses { $0.hasPrefix(prefix) }
+    removeCachedResponses { key in
+      guard key.hasPrefix(prefix) else { return false }
+      guard let sparedName else { return true }
+      let items =
+        URLComponents(string: String(key.dropFirst("public|".count)))?
+        .queryItems ?? []
+      return !items.contains { $0.name == sparedName }
+    }
   }
 
   public func get<Value: Decodable & Sendable>(
@@ -501,14 +795,23 @@ public actor ESIClient {
     let transport = transport
     let transportRequest = request
     let requestPriority = ESIRequestContext.priority
+    let route = ESIRequestRoute(
+      path: endpoint.path,
+      partition: authorizationPartition
+    )
     var attempt = 0
     while true {
       do {
         let (data, response) = try await requestCoordinator.perform(
-          priority: requestPriority
+          priority: requestPriority,
+          route: route
         ) {
           try await transport.data(for: transportRequest)
         }
+        await requestCoordinator.record(
+          ESIRateLimitObservation(response: response),
+          route: route
+        )
         try validateSize(data, response: response)
         let usableData: Data
         if response.statusCode == 304,
@@ -613,13 +916,10 @@ public actor ESIClient {
           )
           continue
         }
-        if case .rateLimited(let retryAfter) = error,
-          attempt < 2
-        {
+        if case .rateLimited = error, attempt < 2 {
+          // The coordinator recorded the 420/429 and holds this and every
+          // other affected request until ESI's announced reset.
           attempt += 1
-          try await Task.sleep(
-            for: .seconds(min(max(retryAfter ?? 60, 1), 900))
-          )
           continue
         }
         throw error
@@ -728,12 +1028,21 @@ public actor ESIClient {
     let transport = transport
     let transportRequest = request
     let requestPriority = ESIRequestContext.priority
+    let route = ESIRequestRoute(
+      path: endpoint.path,
+      partition: lease.map { "character:\($0.characterID)" } ?? "public"
+    )
     do {
       let (data, response) = try await requestCoordinator.perform(
-        priority: requestPriority
+        priority: requestPriority,
+        route: route
       ) {
         try await transport.data(for: transportRequest)
       }
+      await requestCoordinator.record(
+        ESIRateLimitObservation(response: response),
+        route: route
+      )
       try validateSize(data, response: response)
       try validate(response)
       let decoded: Value
@@ -785,42 +1094,117 @@ public actor ESIClient {
     }
   }
 
+  /// `endpoint` with its `page` query item set to `page`.
+  public static func pageEndpoint(
+    _ endpoint: ESIEndpoint,
+    page: Int
+  ) -> ESIEndpoint {
+    var pageEndpoint = endpoint
+    pageEndpoint.query.removeAll { $0.name == "page" }
+    pageEndpoint.query.append(URLQueryItem(name: "page", value: String(page)))
+    return pageEndpoint
+  }
+
+  /// Loads page 1 of a paginated resource. When its cached representation
+  /// expires within a few seconds, waits for ESI's refresh first so the
+  /// following pages come from the same snapshot (CCP X-Pages guidance).
+  public func firstPage<Element: Decodable & Sendable>(
+    _ type: [Element].Type,
+    endpoint: ESIEndpoint,
+    lease: AccessTokenLease? = nil
+  ) async throws -> ESIResponse<[Element]> {
+    let firstEndpoint = Self.pageEndpoint(endpoint, page: 1)
+    let first = try await get([Element].self, endpoint: firstEndpoint, lease: lease)
+    guard (first.pages ?? 1) > 1,
+      let remaining = first.expiresAt?.timeIntervalSince(now()),
+      remaining > 0, remaining <= Self.imminentPageRefresh
+    else { return first }
+    try await sleep(remaining + 1)
+    return try await get([Element].self, endpoint: firstEndpoint, lease: lease)
+  }
+
+  /// Seconds before expiry within which a multi-page read waits for the
+  /// refresh instead of straddling it.
+  static let imminentPageRefresh: TimeInterval = 5
+
+  /// Drops cached pages of `endpoint` that belong to another snapshot than
+  /// `lastModified`. ESI has already refreshed them, so a re-read fetches
+  /// only those pages again and reuses the current ones.
+  public func removeCachedPages(
+    of endpoint: ESIEndpoint,
+    pageCount: Int,
+    lease: AccessTokenLease? = nil,
+    exceptLastModified lastModified: String
+  ) {
+    let partition = lease.map { "character:\($0.characterID)" } ?? "public"
+    for page in 1...max(1, pageCount) {
+      guard let url = try? makeURL(Self.pageEndpoint(endpoint, page: page))
+      else { continue }
+      let key = "\(partition)|\(url.absoluteString)"
+      if let cached = validators[key], cached.lastModified != lastModified {
+        removeCachedResponse(forKey: key)
+      }
+    }
+  }
+
   public func getAllPages<Element: Decodable & Sendable>(
     _ type: [Element].Type,
     endpoint: ESIEndpoint,
     lease: AccessTokenLease? = nil
   ) async throws -> ESIResponse<[Element]> {
-    var firstEndpoint = endpoint
-    firstEndpoint.query.removeAll { $0.name == "page" }
-    firstEndpoint.query.append(URLQueryItem(name: "page", value: "1"))
-    let first = try await get(
-      [Element].self,
-      endpoint: firstEndpoint,
-      lease: lease
-    )
+    do {
+      return try await readAllPages(type, endpoint: endpoint, lease: lease)
+    } catch let change as ESIPageSnapshotChange {
+      // ESI refreshed the resource during the read. Re-read once; the pages
+      // that already belong to the new snapshot come from the cache.
+      removeCachedPages(
+        of: endpoint,
+        pageCount: change.pageCount,
+        lease: lease,
+        exceptLastModified: change.currentLastModified
+      )
+      do {
+        return try await readAllPages(type, endpoint: endpoint, lease: lease)
+      } catch is ESIPageSnapshotChange {
+        throw ESIError.invalidPagination
+      }
+    }
+  }
+
+  private func readAllPages<Element: Decodable & Sendable>(
+    _ type: [Element].Type,
+    endpoint: ESIEndpoint,
+    lease: AccessTokenLease?
+  ) async throws -> ESIResponse<[Element]> {
+    let first = try await firstPage([Element].self, endpoint: endpoint, lease: lease)
     let pageCount = max(first.pages ?? 1, 1)
     if pageCount == 1 { return first }
 
     var all = first.value
-    for page in 2...pageCount {
-      try Task.checkCancellation()
-      var pageEndpoint = endpoint
-      pageEndpoint.query.removeAll { $0.name == "page" }
-      pageEndpoint.query.append(
-        URLQueryItem(name: "page", value: String(page))
-      )
-      let response = try await get(
-        [Element].self,
-        endpoint: pageEndpoint,
-        lease: lease
-      )
-      if let reportedPages = response.pages,
-        reportedPages != pageCount
-      {
-        throw ESIError.invalidPagination
+    // Pages 2…n load concurrently but are appended in page order.
+    try await ESIOrderedLoader.load(
+      count: pageCount - 1,
+      load: { index in
+        try await self.get(
+          [Element].self,
+          endpoint: Self.pageEndpoint(endpoint, page: index + 2),
+          lease: lease
+        )
+      },
+      deliver: { _, response in
+        if let reportedPages = response.pages,
+          reportedPages != pageCount
+        {
+          throw ESIError.invalidPagination
+        }
+        try ESIPageSnapshotChange.check(
+          response.lastModified,
+          firstPage: first.lastModified,
+          pageCount: pageCount
+        )
+        all.append(contentsOf: response.value)
       }
-      all.append(contentsOf: response.value)
-    }
+    )
     return ESIResponse(
       value: all,
       source: first.source,
@@ -923,7 +1307,7 @@ public actor ESIClient {
     return count
   }
 
-  private static func httpDate(_ value: String?) -> Date? {
+  static func httpDate(_ value: String?) -> Date? {
     guard let value else { return nil }
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")

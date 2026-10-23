@@ -225,7 +225,7 @@ private struct MaterialPurchaseRecommendationCell: View {
 
 private struct MaterialPurchaseAnalysisView: View {
   let kind: MaterialPurchaseAnalysisKind
-  @EnvironmentObject private var runtime: RuntimeState
+  @Environment(RuntimeState.self) private var runtime
   @Query private var characters: [StoredCharacter]
   @State private var isExportingImage = false
   @State private var imageExportMessage: String?
