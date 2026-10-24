@@ -2167,20 +2167,25 @@ public enum ManufacturingOpportunityAutomaticRefreshPolicy {
   public static let minimumInterval: TimeInterval = 6 * 60 * 60
   public static let startupDelay: TimeInterval = 15
 
+  /// Hub order books live only in memory, so a session without a loaded
+  /// Main-Hub order book (`hasSessionMarket == false`) is due right after the
+  /// startup delay even when the saved scan is inside the reuse window.
   public static func shouldRefresh(
     lastObservedAt: Date?,
+    hasSessionMarket: Bool = true,
     now: Date = .now
   ) -> Bool {
-    guard let lastObservedAt else { return true }
+    guard hasSessionMarket, let lastObservedAt else { return true }
     return now.timeIntervalSince(lastObservedAt) >= minimumInterval
   }
 
   public static func nextAutomaticRunAt(
     lastObservedAt: Date?,
+    hasSessionMarket: Bool = true,
     now: Date = .now
   ) -> Date {
     let startupBoundary = now.addingTimeInterval(startupDelay)
-    guard let lastObservedAt else { return startupBoundary }
+    guard hasSessionMarket, let lastObservedAt else { return startupBoundary }
     return max(
       startupBoundary,
       lastObservedAt.addingTimeInterval(minimumInterval)

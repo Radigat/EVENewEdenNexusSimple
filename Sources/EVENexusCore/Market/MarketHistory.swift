@@ -136,6 +136,26 @@ public struct MarketVolumeHistorySnapshot: Equatable, Sendable {
     self.unavailableTypeIDs = unavailableTypeIDs
   }
 
+  /// The subset of `typeIDs` this snapshot does not cover for the current
+  /// UTC day. A history is current when it already reaches yesterday (the
+  /// newest day ESI can report) or was captured today, so a history loaded
+  /// before the daily ESI refresh is not requested again the same day. A
+  /// type whose request failed stays unavailable for the snapshot's
+  /// lifetime instead of being retried; ESI remembers that failure for a day.
+  public func typeIDsNeedingLoad(
+    _ typeIDs: Set<Int64>,
+    now: Date = .now
+  ) -> Set<Int64> {
+    let today = MarketTypeVolumeHistory.utcDay(now)
+    let expectedAnchor = MarketTypeVolumeHistory.utcDay(now, addingDays: -1)
+    return typeIDs.filter { typeID in
+      guard let history = historiesByType[typeID] else {
+        return !unavailableTypeIDs.contains(typeID)
+      }
+      return history.anchorDay < expectedAnchor && history.capturedAt < today
+    }
+  }
+
   /// Adds `other`; newer results replace older ones per type, and a type
   /// that loaded is no longer unavailable.
   public mutating func merge(_ other: MarketVolumeHistorySnapshot) {

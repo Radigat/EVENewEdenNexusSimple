@@ -729,6 +729,37 @@ struct MarketBrowserTests {
   }
 
   @Test
+  func automaticOpportunityRefreshRunsAtStartupWithoutASessionOrderBook()
+    throws
+  {
+    let now = try #require(
+      ISO8601DateFormatter().date(from: "2026-08-02T12:00:00Z")
+    )
+    let recent = now.addingTimeInterval(-60 * 60)
+    #expect(
+      ManufacturingOpportunityAutomaticRefreshPolicy.shouldRefresh(
+        lastObservedAt: recent,
+        hasSessionMarket: false,
+        now: now
+      )
+    )
+    #expect(
+      ManufacturingOpportunityAutomaticRefreshPolicy.nextAutomaticRunAt(
+        lastObservedAt: recent,
+        hasSessionMarket: false,
+        now: now
+      ) == now.addingTimeInterval(15)
+    )
+    #expect(
+      !ManufacturingOpportunityAutomaticRefreshPolicy.shouldRefresh(
+        lastObservedAt: recent,
+        hasSessionMarket: true,
+        now: now
+      )
+    )
+  }
+
+  @Test
   func opportunitySnapshotStoreRestoresTheLastCompleteListWithoutReplacingCorruption()
     async throws
   {

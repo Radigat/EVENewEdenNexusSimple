@@ -1,5 +1,54 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 24. Oktober 2026 – Hub-Märkte beim Start, Markthistorie einmal je Hub
+
+Ziel: Eigentümerauftrag: Nach dem Programmstart musste der Handel die
+Hub-Märkte erneut abrufen, obwohl der Startstatus Marktabrufe zeigte. Der
+Abruf soll beim Start mit erfolgen. Ebenso soll die Markthistorie je Hub nur
+einmal geladen werden.
+
+Ursache:
+- Die Startzeilen „Reaktionen“, „Mondmaterialien“ und „Mineralien“ laden
+  eigene Marktsnapshots. Der Handel liest dagegen die Orderbücher der
+  Hub-Scans, die nur im Arbeitsspeicher liegen. Der automatische Hub-Scan
+  übersprang den Start, solange der gespeicherte Scan jünger als 6 Stunden
+  war; der Handel hatte dann keine Orderbücher.
+- Markthistorie: Vor dem täglichen ESI-Update reicht eine Historie nur bis
+  vorgestern und galt deshalb bei jedem Aufruf als veraltet. Außerdem hing der
+  Abruf an der Ansicht; Verlassen des Handels oder ein Marktgruppenwechsel
+  brach ihn ab und verwarf alle bereits geladenen Items. Unverfügbare Items
+  wurden jedes Mal neu angefragt.
+
+Umfang:
+- `ManufacturingOpportunityAutomaticRefreshPolicy.shouldRefresh` und
+  `nextAutomaticRunAt` erhalten `hasSessionMarket`. Ohne Main-Hub-Orderbuch
+  dieser Sitzung ist der Scan nach der Startverzögerung fällig.
+  `RuntimeState.hasSessionMainHubMarket` prüft das Orderbuch des konfigurierten
+  Main Hub. Abschalter und Planner-Vorrang gelten unverändert.
+- `MarketVolumeHistorySnapshot.typeIDsNeedingLoad`: eine Historie ist aktuell,
+  wenn sie bis gestern reicht oder heute (UTC) abgerufen wurde; unverfügbare
+  Items werden nicht erneut angefragt.
+- `RuntimeState.refreshTradeVolumeHistory` sammelt fehlende Items je Region
+  und lädt sie in höchstens einer eigenen Task je Region, unabhängig von der
+  Ansicht.
+
+Prüfung (automatisch):
+- `swift test`: 589 Tests in 40 Suites plus 70 in 3 Suites bestanden. Neu:
+  `automaticOpportunityRefreshRunsAtStartupWithoutASessionOrderBook` und
+  `historiesLoadedTodayAreNotRequestedAgain`.
+- `swift test --package-path Packages/EVEStaticDataKit`: 12 Tests bestanden.
+- `xcodebuild … test`: `** TEST SUCCEEDED **`.
+
+Offen:
+- Nicht in der laufenden App geprüft. Nach dem nächsten Start sollte der
+  Handel nach dem automatischen Hub-Scan ohne manuellen Abruf Daten zeigen,
+  und die Markthistorie sollte beim erneuten Öffnen keinen Fortschritt mehr
+  zeigen.
+- Der Hub-Scan läuft jetzt bei jedem Start einmal (vollständige Orderbücher
+  aller drei Hubs) statt höchstens alle 6 Stunden.
+- Eine Historie, die vor dem täglichen ESI-Update geladen wurde, bleibt bis
+  zum nächsten UTC-Tag beim Stand von vorgestern.
+
 ## 24. Oktober 2026 – Region für alle gespeicherten Handelsorte
 
 Ziel: Eigentümerauftrag nach dem Screenshot des Handels: „Die Region des Home

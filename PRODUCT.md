@@ -317,7 +317,10 @@ Ablauf (Eigentümerentscheid 20.10.2026, [Entscheidung](Documentation/Consolidat
 2. **Analysen:** Danach starten Reaktionen, Mondmaterial- und
    Mineralien-Analyse.
 3. **Scans:** Gleichzeitig werden der automatische Main-Hub-Chancen-Scan und
-   der Public-Contracts-Import freigegeben.
+   der Public-Contracts-Import freigegeben. Der Hub-Scan (Main, Home,
+   Coalition) läuft nach jedem Programmstart einmal, auch wenn der gespeicherte
+   Scan jünger als 6 Stunden ist, weil die Orderbücher für den Handel nur im
+   Arbeitsspeicher liegen. Danach gilt wieder der 6-Stunden-Abstand.
 
 Der Ablauf gehört nicht zu einer Ansicht und läuft unabhängig vom gewählten
 Bereich weiter. Das Dashboard wartet beim ersten Aufruf auf das Sync-Ergebnis
@@ -532,9 +535,16 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     gemeldeter neuerer Tag verschiebt das Ende nach vorn. Tage ohne Eintrag
     zählen als 0 Stück, weil ESI Tage ohne Handel auslässt.
   - Geladen wird beim Anzeigen einer Marktgruppe für alle ihre Items, mit
-    höchstens vier gleichzeitigen Anfragen und sichtbarem Fortschritt. Der
-    ESI-Antwortcache hält jede Historie bis zu ihrem `Expires`; wiederholtes
-    Laden am selben Tag fragt ESI nicht erneut. Die Werte selbst liegen nur im
+    höchstens vier gleichzeitigen Anfragen und sichtbarem Fortschritt.
+  - Jede Historie wird je Region (also je Zielhub) und Item nur einmal je
+    UTC-Tag geladen. Eine Historie gilt als aktuell, wenn sie bis gestern
+    reicht oder heute abgerufen wurde; ein Abruf vor dem täglichen
+    ESI-Update wird am selben Tag also nicht wiederholt. Ein Item ohne
+    Historie bleibt für die Laufzeit unverfügbar und wird nicht erneut
+    angefragt.
+  - Je Region läuft höchstens ein Abruf; weitere Items werden angehängt. Der
+    Abruf hängt nicht an der Ansicht: Verlassen des Handels oder Wechsel der
+    Marktgruppe verwirft keine geladenen Werte. Die Werte liegen nur im
     Arbeitsspeicher.
   - Fehlende Werte zeigen „—“. Der Tooltip nennt den Grund: Region des
     Zielhubs unbekannt, Historie lädt, ESI lieferte keine Historie (404 wird
@@ -575,9 +585,12 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
   - Handelsvolumen: die regionale ESI-Markthistorie der Zielregion.
   - Gebühren: das Händlerprofil der jeweiligen Hub-Rolle.
 - **Marktdaten nur im Speicher:** Sie entstehen mit den Hub-Scans und liegen
-  nur im Arbeitsspeicher. Nach einem Neustart fehlen sie bis zum nächsten Scan;
-  die App sagt das ausdrücklich. **Hub-Märkte aktualisieren** startet denselben
-  Main-, Home- und Coalition-Scan wie die Hub-Chancen.
+  nur im Arbeitsspeicher. Nach einem Neustart lädt der automatische Hub-Scan
+  sie einmal (15 s nach der Startfreigabe, unabhängig vom 6-Stunden-Abstand);
+  bis dahin sagt die App ausdrücklich, dass sie fehlen. Ist die automatische
+  Main-Hub-Aktualisierung abgeschaltet, bleibt es beim manuellen Abruf.
+  **Hub-Märkte aktualisieren** startet denselben Main-, Home- und
+  Coalition-Scan wie die Hub-Chancen.
 - **Transport:**
   - Main → Home ist eine Kurier-Etappe.
   - Main → Coalition besteht aus dieser Etappe plus Home → Coalition. Dafür
@@ -1014,7 +1027,8 @@ Jede Rolle hat eigene Dateien (`market/home-hub-*.json`,
 
 Der **Home-Hub-Scan** läuft direkt im Anschluss an jeden Main-Hub-Scan.
 
-- **Gleiche Steuerung:** Er übernimmt damit dessen 6-Stunden-Wiederverwendung,
+- **Gleiche Steuerung:** Er übernimmt damit dessen 6-Stunden-Wiederverwendung
+  (mit dem einmaligen Lauf nach jedem Programmstart),
   die Freigabe nach dem Startablauf, die Abrufpriorität und den
   Planner-Vorrang. Ohne Main-Hub-Scan (kein Main Hub konfiguriert) gibt es
   auch keinen Home-Hub-Scan.

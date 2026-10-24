@@ -137,6 +137,31 @@ struct MarketHistoryTests {
   }
 
   @Test
+  func historiesLoadedTodayAreNotRequestedAgain() throws {
+    // Captured 24.10. 12:00 UTC, before that day's refresh: anchor 22.10.
+    let beforeRefresh = Self.history(
+      [Self.row("2026-10-22", 1)],
+      lastModified: ESIClient.httpDate("Fri, 23 Oct 2026 11:05:00 GMT")
+    )
+    let snapshot = MarketVolumeHistorySnapshot(
+      regionID: 10_000_002,
+      historiesByType: [34: beforeRefresh],
+      unavailableTypeIDs: [35]
+    )
+    let sameDay = try #require(ESIClient.httpDate("Sat, 24 Oct 2026 20:00:00 GMT"))
+    #expect(snapshot.typeIDsNeedingLoad([34, 35, 36], now: sameDay) == [36])
+
+    let nextDay = try #require(ESIClient.httpDate("Sun, 25 Oct 2026 08:00:00 GMT"))
+    #expect(snapshot.typeIDsNeedingLoad([34, 35], now: nextDay) == [34])
+
+    let current = MarketVolumeHistorySnapshot(
+      regionID: 10_000_002,
+      historiesByType: [34: Self.history([Self.row("2026-10-23", 1)])]
+    )
+    #expect(current.typeIDsNeedingLoad([34], now: sameDay).isEmpty)
+  }
+
+  @Test
   func serviceRequestsOneHistoryPerTypeAndReportsFailuresAsUnavailable() async throws {
     let transport = HistoryTransport(failingTypeIDs: [36])
     let service = TradeHubMarketService(

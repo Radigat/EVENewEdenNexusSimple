@@ -471,10 +471,14 @@ final class RuntimeState {
   /// the startup step writes them into the stored configuration.
   private(set) var resolvedLocationRegions: [Int64: Int64] = [:]
   /// Regional ESI market histories of the Trade area by region ID; memory
-  /// only, the ESI response cache keeps each history until its `Expires`.
+  /// only, loaded once per region, type and UTC day.
   private(set) var tradeVolumeHistories: [Int64: MarketVolumeHistorySnapshot] = [:]
   /// Progress of running history loads by region ID.
   private(set) var tradeVolumeHistoryProgress: [Int64: TradeVolumeHistoryProgress] = [:]
+  /// Types waiting for the region's running history load, by region ID.
+  private var tradeVolumeHistoryPending: [Int64: Set<Int64>] = [:]
+  /// At most one history load per region at a time.
+  private var tradeVolumeHistoryTasks: [Int64: Task<Void, Never>] = [:]
   /// Purchase logbook of the Trade area (HANDEL_PLAN P5); opened on first use.
   private(set) var tradeLogbookEntries: [TradeLogbookEntry] = []
   private(set) var tradeLogbookState: TradeLogbookLoadState =
@@ -847,8 +851,20 @@ final class RuntimeState {
   ) -> Bool {
     ManufacturingOpportunityAutomaticRefreshPolicy.shouldRefresh(
       lastObservedAt: manufacturingOpportunityDemand?.lastObservedAt,
+      hasSessionMarket: hasSessionMainHubMarket,
       now: now
     )
+  }
+
+  /// Whether this session already holds the configured Main Hub's order
+  /// book; the Trade area reads only these in-memory order books.
+  private var hasSessionMainHubMarket: Bool {
+    guard let mainHub = productionBasis.mainTradingLocation?.location,
+      let regionID = mainHub.regionID,
+      let locationID = mainHub.locationID,
+      let market = mainHubMarketState?.value
+    else { return false }
+    return market.regionID == regionID && market.locationID == locationID
   }
 
   func prepareMainHubMarketAutomation() {
@@ -911,6 +927,7 @@ final class RuntimeState {
       retryAfter.map { now.addingTimeInterval($0) }
       ?? ManufacturingOpportunityAutomaticRefreshPolicy.nextAutomaticRunAt(
         lastObservedAt: lastObservedAt,
+        hasSessionMarket: hasSessionMainHubMarket,
         now: now
       )
     mainHubMarketNextAutomaticRunAt = scheduledAt
@@ -6106,45 +6123,68 @@ extension RuntimeState {
     tradeRegionID(for: role).flatMap { tradeVolumeHistories[$0] }
   }
 
-  /// Loads the regional market history of `typeIDs` that are missing or
-  /// older than the newest day ESI can already report. Failed types stay
+  /// Queues the regional market history of `typeIDs` that this session
+  /// does not hold for the current UTC day and loads it once per region.
+  /// The load is not tied to the calling view: leaving the Trade area or
+  /// changing the shown items keeps every loaded history. Failed types stay
   /// unavailable, never zero.
   func refreshTradeVolumeHistory(
     typeIDs: Set<Int64>,
     regionID: Int64
   ) async {
-    // Before the daily ESI refresh the cached answer is served locally
-    // until its `Expires`, so asking again costs no network request.
-    let expectedAnchor = MarketTypeVolumeHistory.utcDay(.now, addingDays: -1)
-    let known = tradeVolumeHistories[regionID]
-    let missing = typeIDs.filter { typeID in
-      guard let history = known?.historiesByType[typeID] else { return true }
-      return history.anchorDay < expectedAnchor
-    }
+    let missing =
+      (tradeVolumeHistories[regionID]
+      ?? MarketVolumeHistorySnapshot(regionID: regionID))
+      .typeIDsNeedingLoad(typeIDs)
     guard !missing.isEmpty else { return }
-    tradeVolumeHistoryProgress[regionID] = TradeVolumeHistoryProgress(
-      completed: 0,
-      total: missing.count
-    )
-    defer { tradeVolumeHistoryProgress[regionID] = nil }
+    tradeVolumeHistoryPending[regionID, default: []].formUnion(missing)
+    guard tradeVolumeHistoryTasks[regionID] == nil else { return }
+    tradeVolumeHistoryTasks[regionID] = Task(priority: .utility) {
+      [weak self] in
+      await self?.drainTradeVolumeHistory(regionID: regionID)
+    }
+  }
+
+  private func drainTradeVolumeHistory(regionID: Int64) async {
+    defer {
+      tradeVolumeHistoryTasks[regionID] = nil
+      tradeVolumeHistoryProgress[regionID] = nil
+    }
     let service = TradeHubMarketService(esi: esi)
-    do {
-      let loaded = try await service.volumeHistory(
-        typeIDs: missing,
-        regionID: regionID
-      ) { completed, total in
-        await MainActor.run {
-          self.tradeVolumeHistoryProgress[regionID] =
-            TradeVolumeHistoryProgress(completed: completed, total: total)
+    var completedBefore = 0
+    while let pending = tradeVolumeHistoryPending.removeValue(forKey: regionID) {
+      let batch =
+        (tradeVolumeHistories[regionID]
+        ?? MarketVolumeHistorySnapshot(regionID: regionID))
+        .typeIDsNeedingLoad(pending)
+      guard !batch.isEmpty else { continue }
+      let offset = completedBefore
+      tradeVolumeHistoryProgress[regionID] = TradeVolumeHistoryProgress(
+        completed: offset,
+        total: offset + batch.count
+      )
+      do {
+        let loaded = try await service.volumeHistory(
+          typeIDs: batch,
+          regionID: regionID
+        ) { completed, total in
+          await MainActor.run {
+            self.tradeVolumeHistoryProgress[regionID] =
+              TradeVolumeHistoryProgress(
+                completed: offset + completed,
+                total: offset + total
+              )
+          }
         }
+        var merged =
+          tradeVolumeHistories[regionID]
+          ?? MarketVolumeHistorySnapshot(regionID: regionID)
+        merged.merge(loaded)
+        tradeVolumeHistories[regionID] = merged
+      } catch {
+        // Only cancellation throws; the types are requested again next time.
       }
-      var merged =
-        tradeVolumeHistories[regionID]
-        ?? MarketVolumeHistorySnapshot(regionID: regionID)
-      merged.merge(loaded)
-      tradeVolumeHistories[regionID] = merged
-    } catch {
-      // Cancelled with the view; loaded types arrive on the next refresh.
+      completedBefore += batch.count
     }
   }
 

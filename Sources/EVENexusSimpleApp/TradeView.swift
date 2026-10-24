@@ -1436,8 +1436,8 @@ struct TradeView: View {
     )
   }
 
-  /// Loads the target region's market history for every item of the shown
-  /// tiles; the ESI cache answers repeated loads of the same day locally.
+  /// Queues the target region's market history for every item of the shown
+  /// tiles; items already loaded today are not requested again.
   private func loadVolumeHistory() async {
     let key = volumeHistoryKey
     guard let regionID = key.regionID, !key.typeIDs.isEmpty else { return }
