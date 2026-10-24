@@ -170,3 +170,55 @@ public struct MarketVolumeHistorySnapshot: Equatable, Sendable {
     }
   }
 }
+
+/// Units traded at the exact target hub during a window, from the daily
+/// records of the hub's demand ledger (one rolling 24-hour lower-bound
+/// estimate per UTC day with a scan). Days without a record are unknown,
+/// not zero, so the sum covers only `recordedDays` of `windowDays`.
+public struct HubTradedVolume: Equatable, Sendable {
+  public let units: Int64
+  public let recordedDays: Int
+  public let windowDays: Int
+
+  public init(units: Int64, recordedDays: Int, windowDays: Int) {
+    self.units = units
+    self.recordedDays = recordedDays
+    self.windowDays = windowDays
+  }
+
+  /// Every day of the window has a record.
+  public var isComplete: Bool { recordedDays >= windowDays }
+
+  /// `units ÷ recordedDays`.
+  public var averagePerRecordedDay: Double {
+    Double(units) / Double(max(recordedDays, 1))
+  }
+}
+
+extension ManufacturingOpportunityDemandSnapshot {
+  /// Hub-exact traded units of `typeID` in the `window.days` UTC days ending
+  /// with the UTC day of `now`; `nil` when no day of the window has a record
+  /// for this type.
+  public func hubTradedVolume(
+    for typeID: Int64,
+    window: MarketHistoryWindow,
+    now: Date = .now
+  ) -> HubTradedVolume? {
+    let lastDay = MarketTypeVolumeHistory.utcDay(now)
+    let firstDay = MarketTypeVolumeHistory.utcDay(now, addingDays: -(window.days - 1))
+    var unitsByDay: [Date: Int64] = [:]
+    for record in dailyHistory ?? [] {
+      let day = MarketTypeVolumeHistory.utcDay(record.utcDay)
+      guard day >= firstDay, day <= lastDay,
+        let units = record.estimatedUnits(for: typeID), units >= 0
+      else { continue }
+      unitsByDay[day] = units
+    }
+    guard !unitsByDay.isEmpty else { return nil }
+    return HubTradedVolume(
+      units: unitsByDay.values.reduce(0, +),
+      recordedDays: unitsByDay.count,
+      windowDays: window.days
+    )
+  }
+}

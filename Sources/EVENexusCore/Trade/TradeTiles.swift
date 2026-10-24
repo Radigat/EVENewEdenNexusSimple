@@ -172,19 +172,29 @@ public struct TradeDisplayRow: Identifiable, Equatable, Sendable {
   /// Regional ESI market history of the target hub's region; `nil` while
   /// unknown (not loaded, failed or region unknown), never zero.
   public let volumeHistory: MarketTypeVolumeHistory?
+  /// Units traded at the exact target hub per window from its demand
+  /// ledger; a missing window is unknown, never zero.
+  public let hubTradedVolumes: [MarketHistoryWindow: HubTradedVolume]
 
   public init(
     row: TradeRow,
     currentDailyDemand: Int64?,
     averageDailyDemand: Int64?,
     openLogbookQuantity: Int64 = 0,
-    volumeHistory: MarketTypeVolumeHistory? = nil
+    volumeHistory: MarketTypeVolumeHistory? = nil,
+    hubTradedVolumes: [MarketHistoryWindow: HubTradedVolume] = [:]
   ) {
     self.row = row
     self.currentDailyDemand = currentDailyDemand
     self.averageDailyDemand = averageDailyDemand
     self.openLogbookQuantity = openLogbookQuantity
     self.volumeHistory = volumeHistory
+    self.hubTradedVolumes = hubTradedVolumes
+  }
+
+  /// Units traded at the exact target hub during `window`.
+  public func hubTradedVolume(_ window: MarketHistoryWindow) -> HubTradedVolume? {
+    hubTradedVolumes[window]
   }
 
   /// Units traded in the target region during `window`.
@@ -228,6 +238,7 @@ public enum TradeSortColumn: String, CaseIterable, Hashable, Sendable {
   case tradedVolume
   case averageDailyVolume
   case dailyProfitPotential
+  case hubTradedVolume
 }
 
 /// Sorts by the typed value of a column. Unknown values follow known values
@@ -291,6 +302,7 @@ public enum TradeRowSorter {
     case .tradedVolume: display.tradedVolume(volumeWindow).map(Double.init)
     case .averageDailyVolume: display.averageDailyVolume(volumeWindow)
     case .dailyProfitPotential: display.dailyProfitPotential(volumeWindow)
+    case .hubTradedVolume: display.hubTradedVolume(volumeWindow).map { Double($0.units) }
     }
   }
 }

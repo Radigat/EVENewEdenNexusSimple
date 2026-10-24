@@ -2210,17 +2210,25 @@
 "Traded volume" = "Traded volume";
 "%lld d" = "%lld d";
 "Days of the regional ESI market history shown in the traded-volume columns" = "Days of the regional ESI market history shown in the traded-volume columns";
-"Traded %lld d" = "Traded %lld d";
-"Profit/day" = "Profit/day";
-"Ø traded/day" = "Ø traded/day";
+"Region %lld d" = "Region %lld d";
+"Profit/day (region)" = "Profit/day (region)";
+"Ø region/day" = "Ø region/day";
 "Profit per unit × average traded units per day in the target region. An upper bound: other traders share this volume." = "Profit per unit × average traded units per day in the target region. An upper bound: other traders share this volume.";
 "Loading market history: %lld of %lld items" = "Loading market history: %lld of %lld items";
 "Market history unavailable for %lld items; their traded volume stays unknown." = "Market history unavailable for %lld items; their traded volume stays unknown.";
 "The region of the %@ is unknown, so its traded volume is unavailable. Select the hub again in Market Settings." = "The region of the %@ is unknown, so its traded volume is unavailable. Select the hub again in Market Settings.";
 "%lld d: %@ units (Ø %@/day)" = "%lld d: %@ units (Ø %@/day)";
 "ESI market history of the target hub's region, up to %@ (UTC). Buy and sell side are not separated." = "ESI market history of the target hub's region, up to %@ (UTC). Buy and sell side are not separated.";
-"Traded %lld d: %@" = "Traded %lld d: %@";
+"Region %lld d: %@" = "Region %lld d: %@";
 "The region of the target hub is unknown." = "The region of the target hub is unknown.";
 "The market history is loading." = "The market history is loading.";
 "ESI did not provide a market history for this item." = "ESI did not provide a market history for this item.";
 "The market history has not been loaded yet." = "The market history has not been loaded yet.";
+
+/* Trade: hub-exact traded volume from the demand ledger (24.10.2026) */
+"Target hub %lld d" = "Target hub %lld d";
+"%lld d: no recorded day" = "%lld d: no recorded day";
+"%lld d: %@ units from %lld of %lld days (Ø %@ per recorded day)" = "%lld d: %@ units from %lld of %lld days (Ø %@ per recorded day)";
+"Traded at the target hub itself, estimated from its Hub scans: units that disappeared from orders still listed between two scans, one 24-hour estimate per UTC day. A lower bound; days without a scan are unknown and not counted." = "Traded at the target hub itself, estimated from its Hub scans: units that disappeared from orders still listed between two scans, one 24-hour estimate per UTC day. A lower bound; days without a scan are unknown and not counted.";
+"Target hub %lld d: %@ units from %lld of %lld days" = "Target hub %lld d: %@ units from %lld of %lld days";
+"Target hub %lld d: %@" = "Target hub %lld d: %@";

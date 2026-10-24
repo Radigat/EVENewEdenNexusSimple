@@ -572,3 +572,24 @@ gestern (UTC) liegt.
 Offen: Die Ankerregel ist nur gegen synthetische Antworten getestet. Ob
 `Last-Modified` der Historie wie angenommen das Datum der täglichen
 Aktualisierung trägt, bestätigt erst eine Live-Abnahme (opt-in).
+
+## M. Nachtrag 24.10.2026: Volumen am Zielhub selbst
+
+Eigentümerauftrag: Das Handelsvolumen muss das Volumen am Zielort zeigen. Die
+ESI-Markthistorie gibt es nur je Region. Entscheidung des Eigentümers: zusätzlich
+ein hub-genaues Volumen je Zeitraum aus dem Bedarfsledger des Zielhubs zeigen
+und die Regionsspalte klar als Region beschriften.
+
+Formel (`ManufacturingOpportunityDemandSnapshot.hubTradedVolume`):
+- Grundlage sind die Tagesdatensätze des Ledgers: je UTC-Tag mit Scan die
+  zuletzt gültige 24-Stunden-Schätzung der Stück, die aus weiterhin gelisteten
+  Orders des Zielhubs verschwunden sind (Untergrenze; Methode
+  `exact-hub-rolling-24h-surviving-order-depletion-daily-history-v3`).
+- Zielhub(N) = Summe dieser Tageswerte der UTC-Tage heute−N+1 … heute, dazu
+  die Zahl der erfassten Tage. Tage ohne Datensatz für das Item sind unbekannt
+  und zählen nicht als 0. Ohne erfassten Tag ist der Wert unbekannt.
+- Sortiert wird nach der Summe; ein unvollständiger Zeitraum wird in
+  Warnfarbe gezeigt und im Tooltip mit „k von N Tagen“ belegt.
+
+Beschriftung: „Zielhub N T“, „Region N T“, „Gewinn/Tag (Region)“,
+„Ø Region/Tag“. Gewinn/Tag rechnet weiter mit dem Regionsvolumen.

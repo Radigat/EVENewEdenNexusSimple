@@ -1,5 +1,33 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 24. Oktober 2026 – Handel: Volumen am Zielhub und Beschriftung „Region“
+
+Ziel: Eigentümerauftrag, das Handelsvolumen am Zielort zu zeigen. Prüfung
+ergab: Die Spalte nutzte die Zielseite der Route, aber die ESI-Historie gilt
+für die ganze Region; eine Historie je Station oder Struktur bietet ESI nicht.
+Regeln: [Handel-Plan, Abschnitt M](Documentation/HANDEL_PLAN.md).
+
+Umfang:
+- `HubTradedVolume` und `ManufacturingOpportunityDemandSnapshot.hubTradedVolume`
+  (in `MarketHistory.swift`): Summe der Ledger-Tageswerte des Zielhubs je
+  Zeitraum mit Zahl der erfassten Tage.
+- `TradeDisplayRow.hubTradedVolumes`, Sortierspalte `hubTradedVolume`.
+- `TradeView`: neue Spalte „Zielhub N T“ (Warnfarbe bei fehlenden Tagen,
+  Tooltip mit allen Zeiträumen); Umbenennung in „Region N T“,
+  „Gewinn/Tag (Region)“ und „Ø Region/Tag“. Texte en/de.
+- Begonnen erst nach dem Commit `9c7170a` der parallelen Sitzung.
+
+Prüfung (automatisch):
+- `swift test`: 591 Tests in 41 Suites plus 70 in 3 Suites bestanden, neu die
+  Suite „Hub-exact traded volume“ (Fenstersummen, Abdeckung, unbekannte Tage,
+  Sortierung).
+- `xcodebuild … test`: `** TEST SUCCEEDED **`; `EVEStaticDataKit`: 12 Tests;
+  `git diff --check` fehlerfrei.
+
+Offen:
+- Nicht in der laufenden App geprüft; Eigentümerabnahme.
+- Auf Auftrag des Eigentümers lokal auf `main` committet, nicht gepusht.
+
 ## 24. Oktober 2026 – Hub-Märkte beim Start, Markthistorie einmal je Hub
 
 Ziel: Eigentümerauftrag: Nach dem Programmstart musste der Handel die

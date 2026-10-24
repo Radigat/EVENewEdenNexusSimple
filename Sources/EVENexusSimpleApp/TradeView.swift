@@ -1006,6 +1006,7 @@ struct TradeView: View {
     let target = runtime.tradeMarketState(for: mode.targetRole)?.value
     let demand = runtime.tradeDemand(for: mode.targetRole)
     let histories = runtime.tradeVolumeHistory(for: mode.targetRole)
+    let now = Date.now
     let openQuantities = TradeLogbookSummary.openQuantities(
       runtime.tradeLogbookEntries,
       targetRole: mode.targetRole
@@ -1030,12 +1031,17 @@ struct TradeView: View {
       transport: transport
     ).map { row in
       let summary = demand?.dailySummary(for: row.typeID)
+      var hubVolumes: [MarketHistoryWindow: HubTradedVolume] = [:]
+      for window in MarketHistoryWindow.allCases {
+        hubVolumes[window] = demand?.hubTradedVolume(for: row.typeID, window: window, now: now)
+      }
       return TradeDisplayRow(
         row: row,
         currentDailyDemand: summary?.currentUnits,
         averageDailyDemand: summary?.averageUnits,
         openLogbookQuantity: openQuantities[row.typeID] ?? 0,
-        volumeHistory: histories?.historiesByType[row.typeID]
+        volumeHistory: histories?.historiesByType[row.typeID],
+        hubTradedVolumes: hubVolumes
       )
     }
   }
@@ -1057,7 +1063,7 @@ struct TradeView: View {
       (.profit, "Profit"),
       (.margin, "Margin"),
       (.returnOnInvestment, "ROI"),
-      (.averageDailyVolume, "Ø traded/day"),
+      (.averageDailyVolume, "Ø region/day"),
       (.averageDailyDemand, "Ø demand/day"),
       (.currentDailyDemand, "Demand today"),
       (.targetDepth, "Depth"),
@@ -1110,13 +1116,19 @@ struct TradeView: View {
         numberHeader("ROI", column: .returnOnInvestment, tint: DesignTokens.accent, sort: sort)
       }
       numberHeader(
-        LocalizedStringKey(AppLocalization.format("Traded %lld d", Int64(volumeWindow.days))),
+        LocalizedStringKey(AppLocalization.format("Target hub %lld d", Int64(volumeWindow.days))),
+        column: .hubTradedVolume,
+        tint: DesignTokens.accent,
+        sort: sort
+      )
+      numberHeader(
+        LocalizedStringKey(AppLocalization.format("Region %lld d", Int64(volumeWindow.days))),
         column: .tradedVolume,
         tint: DesignTokens.accent,
         sort: sort
       )
       numberHeader(
-        "Profit/day",
+        "Profit/day (region)",
         column: .dailyProfitPotential,
         tint: DesignTokens.accent,
         sort: sort
@@ -1205,6 +1217,7 @@ struct TradeView: View {
       if showsReturnOnInvestment {
         detailCell(display, column: .returnOnInvestment)
       }
+      hubTradedVolumeCell(display)
       tradedVolumeCell(display)
       detailCell(display, column: .dailyProfitPotential)
       if showsDetails {
@@ -1278,13 +1291,63 @@ struct TradeView: View {
       .accessibilityLabel(
         Text(
           AppLocalization.format(
-            "Traded %lld d: %@",
+            "Region %lld d: %@",
             Int64(volumeWindow.days),
             formatInteger(display.tradedVolume(volumeWindow))
           )
         )
       )
       .accessibilityHint(Text(text))
+  }
+
+  /// Units traded at the exact target hub in the selected window from its
+  /// demand ledger. A window with days without a scan is shown in the
+  /// caution colour; the help lists every window with its covered days.
+  private func hubTradedVolumeCell(_ display: TradeDisplayRow) -> some View {
+    let volume = display.hubTradedVolume(volumeWindow)
+    let windows = MarketHistoryWindow.allCases.map { window in
+      guard let value = display.hubTradedVolume(window) else {
+        return AppLocalization.format("%lld d: no recorded day", Int64(window.days))
+      }
+      return AppLocalization.format(
+        "%lld d: %@ units from %lld of %lld days (Ø %@ per recorded day)",
+        Int64(window.days),
+        formatInteger(value.units),
+        Int64(value.recordedDays),
+        Int64(value.windowDays),
+        formatNumber(value.averagePerRecordedDay)
+      )
+    }
+    let text =
+      AppLocalization.text(
+        "Traded at the target hub itself, estimated from its Hub scans: units that disappeared from orders still listed between two scans, one 24-hour estimate per UTC day. A lower bound; days without a scan are unknown and not counted."
+      ) + "\n" + windows.joined(separator: "\n")
+    let valueText = formatInteger(volume?.units)
+    return numberCell(
+      valueText,
+      tint: volume.map { $0.isComplete ? DesignTokens.textPrimary : DesignTokens.caution }
+        ?? DesignTokens.textPrimary
+    )
+    .help(text)
+    .accessibilityLabel(
+      Text(
+        volume.map {
+          AppLocalization.format(
+            "Target hub %lld d: %@ units from %lld of %lld days",
+            Int64(volumeWindow.days),
+            valueText,
+            Int64($0.recordedDays),
+            Int64($0.windowDays)
+          )
+        }
+          ?? AppLocalization.format(
+            "Target hub %lld d: %@",
+            Int64(volumeWindow.days),
+            valueText
+          )
+      )
+    )
+    .accessibilityHint(Text(text))
   }
 
   private func volumeHistoryUnknownText(typeID: Int64) -> String {

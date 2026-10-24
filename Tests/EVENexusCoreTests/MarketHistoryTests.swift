@@ -298,3 +298,104 @@ private actor HistoryTransport: ESIHTTPTransporting {
     )
   }
 }
+
+@Suite("Hub-exact traded volume")
+struct HubTradedVolumeTests {
+  private static func day(_ value: String) -> Date {
+    MarketTypeVolumeHistory.parseDay(value)!
+  }
+
+  private static func demand(
+    _ days: [(String, [Int64: Int64])]
+  ) -> ManufacturingOpportunityDemandSnapshot {
+    ManufacturingOpportunityDemandSnapshot(
+      regionID: 10_000_002,
+      locationID: 60_003_760,
+      utcDay: day("2026-10-24"),
+      firstObservedAt: day("2026-10-24"),
+      lastObservedAt: day("2026-10-24").addingTimeInterval(3_600),
+      sampleCount: 2,
+      comparedOrderCount: 1,
+      decreasedOrderCount: 1,
+      observedUnitsByType: [:],
+      dailyHistory: days.map { date, units in
+        ManufacturingOpportunityDailyDemandRecord(
+          utcDay: day(date),
+          observedAt: day(date).addingTimeInterval(3_600),
+          estimatedUnitsByType: units,
+          sourceSnapshotID: UUID()
+        )
+      },
+      source: SourceIdentity(provider: "fixture", version: "1")
+    )
+  }
+
+  @Test
+  func windowsSumRecordedDaysEndingTodayAndCountCoverage() {
+    let snapshot = Self.demand([
+      ("2026-10-24", [34: 10]),
+      ("2026-10-23", [34: 20, 35: 4]),
+      // 2026-10-22 had no scan.
+      ("2026-10-21", [34: 30]),
+      ("2026-10-10", [34: 100]),
+      ("2026-09-20", [34: 9_999]),
+    ])
+    let now = Self.day("2026-10-24").addingTimeInterval(12 * 3_600)
+
+    let one = snapshot.hubTradedVolume(for: 34, window: .oneDay, now: now)
+    #expect(one == HubTradedVolume(units: 10, recordedDays: 1, windowDays: 1))
+    #expect(one?.isComplete == true)
+
+    let five = snapshot.hubTradedVolume(for: 34, window: .fiveDays, now: now)
+    #expect(five == HubTradedVolume(units: 60, recordedDays: 3, windowDays: 5))
+    #expect(five?.isComplete == false)
+    #expect(five?.averagePerRecordedDay == 20)
+
+    #expect(
+      snapshot.hubTradedVolume(for: 34, window: .thirtyDays, now: now)
+        == HubTradedVolume(units: 160, recordedDays: 4, windowDays: 30)
+    )
+    // A day without a record for the type is unknown, not zero.
+    #expect(
+      snapshot.hubTradedVolume(for: 35, window: .sevenDays, now: now)
+        == HubTradedVolume(units: 4, recordedDays: 1, windowDays: 7)
+    )
+    #expect(snapshot.hubTradedVolume(for: 36, window: .thirtyDays, now: now) == nil)
+    // A later day without any scan leaves the window without records.
+    let later = Self.day("2026-10-27")
+    #expect(snapshot.hubTradedVolume(for: 34, window: .twoDays, now: later) == nil)
+  }
+
+  @Test
+  func sorterOrdersHubVolumeByTheSelectedWindowWithUnknownLast() {
+    func display(_ id: Int64, _ volumes: [MarketHistoryWindow: HubTradedVolume])
+      -> TradeDisplayRow
+    {
+      TradeDisplayRow(
+        row: TradeCalculatorTestRow.make(id: id, profit: 1),
+        currentDailyDemand: nil,
+        averageDailyDemand: nil,
+        hubTradedVolumes: volumes
+      )
+    }
+    let rows = [
+      display(3, [:]),
+      display(2, [
+        .oneDay: HubTradedVolume(units: 5, recordedDays: 1, windowDays: 1),
+        .sevenDays: HubTradedVolume(units: 90, recordedDays: 7, windowDays: 7),
+      ]),
+      display(1, [
+        .oneDay: HubTradedVolume(units: 50, recordedDays: 1, windowDays: 1),
+        .sevenDays: HubTradedVolume(units: 50, recordedDays: 1, windowDays: 7),
+      ]),
+    ]
+    #expect(
+      TradeRowSorter.sorted(rows, by: .hubTradedVolume, ascending: true, volumeWindow: .oneDay)
+        .map(\.id) == [2, 1, 3]
+    )
+    #expect(
+      TradeRowSorter.sorted(rows, by: .hubTradedVolume, ascending: false, volumeWindow: .sevenDays)
+        .map(\.id) == [3, 2, 1]
+    )
+  }
+}

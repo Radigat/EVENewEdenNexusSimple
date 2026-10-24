@@ -515,20 +515,32 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     vorn.
   - Item- und Ortsnamen sind per Klick kopierbar. Fehlende Werte zeigen „—“, ein
     Info-Symbol nennt den Grund.
-- **Handelsvolumen** (Regeln im [Handel-Plan, Abschnitt L](Documentation/HANDEL_PLAN.md)):
-  - Quelle ist die öffentliche ESI-Markthistorie
+- **Handelsvolumen** (Regeln im [Handel-Plan, Abschnitte L und M](Documentation/HANDEL_PLAN.md)):
+  - Es gibt zwei getrennt beschriftete Werte: **Zielhub N T** (hub-genau) und
+    **Region N T** (ganze Region des Zielhubs). ESI bietet keine Markthistorie
+    je Station oder Struktur.
+  - **Zielhub N T** stammt aus dem Bedarfsledger des Zielhubs, also aus dessen
+    Hub-Scans, auch bei Spielerstrukturen. Je UTC-Tag mit Scan gibt es eine
+    24-Stunden-Schätzung der Stück, die aus weiterhin gelisteten Orders
+    verschwunden sind; das ist eine Untergrenze. Die Spalte summiert die
+    erfassten Tage der N UTC-Tage bis heute. Tage ohne Scan sind unbekannt und
+    werden nicht als 0 gezählt; fehlt ein Tag des Zeitraums, steht der Wert in
+    Warnfarbe. Der Tooltip nennt je Zeitraum Stück, erfasste Tage von N und
+    Ø je erfasstem Tag. Ohne erfassten Tag zeigt die Spalte „—“. Der Ledger
+    hält höchstens 30 Tage.
+  - **Region N T**: Quelle ist die öffentliche ESI-Markthistorie
     (`/markets/{region_id}/history/`) der **Region des Zielhubs**, also dort,
     wo verkauft wird. Sie ist regional und nicht hub-genau. Sie nennt nur das
     Gesamtvolumen beider Orderseiten; Kauf- und Verkaufsseite werden weder
     getrennt noch geschätzt.
   - Ein Umschalter 1/2/5/7/30 T wählt den Zeitraum; die Wahl wird gespeichert,
     der Standard ist 7 T.
-  - Immer sichtbar sind die Spalten **Gehandelt N T** (Stück) und
-    **Gewinn/Tag**. Gewinn/Tag ist Gewinn je Stück × Ø gehandelte Stück pro
-    Tag. Das ist eine Obergrenze, weil sich andere Händler dieses Volumen
-    teilen. Ein negativer Gewinn bleibt negativ.
-  - Die Details ergänzen **Ø gehandelt/Tag**.
-  - Der Tooltip der Spalte „Gehandelt“ nennt alle fünf Zeiträume mit Stück und
+  - Immer sichtbar sind die Spalten **Zielhub N T**, **Region N T** (Stück)
+    und **Gewinn/Tag (Region)**. Gewinn/Tag (Region) ist Gewinn je Stück × Ø
+    in der Region gehandelte Stück pro Tag. Das ist eine Obergrenze, weil sich
+    andere Händler dieses Volumen teilen. Ein negativer Gewinn bleibt negativ.
+  - Die Details ergänzen **Ø Region/Tag**.
+  - Der Tooltip der Spalte „Region“ nennt alle fünf Zeiträume mit Stück und
     Ø/Tag sowie den letzten enthaltenen UTC-Tag.
   - Der Zeitraum endet mit dem Tag vor dem UTC-Datum von `Last-Modified` der
     ESI-Antwort; ohne Header mit dem Tag vor dem Abruf. Ein von ESI
@@ -552,8 +564,9 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     Zahl der Items ohne Historie bzw. eine unbekannte Region.
   - Die neuen Spalten sind sortierbar, und zwar nach dem Wert des gewählten
     Zeitraums. Die Top-20-Rangfolge bleibt unverändert.
-  - Nicht zu verwechseln mit **Ø Bedarf/Tag** und **Nachfrage heute**: Das ist
-    eine hub-genaue Untergrenze aus schrumpfenden Orders der Hub-Scans.
+  - **Ø Bedarf/Tag** und **Nachfrage heute** nutzen denselben Bedarfsledger
+    wie „Zielhub N T“: Ø über alle erfassten Tage bzw. die aktuelle
+    24-Stunden-Schätzung.
 - **Top-20-Kachel** (Regeln im [Handel-Plan, Abschnitte J und K](Documentation/HANDEL_PLAN.md)):
   - Sie steht als erste Kachel über den Untergruppen-Kacheln und umfasst alle
     Items der gewählten Marktgruppe.
