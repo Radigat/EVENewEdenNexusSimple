@@ -579,13 +579,33 @@ struct ContentView: View {
     )
   }
 
+  /// Writes regions resolved at startup into the stored configuration only;
+  /// every other field of the stored record stays exactly as saved.
+  private static func storeLocationRegions(
+    _ regions: [Int64: Int64],
+    in stored: StoredProductionBasis?,
+    modelContext: ModelContext
+  ) {
+    guard !regions.isEmpty, let stored,
+      var basis = try? JSONDecoder().decode(
+        ProductionBasis.self,
+        from: stored.encodedBasis
+      ),
+      basis.applyLocationRegions(regions),
+      let data = try? JSONEncoder().encode(basis)
+    else { return }
+    stored.encodedBasis = data
+    try? modelContext.save()
+  }
+
   /// Startup order (owner decision 2026-10-20): characters and planner
   /// configuration, then market analyses and the automatic background scans.
   private func startupDataLoadSteps() -> StartupDataLoad.Steps {
     let runtime = runtime
     let modelContext = modelContext
     let characters = storedCharacters
-    let encodedBasis = storedBases.first?.encodedBasis
+    let storedBasis = storedBases.first
+    let encodedBasis = storedBasis?.encodedBasis
     let capabilities = storedCharacters.compactMap { character in
       character.capabilitySnapshot.flatMap {
         try? JSONDecoder().decode(
@@ -599,6 +619,11 @@ struct ContentView: View {
         await runtime.preparePlannerConfiguration(
           encodedBasis: encodedBasis,
           capabilities: capabilities
+        )
+        Self.storeLocationRegions(
+          runtime.resolvedLocationRegions,
+          in: storedBasis,
+          modelContext: modelContext
         )
       },
       synchronizeCharacters: {

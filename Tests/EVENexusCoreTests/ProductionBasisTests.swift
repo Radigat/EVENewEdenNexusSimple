@@ -2006,6 +2006,54 @@ struct ProductionBasisTests {
   }
 
   @Test
+  func storedLocationsWithoutRegionAreFilledFromTheirSolarSystem() throws {
+    let structure = ProcurementLocation(
+      id: "structure:1040000000002",
+      name: "Home Fortizar",
+      locationID: 1_040_000_000_002,
+      kind: .playerStructure,
+      solarSystemID: 30_004_000,
+      ownerCorporationID: 98_000_001
+    )
+    let unresolvable = ProcurementLocation(
+      id: "structure:1040000000003",
+      name: "Unknown System Astrahus",
+      locationID: 1_040_000_000_003,
+      kind: .playerStructure,
+      solarSystemID: 30_005_000
+    )
+    var basis = ProductionBasis()
+    let addedStructure = basis.addTradingLocation(structure)
+    let addedUnresolvable = basis.addTradingLocation(unresolvable)
+    #expect(addedStructure)
+    #expect(addedUnresolvable)
+    #expect(basis.solarSystemIDsWithoutRegion == [30_004_000, 30_005_000])
+
+    let changed = basis.applyLocationRegions([30_004_000: 10_000_060])
+
+    #expect(changed)
+    let filled = try #require(
+      basis.tradingLocations.first { $0.location.id == structure.id }?.location
+    )
+    #expect(filled.regionID == 10_000_060)
+    #expect(filled.locationID == structure.locationID)
+    #expect(filled.name == structure.name)
+    #expect(
+      basis.tradingLocations.first { $0.location.id == unresolvable.id }?
+        .location.regionID == nil
+    )
+    #expect(basis.solarSystemIDsWithoutRegion == [30_005_000])
+    // A known region is never replaced, and a second pass changes nothing.
+    let changedAgain = basis.applyLocationRegions([30_004_000: 10_000_001])
+    #expect(!changedAgain)
+    #expect(
+      basis.tradingLocations.first { $0.location.id == structure.id }?
+        .location.regionID == 10_000_060
+    )
+    #expect(ProcurementLocation.jita.withRegionID(1) == .jita)
+  }
+
+  @Test
   func addedLocationsBecomeComparisonMarketsAndCoalitionRejectsNPCStations()
     throws
   {

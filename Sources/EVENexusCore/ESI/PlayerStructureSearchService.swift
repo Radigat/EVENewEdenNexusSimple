@@ -28,6 +28,20 @@ public struct PlayerStructureOption: Identifiable, Codable, Equatable,
     self.typeID = typeID
     self.source = source
   }
+
+  /// The same option with `regionID` filled in when it was unknown.
+  public func withRegionID(_ regionID: Int64?) -> PlayerStructureOption {
+    guard self.regionID == nil, let regionID else { return self }
+    return PlayerStructureOption(
+      id: id,
+      name: name,
+      ownerCorporationID: ownerCorporationID,
+      solarSystemID: solarSystemID,
+      regionID: regionID,
+      typeID: typeID,
+      source: source
+    )
+  }
 }
 
 private struct ESIStructureSearchResult: Decodable, Sendable {
@@ -82,6 +96,8 @@ public actor PlayerStructureSearchService {
   }
 
   private var searchCache: [SearchCacheKey: SearchCacheEntry] = [:]
+  /// Region per solar system; ESI structure details name only the system.
+  private var regionsBySolarSystemID: [Int64: Int64] = [:]
 
   public init(esi: ESIClient) {
     self.esi = esi
@@ -189,6 +205,7 @@ public actor PlayerStructureSearchService {
         inaccessible += 1
       }
     }
+    values = await withRegions(values)
     values.sort {
       $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
     }
@@ -476,6 +493,7 @@ public actor PlayerStructureSearchService {
     if wasCancelled {
       diagnostics.append("esi.structure-resolution.cancelled")
     }
+    values = await withRegions(values)
     values.sort {
       $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
     }
@@ -485,6 +503,39 @@ public actor PlayerStructureSearchService {
       source: values.first?.source ?? source,
       diagnostics: diagnostics
     )
+  }
+
+  /// Fills `regionID` from the public system → constellation → region
+  /// route. A system that cannot be resolved keeps its options without a
+  /// region instead of guessing one.
+  private func withRegions(
+    _ options: [PlayerStructureOption]
+  ) async -> [PlayerStructureOption] {
+    let missing = Set(
+      options.filter { $0.regionID == nil }.map(\.solarSystemID)
+    ).filter { $0 > 0 && regionsBySolarSystemID[$0] == nil }
+    if !missing.isEmpty {
+      let systems = SolarSystemSearchService(esi: esi)
+      let resolved = await withTaskGroup(
+        of: (Int64, Int64?).self,
+        returning: [(Int64, Int64?)].self
+      ) { group in
+        for systemID in missing {
+          group.addTask {
+            (systemID, try? await systems.details(systemID: systemID).regionID)
+          }
+        }
+        var values: [(Int64, Int64?)] = []
+        for await value in group { values.append(value) }
+        return values
+      }
+      for case (let systemID, let regionID?) in resolved {
+        regionsBySolarSystemID[systemID] = regionID
+      }
+    }
+    return options.map {
+      $0.withRegionID(regionsBySolarSystemID[$0.solarSystemID])
+    }
   }
 
   private func structureDetails(

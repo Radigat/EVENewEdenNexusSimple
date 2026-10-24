@@ -320,6 +320,8 @@ private final class Clock: @unchecked Sendable {
 }
 
 /// Answers structure-detail requests with the scripted status codes in order.
+/// The public system → constellation → region route used for the structure's
+/// region is answered separately and not counted.
 private actor StatusTransport: ESIHTTPTransporting {
   private var statuses: [Int]
   private let expires: Date?
@@ -331,6 +333,17 @@ private actor StatusTransport: ESIHTTPTransporting {
   }
 
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    if let body = Self.regionRouteBody(request.url?.path ?? "") {
+      return (
+        Data(body.utf8),
+        HTTPURLResponse(
+          url: request.url!,
+          statusCode: 200,
+          httpVersion: "HTTP/1.1",
+          headerFields: [:]
+        )!
+      )
+    }
     requestCount += 1
     let status = statuses.isEmpty ? 500 : statuses.removeFirst()
     let body =
@@ -352,5 +365,20 @@ private actor StatusTransport: ESIHTTPTransporting {
         } ?? [:]
       )!
     )
+  }
+}
+
+extension StatusTransport {
+  fileprivate static func regionRouteBody(_ path: String) -> String? {
+    switch path {
+    case "/universe/systems/30000142":
+      #"{"constellation_id":20000020,"name":"Jita","security_status":0.9459,"stations":[],"system_id":30000142}"#
+    case "/universe/constellations/20000020":
+      #"{"constellation_id":20000020,"name":"Kimotoro","region_id":10000002}"#
+    case "/universe/regions/10000002":
+      #"{"name":"The Forge","region_id":10000002}"#
+    default:
+      nil
+    }
   }
 }

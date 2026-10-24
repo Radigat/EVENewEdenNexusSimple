@@ -427,6 +427,18 @@ Verkaufslogistik richtet sich nach den exakten konfigurierten Ortskennungen.
 Ein gleicher Start- und Zielort erzeugt keinen Transportweg. Player-Structure-
 Märkte bleiben ohne passende Berechtigung oder Dockingzugriff unverfügbar.
 
+Jeder gespeicherte Handelsort trägt neben Station bzw. Struktur und
+Sonnensystem auch seine **Region**. NPC-Stationen erhalten sie wie bisher bei
+der Auswahl. Spielerstrukturen erhalten sie seit 24.10.2026 ebenfalls bei der
+Auswahl: ESI nennt für Strukturen nur das Sonnensystem, die App ermittelt die
+Region daraus über die zwischengespeicherte öffentliche Abfrage System →
+Konstellation → Region. Für schon gespeicherte Orte ohne Region (Handelsorte
+und der ältere Logistik-Hub) trägt die App die Region beim Programmstart auf
+demselben Weg nach und schreibt nur dieses Feld in die gespeicherte
+Konfiguration. Eine bekannte Region wird nie überschrieben. Ist das System
+unbekannt oder ESI nicht erreichbar, bleibt die Region unbekannt; der Handel
+meldet das und bittet, den Hub erneut zu wählen.
+
 Die Mineralien-Kaufanalyse, ihre Kaufempfehlungen und der Dashboard-Ticker
 umfassen nur die acht Standardmineralien (Typ-IDs 34–40 und 11399). Weitere
 veröffentlichte Typen der SDE-Gruppe `Mineral` sind seltene Sondermineralien ohne

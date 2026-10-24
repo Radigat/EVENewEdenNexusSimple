@@ -330,6 +330,22 @@ public struct ProcurementLocation: Identifiable, Codable, Hashable, Sendable {
     self.ownerFactionID = ownerFactionID
   }
 
+  /// The same location with `regionID` filled in when it was unknown; a
+  /// known region is never replaced.
+  public func withRegionID(_ regionID: Int64?) -> ProcurementLocation {
+    guard self.regionID == nil, let regionID else { return self }
+    return ProcurementLocation(
+      id: id,
+      name: name,
+      locationID: locationID,
+      kind: kind,
+      solarSystemID: solarSystemID,
+      regionID: regionID,
+      ownerCorporationID: ownerCorporationID,
+      ownerFactionID: ownerFactionID
+    )
+  }
+
   /// Compares the stable ESI location identity when it is available. The
   /// fallback keeps legacy, unresolved locations deterministic without
   /// treating two merely similar display names as the same place.

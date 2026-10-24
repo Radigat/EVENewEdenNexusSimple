@@ -226,6 +226,11 @@ Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt L](Documentati
   der Agentenumgebung kein Fenster), Live-Abruf gegen ESI und damit die
   Ankerregel mit echtem `Last-Modified`.
 - **Offen:** Live-Abnahme (opt-in) und Eigentümerabnahme. Nicht committet.
+- **Region aller Handelsorte (24.10.2026):** Spielerstrukturen speichern bei
+  der Auswahl jetzt die Region (über das Sonnensystem). Bereits gespeicherte
+  Orte ohne Region werden beim Start nachgetragen und zurückgeschrieben.
+  Automatisch geprüft (587 + 70 Tests, Xcode `TEST SUCCEEDED`), in der App
+  noch nicht bestätigt. Nicht committet.
 
 ## Laufzeitoptimierung (23.10.2026)
 

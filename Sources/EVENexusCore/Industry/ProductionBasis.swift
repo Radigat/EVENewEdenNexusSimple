@@ -2955,6 +2955,45 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     }
   }
 
+  /// Solar systems of stored locations (Trading Locations and the legacy
+  /// logistics hub) whose region is still unknown.
+  public var solarSystemIDsWithoutRegion: Set<Int64> {
+    let locations = tradingLocations.map(\.location) + [logistics.homeTradeHub]
+    return Set(
+      locations.compactMap { location in
+        location.regionID == nil ? location.solarSystemID : nil
+      }.filter { $0 > 0 }
+    )
+  }
+
+  /// Fills unknown regions of stored locations from `regionsBySolarSystemID`;
+  /// a known region is never replaced. Returns whether anything changed.
+  @discardableResult
+  public mutating func applyLocationRegions(
+    _ regionsBySolarSystemID: [Int64: Int64]
+  ) -> Bool {
+    func region(of location: ProcurementLocation) -> Int64? {
+      location.solarSystemID.flatMap { regionsBySolarSystemID[$0] }
+    }
+    var changed = false
+    for index in tradingLocations.indices {
+      let location = tradingLocations[index].location
+      let updated = location.withRegionID(region(of: location))
+      if updated != location {
+        tradingLocations[index].location = updated
+        changed = true
+      }
+    }
+    let legacy = logistics.homeTradeHub.withRegionID(
+      region(of: logistics.homeTradeHub)
+    )
+    if legacy != logistics.homeTradeHub {
+      logistics.homeTradeHub = legacy
+      changed = true
+    }
+    return changed
+  }
+
   public mutating func normalizeTradingLocations() {
     var seenLocationIDs = Set<String>()
     tradingLocations = tradingLocations.filter {

@@ -1,5 +1,47 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 24. Oktober 2026 – Region für alle gespeicherten Handelsorte
+
+Ziel: Eigentümerauftrag nach dem Screenshot des Handels: „Die Region des Home
+Hub ist unbekannt“. Die Region soll für alle Orte mitgespeichert und überall
+verfügbar sein.
+
+Ursache: Die Strukturdetails von ESI (`/universe/structures/{id}`) nennen nur
+das Sonnensystem. `PlayerStructureOption` wurde deshalb ohne `regionID`
+erzeugt, und ein als Hub gewählter Ort wurde ohne Region gespeichert.
+NPC-Stationen hatten die Region bereits.
+
+Umfang:
+- `PlayerStructureSearchService`: Suche und Auflösung bekannter Strukturen
+  ergänzen die Region über `SolarSystemSearchService.details`, einmal je
+  System und Dienstinstanz. Ein nicht auflösbares System bleibt ohne Region.
+- `ProcurementLocation.withRegionID` und `PlayerStructureOption.withRegionID`:
+  ergänzen nur eine fehlende Region.
+- `ProductionBasis.solarSystemIDsWithoutRegion` und `applyLocationRegions`
+  für Handelsorte und `logistics.homeTradeHub`.
+- `RuntimeState.resolveMissingLocationRegions()` läuft in
+  `preparePlannerConfiguration`. Der Startschritt in `ContentView` schreibt nur
+  die ermittelten Regionen in den gespeicherten Datensatz zurück; alle anderen
+  Felder bleiben wie gespeichert. Kein Schema- oder Migrationswechsel, da
+  `regionID` schon Teil des gespeicherten Orts war.
+
+Prüfung (automatisch):
+- `swift test`: 587 Tests in 40 Suites plus 70 in 3 Suites bestanden. Neu sind
+  `storedLocationsWithoutRegionAreFilledFromTheirSolarSystem` und die erweiterte
+  Erwartung `regionID` in
+  `accessibleStructureSearchUsesBothScopesAndFiltersBySystem`.
+  `StatusTransport` in `ESIRememberedFailureTests` beantwortet die
+  Regionsabfragen jetzt getrennt und zählt nur Strukturabrufe, damit die
+  bisherigen Zählerwartungen unverändert gelten.
+- `xcodebuild … test`: `** TEST SUCCEEDED **`; `EVEStaticDataKit`: 12 Tests;
+  `git diff --check` fehlerfrei.
+
+Offen:
+- Nicht in der laufenden App geprüft. Nach dem nächsten Programmstart sollte
+  der Handel für den Home Hub UALX-3 keine unbekannte Region mehr melden und
+  das Handelsvolumen laden. Das bestätigt der Eigentümer.
+- Nicht committet.
+
 ## 24. Oktober 2026 – Handel: Handelsvolumen aus der ESI-Markthistorie
 
 Ziel: Eigentümerauftrag, im Handel je Item zu zeigen, wie viel in den letzten

@@ -467,6 +467,9 @@ final class RuntimeState {
   private(set) var manufacturingOpportunityDemandError: String?
   /// Resolved transport legs of the Trade import routes (HANDEL_PLAN P4).
   private(set) var tradeTransportBases: [TradeRoute: TradeTransportBasis] = [:]
+  /// Regions resolved for stored locations in this run, by solar system ID;
+  /// the startup step writes them into the stored configuration.
+  private(set) var resolvedLocationRegions: [Int64: Int64] = [:]
   /// Regional ESI market histories of the Trade area by region ID; memory
   /// only, the ESI response cache keeps each history until its `Expires`.
   private(set) var tradeVolumeHistories: [Int64: MarketVolumeHistorySnapshot] = [:]
@@ -1455,6 +1458,7 @@ final class RuntimeState {
           "The saved production configuration could not be loaded."
       }
     }
+    await resolveMissingLocationRegions()
     let referenceStopwatch = PerformanceStopwatch("planner.reference-data")
     await refreshProfileReferenceData()
     referenceStopwatch.finish()
@@ -4940,6 +4944,37 @@ final class RuntimeState {
         diagnostics: ["sde.industry-facility-reference.unavailable"]
       )
     }
+  }
+
+  /// Resolves the region of every stored location that knows its solar
+  /// system but not its region (e.g. Player Structures saved before
+  /// 24.10.2026) and applies it to `productionBasis`. Returns the applied
+  /// regions so the caller can also update the stored configuration; an
+  /// unresolvable system keeps its region unknown.
+  @discardableResult
+  func resolveMissingLocationRegions() async -> [Int64: Int64] {
+    let systemIDs = productionBasis.solarSystemIDsWithoutRegion
+    guard !systemIDs.isEmpty else { return [:] }
+    let resolved = await withTaskGroup(
+      of: (Int64, Int64?).self,
+      returning: [Int64: Int64].self
+    ) { group in
+      for systemID in systemIDs {
+        group.addTask { [solarSystemSearch] in
+          (systemID, try? await solarSystemSearch.details(systemID: systemID).regionID)
+        }
+      }
+      var values: [Int64: Int64] = [:]
+      for await (systemID, regionID) in group {
+        if let regionID { values[systemID] = regionID }
+      }
+      return values
+    }
+    if !resolved.isEmpty {
+      productionBasis.applyLocationRegions(resolved)
+    }
+    resolvedLocationRegions.merge(resolved) { _, new in new }
+    return resolved
   }
 
   private func refreshConfiguredSystemDetails() async {

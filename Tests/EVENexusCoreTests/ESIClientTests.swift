@@ -1252,6 +1252,8 @@ struct ESIClientTests {
     #expect(result.state == .fresh)
     #expect(result.value?.map(\.id) == [1_000_000_000_001])
     #expect(result.value?.first?.typeID == 35_826)
+    // ESI names only the system; the region comes from the system route.
+    #expect(result.value?.first?.regionID == 10_000_002)
   }
 
   @Test
@@ -3789,6 +3791,13 @@ private struct StructureSearchTransport: ESIHTTPTransporting {
           "type_id":35825
         }
         """
+    case "/universe/systems/30000142":
+      body =
+        #"{"constellation_id":20000020,"name":"Jita","security_status":0.9459,"stations":[60003760],"system_id":30000142}"#
+    case "/universe/constellations/20000020":
+      body = #"{"constellation_id":20000020,"name":"Kimotoro","region_id":10000002}"#
+    case "/universe/regions/10000002":
+      body = #"{"name":"The Forge","region_id":10000002}"#
     default:
       body = "{}"
     }
