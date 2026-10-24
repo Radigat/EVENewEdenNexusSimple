@@ -4331,14 +4331,14 @@ final class RuntimeState {
     }
     let decryptors = (try? await catalog.decryptorDefinitions()) ?? []
     let hub = productionBasis.mainTradingLocation?.location
-    let esi = esi
+    let marketClient = esi
     return ScienceCostInputs(
       prices: prices,
       decryptors: decryptors,
       loadBook: { typeIDs in
         guard let hub, let regionID = hub.regionID,
           let locationID = hub.locationID,
-          let snapshot = try? await TradeHubMarketService(esi: esi)
+          let snapshot = try? await TradeHubMarketService(esi: marketClient)
             .orderSnapshot(
               typeIDs: typeIDs,
               regionID: regionID,

@@ -804,7 +804,7 @@ public struct PrivateContractSyncService: Sendable {
     var failedItemContractIDs: [Int64] = []
 
     // Item lists load concurrently but are recorded in contract order.
-    let esi = esi
+    let itemClient = esi
     let characterID = authorization.characterID
     do {
       try await ESIOrderedLoader.load(
@@ -812,7 +812,7 @@ public struct PrivateContractSyncService: Sendable {
         load: { index in
           let contractID = valuedContracts[index].contractID
           return await capture {
-            try await esi.get(
+            try await itemClient.get(
               [ESIPrivateContractItemDTO].self,
               endpoint: ESIEndpoint(
                 path:

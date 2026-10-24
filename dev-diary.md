@@ -1,5 +1,28 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 24. Oktober 2026 – CI-Build mit Swift 6.1 repariert
+
+Ziel: Eigentümerauftrag. Die CI (`macos-15`, Swift 6.1.2) scheitert seit
+`008cd7b` beim Kompilieren: `closure captures 'esi' before it is declared` in
+`CharacterSyncService.swift`. Ursache: Eine spätere lokale Kopie `let esi = esi`
+verschattet die Eigenschaft für die ganze Funktion; Swift 6.4 (lokal) toleriert
+das, Swift 6.1 nicht.
+
+Umfang:
+- `PrivateContractSyncService.synchronize`: lokale Kopie heißt `itemClient`.
+- `RuntimeState.scienceCostInputs`: gleiche Fehlerklasse (Verwendung von
+  `esi` vor `let esi = esi`), lokale Kopie heißt `marketClient`.
+- Übrige `let x = x`/`let x = self.x`-Kopien geprüft: keine Verwendung vor der
+  Deklaration. Keine Verhaltensänderung.
+
+Prüfung (automatisch, lokal Swift 6.4):
+- `swift test`: 594 Tests in 41 Suites plus 70 in 3 Suites bestanden.
+- `xcodebuild … test`: `** TEST SUCCEEDED **`.
+
+Offen:
+- Mit Swift 6.1 nur über die CI prüfbar; der nächste CI-Lauf nach dem Push
+  belegt die Korrektur.
+
 ## 24. Oktober 2026 – Gewinnpotenzial je Zeitraum (Zielhub und Region)
 
 Ziel: Eigentümerauftrag. Zwei Spalten im Handel, die den Gewinn je Stück mit
