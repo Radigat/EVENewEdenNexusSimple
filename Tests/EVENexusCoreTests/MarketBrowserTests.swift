@@ -3041,11 +3041,12 @@ struct MarketBrowserTests {
 
   @Test
   func hubTopListRanksTheHubProjectionAndSkipsRowsWithoutPotential() throws {
-    let rows = (1...8).map { index in
-      sortableOpportunityRow(
+    let rows: [ManufacturingOpportunityRow] = (1...8).map { (index: Int) in
+      let demand: Int64? = index == 3 ? nil : Int64(index)
+      return sortableOpportunityRow(
         name: "Product \(index)",
-        value: Int64(index * 10),
-        demand: index == 3 ? nil : Int64(index)
+        value: Int64(index) * 10,
+        demand: demand
       )
     }
     let source = SourceIdentity(provider: "Fixture", version: "1")
@@ -3074,33 +3075,34 @@ struct MarketBrowserTests {
       warnings: []
     )
     // The hub view's own projection; the Dashboard only ranks it.
-    let candidates = snapshot.rows.map { row in
-      (
-        row,
-        ManufacturingOpportunityScenarioProjector.costs(
-          for: row,
-          sheet: ManufacturingOpportunityCostSheet(),
-          logistics: ManufacturingOpportunityLogisticsProjection(
-            cost: 0,
-            legs: [],
-            warnings: []
-          ),
-          contract: ManufacturingOpportunityContractContext(
-            references: nil,
-            contractFeeRate: nil
-          )
+    func projectedCosts(
+      _ row: ManufacturingOpportunityRow
+    ) -> ManufacturingOpportunityCostProjection {
+      ManufacturingOpportunityScenarioProjector.costs(
+        for: row,
+        sheet: ManufacturingOpportunityCostSheet(),
+        logistics: ManufacturingOpportunityLogisticsProjection(
+          cost: 0,
+          legs: [],
+          warnings: []
+        ),
+        contract: ManufacturingOpportunityContractContext(
+          references: nil,
+          contractFeeRate: nil
         )
       )
     }
+    let candidates: [(ManufacturingOpportunityRow, ManufacturingOpportunityCostProjection)] =
+      snapshot.rows.map { ($0, projectedCosts($0)) }
     let result = HubTopOpportunityResult.rank(
       role: .main,
       snapshotID: snapshot.id,
       candidates: candidates
     )
-    let top = result.entries
+    let top: [HubTopOpportunityEntry] = result.entries
     #expect(top.count == HubTopOpportunityResult.limit)
     #expect(!top.contains { $0.productName == "Product 3" })
-    let potentials = top.map(\.dailyProfitPotential)
+    let potentials = top.map { (entry: HubTopOpportunityEntry) in entry.dailyProfitPotential }
     #expect(potentials == potentials.sorted(by: >))
     for entry in top {
       let candidate = try #require(

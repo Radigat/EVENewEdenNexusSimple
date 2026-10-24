@@ -19,6 +19,13 @@ Prüfung (automatisch, lokal Swift 6.4):
 - `swift test`: 594 Tests in 41 Suites plus 70 in 3 Suites bestanden.
 - `xcodebuild … test`: `** TEST SUCCEEDED **`.
 
+Nachtrag: Der CI-Lauf zu `cf9b060` kompilierte die Quellen, scheiterte aber
+im Test `hubTopListRanksTheHubProjectionAndSkipsRowsWithoutPotential` an der
+Typprüfung von Swift 6.1 (Zeitlimit beim `map` der Zeilen, Key-Path ohne
+Kontext). Die Zeilen, Kandidaten und Einträge sind jetzt explizit typisiert,
+die Kostenprojektion steht in einer lokalen Hilfsfunktion. Lokal erneut
+`swift test` (594 + 70) und `xcodebuild … test` bestanden.
+
 Offen:
 - Mit Swift 6.1 nur über die CI prüfbar; der nächste CI-Lauf nach dem Push
   belegt die Korrektur.
