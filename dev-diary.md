@@ -1,5 +1,35 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 24. Oktober 2026 – Einstellung „Einziger Markt der Region“
+
+Ziel: Eigentümerauftrag. In Tenerifis gibt es nur den Markt in UALX-3, die
+Zielhub-Spalte (Ledger) zeigt aber weniger als die Region, weil komplett
+gekaufte Orders nicht zählen. Die Einstellung erlaubt, für solche Hubs die
+Regionshistorie als Zielhub-Volumen zu verwenden. Regeln:
+[Handel-Plan, Abschnitt N](Documentation/HANDEL_PLAN.md).
+
+Umfang:
+- `TradingLocationConfiguration.isOnlyMarketInRegion` (Codable mit
+  `decodeIfPresent`, nur geschrieben wenn gesetzt),
+  `ProductionBasis.setOnlyMarketInRegion`, Zurücksetzen beim Ortswechsel.
+- Markteinstellungen: Schalter „Einziger Markt der Region“ je Handelsort mit
+  Erklärung.
+- `HubTradedVolume.regionHistory`; `RuntimeState.tradeHubIsOnlyMarketInRegion`.
+- Handel: Bei gesetztem Schalter am Zielhub zeigt „Zielhub N T (Region)“ die
+  Regionshistorie, mit eigenem Tooltip. Texte en/de.
+
+Prüfung (automatisch):
+- `swift test`: 593 Tests in 41 Suites plus 70 in 3 Suites bestanden, neu
+  `onlyMarketInRegionIsStoredPerLocationAndResetWhenTheLocationChanges` und
+  `regionHistoryAsHubVolumeIsCompleteAndKeepsKnownZeros`.
+- `xcodebuild … test`: `** TEST SUCCEEDED **`; `EVEStaticDataKit`: 12 Tests;
+  `git diff --check` fehlerfrei.
+
+Offen:
+- Nicht in der laufenden App geprüft; Eigentümerabnahme (Schalter beim Home
+  Hub UALX-3 setzen, speichern, Handel prüfen).
+- Auf Auftrag des Eigentümers lokal auf `main` committet, nicht gepusht.
+
 ## 24. Oktober 2026 – Handel: Volumen am Zielhub und Beschriftung „Region“
 
 Ziel: Eigentümerauftrag, das Handelsvolumen am Zielort zu zeigen. Prüfung

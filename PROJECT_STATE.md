@@ -238,6 +238,11 @@ Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt L](Documentati
   „Gewinn/Tag (Region)“, „Ø Region/Tag“. Automatisch geprüft (591 + 70
   Tests, Xcode `TEST SUCCEEDED`), in der App noch nicht bestätigt. Auf
   Auftrag lokal auf `main` committet, nicht gepusht.
+- **Einziger Markt der Region (24.10.2026, [Abschnitt N](Documentation/HANDEL_PLAN.md)):**
+  Schalter je Handelsort in den Markteinstellungen; am Zielhub gesetzt, zeigt
+  „Zielhub N T (Region)“ die Regionshistorie. Automatisch geprüft (593 + 70
+  Tests, Xcode `TEST SUCCEEDED`), in der App noch nicht bestätigt. Auf
+  Auftrag lokal auf `main` committet, nicht gepusht.
 
 ## Laufzeitoptimierung (23.10.2026)
 

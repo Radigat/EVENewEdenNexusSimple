@@ -2232,3 +2232,9 @@
 "Traded at the target hub itself, estimated from its Hub scans: units that disappeared from orders still listed between two scans, one 24-hour estimate per UTC day. A lower bound; days without a scan are unknown and not counted." = "Traded at the target hub itself, estimated from its Hub scans: units that disappeared from orders still listed between two scans, one 24-hour estimate per UTC day. A lower bound; days without a scan are unknown and not counted.";
 "Target hub %lld d: %@ units from %lld of %lld days" = "Target hub %lld d: %@ units from %lld of %lld days";
 "Target hub %lld d: %@" = "Target hub %lld d: %@";
+
+/* Market Settings: only market in its region (24.10.2026) */
+"Only market in its region" = "Only market in its region";
+"Turn this on only when no other station or structure in this region has a market. The Trade area then shows the regional ESI market history as this hub's traded volume, marked “(region)”. ESI offers no market history per station or structure." = "Turn this on only when no other station or structure in this region has a market. The Trade area then shows the regional ESI market history as this hub's traded volume, marked “(region)”. ESI offers no market history per station or structure.";
+"Target hub %lld d (region)" = "Target hub %lld d (region)";
+"Regional ESI market history used as the target hub's volume, because the target hub is marked as the only market of its region in Market Settings. Up to yesterday (UTC); buy and sell side are not separated." = "Regional ESI market history used as the target hub's volume, because the target hub is marked as the only market of its region in Market Settings. Up to yesterday (UTC); buy and sell side are not separated.";

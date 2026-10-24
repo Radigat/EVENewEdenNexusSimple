@@ -6098,6 +6098,19 @@ extension RuntimeState {
     }
   }
 
+  /// Whether the owner marked the role's trading location as the only market
+  /// of its region; the Trade area then uses the regional history as the
+  /// hub's traded volume.
+  func tradeHubIsOnlyMarketInRegion(_ role: OpportunityHubRole) -> Bool {
+    let configuration: TradingLocationConfiguration? =
+      switch role {
+      case .main: productionBasis.mainTradingLocation
+      case .home: productionBasis.homeTradingLocation
+      case .coalition: productionBasis.coalitionTradingLocation
+      }
+    return configuration?.isOnlyMarketInRegion ?? false
+  }
+
   /// Fees of the role's own trading-location settings; unknown stays nil.
   func tradeHubFees(for role: OpportunityHubRole) -> TradeHubFees {
     let configuration: TradingLocationConfiguration? =

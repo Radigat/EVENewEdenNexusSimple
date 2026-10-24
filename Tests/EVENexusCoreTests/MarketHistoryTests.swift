@@ -367,6 +367,29 @@ struct HubTradedVolumeTests {
   }
 
   @Test
+  func regionHistoryAsHubVolumeIsCompleteAndKeepsKnownZeros() {
+    let history = MarketTypeVolumeHistory.make(
+      typeID: 34,
+      regionID: 10_000_060,
+      rows: [
+        ESIMarketHistoryDTO(
+          average: 1, date: "2026-10-23", highest: 1, lowest: 1, orderCount: 1, volume: 7),
+        ESIMarketHistoryDTO(
+          average: 1, date: "2026-10-20", highest: 1, lowest: 1, orderCount: 1, volume: 3),
+      ],
+      lastModified: nil,
+      capturedAt: Self.day("2026-10-24").addingTimeInterval(3_600)
+    )
+    #expect(
+      HubTradedVolume.regionHistory(history, window: .sevenDays)
+        == HubTradedVolume(units: 10, recordedDays: 7, windowDays: 7)
+    )
+    let quiet = HubTradedVolume.regionHistory(history, window: .twoDays)
+    #expect(quiet == HubTradedVolume(units: 7, recordedDays: 2, windowDays: 2))
+    #expect(quiet.isComplete)
+  }
+
+  @Test
   func sorterOrdersHubVolumeByTheSelectedWindowWithUnknownLast() {
     func display(_ id: Int64, _ volumes: [MarketHistoryWindow: HubTradedVolume])
       -> TradeDisplayRow

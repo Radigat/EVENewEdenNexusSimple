@@ -195,6 +195,22 @@ public struct HubTradedVolume: Equatable, Sendable {
   }
 }
 
+extension HubTradedVolume {
+  /// The regional ESI history as the hub's volume, for a hub the owner marked
+  /// as the only market of its region. ESI reports every day of the window
+  /// (days without trades are known zeros), so the window is complete.
+  public static func regionHistory(
+    _ history: MarketTypeVolumeHistory,
+    window: MarketHistoryWindow
+  ) -> HubTradedVolume {
+    HubTradedVolume(
+      units: history.tradedVolume(window),
+      recordedDays: window.days,
+      windowDays: window.days
+    )
+  }
+}
+
 extension ManufacturingOpportunityDemandSnapshot {
   /// Hub-exact traded units of `typeID` in the `window.days` UTC days ending
   /// with the UTC day of `now`; `nil` when no day of the window has a record

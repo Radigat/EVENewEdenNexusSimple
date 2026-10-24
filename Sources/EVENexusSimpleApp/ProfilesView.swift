@@ -3555,6 +3555,19 @@ struct MarketSettingsView: View {
         .id(configuration.id)
       }
 
+      Toggle(
+        "Only market in its region",
+        isOn: onlyMarketInRegionBinding(configuration.id)
+      )
+      .accessibilityIdentifier(
+        "market-settings.only-market-in-region.\(configuration.id.uuidString)"
+      )
+      Text(
+        "Turn this on only when no other station or structure in this region has a market. The Trade area then shows the regional ESI market history as this hub's traded volume, marked “(region)”. ESI offers no market history per station or structure."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+
       Picker("Trader", selection: traderBinding(configuration.id)) {
         Text("No trader selected").tag(Int64?.none)
         ForEach(characters) { character in
@@ -3791,6 +3804,18 @@ struct MarketSettingsView: View {
       name.components(separatedBy: " - ").first?
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? name
     return system.count >= 3 ? system : name
+  }
+
+  private func onlyMarketInRegionBinding(_ id: UUID) -> Binding<Bool> {
+    Binding(
+      get: {
+        runtime.productionBasis.tradingLocations.first { $0.id == id }?
+          .isOnlyMarketInRegion ?? false
+      },
+      set: {
+        runtime.productionBasis.setOnlyMarketInRegion($0, forTradingLocationID: id)
+      }
+    )
   }
 
   private func traderBinding(_ id: UUID) -> Binding<Int64?> {

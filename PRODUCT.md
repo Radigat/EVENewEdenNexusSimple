@@ -515,7 +515,7 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     vorn.
   - Item- und Ortsnamen sind per Klick kopierbar. Fehlende Werte zeigen „—“, ein
     Info-Symbol nennt den Grund.
-- **Handelsvolumen** (Regeln im [Handel-Plan, Abschnitte L und M](Documentation/HANDEL_PLAN.md)):
+- **Handelsvolumen** (Regeln im [Handel-Plan, Abschnitte L bis N](Documentation/HANDEL_PLAN.md)):
   - Es gibt zwei getrennt beschriftete Werte: **Zielhub N T** (hub-genau) und
     **Region N T** (ganze Region des Zielhubs). ESI bietet keine Markthistorie
     je Station oder Struktur.
@@ -528,6 +528,14 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     Warnfarbe. Der Tooltip nennt je Zeitraum Stück, erfasste Tage von N und
     Ø je erfasstem Tag. Ohne erfassten Tag zeigt die Spalte „—“. Der Ledger
     hält höchstens 30 Tage.
+  - **Einziger Markt der Region:** Ein Schalter je Handelsort in den
+    Markteinstellungen („Einziger Markt der Region“, Standard aus) erklärt,
+    dass die Region keinen weiteren Markt hat. Ist er beim Zielhub an, zeigt
+    die Zielhub-Spalte die regionale ESI-Historie statt der Ledger-Schätzung,
+    beschriftet „Zielhub N T (Region)“; der Tooltip nennt die Quelle. Der
+    Zeitraum ist dann vollständig, weil ESI Tage ohne Handel als bekannte 0
+    liefert. Der Schalter wird mit der Produktionsbasis gespeichert und beim
+    Wechsel auf einen anderen Ort zurückgesetzt.
   - **Region N T**: Quelle ist die öffentliche ESI-Markthistorie
     (`/markets/{region_id}/history/`) der **Region des Zielhubs**, also dort,
     wo verkauft wird. Sie ist regional und nicht hub-genau. Sie nennt nur das

@@ -1006,6 +1006,7 @@ struct TradeView: View {
     let target = runtime.tradeMarketState(for: mode.targetRole)?.value
     let demand = runtime.tradeDemand(for: mode.targetRole)
     let histories = runtime.tradeVolumeHistory(for: mode.targetRole)
+    let hubUsesRegion = hubVolumeUsesRegion
     let now = Date.now
     let openQuantities = TradeLogbookSummary.openQuantities(
       runtime.tradeLogbookEntries,
@@ -1031,16 +1032,20 @@ struct TradeView: View {
       transport: transport
     ).map { row in
       let summary = demand?.dailySummary(for: row.typeID)
+      let history = histories?.historiesByType[row.typeID]
       var hubVolumes: [MarketHistoryWindow: HubTradedVolume] = [:]
       for window in MarketHistoryWindow.allCases {
-        hubVolumes[window] = demand?.hubTradedVolume(for: row.typeID, window: window, now: now)
+        hubVolumes[window] =
+          hubUsesRegion
+          ? history.map { HubTradedVolume.regionHistory($0, window: window) }
+          : demand?.hubTradedVolume(for: row.typeID, window: window, now: now)
       }
       return TradeDisplayRow(
         row: row,
         currentDailyDemand: summary?.currentUnits,
         averageDailyDemand: summary?.averageUnits,
         openLogbookQuantity: openQuantities[row.typeID] ?? 0,
-        volumeHistory: histories?.historiesByType[row.typeID],
+        volumeHistory: history,
         hubTradedVolumes: hubVolumes
       )
     }
@@ -1116,7 +1121,12 @@ struct TradeView: View {
         numberHeader("ROI", column: .returnOnInvestment, tint: DesignTokens.accent, sort: sort)
       }
       numberHeader(
-        LocalizedStringKey(AppLocalization.format("Target hub %lld d", Int64(volumeWindow.days))),
+        LocalizedStringKey(
+          AppLocalization.format(
+            hubVolumeUsesRegion ? "Target hub %lld d (region)" : "Target hub %lld d",
+            Int64(volumeWindow.days)
+          )
+        ),
         column: .hubTradedVolume,
         tint: DesignTokens.accent,
         sort: sort
@@ -1318,10 +1328,15 @@ struct TradeView: View {
         formatNumber(value.averagePerRecordedDay)
       )
     }
-    let text =
-      AppLocalization.text(
+    let explanation =
+      hubVolumeUsesRegion
+      ? AppLocalization.text(
+        "Regional ESI market history used as the target hub's volume, because the target hub is marked as the only market of its region in Market Settings. Up to yesterday (UTC); buy and sell side are not separated."
+      )
+      : AppLocalization.text(
         "Traded at the target hub itself, estimated from its Hub scans: units that disappeared from orders still listed between two scans, one 24-hour estimate per UTC day. A lower bound; days without a scan are unknown and not counted."
-      ) + "\n" + windows.joined(separator: "\n")
+      )
+    let text = explanation + "\n" + windows.joined(separator: "\n")
     let valueText = formatInteger(volume?.units)
     return numberCell(
       valueText,
@@ -1348,6 +1363,11 @@ struct TradeView: View {
       )
     )
     .accessibilityHint(Text(text))
+  }
+
+  /// The target hub is marked as the only market of its region.
+  private var hubVolumeUsesRegion: Bool {
+    runtime.tradeHubIsOnlyMarketInRegion(mode.targetRole)
   }
 
   private func volumeHistoryUnknownText(typeID: Int64) -> String {

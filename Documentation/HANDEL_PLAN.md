@@ -593,3 +593,22 @@ Formel (`ManufacturingOpportunityDemandSnapshot.hubTradedVolume`):
 
 Beschriftung: „Zielhub N T“, „Region N T“, „Gewinn/Tag (Region)“,
 „Ø Region/Tag“. Gewinn/Tag rechnet weiter mit dem Regionsvolumen.
+
+## N. Nachtrag 24.10.2026: Einziger Markt der Region
+
+Eigentümerbefund: In Tenerifis gibt es nur den Markt in UALX-3, trotzdem
+weichen „Zielhub“ und „Region“ ab. Ursache: Der Ledger zählt nur Abnahmen
+weiterhin gelisteter Orders; eine komplett gekaufte Order verschwindet und
+zählt nicht. Eigentümerentscheidung: eine Einstellung in der App, mit der ein
+Handelsort als einziger Markt seiner Region markiert wird.
+
+Regeln:
+- `TradingLocationConfiguration.isOnlyMarketInRegion`, Standard `false`,
+  Schalter je Handelsort in den Markteinstellungen. Gespeichert wird das Feld
+  nur, wenn es gesetzt ist. Ein Wechsel auf einen anderen Ort
+  (`updateTradingLocation` mit anderer `locationID`) setzt es zurück.
+- Ist es beim Zielhub der Route gesetzt, gilt für „Zielhub N T“
+  `HubTradedVolume.regionHistory`: Gehandelt(N) der Regionshistorie (Abschnitt
+  L), N von N Tagen erfasst. Die Spalte heißt dann „Zielhub N T (Region)“.
+- Die App prüft nicht, ob die Region wirklich nur einen Markt hat; das ist eine
+  Aussage des Eigentümers.

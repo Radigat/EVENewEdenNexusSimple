@@ -2862,3 +2862,9 @@
 "Traded at the target hub itself, estimated from its Hub scans: units that disappeared from orders still listed between two scans, one 24-hour estimate per UTC day. A lower bound; days without a scan are unknown and not counted." = "Am Zielhub selbst gehandelt, geschätzt aus seinen Hub-Scans: Stück, die zwischen zwei Scans aus weiterhin gelisteten Orders verschwunden sind, eine 24-Stunden-Schätzung je UTC-Tag. Eine Untergrenze; Tage ohne Scan sind unbekannt und nicht mitgezählt.";
 "Target hub %lld d: %@ units from %lld of %lld days" = "Zielhub %1$lld T: %2$@ Stück aus %3$lld von %4$lld Tagen";
 "Target hub %lld d: %@" = "Zielhub %1$lld T: %2$@";
+
+/* Market Settings: only market in its region (24.10.2026) */
+"Only market in its region" = "Einziger Markt der Region";
+"Turn this on only when no other station or structure in this region has a market. The Trade area then shows the regional ESI market history as this hub's traded volume, marked “(region)”. ESI offers no market history per station or structure." = "Nur einschalten, wenn keine andere Station oder Struktur dieser Region einen Markt hat. Der Handel zeigt dann die regionale ESI-Markthistorie als Handelsvolumen dieses Hubs, gekennzeichnet mit „(Region)“. ESI bietet keine Markthistorie je Station oder Struktur.";
+"Target hub %lld d (region)" = "Zielhub %lld T (Region)";
+"Regional ESI market history used as the target hub's volume, because the target hub is marked as the only market of its region in Market Settings. Up to yesterday (UTC); buy and sell side are not separated." = "Regionale ESI-Markthistorie als Volumen des Zielhubs, weil der Zielhub in den Markteinstellungen als einziger Markt der Region markiert ist. Bis gestern (UTC); Kauf- und Verkaufsseite sind nicht getrennt.";

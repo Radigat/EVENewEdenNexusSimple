@@ -2204,6 +2204,10 @@ public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
   /// contract and wallet history at this exact location. It remains evidence
   /// until the owner explicitly confirms its rate for planning.
   public var observedPublicContractFee: PublicContractFeeEvidence?
+  /// Owner statement that this location is the only market of its region
+  /// (owner decision 2026-10-24). The Trade area then uses the regional ESI
+  /// market history as this hub's traded volume, visibly marked.
+  public var isOnlyMarketInRegion: Bool
 
   public init(
     id: UUID = UUID(),
@@ -2211,10 +2215,12 @@ public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
     traderCharacterID: Int64? = nil,
     marketTaxes: MarketTaxConfiguration? = nil,
     publicContractFeeRate: Double? = nil,
-    observedPublicContractFee: PublicContractFeeEvidence? = nil
+    observedPublicContractFee: PublicContractFeeEvidence? = nil,
+    isOnlyMarketInRegion: Bool = false
   ) {
     self.id = id
     self.location = location
+    self.isOnlyMarketInRegion = isOnlyMarketInRegion
     self.marketTaxes =
       marketTaxes
       ?? MarketTaxConfiguration(traderCharacterID: traderCharacterID)
@@ -2242,11 +2248,15 @@ public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
     case marketTaxes
     case publicContractFeeRate
     case observedPublicContractFee
+    case isOnlyMarketInRegion
   }
 
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    isOnlyMarketInRegion =
+      try container.decodeIfPresent(Bool.self, forKey: .isOnlyMarketInRegion)
+      ?? false
     location = try container.decode(
       ProcurementLocation.self,
       forKey: .location
@@ -2293,6 +2303,11 @@ public struct TradingLocationConfiguration: Identifiable, Codable, Equatable,
       observedPublicContractFee,
       forKey: .observedPublicContractFee
     )
+    // Written only when set, so existing stored configurations keep their
+    // exact encoding.
+    if isOnlyMarketInRegion {
+      try container.encode(true, forKey: .isOnlyMarketInRegion)
+    }
   }
 
   private static func validPublicContractFeeRate(_ rate: Double?) -> Double? {
@@ -2994,6 +3009,15 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     return changed
   }
 
+  public mutating func setOnlyMarketInRegion(
+    _ isOnlyMarket: Bool,
+    forTradingLocationID id: UUID
+  ) {
+    guard let index = tradingLocations.firstIndex(where: { $0.id == id })
+    else { return }
+    tradingLocations[index].isOnlyMarketInRegion = isOnlyMarket
+  }
+
   public mutating func normalizeTradingLocations() {
     var seenLocationIDs = Set<String>()
     tradingLocations = tradingLocations.filter {
@@ -3311,6 +3335,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
     if previous.locationID != acceptedLocation.locationID {
       tradingLocations[index].publicContractFeeRate = nil
       tradingLocations[index].observedPublicContractFee = nil
+      tradingLocations[index].isOnlyMarketInRegion = false
     }
     if id == mainTradingLocationID {
       logistics.homeTradeHub = acceptedLocation

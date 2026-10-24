@@ -2006,6 +2006,52 @@ struct ProductionBasisTests {
   }
 
   @Test
+  func onlyMarketInRegionIsStoredPerLocationAndResetWhenTheLocationChanges()
+    throws
+  {
+    let structure = ProcurementLocation(
+      id: "structure:1040000000004",
+      name: "Single Market Fortizar",
+      locationID: 1_040_000_000_004,
+      kind: .playerStructure,
+      solarSystemID: 30_004_000,
+      regionID: 10_000_060
+    )
+    var basis = ProductionBasis()
+    let added = basis.addTradingLocation(structure)
+    #expect(added)
+    let id = try #require(
+      basis.tradingLocations.first { $0.location.id == structure.id }?.id
+    )
+    #expect(basis.tradingLocations.first { $0.id == id }?.isOnlyMarketInRegion == false)
+    // An unset flag is not written, so stored configurations keep their encoding.
+    let unsetJSON = String(decoding: try JSONEncoder().encode(basis), as: UTF8.self)
+    #expect(!unsetJSON.contains("isOnlyMarketInRegion"))
+
+    basis.setOnlyMarketInRegion(true, forTradingLocationID: id)
+    let restored = try JSONDecoder().decode(
+      ProductionBasis.self,
+      from: JSONEncoder().encode(basis)
+    )
+    #expect(restored.tradingLocations.first { $0.id == id }?.isOnlyMarketInRegion == true)
+
+    basis.updateTradingLocation(id: id, location: structure)
+    #expect(basis.tradingLocations.first { $0.id == id }?.isOnlyMarketInRegion == true)
+    basis.updateTradingLocation(
+      id: id,
+      location: ProcurementLocation(
+        id: "structure:1040000000005",
+        name: "Other Fortizar",
+        locationID: 1_040_000_000_005,
+        kind: .playerStructure,
+        solarSystemID: 30_004_001,
+        regionID: 10_000_060
+      )
+    )
+    #expect(basis.tradingLocations.first { $0.id == id }?.isOnlyMarketInRegion == false)
+  }
+
+  @Test
   func storedLocationsWithoutRegionAreFilledFromTheirSolarSystem() throws {
     let structure = ProcurementLocation(
       id: "structure:1040000000002",
