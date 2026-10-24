@@ -604,6 +604,10 @@ is cancellable and limited to six concurrent per-type requests; it does not
 create unbounded tasks for a large plan. Each regional type response discards
 orders from every station except the exact configured location before it is
 retained, reducing peak memory without changing location-bound depth pricing.
+The Trade area's regional market history (`/markets/{region_id}/history/`,
+one public request per type, at most four concurrent, a 404 remembered for 24
+hours) is kept durably by the response cache until `Expires`; the projected
+`MarketVolumeHistorySnapshot` per region stays in Runtime memory only.
 The app's shared `ESIClient` sends through `MeasuringESITransport`, a purely
 observing decorator around `URLSessionESITransport`. It passes every request,
 response and error through unchanged, sends nothing itself and never retries;

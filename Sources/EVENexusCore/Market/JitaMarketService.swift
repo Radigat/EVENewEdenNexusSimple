@@ -381,6 +381,89 @@ public struct TradeHubMarketService: Sendable {
       }
     }
   }
+
+  /// Daily traded units per type in `regionID` from the public ESI market
+  /// history, one request per type with bounded concurrency. A failed type is
+  /// reported in `unavailableTypeIDs` and never as zero; the response cache
+  /// keeps each history until its daily `Expires`.
+  public func volumeHistory(
+    typeIDs: Set<Int64>,
+    regionID: Int64,
+    progress:
+      @escaping @Sendable (_ completed: Int, _ total: Int) async -> Void = {
+        _,
+        _ in
+      }
+  ) async throws -> MarketVolumeHistorySnapshot {
+    let orderedTypeIDs = typeIDs.filter { $0 > 0 }.sorted()
+    var snapshot = MarketVolumeHistorySnapshot(regionID: regionID)
+    let limit = min(maximumConcurrentOrderRequests, 4)
+    let esi = esi
+    try await withThrowingTaskGroup(
+      of: (Int64, MarketTypeVolumeHistory?).self
+    ) { group in
+      var nextIndex = 0
+      var completed = 0
+      func addNext() {
+        guard nextIndex < orderedTypeIDs.count else { return }
+        let typeID = orderedTypeIDs[nextIndex]
+        nextIndex += 1
+        group.addTask {
+          try await Self.fetchHistory(
+            typeID: typeID,
+            regionID: regionID,
+            esi: esi
+          )
+        }
+      }
+      for _ in 0..<min(limit, orderedTypeIDs.count) { addNext() }
+      while let (typeID, history) = try await group.next() {
+        try Task.checkCancellation()
+        if let history {
+          snapshot.historiesByType[typeID] = history
+        } else {
+          snapshot.unavailableTypeIDs.insert(typeID)
+        }
+        completed += 1
+        await progress(completed, orderedTypeIDs.count)
+        addNext()
+      }
+    }
+    return snapshot
+  }
+
+  private static func fetchHistory(
+    typeID: Int64,
+    regionID: Int64,
+    esi: ESIClient
+  ) async throws -> (Int64, MarketTypeVolumeHistory?) {
+    do {
+      let response = try await esi.get(
+        [ESIMarketHistoryDTO].self,
+        endpoint: ESIEndpoint(
+          path: "/markets/\(regionID)/history/",
+          query: [URLQueryItem(name: "type_id", value: String(typeID))],
+          rememberedFailureDuration: 24 * 60 * 60
+        )
+      )
+      return (
+        typeID,
+        MarketTypeVolumeHistory.make(
+          typeID: typeID,
+          regionID: regionID,
+          rows: response.value,
+          lastModified: ESIClient.httpDate(response.lastModified),
+          capturedAt: response.source.capturedAt
+        )
+      )
+    } catch ESIError.cancelled {
+      throw CancellationError()
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      return (typeID, nil)
+    }
+  }
 }
 
 public typealias JitaMarketService = TradeHubMarketService

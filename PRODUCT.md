@@ -500,6 +500,38 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     vorn.
   - Item- und Ortsnamen sind per Klick kopierbar. Fehlende Werte zeigen „—“, ein
     Info-Symbol nennt den Grund.
+- **Handelsvolumen** (Regeln im [Handel-Plan, Abschnitt L](Documentation/HANDEL_PLAN.md)):
+  - Quelle ist die öffentliche ESI-Markthistorie
+    (`/markets/{region_id}/history/`) der **Region des Zielhubs**, also dort,
+    wo verkauft wird. Sie ist regional und nicht hub-genau. Sie nennt nur das
+    Gesamtvolumen beider Orderseiten; Kauf- und Verkaufsseite werden weder
+    getrennt noch geschätzt.
+  - Ein Umschalter 1/2/5/7/30 T wählt den Zeitraum; die Wahl wird gespeichert,
+    der Standard ist 7 T.
+  - Immer sichtbar sind die Spalten **Gehandelt N T** (Stück) und
+    **Gewinn/Tag**. Gewinn/Tag ist Gewinn je Stück × Ø gehandelte Stück pro
+    Tag. Das ist eine Obergrenze, weil sich andere Händler dieses Volumen
+    teilen. Ein negativer Gewinn bleibt negativ.
+  - Die Details ergänzen **Ø gehandelt/Tag**.
+  - Der Tooltip der Spalte „Gehandelt“ nennt alle fünf Zeiträume mit Stück und
+    Ø/Tag sowie den letzten enthaltenen UTC-Tag.
+  - Der Zeitraum endet mit dem Tag vor dem UTC-Datum von `Last-Modified` der
+    ESI-Antwort; ohne Header mit dem Tag vor dem Abruf. Ein von ESI
+    gemeldeter neuerer Tag verschiebt das Ende nach vorn. Tage ohne Eintrag
+    zählen als 0 Stück, weil ESI Tage ohne Handel auslässt.
+  - Geladen wird beim Anzeigen einer Marktgruppe für alle ihre Items, mit
+    höchstens vier gleichzeitigen Anfragen und sichtbarem Fortschritt. Der
+    ESI-Antwortcache hält jede Historie bis zu ihrem `Expires`; wiederholtes
+    Laden am selben Tag fragt ESI nicht erneut. Die Werte selbst liegen nur im
+    Arbeitsspeicher.
+  - Fehlende Werte zeigen „—“. Der Tooltip nennt den Grund: Region des
+    Zielhubs unbekannt, Historie lädt, ESI lieferte keine Historie (404 wird
+    24 Stunden gemerkt) oder noch nicht geladen. Eine Statuszeile nennt die
+    Zahl der Items ohne Historie bzw. eine unbekannte Region.
+  - Die neuen Spalten sind sortierbar, und zwar nach dem Wert des gewählten
+    Zeitraums. Die Top-20-Rangfolge bleibt unverändert.
+  - Nicht zu verwechseln mit **Ø Bedarf/Tag** und **Nachfrage heute**: Das ist
+    eine hub-genaue Untergrenze aus schrumpfenden Orders der Hub-Scans.
 - **Top-20-Kachel** (Regeln im [Handel-Plan, Abschnitte J und K](Documentation/HANDEL_PLAN.md)):
   - Sie steht als erste Kachel über den Untergruppen-Kacheln und umfasst alle
     Items der gewählten Marktgruppe.
@@ -528,6 +560,7 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     der Marktübersicht der Hub-Chancen-Scans. Ein Hub, der einem anderen
     entspricht, nutzt dessen Daten.
   - Tagesbedarf: die Bedarfssnapshots der Hub-Chancen.
+  - Handelsvolumen: die regionale ESI-Markthistorie der Zielregion.
   - Gebühren: das Händlerprofil der jeweiligen Hub-Rolle.
 - **Marktdaten nur im Speicher:** Sie entstehen mit den Hub-Scans und liegen
   nur im Arbeitsspeicher. Nach einem Neustart fehlen sie bis zum nächsten Scan;

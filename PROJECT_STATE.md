@@ -207,6 +207,26 @@ Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt J](Documentati
   Der Stand ist auf Auftrag des Eigentümers als `9b4462f` auf `main`
   committet und nach `origin` gepusht.
 
+### Nachtrag 24.10.2026: Handelsvolumen aus der ESI-Markthistorie
+
+Auftrag und Eigentümerentscheidungen: [HANDEL_PLAN.md, Abschnitt L](Documentation/HANDEL_PLAN.md).
+
+- **Implementiert:** gehandeltes Gesamtvolumen je Item in der Region des
+  Zielhubs für 1/2/5/7/30 Tage (Spalte „Gehandelt N T“, Tooltip mit allen
+  Zeiträumen), Ø gehandelt/Tag (Details) und Gewinn/Tag als Obergrenze.
+  Alle drei sind sortierbar. Abruf je Item über
+  `/markets/{region_id}/history/` mit höchstens vier parallelen Anfragen; der
+  ESI-Antwortcache gilt bis `Expires`. Keine Trennung nach Kauf- und
+  Verkaufsseite. Top-20-Rangfolge, Bedarfsspalten und Rechenregeln sind
+  unverändert. Kein neues Schema, keine Migration.
+- **Automatisch geprüft (24.10.2026):** `swift test` (586 Tests in 40 Suites
+  plus 70 in 3 Suites), `xcodebuild … test` unsigniert (`TEST SUCCEEDED`),
+  `EVEStaticDataKit` (12 Tests), `git diff --check`.
+- **Nicht geprüft:** GUI-Sichtprüfung (die isolierte Debug-Instanz öffnete aus
+  der Agentenumgebung kein Fenster), Live-Abruf gegen ESI und damit die
+  Ankerregel mit echtem `Last-Modified`.
+- **Offen:** Live-Abnahme (opt-in) und Eigentümerabnahme. Nicht committet.
+
 ## Laufzeitoptimierung (23.10.2026)
 
 Auf Auftrag des Eigentümers sind Berechnungs- und Abrufabläufe auf

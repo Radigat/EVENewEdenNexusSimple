@@ -531,3 +531,44 @@ Rechenkern: `TradeTopRankingMetric` mit den gespeicherten Raw-Werten
 `profitPerCubicMeter` und `returnOnInvestment`. Ein gespeicherter Altwert
 `difference` wird nicht mehr erkannt und fällt auf Gewinn/m³ zurück; der
 UserDefaults-Schlüssel `trade.top-ranking` bleibt unverändert.
+
+## L. Nachtrag 24.10.2026: Handelsvolumen aus der ESI-Markthistorie
+
+Eigentümerauftrag: Gewinn je Stück, Gewinn/m³ und ROI reichen nicht. Ein Item,
+das kaum gehandelt wird, bringt trotz hoher Marge wenig. Gebraucht wird je Item,
+wie viel in den letzten 1, 2, 5, 7 und 30 Tagen gehandelt wurde.
+
+Eigentümerentscheidungen (Rückfragen vom 24.10.2026):
+1. Gezeigt wird nur das Gesamtvolumen. ESI trennt die Historie nicht nach
+   Kauf- und Verkaufsseite; eine geschätzte Aufteilung gibt es nicht.
+2. Abgeleitete Kennzahlen: Ø Stück/Tag und Gewinnpotenzial/Tag.
+3. Zeiträume 1/2/5/7/30 Tage. Der gewählte Zeitraum steht als Spalte, alle
+   fünf im Tooltip.
+4. Die Top-20-Rangfolge bleibt unverändert.
+
+Quelle: `GET /markets/{region_id}/history/?type_id=` (öffentlich, ein Abruf je
+Item) für die Region des Zielhubs der Route. Fehlt die Region, bleibt der Wert
+unbekannt.
+
+Formeln (Rechenkern `MarketTypeVolumeHistory`, `TradeDisplayRow`):
+- Ankertag A = UTC-Tag vor dem UTC-Datum von `Last-Modified`; ohne Header der
+  UTC-Tag vor dem Abruf. Liefert ESI einen Tag nach A, wird dieser Tag zu A.
+- Gehandelt(N) = Summe `volume` der UTC-Tage A−N+1 … A. Tage ohne Eintrag
+  zählen 0, weil ESI Tage ohne Handel auslässt. Eine leere Antwort ist 0.
+  Zeilen mit unlesbarem Datum oder negativem Volumen werden verworfen.
+- Ø Stück/Tag(N) = Gehandelt(N) ÷ N.
+- Gewinn/Tag(N) = Gewinn je Stück (Abschnitt C) × Ø Stück/Tag(N), eine
+  Obergrenze. Ohne Gewinn oder Historie unbekannt; negativer Gewinn bleibt
+  negativ.
+- Ein fehlgeschlagener Abruf (404, Fehler) ist „nicht verfügbar“, nie 0. Ein
+  404 wird 24 Stunden gemerkt.
+
+Abruf: `TradeHubMarketService.volumeHistory(typeIDs:regionID:)` mit höchstens
+vier gleichzeitigen Anfragen. Der ESI-Antwortcache speichert die Historie
+dauerhaft bis `Expires`. `RuntimeState` hält die Ergebnisse je Region nur im
+Arbeitsspeicher und lädt nur Items nach, die fehlen oder deren Ankertag vor
+gestern (UTC) liegt.
+
+Offen: Die Ankerregel ist nur gegen synthetische Antworten getestet. Ob
+`Last-Modified` der Historie wie angenommen das Datum der täglichen
+Aktualisierung trägt, bestätigt erst eine Live-Abnahme (opt-in).

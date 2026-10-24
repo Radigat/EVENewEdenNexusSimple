@@ -31,6 +31,7 @@
 		01A0C0010000000000000018 /* TradeLogbookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000008 /* TradeLogbookView.swift */; };
 		01A0C0010000000000000019 /* TradeLogbookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000009 /* TradeLogbookTests.swift */; };
 		01A0C0010000000000000013 /* TradeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000003 /* TradeCalculatorTests.swift */; };
+		01A0D1010000000000000012 /* MarketHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D1010000000000000002 /* MarketHistoryTests.swift */; };
 		019FC3000000000000000011 /* ProductionTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC3000000000000000001 /* ProductionTree.swift */; };
 		019FC95E0000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 019FC95E0000000000000001 /* Assets.xcassets */; };
 		019FC9890000000000000011 /* NetWorthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC9890000000000000001 /* NetWorthView.swift */; };
@@ -124,6 +125,7 @@
 		DECA0A6F7B397D308D8B6CFD /* SourceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5083443D1BA0C9BAC3493E20 /* SourceState.swift */; };
 		E0F526CDDC40158A77B76CF6 /* ProductionInputParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58053BB787C584ABA9902B32 /* ProductionInputParserTests.swift */; };
 		E5380BF0913F7CD882038A4E /* JitaMarketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D774BDC3DB16984A0AE06E68 /* JitaMarketService.swift */; };
+		01A0D1010000000000000011 /* MarketHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D1010000000000000001 /* MarketHistory.swift */; };
 		E72AA3735B44ADC887C56093 /* ProductionBasis.swift in Sources */ = {isa = PBXBuildFile; fileRef = A91941A4CADEFD1746872D53 /* ProductionBasis.swift */; };
 		E843EF4851D47C6138475C27 /* sqlite_shim.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 7EC853A700690D67F134C4BE /* sqlite_shim.h */; };
 		EA30DEE9EDC4BAFD7B575678 /* IndustryRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */; };
@@ -248,6 +250,7 @@
 		01A0C0010000000000000008 /* TradeLogbookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbookView.swift; sourceTree = "<group>"; };
 		01A0C0010000000000000009 /* TradeLogbookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbookTests.swift; sourceTree = "<group>"; };
 		01A0C0010000000000000003 /* TradeCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeCalculatorTests.swift; sourceTree = "<group>"; };
+		01A0D1010000000000000002 /* MarketHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketHistoryTests.swift; sourceTree = "<group>"; };
 		019FC3000000000000000001 /* ProductionTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionTree.swift; sourceTree = "<group>"; };
 		019FC95E0000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		019FC9890000000000000001 /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
@@ -331,6 +334,7 @@
 		CF480041A24E3F7755C5897D /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
 		D2BC6C4AAF1431FE92F2A7D4 /* EVEMultibuyExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEMultibuyExportTests.swift; sourceTree = "<group>"; };
 		D774BDC3DB16984A0AE06E68 /* JitaMarketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JitaMarketService.swift; sourceTree = "<group>"; };
+		01A0D1010000000000000001 /* MarketHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketHistory.swift; sourceTree = "<group>"; };
 		D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterSyncService.swift; sourceTree = "<group>"; };
 		E1121279592F9529DC639AF4 /* IndustryPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryPlannerTests.swift; sourceTree = "<group>"; };
 		E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBasisTests.swift; sourceTree = "<group>"; };
@@ -486,6 +490,7 @@
 			isa = PBXGroup;
 			children = (
 				D774BDC3DB16984A0AE06E68 /* JitaMarketService.swift */,
+				01A0D1010000000000000001 /* MarketHistory.swift */,
 				019FBE470000000000000001 /* MarketBrowserModels.swift */,
 				019FBE470000000000000002 /* MarketBrowserService.swift */,
 				01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */,
@@ -662,6 +667,7 @@
 				019FBE470000000000000004 /* MarketBrowserTests.swift */,
 				BBBDCD301666D06C8735887C /* MarketPricingTests.swift */,
 				01A0C0010000000000000003 /* TradeCalculatorTests.swift */,
+				01A0D1010000000000000002 /* MarketHistoryTests.swift */,
 				01A0C0010000000000000009 /* TradeLogbookTests.swift */,
 				40B81E1970CDE5ECE390B481 /* PersistenceStabilityTests.swift */,
 				E1AF79A70187CE7983309A11 /* ProductionBasisTests.swift */,
@@ -884,6 +890,7 @@
 				EA30DEE9EDC4BAFD7B575678 /* IndustryRulesTests.swift in Sources */,
 				01A0B0020000000000000011 /* JumpFreighterLogisticsTests.swift in Sources */,
 				01A0C0010000000000000013 /* TradeCalculatorTests.swift in Sources */,
+				01A0D1010000000000000012 /* MarketHistoryTests.swift in Sources */,
 				01A0C0010000000000000019 /* TradeLogbookTests.swift in Sources */,
 				7F3AFE42523B5E194D8DA2C8 /* InventionReadinessTests.swift in Sources */,
 				019FBE470000000000000014 /* MarketBrowserTests.swift in Sources */,
@@ -993,6 +1000,7 @@
 				01A0C001000000000000001A /* TradeWallet.swift in Sources */,
 				01A0C001000000000000001B /* TradeWalletReconciler.swift in Sources */,
 				E5380BF0913F7CD882038A4E /* JitaMarketService.swift in Sources */,
+				01A0D1010000000000000011 /* MarketHistory.swift in Sources */,
 				BC8A106455EAE98782C571DE /* KeychainRefreshTokenStore.swift in Sources */,
 				C06F91A81025FE554EB56413 /* LoopbackCallbackServer.swift in Sources */,
 				019FBE470000000000000011 /* MarketBrowserModels.swift in Sources */,

@@ -1,5 +1,51 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 24. Oktober 2026 – Handel: Handelsvolumen aus der ESI-Markthistorie
+
+Ziel: Eigentümerauftrag, im Handel je Item zu zeigen, wie viel in den letzten
+1, 2, 5, 7 und 30 Tagen gehandelt wurde, damit ein Item mit hoher Marge, aber
+kaum Absatz erkennbar ist. Regeln und Rückfrage-Entscheidungen:
+[Handel-Plan, Abschnitt L](Documentation/HANDEL_PLAN.md).
+
+Umfang:
+- Neu `Sources/EVENexusCore/Market/MarketHistory.swift`:
+  `MarketHistoryWindow`, `MarketTypeVolumeHistory` (Ankertag, Fenstersummen,
+  Ø/Tag) und `MarketVolumeHistorySnapshot` mit `merge`.
+- `TradeHubMarketService.volumeHistory(typeIDs:regionID:progress:)`: ein Abruf
+  je Item, höchstens vier parallel, Fehler je Item als „nicht verfügbar“.
+- `TradeDisplayRow.volumeHistory` mit `tradedVolume`, `averageDailyVolume`
+  und `dailyProfitPotential`; `TradeSortColumn` um drei Spalten erweitert,
+  `TradeRowSorter` sortiert nach dem gewählten Zeitraum.
+- `RuntimeState`: Historien je Region im Arbeitsspeicher, Fortschritt je
+  Region, Nachladen nur fehlender oder veralteter Items.
+- `TradeView`: Umschalter 1/2/5/7/30 T (`trade.volume-window`, Standard 7),
+  Spalten „Gehandelt N T“ und „Gewinn/Tag“, in den Details „Ø gehandelt/Tag“,
+  Tooltip mit allen Zeiträumen, Statuszeile für Laden, unbekannte Region und
+  Items ohne Historie. Texte en/de.
+- Xcode-Projekt: beide neuen Dateien eingetragen.
+- Hinweis: Der bisher ungenutzte `MineralPriceTrendProjector` bleibt
+  unverändert; der Mineral-Ticker nutzt weiterhin Orderbuchdaten.
+
+Prüfung (automatisch):
+- `swift test`: 586 Tests in 40 Suites plus 70 Tests in 3 Suites bestanden,
+  darunter die neue Suite „Regional market history volume“ mit 9 Tests
+  (Fenster, fehlende Tage, leere Antwort, Ankerregel, ungültige Zeilen,
+  Gewinn/Tag, Merge, Service mit 404 und begrenzter Parallelität, dauerhafte
+  Cache-Speicherung, Sortierung je Zeitraum).
+- `xcodebuild … -configuration Debug -destination 'platform=macOS,arch=arm64'
+  CODE_SIGNING_ALLOWED=NO test`: `** TEST SUCCEEDED **`.
+- `swift test --package-path Packages/EVEStaticDataKit`: 12 Tests bestanden.
+- `git diff --check` fehlerfrei.
+
+Offen:
+- Keine GUI-Sichtprüfung: Die isolierte Debug-Instanz (eigener Datenordner,
+  eigene Preferences-Suite, Hintergrunddienste aus) öffnete aus der
+  Agentenumgebung kein Fenster, weder direkt noch über `open -n`. Die echte
+  App wurde nicht bedient.
+- Live-Abruf gegen ESI (opt-in): Ankerregel mit echtem `Last-Modified`,
+  Antwortzeiten und Rate-Limit-Gruppe des Endpunkts.
+- Eigentümerabnahme. Nicht committet.
+
 ## 23. Oktober 2026 – Handel: Top-20 nach Gewinn/m³ oder ROI statt Diff %
 
 Ziel: Eigentümerauftrag, die Rangfolge nach Diff % aus der Top-20-Kachel zu

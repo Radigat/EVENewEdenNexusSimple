@@ -467,6 +467,11 @@ final class RuntimeState {
   private(set) var manufacturingOpportunityDemandError: String?
   /// Resolved transport legs of the Trade import routes (HANDEL_PLAN P4).
   private(set) var tradeTransportBases: [TradeRoute: TradeTransportBasis] = [:]
+  /// Regional ESI market histories of the Trade area by region ID; memory
+  /// only, the ESI response cache keeps each history until its `Expires`.
+  private(set) var tradeVolumeHistories: [Int64: MarketVolumeHistorySnapshot] = [:]
+  /// Progress of running history loads by region ID.
+  private(set) var tradeVolumeHistoryProgress: [Int64: TradeVolumeHistoryProgress] = [:]
   /// Purchase logbook of the Trade area (HANDEL_PLAN P5); opened on first use.
   private(set) var tradeLogbookEntries: [TradeLogbookEntry] = []
   private(set) var tradeLogbookState: TradeLogbookLoadState =
@@ -6055,6 +6060,59 @@ extension RuntimeState {
     return TradeHubFees(configuration.marketTaxes)
   }
 
+  /// Region of the role's trading location; `nil` when unknown.
+  func tradeRegionID(for role: OpportunityHubRole) -> Int64? {
+    tradeLocation(for: role)?.regionID
+  }
+
+  func tradeVolumeHistory(
+    for role: OpportunityHubRole
+  ) -> MarketVolumeHistorySnapshot? {
+    tradeRegionID(for: role).flatMap { tradeVolumeHistories[$0] }
+  }
+
+  /// Loads the regional market history of `typeIDs` that are missing or
+  /// older than the newest day ESI can already report. Failed types stay
+  /// unavailable, never zero.
+  func refreshTradeVolumeHistory(
+    typeIDs: Set<Int64>,
+    regionID: Int64
+  ) async {
+    // Before the daily ESI refresh the cached answer is served locally
+    // until its `Expires`, so asking again costs no network request.
+    let expectedAnchor = MarketTypeVolumeHistory.utcDay(.now, addingDays: -1)
+    let known = tradeVolumeHistories[regionID]
+    let missing = typeIDs.filter { typeID in
+      guard let history = known?.historiesByType[typeID] else { return true }
+      return history.anchorDay < expectedAnchor
+    }
+    guard !missing.isEmpty else { return }
+    tradeVolumeHistoryProgress[regionID] = TradeVolumeHistoryProgress(
+      completed: 0,
+      total: missing.count
+    )
+    defer { tradeVolumeHistoryProgress[regionID] = nil }
+    let service = TradeHubMarketService(esi: esi)
+    do {
+      let loaded = try await service.volumeHistory(
+        typeIDs: missing,
+        regionID: regionID
+      ) { completed, total in
+        await MainActor.run {
+          self.tradeVolumeHistoryProgress[regionID] =
+            TradeVolumeHistoryProgress(completed: completed, total: total)
+        }
+      }
+      var merged =
+        tradeVolumeHistories[regionID]
+        ?? MarketVolumeHistorySnapshot(regionID: regionID)
+      merged.merge(loaded)
+      tradeVolumeHistories[regionID] = merged
+    } catch {
+      // Cancelled with the view; loaded types arrive on the next refresh.
+    }
+  }
+
   func refreshTradeTransportBasis(for route: TradeRoute) async {
     tradeTransportBases[route] = await tradeTransportBasis(for: route)
   }
@@ -6446,4 +6504,9 @@ extension RuntimeState {
       )
     )
   }
+}
+
+struct TradeVolumeHistoryProgress: Equatable, Sendable {
+  let completed: Int
+  let total: Int
 }

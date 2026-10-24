@@ -1,0 +1,152 @@
+import Foundation
+
+/// Rolling windows of the regional ESI market history (owner decision
+/// 2026-10-24: 1, 2, 5, 7 and 30 days).
+public enum MarketHistoryWindow: Int, CaseIterable, Identifiable, Sendable {
+  case oneDay = 1
+  case twoDays = 2
+  case fiveDays = 5
+  case sevenDays = 7
+  case thirtyDays = 30
+
+  public var id: Int { rawValue }
+  public var days: Int { rawValue }
+}
+
+/// Daily traded units of one type in one region from
+/// `GET /markets/{region_id}/history/`. ESI reports the total of both order
+/// sides per UTC day and omits days without trades, so a day inside the
+/// window without an entry is a known zero. ESI does not split the volume
+/// into buy and sell side; this model never estimates such a split.
+public struct MarketTypeVolumeHistory: Equatable, Sendable {
+  public let typeID: Int64
+  public let regionID: Int64
+  /// UTC midnight of the newest day the history covers. Windows end here.
+  public let anchorDay: Date
+  /// Traded units keyed by UTC midnight of the day.
+  public let dailyVolumes: [Date: Int64]
+  public let capturedAt: Date
+
+  public init(
+    typeID: Int64,
+    regionID: Int64,
+    anchorDay: Date,
+    dailyVolumes: [Date: Int64],
+    capturedAt: Date
+  ) {
+    self.typeID = typeID
+    self.regionID = regionID
+    self.anchorDay = Self.utcDay(anchorDay)
+    self.dailyVolumes = dailyVolumes
+    self.capturedAt = capturedAt
+  }
+
+  /// Units traded in the `window.days` UTC days ending with `anchorDay`.
+  public func tradedVolume(_ window: MarketHistoryWindow) -> Int64 {
+    let earliest = Self.utcCalendar.date(
+      byAdding: .day,
+      value: -(window.days - 1),
+      to: anchorDay
+    ) ?? anchorDay
+    return dailyVolumes.reduce(into: Int64(0)) { total, entry in
+      if entry.key >= earliest, entry.key <= anchorDay {
+        total += entry.value
+      }
+    }
+  }
+
+  /// `tradedVolume(window) ÷ window.days`.
+  public func averageDailyVolume(_ window: MarketHistoryWindow) -> Double {
+    Double(tradedVolume(window)) / Double(window.days)
+  }
+
+  /// Builds the history from ESI rows. The anchor is the UTC day before the
+  /// UTC date of `Last-Modified` (the history is refreshed once a day and
+  /// then contains the previous day); without the header it is the UTC day
+  /// before `capturedAt`; a reported day after that anchor moves it forward.
+  /// Rows with an unreadable date or a negative volume are dropped.
+  public static func make(
+    typeID: Int64,
+    regionID: Int64,
+    rows: [ESIMarketHistoryDTO],
+    lastModified: Date?,
+    capturedAt: Date
+  ) -> MarketTypeVolumeHistory {
+    let reference = utcDay(lastModified ?? capturedAt)
+    let expectedAnchor =
+      utcCalendar.date(byAdding: .day, value: -1, to: reference) ?? reference
+    var volumes: [Date: Int64] = [:]
+    for row in rows where row.volume >= 0 {
+      guard let day = parseDay(row.date) else { continue }
+      volumes[day, default: 0] += row.volume
+    }
+    // A reported day newer than the expected anchor is never cut off.
+    let anchor = max(expectedAnchor, volumes.keys.max() ?? expectedAnchor)
+    return MarketTypeVolumeHistory(
+      typeID: typeID,
+      regionID: regionID,
+      anchorDay: anchor,
+      dailyVolumes: volumes,
+      capturedAt: capturedAt
+    )
+  }
+
+  static let utcCalendar: Calendar = {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    return calendar
+  }()
+
+  public static func utcDay(_ date: Date) -> Date {
+    utcCalendar.startOfDay(for: date)
+  }
+
+  public static func utcDay(_ date: Date, addingDays days: Int) -> Date {
+    let day = utcDay(date)
+    return utcCalendar.date(byAdding: .day, value: days, to: day) ?? day
+  }
+
+  static func parseDay(_ value: String) -> Date? {
+    let parts = value.split(separator: "-")
+    guard parts.count == 3,
+      let year = Int(parts[0]),
+      let month = Int(parts[1]),
+      let day = Int(parts[2])
+    else { return nil }
+    let components = DateComponents(year: year, month: month, day: day)
+    guard components.isValidDate(in: utcCalendar) else { return nil }
+    return utcCalendar.date(from: components)
+  }
+}
+
+/// Volume histories of several types in one region. Types whose request
+/// failed are listed in `unavailableTypeIDs`; they are unknown, not zero.
+public struct MarketVolumeHistorySnapshot: Equatable, Sendable {
+  public let regionID: Int64
+  public var historiesByType: [Int64: MarketTypeVolumeHistory]
+  public var unavailableTypeIDs: Set<Int64>
+
+  public init(
+    regionID: Int64,
+    historiesByType: [Int64: MarketTypeVolumeHistory] = [:],
+    unavailableTypeIDs: Set<Int64> = []
+  ) {
+    self.regionID = regionID
+    self.historiesByType = historiesByType
+    self.unavailableTypeIDs = unavailableTypeIDs
+  }
+
+  /// Adds `other`; newer results replace older ones per type, and a type
+  /// that loaded is no longer unavailable.
+  public mutating func merge(_ other: MarketVolumeHistorySnapshot) {
+    guard other.regionID == regionID else { return }
+    for (typeID, history) in other.historiesByType {
+      historiesByType[typeID] = history
+      unavailableTypeIDs.remove(typeID)
+    }
+    for typeID in other.unavailableTypeIDs
+    where historiesByType[typeID] == nil {
+      unavailableTypeIDs.insert(typeID)
+    }
+  }
+}

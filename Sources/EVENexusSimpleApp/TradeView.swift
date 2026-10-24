@@ -108,6 +108,9 @@ struct TradeView: View {
   /// Ranking metric of the Top-20 tile (HANDEL_PLAN.md, section J).
   @AppStorage("trade.top-ranking", store: AppDefaults.store)
   private var topRankingRawValue = TradeTopRankingMetric.profitPerCubicMeter.rawValue
+  /// Window in days of the regional ESI market history columns.
+  @AppStorage("trade.volume-window", store: AppDefaults.store)
+  private var volumeWindowRawValue = MarketHistoryWindow.sevenDays.rawValue
 
   @State private var marketGroups: MarketGroupCatalogSnapshot?
   @State private var marketGroupsFailed = false
@@ -137,6 +140,10 @@ struct TradeView: View {
   private var selectedNode: MarketGroupDefinition? {
     guard selectedMarketGroupID != 0 else { return nil }
     return marketGroups?.groups.first { $0.id == Int64(selectedMarketGroupID) }
+  }
+
+  private var volumeWindow: MarketHistoryWindow {
+    MarketHistoryWindow(rawValue: volumeWindowRawValue) ?? .sevenDays
   }
 
   private var topRanking: TradeTopRankingMetric {
@@ -182,6 +189,7 @@ struct TradeView: View {
     .task(id: transportKey) {
       await runtime.refreshTradeTransportBasis(for: mode.route)
     }
+    .task(id: volumeHistoryKey) { await loadVolumeHistory() }
     .task {
       if runtime.tradeLogbookState == .notLoaded {
         await runtime.loadTradeLogbook()
@@ -246,6 +254,7 @@ struct TradeView: View {
             .accessibilityIdentifier("trade.open-market-settings")
         }
         transportStatus
+        volumeHistoryStatus
         Text(
           "Own orders are placed one valid price step (four significant digits) better than the best order. Order modification and relist fees are not included."
         )
@@ -443,6 +452,50 @@ struct TradeView: View {
     }
   }
 
+  /// Load state of the regional ESI market history of the target hub.
+  @ViewBuilder
+  private var volumeHistoryStatus: some View {
+    if let regionID = runtime.tradeRegionID(for: mode.targetRole) {
+      if let progress = runtime.tradeVolumeHistoryProgress[regionID] {
+        HStack(spacing: DesignTokens.spacingSM) {
+          ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
+            .frame(maxWidth: 160)
+          Text(
+            AppLocalization.format(
+              "Loading market history: %lld of %lld items",
+              Int64(progress.completed),
+              Int64(progress.total)
+            )
+          )
+        }
+        .font(.callout)
+        .foregroundStyle(DesignTokens.textSecondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("trade.volume-history.progress")
+      } else if let snapshot = runtime.tradeVolumeHistories[regionID],
+        !snapshot.unavailableTypeIDs.isEmpty
+      {
+        Label(
+          AppLocalization.format(
+            "Market history unavailable for %lld items; their traded volume stays unknown.",
+            Int64(snapshot.unavailableTypeIDs.count)
+          ),
+          systemImage: "chart.bar.xaxis"
+        )
+        .foregroundStyle(DesignTokens.caution)
+      }
+    } else if runtime.tradeDataRole(for: mode.targetRole) != nil {
+      Label(
+        AppLocalization.format(
+          "The region of the %@ is unknown, so its traded volume is unavailable. Select the hub again in Market Settings.",
+          TradeHubText.roleName(mode.targetRole)
+        ),
+        systemImage: "chart.bar.xaxis"
+      )
+      .foregroundStyle(DesignTokens.caution)
+    }
+  }
+
   private var indicatorSettings: some View {
     HStack(spacing: DesignTokens.spacingMD) {
       Stepper(value: $increasePercent, in: 1...1_000) {
@@ -460,6 +513,19 @@ struct TradeView: View {
       }
       .accessibilityIdentifier("trade.indicator.strong-increase")
       Spacer()
+      HStack(spacing: DesignTokens.spacingXS) {
+        Text("Traded volume").font(.caption.weight(.semibold))
+        Picker("Traded volume", selection: $volumeWindowRawValue) {
+          ForEach(MarketHistoryWindow.allCases) { window in
+            Text(AppLocalization.format("%lld d", Int64(window.days))).tag(window.rawValue)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityIdentifier("trade.volume-window")
+      }
+      .help(AppLocalization.text("Days of the regional ESI market history shown in the traded-volume columns"))
       Toggle("Show details", isOn: $showsDetails)
         .toggleStyle(.switch)
         .accessibilityIdentifier("trade.show-details")
@@ -643,7 +709,8 @@ struct TradeView: View {
       let rows = TradeRowSorter.sorted(
         result.rows,
         by: order.column,
-        ascending: order.direction == .ascending
+        ascending: order.direction == .ascending,
+        volumeWindow: volumeWindow
       )
       tileFrame(identifier: "trade.top-tile") {
         HStack(spacing: DesignTokens.spacingSM) {
@@ -924,7 +991,8 @@ struct TradeView: View {
     TradeRowSorter.sorted(
       calculatedRows(items: tile.items, sourceSide: sourceSide, targetSide: targetSide),
       by: sort.column,
-      ascending: sort.direction == .ascending
+      ascending: sort.direction == .ascending,
+      volumeWindow: volumeWindow
     )
   }
 
@@ -937,6 +1005,7 @@ struct TradeView: View {
     let source = runtime.tradeMarketState(for: mode.sourceRole)?.value
     let target = runtime.tradeMarketState(for: mode.targetRole)?.value
     let demand = runtime.tradeDemand(for: mode.targetRole)
+    let histories = runtime.tradeVolumeHistory(for: mode.targetRole)
     let openQuantities = TradeLogbookSummary.openQuantities(
       runtime.tradeLogbookEntries,
       targetRole: mode.targetRole
@@ -965,7 +1034,8 @@ struct TradeView: View {
         row: row,
         currentDailyDemand: summary?.currentUnits,
         averageDailyDemand: summary?.averageUnits,
-        openLogbookQuantity: openQuantities[row.typeID] ?? 0
+        openLogbookQuantity: openQuantities[row.typeID] ?? 0,
+        volumeHistory: histories?.historiesByType[row.typeID]
       )
     }
   }
@@ -987,6 +1057,7 @@ struct TradeView: View {
       (.profit, "Profit"),
       (.margin, "Margin"),
       (.returnOnInvestment, "ROI"),
+      (.averageDailyVolume, "Ø traded/day"),
       (.averageDailyDemand, "Ø demand/day"),
       (.currentDailyDemand, "Demand today"),
       (.targetDepth, "Depth"),
@@ -1038,6 +1109,18 @@ struct TradeView: View {
       if showsReturnOnInvestment {
         numberHeader("ROI", column: .returnOnInvestment, tint: DesignTokens.accent, sort: sort)
       }
+      numberHeader(
+        LocalizedStringKey(AppLocalization.format("Traded %lld d", Int64(volumeWindow.days))),
+        column: .tradedVolume,
+        tint: DesignTokens.accent,
+        sort: sort
+      )
+      numberHeader(
+        "Profit/day",
+        column: .dailyProfitPotential,
+        tint: DesignTokens.accent,
+        sort: sort
+      )
       if showsDetails {
         ForEach(visibleDetailColumns(showsReturnOnInvestment: showsReturnOnInvestment), id: \.0) {
           column, title in
@@ -1122,6 +1205,8 @@ struct TradeView: View {
       if showsReturnOnInvestment {
         detailCell(display, column: .returnOnInvestment)
       }
+      tradedVolumeCell(display)
+      detailCell(display, column: .dailyProfitPotential)
       if showsDetails {
         ForEach(visibleDetailColumns(showsReturnOnInvestment: showsReturnOnInvestment), id: \.0) {
           column, _ in
@@ -1151,8 +1236,68 @@ struct TradeView: View {
     case .targetDepth: numberCell(formatInteger(row.targetVolumeAtPrice))
     case .openLogbookQuantity:
       numberCell(formatInteger(display.openLogbookQuantity))
+    case .averageDailyVolume:
+      numberCell(formatNumber(display.averageDailyVolume(volumeWindow)))
+    case .dailyProfitPotential:
+      let value = display.dailyProfitPotential(volumeWindow)
+      numberCell(formatNumber(value), tint: signTint(value))
+        .help(
+          AppLocalization.text(
+            "Profit per unit × average traded units per day in the target region. An upper bound: other traders share this volume."
+          )
+        )
     default: numberCell("—")
     }
+  }
+
+  /// Units traded in the selected window; the help lists every window or
+  /// why the value is unknown.
+  private func tradedVolumeCell(_ display: TradeDisplayRow) -> some View {
+    let text: String
+    if let history = display.volumeHistory {
+      let windows = MarketHistoryWindow.allCases.map { window in
+        AppLocalization.format(
+          "%lld d: %@ units (Ø %@/day)",
+          Int64(window.days),
+          formatInteger(history.tradedVolume(window)),
+          formatNumber(history.averageDailyVolume(window))
+        )
+      }
+      text =
+        AppLocalization.format(
+          "ESI market history of the target hub's region, up to %@ (UTC). Buy and sell side are not separated.",
+          history.anchorDay.formatted(
+            Date.FormatStyle(date: .numeric, time: .omitted, timeZone: .gmt).locale(locale)
+          )
+        ) + "\n" + windows.joined(separator: "\n")
+    } else {
+      text = volumeHistoryUnknownText(typeID: display.id)
+    }
+    return numberCell(formatInteger(display.tradedVolume(volumeWindow)))
+      .help(text)
+      .accessibilityLabel(
+        Text(
+          AppLocalization.format(
+            "Traded %lld d: %@",
+            Int64(volumeWindow.days),
+            formatInteger(display.tradedVolume(volumeWindow))
+          )
+        )
+      )
+      .accessibilityHint(Text(text))
+  }
+
+  private func volumeHistoryUnknownText(typeID: Int64) -> String {
+    guard let regionID = runtime.tradeRegionID(for: mode.targetRole) else {
+      return AppLocalization.text("The region of the target hub is unknown.")
+    }
+    if runtime.tradeVolumeHistoryProgress[regionID] != nil {
+      return AppLocalization.text("The market history is loading.")
+    }
+    if runtime.tradeVolumeHistories[regionID]?.unavailableTypeIDs.contains(typeID) == true {
+      return AppLocalization.text("ESI did not provide a market history for this item.")
+    }
+    return AppLocalization.text("The market history has not been loaded yet.")
   }
 
   private func numberCell(
@@ -1277,6 +1422,26 @@ struct TradeView: View {
       ],
       mainMarketCapturedAt: runtime.mainHubMarketState?.value?.capturedAt
     )
+  }
+
+  private struct VolumeHistoryKey: Equatable {
+    let regionID: Int64?
+    let typeIDs: Set<Int64>
+  }
+
+  private var volumeHistoryKey: VolumeHistoryKey {
+    VolumeHistoryKey(
+      regionID: runtime.tradeRegionID(for: mode.targetRole),
+      typeIDs: Set(tiles.flatMap(\.items).map(\.id))
+    )
+  }
+
+  /// Loads the target region's market history for every item of the shown
+  /// tiles; the ESI cache answers repeated loads of the same day locally.
+  private func loadVolumeHistory() async {
+    let key = volumeHistoryKey
+    guard let regionID = key.regionID, !key.typeIDs.isEmpty else { return }
+    await runtime.refreshTradeVolumeHistory(typeIDs: key.typeIDs, regionID: regionID)
   }
 
   private func loadMarketGroups() async {

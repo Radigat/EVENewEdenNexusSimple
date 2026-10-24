@@ -169,17 +169,43 @@ public struct TradeDisplayRow: Identifiable, Equatable, Sendable {
   /// Units of open logbook entries for this type at the target hub; zero is
   /// a known value (nothing open).
   public let openLogbookQuantity: Int64
+  /// Regional ESI market history of the target hub's region; `nil` while
+  /// unknown (not loaded, failed or region unknown), never zero.
+  public let volumeHistory: MarketTypeVolumeHistory?
 
   public init(
     row: TradeRow,
     currentDailyDemand: Int64?,
     averageDailyDemand: Int64?,
-    openLogbookQuantity: Int64 = 0
+    openLogbookQuantity: Int64 = 0,
+    volumeHistory: MarketTypeVolumeHistory? = nil
   ) {
     self.row = row
     self.currentDailyDemand = currentDailyDemand
     self.averageDailyDemand = averageDailyDemand
     self.openLogbookQuantity = openLogbookQuantity
+    self.volumeHistory = volumeHistory
+  }
+
+  /// Units traded in the target region during `window`.
+  public func tradedVolume(_ window: MarketHistoryWindow) -> Int64? {
+    volumeHistory?.tradedVolume(window)
+  }
+
+  /// Traded units per day during `window`.
+  public func averageDailyVolume(_ window: MarketHistoryWindow) -> Double? {
+    volumeHistory?.averageDailyVolume(window)
+  }
+
+  /// `profit × averageDailyVolume(window)` in ISK per day: an upper bound,
+  /// because the regional volume is shared with every other trader. Unknown
+  /// without profit or history; a negative profit stays negative.
+  public func dailyProfitPotential(_ window: MarketHistoryWindow) -> Double? {
+    guard let profit = row.profit, profit.isFinite,
+      let perDay = averageDailyVolume(window)
+    else { return nil }
+    let value = profit * perDay
+    return value.isFinite ? value : nil
   }
 }
 
@@ -199,6 +225,9 @@ public enum TradeSortColumn: String, CaseIterable, Hashable, Sendable {
   case currentDailyDemand
   case targetDepth
   case openLogbookQuantity
+  case tradedVolume
+  case averageDailyVolume
+  case dailyProfitPotential
 }
 
 /// Sorts by the typed value of a column. Unknown values follow known values
@@ -208,7 +237,8 @@ public enum TradeRowSorter {
   public static func sorted(
     _ rows: [TradeDisplayRow],
     by column: TradeSortColumn,
-    ascending: Bool
+    ascending: Bool,
+    volumeWindow: MarketHistoryWindow = .sevenDays
   ) -> [TradeDisplayRow] {
     rows.sorted { lhs, rhs in
       if column == .name {
@@ -219,7 +249,10 @@ public enum TradeRowSorter {
         }
         return lhs.id < rhs.id
       }
-      switch (value(lhs, column), value(rhs, column)) {
+      switch (
+        value(lhs, column, volumeWindow: volumeWindow),
+        value(rhs, column, volumeWindow: volumeWindow)
+      ) {
       case (let left?, let right?):
         if left != right { return ascending ? left < right : left > right }
       case (.some, nil):
@@ -235,7 +268,8 @@ public enum TradeRowSorter {
 
   static func value(
     _ display: TradeDisplayRow,
-    _ column: TradeSortColumn
+    _ column: TradeSortColumn,
+    volumeWindow: MarketHistoryWindow = .sevenDays
   ) -> Double? {
     let row = display.row
     return switch column {
@@ -254,6 +288,9 @@ public enum TradeRowSorter {
     case .currentDailyDemand: display.currentDailyDemand.map(Double.init)
     case .targetDepth: row.targetVolumeAtPrice.map(Double.init)
     case .openLogbookQuantity: Double(display.openLogbookQuantity)
+    case .tradedVolume: display.tradedVolume(volumeWindow).map(Double.init)
+    case .averageDailyVolume: display.averageDailyVolume(volumeWindow)
+    case .dailyProfitPotential: display.dailyProfitPotential(volumeWindow)
     }
   }
 }

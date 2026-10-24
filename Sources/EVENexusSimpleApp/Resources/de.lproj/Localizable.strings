@@ -2835,3 +2835,22 @@
 "Coalition → Home" = "Coalition → Home";
 "Home Hub and Coalition Hub must both be configured for this route." = "Für diese Route müssen Home Hub und Coalition Hub eingerichtet sein.";
 "The %@ and the %@ are the same place, so there is no trade route." = "Der %1$@ und der %2$@ sind derselbe Ort, daher gibt es keine Handelsroute.";
+
+/* Trade: regional ESI market history volume (24.10.2026) */
+"Traded volume" = "Handelsvolumen";
+"%lld d" = "%lld T";
+"Days of the regional ESI market history shown in the traded-volume columns" = "Tage der regionalen ESI-Markthistorie für die Spalten zum Handelsvolumen";
+"Traded %lld d" = "Gehandelt %lld T";
+"Profit/day" = "Gewinn/Tag";
+"Ø traded/day" = "Ø gehandelt/Tag";
+"Profit per unit × average traded units per day in the target region. An upper bound: other traders share this volume." = "Gewinn je Stück × durchschnittlich gehandelte Stück pro Tag in der Zielregion. Eine Obergrenze: Andere Händler teilen sich dieses Volumen.";
+"Loading market history: %lld of %lld items" = "Markthistorie wird geladen: %1$lld von %2$lld Items";
+"Market history unavailable for %lld items; their traded volume stays unknown." = "Für %lld Items ist keine Markthistorie verfügbar; ihr Handelsvolumen bleibt unbekannt.";
+"The region of the %@ is unknown, so its traded volume is unavailable. Select the hub again in Market Settings." = "Die Region des %@ ist unbekannt, daher ist kein Handelsvolumen verfügbar. Wähle den Hub in den Markteinstellungen erneut aus.";
+"%lld d: %@ units (Ø %@/day)" = "%1$lld T: %2$@ Stück (Ø %3$@/Tag)";
+"ESI market history of the target hub's region, up to %@ (UTC). Buy and sell side are not separated." = "ESI-Markthistorie der Region des Zielhubs, bis %@ (UTC). Kauf- und Verkaufsseite sind nicht getrennt.";
+"Traded %lld d: %@" = "Gehandelt %1$lld T: %2$@";
+"The region of the target hub is unknown." = "Die Region des Zielhubs ist unbekannt.";
+"The market history is loading." = "Die Markthistorie wird geladen.";
+"ESI did not provide a market history for this item." = "ESI hat für dieses Item keine Markthistorie geliefert.";
+"The market history has not been loaded yet." = "Die Markthistorie ist noch nicht geladen.";
