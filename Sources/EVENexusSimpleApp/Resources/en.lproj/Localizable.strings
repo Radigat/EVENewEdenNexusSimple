@@ -2212,6 +2212,12 @@
 "Days of the regional ESI market history shown in the traded-volume columns" = "Days of the regional ESI market history shown in the traded-volume columns";
 "Region %lld d" = "Region %lld d";
 "Profit/day (region)" = "Profit/day (region)";
+"Profit potential target hub %lld d" = "Profit pot. target hub %lld d";
+"Profit potential target hub %lld d (region)" = "Profit pot. target hub %lld d (region)";
+"Profit potential region %lld d" = "Profit pot. region %lld d";
+"Profit per unit × units traded at the target hub in the selected window, taken from the regional ESI market history because the target hub is the only market of its region. An upper bound: other traders share this volume." = "Profit per unit × units traded at the target hub in the selected window, taken from the regional ESI market history because the target hub is the only market of its region. An upper bound: other traders share this volume.";
+"Profit per unit × units traded at the target hub in the selected window, estimated from its Hub scans. Days without a scan are not counted; other traders share this volume." = "Profit per unit × units traded at the target hub in the selected window, estimated from its Hub scans. Days without a scan are not counted; other traders share this volume.";
+"Profit per unit × units traded in the target region in the selected window. An upper bound: other traders share this volume." = "Profit per unit × units traded in the target region in the selected window. An upper bound: other traders share this volume.";
 "Ø region/day" = "Ø region/day";
 "Profit per unit × average traded units per day in the target region. An upper bound: other traders share this volume." = "Profit per unit × average traded units per day in the target region. An upper bound: other traders share this volume.";
 "Loading market history: %lld of %lld items" = "Loading market history: %lld of %lld items";

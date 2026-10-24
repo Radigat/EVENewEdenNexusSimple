@@ -217,6 +217,28 @@ public struct TradeDisplayRow: Identifiable, Equatable, Sendable {
     let value = profit * perDay
     return value.isFinite ? value : nil
   }
+
+  /// `profit × hubTradedVolume(window).units` in ISK: the profit if the units
+  /// traded at the target hub during `window` were sold again. Unknown without
+  /// profit or hub volume; a negative profit stays negative.
+  public func hubProfitPotential(_ window: MarketHistoryWindow) -> Double? {
+    guard let units = hubTradedVolume(window)?.units else { return nil }
+    return Self.profitPotential(row.profit, units: units)
+  }
+
+  /// `profit × tradedVolume(window)` in ISK: the profit if the units traded in
+  /// the target region during `window` were sold again. Unknown without
+  /// profit or history; a negative profit stays negative.
+  public func regionProfitPotential(_ window: MarketHistoryWindow) -> Double? {
+    guard let units = tradedVolume(window) else { return nil }
+    return Self.profitPotential(row.profit, units: units)
+  }
+
+  private static func profitPotential(_ profit: Double?, units: Int64) -> Double? {
+    guard let profit, profit.isFinite else { return nil }
+    let value = profit * Double(units)
+    return value.isFinite ? value : nil
+  }
 }
 
 public enum TradeSortColumn: String, CaseIterable, Hashable, Sendable {
@@ -239,6 +261,8 @@ public enum TradeSortColumn: String, CaseIterable, Hashable, Sendable {
   case averageDailyVolume
   case dailyProfitPotential
   case hubTradedVolume
+  case hubProfitPotential
+  case regionProfitPotential
 }
 
 /// Sorts by the typed value of a column. Unknown values follow known values
@@ -303,6 +327,8 @@ public enum TradeRowSorter {
     case .averageDailyVolume: display.averageDailyVolume(volumeWindow)
     case .dailyProfitPotential: display.dailyProfitPotential(volumeWindow)
     case .hubTradedVolume: display.hubTradedVolume(volumeWindow).map { Double($0.units) }
+    case .hubProfitPotential: display.hubProfitPotential(volumeWindow)
+    case .regionProfitPotential: display.regionProfitPotential(volumeWindow)
     }
   }
 }

@@ -547,6 +547,13 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     und **Gewinn/Tag (Region)**. Gewinn/Tag (Region) ist Gewinn je Stück × Ø
     in der Region gehandelte Stück pro Tag. Das ist eine Obergrenze, weil sich
     andere Händler dieses Volumen teilen. Ein negativer Gewinn bleibt negativ.
+  - Daneben stehen immer **Gewinnpot. Zielhub N T** und **Gewinnpot. Region
+    N T**: Gewinn je Stück × im gewählten Zeitraum am Zielhub bzw. in der
+    Region gehandelte Stück, in ganzen ISK, sortierbar. Ohne Gewinn oder
+    Volumen bleibt der Wert unbekannt („—“). Bei unvollständig gescanntem
+    Zielhub-Zeitraum erscheint der Wert in Warnfarbe; bei „Einziger Markt der
+    Region“ heißt die Spalte „Gewinnpot. Zielhub N T (Region)“. Beides sind
+    Obergrenzen. Regeln: [Handel-Plan, Abschnitt O](Documentation/HANDEL_PLAN.md).
   - Die Details ergänzen **Ø Region/Tag**.
   - Der Tooltip der Spalte „Region“ nennt alle fünf Zeiträume mit Stück und
     Ø/Tag sowie den letzten enthaltenen UTC-Tag.

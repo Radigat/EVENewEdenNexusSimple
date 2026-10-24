@@ -612,3 +612,21 @@ Regeln:
   L), N von N Tagen erfasst. Die Spalte heißt dann „Zielhub N T (Region)“.
 - Die App prüft nicht, ob die Region wirklich nur einen Markt hat; das ist eine
   Aussage des Eigentümers.
+
+## O. Nachtrag 24.10.2026: Gewinnpotenzial je Zeitraum
+
+Eigentümerauftrag: je eine Spalte, die den Gewinn je Stück mit der Stückzahl
+des gewählten Zeitraums multipliziert, einmal für den Zielhub, einmal für die
+Region.
+
+Formeln (`TradeDisplayRow.hubProfitPotential`, `regionProfitPotential`):
+- Gewinnpot. Zielhub(N) = Gewinn je Stück (Abschnitt C) × Zielhub(N)
+  (Abschnitt M, bzw. Regionshistorie bei „Einziger Markt der Region“,
+  Abschnitt N).
+- Gewinnpot. Region(N) = Gewinn je Stück × Gehandelt(N) (Abschnitt L).
+- Ohne Gewinn oder Volumen unbekannt, nie 0; ein negativer Gewinn bleibt
+  negativ. Beide sind Obergrenzen, weil sich andere Händler das Volumen
+  teilen. Ein unvollständiger Zielhub-Zeitraum wird in Warnfarbe gezeigt.
+
+Beschriftung: „Gewinnpot. Zielhub N T“ (bzw. „… (Region)“) und
+„Gewinnpot. Region N T“, sortierbar, nach „Gewinn/Tag (Region)“, in ganzen ISK.

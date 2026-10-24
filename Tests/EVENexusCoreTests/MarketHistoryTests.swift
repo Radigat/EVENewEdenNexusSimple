@@ -116,6 +116,73 @@ struct MarketHistoryTests {
   }
 
   @Test
+  func profitPotentialsMultiplyProfitWithWindowVolume() {
+    let history = Self.history([Self.row("2026-10-23", 70), Self.row("2026-10-20", 30)])
+    let hub = [MarketHistoryWindow.sevenDays: HubTradedVolume(units: 12, recordedDays: 5, windowDays: 7)]
+    func display(
+      profit: Double?,
+      history: MarketTypeVolumeHistory?,
+      hub: [MarketHistoryWindow: HubTradedVolume]
+    ) -> TradeDisplayRow {
+      TradeDisplayRow(
+        row: TradeCalculatorTestRow.make(id: 34, profit: profit),
+        currentDailyDemand: nil,
+        averageDailyDemand: nil,
+        volumeHistory: history,
+        hubTradedVolumes: hub
+      )
+    }
+    let known = display(profit: 5, history: history, hub: hub)
+    #expect(known.regionProfitPotential(.sevenDays) == 500)
+    #expect(known.hubProfitPotential(.sevenDays) == 60)
+    #expect(known.hubProfitPotential(.thirtyDays) == nil)
+    #expect(display(profit: -2, history: history, hub: hub).regionProfitPotential(.sevenDays) == -200)
+    #expect(display(profit: -2, history: history, hub: hub).hubProfitPotential(.sevenDays) == -24)
+    #expect(display(profit: nil, history: history, hub: hub).regionProfitPotential(.sevenDays) == nil)
+    #expect(display(profit: nil, history: history, hub: hub).hubProfitPotential(.sevenDays) == nil)
+    #expect(display(profit: 5, history: nil, hub: [:]).regionProfitPotential(.sevenDays) == nil)
+    #expect(display(profit: 5, history: nil, hub: [:]).hubProfitPotential(.sevenDays) == nil)
+
+    let rows = [
+      display(profit: 5, history: nil, hub: [:]),
+      TradeDisplayRow(
+        row: TradeCalculatorTestRow.make(id: 35, profit: 1),
+        currentDailyDemand: nil,
+        averageDailyDemand: nil,
+        volumeHistory: history,
+        hubTradedVolumes: [.sevenDays: HubTradedVolume(units: 100, recordedDays: 7, windowDays: 7)]
+      ),
+      TradeDisplayRow(
+        row: TradeCalculatorTestRow.make(id: 36, profit: 10),
+        currentDailyDemand: nil,
+        averageDailyDemand: nil,
+        volumeHistory: history,
+        hubTradedVolumes: [.sevenDays: HubTradedVolume(units: 1, recordedDays: 7, windowDays: 7)]
+      ),
+    ]
+    #expect(
+      TradeRowSorter.sorted(rows, by: .hubProfitPotential, ascending: false, volumeWindow: .sevenDays)
+        .map(\.id) == [34, 35, 36]
+    )
+    #expect(
+      TradeRowSorter.sorted(
+        rows,
+        by: .regionProfitPotential,
+        ascending: false,
+        volumeWindow: .sevenDays
+      ).map(\.id) == [34, 36, 35]
+    )
+    #expect(
+      TradeRowSorter.sorted(
+        rows,
+        by: .regionProfitPotential,
+        ascending: true,
+        volumeWindow: .sevenDays
+      ).map(\.id) == [35, 36, 34]
+    )
+  }
+
+  @Test
   func snapshotMergeReplacesPerTypeAndClearsRecoveredFailures() {
     let loaded = Self.history([Self.row("2026-10-23", 1)])
     var snapshot = MarketVolumeHistorySnapshot(

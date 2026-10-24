@@ -2842,6 +2842,12 @@
 "Days of the regional ESI market history shown in the traded-volume columns" = "Tage der regionalen ESI-Markthistorie für die Spalten zum Handelsvolumen";
 "Region %lld d" = "Region %lld T";
 "Profit/day (region)" = "Gewinn/Tag (Region)";
+"Profit potential target hub %lld d" = "Gewinnpot. Zielhub %lld T";
+"Profit potential target hub %lld d (region)" = "Gewinnpot. Zielhub %lld T (Region)";
+"Profit potential region %lld d" = "Gewinnpot. Region %lld T";
+"Profit per unit × units traded at the target hub in the selected window, taken from the regional ESI market history because the target hub is the only market of its region. An upper bound: other traders share this volume." = "Gewinn je Stück × am Zielhub im gewählten Zeitraum gehandelte Stück, aus der regionalen ESI-Markthistorie, weil der Zielhub der einzige Markt seiner Region ist. Eine Obergrenze: andere Händler teilen sich dieses Volumen.";
+"Profit per unit × units traded at the target hub in the selected window, estimated from its Hub scans. Days without a scan are not counted; other traders share this volume." = "Gewinn je Stück × am Zielhub im gewählten Zeitraum gehandelte Stück, geschätzt aus seinen Hub-Scans. Tage ohne Scan sind nicht mitgezählt; andere Händler teilen sich dieses Volumen.";
+"Profit per unit × units traded in the target region in the selected window. An upper bound: other traders share this volume." = "Gewinn je Stück × in der Zielregion im gewählten Zeitraum gehandelte Stück. Eine Obergrenze: andere Händler teilen sich dieses Volumen.";
 "Ø region/day" = "Ø Region/Tag";
 "Profit per unit × average traded units per day in the target region. An upper bound: other traders share this volume." = "Gewinn je Stück × durchschnittlich gehandelte Stück pro Tag in der Zielregion. Eine Obergrenze: Andere Händler teilen sich dieses Volumen.";
 "Loading market history: %lld of %lld items" = "Markthistorie wird geladen: %1$lld von %2$lld Items";

@@ -1,5 +1,27 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 24. Oktober 2026 – Gewinnpotenzial je Zeitraum (Zielhub und Region)
+
+Ziel: Eigentümerauftrag. Zwei Spalten im Handel, die den Gewinn je Stück mit
+der Stückzahl von „Zielhub N T“ bzw. „Region N T“ multiplizieren. Regeln:
+[Handel-Plan, Abschnitt O](Documentation/HANDEL_PLAN.md).
+
+Umfang:
+- `TradeDisplayRow.hubProfitPotential`/`regionProfitPotential`,
+  `TradeSortColumn.hubProfitPotential`/`regionProfitPotential` mit Sortierung.
+- Handel: Spalten „Gewinnpot. Zielhub N T“ (bei einzigem Markt „(Region)“) und
+  „Gewinnpot. Region N T“ nach „Gewinn/Tag (Region)“, ganze ISK, Tooltips,
+  Warnfarbe bei unvollständigem Zielhub-Zeitraum. Texte en/de.
+
+Prüfung (automatisch):
+- `swift test`: 594 Tests in 41 Suites bestanden, neu
+  `profitPotentialsMultiplyProfitWithWindowVolume`.
+- `xcodebuild … test`: `** TEST SUCCEEDED **`; `EVEStaticDataKit`: 12 Tests.
+
+Offen:
+- Nicht in der laufenden App geprüft (Spaltenbreite bei Milliardenwerten);
+  Eigentümerabnahme.
+
 ## 24. Oktober 2026 – Einstellung „Einziger Markt der Region“
 
 Ziel: Eigentümerauftrag. In Tenerifis gibt es nur den Markt in UALX-3, die

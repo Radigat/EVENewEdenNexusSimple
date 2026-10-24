@@ -1143,6 +1143,27 @@ struct TradeView: View {
         tint: DesignTokens.accent,
         sort: sort
       )
+      numberHeader(
+        LocalizedStringKey(
+          AppLocalization.format(
+            hubVolumeUsesRegion
+              ? "Profit potential target hub %lld d (region)"
+              : "Profit potential target hub %lld d",
+            Int64(volumeWindow.days)
+          )
+        ),
+        column: .hubProfitPotential,
+        tint: DesignTokens.accent,
+        sort: sort
+      )
+      numberHeader(
+        LocalizedStringKey(
+          AppLocalization.format("Profit potential region %lld d", Int64(volumeWindow.days))
+        ),
+        column: .regionProfitPotential,
+        tint: DesignTokens.accent,
+        sort: sort
+      )
       if showsDetails {
         ForEach(visibleDetailColumns(showsReturnOnInvestment: showsReturnOnInvestment), id: \.0) {
           column, title in
@@ -1230,6 +1251,8 @@ struct TradeView: View {
       hubTradedVolumeCell(display)
       tradedVolumeCell(display)
       detailCell(display, column: .dailyProfitPotential)
+      hubProfitPotentialCell(display)
+      regionProfitPotentialCell(display)
       if showsDetails {
         ForEach(visibleDetailColumns(showsReturnOnInvestment: showsReturnOnInvestment), id: \.0) {
           column, _ in
@@ -1271,6 +1294,35 @@ struct TradeView: View {
         )
     default: numberCell("—")
     }
+  }
+
+  /// Profit per unit × units traded at the target hub in the selected window.
+  /// Shown in the caution colour while the hub window has days without a scan.
+  private func hubProfitPotentialCell(_ display: TradeDisplayRow) -> some View {
+    let value = display.hubProfitPotential(volumeWindow)
+    let incomplete = display.hubTradedVolume(volumeWindow).map { !$0.isComplete } ?? false
+    return numberCell(
+      formatWholeNumber(value),
+      tint: incomplete && value != nil ? DesignTokens.caution : signTint(value)
+    )
+    .help(
+      AppLocalization.text(
+        hubVolumeUsesRegion
+          ? "Profit per unit × units traded at the target hub in the selected window, taken from the regional ESI market history because the target hub is the only market of its region. An upper bound: other traders share this volume."
+          : "Profit per unit × units traded at the target hub in the selected window, estimated from its Hub scans. Days without a scan are not counted; other traders share this volume."
+      )
+    )
+  }
+
+  /// Profit per unit × units traded in the target region in the selected window.
+  private func regionProfitPotentialCell(_ display: TradeDisplayRow) -> some View {
+    let value = display.regionProfitPotential(volumeWindow)
+    return numberCell(formatWholeNumber(value), tint: signTint(value))
+      .help(
+        AppLocalization.text(
+          "Profit per unit × units traded in the target region in the selected window. An upper bound: other traders share this volume."
+        )
+      )
   }
 
   /// Units traded in the selected window; the help lists every window or
@@ -1472,6 +1524,12 @@ struct TradeView: View {
   private func formatNumber(_ value: Double?) -> String {
     value.map {
       $0.formatted(.number.precision(.fractionLength(0...2)).locale(locale))
+    } ?? "—"
+  }
+
+  private func formatWholeNumber(_ value: Double?) -> String {
+    value.map {
+      $0.formatted(.number.precision(.fractionLength(0)).locale(locale))
     } ?? "—"
   }
 
