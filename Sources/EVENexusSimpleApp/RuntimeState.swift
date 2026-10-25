@@ -1501,7 +1501,8 @@ final class RuntimeState {
     blueprintSourceSnapshotIDs: [UUID] = [],
     authorizations: [AuthorizationSnapshot] = [],
     capabilities: [CharacterCapabilitySnapshot] = [],
-    clientID: String = ""
+    clientID: String = "",
+    jobSplitting: IndustryJobSplitting = .init()
   ) async {
     plannerCalculationGeneration &+= 1
     let calculationGeneration = plannerCalculationGeneration
@@ -1839,7 +1840,8 @@ final class RuntimeState {
           jumpFreighterRoute: loadedJumpFreighterRoute.route,
           jumpFreighterRouteWarnings: loadedJumpFreighterRoute.warnings,
           capitalJumpRoutes: loadedJumpFreighterRoute.capitalRoutes,
-          capitalJumpRouteWarnings: loadedJumpFreighterRoute.capitalWarnings
+          capitalJumpRouteWarnings: loadedJumpFreighterRoute.capitalWarnings,
+          jobSplitting: jobSplitting
         )
         let calculatedPlan = try await planner.plan(
           preparation: preparation,

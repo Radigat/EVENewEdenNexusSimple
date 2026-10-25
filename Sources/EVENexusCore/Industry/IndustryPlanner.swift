@@ -76,6 +76,8 @@ public struct IndustryPlanningContext: Sendable {
   public let jumpFreighterRouteWarnings: [DomainWarning]
   public let capitalJumpRoutes: [Int64: Sourced<CapitalJumpRouteSnapshot>]
   public let capitalJumpRouteWarnings: [DomainWarning]
+  /// Per-plan choice whether final products and intermediates are split.
+  public let jobSplitting: IndustryJobSplitting
 
   public init(
     manufacturingProfile: ManufacturingProfile,
@@ -115,7 +117,8 @@ public struct IndustryPlanningContext: Sendable {
     jumpFreighterRoute: Sourced<JumpRouteSnapshot>? = nil,
     jumpFreighterRouteWarnings: [DomainWarning] = [],
     capitalJumpRoutes: [Int64: Sourced<CapitalJumpRouteSnapshot>] = [:],
-    capitalJumpRouteWarnings: [DomainWarning] = []
+    capitalJumpRouteWarnings: [DomainWarning] = [],
+    jobSplitting: IndustryJobSplitting = .init()
   ) {
     self.manufacturingProfile = manufacturingProfile
     self.reactionProfile = reactionProfile
@@ -155,6 +158,7 @@ public struct IndustryPlanningContext: Sendable {
     self.jumpFreighterRouteWarnings = jumpFreighterRouteWarnings
     self.capitalJumpRoutes = capitalJumpRoutes
     self.capitalJumpRouteWarnings = capitalJumpRouteWarnings
+    self.jobSplitting = jobSplitting
   }
 }
 
@@ -585,9 +589,14 @@ public struct IndustryPlanner: Sendable {
       slotGroups.filter { $0.activities.contains(activity) }
         .reduce(0) { $0 + $1.count }
     }
+    func splits(_ job: JobDefinition) -> Bool {
+      job.isTopLevel
+        ? context.jobSplitting.splitsFinalProducts
+        : context.jobSplitting.splitsIntermediates
+    }
     func pieces(of job: JobDefinition) -> [JobDefinition] {
       let runs =
-        job.blueprintSupplyJobID == nil
+        job.blueprintSupplyJobID == nil && splits(job)
         ? scheduling.splitRuns(
           runs: job.runs,
           durationSeconds: Self.jobDurationSeconds(job, context: context),
@@ -632,7 +641,11 @@ public struct IndustryPlanner: Sendable {
         fallbackTE: 0
       )
     }
-    for job in topLevelJobs {
+    // Unsplit final products keep one job per request line.
+    let finalJobs =
+      context.jobSplitting.splitsFinalProducts
+      ? Self.mergedTopLevelJobs(topLevelJobs) : topLevelJobs
+    for job in finalJobs {
       for piece in pieces(of: job) {
         reconciled.append(piece)
         consume(piece)
@@ -798,6 +811,40 @@ public struct IndustryPlanner: Sendable {
         ?? context.productionBasis?.defaultIntermediateTE
         ?? context.manufacturingProfile.defaultIntermediateTE
     return (facilitySelection, selectedStructure, me, te)
+  }
+
+  /// Joins top-level jobs of several request lines for the same product into
+  /// one job before it is split, so the scheduling rules see the whole
+  /// demand instead of splitting every line separately. Only jobs without a
+  /// concrete supplied Blueprint are joined, and only when Blueprint, ME, TE
+  /// and facility match; jobs bound to a supplied BPO/BPC stay as they are.
+  private static func mergedTopLevelJobs(
+    _ jobs: [JobDefinition]
+  ) -> [JobDefinition] {
+    var result: [JobDefinition] = []
+    for job in jobs {
+      if job.blueprintSupplyJobID == nil,
+        let index = result.firstIndex(where: {
+          $0.blueprintSupplyJobID == nil
+            && $0.definition == job.definition
+            && $0.me == job.me
+            && $0.te == job.te
+            && $0.facilitySelection == job.facilitySelection
+            && $0.selectedStructure == job.selectedStructure
+            && $0.blueprintSource == job.blueprintSource
+        })
+      {
+        let existing = result[index]
+        result[index] = existing.withRuns(
+          existing.runs.addingReportingOverflow(job.runs).partialValue,
+          piece: 1,
+          pieceCount: 1
+        )
+      } else {
+        result.append(job)
+      }
+    }
+    return result
   }
 
   /// Joins slices of the same supplied Blueprint job (an original can
@@ -2461,7 +2508,7 @@ public struct IndustryPlanner: Sendable {
         }
         return $0.id.uuidString < $1.id.uuidString
       }
-    return IndustryPlanSnapshot(
+    var snapshot = IndustryPlanSnapshot(
       id: context.planID ?? UUID(),
       createdAt: .now,
       requests: requests,
@@ -2497,6 +2544,8 @@ public struct IndustryPlanner: Sendable {
         ruleVersion: IndustryRuleSet.current.version
       )
     )
+    snapshot.jobSplitting = context.jobSplitting
+    return snapshot
   }
 
   private func saleScenarios(

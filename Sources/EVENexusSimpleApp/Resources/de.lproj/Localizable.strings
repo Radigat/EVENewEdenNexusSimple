@@ -2519,9 +2519,7 @@
 
 /* Industry characters and slot-based job time */
 "Science slots" = "Wissenschafts-Slots";
-"Manual slot counts apply only while no character is enabled for industry below." = "Die manuellen Slot-Zahlen gelten nur, solange unten kein Charakter für die Industrie freigegeben ist.";
 "Industry Characters" = "Industrie-Charaktere";
-"Choose which characters may run industry jobs, which activities they may take and how many slots they may use. Empty limits use the skill maximum. Enabled characters replace the manual slot counts for the estimated job time." = "Lege fest, welche Charaktere Industrieaufträge ausführen dürfen, welche Tätigkeiten sie übernehmen und wie viele Slots sie nutzen dürfen. Leere Grenzen verwenden das Skill-Maximum. Freigegebene Charaktere ersetzen für die Auftragsdauer die manuellen Slot-Zahlen.";
 "Connect a character under Data & Settings to assign industry slots." = "Verbinde unter Daten & Einstellungen einen Charakter, um Industrie-Slots zuzuweisen.";
 "Use for industry" = "Für Industrie verwenden";
 "Skill maximum" = "Skill-Maximum";
@@ -2533,7 +2531,6 @@
 "Source: enabled characters." = "Quelle: freigegebene Charaktere.";
 "Source: manual slot counts (no character enabled)." = "Quelle: manuelle Slot-Zahlen (kein Charakter freigegeben).";
 "Slots of %lld enabled characters: %@" = "Slots von %lld freigegebenen Charakteren: %@";
-"Manual slot counts: %@" = "Manuelle Slot-Zahlen: %@";
 "Estimated elapsed time splits jobs by the configured day window (manufacturing) and reaction batch size, then distributes all pieces across the available manufacturing, reaction and science slots at the same time. A piece starts as soon as its share of produced inputs and its blueprint copy, research or invention jobs are finished; bought and warehouse materials are available immediately. Enabled industry characters provide the slots (skill maximum or configured limit); without enabled characters the manual slot counts apply." = "Die voraussichtliche Dauer teilt Aufträge nach dem eingestellten Tage-Fenster (Fertigung) und der Reaktions-Stapelgröße auf und verteilt alle Teilaufträge gleichzeitig auf die verfügbaren Fertigungs-, Reaktions- und Wissenschafts-Slots. Ein Teilauftrag startet, sobald sein Anteil an selbst hergestellten Vorprodukten sowie seine Kopier-, Forschungs- oder Invention-Aufträge fertig sind; gekaufte und gelagerte Materialien stehen sofort bereit. Die Slots stammen von den freigegebenen Industrie-Charakteren (Skill-Maximum oder eingetragene Grenze); ohne freigegebene Charaktere gelten die manuellen Slot-Zahlen.";
 "Fee: confirmed public-contract fee of %@ for the delivery hub" = "Gebühr: bestätigte öffentliche Vertragsgebühr von %@ für den Liefer-Hub";
 "Public-contract fee %@ if empty" = "Öffentliche Vertragsgebühr %@, wenn leer";
@@ -2889,8 +2886,16 @@
 "Build intermediates yourself is off: every input is bought at the Main Hub." = "„Zwischenprodukte selbst bauen“ ist ausgeschaltet: Alle Eingangsstoffe werden am Main Hub gekauft.";
 "This scan has no self-build estimate yet; update the scan to cost intermediates from their materials." = "Dieser Scan enthält noch keine Eigenbau-Schätzung. Scan aktualisieren, um Zwischenprodukte aus ihren Materialien zu rechnen.";
 "Every input is bought: building it is not cheaper or not possible." = "Alle Eingangsstoffe werden gekauft: Eigenbau ist nicht günstiger oder nicht möglich.";
+"Split jobs for final products" = "Aufträge beim Zielprodukt aufteilen";
+"Split jobs for intermediates" = "Aufträge bei Zwischenprodukten aufteilen";
+"Final products: jobs split" = "Zielprodukt: Aufträge aufgeteilt";
 "Final products: one job per input line" = "Zielprodukt: ein Auftrag je Planzeile";
+"Intermediates: jobs split" = "Zwischenprodukte: Aufträge aufgeteilt";
 "Intermediates: one job per product" = "Zwischenprodukte: ein Auftrag je Produkt";
+"When enabled, jobs follow the splitting rules from the industry settings (minimum and maximum length, free slots). When disabled, that stage is not split: final products keep one job per input line, intermediates one job per product. Each selected BPO or BPC remains its own job." = "Wenn aktiv, folgen die Aufträge den Aufteilungsregeln der Industrieeinstellungen (Mindest- und Höchstdauer, freie Slots). Wenn inaktiv, wird diese Stufe nicht geteilt: Das Zielprodukt behält einen Auftrag je Planzeile, Zwischenprodukte einen Auftrag je Produkt. Jede ausgewählte BPO oder BPC bleibt ein eigener Auftrag.";
+"Slots come from the characters enabled for industry below, limited by their skills. Without an enabled character, one slot per activity is used." = "Die Slots ergeben sich aus den unten für die Industrie freigegebenen Charakteren und ihren Skills. Ohne freigegebenen Charakter wird je Tätigkeit ein Slot verwendet.";
+"Choose which characters may run industry jobs, which activities they may take and how many slots they may use. Empty limits use the skill maximum. Without an enabled character, one slot per activity is used." = "Lege fest, welche Charaktere Industrieaufträge ausführen dürfen, welche Tätigkeiten sie übernehmen und wie viele Slots sie nutzen dürfen. Leere Grenzen verwenden das Skill-Maximum. Ohne freigegebenen Charakter wird je Tätigkeit ein Slot verwendet.";
+"No character enabled for industry; one slot per activity: %@" = "Kein Charakter für die Industrie freigegeben; ein Slot je Tätigkeit: %@";
 "Built" = "Eigenbau";
 "Total cost %@ · Materials %@ · Installation %@" = "Gesamtkosten %@ · Material %@ · Installation %@";
 "Blueprint %@ · Logistics %@" = "Bauplan %@ · Logistik %@";

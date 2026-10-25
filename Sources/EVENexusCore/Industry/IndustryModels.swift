@@ -1734,6 +1734,9 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   /// Slot basis of `makespanSeconds`; `nil` for snapshots saved before the
   /// dependency-aware slot schedule existed.
   public var slotSchedule: IndustrySlotScheduleSummary? = nil
+  /// Per-plan job-splitting switches the jobs were built with; `nil` for
+  /// snapshots saved before the switches existed (both split).
+  public var jobSplitting: IndustryJobSplitting? = nil
   public let immediateSale: SaleScenarioResult
   public let listedSale: SaleScenarioResult
   public let mainContractSale: SaleScenarioResult?

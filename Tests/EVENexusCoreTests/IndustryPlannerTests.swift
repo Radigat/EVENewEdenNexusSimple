@@ -196,9 +196,7 @@ struct IndustryPlannerTests {
         context: IndustryPlanningContext(
           manufacturingProfile: ManufacturingProfile(),
           productionBasis: ProductionBasis(
-            scheduling: ProductionSchedulingConfiguration(
-              manufacturingSlots: slots
-            )
+            scheduling: .withManufacturingSlots(slots)
           ),
           catalog: catalog,
           market: market,
@@ -221,7 +219,7 @@ struct IndustryPlannerTests {
     )
     #expect(parallel.makespanSeconds == ship + component)
     #expect(parallel.makespanSeconds < parallel.totalJobSeconds)
-    #expect(parallel.slotSchedule?.source == .manual)
+    #expect(parallel.slotSchedule?.source == .characters)
     #expect(parallel.slotSchedule?.manufacturingSlots == 5)
     #expect(parallel.estimatedMakespanSeconds == parallel.makespanSeconds)
   }
@@ -263,11 +261,7 @@ struct IndustryPlannerTests {
       source: source
     )
     var basis = ProductionBasis(
-      scheduling: ProductionSchedulingConfiguration(
-        manufacturingSlots: 5,
-        doNotSplitShorterThanDays: 1,
-        maximumJobDays: 3
-      )
+      scheduling: .withManufacturingSlots(5)
     )
     basis.defaultIntermediateME = 10
     basis.defaultIntermediateTE = 0
@@ -311,6 +305,132 @@ struct IndustryPlannerTests {
     let pieceSeconds = try #require(partJobs.first?.durationSeconds)
     #expect(plan.makespanSeconds == pieceSeconds + moduleSeconds)
     #expect(plan.slotSchedule?.entries?.count == 6)
+
+    // Intermediates not split: one 10-run job for the part.
+    let unsplit = try await IndustryPlanner().plan(
+      input: "Module 1 0 0",
+      context: IndustryPlanningContext(
+        manufacturingProfile: ManufacturingProfile(),
+        productionBasis: basis,
+        catalog: FixtureCatalog(
+          names: [1: "Module", 2: "Part", 3: "Mineral"],
+          definitions: [1: module, 2: part]
+        ),
+        market: market,
+        adjustedPrices: [:],
+        systemIndices: [],
+        sdeBuild: 1,
+        jobSplitting: IndustryJobSplitting(splitsIntermediates: false)
+      )
+    )
+    #expect(unsplit.jobs.filter { $0.typeID == 2 }.compactMap(\.runs) == [10])
+  }
+
+  @Test
+  func unsplitFinalProductsKeepOneJobPerInputLine() async throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let ship = BlueprintDefinition(
+      blueprintTypeID: 300,
+      productTypeID: 1,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 72_000,
+        materials: [BlueprintMaterial(typeID: 3, quantity: 7)],
+        products: [BlueprintProduct(typeID: 1, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let market = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: EVEConstants.theForgeRegionID,
+      locationID: EVEConstants.jitaIV4StationID,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [3: [makeOrder(typeID: 3, side: .sell, price: 5)]],
+      source: source
+    )
+    let scheduling = ProductionSchedulingConfiguration
+      .withManufacturingSlots(4)
+    let plan = try await IndustryPlanner().plan(
+      input: "Ship 12 0 0\nShip 6 0 0\nShip 6 0 0",
+      context: IndustryPlanningContext(
+        manufacturingProfile: ManufacturingProfile(),
+        productionBasis: ProductionBasis(scheduling: scheduling),
+        catalog: FixtureCatalog(
+          names: [1: "Ship", 3: "Mineral"],
+          definitions: [1: ship]
+        ),
+        market: market,
+        adjustedPrices: [:],
+        systemIndices: [],
+        sdeBuild: 1,
+        jobSplitting: IndustryJobSplitting(splitsFinalProducts: false)
+      )
+    )
+    let shipJobs = plan.jobs.filter { $0.typeID == 1 }
+    // Not split: one job per request line, exactly as entered.
+    #expect(shipJobs.compactMap(\.runs).sorted() == [6, 6, 12])
+    #expect(shipJobs.allSatisfy { $0.pieceCount == 1 })
+    #expect(plan.jobSplitting?.splitsFinalProducts == false)
+    #expect(plan.jobSplitting?.splitsIntermediates == true)
+  }
+
+  @Test
+  func requestLinesOfTheSameProductAreSplitAsOneJob() async throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let ship = BlueprintDefinition(
+      blueprintTypeID: 300,
+      productTypeID: 1,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 72_000,
+        materials: [BlueprintMaterial(typeID: 3, quantity: 7)],
+        products: [BlueprintProduct(typeID: 1, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let market = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: EVEConstants.theForgeRegionID,
+      locationID: EVEConstants.jitaIV4StationID,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [3: [makeOrder(typeID: 3, side: .sell, price: 5)]],
+      source: source
+    )
+    let scheduling = ProductionSchedulingConfiguration
+      .withManufacturingSlots(4)
+    let plan = try await IndustryPlanner().plan(
+      input: "Ship 12 0 0\nShip 6 0 0\nShip 6 0 0",
+      context: IndustryPlanningContext(
+        manufacturingProfile: ManufacturingProfile(),
+        productionBasis: ProductionBasis(scheduling: scheduling),
+        catalog: FixtureCatalog(
+          names: [1: "Ship", 3: "Mineral"],
+          definitions: [1: ship]
+        ),
+        market: market,
+        adjustedPrices: [:],
+        systemIndices: [],
+        sdeBuild: 1
+      )
+    )
+    let shipJobs = plan.jobs.filter { $0.typeID == 1 }
+    // One aggregated demand of 24 runs, split once: every piece belongs to
+    // the same series and no piece number appears twice.
+    #expect(shipJobs.reduce(0) { $0 + ($1.runs ?? 0) } == 24)
+    let pieceCount = try #require(shipJobs.first?.pieceCount)
+    #expect(shipJobs.count == pieceCount)
+    #expect(shipJobs.allSatisfy { $0.pieceCount == pieceCount })
+    #expect(Set(shipJobs.compactMap(\.piece)).count == shipJobs.count)
+    // Each piece stays inside the 1–3 day window.
+    for job in shipJobs {
+      let seconds = try #require(job.durationSeconds)
+      #expect(seconds >= 86_400)
+      #expect(seconds <= 3 * 86_400)
+    }
   }
 
   @Test
@@ -4344,5 +4464,28 @@ private struct FixtureCatalog: IndustryCatalogQuerying {
     compressedOre.filter { option in
       option.outputs.contains { materialTypeIDs.contains($0.typeID) }
     }
+  }
+}
+
+extension ProductionSchedulingConfiguration {
+  /// Day window 1–3 days and one enabled character whose manufacturing slot
+  /// limit supplies `slots` (skills unavailable, so the limit is used).
+  fileprivate static func withManufacturingSlots(
+    _ slots: Int
+  ) -> ProductionSchedulingConfiguration {
+    var scheduling = ProductionSchedulingConfiguration(
+      doNotSplitShorterThanDays: 1,
+      maximumJobDays: 3
+    )
+    scheduling.setAssignment(
+      CharacterIndustryAssignment(
+        characterID: 1,
+        characterName: "Builder",
+        isEnabled: true,
+        allowedActivities: [.manufacturing],
+        manufacturingSlotLimit: slots
+      )
+    )
+    return scheduling
   }
 }

@@ -1332,9 +1332,27 @@ Aufteilung (Industrieeinstellungen → **Job Mode, Slots & Account**):
   shorter than“ (Standard 1 Tag) bleibt ganz. Ein längerer Auftrag wird so
   geteilt, dass kein Teil „No jobs longer than“ (Standard 3 Tage) überschreitet,
   und darüber hinaus auf freie passende Slots verteilt, solange jeder Teil
-  mindestens die Mindestdauer behält. Ein einzelner Run, der länger als die
+  mindestens die Mindestdauer behält. Beide Grenzen werden in ganzen Runs
+  geprüft: Kein Teil wird durch Rundung kürzer als die Mindestdauer oder
+  (über einen Run hinaus) länger als die Höchstdauer (6 Runs à 20 Std. →
+  3 × 2 statt 2, 2, 1, 1). Ein einzelner Run, der länger als die
   Höchstdauer ist, bleibt ein längerer Auftrag. Widersprechen sich Minimum und
   Maximum, gilt das Maximum.
+- **Aufteilung je Plan abschaltbar.** In der **Bauauftragsliste** des Planners
+  steuern zwei Schalter getrennt, ob die Aufträge des Zielprodukts und der
+  Zwischenprodukte nach diesen Regeln geteilt werden (Standard: beide an). Ist
+  ein Schalter aus, wird diese Stufe gar nicht geteilt: Das Zielprodukt behält
+  einen Auftrag je Planzeile (12 + 6 + 6 Runs → 12, 6, 6), Zwischenprodukte
+  einen Auftrag je Produkt; Höchstdauer, Slot-Verteilung und Reaktionsstapel
+  gelten dann für diese Stufe nicht. Von einer BPO/BPC gedeckte Runs bleiben
+  eigene Aufträge (eine 12er-Zeile mit BPCs über 4 und 2 Runs → 4, 2 und 6).
+  Jede Änderung berechnet den Plan sofort neu. Die Wahl wird im Planer-Entwurf
+  und im gespeicherten Plan abgelegt; die historische Ansicht zeigt sie
+  schreibgeschützt. Pläne ohne gespeicherte Wahl gelten als „beide an“.
+- Bei aktiver Aufteilung werden mehrere Planzeilen desselben Endprodukts vor dem Teilen zu einem
+  Auftrag zusammengefasst, sofern Bauplan, ME, TE und Anlage übereinstimmen
+  (12 + 6 + 6 Runs → ein Auftrag mit 24 Runs, einmal geteilt). Aufträge an
+  einer konkreten BPO/BPC bleiben getrennt.
 - **Reaktionen** laufen in Stapeln von mindestens „Reaktions-Runs je Auftrag“
   (Standard 100 Runs, etwa 5–6 Tage). Ein Rest verlängert die Stapel
   gleichmäßig, statt einen kurzen Stapel zu erzeugen (250 Runs → 2 × 125,
@@ -1389,8 +1407,10 @@ Reactions, ohne den Skill Reactions jedoch 0. Wirksam ist das Minimum aus
 Skill-Maximum und Grenze; eine leere Grenze bedeutet Skill-Maximum. Sind die
 Skills eines Charakters nicht verfügbar, zählt nur eine ausdrücklich
 eingetragene Grenze (mit Warnung), sonst trägt er keine Slots bei. Solange kein
-Charakter freigegeben ist, gelten die manuellen Slot-Zahlen für Fertigung,
-Reaktionen und Wissenschaft unter **Job Mode, Slots & Account**. Darf kein
+Charakter freigegeben ist, rechnet der Planner mit genau einem Slot je
+Tätigkeitsbereich (Fertigung, Reaktionen, Wissenschaft) und nennt das unter der
+Dauer. Manuelle Slot-Zahlen gibt es nicht mehr; früher gespeicherte Werte
+bleiben im Datenformat erhalten, werden aber nicht verwendet. Darf kein
 freigegebener Charakter eine benötigte Tätigkeit ausführen, bleibt die
 Auftragsdauer ausdrücklich **Nicht verfügbar**. Pläne, die vor dieser Rechnung
 gespeichert wurden, zeigen ihre damals berechnete Dauer unverändert und keinen

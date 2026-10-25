@@ -1694,11 +1694,39 @@ public struct MarketTaxConfiguration: Codable, Equatable, Sendable {
   }
 }
 
+/// Per-plan Planner choice whether jobs of the final products and of the
+/// intermediates are split by the scheduling rules. Switched off, a stage is
+/// not split at all: final products keep one job per request line (and per
+/// supplied BPO/BPC slice), intermediates one job per product and Blueprint
+/// slice. Both default to `true`; a missing value (older plans) means both.
+public struct IndustryJobSplitting: Codable, Equatable, Sendable {
+  public var splitsFinalProducts: Bool
+  public var splitsIntermediates: Bool
+
+  public init(splitsFinalProducts: Bool = true, splitsIntermediates: Bool = true) {
+    self.splitsFinalProducts = splitsFinalProducts
+    self.splitsIntermediates = splitsIntermediates
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case splitsFinalProducts, splitsIntermediates
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    splitsFinalProducts =
+      try container.decodeIfPresent(Bool.self, forKey: .splitsFinalProducts) ?? true
+    splitsIntermediates =
+      try container.decodeIfPresent(Bool.self, forKey: .splitsIntermediates) ?? true
+  }
+}
+
 public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
+  /// Former manual slot counts. Kept in the stored format for compatibility
+  /// but no longer used: without an enabled character every pool uses
+  /// `fallbackSlotsPerPool`.
   public var reactionSlots: Int
   public var manufacturingSlots: Int
-  /// Manual science slot count shared by copying, research and invention.
-  /// Used only while no character is enabled for industry work.
   public var scienceSlots: Int
   public var doNotSplitShorterThanDays: Double
   public var maximumJobDays: Double
@@ -1707,7 +1735,7 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
   public var reactionRunsPerJob: Int
   public var alwaysUseDefaultMode: Bool
   /// Per-character industry permissions. As soon as one assignment is
-  /// enabled, the enabled characters' slots replace the manual slot counts.
+  /// enabled, the enabled characters' slots replace the one-slot fallback.
   public var characterAssignments: [CharacterIndustryAssignment]
 
   public init(
@@ -1766,6 +1794,9 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
       ) ?? []
   }
 
+  /// Slots per pool while no character is enabled for industry.
+  public static let fallbackSlotsPerPool = 1
+
   /// Maximum number of schedule pieces of one job; keeps the estimate cheap.
   public static let maximumPiecesPerJob = 500
 
@@ -1778,8 +1809,10 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
   ///   a job up to "don't split shorter than" stays whole; otherwise it is
   ///   split so no piece is longer than "no jobs longer than" and, to fill
   ///   free compatible slots, into more pieces as long as each piece keeps at
-  ///   least the minimum length. A single run longer than the maximum stays a
-  ///   longer job.
+  ///   least the minimum length. Both limits are checked against whole runs,
+  ///   so rounding never creates a piece shorter than the minimum or (beyond a
+  ///   single run) longer than the maximum. A single run longer than the
+  ///   maximum stays a longer job.
   /// - Science jobs are never split.
   ///
   /// Runs are distributed evenly; earlier pieces take the extra runs.
@@ -1805,13 +1838,33 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
         maximumJobDays.isFinite && maximumJobDays > 0
         ? maximumJobDays * day : .infinity
       guard duration > minimum else { return [runs] }
-      let forcedByMaximum =
-        maximum.isFinite ? Int(min(1e9, ceil(duration / maximum))) : 1
+      // Pieces hold whole runs, so both limits are applied in runs: the
+      // shortest piece must still reach the minimum and the longest must
+      // stay within the maximum (a single run may still be longer).
+      let runDuration = duration / Double(runs)
+      let tolerance = 1e-9
+      let forcedByMaximum: Int
+      if maximum.isFinite {
+        let maximumRunsPerPiece = max(
+          1,
+          Int(min(1e9, floor(maximum / runDuration + tolerance)))
+        )
+        forcedByMaximum =
+          (runs + maximumRunsPerPiece - 1) / maximumRunsPerPiece
+      } else {
+        forcedByMaximum = 1
+      }
       let slotLimit = max(1, compatibleSlots)
-      let fillingSlots =
-        minimum > 0
-        ? min(slotLimit, Int(min(1e9, floor(duration / minimum))))
-        : slotLimit
+      let fillingSlots: Int
+      if minimum > 0 {
+        let minimumRunsPerPiece = max(
+          1,
+          Int(min(1e9, ceil(minimum / runDuration - tolerance)))
+        )
+        fillingSlots = min(slotLimit, runs / minimumRunsPerPiece)
+      } else {
+        fillingSlots = slotLimit
+      }
       pieces = max(1, forcedByMaximum, fillingSlots)
     }
     let count = min(pieces, runs, Self.maximumPiecesPerJob)
@@ -1837,7 +1890,9 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
 
   /// Resolves the slot pools used for the elapsed-time estimate. Enabled
   /// characters contribute `min(skill maximum, configured limit)` per pool;
-  /// without any enabled character the manual slot counts apply.
+  /// without any enabled character every pool falls back to exactly one
+  /// slot. The stored manual slot counts are no longer used (owner decision
+  /// 25.10.2026); they stay in the format only for compatibility.
   public func resolvedSlotGroups(
     capabilities: [CharacterCapabilitySnapshot]
   ) -> IndustrySlotResolution {
@@ -1849,19 +1904,19 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
           IndustrySlotGroup(
             characterID: nil,
             pool: .manufacturing,
-            count: max(1, manufacturingSlots),
+            count: Self.fallbackSlotsPerPool,
             activities: [.manufacturing]
           ),
           IndustrySlotGroup(
             characterID: nil,
             pool: .reaction,
-            count: max(1, reactionSlots),
+            count: Self.fallbackSlotsPerPool,
             activities: [.reaction]
           ),
           IndustrySlotGroup(
             characterID: nil,
             pool: .science,
-            count: max(1, scienceSlots),
+            count: Self.fallbackSlotsPerPool,
             activities: [.copying, .research, .invention]
           ),
         ],

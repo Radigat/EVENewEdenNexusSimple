@@ -1,5 +1,66 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 25. Oktober 2026 – Planner: Aufteilung je Stufe abschaltbar, Slots nur aus Charakteren
+
+Ziel: Eigentümerauftrag. Im Planner einzeln steuern, ob die Aufträge von
+Zielprodukt und Zwischenprodukten aufgeteilt werden; manuelle Slot-Zahlen
+entfallen, weil die Slots aus den Industrie-Charakteren und ihren Skills kommen.
+
+Entscheidungen des Eigentümers:
+- zunächst „Schalter aus = nur die Höchstdauer entfällt“; nach der ersten
+  Prüfung in der App (18 Runs wurden weiter auf 19 Slots zu 9 × 2 verteilt)
+  geändert in „Schalter aus = gar nicht teilen, Planzeilen behalten“,
+- BPC-gedeckte Runs bleiben eigene Aufträge,
+- Standard beide an, je Plan gespeichert,
+- manuelle Slot-Felder entfernen, ohne freigegebenen Charakter 1 Slot je Bereich.
+
+Umfang (implementiert):
+- `IndustryJobSplitting` (Core) im `IndustryPlanningContext` und als
+  optionales Feld im `IndustryPlanSnapshot`. Ausgeschaltet überspringt
+  `reconcileJobPieces` für diese Stufe `splitRuns` und beim Zielprodukt das
+  Zusammenfassen der Planzeilen.
+- Planner: zwei Schalter in der Bauauftragsliste, Entwurf unter
+  `planner.job-splitting.draft.v1`, sofortige Neuberechnung; historische Pläne
+  zeigen die Wahl schreibgeschützt. Die Zwischenstufe mit dem Schlüssel
+  `planner.job-length-limits.draft.v1` war nur lokal im Einsatz; dort
+  gespeicherte Wahl wird nicht übernommen (Standard wieder an).
+- `resolvedSlotGroups` nutzt ohne freigegebenen Charakter
+  `fallbackSlotsPerPool = 1`; die drei Slot-Felder und `SlotCountField` sind
+  aus den Industrieeinstellungen entfernt. Gespeicherte Felder bleiben im
+  Codable-Format.
+
+Prüfung (automatisch): Tests für ungeteiltes Zielprodukt (12, 6, 6) samt
+Snapshot, ungeteilte Zwischenprodukte und 1-Slot-Fallback; Planner-Tests mit
+mehreren Slots nutzen einen freigegebenen Charakter. `swift test` (607 + 70
+Tests) und natives `xcodebuild … test` (Debug) grün. In der laufenden App noch
+nicht erneut geprüft.
+
+## 25. Oktober 2026 – Bauauftragsliste: keine zersplitterten Endproduktaufträge
+
+Ziel: Eigentümermeldung. Ein Plan mit Confessor 12 + 6 + 6 Runs erzeugte
+viele kleine Aufträge; dieselbe Stücknummer („Auftrag 1 von 4“) erschien
+mehrfach.
+
+Ursache:
+- `reconcileJobPieces` teilte jeden Endprodukt-Auftrag je Planzeile getrennt;
+  jede Zeile füllte für sich alle Slots.
+- `splitRuns` rechnete Mindest- und Höchstdauer nur über die Gesamtdauer. Bei
+  ganzen Runs entstanden Teile unter der Mindestdauer (6 × 20 Std. →
+  2, 2, 1, 1) oder über der Höchstdauer.
+
+Umfang (implementiert):
+- Endprodukt-Aufträge ohne konkrete BPO/BPC werden bei gleichem Bauplan, ME, TE
+  und gleicher Anlage vor dem Teilen zusammengefasst.
+- `splitRuns` begrenzt die Stückzahl über Mindest- und Höchst-Runs je Teil.
+
+Prüfung (automatisch): neuer Planner-Test für drei Zeilen desselben Produkts,
+erweiterter Aufteilungstest; `swift test` (606 Tests) und natives
+`xcodebuild … test` (Debug) grün. Nicht in der laufenden App geprüft.
+
+Ebenfalls gemeldet: Der Kaufen/Lager-Umschalter beeinflusse andere Items. Der
+Eigentümer hat das am 25.10.2026 als Fehlbeobachtung zurückgezogen; keine
+Änderung.
+
 ## 24. Oktober 2026 – Hub-Chancen: Zwischenprodukte als Eigenbau
 
 Ziel: Eigentümerauftrag. Die Chancenzeile soll Bauteile wie Komponenten nicht

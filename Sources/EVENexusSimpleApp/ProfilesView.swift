@@ -211,20 +211,8 @@ struct ProfilesView: View {
               Text(LocalizedStringKey(state.rawValue.capitalized)).tag(state)
             }
           }
-          SlotCountField(
-            title: "Manufacturing slots",
-            value: basisBinding(\.scheduling.manufacturingSlots)
-          )
-          SlotCountField(
-            title: "Reaction slots",
-            value: basisBinding(\.scheduling.reactionSlots)
-          )
-          SlotCountField(
-            title: "Science slots",
-            value: basisBinding(\.scheduling.scienceSlots)
-          )
           Text(
-            "Manual slot counts apply only while no character is enabled for industry below."
+            "Slots come from the characters enabled for industry below, limited by their skills. Without an enabled character, one slot per activity is used."
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
@@ -293,7 +281,7 @@ struct ProfilesView: View {
     return Panel(title: "Industry Characters") {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
         Text(
-          "Choose which characters may run industry jobs, which activities they may take and how many slots they may use. Empty limits use the skill maximum. Enabled characters replace the manual slot counts for the estimated job time."
+          "Choose which characters may run industry jobs, which activities they may take and how many slots they may use. Empty limits use the skill maximum. Without an enabled character, one slot per activity is used."
         )
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
@@ -4600,34 +4588,6 @@ extension IndustrySlotPool {
     case .manufacturing: "Manufacturing slots".localizedUI
     case .reaction: "Reaction slots".localizedUI
     case .science: "Science slots".localizedUI
-    }
-  }
-}
-
-private struct SlotCountField: View {
-  let title: LocalizedStringKey
-  @Binding var value: Int
-
-  private var positiveValue: Binding<Int> {
-    Binding(
-      get: { max(1, value) },
-      set: { value = max(1, $0) }
-    )
-  }
-
-  var body: some View {
-    LabeledContent(title) {
-      HStack(spacing: DesignTokens.spacingSM) {
-        TextField(title, value: positiveValue, format: .number)
-          .multilineTextAlignment(.trailing)
-          .frame(width: DesignTokens.compactNumberWidth)
-          .accessibilityLabel(Text(title))
-        Stepper(value: positiveValue, step: 1) {
-          EmptyView()
-        }
-        .labelsHidden()
-        .accessibilityLabel(Text(title))
-      }
     }
   }
 }

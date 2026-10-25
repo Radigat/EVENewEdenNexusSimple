@@ -2259,8 +2259,16 @@
 "Build intermediates yourself is off: every input is bought at the Main Hub." = "Build intermediates yourself is off: every input is bought at the Main Hub.";
 "This scan has no self-build estimate yet; update the scan to cost intermediates from their materials." = "This scan has no self-build estimate yet; update the scan to cost intermediates from their materials.";
 "Every input is bought: building it is not cheaper or not possible." = "Every input is bought: building it is not cheaper or not possible.";
+"Split jobs for final products" = "Split jobs for final products";
+"Split jobs for intermediates" = "Split jobs for intermediates";
+"Final products: jobs split" = "Final products: jobs split";
 "Final products: one job per input line" = "Final products: one job per input line";
+"Intermediates: jobs split" = "Intermediates: jobs split";
 "Intermediates: one job per product" = "Intermediates: one job per product";
+"When enabled, jobs follow the splitting rules from the industry settings (minimum and maximum length, free slots). When disabled, that stage is not split: final products keep one job per input line, intermediates one job per product. Each selected BPO or BPC remains its own job." = "When enabled, jobs follow the splitting rules from the industry settings (minimum and maximum length, free slots). When disabled, that stage is not split: final products keep one job per input line, intermediates one job per product. Each selected BPO or BPC remains its own job.";
+"Slots come from the characters enabled for industry below, limited by their skills. Without an enabled character, one slot per activity is used." = "Slots come from the characters enabled for industry below, limited by their skills. Without an enabled character, one slot per activity is used.";
+"Choose which characters may run industry jobs, which activities they may take and how many slots they may use. Empty limits use the skill maximum. Without an enabled character, one slot per activity is used." = "Choose which characters may run industry jobs, which activities they may take and how many slots they may use. Empty limits use the skill maximum. Without an enabled character, one slot per activity is used.";
+"No character enabled for industry; one slot per activity: %@" = "No character enabled for industry; one slot per activity: %@";
 "Built" = "Built";
 "Total cost %@ · Materials %@ · Installation %@" = "Total cost %@ · Materials %@ · Installation %@";
 "Blueprint %@ · Logistics %@" = "Blueprint %@ · Logistics %@";

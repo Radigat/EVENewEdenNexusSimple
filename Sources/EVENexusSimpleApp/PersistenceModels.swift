@@ -15,6 +15,9 @@ enum AppSettingKey {
   /// Planner draft input of the manual alliance sale (P11), JSON-encoded
   /// `PlannerAllianceSaleInput`.
   static let plannerAllianceSaleDraft = "planner.alliance-sale.draft.v1"
+  /// Planner draft job-splitting switches, JSON-encoded
+  /// `IndustryJobSplitting`; a missing row means both split.
+  static let plannerJobSplittingDraft = "planner.job-splitting.draft.v1"
 
   static func industryJobs(characterID: Int64) -> String {
     "\(industryJobsPrefix)\(characterID)"

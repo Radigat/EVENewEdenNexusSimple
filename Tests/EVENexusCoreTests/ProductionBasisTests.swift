@@ -2465,9 +2465,11 @@ struct IndustrySlotSchedulingTests {
     )
     let manual = scheduling.resolvedSlotGroups(capabilities: [])
     #expect(manual.source == .manual)
-    #expect(manual.slotCount(for: .manufacturing) == 3)
-    #expect(manual.slotCount(for: .reaction) == 2)
-    #expect(manual.slotCount(for: .science) == 4)
+    // Stored manual counts are ignored: one slot per pool without an
+    // enabled character.
+    #expect(manual.slotCount(for: .manufacturing) == 1)
+    #expect(manual.slotCount(for: .reaction) == 1)
+    #expect(manual.slotCount(for: .science) == 1)
 
     scheduling.setAssignment(
       CharacterIndustryAssignment(
@@ -2687,6 +2689,27 @@ struct IndustryJobSplittingTests {
     #expect(split(runs: 10, days: 10, slots: 4) == [3, 3, 2, 2])
     // A single run longer than the maximum stays one longer job.
     #expect(split(runs: 1, days: 20, slots: 5) == [1])
+    // Whole runs: 6 runs of 20 hours over 4 slots must not create 1-run
+    // pieces below the 1-day minimum (formerly [2, 2, 1, 1]).
+    let twentyHours: Int64 = 72_000
+    #expect(
+      scheduling.splitRuns(
+        runs: 6,
+        durationSeconds: 6 * twentyHours,
+        activity: .manufacturing,
+        compatibleSlots: 4
+      ) == [2, 2, 2]
+    )
+    // 18 runs of 20 hours: 4-run pieces would exceed 3 days, so the
+    // maximum forces six 3-run pieces (formerly five pieces of up to 4 runs).
+    #expect(
+      scheduling.splitRuns(
+        runs: 18,
+        durationSeconds: 18 * twentyHours,
+        activity: .manufacturing,
+        compatibleSlots: 4
+      ) == [3, 3, 3, 3, 3, 3]
+    )
     // Science is never split.
     #expect(
       scheduling.splitRuns(

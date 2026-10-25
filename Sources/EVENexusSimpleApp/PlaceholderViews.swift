@@ -301,6 +301,7 @@ struct PlannerView: View {
   )
   private var isRecentProductionsExpanded = false
   @State private var procurementPreferences: [Int64: MaterialProcurementPreference] = [:]
+  @State private var jobSplitting = IndustryJobSplitting()
   @State private var recommendationApplicationMessage: String?
   @State private var historicalPlan: HistoricalPlanPresentation?
   /// Explicit target market of the draft; `nil` means not chosen (P10).
@@ -4442,6 +4443,7 @@ struct PlannerView: View {
         }
       } content: {
         VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          jobSplittingControls(plan)
           if jobs.isEmpty {
             Label(
               "This plan has no production jobs.",
@@ -4789,7 +4791,10 @@ struct PlannerView: View {
         slots
       )
     case .manual:
-      return AppLocalization.format("Manual slot counts: %@", slots)
+      return AppLocalization.format(
+        "No character enabled for industry; one slot per activity: %@",
+        slots
+      )
     }
   }
 
@@ -5041,6 +5046,17 @@ struct PlannerView: View {
         for: AppSettingKey.plannerTargetMarketDraft
       )).flatMap { $0 }.flatMap(PlannerTargetMarket.init(rawValue:))
       ?? runtime.plan?.targetMarket
+    jobSplitting =
+      (try? modelContext.appSettingValue(
+        for: AppSettingKey.plannerJobSplittingDraft
+      )).flatMap { $0 }.flatMap { stored in
+        try? JSONDecoder().decode(
+          IndustryJobSplitting.self,
+          from: Data(stored.utf8)
+        )
+      }
+      ?? runtime.plan?.jobSplitting
+      ?? IndustryJobSplitting()
     if let stored = try? modelContext.appSettingValue(
       for: AppSettingKey.plannerAllianceSaleDraft
     ), let data = stored.data(using: .utf8),
@@ -5885,6 +5901,74 @@ struct PlannerView: View {
     return candidate
   }
 
+  @ViewBuilder
+  private func jobSplittingControls(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      if historicalPlan != nil {
+        let limits = plan.jobSplitting ?? IndustryJobSplitting()
+        Label(
+          LocalizedStringKey(
+            limits.splitsFinalProducts
+              ? "Final products: jobs split"
+              : "Final products: one job per input line"
+          ),
+          systemImage: "square.split.2x1"
+        )
+        Label(
+          LocalizedStringKey(
+            limits.splitsIntermediates
+              ? "Intermediates: jobs split"
+              : "Intermediates: one job per product"
+          ),
+          systemImage: "square.split.2x1"
+        )
+      } else {
+        Toggle(
+          "Split jobs for final products",
+          isOn: jobSplittingBinding(\.splitsFinalProducts)
+        )
+        .accessibilityIdentifier("planner.job-splitting.final-products")
+        Toggle(
+          "Split jobs for intermediates",
+          isOn: jobSplittingBinding(\.splitsIntermediates)
+        )
+        .accessibilityIdentifier("planner.job-splitting.intermediates")
+      }
+      Text(
+        "When enabled, jobs follow the splitting rules from the industry settings (minimum and maximum length, free slots). When disabled, that stage is not split: final products keep one job per input line, intermediates one job per product. Each selected BPO or BPC remains its own job."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+    .disabled(runtime.isWorking)
+  }
+
+  private func jobSplittingBinding(
+    _ keyPath: WritableKeyPath<IndustryJobSplitting, Bool>
+  ) -> Binding<Bool> {
+    Binding(
+      get: { jobSplitting[keyPath: keyPath] },
+      set: { value in
+        guard jobSplitting[keyPath: keyPath] != value else { return }
+        jobSplitting[keyPath: keyPath] = value
+        do {
+          let data = try JSONEncoder().encode(jobSplitting)
+          try modelContext.upsertAppSetting(
+            key: AppSettingKey.plannerJobSplittingDraft,
+            value: String(decoding: data, as: UTF8.self)
+          )
+          try modelContext.save()
+        } catch {
+          modelContext.rollback()
+          persistenceError = error.localizedDescription
+        }
+        calculatePlan()
+      }
+    )
+  }
+
   private func supplyModeBinding(for material: MaterialRequirement)
     -> Binding<MaterialSupplyMode>
   {
@@ -5954,6 +6038,7 @@ struct PlannerView: View {
         )
       }
       let requestedPreferences = preferences ?? procurementPreferences
+      let requestedJobSplitting = jobSplitting
       let authorizationPayloads = storedCharacters.map(\.authorizationSnapshot)
       let capabilityPayloads = storedCharacters.compactMap(\.capabilitySnapshot)
       consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.stockRelevantSourceStates.allSatisfy { $0 == .fresh })
@@ -6136,7 +6221,8 @@ struct PlannerView: View {
         blueprintSourceSnapshotIDs: handedOffBlueprintSnapshotIDs,
         authorizations: preparedInputs.2,
         capabilities: preparedInputs.3,
-        clientID: EVEConstants.ssoClientID
+        clientID: EVEConstants.ssoClientID,
+        jobSplitting: requestedJobSplitting
       )
       guard !Task.isCancelled else { return }
       guard workspaceRevision == consolidation.workspace.revision else {
