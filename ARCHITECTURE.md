@@ -481,6 +481,20 @@ Catalog adapter 6 adds:
 - the `idx_product_blueprint` and `idx_skill_blueprint` indexes on
   `(blueprint_type_id, activity)`.
 
+Catalog adapter 7 adds the `item_type_localized_names` table (German client
+names from `name.de`, keyed by type and language, indexed case-insensitively
+by name). `resolveItemTypeNames(_:)` matches exact English names first, then
+German ones; several matches are `ambiguous`, and a catalog without the table
+reports `localizedNamesUnavailable` instead of `unknown`.
+
+`Trade/StockSaleComparison.swift` holds the stock sale comparison
+([LAGERVERKAUF_PLAN.md](Documentation/LAGERVERKAUF_PLAN.md)): the paste
+parser, the stored entry list, `StockSaleProductionCostProjector` (the Hub
+opportunity cost chain with an empty warehouse for one quantity), the pure
+`StockSaleComparisonCalculator` and `StockSaleRowSorter`. The SwiftUI view
+reads hub prices, fees and scans from `RuntimeState` and shares the Hub
+opportunity cost inputs through `OpportunityCostInputs`.
+
 `manufacturingDefinitions()` and `reactionDefinitions()` load all complete
 definitions with three set-based queries. A product offered by more than one
 qualifying blueprint keeps the per-product `productionDefinition` selection.

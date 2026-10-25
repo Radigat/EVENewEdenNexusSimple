@@ -4150,6 +4150,13 @@ final class RuntimeState {
     try await catalog.searchItemTypes(matching: query, limit: 80)
   }
 
+  /// Exact English or German item names pasted from the EVE client.
+  func resolveItemTypeNames(_ names: [String]) async throws
+    -> [String: ItemTypeNameResolution]
+  {
+    try await catalog.resolveItemTypeNames(names)
+  }
+
   func searchMarketTypes(matching query: String) async throws
     -> [ItemTypeSearchResult]
   {

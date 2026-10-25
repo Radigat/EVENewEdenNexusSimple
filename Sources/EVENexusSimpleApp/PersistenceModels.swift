@@ -18,6 +18,9 @@ enum AppSettingKey {
   /// Planner draft job-splitting switches, JSON-encoded
   /// `IndustryJobSplitting`; a missing row means both split.
   static let plannerJobSplittingDraft = "planner.job-splitting.draft.v1"
+  /// Item list of the stock sale comparison, JSON-encoded
+  /// `[StockSaleEntry]`; a missing row means an empty list.
+  static let stockSaleItems = "stock-sale.items.v1"
 
   static func industryJobs(characterID: Int64) -> String {
     "\(industryJobsPrefix)\(characterID)"

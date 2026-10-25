@@ -136,6 +136,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Zum Planner hinzufügen** hängt die konkrete Charge an den Planner-Entwurf an |
 | Home Hub Opportunities | dieselbe Chancenansicht für Verkäufe am Home Hub (Material vom Main Hub, ohne Rückweg); eigene Filter, gemeinsamer Scan mit dem Main Hub |
 | Coalition Hub Opportunities | Chancenansicht für Verkäufe am Coalition Hub inklusive sortierbarem Transport Home → Coalition (Jump Freighter oder Kurier); eigene Filter, gemeinsamer Scan |
+| Stock sale comparison | Lagerverkauf-Abgleich: aus dem Spiel kopierte Items samt Anzahl je Hub gegen die Neuproduktion bewerten; Mindestpreis für Sell-Order und Direktverkauf, Marktpreise, Gewinn und Empfehlung |
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
 | Reactions | veröffentlichte Reaktionsrezepte, vollständige Batch-Kosten, Logistik und Make-or-Buy-Vergleich |
 | Moon purchase analysis | Mengen- und Preisvergleich ausgewählter Marktrollen für Mondmaterialien; vollständiger Tabellenexport als PNG |
@@ -750,6 +751,60 @@ SwiftData-Datenbank bleibt unberührt.
 - **Hinweis-Symbole:** aus der Wallet übernommen, Orderart angenommen,
   Transport geschätzt, Steuer belegt. Eigene Änderungen an Kaufart oder
   Transport im Editor setzen die Herkunft auf manuell.
+
+### Lagerverkauf-Abgleich
+
+Der **Lagerverkauf-Abgleich** steht in der Seitenleiste direkt unter dem
+Handelslogbuch. Er beantwortet, zu welchem Preis vorrätige oder schon
+produzierte Items am gewählten Hub mindestens verkauft werden müssen, damit
+der Verkauf Gewinn gegenüber einer Neuproduktion bringt. Verbindliche Regeln
+und Eigentümerentscheide: [Lagerverkauf-Plan](Documentation/LAGERVERKAUF_PLAN.md).
+
+- **Hub:** Main, Home oder Coalition, oben in der Ansicht wählbar; die Wahl wird
+  gespeichert. Chips nennen den Ort sowie Verkaufssteuer und Maklergebühr aus
+  den Markteinstellungen des Hubs. **Hub-Märkte aktualisieren** startet den
+  gemeinsamen Hub-Scan. Ein Hub am selben Ort wie Main bzw. Home nutzt dessen
+  Scan und Marktdaten.
+- **Einfügen:** Items im EVE-Inventar markieren, kopieren und einfügen.
+  Erkannt werden die Inventarliste (Name Tab Menge, leere Menge = 1) sowie
+  `Name x Menge` und `Name Menge`; Mengen mit englischen oder deutschen
+  Tausendertrennern. **Liste ersetzen** oder **Zur Liste hinzufügen**; gleiche
+  Items werden summiert. Englische und deutsche Clientnamen werden über den
+  SDE-Katalog aufgelöst; deutsche Namen erst nach einem Neuimport mit
+  Katalogadapter 7. Nicht erkannte Zeilen (unbekannt, mehrdeutig, deutsche
+  Namen nicht verfügbar, ungültige Menge) stehen mit Grund in einem eigenen
+  Abschnitt und lassen sich entfernen.
+- **Speicherung:** Die Liste samt ME/TE-Wahl liegt als JSON im
+  Einstellungsschlüssel `stock-sale.items.v1`; keine Schemaänderung. **Liste
+  leeren** fragt vorher nach.
+- **Neuproduktion:** Hub-Chancen-Rechnung des Hubs, umgerechnet auf die
+  eingefügte Menge (ganze Läufe) und auf ME/TE. Es gelten die gespeicherten
+  Hub-Chancen-Schalter (Zwischenprodukte selbst bauen, eigene BPCs,
+  Blueprint-Anteil) und deren ME/TE-Standards; ME/TE sind je Zeile änderbar.
+  Alle Materialien werden am Main Hub neu beschafft, vorhandenes Material wird
+  nicht angerechnet. Enthalten sind Material, Installation, Blueprint-Anteil
+  bzw. -Erwerb und die Logistik bis zum gewählten Hub.
+- **Preise:** Mindestpreis Sell-Order = Kosten je Stück ÷ (1 − Steuer −
+  Makler), Mindestpreis Direktverkauf = Kosten ÷ (1 − Steuer). Die eigene Order
+  liegt einen Preisschritt unter dem besten Sell. Gewinn je Stück und gesamt
+  werden für beide Verkaufsarten gezeigt. Die Buy-Tiefe nennt die Stückzahl zum
+  besten Buy; reicht sie nicht für die Menge, steht der Direkt-Gesamtgewinn als
+  Obergrenze in Warnfarbe.
+- **Hervorhebung:** eigene Order und bester Buy grün, wenn sie den
+  Mindestpreis erreichen, sonst rot. **Empfehlung:** Sell-Order oder
+  Direktverkauf mit dem höheren positiven Gesamtgewinn (Gleichstand:
+  Direktverkauf), sonst „Behalten“.
+- **Tabelle:** alle Spalten immer sichtbar und sortierbar, horizontal
+  scrollbar; beim Öffnen nach Empfehlung (Gesamtgewinn) absteigend.
+  Unbekannte Werte stehen in dieser Ansicht in beiden Richtungen am Ende
+  (dokumentierte Regel dieser Ansicht), danach entscheidet die Typ-ID.
+  Itemnamen sind englische SDE-Namen und per Klick kopierbar; ein Symbol nennt
+  den abweichend eingefügten Originalnamen.
+- **Fehlende Daten:** Ohne Scan-Zeile (nicht herstellbar, ausgeschlossen),
+  ohne Preise, Gebühren oder Logistik bleiben Werte „—“; ein Info-Symbol nennt
+  den Grund. Relist- und Orderänderungsgebühren sind nicht enthalten. Der
+  Transport der Lagerware zum Hub wird nicht gesondert angesetzt, weil die
+  Neuproduktion die Lieferung bis zum Hub schon enthält.
 
 ### Assets und Warehouse
 
@@ -2341,6 +2396,13 @@ Der ausführliche Produktionsvertrag steht in
     Beschleunigung greift erst nach einem **Neuimport des aktuellen Katalogs**
     und anschließendem Neustart der App. Der Inhalts-Hash des Builds ändert
     sich dadurch nicht; es entsteht eine neue Datei `catalog-v6`.
+- Katalogadapter 7 legt zusätzlich die deutschen Clientnamen (`name.de`) in der
+  Tabelle `item_type_localized_names` ab. Der Lagerverkauf-Abgleich löst damit
+  eingefügte deutsche Namen auf; angezeigt wird weiter der englische SDE-Name.
+  Ein mit Adapter 1–6 aktivierter Katalog bleibt voll nutzbar, meldet für
+  deutsche Namen aber ausdrücklich „deutsche Namen erst nach SDE-Neuimport“.
+  Abhilfe ist ein **Neuimport des aktuellen Katalogs**; es entsteht eine neue
+  Datei `catalog-v7`.
 - Vollständige Fertigungs- und Reaktionsdefinitionen (Main-Hub-Chancen,
   Reaktionsanalyse) werden mit drei Katalogabfragen statt einer Abfragefolge je
   Produkt geladen und für den aktiven Katalog während der Laufzeit

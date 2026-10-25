@@ -19,6 +19,22 @@ public struct ItemTypeSearchResult: Identifiable, Equatable, Sendable {
   }
 }
 
+public enum ItemTypeNameLanguage: String, Codable, Equatable, Sendable {
+  case english
+  case german
+}
+
+/// Exact lookup of a pasted item name. English SDE names win over German
+/// client names; a German match always reports the English SDE name.
+public enum ItemTypeNameResolution: Equatable, Sendable {
+  case resolved(typeID: Int64, name: String, language: ItemTypeNameLanguage)
+  case ambiguous([Int64])
+  case unknown
+  /// No English match and the active catalog (adapter 6 or older) has no
+  /// German names; a same-build SDE reimport adds them.
+  case localizedNamesUnavailable
+}
+
 public struct ManufacturingProductSearchResult: Identifiable, Equatable,
   Sendable
 {
@@ -144,7 +160,7 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
   ActiveSDEVersionReading, StaticDataCatalogRollingBack,
   SDEPromotionSafetyBackingUp
 {
-  private static let catalogAdapterVersion = 6
+  private static let catalogAdapterVersion = 7
 
   private struct ActivePointer: Codable, Sendable {
     let buildNumber: Int
@@ -487,6 +503,70 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     return try database.scalarInt64(
       "SELECT id FROM item_types WHERE name = \(sql(name)) COLLATE NOCASE AND published = 1 LIMIT 1"
     )
+  }
+
+  /// Resolves exact item names, case-insensitive, among published types.
+  public func resolveItemTypeNames(
+    _ names: [String]
+  ) async throws -> [String: ItemTypeNameResolution] {
+    let database = try activeDatabase()
+    let hasLocalizedNames = try !database.rows(
+      """
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'item_type_localized_names'
+      LIMIT 1
+      """
+    ).isEmpty
+    var result: [String: ItemTypeNameResolution] = [:]
+    for name in Set(names) {
+      let accepted = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !accepted.isEmpty else {
+        result[name] = .unknown
+        continue
+      }
+      let english = try database.rows(
+        """
+        SELECT id, name FROM item_types
+        WHERE name = \(sql(accepted)) COLLATE NOCASE AND published = 1
+        ORDER BY id LIMIT 5
+        """
+      )
+      if let resolution = Self.nameResolution(english, language: .english) {
+        result[name] = resolution
+        continue
+      }
+      guard hasLocalizedNames else {
+        result[name] = .localizedNamesUnavailable
+        continue
+      }
+      let german = try database.rows(
+        """
+        SELECT item_types.id, item_types.name
+        FROM item_type_localized_names
+        JOIN item_types ON item_types.id = item_type_localized_names.type_id
+        WHERE item_type_localized_names.language = 'de'
+          AND item_type_localized_names.name = \(sql(accepted)) COLLATE NOCASE
+          AND item_types.published = 1
+        ORDER BY item_types.id LIMIT 5
+        """
+      )
+      result[name] = Self.nameResolution(german, language: .german) ?? .unknown
+    }
+    return result
+  }
+
+  private static func nameResolution(
+    _ rows: [[String?]],
+    language: ItemTypeNameLanguage
+  ) -> ItemTypeNameResolution? {
+    let matches: [(Int64, String)] = rows.compactMap { row in
+      guard row.count == 2, let id = Int64(row[0] ?? ""), let name = row[1]
+      else { return nil }
+      return (id, name)
+    }
+    guard let first = matches.first else { return nil }
+    guard matches.count == 1 else { return .ambiguous(matches.map(\.0)) }
+    return .resolved(typeID: first.0, name: first.1, language: language)
   }
 
   public func searchItemTypes(
@@ -2368,6 +2448,12 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       CREATE TABLE type_dogma (
         type_id INTEGER PRIMARY KEY, attributes_json TEXT NOT NULL
       );
+      CREATE TABLE item_type_localized_names (
+        type_id INTEGER NOT NULL, language TEXT NOT NULL,
+        name TEXT NOT NULL, PRIMARY KEY (type_id, language)
+      );
+      CREATE INDEX idx_item_type_localized_name
+        ON item_type_localized_names(language, name COLLATE NOCASE);
       """
     )
     try db.execute("BEGIN IMMEDIATE")
@@ -2417,6 +2503,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
           )
           """
         )
+        if let insert = localizedNameInsert(type) {
+          try db.execute(insert)
+        }
       }
       for record in snapshot.typeMaterials {
         for (sortOrder, material) in record.materials.enumerated() {
@@ -2650,6 +2739,9 @@ private actor SQLiteBatchWriter {
             )
             """
           )
+          if let insert = localizedNameInsert(type) {
+            try database.execute(insert)
+          }
         }
       case .typeMaterials(let records):
         for record in records {
@@ -2869,6 +2961,12 @@ private actor SQLiteBatchWriter {
     CREATE TABLE type_dogma (
       type_id INTEGER PRIMARY KEY, attributes_json TEXT NOT NULL
     );
+    CREATE TABLE item_type_localized_names (
+      type_id INTEGER NOT NULL, language TEXT NOT NULL,
+      name TEXT NOT NULL, PRIMARY KEY (type_id, language)
+    );
+    CREATE INDEX idx_item_type_localized_name
+      ON item_type_localized_names(language, name COLLATE NOCASE);
     """
 }
 
@@ -2892,6 +2990,14 @@ private func typeDogmaInsert(_ record: StaticTypeDogmaSnapshot) throws
   }
   return
     "INSERT INTO type_dogma VALUES (\(record.itemTypeID), \(sql(json)))"
+}
+
+/// German client name of a type (catalog adapter 7); English stays in
+/// `item_types.name`.
+private func localizedNameInsert(_ type: StaticItemTypeSnapshot) -> String? {
+  guard let germanName = type.germanName, !germanName.isEmpty else { return nil }
+  return
+    "INSERT INTO item_type_localized_names VALUES (\(type.externalID), 'de', \(sql(germanName)))"
 }
 
 private func marketGroupInsert(_ group: StaticMarketGroupSnapshot) -> String {

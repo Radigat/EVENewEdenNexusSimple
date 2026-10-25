@@ -94,7 +94,7 @@ struct SQLiteStaticCatalogTests {
       withDestinationURL: packageURL
     )
     let activeFileName =
-      "sde-\(active.buildNumber)-\(active.contentSHA256.prefix(12))-catalog-v6.sqlite"
+      "sde-\(active.buildNumber)-\(active.contentSHA256.prefix(12))-catalog-v7.sqlite"
     try dropTable(
       "type_dogma",
       at: root.appendingPathComponent("catalogs", isDirectory: true)
@@ -328,7 +328,7 @@ struct SQLiteStaticCatalogTests {
 
     let hashPrefix = snapshot.contentSHA256.prefix(12)
     let currentName =
-      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v6.sqlite"
+      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v7.sqlite"
     let legacyName =
       "sde-\(snapshot.buildNumber)-\(hashPrefix).sqlite"
     let catalogsURL = root.appendingPathComponent(
@@ -402,7 +402,7 @@ struct SQLiteStaticCatalogTests {
 
     let hashPrefix = snapshot.contentSHA256.prefix(12)
     let currentName =
-      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v6.sqlite"
+      "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v7.sqlite"
     let previousName =
       "sde-\(snapshot.buildNumber)-\(hashPrefix)-catalog-v5.sqlite"
     let catalogsURL = root.appendingPathComponent(
@@ -550,7 +550,7 @@ struct SQLiteStaticCatalogTests {
       "type_dogma",
       at: root.appendingPathComponent("catalogs", isDirectory: true)
         .appendingPathComponent(
-          "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v6.sqlite"
+          "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v7.sqlite"
         )
     )
     try writeFacilityPackage(baseURL: base, snapshot: snapshot)
@@ -786,7 +786,7 @@ struct SQLiteStaticCatalogTests {
       )
 
     let fileName =
-      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v6.sqlite"
+      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v7.sqlite"
     for storeRoot in [snapshotRoot, streamingRoot] {
       let url = storeRoot.appendingPathComponent("catalogs")
         .appendingPathComponent(fileName)
@@ -867,7 +867,7 @@ struct SQLiteStaticCatalogTests {
     let snapshot = try marketGroupFixture(build: 5)
     _ = try await SQLiteStaticCatalog(rootURL: root).activate(snapshot)
     let fileName =
-      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v6.sqlite"
+      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v7.sqlite"
     try dropMarketGroupTable(
       at: root.appendingPathComponent("catalogs", isDirectory: true)
         .appendingPathComponent(fileName)
@@ -939,6 +939,85 @@ struct SQLiteStaticCatalogTests {
         ),
       ],
       assignments: [1: 1_002, 99: 1_002, 100: 1_001, 2: 2_000]
+    )
+  }
+
+  @Test
+  func resolvesExactEnglishAndGermanItemNames() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-localized-names-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = try withGermanNames(
+      try fixture(build: 9, productName: "Name Ship"),
+      names: [1: "Namensschiff", 2: "Doppelt", 100: "Doppelt", 99: "Versteckt"]
+    )
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    _ = try await catalog.activate(snapshot)
+
+    let names = ["name ship", "Namensschiff", "Doppelt", "Versteckt", "Nichts", ""]
+    let resolved = try await catalog.resolveItemTypeNames(names)
+    #expect(resolved["name ship"] == .resolved(typeID: 1, name: "Name Ship", language: .english))
+    #expect(
+      resolved["Namensschiff"] == .resolved(typeID: 1, name: "Name Ship", language: .german)
+    )
+    #expect(resolved["Doppelt"] == .ambiguous([2, 100]))
+    #expect(resolved["Versteckt"] == .unknown)
+    #expect(resolved["Nichts"] == .unknown)
+    #expect(resolved[""] == .unknown)
+
+    // A catalog before adapter 7 has no German names: that state stays
+    // explicit instead of reporting the name as unknown.
+    let fileName =
+      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v7.sqlite"
+    try dropTable(
+      "item_type_localized_names",
+      at: root.appendingPathComponent("catalogs", isDirectory: true)
+        .appendingPathComponent(fileName)
+    )
+    let legacy = try await SQLiteStaticCatalog(rootURL: root)
+      .resolveItemTypeNames(["Name Ship", "Namensschiff"])
+    #expect(legacy["Name Ship"] == .resolved(typeID: 1, name: "Name Ship", language: .english))
+    #expect(legacy["Namensschiff"] == .localizedNamesUnavailable)
+  }
+
+  private func withGermanNames(
+    _ base: StaticDataCatalogSnapshot,
+    names: [Int64: String]
+  ) throws -> StaticDataCatalogSnapshot {
+    try StaticDataCatalogSnapshot(
+      buildNumber: base.buildNumber,
+      contentSHA256: base.contentSHA256,
+      officialArchiveURL: base.officialArchiveURL,
+      sourceFormat: base.sourceFormat,
+      categories: base.categories,
+      groups: base.groups,
+      itemTypes: base.itemTypes.map { type in
+        StaticItemTypeSnapshot(
+          externalID: type.externalID,
+          groupExternalID: type.groupExternalID,
+          categoryExternalID: type.categoryExternalID,
+          marketGroupExternalID: type.marketGroupExternalID,
+          name: type.name,
+          description: type.description,
+          volume: type.volume,
+          packagedVolume: type.packagedVolume,
+          basePrice: type.basePrice,
+          portionSize: type.portionSize,
+          published: type.published,
+          iconExternalID: type.iconExternalID,
+          metaGroupExternalID: type.metaGroupExternalID,
+          techLevel: type.techLevel,
+          germanName: names[type.externalID]
+        )
+      },
+      typeMaterials: base.typeMaterials,
+      blueprints: base.blueprints,
+      decryptors: base.decryptors,
+      marketGroups: base.marketGroups,
+      reactionRuleProfile: base.reactionRuleProfile,
+      typeDogma: base.typeDogma
     )
   }
 

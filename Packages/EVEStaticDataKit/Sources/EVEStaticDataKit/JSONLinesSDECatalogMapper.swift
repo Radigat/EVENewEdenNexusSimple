@@ -671,7 +671,7 @@ public actor JSONLinesSDECatalogMapper:
     )
   }
 
-  private func mapItemType(
+  func mapItemType(
     _ object: [String: Any],
     line: Int,
     groupsByID: [Int64: StaticItemGroupSnapshot]
@@ -763,7 +763,8 @@ public actor JSONLinesSDECatalogMapper:
         dataset: .types,
         line: line,
         field: "techLevel"
-      )
+      ),
+      germanName: optionalLocalizedText(object["name"], language: "de")
     )
   }
 
@@ -1359,6 +1360,16 @@ public actor JSONLinesSDECatalogMapper:
       )
     }
     return text
+  }
+
+  /// A translation is optional: a missing or non-text entry is no name,
+  /// never a mapping error, so imports without it stay unchanged.
+  private func optionalLocalizedText(_ value: Any?, language: String) -> String? {
+    guard let localized = value as? [String: Any],
+      let text = localized[language] as? String
+    else { return nil }
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
   }
 
   private func optionalEnglishText(

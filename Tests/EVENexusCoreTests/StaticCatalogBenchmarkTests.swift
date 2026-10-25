@@ -51,7 +51,7 @@ struct StaticCatalogBenchmarkTests {
     )
     let catalogURL = root.appendingPathComponent("catalogs", isDirectory: true)
       .appendingPathComponent(
-        "sde-\(activation.buildNumber)-\(activation.contentSHA256.prefix(12))-catalog-v6.sqlite"
+        "sde-\(activation.buildNumber)-\(activation.contentSHA256.prefix(12))-catalog-v7.sqlite"
       )
 
     // New paths on the adapter-6 catalog.

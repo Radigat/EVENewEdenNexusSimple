@@ -12,6 +12,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case coalitionHubOpportunities
   case trade
   case tradeLogbook
+  case stockSaleComparison
   case publicContracts
   case reactions
   case moonMaterialAnalysis
@@ -38,6 +39,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .coalitionHubOpportunities: "Coalition Hub Opportunities"
     case .trade: "Trade"
     case .tradeLogbook: "Trade logbook"
+    case .stockSaleComparison: "Stock sale comparison"
     case .publicContracts: "Public Contracts"
     case .reactions: "Reactions"
     case .moonMaterialAnalysis: "Moon purchase analysis"
@@ -60,6 +62,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .coalitionHubOpportunities: "flag.fill"
     case .trade: "arrow.left.arrow.right"
     case .tradeLogbook: "book.closed.fill"
+    case .stockSaleComparison: "scalemass.fill"
     case .publicContracts: "doc.text.magnifyingglass"
     case .reactions: "atom"
     case .moonMaterialAnalysis: "chart.xyaxis.line"
@@ -465,6 +468,13 @@ struct ContentView: View {
             )
           case .tradeLogbook:
             TradeLogbookView()
+          case .stockSaleComparison:
+            StockSaleComparisonView(
+              onOpenMarketSettings: {
+                guardedDataSettingsSelection.wrappedValue = .marketSettings
+                guardedSelection.wrappedValue = .data
+              }
+            )
           case .publicContracts:
             PublicContractsView()
           case .reactions:

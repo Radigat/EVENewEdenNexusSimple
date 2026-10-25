@@ -3,6 +3,18 @@
 Aktueller Konsolidierungsnachweis: [Prüfbericht 25.09.2026](Consolidation/VALIDATION.md).
 Die folgenden Einträge bleiben datierte Fach-, Live- und Eigentümernachweise.
 
+## Lagerverkauf-Abgleich P1–P4, 2026-10-25
+
+Plan und Owner-Testleitfaden: [LAGERVERKAUF_PLAN.md](LAGERVERKAUF_PLAN.md),
+Abschnitt E. Geprüft wurde nur mit synthetischen Daten.
+
+| Area | Automated evidence | Local-data evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| P1 Deutsche SDE-Namen (Adapter 7) | pass: Mapper `name.de` vorhanden/fehlend/ungültig, englische und deutsche Auflösung, mehrdeutig, unveröffentlicht, Altkatalog ohne Tabelle meldet `localizedNamesUnavailable` | synthetischer v7-Katalog; echter Neuimport nicht ausgeführt | open: Neuimport und deutsche Stichprobe |
+| P2 Core-Abgleich | pass: Tab-/x-/Leerzeichen-Format, Trenner, Grenzen, Summierung und Überlauf, Mindestpreise (5 %/1 %), Preisschritt, Tiefe, Empfehlung inkl. Gleichstand und Behalten, unbekannt ≠ 0, Sortierung mit unbekannt am Ende, Kostenprojektor mit Laufrundung und voller Logistik | not run | open: Vergleich mit Hub-Chancen und „Kosten pro Item“ |
+| P3 Ansicht | pass: Build, Navigation direkt nach dem Handelslogbuch, JSON-Rundlauf der Liste | App nicht gestartet | open (visuell, echte Zwischenablage) |
+| Abschlusslauf 2026-10-25 | pass: `swift test` 623 Swift-Testing-Tests in 44 Suites plus 71 Tests in 3 Suites; `EVEStaticDataKit` 13 Tests; `xcodebuild … test` unsigniert `TEST SUCCEEDED` | — | — |
+
 ## Bereich Handel P1–P8, 2026-10-22
 
 Plan, Prompts und Abnahme-Checkliste: [HANDEL_PLAN.md](HANDEL_PLAN.md),

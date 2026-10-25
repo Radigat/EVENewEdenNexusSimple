@@ -292,3 +292,46 @@ func marketGroupsAreAnImportedDataset() {
   #expect(SDEDatasetKind.allCases.contains(.marketGroups))
   #expect(SDEDatasetKind.marketGroups.fileName == "marketGroups.jsonl")
 }
+
+@Test
+func mapsTheGermanClientNameAsOptionalTranslation() async throws {
+  let mapper = JSONLinesSDECatalogMapper()
+  let groups = [
+    Int64(20): StaticItemGroupSnapshot(
+      externalID: 20,
+      categoryExternalID: 10,
+      name: "Fixture Group",
+      published: true
+    )
+  ]
+  func type(_ name: [String: Any]) -> [String: Any] {
+    [
+      "_key": NSNumber(value: 34),
+      "groupID": NSNumber(value: 20),
+      "name": name,
+      "portionSize": NSNumber(value: 1),
+      "published": NSNumber(value: true),
+    ]
+  }
+  let translated = try await mapper.mapItemType(
+    type(["en": "Tritanium", "de": " Tritanium (DE) "]),
+    line: 1,
+    groupsByID: groups
+  )
+  #expect(translated.name == "Tritanium")
+  #expect(translated.germanName == "Tritanium (DE)")
+
+  let englishOnly = try await mapper.mapItemType(
+    type(["en": "Pyerite"]),
+    line: 2,
+    groupsByID: groups
+  )
+  #expect(englishOnly.germanName == nil)
+
+  let invalidGerman = try await mapper.mapItemType(
+    type(["en": "Mexallon", "de": NSNumber(value: 1)]),
+    line: 3,
+    groupsByID: groups
+  )
+  #expect(invalidGerman.germanName == nil)
+}

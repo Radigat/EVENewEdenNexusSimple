@@ -1153,15 +1153,7 @@ struct ManufacturingOpportunitiesView: View {
 
   /// Wallet balances by character name for the Loyalty Store affordability.
   private var walletISKByCharacterName: [String: Double] {
-    var result: [String: Double] = [:]
-    for character in characters {
-      guard let data = character.walletBalanceSnapshot,
-        let balance = try? JSONDecoder().decode(Sourced<Double>.self, from: data),
-        let value = balance.value, value.isFinite
-      else { continue }
-      result[character.characterName] = value
-    }
-    return result
+    OpportunityCostInputs.walletISKByCharacterName(characters)
   }
 
   private var loyaltyStoreOfferTrigger: LoyaltyStoreOfferTrigger {
@@ -4412,14 +4404,9 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private var costSheet: ManufacturingOpportunityCostSheet {
-    ManufacturingOpportunityCostSheet(
-      includesInstallation: true,
-      includesSalesTax: true,
-      includesBrokerFee: true,
-      includesBlueprintAllocation: costIncludesBlueprint,
-      blueprintAllocationPerRun: parsedBlueprintCost,
-      includesHauling: false,
-      haulingCostPerBatch: nil
+    OpportunityCostInputs.costSheet(
+      includesBlueprint: costIncludesBlueprint,
+      blueprintCostPerRun: parsedBlueprintCost
     )
   }
 
@@ -5266,20 +5253,7 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private func parseNonnegativeISK(_ text: String) -> Double? {
-    let locale = AppLocalization.currentLanguage.locale
-    let groupingSeparator = locale.groupingSeparator ?? ","
-    let decimalSeparator = locale.decimalSeparator ?? "."
-    let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-      .replacingOccurrences(of: " ", with: "")
-      .replacingOccurrences(of: "\u{00A0}", with: "")
-      .replacingOccurrences(of: groupingSeparator, with: "")
-      .replacingOccurrences(of: decimalSeparator, with: ".")
-    guard !normalized.isEmpty,
-      let value = Double(normalized),
-      value.isFinite,
-      value >= 0
-    else { return nil }
-    return value
+    OpportunityCostInputs.parseNonnegativeISK(text)
   }
 
   private func groupedISKBinding(_ source: Binding<String>) -> Binding<String> {
@@ -6561,6 +6535,57 @@ enum OpportunityHubText {
       text
       .replacingOccurrences(of: "Main Hub", with: replacement.spaced)
       .replacingOccurrences(of: "Main-Hub", with: replacement.hyphenated)
+  }
+}
+
+/// Cost inputs shared by the Hub opportunities and the stock sale
+/// comparison, so both price new production identically.
+enum OpportunityCostInputs {
+  static func costSheet(
+    includesBlueprint: Bool,
+    blueprintCostPerRun: Double?
+  ) -> ManufacturingOpportunityCostSheet {
+    ManufacturingOpportunityCostSheet(
+      includesInstallation: true,
+      includesSalesTax: true,
+      includesBrokerFee: true,
+      includesBlueprintAllocation: includesBlueprint,
+      blueprintAllocationPerRun: blueprintCostPerRun,
+      includesHauling: false,
+      haulingCostPerBatch: nil
+    )
+  }
+
+  /// Wallet balances by character name for the Loyalty Store affordability.
+  static func walletISKByCharacterName(
+    _ characters: [StoredCharacter]
+  ) -> [String: Double] {
+    var result: [String: Double] = [:]
+    for character in characters {
+      guard let data = character.walletBalanceSnapshot,
+        let balance = try? JSONDecoder().decode(Sourced<Double>.self, from: data),
+        let value = balance.value, value.isFinite
+      else { continue }
+      result[character.characterName] = value
+    }
+    return result
+  }
+
+  static func parseNonnegativeISK(_ text: String) -> Double? {
+    let locale = AppLocalization.currentLanguage.locale
+    let groupingSeparator = locale.groupingSeparator ?? ","
+    let decimalSeparator = locale.decimalSeparator ?? "."
+    let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: " ", with: "")
+      .replacingOccurrences(of: "\u{00A0}", with: "")
+      .replacingOccurrences(of: groupingSeparator, with: "")
+      .replacingOccurrences(of: decimalSeparator, with: ".")
+    guard !normalized.isEmpty,
+      let value = Double(normalized),
+      value.isFinite,
+      value >= 0
+    else { return nil }
+    return value
   }
 }
 

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 @testable import EVENexusCore
+import SwiftData
 import SwiftUI
 import Testing
 
@@ -61,6 +62,43 @@ struct RuntimeFeatureStateTests {
     #expect(runtime.tradeDataRole(for: .home) == nil)
     #expect(runtime.tradeMarketState(for: .home) == nil)
     #expect(runtime.tradeHubFees(for: .coalition).salesTaxRate == nil)
+  }
+
+  @Test
+  func stockSaleComparisonFollowsTradeLogbookAndPersistsItsList() throws {
+    let sections = NavigationSection.allCases
+    let logbook = sections.firstIndex(of: .tradeLogbook)
+    #expect(
+      logbook != nil
+        && sections.firstIndex(of: .stockSaleComparison) == logbook.map { $0 + 1 }
+    )
+    #expect(NavigationSection.establishedCases.contains(.stockSaleComparison))
+
+    let schema = Schema(versionedSchema: EVENexusSchemaV2.self)
+    let container = try ModelContainer(
+      for: schema,
+      configurations: [
+        ModelConfiguration("StockSaleComparison", schema: schema, isStoredInMemoryOnly: true)
+      ]
+    )
+    let context = container.mainContext
+    let entries = [
+      StockSaleEntry(
+        typeID: 34, resolvedName: "Tritanium", pastedName: "Tritanium", quantity: 5,
+        materialEfficiency: 10, timeEfficiency: 20
+      ),
+      StockSaleEntry(
+        typeID: nil, resolvedName: nil, pastedName: "Unbekannt", quantity: 1,
+        unresolvedReason: .unknownName
+      ),
+    ]
+    try context.upsertAppSetting(
+      key: AppSettingKey.stockSaleItems,
+      value: String(decoding: try StockSaleEntryList.encode(entries), as: UTF8.self)
+    )
+    try context.save()
+    let stored = try #require(try context.appSettingValue(for: AppSettingKey.stockSaleItems))
+    #expect(try StockSaleEntryList.decode(Data(stored.utf8)) == entries)
   }
 
   @Test

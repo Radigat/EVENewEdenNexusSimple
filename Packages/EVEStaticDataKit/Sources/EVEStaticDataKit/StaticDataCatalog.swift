@@ -80,6 +80,8 @@ public struct StaticItemTypeSnapshot: Equatable, Sendable {
   public let portionSize: Int64
   public let published: Bool
   public let iconExternalID: Int64?
+  /// German client name (`name.de`); `nil` when the SDE carries none.
+  public let germanName: String?
 
   public init(
     externalID: Int64,
@@ -95,10 +97,12 @@ public struct StaticItemTypeSnapshot: Equatable, Sendable {
     published: Bool,
     iconExternalID: Int64?,
     metaGroupExternalID: Int64? = nil,
-    techLevel: Int64? = nil
+    techLevel: Int64? = nil,
+    germanName: String? = nil
   ) {
     self.externalID = externalID
     self.groupExternalID = groupExternalID
+    self.germanName = germanName
     self.categoryExternalID = categoryExternalID
     self.marketGroupExternalID = marketGroupExternalID
     self.metaGroupExternalID = metaGroupExternalID

@@ -1,5 +1,52 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 25. Oktober 2026 – Lagerverkauf-Abgleich
+
+Ziel: Eigentümerauftrag. Vorrätige oder produzierte Items je Hub gegen eine
+Neuproduktion bewerten: Welchen Preis muss ich je Stück mindestens verlangen,
+inklusive aller Produktionskosten und Marktgebühren?
+
+Entscheidungen des Eigentümers: siehe
+[Lagerverkauf-Plan, Abschnitt A](Documentation/LAGERVERKAUF_PLAN.md) (Kosten aus
+der Hub-Chancen-Rechnung, Einfügen aus dem Spiel mit englischen und deutschen
+Namen, Gewinnschwelle für Sell-Order und Direktverkauf, alle Spalten sichtbar,
+unbekannte Werte immer am Ende, Gleichstand → Direktverkauf).
+
+Umfang (implementiert):
+- P1 SDE: `StaticItemTypeSnapshot.germanName` aus `name.de` (Kit-Mapper,
+  optional, kein neuer Fehlerpfad). Katalogadapter 7 mit Tabelle
+  `item_type_localized_names` in beiden Schreibwegen; neue Abfrage
+  `resolveItemTypeNames(_:)` (englisch vor deutsch, mehrdeutig, Altkatalog →
+  `localizedNamesUnavailable`).
+- P2 Core `Trade/StockSaleComparison.swift`: Einfügeparser, gespeicherte
+  Liste mit Summierung, `StockSaleProductionCostProjector` (Hub-Chancen-
+  Kostenkette mit leerem Lager), `StockSaleComparisonCalculator`,
+  `StockSaleRowSorter`.
+- P3 App: Seitenleisten-Eintrag `stockSaleComparison` nach dem
+  Handelslogbuch, `StockSaleComparisonView` mit Hub-Wahl, Einfügen,
+  nicht erkannten Zeilen, Tabelle mit 21 Spalten, ME/TE je Zeile, Speicherung
+  unter `stock-sale.items.v1`. Kostenblatt, Wallets und ISK-Parser der
+  Hub-Chancen in `OpportunityCostInputs` zusammengeführt (ohne
+  Verhaltensänderung). Lokalisierung de/en, Xcode-Projekt um drei Dateien
+  ergänzt.
+- P4 Dokumentation: `Documentation/LAGERVERKAUF_PLAN.md`, `PRODUCT.md`,
+  `ARCHITECTURE.md`, `ROADMAP.md`, `Documentation/ACCEPTANCE.md`.
+
+Prüfung (automatisch):
+- Neue Tests: `StockSaleComparisonTests` (10), Katalog-Namensauflösung,
+  Kit-Mapper `name.de`, App-Test Navigation und Speicherung. Bestehende
+  Katalogtests auf `catalog-v7` angepasst.
+- `swift build` erfolgreich; `swift test` 623 Swift-Testing-Tests in 44
+  Suites und 71 Tests in 3 Suites bestanden; `swift test --package-path
+  Packages/EVEStaticDataKit` 13 Tests bestanden; `xcodebuild … test`
+  unsigniert `TEST SUCCEEDED`.
+
+Nicht geprüft: Start der App und Sichtprüfung der Ansicht; echter SDE-Import
+mit deutschen Namen; Einfügen echter Zwischenablage-Inhalte aus dem Spiel.
+
+Offen: einmaliger „Neuimport des aktuellen Katalogs“ durch den Eigentümer für
+deutsche Namen; Live- und Eigentümerabnahme nach Abschnitt E des Plans.
+
 ## 25. Oktober 2026 – Planner: Kachel „Kosten pro Item“ in der Finanzübersicht
 
 Ziel: Eigentümerauftrag. Am Ende der Finanzübersicht eine Kachel, die zeigt, zu

@@ -26,6 +26,12 @@ Noch keine weiteren Vorhaben festgelegt.
 
 ## Umgesetzt, Abnahme offen
 
+- [Lagerverkauf-Plan](Documentation/LAGERVERKAUF_PLAN.md) (25.10.2026,
+  implementiert und automatisch geprüft): Lagerverkauf-Abgleich je Hub mit
+  eingefügten Items (englische und deutsche Namen, Katalogadapter 7),
+  Neuproduktionskosten aus der Hub-Chancen-Rechnung, Mindestpreisen für
+  Sell-Order und Direktverkauf und Empfehlung. SDE-Neuimport, Live- und
+  Eigentümerabnahme offen (Leitfaden in Abschnitt E).
 - [Handel-Plan](Documentation/HANDEL_PLAN.md) (22.10.2026, implementiert und
   automatisch geprüft):
   - Bereich Handel mit SDE-Marktgruppen-Kacheln, Import Main→Home/Coalition
