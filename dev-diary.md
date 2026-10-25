@@ -1,5 +1,37 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 25. Oktober 2026 – Planner: Kachel „Kosten pro Item“ in der Finanzübersicht
+
+Ziel: Eigentümerauftrag. Am Ende der Finanzübersicht eine Kachel, die zeigt, zu
+welchem Preis Items mindestens in den Markt gestellt werden müssen.
+
+Umfang (implementiert):
+- Neuer Abschnitt `PlannerFinanceSection.costPerItem` als letzte Karte. Wert ist
+  das bestehende `productionCostPerOutputUnit` (Produktionskosten inklusive
+  Lieferung ÷ erzeugte Endprodukteinheiten); keine neue Rechenregel.
+- Anzeige mit bis zu zwei Nachkommastellen, damit günstige Items nicht
+  irreführend gerundet werden. Hinweis „vor Marktgebühren“; bei mehreren
+  Produkten als Durchschnitt gekennzeichnet. Details: Gesamtkosten inklusive
+  Lieferung und erzeugte Einheiten.
+- Lokalisierung de/en ergänzt, PRODUCT.md aktualisiert.
+
+- Nachauftrag des Eigentümers: zusätzlich Mindestverkaufspreis inklusive
+  Maklergebühr und Verkaufssteuer. Core: `listingFeeRates` (Sätze aus den
+  Szenarien „Eingestellter Verkauf“) und `minimumListingPricePerOutputUnit`
+  = Kosten pro Item ÷ (1 − Steuer − Makler), Umkehrung der bestehenden
+  Nettoerlösregel. Karte zeigt den Wert im Hinweis, Details zeigen Sätze und
+  Formel. Test in `IndustryPlannerTests` (5 % / 1 % → Kosten ÷ 0,94; unbekannte
+  Kosten → nicht verfügbar).
+- Zweiter Nachauftrag nach Sichtprüfung: Werte getauscht. Groß steht der
+  Mindestpreis inklusive Verkaufssteuer und Maklergebühr, darunter der Wert ohne
+  Gebühren; ohne bekannte Sätze bleibt groß der Wert ohne Gebühren mit Hinweis.
+
+Prüfung (automatisch): `swift build` erfolgreich, `swift test` grün (612 Swift-
+Testing- und 70 XCTest-Tests), natives Xcode-Debug-Build erfolgreich.
+`EVEStaticDataKit` unverändert, nicht erneut getestet.
+Offen: Sichtprüfung in der App durch den Eigentümer; Gebühren für
+Preisänderungen und Weitertransport sind nicht enthalten.
+
 ## 25. Oktober 2026 – Planner: Aufteilung je Stufe abschaltbar, Slots nur aus Charakteren
 
 Ziel: Eigentümerauftrag. Im Planner einzeln steuern, ob die Aufträge von

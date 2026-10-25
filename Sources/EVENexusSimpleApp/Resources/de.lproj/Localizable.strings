@@ -2908,3 +2908,16 @@
 "Your Warehouse already covers all %lld materials (column In stock)." = "Dein Lager deckt bereits alle %lld Materialien (Spalte „Auf Lager“).";
 "Your Warehouse already covers %lld of these materials in part or full (column In stock)." = "Dein Lager deckt bereits %lld dieser Materialien ganz oder teilweise (Spalte „Auf Lager“).";
 "%lld self-built input(s) are missing: this scan has no raw materials for them; update the scan." = "%lld Eigenbau-Eingangsstoff(e) fehlen: Dieser Scan kennt ihre Rohstoffe noch nicht; Scan aktualisieren.";
+"Cost per item" = "Kosten pro Item";
+"Average across all products · before market fees" = "Durchschnitt aller Produkte · vor Marktgebühren";
+"Minimum listing price before market fees" = "Mindestverkaufspreis vor Marktgebühren";
+"The landed production cost, including the selected Main Hub to Home Hub delivery." = "Die Produktionskosten am Zielort, einschließlich der gewählten Lieferung vom Main Hub zum Home Hub.";
+"Produced units" = "Erzeugte Einheiten";
+"The top-level output units of this plan used as the divisor." = "Die Endprodukteinheiten dieses Plans, durch die geteilt wird.";
+"Sales tax · broker fee" = "Verkaufssteuer · Maklergebühr";
+"The configured sales tax and broker fee rates used by the listed-sale scenarios." = "Die eingestellten Sätze für Verkaufssteuer und Maklergebühr, die die Szenarien „Eingestellter Verkauf“ verwenden.";
+"Minimum listing price incl. fees" = "Mindestverkaufspreis inkl. Gebühren";
+"Cost per item divided by (1 − sales tax − broker fee). A sell order at this price exactly covers production, delivery, sales tax and broker fee. Relisting fees and outbound transport are not included." = "Kosten pro Item geteilt durch (1 − Verkaufssteuer − Maklergebühr). Eine Verkaufsorder zu diesem Preis deckt genau Produktion, Lieferung, Verkaufssteuer und Maklergebühr. Gebühren für Preisänderungen und Weitertransport sind nicht enthalten.";
+"Cost per item is the break-even before market fees; the minimum listing price includes sales tax and broker fee. For several products both are aggregate averages, not prices per product." = "Kosten pro Item sind die Gewinnschwelle vor Marktgebühren; der Mindestverkaufspreis enthält Verkaufssteuer und Maklergebühr. Bei mehreren Produkten sind beide zusammengefasste Durchschnitte, keine Preise je Produkt.";
+"Average incl. sales tax and broker fee · before fees: %@" = "Durchschnitt inkl. Verkaufssteuer und Maklergebühr · ohne Gebühren: %@";
+"Incl. sales tax and broker fee · before fees: %@" = "Inkl. Verkaufssteuer und Maklergebühr · ohne Gebühren: %@";

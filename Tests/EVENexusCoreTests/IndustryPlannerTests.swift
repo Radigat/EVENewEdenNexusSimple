@@ -1417,6 +1417,7 @@ struct IndustryPlannerTests {
     #expect(unresolved.costBreakdown?.productionCostBeforeLogistics == nil)
     #expect(unresolved.costBreakdown?.hasConsistentTotal == true)
     #expect(unresolved.productionCostPerOutputUnit == nil)
+    #expect(unresolved.minimumListingPricePerOutputUnit == nil)
     #expect(unresolved.immediateSale.totalCost == nil)
     #expect(unresolved.immediateSale.profit == nil)
 
@@ -2029,6 +2030,16 @@ struct IndustryPlannerTests {
     #expect(costs.hasConsistentTotal)
     #expect(plan.plannedOutputUnits == 1)
     #expect(plan.productionCostPerOutputUnit == 8_001_025)
+    let feeRates = try #require(plan.listingFeeRates)
+    #expect(abs(feeRates.salesTax - 0.05) < 0.000_001)
+    #expect(abs(feeRates.brokerFee - 0.01) < 0.000_001)
+    let minimumListingPrice = try #require(
+      plan.minimumListingPricePerOutputUnit
+    )
+    #expect(abs(minimumListingPrice - 8_001_025 / 0.94) < 0.000_1)
+    #expect(
+      abs(minimumListingPrice * (1 - 0.05 - 0.01) - 8_001_025) < 0.000_1
+    )
     #expect(plan.immediateSale.grossRevenue == 250_000_000)
     #expect(plan.immediateSale.salesTax == 12_500_000)
     #expect(plan.immediateSale.brokerFee == 0)

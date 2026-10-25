@@ -2133,13 +2133,28 @@ als kostenlos ergänzt und Szenariogesamtkosten sowie Gewinn bleiben unbekannt.
 Der Hauptplaner beginnt seine Ergebnisdarstellung mit einer kompakten
 **Finanzübersicht**. Materialbeschaffung, Lagerverbrauch, BPC/BPO,
 Installation, Lieferung vom Main Hub zum Home Hub, Produktionszwischensumme
-und Produktionskosten inklusive Lieferung stehen als eigenständige adaptive
-Karten nebeneinander und bei schmalerem Platz untereinander. Jede Karte ist
+Produktionskosten inklusive Lieferung und **Kosten pro Item** stehen als
+eigenständige adaptive Karten nebeneinander und bei schmalerem Platz untereinander. Jede Karte ist
 vollständig aufklappbar. Ihre Detailansicht zeigt die tatsächlich verwendeten
 Teilbeträge, Gleichungen, BPC-/BPO-Zuordnungen beziehungsweise die vollständige
 Logistikroute. Lagerverbrauch und Refining-Gebühr sind ausdrücklich als bereits
 in der Materialbeschaffung enthalten markiert und werden nicht erneut addiert.
 Unbekannte Teilwerte bleiben unbekannt.
+Die letzte Karte **Kosten pro Item** zeigt groß den **Mindestverkaufspreis
+inklusive Gebühren** und darunter die Produktionskosten pro Einheit (siehe oben)
+ohne Gebühren, beide mit bis zu zwei Nachkommastellen. Sind die Gebührensätze
+unbekannt, zeigt die Karte groß den Wert ohne Gebühren und kennzeichnet ihn als
+„vor Marktgebühren“. Mindestverkaufspreis = Kosten pro Item ÷
+(1 − Verkaufssteuer − Maklergebühr), also die
+Umkehrung der Nettoerlösregel des eingestellten Verkaufs; eine Verkaufsorder zu
+diesem Preis deckt genau Produktion, Lieferung, Verkaufssteuer und Maklergebühr.
+Die Sätze stammen aus den Szenarien „Eingestellter Verkauf“ (gemeinsame
+Einstellung). Gebühren für Preisänderungen und Weitertransport zu einem anderen
+Hub sind nicht enthalten. Bei mehreren Produkten weist die Karte beide Werte
+ausdrücklich als zusammengefasste Durchschnitte aus. Die Details nennen
+Produktionskosten inklusive Lieferung, erzeugte Einheiten, die Gebührensätze und
+den Mindestverkaufspreis; sind Kosten oder Sätze unbekannt, bleibt der
+jeweilige Wert „nicht verfügbar“.
 
 Die neun kompakten Verkaufsszenarien zeigen zunächst nur absoluten Gewinn und
 ROI. Ein Klick auf die jeweilige Karte öffnet wieder die vollständige

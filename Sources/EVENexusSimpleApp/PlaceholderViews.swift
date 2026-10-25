@@ -30,6 +30,7 @@ enum PlannerFinanceSection: String, CaseIterable {
   case inboundLogistics
   case productionSubtotal
   case landedProductionCost
+  case costPerItem
 }
 
 private enum PlannerCalculationPhase: Equatable {
@@ -1481,8 +1482,89 @@ struct PlannerView: View {
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
+        financeOverviewCard(
+          section: .costPerItem,
+          title: "Cost per item",
+          value: formatUnitISK(
+            plan.minimumListingPricePerOutputUnit
+              ?? plan.productionCostPerOutputUnit
+          ),
+          annotation: costPerItemAnnotation(plan)
+        ) {
+          costMetric(
+            "Production cost including delivery",
+            breakdown?.totalProductionCost,
+            explanation:
+              "The landed production cost, including the selected Main Hub to Home Hub delivery."
+          )
+          ExplainedPlannerMetricRow(
+            label: "Produced units",
+            value: plan.plannedOutputUnits.map { $0.formatted() }
+              ?? AppLocalization.text("Unavailable"),
+            explanation: AppLocalization.text(
+              "The top-level output units of this plan used as the divisor."
+            ),
+            highlightsValue: true
+          )
+          ExplainedPlannerMetricRow(
+            label: "Sales tax · broker fee",
+            value: plan.listingFeeRates.map {
+              "\(formatFeeRate($0.salesTax)) · \(formatFeeRate($0.brokerFee))"
+            } ?? AppLocalization.text("Unavailable"),
+            explanation: AppLocalization.text(
+              "The configured sales tax and broker fee rates used by the listed-sale scenarios."
+            ),
+            highlightsValue: true
+          )
+          ExplainedPlannerMetricRow(
+            label: "Minimum listing price incl. fees",
+            value: formatUnitISK(plan.minimumListingPricePerOutputUnit),
+            explanation: AppLocalization.text(
+              "Cost per item divided by (1 − sales tax − broker fee). A sell order at this price exactly covers production, delivery, sales tax and broker fee. Relisting fees and outbound transport are not included."
+            ),
+            highlightsValue: true
+          )
+          Text(
+            "Cost per item is the break-even before market fees; the minimum listing price includes sales tax and broker fee. For several products both are aggregate averages, not prices per product."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          .fixedSize(horizontal: false, vertical: true)
+        }
       }
     }
+  }
+
+  /// The card headline is the minimum listing price including fees; the
+  /// annotation carries the break-even before fees. Without fee rates the
+  /// headline falls back to the cost before fees and says so.
+  private func costPerItemAnnotation(_ plan: IndustryPlanSnapshot) -> String {
+    let average = plan.requests.count > 1
+    guard plan.minimumListingPricePerOutputUnit != nil else {
+      return AppLocalization.text(
+        average
+          ? "Average across all products · before market fees"
+          : "Minimum listing price before market fees"
+      )
+    }
+    return AppLocalization.format(
+      average
+        ? "Average incl. sales tax and broker fee · before fees: %@"
+        : "Incl. sales tax and broker fee · before fees: %@",
+      formatUnitISK(plan.productionCostPerOutputUnit)
+    )
+  }
+
+  private func formatFeeRate(_ rate: Double) -> String {
+    rate.formatted(.percent.precision(.fractionLength(0...2)))
+  }
+
+  /// Per-item values keep cents so cheap items are not rounded to a misleading price.
+  private func formatUnitISK(_ value: Double?) -> String {
+    guard let value else { return AppLocalization.text("Unavailable") }
+    return value.formatted(
+      .currency(code: "ISK").precision(.fractionLength(0...2))
+    )
   }
 
   private func financeOverviewCard<Details: View>(

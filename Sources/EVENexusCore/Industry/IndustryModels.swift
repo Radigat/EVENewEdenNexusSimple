@@ -1808,6 +1808,32 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
     let value = totalCost / Double(plannedOutputUnits)
     return value.isFinite && value >= 0 ? value : nil
   }
+
+  /// Sales tax and broker fee rates used by the listed-sale scenarios. All
+  /// scenarios share the configured rates; the first complete pair is used.
+  public var listingFeeRates: (salesTax: Double, brokerFee: Double)? {
+    for sale in [listedSale, homeListedSale, coalitionListedSale] {
+      guard let tax = sale?.salesTaxRate,
+        let broker = sale?.brokerFeeRate,
+        tax.isFinite, broker.isFinite,
+        tax >= 0, broker >= 0,
+        tax + broker < 1
+      else { continue }
+      return (tax, broker)
+    }
+    return nil
+  }
+
+  /// Break-even sell-order price per unit: the landed cost per unit grossed up
+  /// by sales tax and broker fee, the inverse of the listed-sale net revenue
+  /// rule. Unavailable while the cost or the fee rates are unavailable.
+  public var minimumListingPricePerOutputUnit: Double? {
+    guard let costPerUnit = productionCostPerOutputUnit,
+      let rates = listingFeeRates
+    else { return nil }
+    let value = costPerUnit / (1 - rates.salesTax - rates.brokerFee)
+    return value.isFinite && value >= 0 ? value : nil
+  }
 }
 
 public protocol IndustryCatalogQuerying: Sendable {

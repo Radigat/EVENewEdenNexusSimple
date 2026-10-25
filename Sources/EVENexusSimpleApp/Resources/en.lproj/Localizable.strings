@@ -2281,3 +2281,16 @@
 "Your Warehouse already covers all %lld materials (column In stock)." = "Your Warehouse already covers all %lld materials (column In stock).";
 "Your Warehouse already covers %lld of these materials in part or full (column In stock)." = "Your Warehouse already covers %lld of these materials in part or full (column In stock).";
 "%lld self-built input(s) are missing: this scan has no raw materials for them; update the scan." = "%lld self-built input(s) are missing: this scan has no raw materials for them; update the scan.";
+"Cost per item" = "Cost per item";
+"Average across all products · before market fees" = "Average across all products · before market fees";
+"Minimum listing price before market fees" = "Minimum listing price before market fees";
+"The landed production cost, including the selected Main Hub to Home Hub delivery." = "The landed production cost, including the selected Main Hub to Home Hub delivery.";
+"Produced units" = "Produced units";
+"The top-level output units of this plan used as the divisor." = "The top-level output units of this plan used as the divisor.";
+"Sales tax · broker fee" = "Sales tax · broker fee";
+"The configured sales tax and broker fee rates used by the listed-sale scenarios." = "The configured sales tax and broker fee rates used by the listed-sale scenarios.";
+"Minimum listing price incl. fees" = "Minimum listing price incl. fees";
+"Cost per item divided by (1 − sales tax − broker fee). A sell order at this price exactly covers production, delivery, sales tax and broker fee. Relisting fees and outbound transport are not included." = "Cost per item divided by (1 − sales tax − broker fee). A sell order at this price exactly covers production, delivery, sales tax and broker fee. Relisting fees and outbound transport are not included.";
+"Cost per item is the break-even before market fees; the minimum listing price includes sales tax and broker fee. For several products both are aggregate averages, not prices per product." = "Cost per item is the break-even before market fees; the minimum listing price includes sales tax and broker fee. For several products both are aggregate averages, not prices per product.";
+"Average incl. sales tax and broker fee · before fees: %@" = "Average incl. sales tax and broker fee · before fees: %@";
+"Incl. sales tax and broker fee · before fees: %@" = "Incl. sales tax and broker fee · before fees: %@";
