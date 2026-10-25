@@ -2874,3 +2874,32 @@
 "Turn this on only when no other station or structure in this region has a market. The Trade area then shows the regional ESI market history as this hub's traded volume, marked “(region)”. ESI offers no market history per station or structure." = "Nur einschalten, wenn keine andere Station oder Struktur dieser Region einen Markt hat. Der Handel zeigt dann die regionale ESI-Markthistorie als Handelsvolumen dieses Hubs, gekennzeichnet mit „(Region)“. ESI bietet keine Markthistorie je Station oder Struktur.";
 "Target hub %lld d (region)" = "Zielhub %lld T (Region)";
 "Regional ESI market history used as the target hub's volume, because the target hub is marked as the only market of its region in Market Settings. Up to yesterday (UTC); buy and sell side are not separated." = "Regionale ESI-Markthistorie als Volumen des Zielhubs, weil der Zielhub in den Markteinstellungen als einziger Markt der Region markiert ist. Bis gestern (UTC); Kauf- und Verkaufsseite sind nicht getrennt.";
+
+/* Hub opportunities: Add to Planner (24.10.2026) */
+"Add to Planner" = "Zum Planner hinzufügen";
+"Adds this row's visible quantity, Runs, ME and TE as a new line to the Planner draft. Concrete Blueprint sources are selected and verified there." = "Fügt die sichtbare Menge, Runs, ME und TE dieser Zeile als neue Zeile an den Planner-Entwurf an. Die konkreten Bauplanquellen werden dort ausgewählt und geprüft.";
+"Adds this saved batch as a new line to the Planner draft." = "Fügt diese gespeicherte Charge als neue Zeile an den Planner-Entwurf an.";
+
+/* Hub opportunities: build intermediates yourself (24.10.2026) */
+"Build intermediates yourself" = "Zwischenprodukte selbst bauen";
+"Components, reaction products and other buildable inputs are costed from their materials down to bought raw materials, including the exact installation or reaction cost of each intermediate job. Each intermediate uses the cheaper of building and buying at the Main Hub. Intermediates use the Planner's default intermediate ME; reactions have no ME or TE. This remains an estimate: the Planner stays authoritative." = "Komponenten, Reaktionsprodukte und andere baubare Eingangsstoffe werden aus ihren Materialien bis zu den gekauften Rohstoffen gerechnet, einschließlich der genauen Installations- oder Reaktionskosten jedes Zwischenauftrags. Je Zwischenprodukt gilt das Günstigere aus Eigenbau und Kauf am Main Hub. Zwischenprodukte nutzen die Standard-ME für Zwischenprodukte des Planners; Reaktionen haben keine ME und TE. Das bleibt eine Schätzung, maßgeblich ist der Planner.";
+"Update the scan to cost intermediates from their materials." = "Für den Eigenbau von Zwischenprodukten den Scan aktualisieren.";
+"%lld input(s) costed as built from their materials, including %@ installation or reaction cost of the intermediate jobs." = "%lld Eingangsstoff(e) als Eigenbau aus Materialien gerechnet, darin %@ Installations- oder Reaktionskosten der Zwischenaufträge.";
+"Built from its materials: bought materials plus the installation or reaction cost of every built intermediate job." = "Aus Materialien gebaut: gekaufte Materialien plus Installations- oder Reaktionskosten jedes gebauten Zwischenauftrags.";
+"Build intermediates yourself is off: every input is bought at the Main Hub." = "„Zwischenprodukte selbst bauen“ ist ausgeschaltet: Alle Eingangsstoffe werden am Main Hub gekauft.";
+"This scan has no self-build estimate yet; update the scan to cost intermediates from their materials." = "Dieser Scan enthält noch keine Eigenbau-Schätzung. Scan aktualisieren, um Zwischenprodukte aus ihren Materialien zu rechnen.";
+"Every input is bought: building it is not cheaper or not possible." = "Alle Eingangsstoffe werden gekauft: Eigenbau ist nicht günstiger oder nicht möglich.";
+"Final products: one job per input line" = "Zielprodukt: ein Auftrag je Planzeile";
+"Intermediates: one job per product" = "Zwischenprodukte: ein Auftrag je Produkt";
+"Built" = "Eigenbau";
+"Total cost %@ · Materials %@ · Installation %@" = "Gesamtkosten %@ · Material %@ · Installation %@";
+"Blueprint %@ · Logistics %@" = "Bauplan %@ · Logistik %@";
+"%lld item(s) copied for EVE Multibuy." = "%lld Position(en) für EVE Multibuy kopiert.";
+"The shopping list could not be copied to the clipboard." = "Die Einkaufsliste konnte nicht in die Zwischenablage kopiert werden.";
+"Shopping list" = "Einkaufsliste";
+"In stock" = "Auf Lager";
+"No material to copy." = "Kein Material zum Kopieren.";
+"Multibuy contains the full quantity of %lld material(s), self-built inputs as their raw materials." = "Multibuy enthält die volle Menge von %lld Material(ien), Eigenbau-Bauteile als ihre Rohstoffe.";
+"Your Warehouse already covers all %lld materials (column In stock)." = "Dein Lager deckt bereits alle %lld Materialien (Spalte „Auf Lager“).";
+"Your Warehouse already covers %lld of these materials in part or full (column In stock)." = "Dein Lager deckt bereits %lld dieser Materialien ganz oder teilweise (Spalte „Auf Lager“).";
+"%lld self-built input(s) are missing: this scan has no raw materials for them; update the scan." = "%lld Eigenbau-Eingangsstoff(e) fehlen: Dieser Scan kennt ihre Rohstoffe noch nicht; Scan aktualisieren.";

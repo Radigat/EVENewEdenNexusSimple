@@ -1137,6 +1137,29 @@ public enum ManufacturingOpportunitySortDirection: String, Sendable {
   }
 }
 
+/// Favorites lead the opportunity tables (owner decision 24.10.2026). Rows
+/// arrive already sorted by the active column; the stable partition keeps that
+/// order, including its tie-breaker, inside the favorite and the other block.
+public enum ManufacturingOpportunityFavoriteOrdering {
+  public static func favoritesFirst<Element>(
+    _ elements: [Element],
+    favorites: Set<Int64>,
+    typeID: (Element) -> Int64
+  ) -> [Element] {
+    guard !favorites.isEmpty else { return elements }
+    var leading: [Element] = []
+    var trailing: [Element] = []
+    for element in elements {
+      if favorites.contains(typeID(element)) {
+        leading.append(element)
+      } else {
+        trailing.append(element)
+      }
+    }
+    return leading + trailing
+  }
+}
+
 public struct ManufacturingOpportunitySortDescriptor: Equatable, Sendable {
   public let column: ManufacturingOpportunitySortColumn
   public let direction: ManufacturingOpportunitySortDirection
@@ -1417,6 +1440,48 @@ public struct ManufacturingOpportunityMaterial: Identifiable, Codable,
   public let quantity: Int64
   public let quote: PriceQuote
   public let packagedVolumePerUnit: Double?
+  /// Estimated cost of producing this input from its own materials instead
+  /// of buying it; `nil` when it has no buildable recipe or a required value
+  /// is unavailable, and on scans saved before this estimate existed.
+  public var componentBuild: ManufacturingOpportunityComponentBuild? = nil
+}
+
+/// Self-build estimate of one direct input, resolved recursively down to
+/// bought materials. Every intermediate node uses the cheaper of building and
+/// buying at the Main Hub; installation and reaction job costs of the built
+/// nodes use the same EIV formula as the final job.
+public struct ManufacturingOpportunityComponentBuild: Codable, Equatable,
+  Sendable
+{
+  /// Input quantity this estimate was resolved for.
+  public let quantity: Int64
+  /// Bought materials plus all intermediate installation/reaction job costs.
+  public let totalCost: Double
+  /// Share of `totalCost` that is installation or reaction job cost.
+  public let installationCost: Double
+  /// Packaged volume of every bought material; `nil` when one is unknown.
+  public let purchaseVolume: Double?
+  /// Number of nodes, including this input, that are built instead of bought.
+  public let builtNodeCount: Int
+  /// Bought materials of the whole build tree by type ID, for `quantity`.
+  /// `nil` on scans saved before the shopping list existed.
+  public var purchases: [Int64: Int64]? = nil
+
+  public init(
+    quantity: Int64,
+    totalCost: Double,
+    installationCost: Double,
+    purchaseVolume: Double?,
+    builtNodeCount: Int,
+    purchases: [Int64: Int64]? = nil
+  ) {
+    self.quantity = quantity
+    self.totalCost = totalCost
+    self.installationCost = installationCost
+    self.purchaseVolume = purchaseVolume
+    self.builtNodeCount = builtNodeCount
+    self.purchases = purchases
+  }
 }
 
 public struct ManufacturingOpportunityRow: Identifiable, Codable, Sendable {
@@ -1448,7 +1513,7 @@ public struct ManufacturingOpportunityRow: Identifiable, Codable, Sendable {
   public var demandChangeFromPreviousDayPercent: Double? = nil
   public let activeBuyDemand: Int64
   public let activeSellSupply: Int64
-  public let materials: [ManufacturingOpportunityMaterial]
+  public var materials: [ManufacturingOpportunityMaterial]
   public let materialCost: Double?
   public let installationCost: Double?
   public let productionCostBeforeBlueprintAndLogistics: Double?
@@ -1461,7 +1526,7 @@ public struct ManufacturingOpportunityRow: Identifiable, Codable, Sendable {
   public let iskPerHour: Double?
   public let iskPerCubicMeter: Double?
   public let packagedVolumePerUnit: Double?
-  public let warnings: [DomainWarning]
+  public var warnings: [DomainWarning]
 
   public var effectiveActivityKind: BlueprintActivityDefinition.Kind {
     activityKind ?? .manufacturing
@@ -2380,6 +2445,15 @@ public struct ManufacturingOpportunitySnapshot: Identifiable, Codable,
   public let sdeSource: SourceIdentity
   public let marketSource: SourceIdentity
   public let warnings: [DomainWarning]
+  /// `true` when the scan resolved self-build estimates for its inputs;
+  /// `nil` on scans saved before that estimate existed.
+  public var componentBuildsResolved: Bool? = nil
+  /// Names of the bought materials inside self-build estimates, stored once
+  /// per scan instead of in every row.
+  public var componentPurchaseNames: [Int64: String]? = nil
+  /// SDE group of every direct input and bought raw material, stored once
+  /// per scan so the shopping list can be grouped. `nil` on older scans.
+  public var materialGroupNames: [Int64: String]? = nil
 
   public init(
     id: UUID = UUID(),
@@ -2564,7 +2638,9 @@ public enum ManufacturingOpportunityAnalyzer {
     hubRole: OpportunityHubRole = .main,
     saleHub: ProcurementLocation? = nil,
     saleMarket: MarketOrderSnapshot? = nil,
-    coalitionTransport: OpportunityCoalitionTransportBasis? = nil
+    coalitionTransport: OpportunityCoalitionTransportBasis? = nil,
+    intermediateMaterialEfficiency: Int = 10,
+    productionBlacklist: ProductionBlacklistConfiguration = .init()
   ) throws -> ManufacturingOpportunitySnapshot {
     let requestedRunsAreValid =
       settings.requestedRuns.map {
@@ -2611,6 +2687,19 @@ public enum ManufacturingOpportunityAnalyzer {
     guard let sdeSource = (manufacturing.first ?? reactions.first)?.source else {
       throw ManufacturingOpportunityError.noManufacturingDefinitions
     }
+    let componentCosts = ComponentCostResolver(
+      manufacturing: manufacturing,
+      reactions: reactions,
+      typeNames: typeNames,
+      classifications: classifications,
+      packagedVolumes: packagedVolumes,
+      market: market,
+      adjustedPrices: adjustedPrices,
+      facilities: facilities,
+      reactionFacility: reactionFacility,
+      intermediateMaterialEfficiency: min(10, max(0, intermediateMaterialEfficiency)),
+      blacklist: productionBlacklist
+    )
 
     var rows: [ManufacturingOpportunityRow] = []
     rows.reserveCapacity(manufacturing.count + reactions.count)
@@ -2634,7 +2723,8 @@ public enum ManufacturingOpportunityAnalyzer {
             ?? .module
         ],
         salesTaxRate: salesTaxRate,
-        brokerFeeRate: brokerFeeRate
+        brokerFeeRate: brokerFeeRate,
+        componentCosts: componentCosts
       ) {
         rows.append(candidate)
       }
@@ -2656,7 +2746,8 @@ public enum ManufacturingOpportunityAnalyzer {
         adjustedPrices: adjustedPrices,
         facility: reactionFacility,
         salesTaxRate: salesTaxRate,
-        brokerFeeRate: brokerFeeRate
+        brokerFeeRate: brokerFeeRate,
+        componentCosts: componentCosts
       ) {
         rows.append(candidate)
       }
@@ -2724,7 +2815,7 @@ public enum ManufacturingOpportunityAnalyzer {
         )
       )
     }
-    return ManufacturingOpportunitySnapshot(
+    var snapshot = ManufacturingOpportunitySnapshot(
       settings: settings,
       mainHub: mainHub,
       productionWarehouseScope: productionWarehouseScope,
@@ -2757,6 +2848,24 @@ public enum ManufacturingOpportunityAnalyzer {
       saleHub: hubRole == .main ? nil : saleHub,
       coalitionTransport: hubRole == .coalition ? coalitionTransport : nil
     )
+    snapshot.componentBuildsResolved = true
+    snapshot.componentPurchaseNames = componentCosts.purchasedTypeNames(
+      for: snapshot.rows
+    )
+    var materialGroupNames: [Int64: String] = [:]
+    for row in snapshot.rows {
+      for material in row.materials {
+        for typeID in [material.typeID]
+          + Array(material.componentBuild?.purchases?.keys ?? [:].keys)
+        where materialGroupNames[typeID] == nil {
+          if let group = classifications[typeID]?.groupName {
+            materialGroupNames[typeID] = group
+          }
+        }
+      }
+    }
+    snapshot.materialGroupNames = materialGroupNames
+    return snapshot
   }
 
   private static func row(
@@ -2772,7 +2881,8 @@ public enum ManufacturingOpportunityAnalyzer {
     adjustedPrices: [Int64: AdjustedPrice],
     facility: ManufacturingOpportunityFacilityContext?,
     salesTaxRate: Double?,
-    brokerFeeRate: Double?
+    brokerFeeRate: Double?,
+    componentCosts: ComponentCostResolver
   ) -> ManufacturingOpportunityRow? {
     let productOrders = (productMarket.ordersByType[definition.productTypeID] ?? [])
       .filter {
@@ -2834,7 +2944,12 @@ public enum ManufacturingOpportunityAnalyzer {
         baseQuantityPerRun: material.quantity,
         quantity: quantity,
         quote: quote,
-        packagedVolumePerUnit: packagedVolumes[material.typeID]
+        packagedVolumePerUnit: packagedVolumes[material.typeID],
+        componentBuild: componentCosts.build(
+          typeID: material.typeID,
+          quantity: quantity,
+          consumerTypeID: definition.productTypeID
+        )
       )
     }
     guard materials.count == definition.activity.materials.count else {
@@ -2951,7 +3066,8 @@ public enum ManufacturingOpportunityAnalyzer {
     adjustedPrices: [Int64: AdjustedPrice],
     facility: ReactionFacilityCostContext?,
     salesTaxRate: Double?,
-    brokerFeeRate: Double?
+    brokerFeeRate: Double?,
+    componentCosts: ComponentCostResolver
   ) throws -> ManufacturingOpportunityRow? {
     guard
       let product = definition.activity.products.first(where: {
@@ -3014,7 +3130,12 @@ public enum ManufacturingOpportunityAnalyzer {
         baseQuantityPerRun: base.quantity,
         quantity: input.quantity,
         quote: input.quote,
-        packagedVolumePerUnit: packagedVolumes[input.typeID]
+        packagedVolumePerUnit: packagedVolumes[input.typeID],
+        componentBuild: componentCosts.build(
+          typeID: input.typeID,
+          quantity: input.quantity,
+          consumerTypeID: definition.productTypeID
+        )
       )
     }
     guard materials.count == definition.activity.materials.count else {
@@ -3195,6 +3316,716 @@ public enum ManufacturingOpportunityAnalyzer {
 
   private static func finite(_ value: Double) -> Double? {
     value.isFinite ? value : nil
+  }
+}
+
+extension ManufacturingOpportunityAnalyzer {
+  /// Recursive self-build estimate for the inputs of a scan (owner decision
+  /// 24.10.2026). Each node uses the cheaper complete supply of buying at the
+  /// Main Hub and building from its recipe. Manufacturing nodes use the
+  /// Planner's default intermediate ME and the category facility; reaction
+  /// nodes have no ME/TE and use only the reaction facility multiplier. A node
+  /// without recipe, facility, adjusted price or complete supply is not built.
+  /// The estimate rounds per node over its whole quantity, without job splits.
+  final class ComponentCostResolver {
+    static let maximumDepth = 12
+
+    private struct Supply {
+      let total: Double
+      let installation: Double
+      let purchaseVolume: Double?
+      let builtNodeCount: Int
+      /// Bought materials by type ID.
+      let purchases: [Int64: Int64]
+    }
+
+    private struct Key: Hashable {
+      let typeID: Int64
+      let quantity: Int64
+    }
+
+    private let manufacturingByProduct: [Int64: BlueprintDefinition]
+    private let reactionsByProduct: [Int64: BlueprintDefinition]
+    private let typeNames: [Int64: String]
+    private let classifications: [Int64: IndustryItemClassification]
+    private let packagedVolumes: [Int64: Double]
+    private let market: MarketOrderSnapshot
+    private let adjustedPrices: [Int64: AdjustedPrice]
+    private let facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext]
+    private let reactionFacility: ReactionFacilityCostContext?
+    private let intermediateMaterialEfficiency: Int
+    private let blacklist: ProductionBlacklistConfiguration
+    private var sortedSellOrders: [Int64: [MarketOrder]] = [:]
+    private var purchases: [Key: Supply?] = [:]
+    private var builds: [Key: Supply?] = [:]
+
+    init(
+      manufacturing: [BlueprintDefinition],
+      reactions: [BlueprintDefinition],
+      typeNames: [Int64: String],
+      classifications: [Int64: IndustryItemClassification],
+      packagedVolumes: [Int64: Double],
+      market: MarketOrderSnapshot,
+      adjustedPrices: [Int64: AdjustedPrice],
+      facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext],
+      reactionFacility: ReactionFacilityCostContext?,
+      intermediateMaterialEfficiency: Int,
+      blacklist: ProductionBlacklistConfiguration
+    ) {
+      // One recipe per product, the lowest Blueprint ID first, so repeated
+      // scans resolve the same recipe.
+      func index(_ definitions: [BlueprintDefinition]) -> [Int64: BlueprintDefinition] {
+        definitions.reduce(into: [:]) { result, definition in
+          if let existing = result[definition.productTypeID],
+            existing.blueprintTypeID <= definition.blueprintTypeID
+          {
+            return
+          }
+          result[definition.productTypeID] = definition
+        }
+      }
+      manufacturingByProduct = index(manufacturing)
+      reactionsByProduct = index(reactions)
+      self.typeNames = typeNames
+      self.classifications = classifications
+      self.packagedVolumes = packagedVolumes
+      self.market = market
+      self.adjustedPrices = adjustedPrices
+      self.facilities = facilities
+      self.reactionFacility = reactionFacility
+      self.intermediateMaterialEfficiency = intermediateMaterialEfficiency
+      self.blacklist = blacklist
+    }
+
+    /// Self-build estimate of one direct input of `consumerTypeID`.
+    func build(
+      typeID: Int64,
+      quantity: Int64,
+      consumerTypeID: Int64
+    ) -> ManufacturingOpportunityComponentBuild? {
+      guard quantity > 0,
+        let supply = built(
+          typeID: typeID,
+          quantity: quantity,
+          depth: 1,
+          path: [consumerTypeID]
+        )
+      else { return nil }
+      return ManufacturingOpportunityComponentBuild(
+        quantity: quantity,
+        totalCost: supply.total,
+        installationCost: supply.installation,
+        purchaseVolume: supply.purchaseVolume,
+        builtNodeCount: supply.builtNodeCount,
+        purchases: supply.purchases
+      )
+    }
+
+    /// Names of every material bought inside the rows' self-build estimates.
+    func purchasedTypeNames(
+      for rows: [ManufacturingOpportunityRow]
+    ) -> [Int64: String] {
+      var names: [Int64: String] = [:]
+      for row in rows {
+        for material in row.materials {
+          for typeID in material.componentBuild?.purchases?.keys ?? [:].keys {
+            names[typeID] = typeNames[typeID] ?? "Type \(typeID)"
+          }
+        }
+      }
+      return names
+    }
+
+    private func cheapest(
+      typeID: Int64,
+      quantity: Int64,
+      depth: Int,
+      path: Set<Int64>
+    ) -> Supply? {
+      let bought = purchase(typeID: typeID, quantity: quantity)
+      let selfBuilt = built(
+        typeID: typeID,
+        quantity: quantity,
+        depth: depth,
+        path: path
+      )
+      switch (bought, selfBuilt) {
+      case (let bought?, let selfBuilt?):
+        return selfBuilt.total < bought.total ? selfBuilt : bought
+      case (let bought?, nil): return bought
+      case (nil, let selfBuilt?): return selfBuilt
+      case (nil, nil): return nil
+      }
+    }
+
+    private func purchase(typeID: Int64, quantity: Int64) -> Supply? {
+      let key = Key(typeID: typeID, quantity: quantity)
+      if let cached = purchases[key] { return cached }
+      let orders: [MarketOrder]
+      if let cached = sortedSellOrders[typeID] {
+        orders = cached
+      } else {
+        orders = MarketPriceEngine.sortedOrders(
+          typeID: typeID,
+          scenario: .materialBuy,
+          snapshot: market
+        )
+        sortedSellOrders[typeID] = orders
+      }
+      let quote = MarketPriceEngine.quote(
+        typeID: typeID,
+        quantity: quantity,
+        scenario: .materialBuy,
+        snapshot: market,
+        sortedOrders: orders,
+        salesTaxRate: nil,
+        brokerFeeRate: nil
+      )
+      var supply: Supply?
+      if quote.isComplete, let total = quote.total, total.isFinite, total >= 0 {
+        supply = Supply(
+          total: total,
+          installation: 0,
+          purchaseVolume: packagedVolumes[typeID].flatMap {
+            $0 >= 0 ? safeProduct($0, Double(quantity)) : nil
+          },
+          builtNodeCount: 0,
+          purchases: [typeID: quantity]
+        )
+      }
+      purchases[key] = .some(supply)
+      return supply
+    }
+
+    private func built(
+      typeID: Int64,
+      quantity: Int64,
+      depth: Int,
+      path: Set<Int64>
+    ) -> Supply? {
+      guard depth <= Self.maximumDepth, !path.contains(typeID) else {
+        return nil
+      }
+      let key = Key(typeID: typeID, quantity: quantity)
+      if let cached = builds[key] { return cached }
+      let classification = classifications[typeID]
+      let name = typeNames[typeID] ?? "Type \(typeID)"
+      var supply: Supply?
+      if !blacklist.blocks(typeName: name, classification: classification) {
+        var childPath = path
+        childPath.insert(typeID)
+        if let definition = manufacturingByProduct[typeID] {
+          supply = manufactured(
+            definition,
+            quantity: quantity,
+            category: classification?.manufacturingCategory ?? .module,
+            depth: depth,
+            path: childPath
+          )
+        } else if let definition = reactionsByProduct[typeID] {
+          supply = reacted(
+            definition,
+            quantity: quantity,
+            depth: depth,
+            path: childPath
+          )
+        }
+      }
+      builds[key] = .some(supply)
+      return supply
+    }
+
+    private func manufactured(
+      _ definition: BlueprintDefinition,
+      quantity: Int64,
+      category: ManufacturingCategory,
+      depth: Int,
+      path: Set<Int64>
+    ) -> Supply? {
+      guard let facility = facilities[category], !facility.needsReview,
+        let runs = Self.runs(for: definition, quantity: quantity),
+        let installation = installation(
+          definition: definition,
+          runs: runs,
+          adjustedPrices: adjustedPrices,
+          facility: facility
+        )
+      else { return nil }
+      let inputs = definition.activity.materials.map {
+        material -> (typeID: Int64, quantity: Int64) in
+        (
+          material.typeID,
+          IndustryPlanner.manufacturingMaterialQuantity(
+            baseQuantity: material.quantity,
+            runs: runs,
+            materialEfficiency: intermediateMaterialEfficiency,
+            facilityMultiplier: facility.materialMultiplier
+          )
+        )
+      }
+      return combined(
+        inputs: inputs,
+        installation: installation,
+        depth: depth,
+        path: path
+      )
+    }
+
+    private func reacted(
+      _ definition: BlueprintDefinition,
+      quantity: Int64,
+      depth: Int,
+      path: Set<Int64>
+    ) -> Supply? {
+      // Reactions have no ME or TE; productionCostRow applies only the
+      // reaction facility's material multiplier.
+      guard let reactionFacility,
+        let runs = Self.runs(for: definition, quantity: quantity),
+        let reaction = try? ReactionProfitabilityAnalyzer.productionCostRow(
+          definition: definition,
+          typeNames: typeNames,
+          classifications: classifications,
+          runs: runs,
+          market: market,
+          adjustedPrices: adjustedPrices,
+          facility: reactionFacility
+        ),
+        let installation = reaction.installationCost,
+        reaction.inputs.count == definition.activity.materials.count
+      else { return nil }
+      return combined(
+        inputs: reaction.inputs.map { ($0.typeID, $0.quantity) },
+        installation: installation,
+        depth: depth,
+        path: path
+      )
+    }
+
+    private func combined(
+      inputs: [(typeID: Int64, quantity: Int64)],
+      installation: Double,
+      depth: Int,
+      path: Set<Int64>
+    ) -> Supply? {
+      guard installation.isFinite, installation >= 0 else { return nil }
+      var total = installation
+      var installationTotal = installation
+      var volume: Double? = 0
+      var builtNodes = 1
+      var bought: [Int64: Int64] = [:]
+      for input in inputs {
+        guard input.quantity > 0, input.quantity < Int64.max,
+          let supply = cheapest(
+            typeID: input.typeID,
+            quantity: input.quantity,
+            depth: depth + 1,
+            path: path
+          )
+        else { return nil }
+        total += supply.total
+        installationTotal += supply.installation
+        builtNodes += supply.builtNodeCount
+        bought.merge(supply.purchases) { lhs, rhs in
+          let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+          return overflow ? Int64.max : sum
+        }
+        volume = volume.flatMap { current in
+          supply.purchaseVolume.map { current + $0 }
+        }
+        guard total.isFinite, installationTotal.isFinite else { return nil }
+      }
+      return Supply(
+        total: total,
+        installation: installationTotal,
+        purchaseVolume: volume.flatMap { $0.isFinite ? $0 : nil },
+        builtNodeCount: builtNodes,
+        purchases: bought
+      )
+    }
+
+    private static func runs(
+      for definition: BlueprintDefinition,
+      quantity: Int64
+    ) -> Int? {
+      guard quantity > 0,
+        let output = definition.activity.products.first(where: {
+          $0.typeID == definition.productTypeID && $0.quantity > 0
+        })?.quantity
+      else { return nil }
+      let (runs, remainder) = quantity.quotientAndRemainder(dividingBy: output)
+      let total = runs + (remainder > 0 ? 1 : 0)
+      return Int(exactly: total).flatMap { $0 > 0 ? $0 : nil }
+    }
+  }
+}
+
+/// Applies the "build intermediates yourself" switch to one scanned row: an
+/// input with a complete self-build estimate uses it when it is cheaper than
+/// buying or when buying is incomplete. The row's costs are then recomputed by
+/// the run projector from the replaced inputs.
+public enum ManufacturingOpportunityComponentBuildPolicy {
+  public static let builtWarningCode = "manufacturing-opportunity.component-built"
+
+  public static func applying(
+    _ row: ManufacturingOpportunityRow,
+    buildsIntermediates: Bool
+  ) -> ManufacturingOpportunityRow {
+    guard buildsIntermediates else { return row }
+    var replacedWarningIDs: Set<UUID> = []
+    var replaced = false
+    let materials = row.materials.map { material in
+      guard let build = material.componentBuild,
+        build.quantity == material.quantity,
+        material.quantity > 0,
+        build.totalCost.isFinite, build.totalCost >= 0
+      else { return material }
+      if material.quote.isComplete, let bought = material.quote.total,
+        bought <= build.totalCost
+      {
+        return material
+      }
+      replaced = true
+      replacedWarningIDs.formUnion(material.quote.warnings.map(\.id))
+      let quantity = Double(material.quantity)
+      let quote = PriceQuote(
+        id: UUID(),
+        typeID: material.typeID,
+        quantity: material.quantity,
+        scenario: .materialBuy,
+        total: build.totalCost,
+        weightedUnitPrice: build.totalCost / quantity,
+        filledQuantity: material.quantity,
+        capturedAt: material.quote.capturedAt,
+        source: material.quote.source,
+        warnings: [
+          DomainWarning(
+            code: builtWarningCode,
+            message:
+              "Built from its materials: bought materials plus the installation or reaction cost of every built intermediate job.",
+            severity: .information,
+            source: material.quote.source
+          )
+        ]
+      )
+      return ManufacturingOpportunityMaterial(
+        typeID: material.typeID,
+        name: material.name,
+        baseQuantityPerRun: material.baseQuantityPerRun,
+        quantity: material.quantity,
+        quote: quote,
+        packagedVolumePerUnit: build.purchaseVolume.map { $0 / quantity },
+        componentBuild: build
+      )
+    }
+    guard replaced else { return row }
+    var updated = row
+    updated.materials = materials
+    updated.warnings = row.warnings.filter { !replacedWarningIDs.contains($0.id) }
+    return ManufacturingOpportunityRunProjector.project(
+      updated,
+      requestedRuns: updated.runs,
+      materialEfficiency: updated.materialEfficiency,
+      timeEfficiency: updated.timeEfficiency
+    ) ?? row
+  }
+
+  /// Number of inputs of a (policy-applied) row that are built, and the
+  /// intermediate installation/reaction cost they contain.
+  public static func summary(
+    of row: ManufacturingOpportunityRow
+  ) -> (builtInputs: Int, installationCost: Double) {
+    row.materials.reduce(into: (0, 0.0)) { result, material in
+      guard material.quote.warnings.contains(where: { $0.code == builtWarningCode }),
+        let build = material.componentBuild
+      else { return }
+      result.0 += 1
+      result.1 += build.installationCost * Double(material.quantity)
+        / Double(max(1, build.quantity))
+    }
+  }
+}
+
+/// One input of the cost explanation: quantity, unit price and total exactly
+/// as the (self-build-applied) row costs it.
+public struct ManufacturingOpportunityMaterialCostLine: Identifiable, Equatable,
+  Sendable
+{
+  public var id: Int64 { typeID }
+  public let typeID: Int64
+  public let name: String
+  public let quantity: Int64
+  /// `nil` when the market quote is incomplete; never replaced by zero.
+  public let unitPrice: Double?
+  public let total: Double?
+  /// Costed from its materials instead of bought at the Main Hub.
+  public let isBuilt: Bool
+
+  public init(
+    typeID: Int64,
+    name: String,
+    quantity: Int64,
+    unitPrice: Double?,
+    total: Double?,
+    isBuilt: Bool
+  ) {
+    self.typeID = typeID
+    self.name = name
+    self.quantity = quantity
+    self.unitPrice = unitPrice
+    self.total = total
+    self.isBuilt = isBuilt
+  }
+
+  public static func lines(
+    for row: ManufacturingOpportunityRow
+  ) -> [ManufacturingOpportunityMaterialCostLine] {
+    row.materials.map { material in
+      let complete = material.quote.isComplete
+      return ManufacturingOpportunityMaterialCostLine(
+        typeID: material.typeID,
+        name: material.name,
+        quantity: material.quantity,
+        unitPrice: complete ? material.quote.weightedUnitPrice : nil,
+        total: complete ? material.quote.total : nil,
+        isBuilt: material.quote.warnings.contains {
+          $0.code == ManufacturingOpportunityComponentBuildPolicy.builtWarningCode
+        }
+      )
+    }
+  }
+}
+
+/// EVE Multibuy shopping list of one opportunity row, in the Planner's
+/// format. It always contains the full required quantity (owner decision
+/// 25.10.2026): bought inputs directly, and for inputs costed as self-built
+/// the raw materials of their whole build tree, summed per type. Usable
+/// Warehouse stock is reported separately and never deducted.
+public enum ManufacturingOpportunityMultibuy {
+  public struct ShoppingList: Equatable, Sendable {
+    public let items: [EVEShoppingListItem]
+    /// Built inputs from scans saved before raw materials were recorded;
+    /// they cannot be expanded and are missing from `items`.
+    public let unexpandedBuiltInputCount: Int
+  }
+
+  /// Item that usable Warehouse stock already covers in part or full.
+  public struct StockCoverage: Identifiable, Equatable, Sendable {
+    public var id: Int64 { typeID }
+    public let typeID: Int64
+    public let name: String
+    public let covered: Int64
+    public let required: Int64
+
+    public var isComplete: Bool { covered >= required }
+  }
+
+  public static func shoppingList(
+    for row: ManufacturingOpportunityRow,
+    purchaseNames: [Int64: String]
+  ) -> ShoppingList {
+    var quantities: [Int64: Int64] = [:]
+    var names: [Int64: String] = [:]
+    var quotes: [Int64: PriceQuote] = [:]
+    var expandedTypeIDs: Set<Int64> = []
+    var unexpanded = 0
+    func add(_ typeID: Int64, _ quantity: Int64) {
+      let (sum, overflow) = quantities[typeID, default: 0]
+        .addingReportingOverflow(quantity)
+      quantities[typeID] = overflow ? Int64.max : sum
+    }
+    for material in row.materials where material.quantity > 0 {
+      guard isBuilt(material) else {
+        add(material.typeID, material.quantity)
+        names[material.typeID] = material.name
+        quotes[material.typeID] = material.quote
+        continue
+      }
+      guard let build = material.componentBuild, build.quantity > 0,
+        let purchases = build.purchases
+      else {
+        unexpanded += 1
+        continue
+      }
+      // Runs or ME changed in the table scale the scanned tree; rounding up
+      // never leaves a material short.
+      let scale = Double(material.quantity) / Double(build.quantity)
+      for (typeID, quantity) in purchases where quantity > 0 {
+        let scaled =
+          material.quantity == build.quantity
+          ? quantity : Int64(min(ceil(Double(quantity) * scale), Double(Int64.max)))
+        add(typeID, scaled)
+        expandedTypeIDs.insert(typeID)
+        if names[typeID] == nil {
+          names[typeID] = purchaseNames[typeID] ?? "Type \(typeID)"
+        }
+      }
+    }
+    let items = quantities.map { typeID, quantity in
+      EVEShoppingListItem(
+        typeID: typeID,
+        name: names[typeID] ?? "Type \(typeID)",
+        quantity: quantity,
+        // A direct quote no longer matches a quantity that includes
+        // self-built raw materials.
+        marketQuote: expandedTypeIDs.contains(typeID) ? nil : quotes[typeID]
+      )
+    }
+    .sorted {
+      let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+      return order == .orderedSame ? $0.typeID < $1.typeID : order == .orderedAscending
+    }
+    return ShoppingList(items: items, unexpandedBuiltInputCount: unexpanded)
+  }
+
+  /// Usable stock per item, after protected targets and active reservations,
+  /// exactly as the procurement projection derives it.
+  public static func stockCoverage(
+    for items: [EVEShoppingListItem],
+    factualWarehouseQuantities: [Int64: Int64],
+    protectedQuantities: [Int64: Int64],
+    reservedQuantities: [Int64: Int64]
+  ) -> [StockCoverage] {
+    items.compactMap { item in
+      let factual = max(0, factualWarehouseQuantities[item.typeID, default: 0])
+      let protected = min(factual, max(0, protectedQuantities[item.typeID, default: 0]))
+      let afterProtection = factual - protected
+      let reserved = min(
+        afterProtection,
+        max(0, reservedQuantities[item.typeID, default: 0])
+      )
+      let covered = min(item.quantity, afterProtection - reserved)
+      guard covered > 0 else { return nil }
+      return StockCoverage(
+        typeID: item.typeID,
+        name: item.name,
+        covered: covered,
+        required: item.quantity
+      )
+    }
+  }
+
+  public enum Column: Hashable, Sendable {
+    /// SDE group, then name, so related materials stay together.
+    case group
+    case material
+    case quantity
+    case inStock
+  }
+
+  /// Sorts by the typed value; the type ID breaks ties. Items without a
+  /// known group follow the grouped ones ascending and precede them
+  /// descending.
+  public static func sorted(
+    _ items: [EVEShoppingListItem],
+    coverage: [StockCoverage],
+    groups: [Int64: String] = [:],
+    by column: Column,
+    ascending: Bool
+  ) -> [EVEShoppingListItem] {
+    let inStock = Dictionary(
+      coverage.map { ($0.typeID, $0.covered) },
+      uniquingKeysWith: { first, _ in first }
+    )
+    func byName(_ lhs: EVEShoppingListItem, _ rhs: EVEShoppingListItem) -> Bool? {
+      let order = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+      guard order != .orderedSame else { return nil }
+      return ascending ? order == .orderedAscending : order == .orderedDescending
+    }
+    return items.sorted { lhs, rhs in
+      switch column {
+      case .group:
+        switch (groups[lhs.typeID], groups[rhs.typeID]) {
+        case (let left?, let right?):
+          let order = left.localizedCaseInsensitiveCompare(right)
+          if order != .orderedSame {
+            return ascending ? order == .orderedAscending : order == .orderedDescending
+          }
+        case (_?, nil): return ascending
+        case (nil, _?): return !ascending
+        case (nil, nil): break
+        }
+        if let result = byName(lhs, rhs) { return result }
+      case .material:
+        if let result = byName(lhs, rhs) { return result }
+      case .quantity:
+        if lhs.quantity != rhs.quantity {
+          return ascending ? lhs.quantity < rhs.quantity : lhs.quantity > rhs.quantity
+        }
+      case .inStock:
+        let left = inStock[lhs.typeID, default: 0]
+        let right = inStock[rhs.typeID, default: 0]
+        if left != right {
+          return ascending ? left < right : left > right
+        }
+      }
+      return lhs.typeID < rhs.typeID
+    }
+  }
+
+  private static func isBuilt(_ material: ManufacturingOpportunityMaterial) -> Bool {
+    material.quote.warnings.contains {
+      $0.code == ManufacturingOpportunityComponentBuildPolicy.builtWarningCode
+    }
+  }
+}
+
+public enum ManufacturingOpportunityMaterialCostColumn: Hashable, Sendable {
+  case material
+  case quantity
+  case unitPrice
+  case total
+  /// Bought ranks before built.
+  case source
+}
+
+public enum ManufacturingOpportunityMaterialCostSort {
+  /// Sorts by the typed value. Unavailable prices follow known ones when
+  /// ascending and precede them when descending; the type ID breaks ties.
+  public static func sorted(
+    _ lines: [ManufacturingOpportunityMaterialCostLine],
+    by column: ManufacturingOpportunityMaterialCostColumn,
+    ascending: Bool
+  ) -> [ManufacturingOpportunityMaterialCostLine] {
+    lines.sorted { lhs, rhs in
+      switch column {
+      case .material:
+        let order = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        if order != .orderedSame {
+          return ascending ? order == .orderedAscending : order == .orderedDescending
+        }
+      case .quantity:
+        if lhs.quantity != rhs.quantity {
+          return ascending ? lhs.quantity < rhs.quantity : lhs.quantity > rhs.quantity
+        }
+      case .unitPrice:
+        if let result = compare(lhs.unitPrice, rhs.unitPrice, ascending: ascending) {
+          return result
+        }
+      case .total:
+        if let result = compare(lhs.total, rhs.total, ascending: ascending) {
+          return result
+        }
+      case .source:
+        if lhs.isBuilt != rhs.isBuilt {
+          return ascending ? !lhs.isBuilt : lhs.isBuilt
+        }
+      }
+      return lhs.typeID < rhs.typeID
+    }
+  }
+
+  private static func compare(
+    _ lhs: Double?,
+    _ rhs: Double?,
+    ascending: Bool
+  ) -> Bool? {
+    switch (lhs, rhs) {
+    case (let left?, let right?) where left != right:
+      return ascending ? left < right : left > right
+    case (_?, nil): return ascending
+    case (nil, _?): return !ascending
+    default: return nil
+    }
   }
 }
 
@@ -3447,7 +4278,8 @@ public enum ManufacturingOpportunityRunProjector {
       baseQuantityPerRun: material.baseQuantityPerRun,
       quantity: quantity,
       quote: quote,
-      packagedVolumePerUnit: material.packagedVolumePerUnit
+      packagedVolumePerUnit: material.packagedVolumePerUnit,
+      componentBuild: material.componentBuild
     )
   }
 

@@ -2244,3 +2244,32 @@
 "Turn this on only when no other station or structure in this region has a market. The Trade area then shows the regional ESI market history as this hub's traded volume, marked “(region)”. ESI offers no market history per station or structure." = "Turn this on only when no other station or structure in this region has a market. The Trade area then shows the regional ESI market history as this hub's traded volume, marked “(region)”. ESI offers no market history per station or structure.";
 "Target hub %lld d (region)" = "Target hub %lld d (region)";
 "Regional ESI market history used as the target hub's volume, because the target hub is marked as the only market of its region in Market Settings. Up to yesterday (UTC); buy and sell side are not separated." = "Regional ESI market history used as the target hub's volume, because the target hub is marked as the only market of its region in Market Settings. Up to yesterday (UTC); buy and sell side are not separated.";
+
+/* Hub opportunities: Add to Planner (24.10.2026) */
+"Add to Planner" = "Add to Planner";
+"Adds this row's visible quantity, Runs, ME and TE as a new line to the Planner draft. Concrete Blueprint sources are selected and verified there." = "Adds this row's visible quantity, Runs, ME and TE as a new line to the Planner draft. Concrete Blueprint sources are selected and verified there.";
+"Adds this saved batch as a new line to the Planner draft." = "Adds this saved batch as a new line to the Planner draft.";
+
+/* Hub opportunities: build intermediates yourself (24.10.2026) */
+"Build intermediates yourself" = "Build intermediates yourself";
+"Components, reaction products and other buildable inputs are costed from their materials down to bought raw materials, including the exact installation or reaction cost of each intermediate job. Each intermediate uses the cheaper of building and buying at the Main Hub. Intermediates use the Planner's default intermediate ME; reactions have no ME or TE. This remains an estimate: the Planner stays authoritative." = "Components, reaction products and other buildable inputs are costed from their materials down to bought raw materials, including the exact installation or reaction cost of each intermediate job. Each intermediate uses the cheaper of building and buying at the Main Hub. Intermediates use the Planner's default intermediate ME; reactions have no ME or TE. This remains an estimate: the Planner stays authoritative.";
+"Update the scan to cost intermediates from their materials." = "Update the scan to cost intermediates from their materials.";
+"%lld input(s) costed as built from their materials, including %@ installation or reaction cost of the intermediate jobs." = "%lld input(s) costed as built from their materials, including %@ installation or reaction cost of the intermediate jobs.";
+"Built from its materials: bought materials plus the installation or reaction cost of every built intermediate job." = "Built from its materials: bought materials plus the installation or reaction cost of every built intermediate job.";
+"Build intermediates yourself is off: every input is bought at the Main Hub." = "Build intermediates yourself is off: every input is bought at the Main Hub.";
+"This scan has no self-build estimate yet; update the scan to cost intermediates from their materials." = "This scan has no self-build estimate yet; update the scan to cost intermediates from their materials.";
+"Every input is bought: building it is not cheaper or not possible." = "Every input is bought: building it is not cheaper or not possible.";
+"Final products: one job per input line" = "Final products: one job per input line";
+"Intermediates: one job per product" = "Intermediates: one job per product";
+"Built" = "Built";
+"Total cost %@ · Materials %@ · Installation %@" = "Total cost %@ · Materials %@ · Installation %@";
+"Blueprint %@ · Logistics %@" = "Blueprint %@ · Logistics %@";
+"%lld item(s) copied for EVE Multibuy." = "%lld item(s) copied for EVE Multibuy.";
+"The shopping list could not be copied to the clipboard." = "The shopping list could not be copied to the clipboard.";
+"Shopping list" = "Shopping list";
+"In stock" = "In stock";
+"No material to copy." = "No material to copy.";
+"Multibuy contains the full quantity of %lld material(s), self-built inputs as their raw materials." = "Multibuy contains the full quantity of %lld material(s), self-built inputs as their raw materials.";
+"Your Warehouse already covers all %lld materials (column In stock)." = "Your Warehouse already covers all %lld materials (column In stock).";
+"Your Warehouse already covers %lld of these materials in part or full (column In stock)." = "Your Warehouse already covers %lld of these materials in part or full (column In stock).";
+"%lld self-built input(s) are missing: this scan has no raw materials for them; update the scan." = "%lld self-built input(s) are missing: this scan has no raw materials for them; update the scan.";

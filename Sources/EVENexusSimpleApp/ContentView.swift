@@ -199,12 +199,15 @@ enum PlannerLaunchApplicationMode {
 }
 
 enum PlannerLaunchInputPolicy {
-  static func requiresExplicitChoice(
+  /// A handoff appends to an existing draft or result and replaces only an
+  /// empty Planner.
+  static func mode(
     currentInput: String,
     hasCalculatedPlan: Bool
-  ) -> Bool {
+  ) -> PlannerLaunchApplicationMode {
     hasCalculatedPlan
       || !currentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? .append : .replace
   }
 
   static func applying(
@@ -4863,7 +4866,7 @@ struct DashboardTopOpportunitiesPanel: View {
         .font(.caption2.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
       }
-      Button("Build") {
+      Button("Add to Planner") {
         onNavigate(
           DashboardNavigationRequest(
             section: .planner,
@@ -4879,10 +4882,11 @@ struct DashboardTopOpportunitiesPanel: View {
           )
         )
       }
-      .buttonStyle(.borderless)
+      .buttonStyle(.bordered)
+      .controlSize(.small)
       .font(.caption)
-      .help("Transfer this saved batch to the Planner.")
-      .accessibilityLabel("Build in Planner")
+      .help("Adds this saved batch as a new line to the Planner draft.")
+      .accessibilityLabel("Add to Planner")
     }
   }
 

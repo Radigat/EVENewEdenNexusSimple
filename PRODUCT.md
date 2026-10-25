@@ -133,7 +133,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Dashboard | verdichteter Überblick über Jobs, persönliche Wallet-Salden, Finanzen und Markt; übernimmt die Charakterdaten aus dem zentralen Startablauf |
 | Planner | Produktionsgraph, Build/Buy/Warehouse-Auswahl, Installation, Logistik, Gebühren, Erlös, Profit und ROI |
 | Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen und festen Capital-Routen im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
-| Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Bauen** übergibt die konkrete Charge an den Planner |
+| Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Zum Planner hinzufügen** hängt die konkrete Charge an den Planner-Entwurf an |
 | Home Hub Opportunities | dieselbe Chancenansicht für Verkäufe am Home Hub (Material vom Main Hub, ohne Rückweg); eigene Filter, gemeinsamer Scan mit dem Main Hub |
 | Coalition Hub Opportunities | Chancenansicht für Verkäufe am Coalition Hub inklusive sortierbarem Transport Home → Coalition (Jump Freighter oder Kurier); eigene Filter, gemeinsamer Scan |
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
@@ -278,7 +278,8 @@ Einträgen für Main, Home und Coalition Hub.
 - **Einträge:** Jeder Eintrag zeigt das Produkt mit Icon und kopierbarem Namen,
   das tägliche Gewinnpotenzial und den ROI.
 - **Bedienung:** Ein Klick auf den Hub-Titel öffnet die Chancenansicht.
-  **Bauen** übergibt die gespeicherte Charge mit Zielmarkt an den Planner.
+  **Zum Planner hinzufügen** hängt die gespeicherte Charge mit Zielmarkt an den
+  Planner-Entwurf an.
 - **Hinweise:** Ein nicht konfigurierter, gleicher oder unvollständiger Hub
   bekommt einen Hinweis, ebenso ein Hub ohne Scan.
 
@@ -884,12 +885,87 @@ Marktstandort erzeugt null Transportkosten.
 
 Die Chancenzeile bleibt ein schneller Vergleich des direkten veröffentlichten
 Rezepts mit den gewichteten Preisen des gespeicherten Marktsnapshots. Der
-Planner ist die maßgebliche konkrete Rechnung und kann Zwischenprodukte
-rekursiv bauen, andere Blueprintkosten wählen und für größere Mengen tiefere
-oder neuere Marktdaten verwenden. Ein Zahlenvergleich ist daher nur bei
+Planner ist die maßgebliche konkrete Rechnung und kann andere Blueprintkosten
+wählen, Lager und Aufträge je Job aufteilen und für größere Mengen tiefere oder
+neuere Marktdaten verwenden.
+
+**Zwischenprodukte selbst bauen** (Eigentümerentscheidung 24.10.2026; Schalter
+in der Karte **Kosten und Budget**, standardmäßig an):
+
+- **Rechnung:** Jeder baubare Eingangsstoff, etwa eine Komponente oder ein
+  Reaktionsprodukt, wird rekursiv bis zu den gekauften Rohstoffen aus seinen
+  Materialien gerechnet. Je Knoten gilt das Günstigere aus Eigenbau und Kauf am
+  Main Hub. Ist nur eine Variante vollständig rechenbar, gilt diese.
+- **Fertigungsknoten:** Runs = aufgerundete Menge ÷ Ausgabe je Run. Die
+  Materialrundung folgt dem Planner, mit der Standard-ME für Zwischenprodukte
+  der Production Basis und dem Materialmultiplikator der Anlage für die
+  Kategorie des Zwischenprodukts. Die Installation folgt derselben EIV-Formel
+  wie beim Endprodukt.
+- **Reaktionsknoten:** Reaktionen haben keine ME und TE. Es wirkt nur der
+  Materialmultiplikator der konfigurierten Reaktionsanlage, dazu kommen deren
+  Reaktionskosten.
+- **Nicht gebaut wird**, was kein Rezept hat, auf der Produktionssperrliste
+  steht, keine geeignete oder eine zu prüfende Anlage hat, einen fehlenden
+  Adjusted Price hat, sich nur über einen Rezeptzyklus versorgen ließe oder
+  tiefer als 12 Ebenen liegt. Dann bleibt der Kaufpreis maßgeblich; fehlt auch
+  er, bleiben Kosten und Gewinn unverfügbar, nie 0.
+- **Wirkung:** Ein gebauter Eingangsstoff zählt in Materialkosten,
+  Einkaufsbudget, Lagerabgleich und Logistik mit seinen Eigenbaukosten und dem
+  Volumen der gekauften Rohstoffe. Die Installations- und Reaktionskosten der
+  Zwischenaufträge stecken in den Materialkosten.
+- **Erklärung der Gesamtkosten per Klick** (Eigentümerentscheidung
+  25.10.2026): Zellen mit Erklärung (Kosten, Tagesbedarf, Vertragspreis und
+  Vertragsgewinn) tragen einen dezenten Leuchtrahmen in Akzentfarbe, der beim
+  Überfahren stärker wird. Ein Klick öffnet ein Erklärungsfenster mit
+  markierbarem Text. Die Kosten-Erklärung zeigt:
+  - oben Gesamtkosten, Material und Installation, darunter Bauplan und
+    Logistik;
+  - eine Liste aller Eingangsstoffe der Zeile mit kopierbarem Namen, Menge,
+    Stückpreis, Gesamtpreis und Bezug („Gekauft“ oder „Eigenbau“). Alle
+    Spalten sind sortierbar, Standard ist der Gesamtpreis absteigend.
+    Unbekannte Preise bleiben „—“ und stehen aufsteigend hinten; bei
+    gleichen Werten entscheidet die Typ-ID. Bei Eigenbau ist der Stückpreis
+    der Eigenbaupreis je Einheit, einschließlich Installation bzw. Reaktion
+    der Zwischenaufträge; die einzelnen Rohstoffe des Eigenbaus werden nicht
+    aufgelistet.
+  - **Einkaufsliste** (Eigentümerentscheidung 25.10.2026): Unter der
+    Kostenaufteilung steht die Liste aller Materialien, die für die Zeile
+    tatsächlich gekauft werden müssen. Direkt gekaufte Eingangsstoffe
+    erscheinen selbst. Als Eigenbau gerechnete Bauteile werden durch die
+    gekauften Rohstoffe ihres ganzen Bauzweigs ersetzt, also bis zu
+    Mineralien, Mondmaterial usw.; gleiche Materialien werden zusammengezählt.
+    Spalten: Gruppe (SDE-Gruppe, etwa Mineral oder Moon Materials),
+    Material (kopierbar), Menge, Auf Lager. Alle Spalten sind sortierbar.
+    Standard ist Gruppe aufsteigend und darin Material, damit
+    zusammengehörige Materialien als Block stehen; ohne bekannte Gruppe
+    („Nicht klassifiziert“) stehen sie aufsteigend hinten. Gleiche Werte
+    folgen der Typ-ID. Bei geänderten Runs oder ME werden die gescannten Rohstoffmengen
+    anteilig hochskaliert und aufgerundet.
+  - **Für EVE Multibuy kopieren:** Der Knopf legt diese Einkaufsliste im
+    Multibuy-Format des Planners („Name Menge“, je Zeile) in genau der
+    angezeigten Sortierung in die Zwischenablage, standardmäßig nach Gruppen
+    geordnet, sodass unerwünschte Gruppen im Markt als Block gelöscht werden
+    können, über denselben `EVEMultibuyExport`. Kopiert wird immer die
+    volle Menge. Deckt nutzbarer Lagerbestand (nach Schutzbeständen und
+    Planreservierungen) Materialien ganz oder teilweise, steht neben dem Knopf
+    ein roter Hinweis, und die Spalte „Auf Lager“ zeigt den gedeckten Teil
+    rot. Ältere Scans ohne gespeicherte Rohstoffe nennen fehlende
+    Eigenbau-Bauteile und bitten um einen neuen Scan. Erfolg oder Fehler des
+    Kopierens wird angezeigt.
+  - Hinweise zum Eigenbau-Stand und zum Bauplankauf.
+- **Gespeicherte Rohstoffe:** Je Eigenbau-Bauteil speichert der Scan die
+  gekauften Rohstoffe seines Bauzweigs (Typ und Menge), die Namen einmal je
+  Scan. Daraus entsteht die Einkaufsliste.
+- **Grenzen:** Gerundet wird je Zwischenprodukt über die ganze Menge, ohne
+  Jobaufteilung. Gleiche Zwischenprodukte verschiedener Zweige werden nicht
+  zusammengelegt, Lagerbestand zählt nur für die direkten Eingangsstoffe, und
+  Bauplankosten der Zwischenprodukte sind nicht enthalten.
+- **Ältere Scans** ohne diese Schätzung rechnen weiter mit Kaufpreisen und
+  zeigen den Hinweis, den Scan zu aktualisieren. Ausgeschaltet gilt die
+  bisherige Rechnung mit gekauften Eingangsstoffen. Ein Zahlenvergleich ist daher nur bei
 gleicher Charge, ME/TE, Materialquelle, Blueprintkosten, Markttiefe und Route
-gleichartig. **Bauen** übergibt Runs, tatsächliche Ausgabemenge, ME und TE
-unverändert und nennt diese Annahmen im Planner sichtbar.
+gleichartig. **Zum Planner hinzufügen** übergibt Runs, tatsächliche
+Ausgabemenge, ME und TE unverändert und nennt diese Annahmen im Planner sichtbar.
 
 Optional kann in **Data & Settings → Industrie** der Vergleich mit
 komprimierten Erzen aktiviert werden. Dafür lassen sich mehrere Refining-
@@ -1085,7 +1161,7 @@ Der Navigationsbereich **Home-Hub-Chancen** steht direkt unter den
 Main-Hub-Chancen.
 
 - **Oberfläche:** dieselbe wie bei den Main-Hub-Chancen, mit Filtern, Spalten,
-  Runs/ME/TE, Favoriten und **Bauen**.
+  Runs/ME/TE, Favoriten und **Zum Planner hinzufügen**.
 - **Daten:** der gespeicherte Home-Hub-Scan.
 - **Logistik:** nur der Hintransport vom Main Hub zur Produktion, ohne Rückweg
   zum Main Hub.
@@ -1099,8 +1175,8 @@ Main-Hub-Chancen.
   Bedarfsgrundlage sowie Verkaufswarnungen nennen den Home Hub. Warnungen zu
   Materialkäufen nennen weiter den Main Hub, weil dort eingekauft wird.
 - **Aktualisieren** startet den gemeinsamen Main- und Home-Hub-Scan.
-- **Bauen** übergibt zusätzlich den Zielmarkt „Home Hub“ an den Planner. Der
-  Planner wertet ihn erst ab P10 aus.
+- **Zum Planner hinzufügen** übergibt zusätzlich den Zielmarkt „Home Hub“; der
+  Planner wählt ihn als Zielmarkt vor.
 - **Leerzustände:**
   - Ohne Home Hub erscheint ein Hinweis mit Sprung in die Markteinstellungen.
   - Bei Home = Main erscheint ein Hinweis mit Sprung zu den Main-Hub-Chancen.
@@ -1171,7 +1247,7 @@ Der Bereich **Coalition-Hub-Chancen** steht direkt unter den Home-Hub-Chancen.
   ist, den konkreten Grund (zum Beispiel fehlende DOTLAN-Route, deaktivierte
   Logistik oder selbstspringendes Capital).
 - **Texte:** Kopf- und Verkaufstexte nennen den Coalition Hub.
-- **Bauen** übergibt den Zielmarkt „Coalition Hub“.
+- **Zum Planner hinzufügen** übergibt den Zielmarkt „Coalition Hub“.
 - **Leerzustände:**
   - kein Coalition Hub,
   - gleich Main Hub (mit Sprung zu den Main-Hub-Chancen),
@@ -1212,7 +1288,7 @@ Der tägliche Chancenwert ist `Gewinn je Einheit × beobachteter Tagesbedarf`.
 Damit sind beispielsweise 1.000 Einheiten pro Tag mit 1 Million ISK Gewinn je
 Einheit wirtschaftlich gleichrangig zu einer Einheit pro Tag mit 1 Milliarde
 ISK Gewinn. Der Wert ist eine Vergleichskennzahl und keine Verkaufsgarantie.
-**Bauen** öffnet den etablierten Planner und hängt die konkrete
+**Zum Planner hinzufügen** öffnet den etablierten Planner und hängt die konkrete
 Chancencharge mit Produktname, tatsächlicher Ausgabemenge und Runs an dessen
 Eingabe an. Manufacturing-Zeilen übergeben zusätzlich ME/TE; bei Reaktionen
 sind diese Werte nicht anwendbar. Die Chancenansicht besitzt dafür keinen eigenen Produktionsbaum,
@@ -1413,7 +1489,22 @@ Die Main-Hub-Ansicht filtert derzeit bewusst weder nach Bauplanbesitz noch nach
 Bauplantyp oder Bauplanquelle. Die zugrunde liegenden Besitz- und LP-Katalogdaten
 bleiben für andere Abläufe erhalten, beeinflussen diese Chancenliste aber nicht.
 **Favoriten** stehen als eigene kleine Filterkarte direkt unter den
-Produktionsklassen und sind nicht mehr Teil der Ergebnisbewertung. Die
+Produktionsklassen und sind nicht mehr Teil der Ergebnisbewertung. In der
+Chancentabelle aller drei Hubs stehen Favoriten immer oben
+(Eigentümerentscheidung 24.10.2026): Der Favoritenblock und die übrigen Zeilen
+folgen jeweils der gewählten Spaltensortierung samt Tie-Breaker. Ein Klick auf
+den Stern sortiert sofort um, ohne die Kosten neu zu projizieren; nur bei
+aktivem Filter **Nur Favoriten** ändert er die gefilterte Zeilenmenge.
+
+**Laden und Aktualisieren.** Beim ersten Öffnen zeigt die Tabelle genau einen
+Ladezustand („Market-Chancen werden vorbereitet …“), bis Scan, Lager und
+Planreservierungen vorbereitet sind. Spätere Neuberechnungen, etwa durch
+Vertragsreferenzen, Inventionsschätzungen, LP-Angebote, Charaktersynchronisation,
+Filter, Sortierung oder einen automatischen Scan, lassen die zuletzt berechnete
+Tabelle sichtbar und zeigen im Tabellenkopf „Wird aktualisiert“, bis die neue
+Fassung bereitsteht. Unveränderte Planreservierungen und unveränderte
+Inventionsschätzungen lösen keine Neuberechnung aus. Die Main-Hub-Ansicht wird
+durch den Fortschritt der Home- und Coalition-Scans nicht neu ausgewertet. Die
 verbleibenden Karten verwenden ein breitenadaptives Raster statt einer festen
 horizontalen Kartenzeile.
 
@@ -1530,20 +1621,19 @@ Grenze. Erst **Aktualisieren** lädt neue Markttiefe. Beim Wechsel auf einen
 neuen Chancen-Snapshot werden die sitzungsgebundenen Runs-/ME-/TE-Änderungen
 verworfen.
 
-Die Aktion **Bauen** übergibt die aktuell sichtbare Ausgabemenge, Runs, ME und
-TE mit einem Klick direkt an den etablierten Planner. Die kompakte
+Die Aktion **Zum Planner hinzufügen** ist ein umrandeter Button in jeder
+Chancenzeile und in der Dashboard-Karte. Sie übergibt die aktuell sichtbare
+Ausgabemenge, Runs, ME und TE mit einem Klick direkt an den etablierten
+Planner. Die kompakte
 Chancenansicht besitzt keinen eigenen Produktionsbaum und erfindet deshalb
 keine konkrete Blueprintquelle oder einen `BlueprintSupplyPlan`. Der Planner
 löst dort den rekursiven Produktionsbaum sowie die konkreten BPO-/BPC-Quellen
 auf. Ist der Planner leer und besitzt kein berechnetes Ergebnis, wird die neue
 Zeile direkt als Entwurf übernommen. Bei einem vorhandenen Entwurf oder
-Ergebnis zeigt er vor jeder Änderung den neuen Gegenstand und bietet
-**Aktuelle Berechnung ersetzen**, **Zum aktuellen Entwurf hinzufügen** sowie
-**Aktuelle Berechnung behalten** an. Ein ungültiger alter Entwurf blockiert
-damit die gültige neue Zeile nicht mehr: Beim Ersetzen werden seine
-sitzungsgebundenen Produktionsbaum-, Quellen- und Effizienzauswahlen entfernt.
-Der gespeicherte bisher aktive Plan wird erst nach einer erfolgreichen neuen
-Berechnung deaktiviert und nicht schon durch die Vorschau gelöscht. Die
+Ergebnis wird sie ohne Rückfrage als weitere Zeile angehängt
+(Eigentümerentscheidung 24.10.2026); der Planner meldet die angehängte Zeile.
+Ein vorhandener Entwurf mit Eingabefehlern behält diese Fehler. Der bisher
+aktive Plan bleibt bis zu einer erfolgreichen neuen Berechnung aktiv. Die
 übergebenen ME/TE-Werte bleiben bis zur Auswahl einer faktischen Quelle eine
 gekennzeichnete Screening-Hypothese. Der normale Produktpicker innerhalb des
 Planners fügt dagegen weiterhin bewusst eine weitere Zeile an.
@@ -1719,7 +1809,7 @@ Home Hub, Coalition Hub oder „Nicht gewählt“.
   Szenarien (ausstehende Transport- oder Vertragsgebühr) werden nie
   vorgeschlagen; bei Gleichstand gilt die Reihenfolge Main, Home, Coalition.
   **Vorschlag übernehmen** setzt ihn, jede manuelle Wahl hat Vorrang.
-- **Vorauswahl durch Übergabe:** **Bauen** aus den Hub-Chancen oder der
+- **Vorauswahl durch Übergabe:** **Zum Planner hinzufügen** aus den Hub-Chancen oder der
   Dashboard-Karte setzt den Zielmarkt vor.
 - **Hervorhebung:** Die drei Karten des gewählten Hubs sind umrandet.
 - **Speicherung:**
@@ -2668,7 +2758,8 @@ Standardsatz getrennt.
    automatisch; den Stand zeigt die Seitenleisten-Karte **Automatic data**.
 9. Auf dem Dashboard (**Top-Chancen**) oder in den Main-, Home- und
    Coalition-Hub-Chancen ein Produkt nach Gewinn, ROI, Bedarf oder eigener
-   Entscheidung wählen und mit **Bauen** an den Planner übergeben.
+   Entscheidung wählen und mit **Zum Planner hinzufügen** an den Planner
+   übergeben.
 10. Schutzbestände setzen und im Planner Bestände und Blueprints, Marktdeckung, Produktionszweige,
     Kostenbestandteile und Warnungen prüfen, den **Zielmarkt** (einschließlich
     Allianzmarkt) wählen und den Kaufort-Hinweis für Mineralien und

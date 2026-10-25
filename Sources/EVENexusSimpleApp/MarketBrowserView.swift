@@ -940,6 +940,13 @@ struct ManufacturingOpportunitiesView: View {
     store: AppDefaults.store
   )
   private var costIncludesBlueprint = false
+  /// Inputs such as components are costed from their own materials when that
+  /// is cheaper than buying them (owner decision 24.10.2026).
+  @AppStorage(
+    "market-opportunities.cost.builds-intermediates",
+    store: AppDefaults.store
+  )
+  private var buildsIntermediates = true
   @AppStorage(
     "market-opportunities.cost.blueprint-per-run",
     store: AppDefaults.store
@@ -993,7 +1000,9 @@ struct ManufacturingOpportunitiesView: View {
   @State private var preparedWarehouseIdentity: String?
   @State private var isPreparingWarehouse = false
   @State private var preparedPlanReservations = PreparedPlanReservations.empty
-  @State private var preparedPlanReservationRevision = UUID()
+  /// Content identity of the prepared reservations; an unchanged plan set
+  /// keeps it, so re-preparing the same plans does not recompute the table.
+  @State private var preparedPlanReservationRevision = 0
   @State private var preparedCandidateProjection: PreparedManufacturingOpportunityCandidates?
   @State private var requestedRunsByTypeID: [Int64: Int] = [:]
   @State private var loyaltyStoreBlueprintOffers:
@@ -1121,8 +1130,11 @@ struct ManufacturingOpportunitiesView: View {
   }
 
   private var scanProgressValue: ManufacturingOpportunityScanProgress {
+    // The Main view never reads the shared Home/Coalition state, so their
+    // progress publications do not re-evaluate it.
+    guard hubRole != .main else { return runtime.manufacturingOpportunityProgress }
     let state = runtime.opportunityState(for: hubRole)
-    return hubRole != .main && state.isAnalyzing
+    return state.isAnalyzing
       ? state.progress
       : runtime.manufacturingOpportunityProgress
   }
@@ -1312,9 +1324,11 @@ struct ManufacturingOpportunitiesView: View {
     let planReservationsAreCurrent =
       preparedPlanReservations.source == planPayloads
     let candidateTrigger = candidateProjectionTrigger
-    let allPreparedCandidates =
+    let candidatesAreCurrent =
       preparedCandidateProjection?.trigger == candidateTrigger
-      ? preparedCandidateProjection?.candidates : nil
+    // The last finished table stays visible while a newer projection is
+    // prepared; only the very first projection shows the full progress pane.
+    let allPreparedCandidates = preparedCandidateProjection?.candidates
     let preparedCandidates = visibleCandidates(allPreparedCandidates)
     GeometryReader { geometry in
       let upperControlsHeight =
@@ -1359,10 +1373,13 @@ struct ManufacturingOpportunitiesView: View {
         }
         .frame(height: upperControlsHeight)
 
-        if planReservationsAreCurrent {
+        // With a scan present, preparing reservations shares the single
+        // candidate progress pane instead of showing a second spinner first.
+        if planReservationsAreCurrent || analysis != nil {
           calculatorWorkspace(
             analysis,
-            candidates: preparedCandidates
+            candidates: preparedCandidates,
+            isRefreshing: !candidatesAreCurrent
           )
         } else {
           ProgressView("Preparing active plan reservations…")
@@ -1404,7 +1421,7 @@ struct ManufacturingOpportunitiesView: View {
     }
     .task(id: HubTopPublishTrigger(
       candidates: candidateTrigger,
-      isPrepared: allPreparedCandidates != nil,
+      isPrepared: candidatesAreCurrent,
       valueFilter: valueFilter.rawValue,
       maximumMaterialPurchase: maximumMaterialPurchaseISKText,
       minimumAverageDailyDemand: minimumAverageDailyDemand,
@@ -1412,7 +1429,9 @@ struct ManufacturingOpportunitiesView: View {
       materialEfficiency: requestedMEByTypeID,
       timeEfficiency: requestedTEByTypeID
     )) {
-      guard let snapshot = analysis, let visible = preparedCandidates else {
+      guard candidatesAreCurrent, let snapshot = analysis,
+        let visible = preparedCandidates
+      else {
         return
       }
       runtime.publishHubTopOpportunities(
@@ -1429,7 +1448,7 @@ struct ManufacturingOpportunitiesView: View {
       )
       guard !Task.isCancelled else { return }
       preparedPlanReservations = prepared
-      preparedPlanReservationRevision = UUID()
+      preparedPlanReservationRevision = planPayloads.hashValue
     }
     .task(id: candidateTrigger) {
       await prepareCandidates(trigger: candidateTrigger)
@@ -1507,11 +1526,16 @@ struct ManufacturingOpportunitiesView: View {
 
   private func calculatorWorkspace(
     _ snapshot: ManufacturingOpportunitySnapshot?,
-    candidates: [ManufacturingOpportunityCandidate]?
+    candidates: [ManufacturingOpportunityCandidate]?,
+    isRefreshing: Bool
   ) -> some View {
     Group {
       if let snapshot, let candidates {
-        candidatePane(snapshot, candidates: candidates)
+        candidatePane(
+          snapshot,
+          candidates: candidates,
+          isRefreshing: isRefreshing
+        )
       } else if let snapshot {
         preparingCandidatePane(snapshot)
       } else {
@@ -1815,6 +1839,22 @@ struct ManufacturingOpportunitiesView: View {
           )
         )
       )
+      compactToggle("Build intermediates yourself", isOn: $buildsIntermediates)
+        .help(
+          Text(
+            AppLocalization.text(
+              "Components, reaction products and other buildable inputs are costed from their materials down to bought raw materials, including the exact installation or reaction cost of each intermediate job. Each intermediate uses the cheaper of building and buying at the Main Hub. Intermediates use the Planner's default intermediate ME; reactions have no ME or TE. This remains an estimate: the Planner stays authoritative."
+            )
+          )
+        )
+      if buildsIntermediates, analysis.map({ $0.componentBuildsResolved != true }) == true {
+        Label(
+          "Update the scan to cost intermediates from their materials.",
+          systemImage: "arrow.clockwise"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
       compactToggle("Include blueprint allocation", isOn: $costIncludesBlueprint)
       TextField(
         "ISK per run",
@@ -2100,15 +2140,32 @@ struct ManufacturingOpportunitiesView: View {
 
   private func candidatePane(
     _ snapshot: ManufacturingOpportunitySnapshot,
-    candidates: [ManufacturingOpportunityCandidate]
+    candidates unorderedCandidates: [ManufacturingOpportunityCandidate],
+    isRefreshing: Bool
   ) -> some View {
     let favorites = favoriteIDs
+    // Favorites lead without a new projection, so a star click reorders
+    // the table immediately.
+    let candidates = ManufacturingOpportunityFavoriteOrdering.favoritesFirst(
+      unorderedCandidates,
+      favorites: favorites,
+      typeID: \.row.productTypeID
+    )
     return VStack(alignment: .leading, spacing: 0) {
       HStack {
         Text("CALCULATOR")
           .font(.caption.bold())
           .tracking(1.1)
         Spacer()
+        if isRefreshing {
+          HStack(spacing: 4) {
+            ProgressView().controlSize(.mini)
+            Text("Updating")
+          }
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          .accessibilityElement(children: .combine)
+        }
         Text(
           verbatim:
             "\(formatInteger(candidates.count)) / \(formatInteger(snapshot.rows.count))"
@@ -2191,7 +2248,7 @@ struct ManufacturingOpportunitiesView: View {
   private var opportunityHeader: some View {
     HStack(spacing: 0) {
       headerCell("", width: 32)
-      sortableHeaderCell("Task", column: .task, width: 52, alignment: .leading)
+      sortableHeaderCell("Task", column: .task, width: 150, alignment: .leading)
       sortableHeaderCell("Item", column: .item, width: 210, alignment: .leading)
       sortableHeaderCell("Daily demand", column: .demand, width: 155)
       sortableHeaderCell("Quantity", column: .quantity, width: 70)
@@ -2252,7 +2309,7 @@ struct ManufacturingOpportunitiesView: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Toggle favorite")
-      Button("Build") {
+      Button("Add to Planner") {
         onBuildInPlanner(
           MainHubOpportunityPlannerHandoff.request(
             productTypeID: row.productTypeID,
@@ -2265,12 +2322,13 @@ struct ManufacturingOpportunitiesView: View {
           )
         )
       }
-      .buttonStyle(.plain)
-      .font(.caption.monospacedDigit())
-      .frame(width: 52, alignment: .leading)
-      .accessibilityLabel("Build in Planner")
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+      .font(.caption)
+      .frame(width: 150, alignment: .leading)
+      .accessibilityLabel("Add to Planner")
       .help(
-        "Transfer this row's visible quantity, Runs, ME and TE directly to Planner. Concrete Blueprint sources are selected and verified there."
+        "Adds this row's visible quantity, Runs, ME and TE as a new line to the Planner draft. Concrete Blueprint sources are selected and verified there."
       )
       EVEItemText(
         value: row.productName,
@@ -2288,13 +2346,17 @@ struct ManufacturingOpportunitiesView: View {
       requestedEfficiencyCell(row, kind: .material)
       requestedEfficiencyCell(row, kind: .time)
       textCell(formatDuration(row.durationSeconds), width: 80)
-      textCell(
-        formatISK(costs.totalCost),
-        width: 100,
-        color: costs.blueprintAcquisition?.state == .unavailable
-          ? DesignTokens.caution : DesignTokens.textPrimary,
-        help: costCellHelp(costs)
-      )
+      ExplainedTableCell(title: "Cost", width: 100, alignment: .trailing) {
+        Text(verbatim: formatISK(costs.totalCost))
+          .font(.caption.monospacedDigit())
+          .lineLimit(1)
+          .foregroundStyle(
+            costs.blueprintAcquisition?.state == .unavailable
+              ? DesignTokens.caution : DesignTokens.textPrimary
+          )
+      } detail: {
+        costBreakdown(row, costs: costs)
+      }
       textCell(formatISK(costs.grossRevenue), width: 100)
       textCell(formatISK(costs.salesTax), width: 85)
       textCell(formatISK(costs.brokerFee), width: 85)
@@ -2321,6 +2383,7 @@ struct ManufacturingOpportunitiesView: View {
         contractCellText(formatISK(costs.contract?.unitPrice), costs.contract),
         width: 115,
         color: contractCellColor(costs.contract, value: nil),
+        explanationTitle: "Contract price",
         help: contractCellHelp(costs.contract, isProfit: false)
       )
       textCell(
@@ -2330,6 +2393,7 @@ struct ManufacturingOpportunitiesView: View {
         ),
         width: 120,
         color: contractCellColor(costs.contract, value: costs.contract?.profit),
+        explanationTitle: "Contract profit",
         help: contractCellHelp(costs.contract, isProfit: true)
       )
       textCell(formatPercent(costs.returnOnInvestment), width: 65)
@@ -2553,6 +2617,64 @@ struct ManufacturingOpportunitiesView: View {
     return parts.isEmpty
       ? AppLocalization.text("Confirmed from a complete contract index.")
       : parts.joined(separator: " ")
+  }
+
+  private func costBreakdown(
+    _ row: ManufacturingOpportunityRow,
+    costs: ManufacturingOpportunityCostProjection
+  ) -> OpportunityCostBreakdown {
+    let summary = AppLocalization.format(
+      "Total cost %@ · Materials %@ · Installation %@",
+      formatISK(costs.totalCost),
+      formatISK(costs.materialCost),
+      formatISK(costs.installationCost)
+    )
+    let secondary = AppLocalization.format(
+      "Blueprint %@ · Logistics %@",
+      formatISK(costs.blueprintAllocation),
+      formatISK(costs.logisticsCost)
+    )
+    let build = ManufacturingOpportunityComponentBuildPolicy.summary(of: row)
+    let buildText: String
+    if !buildsIntermediates {
+      buildText = AppLocalization.text(
+        "Build intermediates yourself is off: every input is bought at the Main Hub."
+      )
+    } else if analysis?.componentBuildsResolved != true {
+      buildText = AppLocalization.text(
+        "This scan has no self-build estimate yet; update the scan to cost intermediates from their materials."
+      )
+    } else if build.builtInputs > 0 {
+      buildText = AppLocalization.format(
+        "%lld input(s) costed as built from their materials, including %@ installation or reaction cost of the intermediate jobs.",
+        Int64(build.builtInputs),
+        formatISK(build.installationCost)
+      )
+    } else {
+      buildText = AppLocalization.text(
+        "Every input is bought: building it is not cheaper or not possible."
+      )
+    }
+    let shoppingList = ManufacturingOpportunityMultibuy.shoppingList(
+      for: row,
+      purchaseNames: analysis?.componentPurchaseNames ?? [:]
+    )
+    return OpportunityCostBreakdown(
+      summary: summary,
+      secondarySummary: secondary,
+      lines: ManufacturingOpportunityMaterialCostLine.lines(for: row),
+      notes: [buildText] + [costCellHelp(costs)].compactMap { $0 },
+      shoppingList: shoppingList,
+      materialGroups: analysis?.materialGroupNames ?? [:],
+      stockCoverage: ManufacturingOpportunityMultibuy.stockCoverage(
+        for: shoppingList.items,
+        factualWarehouseQuantities: preparedWarehouse.factualQuantities,
+        protectedQuantities: protectedQuantities,
+        reservedQuantities: reservedQuantities
+      ),
+      formatISK: { formatISK($0) },
+      formatInteger: { formatInteger($0) }
+    )
   }
 
   private func costCellHelp(
@@ -2792,19 +2914,34 @@ struct ManufacturingOpportunitiesView: View {
     )
   }
 
+  @ViewBuilder
   private func textCell(
     _ value: String,
     width: CGFloat,
     alignment: Alignment = .trailing,
     color: Color = DesignTokens.textPrimary,
+    explanationTitle: LocalizedStringKey? = nil,
     help: String? = nil
   ) -> some View {
-    Text(verbatim: value)
+    let text = Text(verbatim: value)
       .font(.caption.monospacedDigit())
       .lineLimit(1)
-      .help(help ?? value)
       .foregroundStyle(color)
-      .frame(width: width, alignment: alignment)
+    if let explanationTitle, let help {
+      ExplainedTableCell(
+        title: explanationTitle,
+        explanation: help,
+        width: width,
+        alignment: alignment
+      ) {
+        text
+      }
+    } else {
+      text
+        .frame(width: width, alignment: alignment)
+        .contentShape(Rectangle())
+        .help(help ?? value)
+    }
   }
 
   private func requestedRunsCell(
@@ -2943,7 +3080,22 @@ struct ManufacturingOpportunitiesView: View {
       changeText,
     ].compactMap { $0 }.joined(separator: "\n")
 
-    return VStack(alignment: .trailing, spacing: 1) {
+    return ExplainedTableCell(
+      title: "Daily demand",
+      explanation: help,
+      width: 155,
+      alignment: .trailing
+    ) {
+      dailyDemandLines(row, previousAndAverage: previousAndAverage, changeText: changeText)
+    }
+  }
+
+  private func dailyDemandLines(
+    _ row: ManufacturingOpportunityRow,
+    previousAndAverage: String?,
+    changeText: String?
+  ) -> some View {
+    VStack(alignment: .trailing, spacing: 1) {
       Text(verbatim: row.observedDailyDemand.map(formatInteger) ?? "—")
         .font(.caption.monospacedDigit())
       if let previousAndAverage {
@@ -2962,9 +3114,7 @@ struct ManufacturingOpportunitiesView: View {
           .lineLimit(1)
       }
     }
-    .help(help)
     .accessibilityElement(children: .combine)
-    .frame(width: 155, alignment: .trailing)
   }
 
   private func productionTreePane(
@@ -4322,7 +4472,9 @@ struct ManufacturingOpportunitiesView: View {
     let stockTargetIdentity: [String] = stockTargets.map { target in
       "\(target.typeID):\(target.targetQuantity):\(target.updatedAt.timeIntervalSince1970)"
     }.sorted()
-    let sortedFavoriteIDs: [Int64] = favoriteIDs.sorted()
+    // Favorites only filter while "favorites only" is active; their order
+    // is applied after the projection, so a star click alone keeps the trigger.
+    let sortedFavoriteIDs: [Int64] = favoritesOnly ? favoriteIDs.sorted() : []
     let productFamilies: [String] =
       selectedProductFamilies.map(\.rawValue).sorted()
     let productionClasses: [String] =
@@ -4345,6 +4497,7 @@ struct ManufacturingOpportunitiesView: View {
       valueFilter: valueFilter.rawValue,
       includesCorporationHangars: includeCorporationHangars,
       includesBlueprintCost: costIncludesBlueprint,
+      buildsIntermediates: buildsIntermediates,
       blueprintCostText: blueprintCostPerRunText,
       sortColumn: activeSort.column.rawValue,
       sortDirection: activeSort.direction.rawValue,
@@ -5242,6 +5395,7 @@ struct ManufacturingOpportunitiesView: View {
       selectedCategory: selectedCategory,
       selectedGroup: selectedGroup,
       favoritesOnly: favoritesOnly,
+      buildsIntermediates: buildsIntermediates,
       valueFilter: valueFilter,
       costSheet: costSheet,
       sort: activeCandidateSort,
@@ -5654,6 +5808,367 @@ struct ManufacturingOpportunityWorkbenchLayout: Equatable {
   }
 }
 
+/// A table cell whose explanation opens on click (owner decision
+/// 25.10.2026). A soft accent glow marks it as clickable and brightens on
+/// hover; the popover text is selectable.
+private struct ExplainedTableCell<Content: View, Detail: View>: View {
+  let title: LocalizedStringKey
+  let width: CGFloat
+  let alignment: Alignment
+  let content: () -> Content
+  let detail: () -> Detail
+
+  @State private var isExplanationPresented = false
+  @State private var isHovered = false
+
+  init(
+    title: LocalizedStringKey,
+    width: CGFloat,
+    alignment: Alignment,
+    @ViewBuilder content: @escaping () -> Content,
+    @ViewBuilder detail: @escaping () -> Detail
+  ) {
+    self.title = title
+    self.width = width
+    self.alignment = alignment
+    self.content = content
+    self.detail = detail
+  }
+
+  var body: some View {
+    Button {
+      isExplanationPresented.toggle()
+    } label: {
+      content()
+        .frame(maxWidth: .infinity, alignment: alignment)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .background(
+      RoundedRectangle(cornerRadius: 4)
+        .fill(DesignTokens.accent.opacity(isHovered ? 0.16 : 0.06))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 4)
+        .stroke(DesignTokens.accent.opacity(isHovered ? 0.9 : 0.45), lineWidth: 1)
+    )
+    .shadow(
+      color: DesignTokens.accent.opacity(isHovered ? 0.85 : 0.55),
+      radius: isHovered ? 6 : 3
+    )
+    .onHover { isHovered = $0 }
+    .padding(.horizontal, 2)
+    .frame(width: width, alignment: alignment)
+    .popover(
+      isPresented: $isExplanationPresented,
+      attachmentAnchor: .rect(.bounds),
+      arrowEdge: .bottom
+    ) {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        HStack {
+          Text(title)
+            .font(.headline)
+          Spacer()
+          Button {
+            isExplanationPresented = false
+          } label: {
+            Image(systemName: "xmark")
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Close explanation")
+        }
+        detail()
+      }
+      .padding(DesignTokens.spacingMD)
+      .frame(minWidth: 420, alignment: .leading)
+    }
+    .accessibilityHint("Shows explanatory details.")
+  }
+}
+
+extension ExplainedTableCell where Detail == ExplainedTableText {
+  init(
+    title: LocalizedStringKey,
+    explanation: String,
+    width: CGFloat,
+    alignment: Alignment,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.init(
+      title: title,
+      width: width,
+      alignment: alignment,
+      content: content,
+      detail: { ExplainedTableText(text: explanation) }
+    )
+  }
+}
+
+private struct ExplainedTableText: View {
+  let text: String
+
+  var body: some View {
+    Text(verbatim: text)
+      .foregroundStyle(DesignTokens.textPrimary)
+      .fixedSize(horizontal: false, vertical: true)
+      .textSelection(.enabled)
+      .frame(width: 420, alignment: .leading)
+  }
+}
+
+/// Cost explanation: totals first, then every input with quantity, unit
+/// price, total and whether it is bought or built.
+private struct OpportunityCostBreakdown: View {
+  let summary: String
+  let secondarySummary: String?
+  let lines: [ManufacturingOpportunityMaterialCostLine]
+  let notes: [String]
+  let shoppingList: ManufacturingOpportunityMultibuy.ShoppingList
+  let materialGroups: [Int64: String]
+  let stockCoverage: [ManufacturingOpportunityMultibuy.StockCoverage]
+  let formatISK: (Double?) -> String
+  let formatInteger: (Int64) -> String
+
+  @State private var copyStatus: (message: String, succeeded: Bool)?
+
+  @State private var sort = AppTableSortDescriptor<ManufacturingOpportunityMaterialCostColumn>(
+    column: .total,
+    direction: .descending
+  )
+  @State private var shoppingSort = AppTableSortDescriptor<ManufacturingOpportunityMultibuy.Column>(
+    column: .group,
+    direction: .ascending
+  )
+
+  private var multibuyItems: [EVEShoppingListItem] { shoppingList.items }
+
+  /// The shopping list exactly as shown; Multibuy copies this order so
+  /// unwanted groups can be removed in one block.
+  private var sortedShoppingItems: [EVEShoppingListItem] {
+    ManufacturingOpportunityMultibuy.sorted(
+      multibuyItems,
+      coverage: stockCoverage,
+      groups: materialGroups,
+      by: shoppingSort.column,
+      ascending: shoppingSort.direction == .ascending
+    )
+  }
+
+  private var coveredQuantities: [Int64: Int64] {
+    Dictionary(
+      stockCoverage.map { ($0.typeID, $0.covered) },
+      uniquingKeysWith: { first, _ in first }
+    )
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text(verbatim: summary)
+        .font(.callout.weight(.semibold).monospacedDigit())
+        .textSelection(.enabled)
+      if let secondarySummary {
+        Text(verbatim: secondarySummary)
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(DesignTokens.textSecondary)
+          .textSelection(.enabled)
+      }
+      Divider()
+      HStack(spacing: DesignTokens.spacingSM) {
+        SortableTableHeader(title: "Material", column: .material, sort: $sort)
+          .frame(width: 230, alignment: .leading)
+        SortableTableHeader(title: "Quantity", column: .quantity, sort: $sort, alignment: .trailing)
+          .frame(width: 80, alignment: .trailing)
+        SortableTableHeader(title: "Unit price", column: .unitPrice, sort: $sort, alignment: .trailing)
+          .frame(width: 110, alignment: .trailing)
+        SortableTableHeader(title: "Total", column: .total, sort: $sort, defaultDirection: .descending, alignment: .trailing)
+          .frame(width: 120, alignment: .trailing)
+        SortableTableHeader(title: "Source", column: .source, sort: $sort)
+          .frame(width: 80, alignment: .leading)
+      }
+      .font(.caption.bold())
+      .foregroundStyle(DesignTokens.textSecondary)
+      ScrollView(.vertical) {
+        VStack(alignment: .leading, spacing: 4) {
+          ForEach(
+            ManufacturingOpportunityMaterialCostSort.sorted(
+              lines,
+              by: sort.column,
+              ascending: sort.direction == .ascending
+            )
+          ) { line in
+            HStack(spacing: DesignTokens.spacingSM) {
+              EVEItemText(
+                value: line.name,
+                typeID: line.typeID,
+                font: .caption,
+                lineLimit: 1,
+                iconSize: 16
+              )
+              .frame(width: 230, alignment: .leading)
+              Text(verbatim: formatInteger(line.quantity))
+                .frame(width: 80, alignment: .trailing)
+              Text(verbatim: formatISK(line.unitPrice))
+                .frame(width: 110, alignment: .trailing)
+              Text(verbatim: formatISK(line.total))
+                .frame(width: 120, alignment: .trailing)
+              Text(line.isBuilt ? "Built" : "Bought")
+                .foregroundStyle(line.isBuilt ? DesignTokens.accent : DesignTokens.textSecondary)
+                .frame(width: 80, alignment: .leading)
+            }
+            .font(.caption.monospacedDigit())
+          }
+        }
+      }
+      // Explicit height: inside the popover a flexible scroll view would
+      // otherwise collapse when other content competes for space.
+      .frame(height: min(CGFloat(max(lines.count, 1)) * 24, 240))
+      Divider()
+      Text("Shopping list")
+        .font(.callout.weight(.semibold))
+      HStack(spacing: DesignTokens.spacingSM) {
+        SortableTableHeader(title: "Group", column: .group, sort: $shoppingSort)
+          .frame(width: 170, alignment: .leading)
+        SortableTableHeader(title: "Material", column: .material, sort: $shoppingSort)
+          .frame(width: 230, alignment: .leading)
+        SortableTableHeader(
+          title: "Quantity", column: .quantity, sort: $shoppingSort,
+          defaultDirection: .descending, alignment: .trailing
+        )
+        .frame(width: 100, alignment: .trailing)
+        SortableTableHeader(
+          title: "In stock", column: .inStock, sort: $shoppingSort,
+          defaultDirection: .descending, alignment: .trailing
+        )
+        .frame(width: 100, alignment: .trailing)
+      }
+      .font(.caption.bold())
+      .foregroundStyle(DesignTokens.textSecondary)
+      ScrollView(.vertical) {
+        VStack(alignment: .leading, spacing: 4) {
+          ForEach(sortedShoppingItems) { item in
+            let covered = coveredQuantities[item.typeID, default: 0]
+            HStack(spacing: DesignTokens.spacingSM) {
+              Text(verbatim: materialGroups[item.typeID] ?? AppLocalization.text("Unclassified"))
+                .foregroundStyle(DesignTokens.textSecondary)
+                .lineLimit(1)
+                .frame(width: 170, alignment: .leading)
+              EVEItemText(
+                value: item.name,
+                typeID: item.typeID,
+                font: .caption,
+                lineLimit: 1,
+                iconSize: 16
+              )
+              .frame(width: 230, alignment: .leading)
+              Text(verbatim: formatInteger(item.quantity))
+                .frame(width: 100, alignment: .trailing)
+              Text(verbatim: covered > 0 ? formatInteger(covered) : "—")
+                .foregroundStyle(covered > 0 ? DesignTokens.negative : DesignTokens.textSecondary)
+                .frame(width: 100, alignment: .trailing)
+            }
+            .font(.caption.monospacedDigit())
+          }
+        }
+      }
+      .frame(height: min(CGFloat(max(multibuyItems.count, 1)) * 24, 240))
+      Divider()
+      HStack(alignment: .center, spacing: DesignTokens.spacingSM) {
+        VStack(alignment: .leading, spacing: 2) {
+          if multibuyItems.isEmpty {
+            Text("No material to copy.")
+          } else {
+            Text(
+              verbatim: AppLocalization.format(
+                "Multibuy contains the full quantity of %lld material(s), self-built inputs as their raw materials.",
+                Int64(multibuyItems.count)
+              )
+            )
+          }
+          if !stockCoverage.isEmpty {
+            // Red so it is read together with the copy button: the copied
+            // list ignores this stock on purpose.
+            Text(
+              verbatim: AppLocalization.format(
+                stockCoverage.count == multibuyItems.count
+                  && stockCoverage.allSatisfy(\.isComplete)
+                  ? "Your Warehouse already covers all %lld materials (column In stock)."
+                  : "Your Warehouse already covers %lld of these materials in part or full (column In stock).",
+                Int64(stockCoverage.count)
+              )
+            )
+            .foregroundStyle(DesignTokens.negative)
+            .fontWeight(.semibold)
+          }
+          if shoppingList.unexpandedBuiltInputCount > 0 {
+            Text(
+              verbatim: AppLocalization.format(
+                "%lld self-built input(s) are missing: this scan has no raw materials for them; update the scan.",
+                Int64(shoppingList.unexpandedBuiltInputCount)
+              )
+            )
+            .foregroundStyle(DesignTokens.caution)
+          }
+          if let copyStatus {
+            Label(
+              copyStatus.message,
+              systemImage: copyStatus.succeeded
+                ? "checkmark.circle.fill" : "xmark.octagon.fill"
+            )
+            .foregroundStyle(
+              copyStatus.succeeded ? DesignTokens.positive : DesignTokens.negative
+            )
+          }
+        }
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+        Spacer()
+        Button {
+          copyMultibuy()
+        } label: {
+          Label("Copy Multibuy", systemImage: "doc.on.doc")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(multibuyItems.isEmpty)
+        .accessibilityIdentifier("market-opportunities.cost.copy-multibuy")
+      }
+      if !notes.isEmpty {
+        Divider()
+        ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
+          Text(verbatim: note)
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+        }
+      }
+    }
+    .frame(width: 660, alignment: .leading)
+  }
+
+  private func copyMultibuy() {
+    let export = EVEMultibuyExport.make(items: sortedShoppingItems)
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    if pasteboard.setString(export.text, forType: .string) {
+      copyStatus = (
+        AppLocalization.format(
+          "%lld item(s) copied for EVE Multibuy.",
+          Int64(export.itemCount)
+        ),
+        true
+      )
+    } else {
+      copyStatus = (
+        AppLocalization.text("The shopping list could not be copied to the clipboard."),
+        false
+      )
+    }
+  }
+}
+
 private struct OpportunityExplanationButton: View {
   let title: LocalizedStringKey
   let explanation: LocalizedStringKey
@@ -5781,7 +6296,7 @@ private struct ManufacturingOpportunityCandidateProjectionTrigger: Hashable {
   let snapshotID: UUID?
   let requestedWarehouseIdentity: String
   let preparedWarehouseIdentity: String?
-  let reservationRevision: UUID
+  let reservationRevision: Int
   let stockTargetIdentity: [String]
   let searchText: String
   let selectedCategory: String
@@ -5793,6 +6308,7 @@ private struct ManufacturingOpportunityCandidateProjectionTrigger: Hashable {
   let valueFilter: String
   let includesCorporationHangars: Bool
   let includesBlueprintCost: Bool
+  let buildsIntermediates: Bool
   let blueprintCostText: String
   let sortColumn: String
   let sortDirection: String
@@ -5818,6 +6334,7 @@ private struct ManufacturingOpportunityCandidateProjectionInput: Sendable {
   let selectedCategory: String
   let selectedGroup: String
   let favoritesOnly: Bool
+  let buildsIntermediates: Bool
   let valueFilter: ManufacturingOpportunityValueFilter
   let costSheet: ManufacturingOpportunityCostSheet
   let sort: ManufacturingOpportunitySortDescriptor
@@ -5841,29 +6358,35 @@ private enum ManufacturingOpportunityCandidateProjection {
       )
       var candidates: [ManufacturingOpportunityCandidate] = []
       candidates.reserveCapacity(input.snapshot.rows.count)
-      for row in input.snapshot.rows {
+      for scannedRow in input.snapshot.rows {
         guard !Task.isCancelled else { return [] }
         guard
           ManufacturingOpportunitySearchPolicy.accepts(
             effectiveQuery: searchQuery,
-            productName: row.productName,
-            groupName: row.groupName,
-            categoryName: row.categoryName
+            productName: scannedRow.productName,
+            groupName: scannedRow.groupName,
+            categoryName: scannedRow.categoryName
           ),
           input.selectedCategory.isEmpty
-            || row.categoryName == input.selectedCategory,
-          input.selectedGroup.isEmpty || row.groupName == input.selectedGroup,
-          !input.favoritesOnly || input.favorites.contains(row.productTypeID),
+            || scannedRow.categoryName == input.selectedCategory,
+          input.selectedGroup.isEmpty || scannedRow.groupName == input.selectedGroup,
+          !input.favoritesOnly || input.favorites.contains(scannedRow.productTypeID),
           ManufacturingOpportunityCatalogFilter.accepts(
-            activityKind: row.effectiveActivityKind,
-            categoryName: row.categoryName,
-            groupName: row.groupName,
-            metaGroupID: row.metaGroupID,
-            techLevel: row.techLevel,
+            activityKind: scannedRow.effectiveActivityKind,
+            categoryName: scannedRow.categoryName,
+            groupName: scannedRow.groupName,
+            metaGroupID: scannedRow.metaGroupID,
+            techLevel: scannedRow.techLevel,
             productFamilies: input.productFamilies,
             productionClasses: input.productionClasses
           )
         else { continue }
+        // Self-built inputs replace their purchase quotes before stock,
+        // logistics and costs are projected.
+        let row = ManufacturingOpportunityComponentBuildPolicy.applying(
+          scannedRow,
+          buildsIntermediates: input.buildsIntermediates
+        )
         let procurement = ManufacturingOpportunityScenarioProjector.procurement(
           for: row,
           factualWarehouseQuantities: input.factualWarehouseQuantities,

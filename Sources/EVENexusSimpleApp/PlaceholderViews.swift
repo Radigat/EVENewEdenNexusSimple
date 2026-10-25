@@ -369,10 +369,6 @@ struct PlannerView: View {
           historicalPlanPanel(historicalPlan)
         } else if historicalPlannerRequest == nil {
           Panel(title: "Produce") {
-            if let launchRequest {
-              plannerLaunchChoice(launchRequest)
-              Divider()
-            }
             PlannerManufacturingProductAdder(runtime: runtime) { line in
               appendPlannerInputLine(line)
             }
@@ -5117,13 +5113,15 @@ struct PlannerView: View {
 
   private func applyPlannerLaunchRequestIfNeeded() {
     guard let request = launchRequest else { return }
-    guard
-      !PlannerLaunchInputPolicy.requiresExplicitChoice(
+    // "Add to Planner" always appends to an existing draft (owner decision
+    // 24.10.2026); only an empty Planner starts from the handed-off line.
+    applyPlannerLaunchRequest(
+      request,
+      mode: PlannerLaunchInputPolicy.mode(
         currentInput: input,
         hasCalculatedPlan: runtime.plan != nil || blueprintTree != nil
       )
-    else { return }
-    applyPlannerLaunchRequest(request, mode: .replace)
+    )
   }
 
   private func applyPlannerLaunchRequest(
@@ -5205,64 +5203,6 @@ struct PlannerView: View {
     procurementPreferences.removeAll()
     recommendationApplicationMessage = nil
     shoppingListCopyStatus = nil
-  }
-
-  private func discardPlannerLaunchRequest() {
-    guard let request = launchRequest else { return }
-    launchRequest = nil
-    persistenceMessage = AppLocalization.format(
-      "Kept the current Planner calculation; %@ was not applied.",
-      request.productName
-    )
-  }
-
-  private func plannerLaunchChoice(
-    _ request: PlannerLaunchRequest
-  ) -> some View {
-    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      Label(
-        "New item from Main Hub Opportunities",
-        systemImage: "arrow.triangle.branch"
-      )
-      .font(.headline)
-      EVEItemText(
-        value: request.productName,
-        typeID: request.productTypeID
-      )
-      Text(
-        "A Planner draft or calculated result already exists. Choose whether the new item replaces it or is added as another line."
-      )
-      .font(.caption)
-      .foregroundStyle(DesignTokens.textSecondary)
-      if !parseResult.errors.isEmpty {
-        Label(
-          "The current draft contains input errors. Adding another line keeps those errors; replace it to calculate only the new item.",
-          systemImage: "exclamationmark.triangle.fill"
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.caution)
-      }
-      HStack(spacing: DesignTokens.spacingSM) {
-        Button("Replace current calculation") {
-          applyPlannerLaunchRequest(request, mode: .replace)
-        }
-        .buttonStyle(.borderedProminent)
-        .accessibilityIdentifier("planner.launch.replace")
-        Button("Add to current draft") {
-          applyPlannerLaunchRequest(request, mode: .append)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("planner.launch.append")
-        Button("Keep current calculation") {
-          discardPlannerLaunchRequest()
-        }
-        .buttonStyle(.borderless)
-        .accessibilityIdentifier("planner.launch.discard")
-      }
-    }
-    .padding(DesignTokens.spacingSM)
-    .background(DesignTokens.elevated)
-    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
   }
 
   private func plannerAction(

@@ -1,5 +1,182 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 24. Oktober 2026 – Hub-Chancen: Zwischenprodukte als Eigenbau
+
+Ziel: Eigentümerauftrag. Die Chancenzeile soll Bauteile wie Komponenten nicht
+nur kaufen, sondern aus ihren Materialien rechnen, als würde man sie
+produzieren.
+
+Entscheidungen des Eigentümers:
+- rekursiv bis zu den Rohstoffen,
+- Installation und Reaktion der Zwischenaufträge genau gerechnet,
+- je Knoten das Günstigere aus Eigenbau und Kauf,
+- umschaltbar, Standard an,
+- Reaktionen ohne ME und TE.
+
+Umfang (implementiert):
+- `ComponentCostResolver` im Analyzer und `ManufacturingOpportunityComponentBuild`
+  je Eingangsstoff. `componentBuildsResolved` steht im Snapshot.
+  `MarketPriceEngine.sortedOrders` wird je Typ einmal vorbereitet.
+- `ManufacturingOpportunityComponentBuildPolicy` wird in der
+  Kandidatenprojektion vor Lager, Logistik und Kosten angewendet.
+- Die Scans übergeben die Zwischenprodukt-ME und die Produktionssperrliste der
+  Production Basis an den Analyzer.
+- Der Schalter „Zwischenprodukte selbst bauen“, der Hinweis für alte Scans und
+  der Mouse-Over der Gesamtkosten sind eingebaut.
+
+Prüfung (automatisch):
+- 8 neue Tests decken ab:
+  - Eigenbau ist günstiger, Kauf ist günstiger,
+  - fehlende Sell-Order samt entfernter Warnung,
+  - Sperrliste, fehlender Adjusted Price, zu prüfende Anlage,
+  - Reaktionszwischenstufe ohne ME-Einfluss und ohne Reaktionsanlage,
+  - Zwischenprodukt-ME,
+  - Rezeptzyklus,
+  - Dekodierung alter Materialien.
+- `swift test`: 605 Tests in 43 Suites plus 70 in 3 Suites bestanden.
+- `xcodebuild … test`: `** TEST SUCCEEDED **`.
+- `EVEStaticDataKit` separat: 12 Tests bestanden.
+
+Nachtrag 25.10.2026: Der Eigentümer sah keinen Mouse-Over an den
+Gesamtkosten. Mögliche Ursachen waren, dass die Hover-Fläche nur die Ziffern
+abdeckte und dass ein älterer Scan nur den Betrag zeigte. Jetzt gilt die
+Hilfe für die ganze Zelle (alle Tabellenzellen). Sie nennt immer Material,
+Installation, Bauplan und Logistik sowie den Eigenbau-Stand. `swift test`
+(606 + 70) und `xcodebuild … build` sind bestanden. Zwei vorherige volle Läufe
+scheiterten in `Full-store recovery` mit Sperrdatei-Fehlern, die mit dieser
+Änderung nichts zu tun haben. Diese Suite lief isoliert zweimal und im
+nächsten vollen Lauf durch. GUI nicht geprüft.
+
+Nachtrag 25.10.2026 (Ursache Tooltips): Der Eigentümer meldete, dass
+nirgends im Programm Tooltips erscheinen. Gemessen wurde per Prozess-ID mit
+einem Werkzeug, das sichtbare Tooltip-Fenster zählt, sowohl an einer
+isolierten Instanz mit erfundenem Fixture-Scan als auch, mit Freigabe, an der
+laufenden App, dort nur Mausbewegung und eine Navigation. Ergebnis: Ist die
+App aktiv, erscheinen Tooltips (4/4); ist ein anderes Programm aktiv, nie
+(0/3). Ursache ist das AppKit-Standardverhalten, nicht der Ansichtscode.
+Korrektur: `InactiveWindowToolTips` setzt für jedes App-Fenster
+`allowsToolTipsWhenApplicationIsInactive`. Danach erscheinen Tooltips auch bei
+inaktiver App (3/3) und weiterhin bei aktiver App (2/2). `swift test`
+(607 + 70) und `xcodebuild … build` sind bestanden. Die Abnahme durch den
+Eigentümer steht aus.
+
+Nachtrag 25.10.2026 (Klick-Erklärung): Der Eigentümer meldete, dass die
+Tooltips weiterhin nicht erscheinen, und wählte die Klickvariante.
+`ExplainedTableCell` ersetzt den Tooltip an Kosten, Tagesbedarf,
+Vertragspreis und Vertragsgewinn: Akzent-Leuchtrahmen, beim Überfahren
+verstärkt, Popover per Klick. Die Prüfung lief in der isolierten Instanz mit
+erfundenem Fixture-Scan: Der Rahmen ist sichtbar, und der Klick auf die
+Kosten-Zelle öffnet das Popover mit Aufteilung und Eigenbau-Stand
+(Bildschirmfoto). `InactiveWindowToolTips` bleibt erhalten; die Ursache für die
+fehlenden Tooltips beim Eigentümer ist damit nicht bestätigt.
+
+Nachtrag 25.10.2026 (Kosten-Erklärung): Auf Wunsch des Eigentümers zeigt
+die Kosten-Erklärung oben Gesamtkosten, Material und Installation und darunter
+die Liste der Eingangsstoffe mit Menge, Stückpreis, Gesamtpreis und Bezug.
+Die Kopfzeilen nutzen den gemeinsamen sortierbaren Tabellenkopf
+(`SortableTableHeader`). Die Logik steckt in
+`ManufacturingOpportunityMaterialCostLine` und
+`ManufacturingOpportunityMaterialCostSort` und ist mit 2 neuen Tests
+abgedeckt. Die isolierte Fixture-Instanz zeigt das Popover korrekt
+(Bildschirmfoto).
+
+Nachtrag 25.10.2026 (Multibuy): Die Kosten-Erklärung hat jetzt den Knopf
+„Für EVE Multibuy kopieren“. `ManufacturingOpportunityMultibuy` liefert die
+gekauften Eingangsstoffe abzüglich des nutzbaren Lagerbestands und lässt
+Eigenbau-Eingangsstoffe aus; der Text entsteht über `EVEMultibuyExport` wie im
+Planner. Ein neuer Test prüft Lagerabzug und den Ausschluss von Eigenbau. In
+der isolierten Fixture-Instanz stand nach dem Klick „Fixture Mineral 101“ in
+der Zwischenablage. Dabei wurde die Zwischenablage des Eigentümers
+überschrieben. Die Materialliste im Popover bekommt eine feste Höhe, weil sie
+sonst neben dem neuen Bereich auf Höhe 0 zusammenfiel.
+
+Nachtrag 25.10.2026 (Multibuy volle Menge): Auf Wunsch des Eigentümers
+kopiert Multibuy immer die volle Menge der gekauften Eingangsstoffe.
+`ManufacturingOpportunityMultibuy.stockCoverage` liefert, was das Lager davon
+schon deckt. Das steht in roter Schrift neben dem Knopf. Der Test ist
+angepasst; in der isolierten Instanz stand „Fixture Mineral 100“ in der
+Zwischenablage. Die Zwischenablage des Eigentümers wurde danach
+wiederhergestellt. Der rote Hinweis wurde nur per Test geprüft, nicht
+sichtbar, weil die isolierte Instanz kein Lager hat.
+
+Nachtrag 25.10.2026 (Einkaufsliste mit Rohstoffen): Am Beispiel Charon zeigte
+der Eigentümer, dass Multibuy die gebauten Komponenten statt der zu kaufenden
+Rohstoffe brauchte. Jetzt gilt:
+- `ComponentCostResolver` führt die gekauften Rohstoffe je Knoten mit.
+- `ManufacturingOpportunityComponentBuild.purchases` speichert sie, die Namen
+  stehen einmal je Scan in `componentPurchaseNames`.
+- `ManufacturingOpportunityMultibuy.shoppingList` fasst Direktkäufe und die
+  Rohstoffe der Eigenbau-Bauteile zusammen und skaliert sie bei geänderten
+  Runs oder ME.
+- Das Popover hat den Abschnitt „Einkaufsliste“ mit Lagerspalte; der rote
+  Hinweis steht neben dem Knopf.
+
+Tests: 2 neue bzw. angepasste Tests. Die isolierte Fixture-Instanz mit einem
+baubaren Bauteil kopierte „Fixture Isogen 27 / Fixture Mineral 235“, wie
+erwartet: 100 direkt plus 3 × 50 × 0,9 bzw. 3 × 10 × 0,9 aus dem Eigenbau.
+Die Zwischenablage des Eigentümers wurde wiederhergestellt.
+
+Nachtrag 25.10.2026 (Gruppen): Die Einkaufsliste ist nach SDE-Gruppen
+sortiert und hat eine Spalte „Gruppe“; Multibuy kopiert in der angezeigten
+Reihenfolge. Der Scan lädt dafür die Klassifikationen aller beteiligten
+Typen, also auch der Materialien, und speichert `materialGroupNames` einmal
+je Scan. Ein neuer Test prüft Gruppenreihenfolge, unbekannte Gruppen und den
+Kopiertext. `swift test` (612 + 70) ist bestanden. Die Fixture-Instanz zeigt
+die Gruppenspalte (Bildschirmfoto). Ein neuer Scan ist nötig, damit Gruppen
+erscheinen.
+
+Offen:
+- Wie stark der gespeicherte Scan durch die Rohstofflisten wächst, ist mit
+  echten Daten nicht gemessen.
+- Die Dauer eines echten Scans ist mit der Rekursion nicht gemessen. Die
+  Stopwatch-Phase `analysis` im Protokoll zeigt sie beim nächsten Scan.
+- Die Abnahme der Zahlen mit echtem Scan durch den Eigentümer steht aus.
+
+## 24. Oktober 2026 – Hub-Chancen: ruhiges Laden, Favoriten oben, „Zum Planner hinzufügen“
+
+Ziel: Eigentümerauftrag. Main-, Home- und Coalition-Hub-Chancen sprangen beim
+Öffnen mehrfach auf den Spinner, ein Stern-Klick verzögerte die Ansicht,
+Favoriten standen nicht oben, und „Bauen“ war nur Text.
+
+Befund:
+- Jede Abweichung des `ManufacturingOpportunityCandidateProjectionTrigger`
+  setzte die Tabelle auf den Spinner. Beim Öffnen änderten Analyse, Lager,
+  Planreservierungen (neue UUID je Vorbereitung), Vertragsreferenzen,
+  Inventionsschätzungen (neue UUID je Lauf) und LP-Angebote den Trigger
+  nacheinander.
+- Die Favoriten-IDs standen immer im Trigger, deshalb rechnete jeder Stern-Klick
+  alle Zeilen neu.
+- Die Main-Ansicht las den Zustand von Home und Coalition mit und wurde daher
+  bei deren Scan-Fortschritt neu ausgewertet.
+
+Umfang (implementiert):
+- Die zuletzt fertige Tabelle bleibt sichtbar, im Kopf steht „Wird
+  aktualisiert“. Es gibt nur noch einen Ladezustand vor der ersten Projektion,
+  und das gilt auch während der Reservierungsvorbereitung.
+- Inhaltsbasierte Revisionen: Planreservierungen über den Payload-Hash, die
+  Inventionsrevision nur bei geänderten Schätzungen.
+- Favoriten stehen nur bei „Nur Favoriten“ im Trigger.
+  `ManufacturingOpportunityFavoriteOrdering.favoritesFirst` stellt sie nach der
+  Projektion stabil voran.
+- Der umrandete Button „Zum Planner hinzufügen“ ersetzt in den Chancenzeilen
+  und in der Dashboard-Karte „Bauen“. Die Übergabe hängt an einen vorhandenen
+  Entwurf an (`PlannerLaunchInputPolicy.mode`). Die Rückfrage
+  „Ersetzen/Hinzufügen/Behalten“ ist entfernt.
+
+Prüfung (automatisch):
+- `swift test`: 597 Tests in 42 Suites bestanden, davon 3 neue Tests zur
+  Favoritenreihenfolge. Den Übergabetest auf Anhängen umgestellt.
+- `xcodebuild … test` (Debug, arm64, eigene DerivedData): `** TEST SUCCEEDED **`.
+- `EVEStaticDataKit` separat: 12 Tests bestanden.
+- Die GUI-Abnahme durch den Eigentümer steht aus.
+
+Offen:
+- Planner-Kosten auf Abruf in der Chancenansicht sind noch nicht umgesetzt.
+  Die Planner-Endrechnung (Bauplankosten-Zuordnung, BPC-Bewertung,
+  `RuntimeState.calculate`) steckt im Planner-Fenster und setzt globalen
+  Zustand (`runtime.plan`). Eine saubere Wiederverwendung braucht eine
+  Herauslösung, die der Eigentümer zuerst entscheiden muss.
+
 ## 24. Oktober 2026 – CI-Build mit Swift 6.1 repariert
 
 Ziel: Eigentümerauftrag. Die CI (`macos-15`, Swift 6.1.2) scheitert seit

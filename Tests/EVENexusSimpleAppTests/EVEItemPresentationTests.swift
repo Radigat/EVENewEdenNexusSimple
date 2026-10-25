@@ -20,7 +20,7 @@ final class EVEItemPresentationTests: XCTestCase {
     XCTAssertTrue(request.blueprintSupplyPlans.isEmpty)
   }
 
-  func testMainHubHandoffCanReplaceAnInvalidRestoredPlannerDraft() {
+  func testMainHubHandoffAppendsToExistingDraftAndReplacesOnlyAnEmptyPlanner() {
     let request = MainHubOpportunityPlannerHandoff.request(
       productTypeID: 34_567,
       productName: "Fixture Module",
@@ -31,11 +31,19 @@ final class EVEItemPresentationTests: XCTestCase {
     )
     let invalidRestoredDraft = "Old incomplete line"
 
-    XCTAssertTrue(
-      PlannerLaunchInputPolicy.requiresExplicitChoice(
+    XCTAssertEqual(
+      PlannerLaunchInputPolicy.mode(
         currentInput: invalidRestoredDraft,
         hasCalculatedPlan: true
-      )
+      ),
+      .append
+    )
+    XCTAssertEqual(
+      PlannerLaunchInputPolicy.mode(
+        currentInput: "",
+        hasCalculatedPlan: true
+      ),
+      .append
     )
     let replacement = PlannerLaunchInputPolicy.applying(
       request,
@@ -47,11 +55,12 @@ final class EVEItemPresentationTests: XCTestCase {
     XCTAssertEqual(replacement, "Fixture Module 10 10 20")
     XCTAssertTrue(parsedReplacement.isValid)
     XCTAssertEqual(parsedReplacement.requests.count, 1)
-    XCTAssertFalse(
-      PlannerLaunchInputPolicy.requiresExplicitChoice(
+    XCTAssertEqual(
+      PlannerLaunchInputPolicy.mode(
         currentInput: "\n",
         hasCalculatedPlan: false
-      )
+      ),
+      .replace
     )
     XCTAssertEqual(
       PlannerLaunchInputPolicy.applying(

@@ -223,6 +223,8 @@ private struct SecondaryHubOpportunityScanContext: Sendable {
   let adjustedPrices: [Int64: AdjustedPrice]
   let facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext]
   let reactionFacility: ReactionFacilityCostContext?
+  let intermediateMaterialEfficiency: Int
+  let productionBlacklist: ProductionBlacklistConfiguration
   let isAutomatic: Bool
 }
 
@@ -3062,8 +3064,9 @@ final class RuntimeState {
         }
       )
       async let namesValue = catalog.typeNames(ids: allTypeIDs)
+      // Material types too: the shopping list groups bought materials.
       async let classificationsValue = catalog.industryClassifications(
-        typeIDs: productTypeIDs
+        typeIDs: allTypeIDs
       )
       async let volumesValue = universeTypeVolumeService.volumes(
         for: allTypeIDs
@@ -3085,6 +3088,8 @@ final class RuntimeState {
       let mainHub = configuredMainHub.location
       let salesTaxRate = configuredMainHub.marketTaxes.effectiveSalesTaxRate
       let brokerFeeRate = configuredMainHub.marketTaxes.effectiveBrokerFeeRate
+      let intermediateMaterialEfficiency = productionBasis.defaultIntermediateME
+      let productionBlacklist = productionBasis.blacklist
       let analysisTask = Task.detached(
         priority: isAutomatic ? .utility : .userInitiated
       ) {
@@ -3103,7 +3108,9 @@ final class RuntimeState {
           facilities: facilities,
           reactionFacility: reactionFacility,
           salesTaxRate: salesTaxRate,
-          brokerFeeRate: brokerFeeRate
+          brokerFeeRate: brokerFeeRate,
+          intermediateMaterialEfficiency: intermediateMaterialEfficiency,
+          productionBlacklist: productionBlacklist
         )
       }
       let analysis = try await withTaskCancellationHandler {
@@ -3135,6 +3142,8 @@ final class RuntimeState {
           adjustedPrices: adjusted,
           facilities: facilities,
           reactionFacility: reactionFacility,
+          intermediateMaterialEfficiency: intermediateMaterialEfficiency,
+          productionBlacklist: productionBlacklist,
           isAutomatic: isAutomatic
         )
       try await analyzeSecondaryHubOpportunities(
@@ -4538,9 +4547,14 @@ final class RuntimeState {
         outputRuns: estimate.outputRuns
       )
     }
-    opportunityInventionEstimates.merge(estimates) { $1 }
+    let merged = opportunityInventionEstimates.merging(estimates) { $1 }
     opportunityInventionEstimatesLoadedAt = .now
-    opportunityInventionRevision = UUID()
+    // Unchanged estimates keep the revision, so the opportunity tables do
+    // not recompute after a refresh that produced the same values.
+    if merged != opportunityInventionEstimates {
+      opportunityInventionEstimates = merged
+      opportunityInventionRevision = UUID()
+    }
     opportunityInventionError = nil
   }
 
@@ -5504,7 +5518,9 @@ final class RuntimeState {
           hubRole: role,
           saleHub: saleHub,
           saleMarket: analysisMarket,
-          coalitionTransport: coalitionTransport
+          coalitionTransport: coalitionTransport,
+          intermediateMaterialEfficiency: context.intermediateMaterialEfficiency,
+          productionBlacklist: context.productionBlacklist
         )
       }
       let analysis = try await withTaskCancellationHandler {

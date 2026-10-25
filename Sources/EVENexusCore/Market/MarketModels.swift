@@ -1986,22 +1986,11 @@ public enum MarketPriceEngine {
     salesTaxRate: Double? = nil,
     brokerFeeRate: Double? = nil
   ) -> PriceQuote {
-    let relevant = (snapshot.ordersByType[typeID] ?? []).filter {
-      $0.locationID == snapshot.locationID
-        && $0.price.isFinite
-        && $0.price > 0
-        && $0.volumeRemaining > 0
-        && $0.minimumVolume > 0
-    }
-    let sorted: [MarketOrder]
-    switch scenario {
-    case .materialBuy, .listedSale, .contractSale:
-      sorted = relevant.filter { $0.side == .sell }
-        .sorted { $0.price < $1.price }
-    case .immediateSale:
-      sorted = relevant.filter { $0.side == .buy }
-        .sorted { $0.price > $1.price }
-    }
+    let sorted = sortedOrders(
+      typeID: typeID,
+      scenario: scenario,
+      snapshot: snapshot
+    )
     return quote(
       typeID: typeID,
       quantity: quantity,
@@ -2013,7 +2002,31 @@ public enum MarketPriceEngine {
     )
   }
 
-  fileprivate static func quote(
+  /// Usable orders of one type in the order a quote fills them. Callers that
+  /// quote the same type repeatedly prepare this once.
+  static func sortedOrders(
+    typeID: Int64,
+    scenario: PriceScenario,
+    snapshot: MarketOrderSnapshot
+  ) -> [MarketOrder] {
+    let relevant = (snapshot.ordersByType[typeID] ?? []).filter {
+      $0.locationID == snapshot.locationID
+        && $0.price.isFinite
+        && $0.price > 0
+        && $0.volumeRemaining > 0
+        && $0.minimumVolume > 0
+    }
+    switch scenario {
+    case .materialBuy, .listedSale, .contractSale:
+      return relevant.filter { $0.side == .sell }
+        .sorted { $0.price < $1.price }
+    case .immediateSale:
+      return relevant.filter { $0.side == .buy }
+        .sorted { $0.price > $1.price }
+    }
+  }
+
+  static func quote(
     typeID: Int64,
     quantity: Int64,
     scenario: PriceScenario,

@@ -3536,3 +3536,553 @@ private actor MarketBrowserFixtureTransport: ESIHTTPTransporting {
     )
   }
 }
+
+@Suite("Opportunity favorites first")
+struct ManufacturingOpportunityFavoriteOrderingTests {
+  private struct Row: Equatable {
+    let typeID: Int64
+    let name: String
+  }
+
+  @Test
+  func favoritesLeadAndBothBlocksKeepTheSortedOrder() {
+    // Already sorted by the active column, e.g. profit descending.
+    let sorted = [
+      Row(typeID: 1, name: "A"),
+      Row(typeID: 2, name: "B"),
+      Row(typeID: 3, name: "C"),
+      Row(typeID: 4, name: "D"),
+      Row(typeID: 5, name: "E"),
+    ]
+
+    let ordered = ManufacturingOpportunityFavoriteOrdering.favoritesFirst(
+      sorted,
+      favorites: [4, 2],
+      typeID: \.typeID
+    )
+
+    #expect(ordered.map(\.typeID) == [2, 4, 1, 3, 5])
+  }
+
+  @Test
+  func reversedSortStaysReversedInsideBothBlocks() {
+    let descending = [5, 4, 3, 2, 1].map { Row(typeID: $0, name: "\($0)") }
+
+    let ordered = ManufacturingOpportunityFavoriteOrdering.favoritesFirst(
+      descending,
+      favorites: [1, 3],
+      typeID: \.typeID
+    )
+
+    #expect(ordered.map(\.typeID) == [3, 1, 5, 4, 2])
+  }
+
+  @Test
+  func withoutFavoritesOrUnknownFavoritesTheOrderIsUnchanged() {
+    let sorted = [Row(typeID: 7, name: "X"), Row(typeID: 8, name: "Y")]
+
+    #expect(
+      ManufacturingOpportunityFavoriteOrdering.favoritesFirst(
+        sorted,
+        favorites: [],
+        typeID: \.typeID
+      ) == sorted
+    )
+    #expect(
+      ManufacturingOpportunityFavoriteOrdering.favoritesFirst(
+        sorted,
+        favorites: [99],
+        typeID: \.typeID
+      ) == sorted
+    )
+  }
+}
+
+@Suite("Opportunity intermediates built from materials")
+struct ManufacturingOpportunityComponentBuildTests {
+  private let source = SourceIdentity(provider: "Fixture", version: "1")
+
+  private func order(_ id: Int64, _ typeID: Int64, price: Double) -> MarketOrder {
+    MarketOrder(
+      id: id,
+      typeID: typeID,
+      locationID: 60_003_760,
+      systemID: 30_000_142,
+      side: .sell,
+      price: price,
+      volumeRemaining: 1_000_000,
+      minimumVolume: 1,
+      issued: .now
+    )
+  }
+
+  private func definition(
+    blueprint: Int64,
+    product: Int64,
+    output: Int64 = 1,
+    kind: BlueprintActivityDefinition.Kind = .manufacturing,
+    materials: [(Int64, Int64)]
+  ) -> BlueprintDefinition {
+    BlueprintDefinition(
+      blueprintTypeID: blueprint,
+      productTypeID: product,
+      maxProductionLimit: 100,
+      activity: BlueprintActivityDefinition(
+        kind: kind,
+        durationSeconds: 3_600,
+        materials: materials.map { BlueprintMaterial(typeID: $0.0, quantity: $0.1) },
+        products: [BlueprintProduct(typeID: product, quantity: output, probability: nil)]
+      ),
+      source: source
+    )
+  }
+
+  private var facility: ManufacturingOpportunityFacilityContext {
+    ManufacturingOpportunityFacilityContext(
+      name: "Factory",
+      materialMultiplier: 1,
+      timeMultiplier: 1,
+      jobCostMultiplier: 1,
+      facilityTaxRate: 0,
+      systemCostIndex: 0.1,
+      sccSurchargeRate: 0,
+      alphaSurchargeRate: 0
+    )
+  }
+
+  private var reactionFacility: ReactionFacilityCostContext {
+    ReactionFacilityCostContext(
+      name: "Refinery",
+      materialMultiplier: 1,
+      timeMultiplier: 1,
+      jobCostMultiplier: 1,
+      facilityTaxRate: 0,
+      systemCostIndex: 0.1,
+      sccSurchargeRate: 0,
+      alphaSurchargeRate: 0,
+      ruleVersion: "fixture"
+    )
+  }
+
+  private func analyze(
+    definitions: [BlueprintDefinition],
+    orders: [MarketOrder],
+    adjusted: [Int64: Double],
+    facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext]? = nil,
+    withReactionFacility: Bool = true,
+    intermediateME: Int = 0,
+    blacklist: ProductionBlacklistConfiguration = .init(),
+    classifications: [Int64: IndustryItemClassification] = [:]
+  ) throws -> ManufacturingOpportunitySnapshot {
+    let market = MarketOrderSnapshot(
+      id: UUID(),
+      regionID: 10_000_002,
+      locationID: 60_003_760,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: Dictionary(grouping: orders, by: \.typeID),
+      source: source
+    )
+    return try ManufacturingOpportunityAnalyzer.analyze(
+      definitions: definitions,
+      typeNames: [34: "Fixture Mineral", 100: "Fixture Product", 500: "Fixture Component", 600: "Fixture Reaction"],
+      classifications: classifications,
+      packagedVolumes: [34: 0.01, 500: 1, 700: 0.05],
+      settings: ManufacturingOpportunitySettings(
+        targetQuantity: 1,
+        requestedRuns: nil,
+        materialEfficiency: 0,
+        timeEfficiency: 0
+      ),
+      mainHub: .jita,
+      productionWarehouseScope: ProductionWarehouseScope(locations: []),
+      market: market,
+      adjustedPrices: adjusted.reduce(into: [:]) {
+        $0[$1.key] = AdjustedPrice(typeID: $1.key, adjustedPrice: $1.value, averagePrice: nil)
+      },
+      facilities: facilities ?? [.module: facility],
+      reactionFacility: withReactionFacility ? reactionFacility : nil,
+      salesTaxRate: 0,
+      brokerFeeRate: 0,
+      intermediateMaterialEfficiency: intermediateME,
+      productionBlacklist: blacklist
+    )
+  }
+
+  /// Product 100 needs 2 × component 500 and 10 × mineral 34; the component
+  /// needs 100 × mineral 34 per run.
+  private var componentDefinitions: [BlueprintDefinition] {
+    [
+      definition(blueprint: 200, product: 100, materials: [(500, 2), (34, 10)]),
+      definition(blueprint: 201, product: 500, materials: [(34, 100)]),
+    ]
+  }
+
+  private func productRow(_ snapshot: ManufacturingOpportunitySnapshot) throws
+    -> ManufacturingOpportunityRow
+  {
+    try #require(snapshot.rows.first(where: { $0.productTypeID == 100 }))
+  }
+
+  @Test
+  func cheaperComponentIsBuiltIncludingItsInstallation() throws {
+    let snapshot = try analyze(
+      definitions: componentDefinitions,
+      orders: [order(1, 34, price: 1), order(2, 500, price: 1_000), order(3, 100, price: 5_000)],
+      adjusted: [34: 2]
+    )
+    #expect(snapshot.componentBuildsResolved == true)
+    let row = try productRow(snapshot)
+    let component = try #require(row.materials.first(where: { $0.typeID == 500 }))
+    let build = try #require(component.componentBuild)
+    // 2 runs × 100 minerals at 1 ISK, installation 2 × 100 × 2 ISK × 0.1.
+    #expect(build.totalCost == 240)
+    #expect(build.installationCost == 40)
+    #expect(build.builtNodeCount == 1)
+    #expect(row.materialCost == 2_010)
+
+    let built = ManufacturingOpportunityComponentBuildPolicy.applying(
+      row,
+      buildsIntermediates: true
+    )
+    #expect(built.materialCost == 250)
+    let summary = ManufacturingOpportunityComponentBuildPolicy.summary(of: built)
+    #expect(summary.builtInputs == 1)
+    #expect(summary.installationCost == 40)
+    // Raw purchase volume replaces the component volume.
+    let builtComponent = try #require(built.materials.first(where: { $0.typeID == 500 }))
+    #expect(abs((builtComponent.packagedVolumePerUnit ?? 0) - 1) < 0.000_001)
+
+    let bought = ManufacturingOpportunityComponentBuildPolicy.applying(
+      row,
+      buildsIntermediates: false
+    )
+    #expect(bought.materialCost == 2_010)
+  }
+
+  @Test
+  func cheaperPurchaseKeepsTheMarketQuote() throws {
+    let snapshot = try analyze(
+      definitions: componentDefinitions,
+      orders: [order(1, 34, price: 1), order(2, 500, price: 50), order(3, 100, price: 5_000)],
+      adjusted: [34: 2]
+    )
+    let row = try productRow(snapshot)
+    let applied = ManufacturingOpportunityComponentBuildPolicy.applying(
+      row,
+      buildsIntermediates: true
+    )
+    #expect(applied.materialCost == 110)
+    #expect(ManufacturingOpportunityComponentBuildPolicy.summary(of: applied).builtInputs == 0)
+  }
+
+  @Test
+  func componentWithoutSellOrderIsBuiltAndItsMarketWarningRemoved() throws {
+    let snapshot = try analyze(
+      definitions: componentDefinitions,
+      orders: [order(1, 34, price: 1), order(3, 100, price: 5_000)],
+      adjusted: [34: 2]
+    )
+    let row = try productRow(snapshot)
+    #expect(row.materialCost == nil)
+    let componentWarningIDs = Set(
+      try #require(row.materials.first(where: { $0.typeID == 500 })).quote.warnings.map(\.id)
+    )
+    #expect(!componentWarningIDs.isEmpty)
+    let applied = ManufacturingOpportunityComponentBuildPolicy.applying(
+      row,
+      buildsIntermediates: true
+    )
+    #expect(applied.materialCost == 250)
+    #expect(!applied.warnings.contains(where: { componentWarningIDs.contains($0.id) }))
+  }
+
+  @Test
+  func blockedMissingFacilityOrMissingAdjustedPriceIsNotBuilt() throws {
+    let orders = [order(1, 34, price: 1), order(2, 500, price: 1_000), order(3, 100, price: 5_000)]
+    let blocked = try analyze(
+      definitions: componentDefinitions,
+      orders: orders,
+      adjusted: [34: 2],
+      blacklist: ProductionBlacklistConfiguration(typeNames: ["Fixture Component"])
+    )
+    #expect(try productRow(blocked).materials.first(where: { $0.typeID == 500 })?.componentBuild == nil)
+
+    let missingAdjustedPrice = try analyze(
+      definitions: componentDefinitions,
+      orders: orders,
+      adjusted: [:]
+    )
+    #expect(
+      try productRow(missingAdjustedPrice).materials.first(where: { $0.typeID == 500 })?
+        .componentBuild == nil
+    )
+
+    // The component's (unclassified → module) facility needs review.
+    let reviewed = ManufacturingOpportunityFacilityContext(
+      name: "Factory",
+      materialMultiplier: 1,
+      timeMultiplier: 1,
+      jobCostMultiplier: 1,
+      facilityTaxRate: 0,
+      systemCostIndex: 0.1,
+      sccSurchargeRate: 0,
+      alphaSurchargeRate: 0,
+      needsReview: true
+    )
+    let missingFacility = try analyze(
+      definitions: componentDefinitions,
+      orders: orders,
+      adjusted: [34: 2],
+      facilities: [.module: reviewed]
+    )
+    let row = try productRow(missingFacility)
+    #expect(row.materials.first(where: { $0.typeID == 500 })?.componentBuild == nil)
+    let unchanged = ManufacturingOpportunityComponentBuildPolicy.applying(
+      row,
+      buildsIntermediates: true
+    )
+    #expect(unchanged.materialCost == row.materialCost)
+  }
+
+  @Test
+  func reactionIntermediateUsesTheReactionFacilityWithoutMaterialEfficiency() throws {
+    // Product 100 needs 10 × reaction product 600; one reaction run makes one
+    // unit from 100 × moon material 700.
+    let definitions = [
+      definition(blueprint: 200, product: 100, materials: [(600, 10)]),
+      definition(blueprint: 300, product: 600, kind: .reaction, materials: [(700, 100)]),
+    ]
+    let orders = [order(1, 700, price: 1), order(2, 600, price: 1_000), order(3, 100, price: 50_000)]
+    let withoutME = try analyze(
+      definitions: definitions,
+      orders: orders,
+      adjusted: [700: 1],
+      intermediateME: 0
+    )
+    let withME = try analyze(
+      definitions: definitions,
+      orders: orders,
+      adjusted: [700: 1],
+      intermediateME: 10
+    )
+    let build = try #require(
+      try productRow(withoutME).materials.first(where: { $0.typeID == 600 })?.componentBuild
+    )
+    // 10 runs × 100 inputs at 1 ISK plus reaction cost 1,000 × 1 ISK × 0.1.
+    #expect(build.totalCost == 1_100)
+    #expect(build.installationCost == 100)
+    #expect(
+      try productRow(withME).materials.first(where: { $0.typeID == 600 })?.componentBuild
+        == build
+    )
+
+    let noReactionFacility = try analyze(
+      definitions: definitions,
+      orders: orders,
+      adjusted: [700: 1],
+      withReactionFacility: false
+    )
+    #expect(
+      try productRow(noReactionFacility).materials.first(where: { $0.typeID == 600 })?
+        .componentBuild == nil
+    )
+  }
+
+  @Test
+  func intermediateMaterialEfficiencyReducesManufacturedIntermediates() throws {
+    let snapshot = try analyze(
+      definitions: componentDefinitions,
+      orders: [order(1, 34, price: 1), order(2, 500, price: 1_000), order(3, 100, price: 5_000)],
+      adjusted: [34: 2],
+      intermediateME: 10
+    )
+    let build = try #require(
+      try productRow(snapshot).materials.first(where: { $0.typeID == 500 })?.componentBuild
+    )
+    // 2 runs × 100 × 0.9 = 180 minerals; installation EIV ignores ME.
+    #expect(build.totalCost == 220)
+  }
+
+  @Test
+  func recipeCycleIsNotBuiltAndDoesNotRecurseForever() throws {
+    let definitions = [
+      definition(blueprint: 200, product: 100, materials: [(500, 1)]),
+      definition(blueprint: 201, product: 500, materials: [(501, 1)]),
+      definition(blueprint: 202, product: 501, materials: [(500, 1)]),
+    ]
+    // Neither 500 nor 501 can be bought, so only the cycle could supply them.
+    let snapshot = try analyze(
+      definitions: definitions,
+      orders: [order(3, 100, price: 100)],
+      adjusted: [500: 1, 501: 1]
+    )
+    let row = try productRow(snapshot)
+    #expect(row.materials.first?.componentBuild == nil)
+    #expect(row.materialCost == nil)
+  }
+
+  @Test
+  func costLinesShowQuantityPriceTotalAndBuiltInputs() throws {
+    let snapshot = try analyze(
+      definitions: componentDefinitions,
+      orders: [order(1, 34, price: 1), order(2, 500, price: 1_000), order(3, 100, price: 5_000)],
+      adjusted: [34: 2]
+    )
+    let built = ManufacturingOpportunityComponentBuildPolicy.applying(
+      try productRow(snapshot),
+      buildsIntermediates: true
+    )
+    let lines = ManufacturingOpportunityMaterialCostLine.lines(for: built)
+    let component = try #require(lines.first(where: { $0.typeID == 500 }))
+    #expect(component.isBuilt)
+    #expect(component.quantity == 2)
+    #expect(component.unitPrice == 120)
+    #expect(component.total == 240)
+    let mineral = try #require(lines.first(where: { $0.typeID == 34 }))
+    #expect(!mineral.isBuilt)
+    #expect(mineral.quantity == 10)
+    #expect(mineral.unitPrice == 1)
+    #expect(mineral.total == 10)
+  }
+
+  @Test
+  func costLinesSortTypedValuesWithUnavailablePricesLast() {
+    let lines = [
+      ManufacturingOpportunityMaterialCostLine(typeID: 3, name: "Charlie", quantity: 5, unitPrice: nil, total: nil, isBuilt: false),
+      ManufacturingOpportunityMaterialCostLine(typeID: 1, name: "alpha", quantity: 50, unitPrice: 2, total: 100, isBuilt: true),
+      ManufacturingOpportunityMaterialCostLine(typeID: 2, name: "Bravo", quantity: 5, unitPrice: 10, total: 50, isBuilt: false),
+    ]
+    func ids(_ column: ManufacturingOpportunityMaterialCostColumn, _ ascending: Bool) -> [Int64] {
+      ManufacturingOpportunityMaterialCostSort.sorted(lines, by: column, ascending: ascending).map(\.typeID)
+    }
+    #expect(ids(.total, true) == [2, 1, 3])
+    #expect(ids(.total, false) == [3, 1, 2])
+    #expect(ids(.unitPrice, true) == [1, 2, 3])
+    #expect(ids(.material, true) == [1, 2, 3])
+    #expect(ids(.material, false) == [3, 2, 1])
+    // Equal quantities fall back to the type ID.
+    #expect(ids(.quantity, true) == [2, 3, 1])
+    #expect(ids(.source, true) == [2, 3, 1])
+    #expect(ids(.source, false) == [1, 2, 3])
+  }
+
+  @Test
+  func shoppingListExpandsBuiltInputsToRawMaterialsAtFullQuantity() throws {
+    let snapshot = try analyze(
+      definitions: componentDefinitions,
+      orders: [order(1, 34, price: 1), order(2, 500, price: 1_000), order(3, 100, price: 5_000)],
+      adjusted: [34: 2]
+    )
+    let names = snapshot.componentPurchaseNames ?? [:]
+    #expect(names[34] == "Fixture Mineral")
+    let row = try productRow(snapshot)
+    #expect(row.materials.first(where: { $0.typeID == 500 })?.componentBuild?.purchases == [34: 200])
+
+    // Everything bought: the component itself and the direct minerals.
+    let bought = ManufacturingOpportunityMultibuy.shoppingList(for: row, purchaseNames: names)
+    #expect(EVEMultibuyExport.make(items: bought.items).text == "Fixture Component 2\nFixture Mineral 10")
+
+    // Built: the component becomes its 200 minerals, summed with the 10 direct ones.
+    let built = ManufacturingOpportunityComponentBuildPolicy.applying(row, buildsIntermediates: true)
+    let list = ManufacturingOpportunityMultibuy.shoppingList(for: built, purchaseNames: names)
+    #expect(EVEMultibuyExport.make(items: list.items).text == "Fixture Mineral 210")
+    #expect(list.unexpandedBuiltInputCount == 0)
+
+    // Doubled runs scale the scanned tree.
+    let doubled = try #require(
+      ManufacturingOpportunityRunProjector.project(built, requestedRuns: 2)
+    )
+    let doubledList = ManufacturingOpportunityMultibuy.shoppingList(for: doubled, purchaseNames: names)
+    #expect(EVEMultibuyExport.make(items: doubledList.items).text == "Fixture Mineral 420")
+
+    // Stock is reported, never deducted.
+    let coverage = ManufacturingOpportunityMultibuy.stockCoverage(
+      for: list.items,
+      factualWarehouseQuantities: [34: 300],
+      protectedQuantities: [34: 50],
+      reservedQuantities: [34: 30]
+    )
+    #expect(coverage.first?.covered == 210)
+    #expect(coverage.first?.isComplete == true)
+    let partial = ManufacturingOpportunityMultibuy.stockCoverage(
+      for: list.items,
+      factualWarehouseQuantities: [34: 100],
+      protectedQuantities: [34: 50],
+      reservedQuantities: [:]
+    )
+    #expect(partial.first?.covered == 50)
+    #expect(partial.first?.isComplete == false)
+  }
+
+  @Test
+  func shoppingListSortsTypedValuesWithTypeIDTieBreaker() {
+    let items = [
+      EVEShoppingListItem(typeID: 3, name: "Charlie", quantity: 5, marketQuote: nil),
+      EVEShoppingListItem(typeID: 1, name: "alpha", quantity: 50, marketQuote: nil),
+      EVEShoppingListItem(typeID: 2, name: "Bravo", quantity: 5, marketQuote: nil),
+    ]
+    let coverage = [
+      ManufacturingOpportunityMultibuy.StockCoverage(typeID: 2, name: "Bravo", covered: 5, required: 5)
+    ]
+    func ids(_ column: ManufacturingOpportunityMultibuy.Column, _ ascending: Bool) -> [Int64] {
+      ManufacturingOpportunityMultibuy.sorted(items, coverage: coverage, by: column, ascending: ascending)
+        .map(\.typeID)
+    }
+    #expect(ids(.material, true) == [1, 2, 3])
+    #expect(ids(.quantity, false) == [1, 2, 3])
+    #expect(ids(.quantity, true) == [2, 3, 1])
+    #expect(ids(.inStock, false) == [2, 1, 3])
+  }
+
+  @Test
+  func shoppingListGroupsMaterialsAndKeepsUnknownGroupsLast() throws {
+    let mineral = IndustryItemClassification(
+      categoryName: "Material", groupName: "Mineral", manufacturingCategory: .module
+    )
+    let snapshot = try analyze(
+      definitions: componentDefinitions,
+      orders: [order(1, 34, price: 1), order(2, 500, price: 1_000), order(3, 100, price: 5_000)],
+      adjusted: [34: 2],
+      classifications: [34: mineral]
+    )
+    #expect(snapshot.materialGroupNames?[34] == "Mineral")
+
+    let items = [
+      EVEShoppingListItem(typeID: 4, name: "Zydrine", quantity: 1, marketQuote: nil),
+      EVEShoppingListItem(typeID: 9, name: "Unknown Thing", quantity: 1, marketQuote: nil),
+      EVEShoppingListItem(typeID: 7, name: "Coolant", quantity: 1, marketQuote: nil),
+      EVEShoppingListItem(typeID: 3, name: "Isogen", quantity: 1, marketQuote: nil),
+    ]
+    let groups: [Int64: String] = [4: "Mineral", 3: "Mineral", 7: "Refined Commodities"]
+    func ids(_ ascending: Bool) -> [Int64] {
+      ManufacturingOpportunityMultibuy.sorted(
+        items, coverage: [], groups: groups, by: .group, ascending: ascending
+      ).map(\.typeID)
+    }
+    #expect(ids(true) == [3, 4, 7, 9])
+    #expect(ids(false) == [9, 7, 4, 3])
+    #expect(
+      EVEMultibuyExport.make(
+        items: ManufacturingOpportunityMultibuy.sorted(
+          items, coverage: [], groups: groups, by: .group, ascending: true
+        )
+      ).text == "Isogen 1\nZydrine 1\nCoolant 1\nUnknown Thing 1"
+    )
+  }
+
+  @Test
+  func materialsSavedBeforeTheEstimateDecodeWithoutIt() throws {
+    let snapshot = try analyze(
+      definitions: componentDefinitions,
+      orders: [order(1, 34, price: 1), order(2, 500, price: 1_000), order(3, 100, price: 5_000)],
+      adjusted: [34: 2]
+    )
+    let mineral = try #require(try productRow(snapshot).materials.first(where: { $0.typeID == 34 }))
+    let data = try JSONEncoder().encode(mineral)
+    let json = try #require(String(data: data, encoding: .utf8))
+    #expect(!json.contains("componentBuild"))
+    let decoded = try JSONDecoder().decode(ManufacturingOpportunityMaterial.self, from: data)
+    #expect(decoded.componentBuild == nil)
+  }
+}

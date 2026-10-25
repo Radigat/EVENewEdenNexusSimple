@@ -125,6 +125,7 @@ struct EVENexusSimpleApp: App {
         }
       }
       .background(InitialWindowMaximizer())
+      .background(InactiveWindowToolTips())
     }
     .windowStyle(.titleBar)
     .defaultSize(width: 1_180, height: 760)
@@ -164,6 +165,28 @@ final class InitialWindowMaximizerView: NSView {
       guard let self, let window = self.window else { return }
       self.maximization.apply(to: window)
     }
+  }
+}
+
+/// Shows help tooltips while another app is active. AppKit otherwise shows
+/// them only in the active app, so hovering the window next to another app
+/// never revealed any explanation.
+struct InactiveWindowToolTips: NSViewRepresentable {
+  func makeNSView(context: Context) -> InactiveWindowToolTipsView {
+    InactiveWindowToolTipsView()
+  }
+
+  func updateNSView(
+    _ nsView: InactiveWindowToolTipsView,
+    context: Context
+  ) {}
+}
+
+@MainActor
+final class InactiveWindowToolTipsView: NSView {
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    window?.allowsToolTipsWhenApplicationIsInactive = true
   }
 }
 

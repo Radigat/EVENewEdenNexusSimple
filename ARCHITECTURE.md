@@ -743,7 +743,7 @@ with fixed standard assumptions:
 
 It returns the highest daily profit potentials, with a stable type-ID tie
 order. `DashboardTopOpportunitiesPanel` runs it off the main actor for the Main,
-Home and Coalition snapshots. It hands Build through
+Home and Coalition snapshots. It hands "Add to Planner" through
 `DashboardNavigationRequest.plannerLaunch` and performs no network work.
 
 `DashboardInProgressIndustryProjector.projectJobs` supplies the same per-job
@@ -1251,7 +1251,7 @@ Home → Coalition share, which the sortable column `.onwardTransport` uses.
 - **Texts:** `OpportunityHubText` renames only sale-side wording and the sale
   warning codes. Material purchases remain Main-Hub texts.
 - **Planner handoff:** `PlannerLaunchRequest.targetMarket` carries the selected
-  hub to the Planner, which ignores it until P10.
+  hub to the Planner, which preselects it as target market.
 
 Every complete supported definition remains a candidate even when the exact
 Main Hub has no active product order. Sell and buy coverage are recorded
@@ -1440,9 +1440,40 @@ unavailable.
 
 The opportunities workspace owns no recursive production tree, Warehouse
 workbench, depth tab, Shopping List or Cost-details tab. Clicking the product
-name copies it through the shared EVE-name control. **Build** transfers the
-visible product, output quantity, runs, ME and TE directly into the established
-Planner. Because the compact opportunities table has no concrete Blueprint
+name copies it through the shared EVE-name control. **Add to Planner** (a
+bordered button) transfers the visible product, output quantity, runs, ME and
+TE directly into the established Planner. `PlannerLaunchInputPolicy.mode`
+appends the line to an existing draft or result and replaces only an empty
+Planner; there is no replace/keep prompt any more.
+
+`ManufacturingOpportunityAnalyzer.ComponentCostResolver` attaches a
+`ManufacturingOpportunityComponentBuild` to every direct input with a buildable
+recipe during the scan. It recurses down to bought materials, takes the cheaper
+complete supply of buying or building per node and memoizes per type and
+quantity. Manufacturing nodes use `IndustryPlanner.manufacturingMaterialQuantity`
+with the Production Basis intermediate ME and the analyzer's EIV installation.
+Reaction nodes use `ReactionProfitabilityAnalyzer.productionCostRow` (no ME/TE).
+The stored row keeps its purchase values and the snapshot sets
+`componentBuildsResolved`. In the view,
+`ManufacturingOpportunityComponentBuildPolicy.applying` swaps cheaper or
+otherwise unavailable purchase quotes for self-build quotes. It runs before
+procurement, logistics and costs and recomputes the row through
+`ManufacturingOpportunityRunProjector`.
+
+Every app window sets `allowsToolTipsWhenApplicationIsInactive` through
+`InactiveWindowToolTips` (EVENexusSimpleApp.swift). Without it, AppKit shows
+`.help` tooltips only while the app is active.
+
+The table keeps the last finished `PreparedManufacturingOpportunityCandidates`
+visible while a newer `ManufacturingOpportunityCandidateProjectionTrigger` is
+prepared and shows only a header status; the full progress pane appears only
+before the first projection. The trigger carries content identities instead of
+per-load UUIDs (plan reservations by payload hash; the invention revision
+changes only when estimates change) and favorite IDs only while "favorites
+only" filters. `ManufacturingOpportunityFavoriteOrdering.favoritesFirst`
+places favorites ahead after the projection with a stable partition of the
+sorted rows, so a star click does not re-project costs. The Main view reads
+no secondary-hub state, so Home/Coalition progress does not re-evaluate it. Because the compact opportunities table has no concrete Blueprint
 source picker, it does not fabricate a source identity or a
 `BlueprintSupplyPlan`; the Planner resolves and validates that supply. Workflows
 that already selected a concrete source continue to transfer its complete
