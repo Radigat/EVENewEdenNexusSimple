@@ -249,3 +249,21 @@ Schritt P1.
     Charakter geladen hat.
   - Die Charakterwahl der Aufrufer bleibt unverändert.
 - **Außerdem:** Der Messzähler „early“ zählt je Charakter statt je URL.
+
+## 30.10.2026 – Gekaufte BPO ohne Umlage über BPC-Verträge bewerten
+
+- **Anlass:** Planer „Ark 1 3 2“: Radar-FTL Interlink Communicator und Capital
+  Core Temperature Regulator liefen über eine noch zu kaufende Markt-BPO
+  (1,59 bzw. 1,50 Mrd. ISK) ohne eingetragene Umlage. Damit blieben BPC/BPO,
+  Produktionszwischensumme, Kosten pro Item und alle Gewinne „nicht verfügbar“.
+- **Entscheidung (Eigentümer):** Den Preis aus den BPC-Verträgen ableiten; bei
+  einer gewählten BPO prüfen, ob sie bereits in Benutzung ist, dann keine
+  Kosten ansetzen.
+  - Noch zu kaufende BPO (Markt oder Vertrag) ohne Umlage: genutzte Runs ×
+    günstigster Preis pro Run eines gleich- oder besserwertigen öffentlichen
+    Einzel-BPC-Vertrags am Main Hub.
+  - Eigene BPO (bereits vorhanden) ohne Umlage: weiterhin 0 ISK.
+  - Eingetragene Umlage hat Vorrang; ohne passenden BPC-Vertrag bleibt die
+    Quelle ungeklärt. Der BPO-Kaufpreis bleibt als Kapitalbedarf sichtbar.
+- **Ersetzt:** die Regel, dass ein BPO-Kauf immer eine eingetragene Umlage
+  benötigt.

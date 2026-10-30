@@ -1765,8 +1765,13 @@ stimmen Bauschritte und Run-Zahlen der Blueprint-Versorgung mit dem
 berechneten Plan überein. Reicht ein vorab geplanter Versorgungsjob auf einem
 Blueprint-Original (BPO) nicht für alle Runs, läuft der Rest auf demselben
 Original weiter; nur endliche BPC-Runs können eine Fehlmenge erzeugen. Ein
-BPO-Kaufpreis wird vollständig angezeigt, aber nicht ohne
-eingetragene Umlage einer einzelnen Produktion belastet. Bündel, Nullpreise und
+BPO-Kaufpreis wird vollständig als Kapitalbedarf angezeigt, aber nie komplett
+einer einzelnen Produktion belastet. Eine noch zu kaufende BPO (Markt oder
+Vertrag) ohne eingetragene Umlage wird mit den BPC-Runs bewertet, die sie
+ersetzt: genutzte Runs × günstigster Preis pro Run eines gleich- oder
+besserwertigen öffentlichen Einzel-BPC-Vertrags am Main Hub. Gibt es keinen
+solchen Vertrag, bleibt die Quelle ungeklärt. Eine eigene BPO ohne eingetragene
+Kosten zählt weiterhin als 0 ISK. Bündel, Nullpreise und
 alte Vertragszeilen ohne Runs/ME/TE bleiben ausdrücklich unkalkulierbar. Fehlt
 bei irgendeinem produzierten Knoten eine Blueprintkostenquelle (zum Beispiel
 gar kein Blueprint vorhanden), bleiben Gesamtkosten und Gewinn unverfügbar.
@@ -1992,13 +1997,14 @@ zuordenbare Einzel-BPC-Verträge am exakten Main Hub zu einer Run-Abdeckung
 zusammenstellen und deren vollständige Vertragspreise als BPC-Kosten der
 Charge ansetzen. Bündelverträge, fehlende Blueprint-Details und unvollständige
 Contract-Abdeckung werden nicht als billige oder nicht vorhandene Blaupause
-interpretiert. Ein BPO-Kauf oder eine bereits besessene BPO benötigt weiterhin
-eine ausdrücklich eingegebene Umlage für diesen Plan; unbekannte historische
-Anschaffungskosten werden nicht zu null erfunden.
+interpretiert. Eine ausdrücklich eingegebene Umlage hat für BPO-Kauf und
+eigene BPO immer Vorrang. Ohne Umlage zählt eine eigene BPO als 0 ISK, eine
+noch zu kaufende BPO mit dem BPC-Vertragswert der genutzten Runs (siehe oben).
 
 T1-BPOs aus tatsächlichen Sell Orders am Main Hub und BPO-Verträge sind
 getrennte Quellen. Der Markt- oder Vertragspreis ist Kapitalbedarf; in die
-Charge fließt ausschließlich die gewählte BPO-Umlage ein. Normale Marktorders
+Charge fließt die eingegebene BPO-Umlage oder, ohne sie, der BPC-Vertragswert
+der genutzten Runs ein. Normale Marktorders
 werden niemals als BPC interpretiert.
 
 Das Tagesbedarf-Ledger bewahrt für den exakten Main Hub zusätzlich den letzten

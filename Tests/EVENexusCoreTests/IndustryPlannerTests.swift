@@ -1685,6 +1685,60 @@ struct IndustryPlannerTests {
   }
 
   @Test
+  func boughtBPOWithoutAllocationIsValuedByBPCContractsPerRun() throws {
+    func offer(_ id: Int64, runs: Int, me: Int, te: Int, price: Double)
+      -> ProductionTreeContractBlueprintOption
+    {
+      ProductionTreeContractBlueprintOption(
+        recordID: id, contractID: id, kind: .copy, runs: runs,
+        materialEfficiency: me, timeEfficiency: te, price: price,
+        locationID: 60_003_760, locationName: "Jita"
+      )
+    }
+    let offers = [
+      offer(1, runs: 2, me: 10, te: 20, price: 30_000_000),
+      offer(2, runs: 40, me: 10, te: 20, price: 400_000_000),
+    ]
+    let allocations = ProductionTreeBlueprintCostProjector.allocations(
+      for: [
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 57_511, productName: "Market BPO",
+          action: .buyMarketBPO, usedRuns: 1, contractOptions: offers),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 57_524, productName: "Contract BPO",
+          action: .buyContractBPO, usedRuns: 3, materialEfficiency: 10,
+          timeEfficiency: 20, contractOptions: offers),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 57_525, productName: "No BPC Contract",
+          action: .buyMarketBPO, usedRuns: 1),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 57_526, productName: "Entered allocation",
+          action: .buyMarketBPO, manualAmount: 5_000, usedRuns: 1,
+          contractOptions: offers),
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 57_527, productName: "Owned BPO",
+          action: .useOwnedBPO, usedRuns: 1, contractOptions: offers),
+      ]
+    )
+
+    // Cheapest equal-or-better copy is 10 M per run.
+    let market = try #require(allocations[57_511])
+    #expect(market.kind == .bpo)
+    #expect(market.amount == 10_000_000)
+    #expect(
+      market.source
+        == ProductionTreeBlueprintCostProjector
+        .purchasedBPOValuedByBPCContractsSource)
+    #expect(allocations[57_524]?.amount == 30_000_000)
+    #expect(allocations[57_525] == nil)
+    #expect(allocations[57_526]?.amount == 5_000)
+    #expect(allocations[57_527]?.amount == 0)
+    #expect(
+      allocations[57_527]?.source
+        == ProductionTreeBlueprintCostProjector.ownedWithoutEnteredCostSource)
+  }
+
+  @Test
   func strictBlueprintCostsAcceptManualTopLevelInput() async throws {
     let plan = try await IndustryPlanner().plan(
       input: "Choice Product 1 0 0 BPC 42",

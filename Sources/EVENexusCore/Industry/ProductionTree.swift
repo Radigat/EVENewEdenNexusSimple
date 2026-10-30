@@ -30,6 +30,12 @@ public struct ProductionTreeBlueprintCostChoice: Sendable {
   public let attributableBPCContractPrice: Double?
   public let attributableBPCContractCount: Int
   public let attributableBPCContractRuns: Int?
+  /// Runs and ME/TE the plan uses from a bought BPO. A bought BPO without an
+  /// entered allocation is valued like the BPC runs it replaces.
+  public let usedRuns: Int
+  public let materialEfficiency: Int
+  public let timeEfficiency: Int
+  public let contractOptions: [ProductionTreeContractBlueprintOption]
 
   public init(
     blueprintTypeID: Int64,
@@ -38,7 +44,11 @@ public struct ProductionTreeBlueprintCostChoice: Sendable {
     manualAmount: Double? = nil,
     attributableBPCContractPrice: Double? = nil,
     attributableBPCContractCount: Int = 0,
-    attributableBPCContractRuns: Int? = nil
+    attributableBPCContractRuns: Int? = nil,
+    usedRuns: Int = 0,
+    materialEfficiency: Int = 0,
+    timeEfficiency: Int = 0,
+    contractOptions: [ProductionTreeContractBlueprintOption] = []
   ) {
     self.blueprintTypeID = blueprintTypeID
     self.productName = productName
@@ -47,6 +57,10 @@ public struct ProductionTreeBlueprintCostChoice: Sendable {
     self.attributableBPCContractPrice = attributableBPCContractPrice
     self.attributableBPCContractCount = attributableBPCContractCount
     self.attributableBPCContractRuns = attributableBPCContractRuns
+    self.usedRuns = usedRuns
+    self.materialEfficiency = materialEfficiency
+    self.timeEfficiency = timeEfficiency
+    self.contractOptions = contractOptions
   }
 }
 
@@ -56,6 +70,12 @@ public enum ProductionTreeBlueprintCostProjector {
   /// still need an explicit cost.
   public static let ownedWithoutEnteredCostSource =
     "Owned blueprint without entered cost (counted as 0 ISK)"
+  /// Owner decision 2026-10-30: a BPO that still has to be bought (market or
+  /// Contract) and has no entered allocation is charged with the BPC runs it
+  /// replaces, at the cheapest equal-or-better public BPC Contract price per
+  /// run. Without such a Contract it stays unresolved.
+  public static let purchasedBPOValuedByBPCContractsSource =
+    "Bought BPO valued at the cheapest public BPC Contract price per run"
 
   public static func allocations(
     for choices: [ProductionTreeBlueprintCostChoice]
@@ -106,6 +126,23 @@ public enum ProductionTreeBlueprintCostProjector {
             choice.action == .buyLoyaltyStoreBPC
             ? "Configured Loyalty Store BPC ISK equivalent"
             : "Explicit BPC acquisition or activity cost"
+        )
+      case .buyContractBPO where manualAmount == nil,
+        .buyMarketBPO where manualAmount == nil:
+        guard
+          let value = OwnedBPCValuation.marketValue(
+            usedRuns: choice.usedRuns,
+            materialEfficiency: choice.materialEfficiency,
+            timeEfficiency: choice.timeEfficiency,
+            offers: choice.contractOptions
+          )
+        else { return }
+        allocation = IndustryBlueprintCostAllocation(
+          blueprintTypeID: choice.blueprintTypeID,
+          productName: choice.productName,
+          kind: .bpo,
+          amount: value,
+          source: purchasedBPOValuedByBPCContractsSource
         )
       case .useOwnedBPO, .copyOwnedBPO, .buyContractBPO, .buyMarketBPO:
         guard let manualAmount else { return }

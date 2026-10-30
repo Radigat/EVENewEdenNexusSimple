@@ -5816,6 +5816,8 @@ struct PlannerView: View {
         guard producedBlueprintTypeIDs.contains(blueprint.blueprintTypeID),
           !manuallyCoveredBlueprintTypeIDs.contains(blueprint.blueprintTypeID)
         else { return nil }
+        let supplyJobs =
+          contractSupplyPlans[blueprint.blueprintTypeID]?.manufacturingJobs ?? []
         return ProductionTreeBlueprintCostChoice(
           blueprintTypeID: blueprint.blueprintTypeID,
           productName: step.node.name,
@@ -5825,7 +5827,14 @@ struct PlannerView: View {
             blueprint.attributableBPCContractPrice,
           attributableBPCContractCount:
             blueprint.attributableBPCContractSelectionCount,
-          attributableBPCContractRuns: blueprint.attributableBPCContractRuns
+          attributableBPCContractRuns: blueprint.attributableBPCContractRuns,
+          usedRuns: supplyJobs.isEmpty
+            ? blueprint.requiredRuns
+            : supplyJobs.reduce(0) { $0 + max(0, $1.allocation.allocatedRuns) },
+          materialEfficiency:
+            supplyJobs.map(\.allocation.materialEfficiency).min() ?? 0,
+          timeEfficiency: supplyJobs.map(\.allocation.timeEfficiency).min() ?? 0,
+          contractOptions: blueprint.attributableContractOptions
         )
       }
     var allocations = ProductionTreeBlueprintCostProjector.allocations(

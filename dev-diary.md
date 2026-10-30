@@ -1,5 +1,33 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 30. Oktober 2026 – Planer: Finanzübersicht bei gekaufter BPO
+
+Fehler (Eigentümer-Screenshots, Plan „Ark 1 3 2“): BPC/BPO,
+Produktionszwischensumme, Produktionskosten inkl. Lieferung und Kosten pro
+Item „Nicht verfügbar“; Warnung „2 produced Blueprint source have no
+attributable acquisition or allocation cost“.
+
+Ursache (aus dem gespeicherten aktiven Plan): Radar-FTL Interlink Communicator
+und Capital Core Temperature Regulator wurden über eine Markt-BPO versorgt
+(Kapitalbedarf 1,59 bzw. 1,50 Mrd. ISK). Ein BPO-Kauf ohne eingetragene Umlage
+erhielt keine Kostenzuordnung, also blieb die Gesamtkostenkette ungeklärt.
+
+Änderung nach Eigentümerentscheidung (siehe
+`Documentation/Consolidation/DECISIONS.md`):
+`ProductionTreeBlueprintCostProjector` bewertet eine noch zu kaufende BPO
+(Markt/Vertrag) ohne Umlage mit genutzten Runs × günstigstem BPC-Vertragspreis
+pro Run (gleich- oder besserwertige ME/TE, `OwnedBPCValuation.marketValue`).
+Der Planer übergibt Runs und ME/TE aus dem Versorgungsplan sowie die
+Main-Hub-Vertragsoptionen. Eigene BPO bleibt 0 ISK, eingetragene Umlage hat
+Vorrang, ohne Vertrag bleibt die Quelle ungeklärt. PRODUCT.md angepasst.
+
+Prüfung: neuer Test `boughtBPOWithoutAllocationIsValuedByBPCContractsPerRun`;
+`swift test` (657 Tests), EVEStaticDataKit `swift test` (13), `xcodebuild`
+Debug-Test erfolgreich. Nicht in der laufenden App mit dem Ark-Plan
+nachgerechnet; Abnahme durch den Eigentümer offen. Offen: Ob für die zwei
+Komponenten am Main Hub tatsächlich ein passender Einzel-BPC-Vertrag im Index
+liegt, zeigt erst die Neuberechnung.
+
 ## 30. Oktober 2026 – CI: Weckbeobachtung für Swift 6.1
 
 Fehler: CI-Lauf zu `1b23ba5` (macOS 15, Swift 6.1) brach in
