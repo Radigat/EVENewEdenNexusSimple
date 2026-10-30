@@ -220,10 +220,15 @@ struct ConsolidationPersistenceTests {
     let controller = ConsolidationController()
     try controller.start(container: container)
     #expect(controller.workspace.projects.isEmpty)
-    controller.propose(["Create warehouse"]) { try $0.createWarehouse(name: "A") }
+    controller.propose(["Add receipt"]) {
+      try $0.addEvidence(
+        ProductionSaleEvidence(
+          id: "1:transaction:1", typeID: 34, quantity: 1, unitPrice: try ISKAmount.parse("1"),
+          recordedAt: .now, source: "Wallet"))
+    }
     try controller.edit { $0.warningThresholds[34] = 1 }
     controller.confirm(catalogBuild: nil)
-    #expect(controller.workspace.warehouses.isEmpty)
+    #expect(controller.workspace.evidence.isEmpty)
     #expect(controller.error != nil)
   }
 
@@ -234,10 +239,15 @@ struct ConsolidationPersistenceTests {
     let controller = ConsolidationController()
     try controller.start(container: container)
     controller.updateESIStock([34: 10])
-    controller.propose(["Create warehouse"]) { try $0.createWarehouse(name: "A") }
+    controller.propose(["Add receipt"]) {
+      try $0.addEvidence(
+        ProductionSaleEvidence(
+          id: "1:transaction:1", typeID: 34, quantity: 1, unitPrice: try ISKAmount.parse("1"),
+          recordedAt: .now, source: "Wallet"))
+    }
     controller.updateESIStock([34: 2])
     controller.confirm(catalogBuild: nil)
-    #expect(controller.workspace.warehouses.isEmpty)
+    #expect(controller.workspace.evidence.isEmpty)
     #expect(controller.error != nil)
   }
 

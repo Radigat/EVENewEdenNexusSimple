@@ -62,72 +62,54 @@ struct ConsolidationTests {
     #expect(Set(reservations.map(\.planID)) == [global.id, legacy.id])
     #expect(reservations.allSatisfy { $0.blueprintItemID == 88 })
   }
-  @Test func previewShowsFrozenWarehouseAmounts() throws {
-    var w = try workspace()
-    try w.createWarehouse(name: "Manual A")
-    let preview = try ConsolidationPreview(base: w, summary: []) { candidate in
-      candidate.warehouses[0].stock = [34: 9]
-    }
-    w.warehouses[0].stock = [34: 1]
+  @Test func legacyManualWarehouseDataRoundTripsUnchanged() throws {
+    // Payload shape written before manual warehouses were removed (2026-10-30).
+    var legacy = ConsolidationWorkspace()
+    var warehouse = ManualWarehouse(name: "Manual A")
+    warehouse.notes = "Notes"
+    warehouse.archived = true
+    warehouse.stock = [34: 9]
+    warehouse.names = [34: "Tritanium"]
+    legacy.warehouses = [warehouse]
+    legacy.warningThresholds = [34: 5]
+    legacy.imports = [
+      ConsolidationImportReport(
+        filename: "stock.csv", sha256: "fixture", encoding: "utf8", delimiter: "semicolon",
+        outcomes: ["Zeile 2, Typ 34: setzen auf 9."])
+    ]
+    let decoded = try JSONDecoder().decode(
+      ConsolidationWorkspace.self, from: JSONEncoder().encode(legacy))
+    try decoded.validate()
+    let again = try JSONDecoder().decode(
+      ConsolidationWorkspace.self, from: JSONEncoder().encode(decoded))
+    #expect(again.warehouses.first?.id == warehouse.id)
+    #expect(again.warehouses.first?.name == "Manual A")
+    #expect(again.warehouses.first?.archived == true)
+    #expect(again.warehouses.first?.stock == [34: 9])
+    #expect(again.warehouses.first?.names == [34: "Tritanium"])
+    #expect(again.warningThresholds == [34: 5])
+    #expect(again.imports.first?.filename == "stock.csv")
+    #expect(again.imports.first?.outcomes.count == 1)
+  }
+  private func fixtureReceipt(id: String = "1:transaction:1") throws -> ProductionSaleEvidence {
+    ProductionSaleEvidence(
+      id: id, typeID: 34, quantity: 9, unitPrice: try ISKAmount.parse("1.23"), recordedAt: .now,
+      source: "Wallet")
+  }
+  @Test func previewShowsFrozenEvidenceAmounts() throws {
+    let w = try workspace()
+    let receipt = try fixtureReceipt()
+    let preview = try ConsolidationPreview(base: w, summary: []) { try $0.addEvidence(receipt) }
     let text = preview.summary.joined(separator: "\n")
-    #expect(text.contains("Lager Manual A, Typ 34: 0 → 9 Einheiten."))
-    #expect(preview.proposed.warehouses[0].stock[34] == 9)
+    #expect(text.contains("Beleg 1:transaction:1, Typ 34: 9 Einheiten"))
+    #expect(preview.proposed.evidence.first?.id == receipt.id)
   }
   @Test func staleAndReplayedPreviewsAreRejected() throws {
     let w = try workspace()
-    let preview = try ConsolidationPreview(base: w, summary: []) {
-      try $0.createWarehouse(name: "A")
-    }
+    let receipt = try fixtureReceipt()
+    let preview = try ConsolidationPreview(base: w, summary: []) { try $0.addEvidence(receipt) }
     let applied = try preview.applying(to: w)
     #expect(throws: ConsolidationError.stalePreview) { try preview.applying(to: applied) }
-  }
-  @Test func csvIsAtomicAndDuplicateTypesDoNotSum() throws {
-    var w = try workspace()
-    try w.createWarehouse(name: "A")
-    let id = w.warehouses[0].id
-    let csv = InventoryCSVImportSource(
-      displayName: "file.csv", data: Data("type_id,quantity\n34,8\n34,9".utf8),
-      sha256: String(repeating: "a", count: 64))
-    #expect(throws: (any Error).self) {
-      try ConsolidationImports.preview(
-        base: w, source: csv, kind: .warehouse(id), conflict: .replace,
-        catalogNames: [34: "Tritanium"])
-    }
-    #expect(w.warehouses[0].stock.isEmpty)
-    #expect(w.imports.isEmpty)
-  }
-  @Test func csvReplaceSkipAndImportReportCommitTogether() throws {
-    var w = try workspace()
-    try w.createWarehouse(name: "A")
-    let id = w.warehouses[0].id
-    w.warehouses[0].stock[34] = 10
-    let source = InventoryCSVImportSource(
-      displayName: "/private/secret/stock.csv", data: Data("type_id;quantity\n34;8\n35;9".utf8),
-      sha256: String(repeating: "b", count: 64))
-    let preview = try ConsolidationImports.preview(
-      base: w, source: source, kind: .warehouse(id), conflict: .skip,
-      catalogNames: [34: "Tritanium", 35: "Pyerite"])
-    let accepted = try preview.applying(to: w)
-    #expect(accepted.warehouses[0].stock == [34: 10, 35: 9])
-    #expect(accepted.imports[0].filename == "stock.csv")
-    #expect(accepted.imports[0].outcomes.count == 2)
-    let replaced = try ConsolidationImports.preview(
-      base: accepted, source: source, kind: .warehouse(id), conflict: .replace,
-      catalogNames: [34: "Tritanium", 35: "Pyerite"]
-    ).applying(to: accepted)
-    #expect(replaced.warehouses[0].stock[34] == 8)
-  }
-  @Test(arguments: ["0", "-1", "9223372036854775808", "1.5", "1,000"])
-  func invalidInventoryValuesAreRejected(_ amount: String) throws {
-    var w = try workspace()
-    try w.createWarehouse(name: "A")
-    let source = InventoryCSVImportSource(
-      displayName: "bad.csv", data: Data("type_id;quantity\n34;\(amount)".utf8), sha256: "a")
-    #expect(throws: (any Error).self) {
-      try ConsolidationImports.preview(
-        base: w, source: source, kind: .warehouse(w.warehouses[0].id), conflict: .replace,
-        catalogNames: [34: "Tritanium"])
-    }
   }
   @Test func moneyIsExact() throws {
     #expect(try ISKAmount.parse("123,45").hundredths == 12345)
@@ -224,20 +206,6 @@ struct ConsolidationTests {
     #expect(throws: (any Error).self) {
       try w.allocateSale(rowID: row, evidenceID: "1:journal:2", quantity: 1, switchToEvidence: true)
     }
-  }
-  @Test func invalidRowsRequireExplicitSkippingAndBothDuplicatesAreExcluded() throws {
-    var w = try workspace()
-    try w.createWarehouse(name: "A")
-    let source = InventoryCSVImportSource(
-      displayName: "stock.csv", data: Data("type_id;quantity\n34;3\n34;4\n35;9\n36;-1".utf8),
-      sha256: "fixture")
-    let preview = try ConsolidationImports.preview(
-      base: w, source: source, kind: .warehouse(w.warehouses[0].id),
-      conflict: .replace, skipInvalidRows: true,
-      catalogNames: [34: "Tritanium", 35: "Pyerite", 36: "Mexallon"])
-    let accepted = try preview.applying(to: w)
-    #expect(accepted.warehouses[0].stock == [35: 9])
-    #expect(accepted.imports[0].outcomes.count == 4)
   }
   @Test func researchSuppliesFutureEfficiencyAndRetainsOriginalIdentity() throws {
     let source = SourceIdentity(provider: "fixture", version: "1")

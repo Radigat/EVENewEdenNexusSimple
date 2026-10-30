@@ -71,8 +71,8 @@ lässt rechnen.
   Mengengrenzen, Preisprofil-Zuweisung, Logistik-/Installations-Ersatzwerte, Duplizieren, Archiv),
   Projektreservierungen samt Konfliktvorschlag, Einkaufsbudget, Einkaufsfortschritt und Einkaufsexport.
 - **Berechnung:** ESI-Bestand nach der unveränderten Schutzmengenberechnung plus Planner-Handeingabe.
-  Pläne anderer Projekte mindern den Bestand nicht mehr. Manuelle Lager fließen nicht ein, bleiben
-  aber als eigene Verwaltung bestehen. Die übrigen Rechenregeln sind unverändert.
+  Pläne anderer Projekte mindern den Bestand nicht mehr. Manuelle Lager fließen nicht ein (seit
+  30.10.2026 ganz entfernt). Die übrigen Rechenregeln sind unverändert.
 - **Wissenschaft:** Aufträge sind global. Alle nicht archivierten Aufträge liefern Versorgung und
   Input-BPC-Reservierungen. Neue Aufträge speichern keine Projekt-ID; alte Projekt-IDs bleiben erhalten.
   Aufträge, die früher zu archivierten Projekten gehörten, sind dadurch wieder wirksam, bis sie archiviert werden.
@@ -111,6 +111,19 @@ Schritt P1.
 
   Im Recovery-Modus und mit `EVE_NEXUS_DISABLE_BACKGROUND_SERVICES=1` startet
   nichts. Ohne Hintergrunddienste synchronisiert das Dashboard wie bisher selbst.
+
+## 30.10.2026 – Manuelle Lager entfernt
+
+- **Anlass:** Eigentümerauftrag. Manuelle Lager flossen seit 19.10.2026 in keine Berechnung ein.
+- **Entfernt:** Schaltfläche **Manuelle Lager** im Lager, Dialog und Bestandsbearbeitung,
+  CSV-Import samt Parser und Dateileser, zusätzliche Warnschwellen, Abschnitt **Letzte Importberichte**
+  in den allgemeinen Einstellungen und die zugehörigen Vorschauzeilen.
+- **Nicht betroffen:** die Planner-Handeingabe **Manueller Lagerbestand** (fließt weiterhin in die
+  Planberechnung ein), Mindestbestände und Alarme im Lager sowie synchronisierte Bestände.
+- **Altdaten:** `warehouses`, `imports`, `warningThresholds` und `ManualWarehouse` bleiben im
+  `ConsolidationWorkspace` und werden unverändert dekodiert und wieder gespeichert, aber nicht mehr
+  validiert. Format (`formatVersion` 1), SwiftData-Schema, Migrationskette und Sicherungen sind
+  unverändert. Die Diagnose zählt manuelle Lager unter den Altdaten.
 
 ## 22.10.2026 – Manuelle Preisprofile entfernt
 

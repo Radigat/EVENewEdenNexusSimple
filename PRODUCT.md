@@ -11,16 +11,16 @@ Aktueller Konsolidierungsstand: 25. September 2026
 Der Planner rechnet direkt: Produkt und Menge eintragen, berechnen. Grundlage sind der ESI-Bestand nach
 der bestehenden Schutzmengenberechnung und die Planner-Handeingabe. Eingabe, Handbestand und aktiver Plan
 werden im Planner-Entwurf gespeichert und beim Start wiederhergestellt. Fertigungsprojekte, Projektreservierungen
-sowie Einkaufsbudget und -fortschritt gibt es nicht. Manuelle Lager fließen nicht in die Planberechnung ein.
-Warehouse öffnet **Manuelle Lager**, Blueprints **Wissenschaftsaufträge** und die
+sowie Einkaufsbudget und -fortschritt gibt es nicht. Manuelle Lager samt CSV-Import gibt es nicht; das Lager
+zeigt ausschließlich synchronisierte Bestände. Blueprints öffnet **Wissenschaftsaufträge** und die
 Produktionsübersicht **Verkaufsbelege**. Die früheren gemeinsamen Einstiege **Projekte & Einkauf**
 und **Preisprofile & Sicherung** samt Projektverwaltungsdialog sind entfernt; Sicherung,
 Wiederherstellung und Diagnose liegen in **Daten & Einstellungen → Allgemein**. Manuelle
 Preisprofile gibt es nicht mehr. Alle Arbeitsbereiche verwenden denselben lokalen
-Datenbestand. Früher gespeicherte Projekt-, Reservierungs-, Einkaufs- und Preisprofildatensätze bleiben
+Datenbestand. Früher gespeicherte Projekt-, Reservierungs-, Einkaufs-, Preisprofil- und manuelle Lagerdatensätze
+samt Importberichten und Warnschwellen bleiben
 als nicht mehr verwendete Altdaten unverändert erhalten ([Entscheidung](Documentation/Consolidation/DECISIONS.md)).
 
-Manuelle Lager besitzen einen kontrollierten CSV-Import.
 Copying, ME-/TE-Forschung und Invention sind global gespeicherte Wissenschaftsaufträge; jeder nicht
 archivierte Auftrag liefert konkrete Versorgung und übernimmt deren Effizienzen, Kosten und
 vorgeschaltete Zeiten in die aktuelle Fertigung.
@@ -138,8 +138,7 @@ deutsch mit Punkt als Tausendertrenner und Komma für Dezimalstellen
 - Betroffen: Handelslogbuch (Menge, Preise, Transport, Verkäufe),
   Marktübersicht (Preis- und Mengenfilter), Industrie-Chancen
   (Blueprint-Kosten, Materialbudget, Kostenbaum), Planer (Blueprint-Kosten,
-  Allianzverkauf), Konsolidierung (Bestand, Warnschwelle, Belege,
-  Science-Kosten).
+  Allianzverkauf), Konsolidierung (Belege, Science-Kosten).
 - Formatierte Wertfelder (Transportprofile ISK je m³ und m³, Warehouse-
   Zielmengen, Produktionsbuch-Beträge) gruppieren beim Bestätigen in der
   App-Sprache statt in der Systemsprache.

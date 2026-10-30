@@ -505,7 +505,6 @@ struct ContentView: View {
     }
     .toolbar {
       if selection != .planner {
-        if selection == .warehouse { Button("Manuelle Lager") { consolidationArea = .warehouses } }
         if selection == .blueprints {
           Button("Wissenschaftsaufträge") { consolidationArea = .science }
         }

@@ -481,19 +481,6 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     )
   }
 
-  public func consolidationPublishedNames(_ ids: Set<Int64>) async throws -> [Int64: String] {
-    let database = try activeDatabase()
-    let accepted = ids.filter { $0 > 0 }.sorted()
-    var result: [Int64: String] = [:]
-    for start in stride(from: 0, to: accepted.count, by: 500) {
-      let chunk = accepted[start..<min(start + 500, accepted.count)].map(String.init).joined(separator: ",")
-      for row in try database.rows("SELECT id, name FROM item_types WHERE published = 1 AND id IN (\(chunk))") {
-        if row.count == 2, let id = Int64(row[0] ?? ""), let name = row[1] { result[id] = name }
-      }
-    }
-    return result
-  }
-
   public func consolidationManufacturingDefinition(_ blueprintID: Int64) async throws -> BlueprintDefinition? {
     let database = try activeDatabase()
     guard blueprintID > 0, let product = try database.scalarInt64("SELECT item_type_id FROM blueprint_products WHERE blueprint_type_id = \(blueprintID) AND activity = 'manufacturing' AND resolved = 1 ORDER BY sort_order LIMIT 1") else { return nil }

@@ -45,10 +45,10 @@ Quelle: archivierte Feature-Matrix; Status gegen vorhandenen Quellcode und die a
 | CAL-006 | Reaktionen als Stufen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | CAL-007 | Gleiche Materialien zusammenführen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
 | CAL-008 | Zyklen/fehlende Rezepte erkennen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
-| INV-001 | Lagerorte und manuelle Mengen | Übernommen: manuelle Lager und kontrollierter CSV-Import; seit 19.10.2026 ohne Einfluss auf die Planberechnung. |
-| INV-002 | CSV-Bestandsimport | Übernommen: manuelle Lager und kontrollierter CSV-Import; seit 19.10.2026 ohne Einfluss auf die Planberechnung. |
+| INV-001 | Lagerorte und manuelle Mengen | Entfernt am 30.10.2026 auf Eigentümerauftrag: ohne Einfluss auf Berechnungen. Gespeicherte Lager bleiben als Altdaten erhalten ([DECISIONS](DECISIONS.md)). |
+| INV-002 | CSV-Bestandsimport | Entfernt am 30.10.2026 auf Eigentümerauftrag. Gespeicherte Importberichte bleiben als Altdaten erhalten ([DECISIONS](DECISIONS.md)). |
 | INV-003 | Verfügbarkeit und Ausschlüsse | Am 19.10.2026 durch Eigentümerentscheid entfernt: keine projektbezogene Verfügbarkeit, Ausschlüsse oder Mengenlimits; Berechnung nutzt ESI nach Schutzmengen plus Handeingabe. |
-| SAF-001 | Mindest-, Ziel- und Warnbestand | Zusammengeführt: aktuelle Schutzformel und Zielmenge erhalten; unabhängige Warnschwellen ergänzt. |
+| SAF-001 | Mindest-, Ziel- und Warnbestand | Zusammengeführt: aktuelle Schutzformel und Zielmenge erhalten; die unabhängigen Warnschwellen der manuellen Lager sind seit 30.10.2026 entfernt. |
 | RES-001 | Materialien für Projekte reservieren | Am 19.10.2026 durch Eigentümerentscheid entfernt: keine Projektreservierungen; Schutzmengen der aktuellen Formel bleiben maßgeblich. |
 | RES-002 | Konkurrenz und Schutzmengen erkennen | Am 19.10.2026 durch Eigentümerentscheid entfernt: keine Projektreservierungen; Schutzmengen der aktuellen Formel bleiben maßgeblich. |
 | BOB-001 | Bestand verwenden und Zwischenstufen bauen/kaufen | Aktive Entsprechung beibehalten; bestehende Tests und Bedienung maßgeblich. |
@@ -84,8 +84,8 @@ Quellpfade beziehen sich auf den unveränderten Legacy-Ordner, Zielpfade auf den
 | Herkunft im Legacy-Stand | Aktive Umsetzung | Prüfnachweis |
 | --- | --- | --- |
 | Application/ProductionProjectLifecycle.swift und ProductionProjectRepository.swift | Am 19.10.2026 entfernt; nur dekodierbare Altdaten in ConsolidationWorkspace | Altdaten-Roundtrip-Test; Migration ohne Projektanlage |
-| Application/InventoryManagement.swift, InventoryAvailability.swift, InventoryCSVImport.swift | Workspace, Imports, Warehouse-/CSV-Formulare | Importatomarität und Invalidierung |
-| Infrastructure/DelimitedInventoryCSVParser.swift | ConsolidationCSV.swift | Alle acht InventoryCSVParserTests adaptiert |
+| Application/InventoryManagement.swift, InventoryAvailability.swift, InventoryCSVImport.swift | Am 30.10.2026 entfernt; nur dekodierbare Altdaten in ConsolidationWorkspace | Altdaten-Roundtrip-Test |
+| Infrastructure/DelimitedInventoryCSVParser.swift | Am 30.10.2026 entfernt | Entfällt |
 | Application/ProjectReservation.swift und ReservationConflict.swift | Am 19.10.2026 entfernt; Altdaten bleiben gespeichert | Altdaten-Roundtrip-Test |
 | Domain/PriceProfile.swift, Application/PriceProfileManagement.swift | ConsolidationMoney, Imports und Preisprofilverwaltung | Exaktes Geld, Gültigkeit, fehlende Werte, Überlauf |
 | Application/ProjectBudgetPlanning.swift, ProjectEconomics.swift, ShoppingListManagement.swift | Am 19.10.2026 entfernt; Altdaten bleiben gespeichert | Altdaten-Roundtrip-Test |
@@ -93,8 +93,7 @@ Quellpfade beziehen sich auf den unveränderten Legacy-Ordner, Zielpfade auf den
 | Application/LocalBackupManagement.swift, Persistence/SQLiteLocalBackupService.swift | ConsolidationBackup und Allgemeine Einstellungen | WAL-Snapshot, Prüfsummen, fremdes Format und Wiederherstellung |
 | Aktive Blueprints/BlueprintModels.swift und vorhandene SDE-/Research-Dienste | ConsolidationScience und Science-Formular | Bestehende Wahrscheinlichkeitsfälle, konkrete Versorgung und Zeitregression |
 
-`ConsolidationTests.swift`, `ConsolidationCSVParserTests.swift` und
-`ConsolidationPersistenceTests.swift` sind die aktiven ergänzenden Testgruppen.
+`ConsolidationTests.swift` und `ConsolidationPersistenceTests.swift` sind die aktiven ergänzenden Testgruppen.
 Alte UI-/Architekturtests werden nach [Einzelfehlerbewertung](LEGACY_TEST_DISPOSITIONS.md) behandelt.
 
 ## Ergänzungen der Weiterentwicklung

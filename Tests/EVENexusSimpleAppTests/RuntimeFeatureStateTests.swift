@@ -1185,7 +1185,8 @@ struct RuntimeFeatureStateTests {
     #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Projekte"))
     #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Reservierungen"))
     #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Einkauf"))
-    #expect(ConsolidationArea.allCases == [.warehouses, .science, .sales])
+    #expect(!ConsolidationArea.allCases.map(\.rawValue).contains("Manuelle Lager"))
+    #expect(ConsolidationArea.allCases == [.science, .sales])
   }
 
   @Test

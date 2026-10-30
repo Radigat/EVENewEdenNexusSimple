@@ -7,7 +7,7 @@ Legacy-Projekte dienen ausschließlich als Quelle für die Konsolidierung.
 ## Fachlicher Stand
 
 Die organisatorische Basis `182f1a9` ist um die freigegebenen vorhandenen Fachabläufe ergänzt:
-manuelle Lager/CSV, Preisprofile,
+Preisprofile (seit 22.10.2026 entfernt), manuelle Lager/CSV (seit 30.10.2026 entfernt),
 konkrete Wissenschaftsaufträge, Kosten-/Verkaufsbelege und lokale Sicherung/Wiederherstellung.
 Die heutige Oberfläche und aktuelle Berechnungen bleiben Grundlage. V3 ergänzt die Datenhaltung;
 bestehende Modelle, Nummern, historische Werte und technische Kennungen werden erhalten.

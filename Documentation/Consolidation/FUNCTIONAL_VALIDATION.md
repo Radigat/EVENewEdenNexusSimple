@@ -59,7 +59,6 @@ mehr als in seiner maßgeblichen Testfall-Gesamtsumme. Gegenüber der organisato
   Beträge, Preise, Kauf-/Reservierungsmengen und Belegzuordnungen.
 
 Testquellen: [Kernverträge](../../Tests/EVENexusCoreTests/ConsolidationTests.swift),
-[Parserfälle](../../Tests/EVENexusCoreTests/ConsolidationCSVParserTests.swift),
 [Migration und Speicherung](../../Tests/EVENexusSimpleAppTests/ConsolidationPersistenceTests.swift).
 
 ## Isolierte Bedienprüfung

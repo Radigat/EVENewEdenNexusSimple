@@ -9288,3 +9288,30 @@ alt):
   - danach zwei Starts mit abgelaufenem Cache vergleichen.
 
 Nicht geprüft: Live-Wirkung des Teilens, Abnahme.
+
+## 30.10.2026 – Manuelle Lager entfernt
+
+Auftrag: Schaltfläche **Manuelle Lager** und die manuelle Eingabe im Lager
+vollständig entfernen, ohne Funktionen des Planers oder der übrigen App zu
+verändern.
+
+Ergebnis:
+- Entfernt:
+  - Schaltfläche, Dialog, Bestandsbearbeitung und zusätzliche Warnschwellen;
+  - CSV-Import mit Parser und Dateileser (`ConsolidationImports`,
+    `ConsolidationCSV`) samt deren Tests;
+  - Abschnitt **Letzte Importberichte** in den allgemeinen Einstellungen;
+  - nur dafür genutzte Hilfen und Vorschauzeilen.
+- Unverändert: Planner-Handeingabe **Manueller Lagerbestand**, Mindestbestände
+  und Alarme im Lager, synchronisierte Bestände und alle Rechenregeln.
+- Altdaten: `warehouses`, `imports` und `warningThresholds` bleiben im
+  `ConsolidationWorkspace` und werden unverändert gespeichert. Schema, Format
+  und Sicherungen sind unverändert
+  ([Entscheidung](Documentation/Consolidation/DECISIONS.md)).
+
+Prüfung:
+- `swift test` 655 + 84 Tests; `EVEStaticDataKit` 13 Tests;
+  `xcodebuild … test` 655 Tests, `TEST SUCCEEDED`.
+- Neuer Roundtrip-Test für die Altdaten; `git diff --check` fehlerfrei.
+
+Nicht geprüft: Sichtprüfung in der laufenden App, Abnahme.

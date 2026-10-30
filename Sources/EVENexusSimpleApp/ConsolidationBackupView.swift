@@ -64,22 +64,6 @@ struct ConsolidationBackupView: View {
           .foregroundStyle(DesignTokens.negative)
           .textSelection(.enabled)
       }
-      Divider()
-      Text("Letzte Importberichte")
-        .font(.headline)
-      if controller.workspace.imports.isEmpty {
-        Text("Keine Importberichte vorhanden.")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        ForEach(controller.workspace.imports.suffix(10).reversed()) { report in
-          DisclosureGroup("\(report.filename) · \(report.outcomes.count) Zeilen") {
-            Text("SHA256: \(report.sha256)\n\(report.encoding), \(report.delimiter)").font(.caption)
-              .textSelection(.enabled)
-            Text(report.outcomes.joined(separator: "\n")).font(.caption).textSelection(.enabled)
-          }
-        }
-      }
     }
     .accessibilityIdentifier("general.backup-recovery")
     .confirmationDialog(
@@ -157,8 +141,7 @@ struct ConsolidationBackupView: View {
       macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
       SDE-Build: \(runtime.activeSDEBuild.map(String.init) ?? "nicht verfügbar")
       Arbeitsdatenformat: \(w.formatVersion), Revision: \(w.revision)
-      Lager: \(w.warehouses.count)
-      Altdaten (nicht mehr verwendet): Projekte \(w.projects.count), Reservierungen \(w.reservations.count), Einkaufspositionen \(w.purchases.count), Preisprofile \(w.priceProfiles.count)
+      Altdaten (nicht mehr verwendet): Projekte \(w.projects.count), Reservierungen \(w.reservations.count), Einkaufspositionen \(w.purchases.count), Preisprofile \(w.priceProfiles.count), manuelle Lager \(w.warehouses.count)
       Belege: \(w.evidence.count)
       Verkaufszuordnungen: \(w.sales.count), Wissenschaftsaufträge: \(w.science.count)
       Keine Namen, Account-IDs, Dateipfade, Belegdaten oder Anmeldeschlüssel enthalten.

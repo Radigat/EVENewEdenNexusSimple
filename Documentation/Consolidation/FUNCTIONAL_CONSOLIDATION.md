@@ -25,22 +25,15 @@ ursprüngliche Patches bleiben unter `_archive/` bzw. diesem Dokumentverzeichnis
 **Fertigungsprojekte sind seit 19.10.2026 entfernt (Eigentümerentscheid).** Der Planner rechnet
 direkt aus der eingetragenen Produktion, dem ESI-Bestand nach Schutzmengen und der Planner-Handeingabe.
 Projektwahl, Projekteinstellungen, Reservierungen und Einkaufsbudget/-fortschritt gibt es nicht mehr.
-Begründung und Altdatenbehandlung: [DECISIONS.md](DECISIONS.md). Warehouse, Blueprints und Produktionsübersicht öffnen nur ihre jeweils passenden Fachdialoge für
-manuelle Lager, Wissenschaftsaufträge beziehungsweise Verkaufsbelege. Manuelle Preisprofile sind seit
+Begründung und Altdatenbehandlung: [DECISIONS.md](DECISIONS.md). Blueprints und Produktionsübersicht öffnen nur ihre jeweils passenden Fachdialoge für
+Wissenschaftsaufträge beziehungsweise Verkaufsbelege. Manuelle Preisprofile sind seit
 22.10.2026 entfernt; lokale Sicherung, Wiederherstellung und Diagnose liegen in den
 allgemeinen Einstellungen. Der frühere bereichsumschaltende Projektverwaltungsdialog ist entfernt.
 
 - Projekte: entfernt. Gespeicherte Projekt-, Reservierungs- und Einkaufsdatensätze bleiben als
   unveränderte, nicht mehr verwendete Altdaten im Arbeitsdatenverbund und in Sicherungen erhalten.
-- Manuelle Lager: dauerhafte Mengen nach veröffentlichter CCP-Typ-ID, Notizen, Umbenennen und reversibles
-  Archivieren. Eine Eingabe ersetzt eine Menge. Namen sind normalisiert und auch über Archive eindeutig.
-  Manuelle Lager fließen nicht in die Planberechnung ein; sie sind eine eigenständige Bestandsverwaltung.
-- CSV: UTF-8/UTF-16-BOM/Windows-1252/Latin-1, Komma/Semikolon/Tabulator, gequotete und mehrzeilige Felder;
-  16 MiB, 100.000 Zeilen, 64 Spalten. Spaltennamen sind zuordenbar. Ersetzen/Überspringen ist global und
-  je Typ wählbar. Fehler blockieren standardmäßig; ausdrücklich ausgelassene ungültige Zeilen werden
-  protokolliert. Bei doppelten Typen werden beide Zeilen abgelehnt bzw. ausgelassen, niemals summiert.
-  Vorschau, Übernahme und Bericht gehören zu einer Revision und einem Speichervorgang. Berichte enthalten
-  Dateiname, Hash, Format und Zeilenergebnisse, keinen ursprünglichen Dateipfad.
+- Manuelle Lager und CSV-Import: seit 30.10.2026 entfernt. Gespeicherte Lager, Importberichte und
+  Warnschwellen bleiben als unveränderte, nicht mehr verwendete Altdaten erhalten ([DECISIONS.md](DECISIONS.md)).
 - Verfügbarkeit: bestehende Schutzmengenberechnung des ESI-Bestands plus Planner-Handeingabe. Es gibt
   keine Projektreservierungen, Ausschlüsse oder Mengenobergrenzen mehr. Fehlende ESI-Daten sind kein leeres Lager.
 - Preise: exakte positive Centbeträge, Gültigkeit mit ausgeschlossenem Endzeitpunkt, CSV und bestätigte
@@ -85,7 +78,7 @@ Inaktive Pläne bleiben Historie.
 Die Initialisierung ist wiederholbar ohne Doppelanlage. Originale gespeicherte Snapshot-Bytes bleiben erhalten.
 
 `ConsolidationWorkspace`/`ConsolidationPreview` im bestehenden Kern bilden die neuen Fachgrenzen;
-`ConsolidationController` ist der SwiftData-Adapter. CSV-, Sicherungs- und Wissenschaftsadapter verwenden
+`ConsolidationController` ist der SwiftData-Adapter. Sicherungs- und Wissenschaftsadapter verwenden
 bestehende Dienste. Die vorhandenen Planner-Schnittstellen erhalten optionale Stock-Adapter;
 die optionale Invention-Dauer bleibt mit alten Snapshots decodierbar. Es gibt keine zweite SSO-/ESI- oder
 SDE-Implementierung. Bundle-ID, Swift-Module, Callback, Schlüsselbunddienste und Datenpfade bleiben stabil.

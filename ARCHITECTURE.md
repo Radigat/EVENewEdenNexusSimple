@@ -24,7 +24,7 @@ sind entfernt; der Planner hält Eingabe und Plan ausschließlich in
 Sicherung/Wiederherstellung und der anonymisierte Diagnoseexport sind Teil der
 allgemeinen Einstellungen. Das
 verbleibende `ConsolidationWorkbenchView` dient nur den fachlich zugeordneten
-Dialogen für manuelle Lager, Wissenschaftsaufträge und Verkaufsbelege.
+Dialogen für Wissenschaftsaufträge und Verkaufsbelege.
 Automatische Migrations- und SDE-Sicherungen bleiben im Kern und im
 App-Lebenszyklus unabhängig von diesen Bedienflächen aktiv.
 

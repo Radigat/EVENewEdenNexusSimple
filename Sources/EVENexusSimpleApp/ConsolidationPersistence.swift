@@ -88,12 +88,6 @@ final class ConsolidationController: ObservableObject {
       self.error = error.localizedDescription
     }
   }
-  func setPreview(_ value: ConsolidationPreview, catalogBuild: Int?) {
-    preview = value
-    previewStockRevision = stockRevision
-    previewCatalogBuild = catalogBuild
-    error = nil
-  }
   func confirm(catalogBuild: Int?) {
     do {
       guard let preview, previewStockRevision == stockRevision,

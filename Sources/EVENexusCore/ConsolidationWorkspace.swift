@@ -41,6 +41,8 @@ public struct ConsolidatedProject: Codable, Identifiable, Sendable {
   public init(name: String) { self.name = name }
 }
 
+/// Legacy manual warehouse record. Manual warehouses were removed on 2026-10-30; this type only keeps
+/// previously stored workspace payloads decodable and unchanged.
 public struct ManualWarehouse: Codable, Identifiable, Sendable {
   public var id = UUID()
   public var name: String
@@ -227,6 +229,8 @@ public struct ConsolidationWorkspace: Codable, Sendable {
   public var selectedProjectID: UUID?
   /// Legacy, read-only (see `selectedProjectID`).
   public var projects: [ConsolidatedProject] = []
+  /// Legacy, read-only: manual warehouses and their CSV import were removed on 2026-10-30. Stored
+  /// warehouses, import reports and warning thresholds are decoded and re-encoded unchanged.
   public var warehouses: [ManualWarehouse] = []
   /// Legacy, read-only (see `selectedProjectID`).
   public var reservations: [ProjectStockReservation] = []
@@ -239,36 +243,12 @@ public struct ConsolidationWorkspace: Codable, Sendable {
   public var sales: [ProductionSaleAllocation] = []
   public var costs: [ImmutableProductionCost] = []
   public var science: [SavedScienceJob] = []
+  /// Legacy, read-only (see `warehouses`).
   public var imports: [ConsolidationImportReport] = []
+  /// Legacy, read-only (see `warehouses`).
   public var warningThresholds: [Int64: Int64] = [:]
   public init() {}
 
-  public static func normalized(_ name: String) -> String {
-    name.trimmingCharacters(in: .whitespacesAndNewlines)
-      .folding(
-        options: [.caseInsensitive, .diacriticInsensitive],
-        locale: Locale(identifier: "en_US_POSIX"))
-  }
-  private func uniqueName(_ name: String, among names: [String]) throws {
-    let normalized = Self.normalized(name)
-    guard !normalized.isEmpty, !names.contains(where: { Self.normalized($0) == normalized }) else {
-      throw ConsolidationError.invalid("Der Name ist leer oder bereits vergeben, auch im Archiv.")
-    }
-  }
-  public mutating func createWarehouse(name: String) throws {
-    try uniqueName(name, among: warehouses.map(\.name))
-    warehouses.append(ManualWarehouse(name: name))
-  }
-  public mutating func updateWarehouse(_ warehouse: ManualWarehouse) throws {
-    guard let index = warehouses.firstIndex(where: { $0.id == warehouse.id }) else {
-      throw ConsolidationError.stalePreview
-    }
-    try uniqueName(warehouse.name, among: warehouses.filter { $0.id != warehouse.id }.map(\.name))
-    guard warehouse.stock.allSatisfy({ $0.key > 0 && $0.value > 0 }) else {
-      throw ConsolidationError.invalid("Bestände benötigen positive Typ-IDs und Mengen.")
-    }
-    warehouses[index] = warehouse
-  }
   public mutating func addEvidence(_ receipt: ProductionSaleEvidence) throws {
     guard !receipt.id.isEmpty, receipt.typeID > 0, receipt.quantity > 0 else {
       throw ConsolidationError.invalid("Ungültiger Verkaufsbeleg.")
@@ -327,18 +307,12 @@ public struct ConsolidationWorkspace: Codable, Sendable {
   }
 
   public func validate() throws {
-    // Legacy project, reservation, purchase and price profile records are kept as stored and not
-    // validated.
+    // Legacy project, reservation, purchase, price profile and manual warehouse records are kept as
+    // stored and not validated.
     guard formatVersion == 1, revision >= 0,
-      Set(warehouses.map(\.id)).count == warehouses.count,
       Set(evidence.map(\.id)).count == evidence.count,
       Set(costs.map(\.id)).count == costs.count, Set(sales.map(\.id)).count == sales.count
     else { throw ConsolidationError.invalid("Widersprüchliche Identitäten in den Arbeitsdaten.") }
-    for w in warehouses {
-      guard w.stock.allSatisfy({ $0.key > 0 && $0.value > 0 }) else {
-        throw ConsolidationError.invalid("Ungültige Lagermengen.")
-      }
-    }
     for e in evidence {
       guard e.quantity > 0, try e.amountCents() > 0, e.typeID > 0 else {
         throw ConsolidationError.invalid("Ungültiger Beleg.")
@@ -417,23 +391,6 @@ extension ConsolidationPreview {
       guard let cents else { return "Planwert" }
       return "\(cents / 100).\(String(format: "%02lld", cents % 100)) ISK"
     }
-    for warehouse in proposed.warehouses {
-      let old = base.warehouses.first { $0.id == warehouse.id }
-      if old?.name != warehouse.name || old?.notes != warehouse.notes
-        || old?.archived != warehouse.archived
-      {
-        lines.append(
-          "Lager \(warehouse.name): \(warehouse.archived ? "archiviert" : "aktiv"); Notizen: \(warehouse.notes)."
-        )
-      }
-      for type in Set(warehouse.stock.keys).union(old?.stock.keys.map { $0 } ?? []).sorted() {
-        let before = old?.stock[type] ?? 0
-        let after = warehouse.stock[type] ?? 0
-        if before != after {
-          lines.append("Lager \(warehouse.name), Typ \(type): \(before) → \(after) Einheiten.")
-        }
-      }
-    }
     for evidence in proposed.evidence where !base.evidence.contains(where: { $0.id == evidence.id })
     {
       lines.append(
@@ -449,12 +406,6 @@ extension ConsolidationPreview {
     where cost.evidenceMode && base.costs.first(where: { $0.id == cost.id })?.evidenceMode != true {
       lines.append(
         "Produktion \(cost.id): Belegmodus ersetzt bisherige manuelle Verkaufsmenge \(cost.historicalManualSoldUnits); diese bleibt als Historie erhalten und wird nicht addiert."
-      )
-    }
-    for type in proposed.warningThresholds.keys.sorted()
-    where base.warningThresholds[type] != proposed.warningThresholds[type] {
-      lines.append(
-        "Typ \(type): Warnschwelle \(base.warningThresholds[type].map(String.init) ?? "nicht festgelegt") → \(proposed.warningThresholds[type]!)."
       )
     }
     return lines

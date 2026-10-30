@@ -12,12 +12,12 @@ beschrieben; jede Legacy-Feature-ID ist in [FEATURE_COVERAGE.md](FEATURE_COVERAG
 | Auth, SSO, ESI, Charaktere | Aktive Dienste | Keine zweite Anmeldung; vorhandene Wallet-Snapshots für Belege |
 | SDE, Katalog und Updates | EVEStaticDataKit / SQLiteStaticCatalog | Veröffentlichte Typvalidierung und bestehende Science-Definitionen |
 | Projekte, Lager, Reservierungen | ConsolidationWorkspace / ConsolidationController | Legacy-Fachverträge mit aktuellem Schutz-/Bestandsmodell |
-| CSV und Geldbeträge | ConsolidationCSV / ConsolidationMoney | Direkte Portierung; Quellabhängigkeiten auf aktiven Kern umgestellt |
+| Geldbeträge | ConsolidationMoney | Direkte Portierung; Quellabhängigkeiten auf aktiven Kern umgestellt; CSV-Import seit 30.10.2026 entfernt |
 | Industrie, Reaktionen, Logistik | IndustryPlanner und vorhandene Rechner | Bestehende Regeln unverändert; konkrete Wissenschaftsvoraussetzungen ergänzt |
 | Märkte, Public Contracts, Loyalty Store | Aktive Dienste | Unverändert; manuelle Profile sind ausdrücklich gewählte Budgeteingaben |
 | Produktionsbuch | Bestehende Zeilen und Projektion | Kostenstand und bestätigte Verkaufszuordnungen verknüpft, keine zweite Historie |
 | Persistenz | V1/V2 unverändert, additive V3 | Versionierter atomarer Arbeitsdatenverbund, keine Legacy-Store-Migration |
 | Sicherung | ConsolidationBackup und App-Lebenszyklus | Online-Snapshots, Manifest, Prüfung und Start-Wiederherstellung |
-| Tests | SwiftPM, natives Core-Testtarget, Kit | Bestehende Tests plus portierte CSV-Fälle, Fach- und Migrationstests |
+| Tests | SwiftPM, natives Core-Testtarget, Kit | Bestehende Tests plus Fach- und Migrationstests |
 
 Die alternative Architektur, nummerierte Xcode-Projekte und historische Roadmaps bleiben Quellen im Archiv.

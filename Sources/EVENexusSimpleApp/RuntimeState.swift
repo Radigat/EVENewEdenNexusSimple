@@ -4229,12 +4229,6 @@ final class RuntimeState {
     )
   }
 
-  func consolidationCatalogNames(_ ids: Set<Int64>) async throws -> [Int64: String] {
-    guard activeSDEBuild != nil else {
-      throw ConsolidationError.unavailable("Zuerst unter Daten & Einstellungen einen geprüften SDE-Datenkatalog installieren.")
-    }
-    return try await catalog.consolidationPublishedNames(ids)
-  }
   func consolidationScienceDefinitions(_ blueprintID: Int64) async throws -> ([BlueprintScienceActivityDefinition], [BlueprintDecryptorDefinition]) {
     async let activities = catalog.blueprintScienceActivities(blueprintTypeID: blueprintID)
     async let decryptors = catalog.decryptorDefinitions()
