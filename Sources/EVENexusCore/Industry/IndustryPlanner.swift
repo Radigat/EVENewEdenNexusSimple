@@ -53,6 +53,8 @@ public struct IndustryPlanningContext: Sendable {
   public let availableStock: [Int64: Int64]
   public let procurementPreferences: [Int64: MaterialProcurementPreference]
   public let defaultPurchaseLocation: ProcurementLocation
+  /// The markets materials may be bought from; `nil` buys only at the Main Hub.
+  public let purchaseMarkets: [PlannerPurchaseMarket]?
   public let assetSource: StockSource?
   public let sdeBuild: Int
   public let snapshotIDs: [UUID]
@@ -95,6 +97,7 @@ public struct IndustryPlanningContext: Sendable {
     availableStock: [Int64: Int64] = [:],
     procurementPreferences: [Int64: MaterialProcurementPreference] = [:],
     defaultPurchaseLocation: ProcurementLocation = .jita,
+    purchaseMarkets: [PlannerPurchaseMarket]? = nil,
     assetSource: StockSource? = nil,
     sdeBuild: Int,
     snapshotIDs: [UUID] = [],
@@ -135,6 +138,7 @@ public struct IndustryPlanningContext: Sendable {
     self.availableStock = availableStock
     self.procurementPreferences = procurementPreferences
     self.defaultPurchaseLocation = defaultPurchaseLocation
+    self.purchaseMarkets = purchaseMarkets
     self.assetSource = assetSource
     self.sdeBuild = sdeBuild
     self.snapshotIDs = snapshotIDs
@@ -1257,6 +1261,7 @@ public struct IndustryPlanner: Sendable {
     reusableMakeOrBuyAnalyses: [Int64: MaterialMakeOrBuyAnalysis]
   ) async throws -> IndustryPlanSnapshot {
     let mainMarketBook = PreparedMarketOrderBook(snapshot: context.market)
+    let purchaseBook = try await PlannerPurchaseBook.make(context: context)
     var chainMemo: [MakeOrBuyChainKey: MakeOrBuyChainSupply?] = [:]
     let systemIndexLookup = IndustrySystemIndexLookup(
       indices: context.systemIndices
@@ -1268,7 +1273,26 @@ public struct IndustryPlanner: Sendable {
     var purchasedMaterialCost = 0.0
     var purchasedMaterialCostComplete = true
     for (typeID, quantity) in state.toBuy.sorted(by: { $0.key < $1.key }) {
-      let quote = mainMarketBook.quote(
+      if purchaseBook.sources.count > 1 {
+        for source in purchaseBook.sources {
+          guard
+            let reason = purchaseBook.exclusionReason(
+              source: source,
+              typeID: typeID
+            )
+          else { continue }
+          let name = try await context.catalog.typeName(id: typeID)
+          warnings.append(
+            DomainWarning(
+              code: "planner.purchase-location-excluded",
+              message:
+                "\(source.location.name) was not used for \(name ?? "an unresolved item"): \(reason)",
+              severity: .warning
+            )
+          )
+        }
+      }
+      let quote = purchaseBook.quote(
         typeID: typeID,
         quantity: quantity,
         scenario: .materialBuy
@@ -1287,7 +1311,7 @@ public struct IndustryPlanner: Sendable {
       }
     }
     for (typeID, quantity) in state.stockUsed.sorted(by: { $0.key < $1.key }) {
-      let quote = mainMarketBook.quote(
+      let quote = purchaseBook.quote(
         typeID: typeID,
         quantity: quantity,
         scenario: .materialBuy
@@ -1302,7 +1326,7 @@ public struct IndustryPlanner: Sendable {
     )
     for typeID in replacementLeafTypeIDs.sorted() {
       let quantity = state.required[typeID, default: 0]
-      let quote = mainMarketBook.quote(
+      let quote = purchaseBook.quote(
         typeID: typeID,
         quantity: quantity,
         scenario: .materialBuy
@@ -1676,7 +1700,7 @@ public struct IndustryPlanner: Sendable {
             definition: definition,
             requiredQuantity: requiredQuantity,
             context: context,
-            marketBook: mainMarketBook,
+            marketBook: purchaseBook,
             systemIndexLookup: systemIndexLookup,
             chainMemo: &chainMemo
           )
@@ -1700,7 +1724,14 @@ public struct IndustryPlanner: Sendable {
           sourceGroup: classification?.groupName,
           productionActivity: productionActivity,
           productionAllowed: productionAllowed,
-          makeOrBuyAnalysis: analysis
+          makeOrBuyAnalysis: analysis,
+          purchaseAllocations:
+            context.purchaseMarkets == nil
+            ? nil
+            : purchaseBook.allocations(
+              typeID: typeID,
+              quantity: state.toBuy[typeID, default: 0]
+            )
         )
       )
     }
@@ -1714,19 +1745,23 @@ public struct IndustryPlanner: Sendable {
         replacementQuotes[typeID] == nil ? nil : (typeID, quantity)
       }
     )
-    var refiningOptimization = try await optimizeCompressedOreRefining(
-      requirements: directMineralRequirements,
-      directQuotes: replacementQuotes,
-      context: context,
-      marketBook: mainMarketBook,
-      homeHub:
-        context.productionBasis?.homeTradingLocation?.location
-        ?? .legacy(
-          name:
-            context.productionBasis?.logistics.productionLocationName
-            ?? "Home Hub"
-        )
-    )
+    // Compressed ore is bought at the Main Hub, so it needs that location.
+    var refiningOptimization: OreRefiningOptimizationResult?
+    if purchaseBook.contains(context.defaultPurchaseLocation) {
+      refiningOptimization = try await optimizeCompressedOreRefining(
+        requirements: directMineralRequirements,
+        directQuotes: replacementQuotes,
+        context: context,
+        marketBook: mainMarketBook,
+        homeHub:
+          context.productionBasis?.homeTradingLocation?.location
+          ?? .legacy(
+            name:
+              context.productionBasis?.logistics.productionLocationName
+              ?? "Home Hub"
+          )
+      )
+    }
     if let optimization = refiningOptimization {
       warnings.append(contentsOf: optimization.warnings)
     }
@@ -1747,7 +1782,7 @@ public struct IndustryPlanner: Sendable {
           ? originalQuantity
           : optimization.remainingDirectMinerals[typeID, default: 0]
         guard quantity > 0 else { continue }
-        let quote = mainMarketBook.quote(
+        let quote = purchaseBook.quote(
           typeID: typeID,
           quantity: quantity,
           scenario: .materialBuy
@@ -1943,6 +1978,7 @@ public struct IndustryPlanner: Sendable {
       mainHub: context.defaultPurchaseLocation,
       homeHub: configuredHomeHub,
       marketBook: mainMarketBook,
+      purchaseBook: purchaseBook,
       includeInboundMaterials:
         context.productionBasis?.logistics.includeInboundMaterials == true,
       includeOutboundProducts: false,
@@ -1962,6 +1998,7 @@ public struct IndustryPlanner: Sendable {
         mainHub: context.defaultPurchaseLocation,
         homeHub: configuredHomeHub,
         marketBook: mainMarketBook,
+        purchaseBook: purchaseBook,
         includeInboundMaterials:
           context.productionBasis?.logistics.includeInboundMaterials == true,
         includeOutboundProducts: false,
@@ -2202,9 +2239,32 @@ public struct IndustryPlanner: Sendable {
     }
     let logisticsCost =
       inboundRequiresManualTransfer ? nil : inboundLogistics.cost
+    if purchaseBook.sources.contains(where: { $0.leg == nil }),
+      materials.contains(where: {
+        $0.purchaseAllocations?.contains {
+          $0.location.representsSameLocation(as: configuredHomeHub)
+        } == true
+      }),
+      state.nodes.contains(where: {
+        $0.action == .produce && $0.facilityName != nil
+          && $0.facilityName != configuredHomeHub.name
+      })
+    {
+      warnings.append(
+        DomainWarning(
+          code: "planner.home-hub-transport-assumed",
+          message:
+            "Materials bought at the Home Hub count without transport, although a facility is elsewhere; no route is configured for it.",
+          severity: .information
+        )
+      )
+    }
     let inboundAssessment = logisticsRouteAssessment(
       result: inboundLogistics,
-      origin: context.defaultPurchaseLocation.name,
+      origin:
+        context.purchaseMarkets == nil
+        ? context.defaultPurchaseLocation.name
+        : purchaseBook.sources.map(\.location.name).joined(separator: ", "),
       destination: configuredHomeHub.name
     )
     let mainOutboundAssessment = logisticsRouteAssessment(
@@ -3226,6 +3286,7 @@ public struct IndustryPlanner: Sendable {
     mainHub: ProcurementLocation,
     homeHub: ProcurementLocation,
     marketBook: PreparedMarketOrderBook,
+    purchaseBook: PlannerPurchaseBook? = nil,
     includeInboundMaterials: Bool,
     includeOutboundProducts: Bool,
     leg: HubTransportLeg,
@@ -3241,6 +3302,20 @@ public struct IndustryPlanner: Sendable {
     }
     guard includeInboundMaterials || includeOutboundProducts else {
       return (nil, 0, [])
+    }
+    if includeInboundMaterials, let purchaseBook,
+      !(purchaseBook.sources.count == 1
+        && purchaseBook.sources[0].leg == .mainToHome)
+    {
+      return try await multiOriginInboundBreakdown(
+        configuration: configuration,
+        nodes: nodes,
+        mainHub: mainHub,
+        homeHub: homeHub,
+        purchaseBook: purchaseBook,
+        catalog: catalog,
+        refiningOptimization: refiningOptimization
+      )
     }
     guard !mainHub.representsSameLocation(as: homeHub) else {
       return (nil, 0, [])
@@ -3404,6 +3479,123 @@ public struct IndustryPlanner: Sendable {
     )
   }
 
+  /// Inbound transport when materials come from the selected purchase
+  /// locations: one courier calculation per origin, over its summed cargo.
+  private func multiOriginInboundBreakdown(
+    configuration: LogisticsConfiguration,
+    nodes: [PlanNode],
+    mainHub: ProcurementLocation,
+    homeHub: ProcurementLocation,
+    purchaseBook: PlannerPurchaseBook,
+    catalog: any IndustryCatalogQuerying,
+    refiningOptimization: OreRefiningOptimizationResult?
+  ) async throws -> (
+    breakdown: LogisticsCostBreakdown?,
+    cost: Double?,
+    warnings: [DomainWarning]
+  ) {
+    var warnings: [DomainWarning] = []
+    var cargoByOrigin: [String: [(typeID: Int64, quantity: Int64, collateral: Double?)]] = [:]
+    var coverageRemaining = refiningOptimization?.coveredMinerals ?? [:]
+    var demand: [Int64: Int64] = [:]
+    for purchase in nodes where purchase.action == .buy {
+      let covered = min(
+        purchase.requiredQuantity,
+        coverageRemaining[purchase.typeID, default: 0]
+      )
+      coverageRemaining[purchase.typeID, default: 0] -= covered
+      let quantity = purchase.requiredQuantity - covered
+      guard quantity > 0 else { continue }
+      demand[purchase.typeID, default: 0] += quantity
+    }
+    for (typeID, quantity) in demand.sorted(by: { $0.key < $1.key }) {
+      let quote = purchaseBook.quote(
+        typeID: typeID,
+        quantity: quantity,
+        scenario: .materialBuy
+      )
+      warnings.append(contentsOf: quote.warnings)
+      for allocation in purchaseBook.allocations(typeID: typeID, quantity: quantity) {
+        cargoByOrigin[allocation.location.id, default: []].append(
+          (typeID, allocation.quantity, allocation.total)
+        )
+      }
+    }
+    for purchase in refiningOptimization?.purchases ?? [] {
+      cargoByOrigin[mainHub.id, default: []].append(
+        (purchase.oreTypeID, purchase.quantity, purchase.purchaseQuote.total)
+      )
+    }
+    var legs: [LogisticsCostLeg] = []
+    var displayPricing: LogisticsContractPricing?
+    for source in purchaseBook.sources {
+      guard let cargo = cargoByOrigin[source.location.id], !cargo.isEmpty,
+        let leg = source.leg,
+        !source.location.representsSameLocation(as: homeHub)
+      else { continue }
+      switch configuration.legPricing(for: leg) {
+      case .contract(let pricing):
+        displayPricing = displayPricing ?? pricing
+        let result = try await logisticsLegs(
+          kind: .inboundMaterials,
+          origin: source.location.name,
+          destination: homeHub.name,
+          cargo: cargo,
+          pricing: pricing,
+          catalog: catalog
+        )
+        legs.append(contentsOf: result.legs)
+        warnings.append(contentsOf: result.warnings)
+      case .unavailable(let warning):
+        return (nil, nil, warnings + [warning])
+      case .selfJump:
+        return (
+          nil,
+          nil,
+          warnings + [
+            DomainWarning(
+              code: "logistics.self-jump-not-contract",
+              message:
+                "This leg is carried by an own Jump Freighter and has no courier contracts.",
+              severity: .blocking
+            )
+          ]
+        )
+      }
+    }
+    guard !warnings.contains(where: { $0.severity == .blocking }) else {
+      return (nil, nil, warnings)
+    }
+    guard let displayPricing else { return (nil, 0, warnings) }
+    let total = legs.reduce(0) { $0 + $1.roundedCharge }
+    guard total.isFinite, total >= 0 else {
+      return (
+        nil,
+        nil,
+        warnings + [
+          DomainWarning(
+            code: "logistics.invalid-total",
+            message: "The logistics total exceeded safe numeric limits.",
+            severity: .blocking
+          )
+        ]
+      )
+    }
+    return (
+      LogisticsCostBreakdown(
+        ruleVersion: configuration.effectiveRuleVersion,
+        iskPerCubicMeter: displayPricing.iskPerCubicMeter,
+        collateralRate: displayPricing.collateralRate,
+        maximumContractVolumeM3: displayPricing.maximumContractVolumeM3,
+        roundingIncrement: displayPricing.breakdownRoundingIncrement,
+        legs: legs,
+        total: total
+      ),
+      total,
+      warnings
+    )
+  }
+
   private func acceptedLogisticsFacilityName(
     _ name: String?,
     fallback: String
@@ -3421,7 +3613,7 @@ public struct IndustryPlanner: Sendable {
     definition: BlueprintDefinition,
     requiredQuantity: Int64,
     context: IndustryPlanningContext,
-    marketBook: PreparedMarketOrderBook,
+    marketBook: PlannerPurchaseBook,
     systemIndexLookup: IndustrySystemIndexLookup,
     chainMemo: inout [MakeOrBuyChainKey: MakeOrBuyChainSupply?]
   ) async throws -> MaterialMakeOrBuyAnalysis? {
@@ -3503,9 +3695,9 @@ public struct IndustryPlanner: Sendable {
     )
     warnings.append(contentsOf: installation.warnings)
 
-    let purchaseLogistics = try await makeOrBuyLogisticsCost(
+    let purchaseLogistics = try await purchaseLogisticsCost(
+      purchaseBook: marketBook,
       configuration: context.productionBasis?.logistics,
-      origin: mainHub,
       destinationName: facility.name,
       destinationLocationID: facility.locationID,
       cargo: [
@@ -3534,9 +3726,9 @@ public struct IndustryPlanner: Sendable {
       )
     }
 
-    let buildLogistics = try await makeOrBuyLogisticsCost(
+    let buildLogistics = try await purchaseLogisticsCost(
+      purchaseBook: marketBook,
       configuration: context.productionBasis?.logistics,
-      origin: mainHub,
       destinationName: facility.name,
       destinationLocationID: facility.locationID,
       cargo: inputQuotes.map { ($0.typeID, $0.quantity, $0.quote.total) },
@@ -3611,9 +3803,9 @@ public struct IndustryPlanner: Sendable {
         let chainMaterial =
           quotes.allSatisfy(\.isComplete)
           ? Self.acceptedCostTotal(quotes.map(\.total)) : nil
-        let chainLogistics = try await makeOrBuyLogisticsCost(
+        let chainLogistics = try await purchaseLogisticsCost(
+          purchaseBook: marketBook,
           configuration: context.productionBasis?.logistics,
-          origin: mainHub,
           destinationName: facility.name,
           destinationLocationID: facility.locationID,
           cargo: cargo,
@@ -3688,7 +3880,7 @@ public struct IndustryPlanner: Sendable {
     facilityName: String,
     facilityLocationID: Int64?,
     context: IndustryPlanningContext,
-    marketBook: PreparedMarketOrderBook,
+    marketBook: PlannerPurchaseBook,
     systemIndexLookup: IndustrySystemIndexLookup,
     memo: inout [MakeOrBuyChainKey: MakeOrBuyChainSupply?]
   ) async throws -> MakeOrBuyChainSupply? {
@@ -3710,6 +3902,7 @@ public struct IndustryPlanner: Sendable {
       bought = MakeOrBuyChainSupply(
         comparisonCost: total
           + (try await unroundedChainLogistics(
+            purchaseBook: marketBook,
             typeID: typeID,
             quantity: quantity,
             collateral: total,
@@ -3878,6 +4071,7 @@ public struct IndustryPlanner: Sendable {
   }
 
   private func unroundedChainLogistics(
+    purchaseBook: PlannerPurchaseBook,
     typeID: Int64,
     quantity: Int64,
     collateral: Double,
@@ -3885,23 +4079,41 @@ public struct IndustryPlanner: Sendable {
     facilityLocationID: Int64?,
     context: IndustryPlanningContext
   ) async throws -> Double {
-    let origin = context.defaultPurchaseLocation
-    if let originID = origin.locationID, originID == facilityLocationID {
-      return 0
-    }
     guard let configuration = context.productionBasis?.logistics,
       configuration.isEnabled,
-      configuration.includeInboundMaterials,
-      case .contract(let pricing) = configuration.legPricing(for: .mainToHome)
+      configuration.includeInboundMaterials
     else { return 0 }
-    let charge = try await logisticsLegs(
-      kind: .inboundMaterials,
-      origin: origin.name,
-      destination: facilityName,
-      cargo: [(typeID, quantity, collateral)],
-      pricing: pricing,
-      catalog: context.catalog
-    ).legs.reduce(0) { $0 + $1.unroundedCharge }
+    var shares: [(source: PlannerPurchaseBook.Source, quantity: Int64, collateral: Double)] = []
+    if purchaseBook.sources.count == 1, let source = purchaseBook.sources.first {
+      shares = [(source, quantity, collateral)]
+    } else {
+      for allocation in purchaseBook.allocations(typeID: typeID, quantity: quantity) {
+        if let source = purchaseBook.sources.first(where: {
+          $0.location == allocation.location
+        }) {
+          shares.append((source, allocation.quantity, allocation.total))
+        }
+      }
+    }
+    var charge = 0.0
+    for share in shares {
+      if let originID = share.source.location.locationID,
+        originID == facilityLocationID
+      {
+        continue
+      }
+      guard let leg = share.source.leg,
+        case .contract(let pricing) = configuration.legPricing(for: leg)
+      else { continue }
+      charge += try await logisticsLegs(
+        kind: .inboundMaterials,
+        origin: share.source.location.name,
+        destination: facilityName,
+        cargo: [(typeID, share.quantity, share.collateral)],
+        pricing: pricing,
+        catalog: context.catalog
+      ).legs.reduce(0) { $0 + $1.unroundedCharge }
+    }
     return charge.isFinite && charge >= 0 ? charge : 0
   }
 
@@ -4110,9 +4322,63 @@ public struct IndustryPlanner: Sendable {
     return (cost, [])
   }
 
+  /// Comparison logistics of a cargo as `purchaseBook` would buy it: per
+  /// origin, each with its own leg. A Home Hub origin has no transport.
+  private func purchaseLogisticsCost(
+    purchaseBook: PlannerPurchaseBook,
+    configuration: LogisticsConfiguration?,
+    destinationName: String,
+    destinationLocationID: Int64?,
+    cargo: [(typeID: Int64, quantity: Int64, collateral: Double?)],
+    catalog: any IndustryCatalogQuerying
+  ) async throws -> (cost: Double?, warnings: [DomainWarning]) {
+    var cargoBySource: [(
+      source: PlannerPurchaseBook.Source,
+      cargo: [(typeID: Int64, quantity: Int64, collateral: Double?)]
+    )] = []
+    if purchaseBook.sources.count == 1, let source = purchaseBook.sources.first {
+      cargoBySource = [(source, cargo)]
+    } else {
+      cargoBySource = purchaseBook.sources.map { ($0, []) }
+      for item in cargo {
+        for allocation in purchaseBook.allocations(
+          typeID: item.typeID,
+          quantity: item.quantity
+        ) {
+          if let index = cargoBySource.firstIndex(where: {
+            $0.source.location == allocation.location
+          }) {
+            cargoBySource[index].cargo.append(
+              (item.typeID, allocation.quantity, allocation.total)
+            )
+          }
+        }
+      }
+    }
+    var total = 0.0
+    var warnings: [DomainWarning] = []
+    for entry in cargoBySource where !entry.cargo.isEmpty {
+      guard let leg = entry.source.leg else { continue }
+      let result = try await makeOrBuyLogisticsCost(
+        configuration: configuration,
+        origin: entry.source.location,
+        leg: leg,
+        destinationName: destinationName,
+        destinationLocationID: destinationLocationID,
+        cargo: entry.cargo,
+        catalog: catalog
+      )
+      warnings.append(contentsOf: result.warnings)
+      guard let cost = result.cost else { return (nil, warnings) }
+      total += cost
+    }
+    return (total, warnings)
+  }
+
   private func makeOrBuyLogisticsCost(
     configuration: LogisticsConfiguration?,
     origin: ProcurementLocation,
+    leg: HubTransportLeg = .mainToHome,
     destinationName: String,
     destinationLocationID: Int64?,
     cargo: [(typeID: Int64, quantity: Int64, collateral: Double?)],
@@ -4126,7 +4392,7 @@ public struct IndustryPlanner: Sendable {
     guard let configuration,
       configuration.isEnabled,
       configuration.includeInboundMaterials,
-      case .contract(let pricing) = configuration.legPricing(for: .mainToHome)
+      case .contract(let pricing) = configuration.legPricing(for: leg)
     else {
       return (
         nil,

@@ -1517,6 +1517,7 @@ final class RuntimeState {
     stockTargets: [Int64: Int64] = [:],
     procurementPreferences: [Int64: MaterialProcurementPreference] = [:],
     defaultPurchaseLocation: ProcurementLocation? = nil,
+    purchaseLocationIDs: Set<UUID>? = nil,
     blueprintCostAllocations: [Int64: IndustryBlueprintCostAllocation] = [:],
     requiresCompleteBlueprintCosts: Bool = false,
     productionEfficiencies: [Int64: IndustryProductionEfficiency] = [:],
@@ -1819,6 +1820,51 @@ final class RuntimeState {
             packagedVolumes: packagedVolumeSnapshot.value ?? [:]
           )
         )
+        var purchaseMarkets: [PlannerPurchaseMarket]?
+        var purchaseWarnings: [DomainWarning] = []
+        if let purchaseLocationIDs {
+          var selected: [PlannerPurchaseMarket] = []
+          let homeLocation = configuredHomeHub?.location
+          func addMarket(
+            _ hub: TradingLocationConfiguration?,
+            snapshot: MarketOrderSnapshot?,
+            leg: HubTransportLeg
+          ) {
+            guard let hub, purchaseLocationIDs.contains(hub.id),
+              !selected.contains(where: {
+                $0.location.representsSameLocation(as: hub.location)
+              })
+            else { return }
+            guard let snapshot else {
+              purchaseWarnings.append(
+                DomainWarning(
+                  code: "planner.purchase-market-unavailable",
+                  message:
+                    "\(hub.location.name) could not be loaded and is not used for purchases.",
+                  severity: .warning
+                )
+              )
+              return
+            }
+            let isHome =
+              homeLocation?.representsSameLocation(as: hub.location) == true
+            selected.append(
+              PlannerPurchaseMarket(
+                location: hub.location,
+                snapshot: snapshot,
+                leg: isHome ? nil : leg
+              )
+            )
+          }
+          addMarket(configuredMainHub, snapshot: values.0, leg: .mainToHome)
+          addMarket(configuredHomeHub, snapshot: homeMarket, leg: .mainToHome)
+          addMarket(
+            configuredCoalitionHub,
+            snapshot: coalitionMarket,
+            leg: .coalitionToHome
+          )
+          purchaseMarkets = selected
+        }
         let context = IndustryPlanningContext(
           manufacturingProfile: manufacturingProfile,
           reactionProfile: configuredReaction,
@@ -1837,10 +1883,11 @@ final class RuntimeState {
           availableStock: availableStock,
           procurementPreferences: acceptedProcurementPreferences,
           defaultPurchaseLocation: mainPurchaseLocation,
+          purchaseMarkets: purchaseMarkets,
           assetSource: assetSource,
           sdeBuild: active.buildNumber,
           snapshotIDs: snapshotIDs,
-          inputWarnings: inputWarnings,
+          inputWarnings: inputWarnings + purchaseWarnings,
           homeMarketWarnings: homeMarketWarnings,
           coalitionMarketWarnings: coalitionMarketWarnings,
           contractReferenceWarnings: contractReferenceWarnings,

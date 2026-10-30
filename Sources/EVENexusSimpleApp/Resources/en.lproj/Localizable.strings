@@ -2511,3 +2511,7 @@
 "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics." = "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics.";
 "Use owned BPC, rest from contracts" = "Use owned BPC, rest from contracts";
 "Owned BPC runs plus whole public BPC Contract prices" = "Owned BPC runs plus whole public BPC Contract prices";
+"Purchase locations" = "Purchase locations";
+"Select at least one purchase location." = "Select at least one purchase location.";
+"Recalculate to apply the purchase locations." = "Recalculate to apply the purchase locations.";
+"Each EVE Multibuy list contains the uncovered quantity to buy at that purchase location." = "Each EVE Multibuy list contains the uncovered quantity to buy at that purchase location.";

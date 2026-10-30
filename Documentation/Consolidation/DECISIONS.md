@@ -297,3 +297,17 @@ Schritt P1.
 - **Ersetzt:** die bisherige Prioritätskette der Blueprint-Empfehlung.
 - **Noch offen:** Einkaufsorte, automatische Übernahme und neue Oberfläche
   folgen in den Prompts 2 bis 4 der Reihe.
+
+## 30.10.2026 – Einkaufsorte im Planer
+
+- **Entscheidung (Eigentümer):** Mehrfachauswahl im Planer vor der Berechnung; zur
+  Wahl stehen nur Märkte mit konfigurierter Strecke (Main, Home, Coalition). Je
+  Material gewinnt der billigste Ort einschließlich Transport, bei fehlender
+  Tiefe wird aufgeteilt. Unbekannte Strecke: Ort entfällt mit Hinweis. Home Hub:
+  Transport 0 mit Hinweis.
+- **Ersetzt:** „Plankosten nur am Main Hub“.
+- **Umsetzungsregeln:** Ohne Wahl gilt der Main Hub. Komprimiertes Erz bleibt am
+  Main Hub und entfällt, wenn er abgewählt ist. Eine Strecke mit eigenem Jump
+  Freighter hat keine Kurierpreise und gilt als unbekannt. Das Feld
+  `purchaseLocation` der Materialwahl steuert den Einkauf nicht mehr; maßgeblich
+  sind die `purchaseAllocations` des Plans.

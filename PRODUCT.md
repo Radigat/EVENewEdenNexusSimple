@@ -436,8 +436,9 @@ jedem Raster erhalten.
 
 ### Marktrollen und Preise
 
-Main Hub, Home Hub und Coalition Hub sind getrennte Rollen. Der Main Hub ist
-die Quelle für Planner-Käufe und Multibuy-Listen. Produktions- und
+Main Hub, Home Hub und Coalition Hub sind getrennte Rollen. Die Planner-Käufe
+kommen von den im Planner gewählten **Einkaufsorten** (siehe „Blueprints,
+Industrie und Reaktionen“); ohne eigene Wahl ist das der Main Hub. Produktions- und
 Verkaufslogistik richtet sich nach den exakten konfigurierten Ortskennungen.
 Ein gleicher Start- und Zielort erzeugt keinen Transportweg. Player-Structure-
 Märkte bleiben ohne passende Berechtigung oder Dockingzugriff unverfügbar.
@@ -1079,6 +1080,29 @@ Informationshinweis.
 
 ### Blueprints, Industrie und Reaktionen
 
+**Planner: Einkaufsorte** (Eigentümerentscheidung 30.10.2026):
+
+- **Auswahl:** Über der Eingabe stehen Main, Home und Coalition Hub zur Wahl,
+  weil nur für sie Transportstrecken konfiguriert sind. Die Wahl bleibt
+  gespeichert; ohne Wahl gilt der Main Hub, und er ist abwählbar. Ohne jeden Ort
+  lässt sich nicht rechnen. Eine Änderung wirkt erst bei der nächsten Berechnung.
+- **Einkauf:** Je Material füllt der Planner die Menge aus den Sell Orders aller
+  gewählten Orte, zuerst die im Stückpreis einschließlich Transportanteil
+  günstigste Order. Reicht die Tiefe eines Orts nicht, wird aufgeteilt. Der
+  Transportanteil entscheidet nur den Ort; die Einkaufskosten bleiben Marktpreise,
+  der Transport läuft je Herkunft über die gesummte Fracht mit Rundung.
+- **Strecken:** Main über Main → Home, Coalition über Coalition → Home. Am Home
+  Hub fällt kein Transport an; liegt eine Anlage woanders, nennt das ein Hinweis.
+  Ein Ort ohne Preis der Strecke (auch bei eigenem Jump Freighter) oder mit zu
+  großem Item entfällt für dieses Material mit sichtbarer Warnung. Ist nur ein
+  Ort gewählt, entfällt er nicht; dann zeigt die Logistik die fehlende Strecke.
+- **Ergebnis:** Einkaufsliste und Multibuy sind je Ort getrennt, die
+  Materialzeile nennt die Orte. Gespeicherte ältere Pläne behalten ihren Ort.
+- **Unverändert am Main Hub:** BPC- und BPO-Verträge, Markt-BPOs, Verkaufsszenarien
+  und Hub-Chancen. Komprimiertes Erz wird nur am Main Hub gekauft und daher nur
+  geprüft, wenn er gewählt ist. Der Materialwert im BPC-Vertragsvergleich und die
+  Bauplan-Auswahl im Baum rechnen weiter mit Main-Hub-Preisen.
+
 **Reaktionen: Kostenanalyse bis zu den Ursprungsmaterialien**
 (Eigentümerentscheidung 30.10.2026):
 
@@ -1156,6 +1180,7 @@ Materials. Sie ist eine Empfehlungsgrundlage. Die Planzahlen rechnet erst der
 Planner nach der Übernahme. **Empfehlungen übernehmen** setzt auch noch verdeckte
 Stufen der Kette in einem Schritt. Ohne Übernahme oder eigene Wahl bleibt jedes
 baubare Material auf Bauen.
+Make-or-Buy bewertet Kauf und Bau mit den gewählten Einkaufsorten.
 Passt ein Item verpackt nicht in das konfigurierte Transportlimit je Vertrag
 (zum Beispiel ein Freighter-Rumpf bei 350.000 m³), ist der Kauf am Main Hub nicht
 möglich: Kaufkosten und Kauflogistik bleiben nicht verfügbar, die Empfehlung lautet

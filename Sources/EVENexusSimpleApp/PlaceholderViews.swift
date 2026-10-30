@@ -275,6 +275,8 @@ struct PlannerView: View {
   @State private var recommendationApplicationMessage: String?
   @State private var historicalPlan: HistoricalPlanPresentation?
   /// Explicit target market of the draft; `nil` means not chosen (P10).
+  @State private var storedPurchaseLocationIDs: Set<UUID>?
+  @State private var purchaseLocationsNeedRecalculation = false
   @State private var targetMarketSelection: PlannerTargetMarket?
   /// Manual alliance-sale draft (P11).
   @State private var allianceInput = PlannerAllianceSaleInput()
@@ -339,6 +341,7 @@ struct PlannerView: View {
         if let historicalPlan {
           historicalPlanPanel(historicalPlan)
         } else if historicalPlannerRequest == nil {
+          purchaseLocationsPanel
           Panel(title: "Produce") {
             PlannerManufacturingProductAdder(runtime: runtime) { line in
               appendPlannerInputLine(line)
@@ -366,6 +369,7 @@ struct PlannerView: View {
                   || runtime.isWorking
                   || isPreparingAssetWarehouse
                   || !runtime.isPlannerConfigurationReady
+                  || effectivePurchaseLocationIDs.isEmpty
               )
               Spacer()
               if let calculationPhase {
@@ -3822,7 +3826,10 @@ struct PlannerView: View {
                   )
                   Spacer()
                   Label(
-                    procurement.purchaseLocation.name,
+                    purchaseLocationText(
+                      material,
+                      fallback: procurement.purchaseLocation
+                    ),
                     systemImage: "building.columns"
                   )
                   .font(.caption)
@@ -3848,7 +3855,10 @@ struct PlannerView: View {
                 .frame(width: material.canProduce ? 315 : 210)
                 .disabled(runtime.isWorking)
                 Label(
-                  preference(for: material).purchaseLocation.name,
+                  purchaseLocationText(
+                    material,
+                    fallback: preference(for: material).purchaseLocation
+                  ),
                   systemImage: "building.columns"
                 )
                 .font(.caption)
@@ -4137,40 +4147,21 @@ struct PlannerView: View {
   private func shoppingListPanel(
     _ plan: IndustryPlanSnapshot
   ) -> some View {
-    let groups: [PlannerShoppingListGroup]
-    if let refiningPlan = plan.compressedOreRefining {
-      let location =
-        plan.materials.compactMap(\.procurement?.purchaseLocation).first
-        ?? runtime.productionBasis.mainTradingLocation?.location
-        ?? .jita
-      let shoppingList = EVEShoppingList.make(
-        from: plan.materials,
-        refiningPlan: refiningPlan
+    let mainHub =
+      plan.materials.compactMap(\.procurement?.purchaseLocation).first
+      ?? runtime.productionBasis.mainTradingLocation?.location
+      ?? .jita
+    let groups = EVEShoppingList.locationGroups(
+      from: plan.materials,
+      refiningPlan: plan.compressedOreRefining,
+      refiningLocation: mainHub,
+      fallback: .jita
+    ).map {
+      PlannerShoppingListGroup(
+        location: $0.location,
+        shoppingList: $0.shoppingList,
+        export: $0.export
       )
-      groups = [
-        PlannerShoppingListGroup(
-          location: location,
-          shoppingList: shoppingList,
-          export: EVEMultibuyExport.make(
-            from: plan.materials,
-            refiningPlan: refiningPlan
-          )
-        )
-      ].filter { !$0.shoppingList.items.isEmpty }
-    } else {
-      groups = Dictionary(
-        grouping: plan.materials.filter { $0.toBuy > 0 }
-      ) {
-        $0.procurement?.purchaseLocation ?? .jita
-      }
-      .map { location, materials in
-        PlannerShoppingListGroup(
-          location: location,
-          shoppingList: EVEShoppingList.make(from: materials),
-          export: EVEMultibuyExport.make(from: materials)
-        )
-      }
-      .sorted { $0.location.name < $1.location.name }
     }
     let itemCount = groups.reduce(0) { $0 + $1.shoppingList.items.count }
     let totalQuantity = groups.reduce(Int64(0)) {
@@ -4200,7 +4191,7 @@ struct PlannerView: View {
             .foregroundStyle(DesignTokens.textSecondary)
           } else {
             Text(
-              "The EVE Multibuy list contains the complete uncovered quantity to buy at the Profile Main Hub."
+              "Each EVE Multibuy list contains the uncovered quantity to buy at that purchase location."
             )
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
@@ -5100,6 +5091,12 @@ struct PlannerView: View {
     if runtime.plan == nil {
       runtime.plan = restored.plan
     }
+    storedPurchaseLocationIDs =
+      (try? modelContext.appSettingValue(
+        for: AppSettingKey.plannerPurchaseLocationsDraft
+      )).flatMap { $0 }.flatMap { stored in
+        try? JSONDecoder().decode([String].self, from: Data(stored.utf8))
+      }.map { Set($0.compactMap(UUID.init(uuidString:))) }
     targetMarketSelection =
       (try? modelContext.appSettingValue(
         for: AppSettingKey.plannerTargetMarketDraft
@@ -6286,6 +6283,7 @@ struct PlannerView: View {
         return
       }
       calculationPhase = .calculating
+      purchaseLocationsNeedRecalculation = false
       await runtime.calculate(
         input: plannerInput,
         manualStockInput: plannerManualStockInput,
@@ -6293,6 +6291,7 @@ struct PlannerView: View {
         assetWarehouse: plannerWarehouse,
         stockTargets: targets,
         procurementPreferences: requestedPreferences,
+        purchaseLocationIDs: effectivePurchaseLocationIDs,
         blueprintCostAllocations: allocations,
         requiresCompleteBlueprintCosts: true,
         productionEfficiencies: plannerProductionEfficiencies(
@@ -6385,6 +6384,101 @@ struct PlannerView: View {
       persistenceError = error.localizedDescription
       return false
     }
+  }
+
+  private var plannerPurchaseLocationOptions: [TradingLocationConfiguration] {
+    let basis = runtime.productionBasis
+    var options: [TradingLocationConfiguration] = []
+    for hub in [
+      basis.mainTradingLocation,
+      basis.homeTradingLocation,
+      basis.coalitionTradingLocation,
+    ].compactMap({ $0 })
+    where !options.contains(where: {
+      $0.location.representsSameLocation(as: hub.location)
+    }) {
+      options.append(hub)
+    }
+    return options
+  }
+
+  /// The saved choice among the current options; the Main Hub without a choice.
+  private var effectivePurchaseLocationIDs: Set<UUID> {
+    let optionIDs = Set(plannerPurchaseLocationOptions.map(\.id))
+    if let storedPurchaseLocationIDs {
+      return storedPurchaseLocationIDs.intersection(optionIDs)
+    }
+    return Set(
+      [runtime.productionBasis.mainTradingLocationID].compactMap { $0 }
+    ).intersection(optionIDs)
+  }
+
+  private var purchaseLocationsPanel: some View {
+    Panel(title: "Purchase locations") {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+        ForEach(plannerPurchaseLocationOptions) { option in
+          HStack(spacing: DesignTokens.spacingSM) {
+            Toggle(
+              option.location.name,
+              isOn: Binding(
+                get: { effectivePurchaseLocationIDs.contains(option.id) },
+                set: { setPurchaseLocation(option.id, isSelected: $0) }
+              )
+            )
+            .labelsHidden()
+            .disabled(isPlannerCalculationActive || runtime.isWorking)
+            EVEEntityText(value: option.location.name, font: .body)
+            Spacer()
+          }
+        }
+        if effectivePurchaseLocationIDs.isEmpty {
+          Label(
+            "Select at least one purchase location.",
+            systemImage: "exclamationmark.triangle"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
+        } else if purchaseLocationsNeedRecalculation {
+          Label(
+            "Recalculate to apply the purchase locations.",
+            systemImage: "arrow.clockwise"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
+      }
+    }
+  }
+
+  private func setPurchaseLocation(_ id: UUID, isSelected: Bool) {
+    var selection = effectivePurchaseLocationIDs
+    if isSelected {
+      selection.insert(id)
+    } else {
+      selection.remove(id)
+    }
+    storedPurchaseLocationIDs = selection
+    purchaseLocationsNeedRecalculation = runtime.plan != nil
+    do {
+      let data = try JSONEncoder().encode(selection.map(\.uuidString).sorted())
+      try modelContext.upsertAppSetting(
+        key: AppSettingKey.plannerPurchaseLocationsDraft,
+        value: String(decoding: data, as: UTF8.self)
+      )
+      try modelContext.save()
+    } catch {
+      modelContext.rollback()
+      persistenceError = error.localizedDescription
+    }
+  }
+
+  private func purchaseLocationText(
+    _ material: MaterialRequirement,
+    fallback: ProcurementLocation
+  ) -> String {
+    guard let allocations = material.purchaseAllocations, !allocations.isEmpty
+    else { return fallback.name }
+    return allocations.map(\.location.name).joined(separator: ", ")
   }
 
   private func persistTargetMarketDraft(_ market: PlannerTargetMarket?) {

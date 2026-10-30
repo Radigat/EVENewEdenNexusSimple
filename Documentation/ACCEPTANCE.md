@@ -684,3 +684,9 @@ are no longer current product requirements.
 | Area | Automated evidence | Live evidence | Owner acceptance |
 | --- | --- | --- | --- |
 | Source order and Contract choice | pass: fixtures cover owned BPO and BPC at and away from the production location, remainder from Contracts, reservations, selected-plan runs, material-plus-Contract comparison and unresolved material values | not run | pending: compare one item per source stage with EVE |
+
+## Selectable purchase locations, 2026-10-30
+
+| Area | Automated evidence | Live evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| Multi-location purchasing | pass: fixtures cover cheapest location, depth split, transport flipping the choice, missing route, oversized item, no selection, per-location Multibuy and saved plans without allocations | not run: no selected Home or Coalition market was loaded in the app | pending: compare one split plan with EVE market prices and the courier cost per origin |

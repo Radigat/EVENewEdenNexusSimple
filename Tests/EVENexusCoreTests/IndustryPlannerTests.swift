@@ -1273,6 +1273,268 @@ struct IndustryPlannerTests {
     #expect(assessment.inventoryIsComplete == false)
   }
 
+  // MARK: Purchase locations (owner decision 30.10.2026)
+
+  private func purchaseSnapshot(
+    _ location: ProcurementLocation,
+    orders: [(price: Double, volume: Int64)],
+    typeID: Int64 = 62
+  ) -> MarketOrderSnapshot {
+    let locationID = location.locationID ?? 0
+    return MarketOrderSnapshot(
+      id: UUID(),
+      regionID: location.regionID ?? 0,
+      locationID: locationID,
+      capturedAt: .now,
+      state: .fresh,
+      ordersByType: [
+        typeID: orders.enumerated().map { index, order in
+          MarketOrder(
+            id: locationID + Int64(index),
+            typeID: typeID,
+            locationID: locationID,
+            systemID: location.solarSystemID ?? 0,
+            side: .sell,
+            price: order.price,
+            volumeRemaining: order.volume,
+            minimumVolume: 1,
+            issued: .now
+          )
+        }
+      ],
+      source: SourceIdentity(provider: "fixture", version: "1")
+    )
+  }
+
+  private func purchaseBook(
+    _ sources: [(
+      location: ProcurementLocation,
+      orders: [(price: Double, volume: Int64)],
+      transport: PlannerPurchaseBook.Transport
+    )],
+    volume: Double = 1
+  ) -> PlannerPurchaseBook {
+    PlannerPurchaseBook(
+      sources: sources.map {
+        PlannerPurchaseBook.Source(
+          location: $0.location,
+          book: PreparedMarketOrderBook(
+            snapshot: purchaseSnapshot($0.location, orders: $0.orders)
+          ),
+          leg: nil,
+          transport: $0.transport
+        )
+      },
+      fallbackSnapshot: purchaseSnapshot(.jita, orders: []),
+      packagedVolumes: [62: volume]
+    )
+  }
+
+  @Test
+  func purchaseBookBuysAtTheCheapestLocationAndSplitsOnDepth() throws {
+    let book = purchaseBook([
+      (.jita, [(10, 100)], .free),
+      (.amarr, [(8, 30), (12, 100)], .free),
+    ])
+    let quote = book.quote(typeID: 62, quantity: 50, scenario: .materialBuy)
+    #expect(quote.isComplete)
+    #expect(quote.total == 440)
+    let allocations = book.allocations(typeID: 62, quantity: 50)
+    #expect(allocations.map(\.location) == [.jita, .amarr])
+    #expect(allocations.map(\.quantity) == [20, 30])
+  }
+
+  @Test
+  func transportCanFlipTheCheapestPurchaseLocation() throws {
+    let pricing = LogisticsContractPricing(
+      iskPerCubicMeter: 5,
+      maximumContractVolumeM3: 1_000,
+      collateralRate: 0
+    )
+    let book = purchaseBook([
+      (.jita, [(10, 100)], .contract(pricing)),
+      (.amarr, [(12, 100)], .free),
+    ])
+    let allocations = book.allocations(typeID: 62, quantity: 10)
+    #expect(allocations.map(\.location) == [.amarr])
+    // The transport decides the location but is not part of the market price.
+    #expect(allocations.first?.total == 120)
+  }
+
+  @Test
+  func locationsWithoutARouteOrTooLargeItemsAreExcluded() throws {
+    let warning = DomainWarning(
+      code: "logistics.fixture",
+      message: "No route.",
+      severity: .blocking
+    )
+    let noRoute = purchaseBook([
+      (.jita, [(1, 100)], .unavailable(warning)),
+      (.amarr, [(50, 100)], .free),
+    ])
+    #expect(
+      noRoute.allocations(typeID: 62, quantity: 1).map(\.location) == [.amarr]
+    )
+    #expect(
+      noRoute.exclusionReason(source: noRoute.sources[0], typeID: 62)
+        == "No route."
+    )
+    let tooLarge = purchaseBook(
+      [
+        (
+          .jita,
+          [(1, 100)],
+          .contract(
+            LogisticsContractPricing(
+              iskPerCubicMeter: 0,
+              maximumContractVolumeM3: 10
+            )
+          )
+        ),
+        (.amarr, [(50, 100)], .free),
+      ],
+      volume: 11
+    )
+    #expect(
+      tooLarge.allocations(typeID: 62, quantity: 1).map(\.location) == [.amarr]
+    )
+  }
+
+  @Test
+  func noPurchaseLocationOrTooLittleDepthStaysMissing() throws {
+    let empty = purchaseBook([])
+    let none = empty.quote(typeID: 62, quantity: 1, scenario: .materialBuy)
+    #expect(none.total == nil)
+    #expect(none.warnings.map(\.code) == ["planner.no-purchase-location"])
+
+    let shallow = purchaseBook([
+      (.jita, [(1, 1)], .free),
+      (.amarr, [(1, 1)], .free),
+    ]).quote(typeID: 62, quantity: 5, scenario: .materialBuy)
+    #expect(shallow.total == nil)
+    #expect(shallow.filledQuantity == 2)
+    #expect(shallow.warnings.map(\.code) == ["market.insufficient-depth"])
+  }
+
+  private func purchasePlan(
+    markets: [PlannerPurchaseMarket]?
+  ) async throws -> IndustryPlanSnapshot {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let product = BlueprintDefinition(
+      blueprintTypeID: 601,
+      productTypeID: 61,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 1,
+        materials: [BlueprintMaterial(typeID: 62, quantity: 100)],
+        products: [
+          BlueprintProduct(typeID: 61, quantity: 1, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    return try await IndustryPlanner().plan(
+      input: "Purchase Product 1 0 0",
+      context: IndustryPlanningContext(
+        manufacturingProfile: ManufacturingProfile(),
+        catalog: FixtureCatalog(
+          names: [61: "Purchase Product", 62: "Purchase Material"],
+          definitions: [61: product],
+          packagedVolumes: [61: 1, 62: 1]
+        ),
+        market: purchaseSnapshot(.jita, orders: [(10, 1_000)]),
+        adjustedPrices: [
+          62: AdjustedPrice(typeID: 62, adjustedPrice: 1, averagePrice: 1)
+        ],
+        systemIndices: [
+          IndustrySystemIndex(
+            solarSystemID: EVEConstants.jitaSystemID,
+            activity: .manufacturing,
+            costIndex: 0
+          )
+        ],
+        purchaseMarkets: markets,
+        sdeBuild: 1
+      )
+    )
+  }
+
+  @Test
+  func plannerPricesMaterialsAcrossTheSelectedLocations() async throws {
+    let legacy = try await purchasePlan(markets: nil)
+    #expect(legacy.materials.first { $0.typeID == 62 }?.quote?.total == 1_000)
+    #expect(legacy.materials.first { $0.typeID == 62 }?.purchaseAllocations == nil)
+
+    let split = try await purchasePlan(
+      markets: [
+        PlannerPurchaseMarket(
+          location: .jita,
+          snapshot: purchaseSnapshot(.jita, orders: [(10, 1_000)]),
+          leg: .mainToHome
+        ),
+        PlannerPurchaseMarket(
+          location: .amarr,
+          snapshot: purchaseSnapshot(.amarr, orders: [(5, 60)]),
+          leg: nil
+        ),
+      ]
+    )
+    let material = try #require(split.materials.first { $0.typeID == 62 })
+    #expect(material.quote?.total == 700)
+    #expect(material.purchaseAllocations?.map(\.quantity) == [40, 60])
+
+    let groups = EVEShoppingList.locationGroups(
+      from: split.materials,
+      refiningPlan: nil,
+      refiningLocation: .jita,
+      fallback: .jita
+    )
+    #expect(groups.map(\.location.name) == [
+      ProcurementLocation.amarr.name, ProcurementLocation.jita.name,
+    ])
+    #expect(groups.map(\.export.text) == [
+      "Purchase Material 60", "Purchase Material 40",
+    ])
+    #expect(groups.compactMap(\.shoppingList.purchaseTotal) == [300, 400])
+
+    let none = try await purchasePlan(markets: [])
+    let missing = try #require(none.materials.first { $0.typeID == 62 })
+    #expect(missing.quote?.total == nil)
+    #expect(none.costBreakdown?.materialCost == nil)
+    #expect(none.warnings.contains { $0.code == "planner.no-purchase-location" })
+  }
+
+  @Test
+  func savedMaterialsWithoutAllocationsKeepTheirLocation() throws {
+    let material = MaterialRequirement(
+      typeID: 62,
+      name: "Purchase Material",
+      required: 5,
+      fromStock: 0,
+      toBuy: 5,
+      toProduce: 0,
+      quote: nil,
+      procurement: MaterialProcurementPreference(
+        supplyMode: .buy,
+        purchaseLocation: .amarr
+      )
+    )
+    let decoded = try JSONDecoder().decode(
+      MaterialRequirement.self,
+      from: JSONEncoder().encode(material)
+    )
+    #expect(decoded.purchaseAllocations == nil)
+    let groups = EVEShoppingList.locationGroups(
+      from: [decoded],
+      refiningPlan: nil,
+      refiningLocation: .jita,
+      fallback: .jita
+    )
+    #expect(groups.map(\.location) == [.amarr])
+    #expect(groups.first?.export.text == "Purchase Material 5")
+  }
+
   // MARK: Blueprint source order (owner decision 30.10.2026)
 
   private func sourceRuleAssessment(

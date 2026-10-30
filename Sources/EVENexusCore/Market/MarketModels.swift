@@ -1951,6 +1951,13 @@ public struct PreparedMarketOrderBook: Sendable {
     buyOrdersByType = buys
   }
 
+  public var capturedAt: Date { snapshot.capturedAt }
+
+  /// Usable sell orders of one type, cheapest first.
+  public func sellOrders(typeID: Int64) -> [MarketOrder] {
+    sellOrdersByType[typeID] ?? []
+  }
+
   public func quote(
     typeID: Int64,
     quantity: Int64,

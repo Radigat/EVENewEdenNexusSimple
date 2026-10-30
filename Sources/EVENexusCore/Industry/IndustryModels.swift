@@ -727,6 +727,9 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
   public let productionActivity: BlueprintActivityDefinition.Kind?
   public let productionAllowed: Bool?
   public let makeOrBuyAnalysis: MaterialMakeOrBuyAnalysis?
+  /// Where `toBuy` comes from. `nil` for snapshots from before the selectable
+  /// purchase locations (30.10.2026) and for single-market plans without a price.
+  public let purchaseAllocations: [PurchaseLocationAllocation]?
 
   public init(
     typeID: Int64,
@@ -744,7 +747,10 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
     productionActivity: BlueprintActivityDefinition.Kind? = nil,
     productionAllowed: Bool? = nil,
     makeOrBuyAnalysis: MaterialMakeOrBuyAnalysis? = nil
+,
+    purchaseAllocations: [PurchaseLocationAllocation]? = nil
   ) {
+    self.purchaseAllocations = purchaseAllocations
     self.typeID = typeID
     self.name = name
     self.required = required

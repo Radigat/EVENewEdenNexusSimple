@@ -12,6 +12,9 @@ enum AppSettingKey {
   /// Planner draft target market (HUB_CHANCEN_PLAN P10); value is the raw
   /// `PlannerTargetMarket`, a missing row means not chosen.
   static let plannerTargetMarketDraft = "planner.target-market.draft.v1"
+  /// Selected purchase locations, JSON-encoded trading location UUIDs; a
+  /// missing row means the Main Hub only.
+  static let plannerPurchaseLocationsDraft = "planner.purchase-locations.draft.v1"
   /// Planner draft input of the manual alliance sale (P11), JSON-encoded
   /// `PlannerAllianceSaleInput`.
   static let plannerAllianceSaleDraft = "planner.alliance-sale.draft.v1"

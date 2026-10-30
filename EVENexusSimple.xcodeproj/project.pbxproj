@@ -89,6 +89,7 @@
 		42BA88660D950E4031482CB1 /* RuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 312D142B1E16A8C378F71587 /* RuntimeState.swift */; };
 		43C3510286F776B3AF65C7E1 /* ReservationLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A4B40B0706769D9277F8172 /* ReservationLedger.swift */; };
 		52E07FEADEEE4A083D76F969 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF480041A24E3F7755C5897D /* AuthModels.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* PlannerPurchaseBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */; };
 		57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */; };
 		5D6F2CE98F6969D5DF667A41 /* ESIDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */; };
 		61D17934EACACE799E4EC123 /* EVENexusCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E58C6EA5E4842768987863A4 /* EVENexusCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -365,6 +366,7 @@
 		E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileReferenceComponents.swift; sourceTree = "<group>"; };
 		E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventionReadinessTests.swift; sourceTree = "<group>"; };
 		E8EE2273BE23D5140708B334 /* ProductionProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionProfiles.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPurchaseBook.swift; sourceTree = "<group>"; };
 		EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEMultibuyExport.swift; sourceTree = "<group>"; };
 		EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionOverviewTests.swift; sourceTree = "<group>"; };
 		01A0C0020000000000000003 /* StockSaleComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockSaleComparisonTests.swift; sourceTree = "<group>"; };
@@ -553,6 +555,7 @@
 			isa = PBXGroup;
 			children = (
 				EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */,
+				A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */,
 				41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */,
 				CA2F5055B38824F803FA5FBA /* IndustryModels.swift */,
 				788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */,
@@ -1016,6 +1019,7 @@
 				01A0D0010000000000000012 /* MeasuringESITransport.swift in Sources */,
 				01A0D0010000000000000011 /* PerformanceLog.swift in Sources */,
 				57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* PlannerPurchaseBook.swift in Sources */,
 				99D95412344E68545253E28B /* EVEOnlineServiceStatus.swift in Sources */,
 				180F00EAEA55A5FECB622EDF /* EVESSOService.swift in Sources */,
 				B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */,

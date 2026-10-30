@@ -9378,3 +9378,28 @@ Nicht geprüft: Sichtprüfung und Vergleich mit Live-Daten, Abnahme.
 Offen: Bereits in der Sitzung festgeschriebene Quellen werden erst mit Prompt 3
 von neuen Empfehlungen getrennt. Einkaufsorte, Automatik und Oberfläche folgen in
 den Prompts 2 bis 4.
+
+## 30.10.2026 – Planer: Einkaufsorte (Prompt 2 von 4)
+
+Auftrag: Einkaufsorte vor der Berechnung wählen, je Material der billigste Ort
+einschließlich Transport, Aufteilung bei fehlender Tiefe, Liste je Ort.
+
+Ergebnis:
+- Neues `PlannerPurchaseBook` füllt Mengen über alle gewählten Orte und liefert
+  Preise und `purchaseAllocations`. Ohne `purchaseMarkets` bleibt der Main-Hub-Pfad.
+- Material, Make-or-Buy, Kette und Eingangslogistik rechnen damit, je Herkunft mit
+  eigener Strecke. Auswahl unter `planner.purchase-locations.draft.v1`, ohne
+  Schemaänderung.
+- Einkaufsliste und Multibuy über `EVEShoppingList.locationGroups` je Ort.
+
+Abweichung vom Plan: Das Überschreiben von `purchaseLocation` auf den Main Hub blieb
+stehen, weil das Feld den Einkauf nicht mehr steuert. Die Anzeige nutzt die
+Allokationen.
+
+Prüfung: `swift test` 679 + 84 Tests, davon sechs neue; `EVEStaticDataKit` 13 Tests;
+`xcodebuild … test` 679 Tests, `TEST SUCCEEDED`; `git diff --check` fehlerfrei.
+
+Nicht geprüft: GUI-Durchlauf mit isoliertem Testbestand, Live-Märkte, Abnahme.
+
+Offen: Bauplan-Baum und Materialwert des Vertragsvergleichs rechnen weiter mit
+Main-Hub-Preisen. Automatik und Oberfläche folgen in den Prompts 3 und 4.

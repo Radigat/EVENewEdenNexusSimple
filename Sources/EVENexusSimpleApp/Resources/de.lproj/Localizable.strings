@@ -3138,3 +3138,7 @@
 "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics." = "Positive Wertschöpfung bedeutet, dass der Direktkauf des erzeugten Produkts einschließlich Transport zur Reaktionsanlage teurer ist als die günstigste bewertete Versorgung einschließlich Transport der gekauften Materialien. Die günstigste Versorgung kann Zwischenprodukte kaufen oder aus Ursprungsmaterialien herstellen. Die Sofortverkaufsspanne wird getrennt ausgewiesen und verwendet aktuelle Kaufaufträge vor charakterspezifischer Verkaufssteuer und Ausgangslogistik.";
 "Use owned BPC, rest from contracts" = "Vorhandene BPC verwenden, Rest aus Verträgen";
 "Owned BPC runs plus whole public BPC Contract prices" = "Eigene BPC-Runs plus volle Preise öffentlicher BPC-Verträge";
+"Purchase locations" = "Einkaufsorte";
+"Select at least one purchase location." = "Wähle mindestens einen Einkaufsort aus.";
+"Recalculate to apply the purchase locations." = "Neu berechnen, um die Einkaufsorte zu übernehmen.";
+"Each EVE Multibuy list contains the uncovered quantity to buy at that purchase location." = "Jede EVE-Multibuy-Liste enthält die ungedeckte Menge, die an diesem Einkaufsort zu kaufen ist.";
