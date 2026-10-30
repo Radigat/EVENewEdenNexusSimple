@@ -480,6 +480,11 @@ public struct MaterialMakeOrBuyAnalysis: Codable, Sendable {
   public let recommendation: MakeOrBuyRecommendation
   public let savings: Double?
   public let warnings: [DomainWarning]
+  /// Intermediates below this material that the cheapest chain builds.
+  /// `nil` for snapshots from before the chain comparison (30.10.2026).
+  public let chainBuiltTypeIDs: [Int64]?
+  /// Materials the recommended build buys, at any depth below this material.
+  public let chainBoughtTypeIDs: [Int64]?
 
   public init(
     requiredQuantity: Int64,
@@ -495,8 +500,12 @@ public struct MaterialMakeOrBuyAnalysis: Codable, Sendable {
     buildTotalCost: Double?,
     recommendation: MakeOrBuyRecommendation,
     savings: Double?,
-    warnings: [DomainWarning]
+    warnings: [DomainWarning],
+    chainBuiltTypeIDs: [Int64]? = nil,
+    chainBoughtTypeIDs: [Int64]? = nil
   ) {
+    self.chainBuiltTypeIDs = chainBuiltTypeIDs
+    self.chainBoughtTypeIDs = chainBoughtTypeIDs
     self.requiredQuantity = requiredQuantity
     self.productionRuns = productionRuns
     self.producedQuantity = producedQuantity
@@ -537,6 +546,8 @@ public struct MakeOrBuyRecommendationApplication: Sendable {
     var produceCount = 0
     var buyCount = 0
     var unavailableCount = 0
+    var chainBuilt = Set<Int64>()
+    var chainBought = Set<Int64>()
 
     for material in materials {
       if resolved[material.typeID] == nil,
@@ -569,6 +580,31 @@ public struct MakeOrBuyRecommendationApplication: Sendable {
         continue
       }
       resolved[material.typeID] = preference
+      if analysis.recommendation == .produce {
+        chainBuilt.formUnion(analysis.chainBuiltTypeIDs ?? [])
+        chainBought.formUnion(analysis.chainBoughtTypeIDs ?? [])
+      }
+    }
+
+    // Materials still hidden behind a bought parent need the chain's choice too,
+    // or one click would not reach it: unset materials default to building. A
+    // material with its own recommendation in this plan keeps it.
+    let ownRecommendations = Set(
+      materials.lazy.filter { $0.makeOrBuyAnalysis != nil }.map(\.typeID)
+    )
+    for typeID in chainBuilt.subtracting(ownRecommendations) {
+      resolved[typeID] = MaterialProcurementPreference(
+        supplyMode: .produce,
+        purchaseLocation: mainHub
+      )
+    }
+    for typeID in chainBought.subtracting(chainBuilt)
+      .subtracting(ownRecommendations)
+    {
+      resolved[typeID] = MaterialProcurementPreference(
+        supplyMode: .buy,
+        purchaseLocation: mainHub
+      )
     }
 
     self.preferences = resolved

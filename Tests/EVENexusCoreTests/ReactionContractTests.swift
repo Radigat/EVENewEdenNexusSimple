@@ -257,6 +257,176 @@ struct ReactionContractTests {
     #expect(row.warnings.contains { $0.severity == .blocking })
   }
 
+  // Chain fixture: product 30 needs 10 x type 31 per run; 31 comes from a
+  // reaction needing 2 x raw type 32 per run. No multipliers, no job costs.
+  private func chainDefinition(
+    blueprint: Int64,
+    product: Int64,
+    material: Int64,
+    quantity: Int64,
+    kind: BlueprintActivityDefinition.Kind = .reaction,
+    source: SourceIdentity
+  ) -> BlueprintDefinition {
+    BlueprintDefinition(
+      blueprintTypeID: blueprint,
+      productTypeID: product,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: kind,
+        durationSeconds: 3_600,
+        materials: [BlueprintMaterial(typeID: material, quantity: quantity)],
+        products: [BlueprintProduct(typeID: product, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+  }
+
+  private func chainAnalysis(
+    orders: [MarketOrder],
+    source: SourceIdentity,
+    manufacturing: [BlueprintDefinition] = [],
+    blacklist: ProductionBlacklistConfiguration = ProductionBlacklistConfiguration()
+  ) throws -> ReactionAnalysisRow {
+    let analysis = try ReactionProfitabilityAnalyzer.analyze(
+      definitions: [
+        chainDefinition(blueprint: 40, product: 30, material: 31, quantity: 10, source: source),
+        chainDefinition(blueprint: 41, product: 31, material: 32, quantity: 2, source: source),
+      ],
+      typeNames: [30: "Final", 31: "Intermediate", 32: "Raw"],
+      classifications: [:],
+      runs: 1,
+      tradeHub: .jita,
+      market: marketSnapshot(source: source, orders: orders),
+      adjustedPrices: [
+        31: AdjustedPrice(typeID: 31, adjustedPrice: 0, averagePrice: nil),
+        32: AdjustedPrice(typeID: 32, adjustedPrice: 0, averagePrice: nil),
+      ],
+      facility: ReactionFacilityCostContext(
+        name: "Fixture Tatara",
+        materialMultiplier: 1,
+        timeMultiplier: 1,
+        jobCostMultiplier: 1,
+        facilityTaxRate: 0,
+        systemCostIndex: 0,
+        sccSurchargeRate: 0,
+        alphaSurchargeRate: 0,
+        ruleVersion: "fixture-v1"
+      ),
+      logistics: logisticsContext(isEnabled: false),
+      supplyChain: ReactionSupplyChainContext(
+        manufacturing: manufacturing,
+        facilities: [:],
+        intermediateMaterialEfficiency: 10,
+        blacklist: blacklist
+      )
+    )
+    return try #require(analysis.rows.first { $0.productTypeID == 30 })
+  }
+
+  @Test
+  func cheapestChainBuildsFromRawMaterialsAndDrivesHeadlineValues() throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let row = try chainAnalysis(
+      orders: [
+        marketOrder(id: 1, typeID: 30, side: .sell, price: 100),
+        marketOrder(id: 2, typeID: 31, side: .sell, price: 8),
+        marketOrder(id: 3, typeID: 32, side: .sell, price: 1),
+      ],
+      source: source
+    )
+
+    let chain = try #require(row.supplyChain)
+    #expect(chain.directPurchaseTotal == 100)
+    #expect(chain.intermediatesBought.totalCost == 80)
+    #expect(chain.fullChain.totalCost == 20)
+    #expect(chain.fullChain.purchases.map(\.typeID) == [32])
+    #expect(chain.fullChain.purchases.first?.quantity == 20)
+    #expect(chain.fullChain.builtJobCount == 1)
+    let cheapest = try #require(chain.cheapest)
+    #expect(cheapest.totalCost == 20)
+    #expect(cheapest.treeLines.map(\.depth) == [0, 1])
+    #expect(cheapest.treeLines.map(\.node.isBuilt) == [true, false])
+    #expect(chain.savingsAgainstDirectPurchase(cheapest) == 80)
+    #expect(row.evaluatedCost == 20)
+    #expect(row.makeOrBuySavings == 80)
+    #expect(row.valueCreation == 80)
+    #expect(row.valueCreationMargin == 4)
+    #expect(row.inputs.map(\.typeID) == [31])
+    #expect(row.outputPurchaseTotalCost == 100)
+  }
+
+  @Test
+  func dearerRawMaterialsKeepBoughtIntermediatesAsCheapest() throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let row = try chainAnalysis(
+      orders: [
+        marketOrder(id: 1, typeID: 30, side: .sell, price: 100),
+        marketOrder(id: 2, typeID: 31, side: .sell, price: 2),
+        marketOrder(id: 3, typeID: 32, side: .sell, price: 5),
+      ],
+      source: source
+    )
+
+    let chain = try #require(row.supplyChain)
+    #expect(chain.fullChain.totalCost == 100)
+    #expect(chain.cheapest?.totalCost == 20)
+    #expect(chain.cheapest?.builtJobCount == 0)
+    #expect(row.valueCreation == 80)
+  }
+
+  @Test
+  func missingIntermediateMarketUsesCompleteChainAndMissingRawStaysUnavailable() throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let built = try chainAnalysis(
+      orders: [
+        marketOrder(id: 1, typeID: 30, side: .sell, price: 100),
+        marketOrder(id: 3, typeID: 32, side: .sell, price: 1),
+      ],
+      source: source
+    )
+    #expect(built.supplyChain?.intermediatesBought.totalCost == nil)
+    #expect(built.supplyChain?.cheapest?.totalCost == 20)
+    #expect(built.valueCreation == 80)
+
+    let missing = try chainAnalysis(
+      orders: [marketOrder(id: 1, typeID: 30, side: .sell, price: 100)],
+      source: source
+    )
+    #expect(missing.supplyChain?.cheapest == nil)
+    #expect(missing.supplyChain?.fullChain.totalCost == nil)
+    #expect(missing.valueCreation == nil)
+    #expect(missing.valueStatus == .unavailable)
+  }
+
+  @Test
+  func requiredTypesFollowManufacturedInputsToRawMaterials() {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let ids = ReactionSupplyChainContext.requiredTypeIDs(
+      reactions: [
+        chainDefinition(blueprint: 40, product: 30, material: 31, quantity: 1, source: source)
+      ],
+      manufacturing: [
+        chainDefinition(
+          blueprint: 41,
+          product: 31,
+          material: 32,
+          quantity: 1,
+          kind: .manufacturing,
+          source: source
+        ),
+        chainDefinition(
+          blueprint: 42,
+          product: 99,
+          material: 98,
+          quantity: 1,
+          kind: .manufacturing,
+          source: source
+        ),
+      ]
+    )
+    #expect(ids == [30, 31, 32])
+  }
+
   private func reactionDefinition(source: SourceIdentity) -> BlueprintDefinition {
     BlueprintDefinition(
       blueprintTypeID: 10,

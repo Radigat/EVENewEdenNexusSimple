@@ -134,6 +134,159 @@ public struct ReactionMaterialValuation: Identifiable, Codable, Sendable {
   public let quote: PriceQuote
 }
 
+/// One node of a traced reaction supply: bought at the market or built from
+/// its children. `cost` is the node's own estimate before transport.
+public struct ReactionSupplyNode: Identifiable, Codable, Sendable {
+  public var id: String { "\(typeID)-\(quantity)" }
+  public let typeID: Int64
+  public let name: String
+  public let quantity: Int64
+  public let isBuilt: Bool
+  public let cost: Double?
+  /// Installation and reaction costs of this node and everything below it.
+  public let installationCost: Double
+  public let children: [ReactionSupplyNode]
+
+  public init(
+    typeID: Int64,
+    name: String,
+    quantity: Int64,
+    isBuilt: Bool,
+    cost: Double?,
+    installationCost: Double,
+    children: [ReactionSupplyNode]
+  ) {
+    self.typeID = typeID
+    self.name = name
+    self.quantity = quantity
+    self.isBuilt = isBuilt
+    self.cost = cost
+    self.installationCost = installationCost
+    self.children = children
+  }
+}
+
+public struct ReactionSupplyTreeLine: Identifiable, Sendable {
+  public let id: String
+  public let depth: Int
+  public let node: ReactionSupplyNode
+}
+
+public enum ReactionSupplyVariantKind: String, Codable, CaseIterable, Sendable {
+  /// Direct inputs bought at the market; the classic reaction calculation.
+  case intermediatesBought
+  /// Every node with a complete self-build is built down to its raw materials.
+  case fullChain
+  /// The cheapest complete supply found.
+  case cheapest
+}
+
+public struct ReactionSupplyVariant: Codable, Sendable {
+  public let kind: ReactionSupplyVariantKind
+  public let nodes: [ReactionSupplyNode]
+  /// The summed shopping list, priced together against the order book.
+  public let purchases: [ReactionMaterialValuation]
+  public let materialCost: Double?
+  public let logisticsCost: Double?
+  /// Final reaction job plus every built intermediate job.
+  public let installationCost: Double?
+  public let totalCost: Double?
+  /// Built intermediate jobs, without the final reaction job.
+  public let builtJobCount: Int
+
+  /// The supply tree in display order, parents directly above their children.
+  public var treeLines: [ReactionSupplyTreeLine] {
+    func lines(
+      _ nodes: [ReactionSupplyNode],
+      depth: Int,
+      path: String
+    ) -> [ReactionSupplyTreeLine] {
+      nodes.flatMap { node -> [ReactionSupplyTreeLine] in
+        let id = path + "/" + node.id
+        return [ReactionSupplyTreeLine(id: id, depth: depth, node: node)]
+          + lines(node.children, depth: depth + 1, path: id)
+      }
+    }
+    return lines(nodes, depth: 0, path: "")
+  }
+}
+
+public struct ReactionSupplyChainComparison: Codable, Sendable {
+  public let directPurchaseTotal: Double?
+  public let intermediatesBought: ReactionSupplyVariant
+  public let fullChain: ReactionSupplyVariant
+  /// `nil` when no supply is completely computable; never treated as zero.
+  public let cheapest: ReactionSupplyVariant?
+
+  public func variant(
+    _ kind: ReactionSupplyVariantKind
+  ) -> ReactionSupplyVariant? {
+    switch kind {
+    case .intermediatesBought: intermediatesBought
+    case .fullChain: fullChain
+    case .cheapest: cheapest
+    }
+  }
+
+  /// Saving against buying the output directly; negative when buying is cheaper.
+  public func savingsAgainstDirectPurchase(
+    _ variant: ReactionSupplyVariant
+  ) -> Double? {
+    guard let directPurchaseTotal, let total = variant.totalCost else {
+      return nil
+    }
+    let result = directPurchaseTotal - total
+    return result.isFinite ? result : nil
+  }
+}
+
+/// Recipes and rules for tracing reaction inputs down to their raw materials,
+/// the same ones as the Planner's "build intermediates yourself" estimate.
+public struct ReactionSupplyChainContext: Sendable {
+  public let manufacturing: [BlueprintDefinition]
+  public let facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext]
+  public let intermediateMaterialEfficiency: Int
+  public let blacklist: ProductionBlacklistConfiguration
+
+  public init(
+    manufacturing: [BlueprintDefinition],
+    facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext],
+    intermediateMaterialEfficiency: Int,
+    blacklist: ProductionBlacklistConfiguration
+  ) {
+    self.manufacturing = manufacturing
+    self.facilities = facilities
+    self.intermediateMaterialEfficiency = intermediateMaterialEfficiency
+    self.blacklist = blacklist
+  }
+
+  /// Every type a reaction's supply chain can touch, at any depth.
+  public static func requiredTypeIDs(
+    reactions: [BlueprintDefinition],
+    manufacturing: [BlueprintDefinition]
+  ) -> Set<Int64> {
+    let recipes = Dictionary(
+      grouping: (manufacturing + reactions).filter {
+        !$0.activity.materials.isEmpty
+      },
+      by: \.productTypeID
+    )
+    var result = Set<Int64>()
+    var pending = reactions.flatMap { definition in
+      [definition.productTypeID]
+        + definition.activity.materials.map(\.typeID)
+        + definition.activity.products.map(\.typeID)
+    }
+    while let typeID = pending.popLast() {
+      guard result.insert(typeID).inserted else { continue }
+      for recipe in recipes[typeID] ?? [] {
+        pending.append(contentsOf: recipe.activity.materials.map(\.typeID))
+      }
+    }
+    return result
+  }
+}
+
 public struct ReactionAnalysisRow: Identifiable, Codable, Sendable {
   public var id: Int64 { blueprintTypeID }
   public let blueprintTypeID: Int64
@@ -144,21 +297,22 @@ public struct ReactionAnalysisRow: Identifiable, Codable, Sendable {
   public let runs: Int
   public let inputs: [ReactionMaterialValuation]
   public let outputs: [ReactionMaterialValuation]
-  public let materialCost: Double?
-  public let inputLogisticsCost: Double?
-  public let installationCost: Double?
-  public let evaluatedCost: Double?
+  public var materialCost: Double?
+  public var inputLogisticsCost: Double?
+  public var installationCost: Double?
+  public var evaluatedCost: Double?
   public let outputBuyCost: Double?
   public let outputPurchaseLogisticsCost: Double?
   public let outputPurchaseTotalCost: Double?
   public let immediateSaleRevenue: Double?
-  public let makeOrBuySavings: Double?
-  public let valueCreation: Double?
-  public let valueCreationMargin: Double?
+  public var makeOrBuySavings: Double?
+  public var valueCreation: Double?
+  public var valueCreationMargin: Double?
   public let durationSeconds: Int64
   public let maximumRunsPerJob: Int
   public let basis: ReactionAnalysisBasis
   public let warnings: [DomainWarning]
+  public var supplyChain: ReactionSupplyChainComparison? = nil
 
   public var valueStatus: ReactionValueStatus {
     guard let valueCreation, valueCreation.isFinite else {
@@ -381,7 +535,8 @@ public enum ReactionProfitabilityAnalyzer {
     market: MarketOrderSnapshot,
     adjustedPrices: [Int64: AdjustedPrice],
     facility: ReactionFacilityCostContext?,
-    logistics: ReactionLogisticsCostContext
+    logistics: ReactionLogisticsCostContext,
+    supplyChain: ReactionSupplyChainContext? = nil
   ) throws -> ReactionAnalysisSnapshot {
     try analyze(
       definitions: definitions,
@@ -392,7 +547,8 @@ public enum ReactionProfitabilityAnalyzer {
       market: market,
       adjustedPrices: adjustedPrices,
       facility: facility,
-      logistics: logistics
+      logistics: logistics,
+      supplyChain: supplyChain
     )
   }
 
@@ -405,7 +561,8 @@ public enum ReactionProfitabilityAnalyzer {
     market: MarketOrderSnapshot,
     adjustedPrices: [Int64: AdjustedPrice],
     facility: ReactionFacilityCostContext?,
-    logistics: ReactionLogisticsCostContext
+    logistics: ReactionLogisticsCostContext,
+    supplyChain: ReactionSupplyChainContext? = nil
   ) throws -> ReactionAnalysisSnapshot {
     guard runs > 0 else { throw ReactionAnalysisError.invalidRuns }
     guard market.locationID == marketLocation.locationID,
@@ -426,8 +583,22 @@ public enum ReactionProfitabilityAnalyzer {
     let basis: ReactionAnalysisBasis =
       facility == nil ? .materialOnlyBaseline : .configuredFacility
     let basisName = facility?.name ?? "SDE material baseline"
-    let rows = reactions.compactMap { definition in
-      analyze(
+    let supplyResolvers = facility == nil
+      ? nil
+      : supplyChain.map {
+        supplyChainResolvers(
+          context: $0,
+          reactions: reactions,
+          typeNames: typeNames,
+          classifications: classifications,
+          market: market,
+          adjustedPrices: adjustedPrices,
+          facility: facility,
+          logistics: logistics
+        )
+      }
+    let rows = reactions.compactMap { definition -> ReactionAnalysisRow? in
+      let row = analyze(
         definition: definition,
         typeNames: typeNames,
         classifications: classifications,
@@ -437,6 +608,15 @@ public enum ReactionProfitabilityAnalyzer {
         facility: facility,
         logistics: logistics,
         basis: basis
+      )
+      guard let row, let supplyResolvers else { return row }
+      return applyingSupplyChain(
+        to: row,
+        source: definition.source,
+        resolvers: supplyResolvers,
+        typeNames: typeNames,
+        market: market,
+        logistics: logistics
       )
     }
     .sorted {
@@ -742,6 +922,269 @@ public enum ReactionProfitabilityAnalyzer {
       )
     }
     return (total, result.warnings)
+  }
+
+  private typealias SupplyResolver =
+    ManufacturingOpportunityAnalyzer.ComponentCostResolver
+
+  private static func supplyChainResolvers(
+    context: ReactionSupplyChainContext,
+    reactions: [BlueprintDefinition],
+    typeNames: [Int64: String],
+    classifications: [Int64: IndustryItemClassification],
+    market: MarketOrderSnapshot,
+    adjustedPrices: [Int64: AdjustedPrice],
+    facility: ReactionFacilityCostContext?,
+    logistics: ReactionLogisticsCostContext
+  ) -> (cheapest: SupplyResolver, fullChain: SupplyResolver) {
+    func resolver(
+      strategy: SupplyResolver.Strategy,
+      surcharge: ((Int64, Int64, Double) -> Double)?
+    ) -> SupplyResolver {
+      SupplyResolver(
+        manufacturing: context.manufacturing,
+        reactions: reactions,
+        typeNames: typeNames,
+        classifications: classifications,
+        packagedVolumes: logistics.packagedVolumes,
+        market: market,
+        adjustedPrices: adjustedPrices,
+        facilities: context.facilities,
+        reactionFacility: facility,
+        intermediateMaterialEfficiency:
+          min(10, max(0, context.intermediateMaterialEfficiency)),
+        blacklist: context.blacklist,
+        strategy: strategy,
+        purchaseSurcharge: surcharge
+      )
+    }
+    return (
+      resolver(strategy: .cheapest) { typeID, quantity, collateral in
+        unroundedLogistics(
+          typeID: typeID,
+          quantity: quantity,
+          collateral: collateral,
+          context: logistics
+        )
+      },
+      resolver(strategy: .alwaysBuild, surcharge: nil)
+    )
+  }
+
+  /// Compares the supplies and moves the row's cost figures onto the cheapest
+  /// one (owner decision 30.10.2026). The direct-purchase figures stay.
+  private static func applyingSupplyChain(
+    to row: ReactionAnalysisRow,
+    source: SourceIdentity,
+    resolvers: (cheapest: SupplyResolver, fullChain: SupplyResolver),
+    typeNames: [Int64: String],
+    market: MarketOrderSnapshot,
+    logistics: ReactionLogisticsCostContext
+  ) -> ReactionAnalysisRow {
+    let intermediates = ReactionSupplyVariant(
+      kind: .intermediatesBought,
+      nodes: row.inputs.map {
+        ReactionSupplyNode(
+          typeID: $0.typeID,
+          name: $0.name,
+          quantity: $0.quantity,
+          isBuilt: false,
+          cost: $0.quote.isComplete ? $0.quote.total : nil,
+          installationCost: 0,
+          children: []
+        )
+      },
+      purchases: row.inputs,
+      materialCost: row.materialCost,
+      logisticsCost: row.inputLogisticsCost,
+      installationCost: row.installationCost,
+      totalCost: row.evaluatedCost,
+      builtJobCount: 0
+    )
+    func traced(
+      _ kind: ReactionSupplyVariantKind,
+      _ resolver: SupplyResolver
+    ) -> ReactionSupplyVariant {
+      supplyVariant(
+        kind: kind,
+        row: row,
+        resolver: resolver,
+        source: source,
+        typeNames: typeNames,
+        market: market,
+        logistics: logistics
+      )
+    }
+    let fullChain = traced(.fullChain, resolvers.fullChain)
+    let mixed = traced(.cheapest, resolvers.cheapest)
+    // Node decisions are estimates; only the final costing of the summed
+    // shopping lists decides. A tie keeps the variant with fewer jobs.
+    var best: ReactionSupplyVariant?
+    for candidate in [intermediates, mixed, fullChain] {
+      guard let total = candidate.totalCost else { continue }
+      guard let current = best, let currentTotal = current.totalCost else {
+        best = candidate
+        continue
+      }
+      if total < currentTotal
+        || (total == currentTotal
+          && candidate.builtJobCount < current.builtJobCount)
+      {
+        best = candidate
+      }
+    }
+    let cheapest: ReactionSupplyVariant? = best.map { best in
+      ReactionSupplyVariant(
+        kind: .cheapest,
+        nodes: best.nodes,
+        purchases: best.purchases,
+        materialCost: best.materialCost,
+        logisticsCost: best.logisticsCost,
+        installationCost: best.installationCost,
+        totalCost: best.totalCost,
+        builtJobCount: best.builtJobCount
+      )
+    }
+    var result = row
+    result.supplyChain = ReactionSupplyChainComparison(
+      directPurchaseTotal: row.outputPurchaseTotalCost,
+      intermediatesBought: intermediates,
+      fullChain: fullChain,
+      cheapest: cheapest
+    )
+    guard let cheapest, let total = cheapest.totalCost else { return result }
+    result.materialCost = cheapest.materialCost
+    result.inputLogisticsCost = cheapest.logisticsCost
+    result.installationCost = cheapest.installationCost
+    result.evaluatedCost = total
+    let savings = difference(row.outputPurchaseTotalCost, total)
+    result.makeOrBuySavings = savings
+    result.valueCreation = savings
+    if let savings, total > 0 {
+      let margin = savings / total
+      result.valueCreationMargin = margin.isFinite ? margin : nil
+    } else {
+      result.valueCreationMargin = nil
+    }
+    return result
+  }
+
+  private static func supplyVariant(
+    kind: ReactionSupplyVariantKind,
+    row: ReactionAnalysisRow,
+    resolver: SupplyResolver,
+    source: SourceIdentity,
+    typeNames: [Int64: String],
+    market: MarketOrderSnapshot,
+    logistics: ReactionLogisticsCostContext
+  ) -> ReactionSupplyVariant {
+    var nodes: [ReactionSupplyNode] = []
+    var quantities: [Int64: Int64] = [:]
+    var installation = row.installationCost
+    var builtJobs = 0
+    var isComplete = true
+    for input in row.inputs {
+      guard
+        let resolved = resolver.resolve(
+          typeID: input.typeID,
+          quantity: input.quantity,
+          consumerTypeID: row.productTypeID
+        )
+      else {
+        // Stays visible as an open line; the variant remains unavailable.
+        isComplete = false
+        nodes.append(
+          ReactionSupplyNode(
+            typeID: input.typeID,
+            name: input.name,
+            quantity: input.quantity,
+            isBuilt: false,
+            cost: nil,
+            installationCost: 0,
+            children: []
+          )
+        )
+        continue
+      }
+      nodes.append(resolved.node)
+      installation = installation.map { $0 + resolved.installationCost }
+      builtJobs += resolved.builtNodeCount
+      quantities.merge(resolved.purchases) { lhs, rhs in
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        return overflow ? Int64.max : sum
+      }
+    }
+    let purchases = quantities.map { typeID, quantity in
+      ReactionMaterialValuation(
+        typeID: typeID,
+        name: typeNames[typeID] ?? "Type \(typeID)",
+        quantity: quantity,
+        quote: MarketPriceEngine.quote(
+          typeID: typeID,
+          quantity: quantity,
+          scenario: .materialBuy,
+          snapshot: market
+        )
+      )
+    }
+    .sorted {
+      let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+      return order == .orderedSame
+        ? $0.typeID < $1.typeID : order == .orderedAscending
+    }
+    let materialCost = isComplete ? sumQuotes(purchases.map(\.quote)) : nil
+    let logisticsValue =
+      isComplete
+      ? logisticsCost(cargo: purchases, context: logistics, source: source).cost
+      : nil
+    var totalCost: Double?
+    if let materialCost, let logisticsValue, let installation {
+      totalCost = safeSum([materialCost, logisticsValue, installation])
+    }
+    return ReactionSupplyVariant(
+      kind: kind,
+      nodes: nodes,
+      purchases: purchases,
+      materialCost: materialCost,
+      logisticsCost: logisticsValue,
+      installationCost: installation,
+      totalCost: totalCost,
+      builtJobCount: builtJobs
+    )
+  }
+
+  /// Transport share of one bought node for the buy-or-build decision, without
+  /// the per-contract rounding that only makes sense for a whole shipment.
+  private static func unroundedLogistics(
+    typeID: Int64,
+    quantity: Int64,
+    collateral: Double,
+    context: ReactionLogisticsCostContext
+  ) -> Double {
+    if let originID = context.origin.locationID,
+      originID == context.destinationLocationID
+    {
+      return 0
+    }
+    let configuration = context.configuration
+    guard configuration.isEnabled, configuration.includeInboundMaterials,
+      case .contract(let pricing) = configuration.legPricing(for: .mainToHome)
+    else { return 0 }
+    let charge = LogisticsCostCalculator.calculateLegs(
+      kind: .inboundMaterials,
+      origin: context.origin.name,
+      destination: context.destinationName,
+      cargo: [
+        LogisticsCargoItem(
+          typeID: typeID,
+          quantity: quantity,
+          collateral: collateral,
+          packagedVolumePerUnit: context.packagedVolumes[typeID]
+        )
+      ],
+      pricing: pricing
+    ).legs.reduce(0) { $0 + $1.unroundedCharge }
+    return charge.isFinite && charge >= 0 ? charge : 0
   }
 
   private static func deduplicatedWarnings(

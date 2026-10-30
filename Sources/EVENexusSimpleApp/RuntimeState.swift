@@ -2854,19 +2854,21 @@ final class RuntimeState {
       guard try await catalog.activeSDEVersion() != nil else {
         throw StaticCatalogError.noActiveCatalog
       }
-      let definitions = try await catalog.reactionDefinitions()
+      async let reactionDefinitionsValue = catalog.reactionDefinitions()
+      async let manufacturingDefinitionsValue = catalog.manufacturingDefinitions()
+      let (definitions, manufacturingDefinitions) = try await (
+        reactionDefinitionsValue,
+        manufacturingDefinitionsValue
+      )
       try Task.checkCancellation()
-      let typeIDs = Set(
-        definitions.flatMap { definition in
-          [definition.productTypeID]
-            + definition.activity.materials.map(\.typeID)
-            + definition.activity.products.map(\.typeID)
-        }
+      let typeIDs = ReactionSupplyChainContext.requiredTypeIDs(
+        reactions: definitions,
+        manufacturing: manufacturingDefinitions
       )
       let marketService = TradeHubMarketService(esi: esi)
       async let namesValue = catalog.typeNames(ids: typeIDs)
       async let classificationsValue = catalog.industryClassifications(
-        typeIDs: Set(definitions.map(\.productTypeID))
+        typeIDs: typeIDs
       )
       async let packagedVolumesValue = universeTypeVolumeService.volumes(
         for: typeIDs
@@ -2938,17 +2940,32 @@ final class RuntimeState {
         origin: marketHub.location,
         packagedVolumes: packagedVolumeSnapshot.value ?? [:]
       )
-      let analysis = try ReactionProfitabilityAnalyzer.analyze(
-        definitions: definitions,
-        typeNames: names,
-        classifications: classifications,
-        runs: runs,
-        marketLocation: marketHub.location,
-        market: marketValue,
-        adjustedPrices: adjusted,
-        facility: facility,
-        logistics: logistics
+      let supplyChain = ReactionSupplyChainContext(
+        manufacturing: manufacturingDefinitions,
+        facilities: manufacturingOpportunityFacilities(systemIndices: systems),
+        intermediateMaterialEfficiency: productionBasis.defaultIntermediateME,
+        blacklist: productionBasis.blacklist
       )
+      let marketLocation = marketHub.location
+      let analysisTask = Task.detached(priority: .userInitiated) {
+        try ReactionProfitabilityAnalyzer.analyze(
+          definitions: definitions,
+          typeNames: names,
+          classifications: classifications,
+          runs: runs,
+          marketLocation: marketLocation,
+          market: marketValue,
+          adjustedPrices: adjusted,
+          facility: facility,
+          logistics: logistics,
+          supplyChain: supplyChain
+        )
+      }
+      let analysis = try await withTaskCancellationHandler {
+        try await analysisTask.value
+      } onCancel: {
+        analysisTask.cancel()
+      }
       guard configurationContext == marketAnalysisContextIdentity else { return }
       reactionAnalysis = analysis
       reactionAnalysisDestinationName = logistics.destinationName

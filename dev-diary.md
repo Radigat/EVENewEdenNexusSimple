@@ -9315,3 +9315,43 @@ Prüfung:
 - Neuer Roundtrip-Test für die Altdaten; `git diff --check` fehlerfrei.
 
 Nicht geprüft: Sichtprüfung in der laufenden App, Abnahme.
+
+## 30.10.2026 – Reaktionen: Kostenanalyse bis zu den Ursprungsmaterialien
+
+Auftrag: Im aufgeklappten Reaktionsergebnis die vollständig zurückverfolgte
+Kette zeigen und die günstigste Variante dem Direktkauf gegenüberstellen.
+Eigentümerentscheidungen: auch Fertigung auflösen, vier Varianten, Kopfwerte
+rechnen mit der günstigsten Kette.
+
+Ergebnis:
+- `ComponentCostResolver` um Strategie, Transportaufschlag und Versorgungsbaum
+  erweitert; ohne die neuen Parameter rechnet er wie bisher.
+- `ReactionProfitabilityAnalyzer` bewertet Zwischenproduktkauf, reine Kette und
+  Mischung über die summierte Einkaufsliste und übernimmt die günstigste in die
+  Kopfwerte. Marktdaten, Namen und Volumina umfassen die ganze Kette.
+- Regeländerung auf Auftrag: Wertschöpfung, Filter, Sortierung, Kacheln und
+  Dashboard-Kachel können gegenüber dem bisherigen Stand abweichen
+  ([PRODUCT.md](PRODUCT.md)).
+
+Prüfung:
+- `swift test` 659 + 84 Tests, davon vier neue; `EVEStaticDataKit` 13 Tests;
+  `xcodebuild … test` 659 Tests, `TEST SUCCEEDED`.
+
+Nicht geprüft: Sichtprüfung und Laufzeit in der App mit Live-Marktdaten, Abnahme.
+
+## 30.10.2026 – Planer: Empfehlung mit günstigster Kette
+
+Auftrag: Die Planer-Empfehlung soll die günstigste Kette oder den Direktkauf
+wählen, falls dieser günstiger ist.
+
+Ergebnis:
+- `makeOrBuyAnalysis` bewertet zusätzlich die Kette bis zu den Rohstoffen mit den
+  Planner-Regeln und übernimmt sie, wenn sie günstiger als der einstufige Bau ist.
+- `MakeOrBuyRecommendationApplication` setzt verdeckte Kettenstufen in einem
+  Schritt.
+- Unverändert: Standard **Bauen** ohne Übernahme; Planzahlen rechnet der Planner.
+
+Prüfung: `swift test` 662 + 84 Tests, davon drei neue; `EVEStaticDataKit` 13 Tests;
+`xcodebuild … test` 662 Tests, `TEST SUCCEEDED`.
+
+Nicht geprüft: Sichtprüfung und Rechenzeit mit Live-Daten, Abnahme.

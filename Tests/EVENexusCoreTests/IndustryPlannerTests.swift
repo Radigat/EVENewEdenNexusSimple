@@ -3892,6 +3892,207 @@ struct IndustryPlannerTests {
     )
   }
 
+  private func chainPlan(
+    componentPrice: Double,
+    productPrice: Double,
+    intermediatePrice: Double,
+    rawPrice: Double,
+    preferences: [Int64: MaterialProcurementPreference] = [:]
+  ) async throws -> IndustryPlanSnapshot {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    func definition(
+      _ blueprint: Int64,
+      _ product: Int64,
+      _ material: Int64,
+      _ kind: BlueprintActivityDefinition.Kind = .manufacturing
+    ) -> BlueprintDefinition {
+      BlueprintDefinition(
+        blueprintTypeID: blueprint,
+        productTypeID: product,
+        maxProductionLimit: nil,
+        activity: BlueprintActivityDefinition(
+          kind: kind,
+          durationSeconds: 60,
+          materials: [BlueprintMaterial(typeID: material, quantity: 10)],
+          products: [BlueprintProduct(typeID: product, quantity: 1, probability: nil)]
+        ),
+        source: source
+      )
+    }
+    let manufacturingService = IndustryServiceModuleConfiguration(
+      definition: IndustryServiceModuleDefinition(
+        typeID: 9_001,
+        name: "Fixture Manufacturing Service",
+        activities: [.manufacturing],
+        source: source
+      )
+    )
+    let manufacturingSystem = ActivitySystemConfiguration(
+      activity: .manufacturing,
+      solarSystemID: EVEConstants.jitaSystemID,
+      solarSystemName: "Jita",
+      regionID: EVEConstants.theForgeRegionID,
+      securityStatus: 0.9,
+      securityClass: "highsec"
+    )
+    let basis = ProductionBasis(
+      manufacturingSystems: [manufacturingSystem],
+      logistics: LogisticsConfiguration(
+        isEnabled: true,
+        productionLocationName: "Production",
+        homeTradeHub: .jita,
+        iskPerCubicMeter: 1
+      ),
+      structures: [
+        ConfiguredIndustryStructure(
+          name: "Production",
+          kind: .custom,
+          manufacturingSystemID: manufacturingSystem.id,
+          securityBand: .highSecurity,
+          facilityTaxRate: 0,
+          serviceModules: [manufacturingService],
+          source: .manual
+        )
+      ]
+    )
+    let context = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: FixtureCatalog(
+        names: [191: "Chain Product", 192: "Component", 193: "Intermediate", 194: "Raw"],
+        definitions: [
+          191: definition(291, 191, 192),
+          192: definition(292, 192, 193),
+          193: definition(293, 193, 194),
+        ],
+        packagedVolumes: [192: 0, 193: 0, 194: 0]
+      ),
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          191: [makeOrder(typeID: 191, side: .sell, price: productPrice)],
+          192: [makeOrder(typeID: 192, side: .sell, price: componentPrice)],
+          193: [makeOrder(typeID: 193, side: .sell, price: intermediatePrice)],
+          194: [makeOrder(typeID: 194, side: .sell, price: rawPrice)],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        192: AdjustedPrice(typeID: 192, adjustedPrice: 0, averagePrice: 0),
+        193: AdjustedPrice(typeID: 193, adjustedPrice: 0, averagePrice: 0),
+        194: AdjustedPrice(typeID: 194, adjustedPrice: 0, averagePrice: 0),
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0
+        )
+      ],
+      procurementPreferences: preferences,
+      defaultPurchaseLocation: .jita,
+      sdeBuild: 1
+    )
+    return try await IndustryPlanner().plan(
+      input: "Chain Product 1 0 0",
+      context: context
+    )
+  }
+
+  @Test
+  func makeOrBuyRecommendsCheapestChainAgainstDirectPurchase() async throws {
+    // 10 Components: buying costs 6_000, one level 100 Intermediates 10_000,
+    // the chain 1_000 Raw only 1_000. Only the chain beats the purchase.
+    let plan = try await chainPlan(
+      componentPrice: 600,
+      productPrice: 100_000,
+      intermediatePrice: 100,
+      rawPrice: 1
+    )
+    let analysis = try #require(
+      plan.materials.first { $0.typeID == 192 }?.makeOrBuyAnalysis
+    )
+    #expect(analysis.buildMaterialCost != nil)
+    #expect((analysis.buildTotalCost ?? .infinity) < (analysis.purchaseTotalCost ?? 0))
+    #expect(analysis.chainBuiltTypeIDs?.contains(193) == true)
+    #expect(analysis.recommendation == .produce)
+
+    let application = MakeOrBuyRecommendationApplication(
+      materials: plan.materials,
+      existingPreferences: [:],
+      mainHub: .jita
+    )
+    #expect(application.preferences[192]?.supplyMode == .produce)
+    #expect(application.preferences[193]?.supplyMode == .produce)
+  }
+
+  @Test
+  func applyingRecommendationSetsHiddenChainMaterialsInOneStep() async throws {
+    // Component is bought, so Intermediate and Raw have no own recommendation.
+    let bought = [
+      Int64(192): MaterialProcurementPreference(
+        supplyMode: .buy,
+        purchaseLocation: .jita
+      )
+    ]
+    let builtChain = try await chainPlan(
+      componentPrice: 600,
+      productPrice: 100_000,
+      intermediatePrice: 100,
+      rawPrice: 1,
+      preferences: bought
+    )
+    #expect(!builtChain.materials.contains { $0.typeID == 193 })
+    let builtApplication = MakeOrBuyRecommendationApplication(
+      materials: builtChain.materials,
+      existingPreferences: bought,
+      mainHub: .jita
+    )
+    #expect(builtApplication.preferences[192]?.supplyMode == .produce)
+    #expect(builtApplication.preferences[193]?.supplyMode == .produce)
+
+    // Intermediate is cheap: build Component, but buy Intermediate, although an
+    // unset material would default to building.
+    let boughtInput = try await chainPlan(
+      componentPrice: 600,
+      productPrice: 100_000,
+      intermediatePrice: 1,
+      rawPrice: 50,
+      preferences: bought
+    )
+    let boughtApplication = MakeOrBuyRecommendationApplication(
+      materials: boughtInput.materials,
+      existingPreferences: bought,
+      mainHub: .jita
+    )
+    #expect(boughtApplication.preferences[192]?.supplyMode == .produce)
+    #expect(boughtApplication.preferences[193]?.supplyMode == .buy)
+  }
+
+  @Test
+  func makeOrBuyKeepsDirectPurchaseWhenCheaperThanChain() async throws {
+    let plan = try await chainPlan(
+      componentPrice: 1,
+      productPrice: 100_000,
+      intermediatePrice: 100,
+      rawPrice: 1
+    )
+    let analysis = try #require(
+      plan.materials.first { $0.typeID == 192 }?.makeOrBuyAnalysis
+    )
+    #expect(analysis.recommendation == .buy)
+    let application = MakeOrBuyRecommendationApplication(
+      materials: plan.materials,
+      existingPreferences: [:],
+      mainHub: .jita
+    )
+    #expect(application.preferences[192]?.supplyMode == .buy)
+  }
+
   private func makeOrder(
     typeID: Int64,
     side: MarketOrderSide,

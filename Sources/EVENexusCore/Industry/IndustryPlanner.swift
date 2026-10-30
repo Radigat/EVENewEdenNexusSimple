@@ -1257,6 +1257,7 @@ public struct IndustryPlanner: Sendable {
     reusableMakeOrBuyAnalyses: [Int64: MaterialMakeOrBuyAnalysis]
   ) async throws -> IndustryPlanSnapshot {
     let mainMarketBook = PreparedMarketOrderBook(snapshot: context.market)
+    var chainMemo: [MakeOrBuyChainKey: MakeOrBuyChainSupply?] = [:]
     let systemIndexLookup = IndustrySystemIndexLookup(
       indices: context.systemIndices
     )
@@ -1676,7 +1677,8 @@ public struct IndustryPlanner: Sendable {
             requiredQuantity: requiredQuantity,
             context: context,
             marketBook: mainMarketBook,
-            systemIndexLookup: systemIndexLookup
+            systemIndexLookup: systemIndexLookup,
+            chainMemo: &chainMemo
           )
         }
       } else {
@@ -3420,7 +3422,8 @@ public struct IndustryPlanner: Sendable {
     requiredQuantity: Int64,
     context: IndustryPlanningContext,
     marketBook: PreparedMarketOrderBook,
-    systemIndexLookup: IndustrySystemIndexLookup
+    systemIndexLookup: IndustrySystemIndexLookup,
+    chainMemo: inout [MakeOrBuyChainKey: MakeOrBuyChainSupply?]
   ) async throws -> MaterialMakeOrBuyAnalysis? {
     guard requiredQuantity > 0,
       definition.activity.kind != .invention,
@@ -3547,15 +3550,93 @@ public struct IndustryPlanner: Sendable {
         purchaseQuote.total,
         purchaseLogistics.cost,
       ]) : nil
-    let acceptedBuildMaterialCost =
+    var acceptedBuildMaterialCost =
       buildMaterialCostComplete ? buildMaterialCost : nil
-    let buildTotal =
+    var buildInstallationCost = installation.cost
+    var buildLogisticsCost = buildLogistics.cost
+    var buildTotal =
       marketMatchesMainHub
       ? Self.acceptedCostTotal([
         acceptedBuildMaterialCost,
         installation.cost,
         buildLogistics.cost,
       ]) : nil
+    // The cheapest chain below this material (owner decision 30.10.2026). It
+    // replaces the one-level build only when its summed shopping list, priced
+    // as a whole, is actually cheaper or the one-level build is incomplete.
+    var chainBuiltTypeIDs: [Int64] = []
+    var chainBoughtTypeIDs = inputQuantities.map(\.typeID)
+    if marketMatchesMainHub, let ownInstallation = installation.cost {
+      var chain = MakeOrBuyChainSupply.empty
+      var chainComplete = true
+      for input in inputQuantities {
+        guard
+          let supply = try await cheapestChainSupply(
+            typeID: input.typeID,
+            quantity: input.quantity,
+            depth: 1,
+            path: [definition.productTypeID],
+            facilityName: facility.name,
+            facilityLocationID: facility.locationID,
+            context: context,
+            marketBook: marketBook,
+            systemIndexLookup: systemIndexLookup,
+            memo: &chainMemo
+          )
+        else {
+          chainComplete = false
+          break
+        }
+        chain.add(supply)
+      }
+      if chainComplete, !chain.builtTypeIDs.isEmpty {
+        let cargo = chain.purchases.map { typeID, quantity in
+          (
+            typeID: typeID,
+            quantity: quantity,
+            collateral: marketBook.quote(
+              typeID: typeID,
+              quantity: quantity,
+              scenario: .materialBuy
+            ).total
+          )
+        }
+        let quotes = chain.purchases.map { typeID, quantity in
+          marketBook.quote(
+            typeID: typeID,
+            quantity: quantity,
+            scenario: .materialBuy
+          )
+        }
+        let chainMaterial =
+          quotes.allSatisfy(\.isComplete)
+          ? Self.acceptedCostTotal(quotes.map(\.total)) : nil
+        let chainLogistics = try await makeOrBuyLogisticsCost(
+          configuration: context.productionBasis?.logistics,
+          origin: mainHub,
+          destinationName: facility.name,
+          destinationLocationID: facility.locationID,
+          cargo: cargo,
+          catalog: context.catalog
+        )
+        let chainInstallation = ownInstallation + chain.installation
+        if let chainTotal = Self.acceptedCostTotal([
+          chainMaterial, chainInstallation, chainLogistics.cost,
+        ]), buildTotal.map({ chainTotal < $0 }) ?? true {
+          acceptedBuildMaterialCost = chainMaterial
+          buildInstallationCost = chainInstallation
+          buildLogisticsCost = chainLogistics.cost
+          buildTotal = chainTotal
+          chainBuiltTypeIDs = chain.builtTypeIDs.sorted()
+          chainBoughtTypeIDs = chain.purchases.keys.sorted()
+          // The market gaps of bought intermediates no longer apply.
+          let boughtGaps = Set(
+            inputQuotes.flatMap { $0.quote.warnings.map(\.id) }
+          )
+          warnings.removeAll { boughtGaps.contains($0.id) }
+        }
+      }
+    }
     let recommendation: MakeOrBuyRecommendation
     let savings: Double?
     if !purchaseIsTransportable {
@@ -3583,13 +3664,177 @@ public struct IndustryPlanner: Sendable {
       purchaseLogisticsCost: purchaseIsTransportable ? purchaseLogistics.cost : nil,
       purchaseTotalCost: purchaseTotal,
       buildMaterialCost: acceptedBuildMaterialCost,
-      buildInstallationCost: installation.cost,
-      buildLogisticsCost: buildLogistics.cost,
+      buildInstallationCost: buildInstallationCost,
+      buildLogisticsCost: buildLogisticsCost,
       buildTotalCost: buildTotal,
       recommendation: recommendation,
       savings: savings,
-      warnings: Self.deduplicatedWarnings(warnings)
+      warnings: Self.deduplicatedWarnings(warnings),
+      chainBuiltTypeIDs: chainBuiltTypeIDs,
+      chainBoughtTypeIDs: chainBoughtTypeIDs
     )
+  }
+
+  /// The cheaper complete supply of one chain node: buying it, including its
+  /// unrounded transport share, or building it from its own cheapest inputs.
+  /// Uses the Planner's quantity, facility, installation and blacklist rules.
+  /// Quantities round per node, without job splits; bought materials are costed
+  /// to the analysed material's facility.
+  private func cheapestChainSupply(
+    typeID: Int64,
+    quantity: Int64,
+    depth: Int,
+    path: Set<Int64>,
+    facilityName: String,
+    facilityLocationID: Int64?,
+    context: IndustryPlanningContext,
+    marketBook: PreparedMarketOrderBook,
+    systemIndexLookup: IndustrySystemIndexLookup,
+    memo: inout [MakeOrBuyChainKey: MakeOrBuyChainSupply?]
+  ) async throws -> MakeOrBuyChainSupply? {
+    let key = MakeOrBuyChainKey(
+      typeID: typeID,
+      quantity: quantity,
+      facilityLocationID: facilityLocationID
+    )
+    if let cached = memo[key] { return cached }
+    try Task.checkCancellation()
+
+    var bought: MakeOrBuyChainSupply?
+    let quote = marketBook.quote(
+      typeID: typeID,
+      quantity: quantity,
+      scenario: .materialBuy
+    )
+    if quote.isComplete, let total = quote.total, total.isFinite, total >= 0 {
+      bought = MakeOrBuyChainSupply(
+        comparisonCost: total
+          + (try await unroundedChainLogistics(
+            typeID: typeID,
+            quantity: quantity,
+            collateral: total,
+            facilityName: facilityName,
+            facilityLocationID: facilityLocationID,
+            context: context
+          )),
+        installation: 0,
+        purchases: [typeID: quantity],
+        builtTypeIDs: []
+      )
+    }
+
+    var built: MakeOrBuyChainSupply?
+    if depth <= ManufacturingOpportunityAnalyzer.ComponentCostResolver.maximumDepth,
+      !path.contains(typeID),
+      let definition = try await context.catalog.productionDefinition(
+        productTypeID: typeID
+      ),
+      definition.activity.kind != .invention,
+      let output = definition.activity.products.first(where: {
+        $0.typeID == typeID
+      })?.quantity,
+      output > 0
+    {
+      let classification = try await context.catalog.industryClassification(
+        productTypeID: typeID
+      )
+      let name = try await context.catalog.typeName(id: typeID)
+      let blocked =
+        context.productionBasis?.blacklist.blocks(
+          typeName: name ?? "Type \(typeID)",
+          classification: classification
+        ) ?? false
+      if !blocked {
+        let runs = Self.runsRequired(
+          wantedQuantity: quantity,
+          outputPerRun: output
+        )
+        let nodeFacility = try await makeOrBuyFacility(
+          definition: definition,
+          context: context
+        )
+        let nodeInstallation = makeOrBuyInstallationCost(
+          definition: definition,
+          runs: runs,
+          facility: nodeFacility,
+          context: context,
+          systemIndexLookup: systemIndexLookup
+        )
+        if let installationCost = nodeInstallation.cost {
+          var supply = MakeOrBuyChainSupply.empty
+          supply.comparisonCost = installationCost
+          supply.installation = installationCost
+          supply.builtTypeIDs = [typeID]
+          var complete = true
+          var childPath = path
+          childPath.insert(typeID)
+          for input in try await makeOrBuyInputQuantities(
+            definition: definition,
+            runs: runs,
+            context: context
+          ) {
+            guard
+              let child = try await cheapestChainSupply(
+                typeID: input.typeID,
+                quantity: input.quantity,
+                depth: depth + 1,
+                path: childPath,
+                facilityName: facilityName,
+                facilityLocationID: facilityLocationID,
+                context: context,
+                marketBook: marketBook,
+                systemIndexLookup: systemIndexLookup,
+                memo: &memo
+              )
+            else {
+              complete = false
+              break
+            }
+            supply.add(child)
+          }
+          if complete { built = supply }
+        }
+      }
+    }
+
+    let result: MakeOrBuyChainSupply?
+    switch (bought, built) {
+    case (let bought?, let built?):
+      result = built.comparisonCost < bought.comparisonCost ? built : bought
+    case (let bought?, nil): result = bought
+    case (nil, let built?): result = built
+    case (nil, nil): result = nil
+    }
+    memo[key] = .some(result)
+    return result
+  }
+
+  private func unroundedChainLogistics(
+    typeID: Int64,
+    quantity: Int64,
+    collateral: Double,
+    facilityName: String,
+    facilityLocationID: Int64?,
+    context: IndustryPlanningContext
+  ) async throws -> Double {
+    let origin = context.defaultPurchaseLocation
+    if let originID = origin.locationID, originID == facilityLocationID {
+      return 0
+    }
+    guard let configuration = context.productionBasis?.logistics,
+      configuration.isEnabled,
+      configuration.includeInboundMaterials,
+      case .contract(let pricing) = configuration.legPricing(for: .mainToHome)
+    else { return 0 }
+    let charge = try await logisticsLegs(
+      kind: .inboundMaterials,
+      origin: origin.name,
+      destination: facilityName,
+      cargo: [(typeID, quantity, collateral)],
+      pricing: pricing,
+      catalog: context.catalog
+    ).legs.reduce(0) { $0 + $1.unroundedCharge }
+    return charge.isFinite && charge >= 0 ? charge : 0
   }
 
   private func makeOrBuyInputQuantities(
@@ -5019,5 +5264,35 @@ extension Sequence {
       values.append(try await transform(element))
     }
     return values
+  }
+}
+
+private struct MakeOrBuyChainKey: Hashable {
+  let typeID: Int64
+  let quantity: Int64
+  let facilityLocationID: Int64?
+}
+
+private struct MakeOrBuyChainSupply {
+  var comparisonCost: Double
+  var installation: Double
+  var purchases: [Int64: Int64]
+  var builtTypeIDs: Set<Int64>
+
+  static let empty = MakeOrBuyChainSupply(
+    comparisonCost: 0,
+    installation: 0,
+    purchases: [:],
+    builtTypeIDs: []
+  )
+
+  mutating func add(_ other: MakeOrBuyChainSupply) {
+    comparisonCost += other.comparisonCost
+    installation += other.installation
+    builtTypeIDs.formUnion(other.builtTypeIDs)
+    purchases.merge(other.purchases) { lhs, rhs in
+      let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+      return overflow ? Int64.max : sum
+    }
   }
 }

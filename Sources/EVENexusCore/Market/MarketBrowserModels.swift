@@ -3385,13 +3385,31 @@ extension ManufacturingOpportunityAnalyzer {
   final class ComponentCostResolver {
     static let maximumDepth = 12
 
+    enum Strategy {
+      /// The cheaper complete supply per node.
+      case cheapest
+      /// Every node with a complete self-build is built, even when dearer.
+      case alwaysBuild
+    }
+
+    /// One resolved direct input with its traced supply tree.
+    struct ResolvedInput {
+      let node: ReactionSupplyNode
+      let installationCost: Double
+      let builtNodeCount: Int
+      let purchases: [Int64: Int64]
+    }
+
     private struct Supply {
       let total: Double
+      /// `total` plus the purchase surcharge; decides between buying and building.
+      let comparisonTotal: Double
       let installation: Double
       let purchaseVolume: Double?
       let builtNodeCount: Int
       /// Bought materials by type ID.
       let purchases: [Int64: Int64]
+      let node: ReactionSupplyNode
     }
 
     private struct Key: Hashable {
@@ -3410,6 +3428,8 @@ extension ManufacturingOpportunityAnalyzer {
     private let reactionFacility: ReactionFacilityCostContext?
     private let intermediateMaterialEfficiency: Int
     private let blacklist: ProductionBlacklistConfiguration
+    private let strategy: Strategy
+    private let purchaseSurcharge: ((Int64, Int64, Double) -> Double)?
     private var sortedSellOrders: [Int64: [MarketOrder]] = [:]
     private var purchases: [Key: Supply?] = [:]
     private var builds: [Key: Supply?] = [:]
@@ -3425,7 +3445,9 @@ extension ManufacturingOpportunityAnalyzer {
       facilities: [ManufacturingCategory: ManufacturingOpportunityFacilityContext],
       reactionFacility: ReactionFacilityCostContext?,
       intermediateMaterialEfficiency: Int,
-      blacklist: ProductionBlacklistConfiguration
+      blacklist: ProductionBlacklistConfiguration,
+      strategy: Strategy = .cheapest,
+      purchaseSurcharge: ((Int64, Int64, Double) -> Double)? = nil
     ) {
       // One recipe per product, the lowest Blueprint ID first, so repeated
       // scans resolve the same recipe.
@@ -3450,6 +3472,30 @@ extension ManufacturingOpportunityAnalyzer {
       self.reactionFacility = reactionFacility
       self.intermediateMaterialEfficiency = intermediateMaterialEfficiency
       self.blacklist = blacklist
+      self.strategy = strategy
+      self.purchaseSurcharge = purchaseSurcharge
+    }
+
+    /// Supply of one direct input of `consumerTypeID` under this strategy.
+    func resolve(
+      typeID: Int64,
+      quantity: Int64,
+      consumerTypeID: Int64
+    ) -> ResolvedInput? {
+      guard quantity > 0,
+        let supply = cheapest(
+          typeID: typeID,
+          quantity: quantity,
+          depth: 1,
+          path: [consumerTypeID]
+        )
+      else { return nil }
+      return ResolvedInput(
+        node: supply.node,
+        installationCost: supply.installation,
+        builtNodeCount: supply.builtNodeCount,
+        purchases: supply.purchases
+      )
     }
 
     /// Self-build estimate of one direct input of `consumerTypeID`.
@@ -3506,7 +3552,9 @@ extension ManufacturingOpportunityAnalyzer {
       )
       switch (bought, selfBuilt) {
       case (let bought?, let selfBuilt?):
-        return selfBuilt.total < bought.total ? selfBuilt : bought
+        if strategy == .alwaysBuild { return selfBuilt }
+        return selfBuilt.comparisonTotal < bought.comparisonTotal
+          ? selfBuilt : bought
       case (let bought?, nil): return bought
       case (nil, let selfBuilt?): return selfBuilt
       case (nil, nil): return nil
@@ -3538,14 +3586,25 @@ extension ManufacturingOpportunityAnalyzer {
       )
       var supply: Supply?
       if quote.isComplete, let total = quote.total, total.isFinite, total >= 0 {
+        let surcharge = purchaseSurcharge?(typeID, quantity, total) ?? 0
         supply = Supply(
           total: total,
+          comparisonTotal: total + surcharge,
           installation: 0,
           purchaseVolume: packagedVolumes[typeID].flatMap {
             $0 >= 0 ? safeProduct($0, Double(quantity)) : nil
           },
           builtNodeCount: 0,
-          purchases: [typeID: quantity]
+          purchases: [typeID: quantity],
+          node: ReactionSupplyNode(
+            typeID: typeID,
+            name: typeNames[typeID] ?? "Type \(typeID)",
+            quantity: quantity,
+            isBuilt: false,
+            cost: total,
+            installationCost: 0,
+            children: []
+          )
         )
       }
       purchases[key] = .some(supply)
@@ -3619,6 +3678,8 @@ extension ManufacturingOpportunityAnalyzer {
         )
       }
       return combined(
+        product: definition.productTypeID,
+        quantity: quantity,
         inputs: inputs,
         installation: installation,
         depth: depth,
@@ -3649,6 +3710,8 @@ extension ManufacturingOpportunityAnalyzer {
         reaction.inputs.count == definition.activity.materials.count
       else { return nil }
       return combined(
+        product: definition.productTypeID,
+        quantity: quantity,
         inputs: reaction.inputs.map { ($0.typeID, $0.quantity) },
         installation: installation,
         depth: depth,
@@ -3657,6 +3720,8 @@ extension ManufacturingOpportunityAnalyzer {
     }
 
     private func combined(
+      product: Int64,
+      quantity: Int64,
       inputs: [(typeID: Int64, quantity: Int64)],
       installation: Double,
       depth: Int,
@@ -3664,6 +3729,8 @@ extension ManufacturingOpportunityAnalyzer {
     ) -> Supply? {
       guard installation.isFinite, installation >= 0 else { return nil }
       var total = installation
+      var comparisonTotal = installation
+      var children: [ReactionSupplyNode] = []
       var installationTotal = installation
       var volume: Double? = 0
       var builtNodes = 1
@@ -3678,6 +3745,8 @@ extension ManufacturingOpportunityAnalyzer {
           )
         else { return nil }
         total += supply.total
+        comparisonTotal += supply.comparisonTotal
+        children.append(supply.node)
         installationTotal += supply.installation
         builtNodes += supply.builtNodeCount
         bought.merge(supply.purchases) { lhs, rhs in
@@ -3691,10 +3760,20 @@ extension ManufacturingOpportunityAnalyzer {
       }
       return Supply(
         total: total,
+        comparisonTotal: comparisonTotal,
         installation: installationTotal,
         purchaseVolume: volume.flatMap { $0.isFinite ? $0 : nil },
         builtNodeCount: builtNodes,
-        purchases: bought
+        purchases: bought,
+        node: ReactionSupplyNode(
+          typeID: product,
+          name: typeNames[product] ?? "Type \(product)",
+          quantity: quantity,
+          isBuilt: true,
+          cost: total,
+          installationCost: installationTotal,
+          children: children
+        )
       )
     }
 

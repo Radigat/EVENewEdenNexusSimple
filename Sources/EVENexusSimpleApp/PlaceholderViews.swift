@@ -7294,6 +7294,7 @@ struct ReactionsView: View {
   @State private var selectedGroup = ReactionGroupFilter.all
   @State private var sortOrder = ReactionAnalysisSortOrder.valueCreationDescending
   @State private var expandedReactionIDs = Set<Int64>()
+  @State private var supplyVariantSelection: [Int64: ReactionSupplyVariantKind] = [:]
   @State private var analysisTask: Task<Void, Never>?
 
   init(initialNegativeFilter: Binding<Bool> = .constant(false)) {
@@ -7477,7 +7478,7 @@ struct ReactionsView: View {
         )
       }
       Text(
-        "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the evaluated reaction cost, including transport of its inputs. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics."
+        "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics."
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -7672,8 +7673,12 @@ struct ReactionsView: View {
         }
         Divider()
         HStack(alignment: .top, spacing: DesignTokens.spacingLG) {
-          materialList("Inputs", row.inputs)
+          materialList("Direct inputs at market price", row.inputs)
           materialList("Outputs", row.outputs)
+        }
+        if let comparison = row.supplyChain {
+          Divider()
+          supplyChainSection(row, comparison)
         }
         HStack {
           Label("\(row.runs.formatted()) runs", systemImage: "repeat")
@@ -7729,6 +7734,173 @@ struct ReactionsView: View {
       )
       .padding(.top, DesignTokens.spacingMD - 1)
     }
+  }
+
+  private func supplyChainSection(
+    _ row: ReactionAnalysisRow,
+    _ comparison: ReactionSupplyChainComparison
+  ) -> some View {
+    let selection = supplyVariantSelection[row.id] ?? .cheapest
+    return VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+      Text("Cost analysis down to raw materials").font(.headline)
+      LazyVGrid(
+        columns: [GridItem(.adaptive(minimum: 200, maximum: 320))],
+        alignment: .leading,
+        spacing: DesignTokens.spacingSM
+      ) {
+        supplyCard(
+          "Direct purchase",
+          total: comparison.directPurchaseTotal,
+          savings: nil,
+          isBest: isDirectPurchaseBest(comparison)
+        )
+        supplyCard(comparison, comparison.intermediatesBought, isBest: false)
+        supplyCard(comparison, comparison.fullChain, isBest: false)
+        if let cheapest = comparison.cheapest {
+          supplyCard(
+            comparison,
+            cheapest,
+            isBest: !isDirectPurchaseBest(comparison)
+          )
+        } else {
+          supplyCard(
+            supplyVariantTitle(.cheapest),
+            total: nil,
+            savings: nil,
+            isBest: false
+          )
+        }
+      }
+      Picker(
+        "Show variant",
+        selection: Binding(
+          get: { supplyVariantSelection[row.id] ?? .cheapest },
+          set: { supplyVariantSelection[row.id] = $0 }
+        )
+      ) {
+        ForEach(ReactionSupplyVariantKind.allCases, id: \.self) { kind in
+          Text(supplyVariantTitle(kind)).tag(kind)
+        }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      if let variant = comparison.variant(selection) {
+        LazyVGrid(
+          columns: [GridItem(.adaptive(minimum: 180, maximum: 280))],
+          alignment: .leading,
+          spacing: DesignTokens.spacingSM
+        ) {
+          reactionMetric("Bought materials", variant.materialCost)
+          reactionMetric("Material transport", variant.logisticsCost)
+          reactionMetric("All installation costs", variant.installationCost)
+          reactionMetric("Total costs", variant.totalCost)
+        }
+        HStack(alignment: .top, spacing: DesignTokens.spacingLG) {
+          supplyTree(variant)
+          materialList("Shopping list", variant.purchases)
+        }
+      } else {
+        Text("No complete supply can be calculated for this reaction.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      Text(
+        "Built quantities are rounded up to whole runs per node, without job splits or credit for surplus output. The shopping list is priced in total against the order book, so node costs can add up to less than the bought materials. Duration and job limits above apply to the final reaction only."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
+
+  private func isDirectPurchaseBest(
+    _ comparison: ReactionSupplyChainComparison
+  ) -> Bool {
+    guard let direct = comparison.directPurchaseTotal else { return false }
+    guard let total = comparison.cheapest?.totalCost else { return true }
+    return direct <= total
+  }
+
+  private func supplyVariantTitle(
+    _ kind: ReactionSupplyVariantKind
+  ) -> LocalizedStringKey {
+    switch kind {
+    case .intermediatesBought: "Buy intermediates"
+    case .fullChain: "From raw materials"
+    case .cheapest: "Cheapest variant"
+    }
+  }
+
+  private func supplyCard(
+    _ comparison: ReactionSupplyChainComparison,
+    _ variant: ReactionSupplyVariant,
+    isBest: Bool
+  ) -> some View {
+    supplyCard(
+      supplyVariantTitle(variant.kind),
+      total: variant.totalCost,
+      savings: comparison.savingsAgainstDirectPurchase(variant),
+      isBest: isBest
+    )
+  }
+
+  private func supplyCard(
+    _ title: LocalizedStringKey,
+    total: Double?,
+    savings: Double?,
+    isBest: Bool
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      HStack(spacing: 4) {
+        Text(title)
+        if isBest {
+          Image(systemName: "checkmark.seal.fill")
+            .foregroundStyle(DesignTokens.positive)
+            .accessibilityLabel(Text("Cheapest option"))
+        }
+      }
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      Text(formatISK(total))
+        .font(.body.bold().monospacedDigit())
+        .foregroundStyle(DesignTokens.highlight)
+      if let savings {
+        HStack(spacing: 3) {
+          Text(formatSignedISK(savings))
+          Text("vs. direct purchase")
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(
+          savings >= 0 ? DesignTokens.positive : DesignTokens.negative
+        )
+      }
+    }
+  }
+
+  private func supplyTree(_ variant: ReactionSupplyVariant) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text("Supply chain").font(.headline)
+      ForEach(variant.treeLines) { line in
+        HStack {
+          VStack(alignment: .leading, spacing: 1) {
+            EVEItemText(value: line.node.name, typeID: line.node.typeID)
+            HStack(spacing: 3) {
+              Text(line.node.quantity.formatted())
+              Text("units")
+              Text("•")
+              Text(line.node.isBuilt ? "Make" : "Buy")
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+          .padding(.leading, CGFloat(line.depth) * DesignTokens.spacingMD)
+          Spacer()
+          Text(formatISK(line.node.cost))
+            .font(.body.monospacedDigit())
+            .foregroundStyle(DesignTokens.highlight)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private func reactionMetric(_ title: String, _ value: Double?) -> some View {

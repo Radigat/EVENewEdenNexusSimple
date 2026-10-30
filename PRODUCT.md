@@ -1079,6 +1079,39 @@ Informationshinweis.
 
 ### Blueprints, Industrie und Reaktionen
 
+**Reaktionen: Kostenanalyse bis zu den Ursprungsmaterialien**
+(Eigentümerentscheidung 30.10.2026):
+
+- **Varianten:** Das aufgeklappte Ergebnis stellt vier Werte gegenüber:
+  Direktkauf, Zwischenprodukte kaufen, aus Ursprungsmaterialien und günstigste
+  Variante. Die insgesamt günstigste Option trägt ein Siegel; jede Variante
+  zeigt ihren Abstand zum Direktkauf. Baum und Einkaufsliste lassen sich je
+  Variante umschalten, Standard ist die günstigste.
+- **Auflösung:** Reaktions- und Fertigungsrezepte, also auch Fuel Blocks, werden
+  mit den Regeln von **Zwischenprodukte selbst bauen** aufgelöst: Standard-ME
+  für Zwischenprodukte, Anlage je Kategorie, Sperrliste, höchstens 12 Ebenen,
+  keine Rezeptzyklen. Was sich nicht bauen lässt, bleibt Kaufware.
+- **Ursprungsmaterialien:** Jeder vollständig baubare Knoten wird gebaut, auch
+  wenn Kaufen günstiger wäre.
+- **Günstigste Variante:** Je Knoten entscheidet Kauf gegen Eigenbau einschließlich
+  ungerundetem Transportanteil. Danach werden die Mischung und beide reinen
+  Varianten über ihre summierte Einkaufsliste endgültig bewertet; der niedrigste
+  vollständige Gesamtwert gilt, bei Gleichstand der mit weniger Aufträgen.
+- **Kosten:** Einkauf gesamt gegen die Markttiefe, Transport der Einkaufsliste zur
+  Reaktionsanlage, Installation der letzten Reaktion und aller Zwischenaufträge.
+  Mengen werden je Knoten auf ganze Durchläufe aufgerundet, ohne Auftragsaufteilung
+  und ohne Anrechnung überschüssiger Ausgaben. Dauer und Auftragsgrenze gelten nur
+  für die letzte Reaktion.
+- **Kopfwerte:** Wertschöpfung, Marge, Herstellen oder kaufen, Eigenfertigungs-
+  ersparnis, Sofortverkaufsspanne, Bewertete Reaktionskosten, Kacheln, Filter,
+  Sortierung und die Dashboard-Kachel der negativen Reaktionen rechnen mit der
+  günstigsten Variante. **Direkte Eingänge zum Marktpreis** zeigt weiter die
+  Marktpreise der direkten Eingänge.
+- **Fehlende Daten:** Eine Variante ohne vollständige Preise, Mengen oder
+  Volumina bleibt „—“, nie 0. Fehlt der Kauf eines Zwischenprodukts, kann die Kette
+  trotzdem vollständig sein. Ohne geprüfte Reaktionsanlage entfällt die Analyse
+  und es bleibt die SDE-Materialbasis.
+
 BPO und BPC bleiben unterschiedliche Instanzen mit eigener Herkunft. Die Art
 folgt der ESI-Menge: `-1` Original, `-2` Kopie; eine positive Menge mit
 `runs = -1` ist ein Stapel unbenutzter Originale (Kopien stapeln nie) und gilt
@@ -1113,6 +1146,16 @@ Der Planner friert eine berechnete Planung als unveränderlichen Snapshot ein.
 Ein gekaufter oder aus dem Warehouse verwendeter Zwischenstoff entfernt seinen
 Produktionszweig und den zugehörigen Job. Make-or-Buy vergleicht vollständige
 Bedarfs- und Batchmengen einschließlich belegter Installation und Logistik.
+Die Bau-Seite rechnet mit dem günstigeren Weg aus direktem Einkauf der Eingänge
+und der günstigsten Kette bis zu den Rohstoffen (Eigentümerentscheidung
+30.10.2026); die Empfehlung lautet **Bauen** nur, wenn das nicht teurer ist als
+der Direktkauf. Die Kette folgt den Planner-Regeln für Mengen, Anlage,
+Installation und Sperrliste, rundet je Knoten ohne Auftragsaufteilung, geht
+höchstens 12 Ebenen tief und rechnet den Transport nur zur Anlage des bewerteten
+Materials. Sie ist eine Empfehlungsgrundlage. Die Planzahlen rechnet erst der
+Planner nach der Übernahme. **Empfehlungen übernehmen** setzt auch noch verdeckte
+Stufen der Kette in einem Schritt. Ohne Übernahme oder eigene Wahl bleibt jedes
+baubare Material auf Bauen.
 Passt ein Item verpackt nicht in das konfigurierte Transportlimit je Vertrag
 (zum Beispiel ein Freighter-Rumpf bei 350.000 m³), ist der Kauf am Main Hub nicht
 möglich: Kaufkosten und Kauflogistik bleiben nicht verfügbar, die Empfehlung lautet
