@@ -858,6 +858,47 @@ struct SQLiteStaticCatalogTests {
   }
 
   @Test
+  func tradeItemSearchFindsMarketItemsAcrossAllGroups() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-trade-item-search-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = try withGermanNames(
+      try marketGroupFixture(build: 6),
+      names: [1: "Marktschiff", 99: "Versteckt"]
+    )
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    _ = try await catalog.activate(snapshot)
+
+    let english = try await catalog.searchTradeItems(matching: "  MARKET sh ", limit: 10)
+    #expect(english.map(\.id) == [1])
+    #expect(english.first?.marketGroupID == 1_002)
+    // The German name finds the item; the displayed name stays English.
+    let german = try await catalog.searchTradeItems(matching: "marktschiff", limit: 10)
+    #expect(german.map(\.name) == ["Market Ship"])
+    // Unpublished items stay out.
+    #expect(try await catalog.searchTradeItems(matching: "Versteckt", limit: 10).isEmpty)
+    // Too short, and LIKE wildcards count literally.
+    #expect(try await catalog.searchTradeItems(matching: "M", limit: 10).isEmpty)
+    #expect(try await catalog.searchTradeItems(matching: "%%", limit: 10).isEmpty)
+
+    let fileName =
+      "sde-\(snapshot.buildNumber)-\(snapshot.contentSHA256.prefix(12))-catalog-v7.sqlite"
+    let databaseURL = root.appendingPathComponent("catalogs", isDirectory: true)
+      .appendingPathComponent(fileName)
+    // Before adapter 7 only the English name is searched.
+    try dropTable("item_type_localized_names", at: databaseURL)
+    let withoutGerman = SQLiteStaticCatalog(rootURL: root)
+    #expect(try await withoutGerman.searchTradeItems(matching: "marktschiff", limit: 10).isEmpty)
+    #expect(try await withoutGerman.searchTradeItems(matching: "Market", limit: 10).map(\.id) == [1])
+    // Without market groups the search returns nothing instead of failing.
+    try dropMarketGroupTable(at: databaseURL)
+    let legacy = SQLiteStaticCatalog(rootURL: root)
+    #expect(try await legacy.searchTradeItems(matching: "Market", limit: 10).isEmpty)
+  }
+
+  @Test
   func catalogWithoutMarketTreeReportsReimportInsteadOfFailing() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "eve-simple-legacy-market-groups-\(UUID().uuidString)",

@@ -150,6 +150,8 @@ public protocol MarketGroupCatalogQuerying: Sendable {
   func marketGroups() async throws -> MarketGroupCatalogSnapshot
   func tradeItems(inMarketGroupSubtree rootID: Int64) async throws
     -> TradeCatalogItemsSnapshot
+  func searchTradeItems(matching query: String, limit: Int) async throws
+    -> [TradeCatalogItem]
 }
 
 public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
@@ -1826,27 +1828,80 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       WHERE t.published = 1
       ORDER BY t.name COLLATE NOCASE, t.id
       """
-    ).compactMap { values -> TradeCatalogItem? in
-      guard values.count == 4,
-        let id = Int64(values[0] ?? ""),
-        let name = values[1], !name.isEmpty,
-        let marketGroupID = Int64(values[2] ?? "")
-      else { return nil }
-      let volume = values[3].flatMap(Double.init).flatMap {
-        $0.isFinite && $0 >= 0 ? $0 : nil
-      }
-      return TradeCatalogItem(
-        id: id,
-        name: name,
-        marketGroupID: marketGroupID,
-        packagedVolume: volume
-      )
-    }
+    ).compactMap(Self.tradeCatalogItem)
     return TradeCatalogItemsSnapshot(
       availability: .available,
       rootMarketGroupID: rootID,
       items: items,
       source: source
+    )
+  }
+
+  /// Published market items whose English or German name contains `query`,
+  /// independent of the market-group selection: exact matches first, then
+  /// prefix matches, then the shortest name. A query below two characters or
+  /// a catalog without market groups returns nothing.
+  public func searchTradeItems(
+    matching query: String,
+    limit: Int = 50
+  ) async throws -> [TradeCatalogItem] {
+    let accepted = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard accepted.count >= 2 else { return [] }
+    let database = try activeDatabase()
+    guard try Self.hasTable("market_groups", in: database) else { return [] }
+    let boundedLimit = min(max(1, limit), 200)
+    let escaped =
+      accepted
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "%", with: "\\%")
+      .replacingOccurrences(of: "_", with: "\\_")
+    let contains = sql("%\(escaped)%")
+    let prefix = sql("\(escaped)%")
+    let exact = sql(accepted)
+    // A catalog before adapter 7 has no German names and searches English only.
+    let hasGermanNames = try Self.hasTable("item_type_localized_names", in: database)
+    let germanJoin =
+      hasGermanNames
+      ? "LEFT JOIN item_type_localized_names l ON l.type_id = t.id AND l.language = 'de'" : ""
+    let germanContains = hasGermanNames ? "OR l.name LIKE \(contains) ESCAPE '\\'" : ""
+    let germanExact = hasGermanNames ? "OR l.name = \(exact) COLLATE NOCASE" : ""
+    let germanPrefix = hasGermanNames ? "OR l.name LIKE \(prefix) ESCAPE '\\'" : ""
+    return try database.rows(
+      """
+      SELECT t.id, t.name, t.market_group_id, t.packaged_volume
+      FROM item_types t
+      JOIN market_groups g ON g.id = t.market_group_id
+      \(germanJoin)
+      WHERE t.published = 1
+        AND (t.name LIKE \(contains) ESCAPE '\\' \(germanContains))
+      ORDER BY
+        CASE
+          WHEN t.name = \(exact) COLLATE NOCASE \(germanExact) THEN 0
+          WHEN t.name LIKE \(prefix) ESCAPE '\\' \(germanPrefix) THEN 1
+          ELSE 2
+        END,
+        length(t.name),
+        t.name COLLATE NOCASE,
+        t.id
+      LIMIT \(boundedLimit)
+      """
+    ).compactMap(Self.tradeCatalogItem)
+  }
+
+  private static func tradeCatalogItem(_ values: [String?]) -> TradeCatalogItem? {
+    guard values.count == 4,
+      let id = Int64(values[0] ?? ""),
+      let name = values[1], !name.isEmpty,
+      let marketGroupID = Int64(values[2] ?? "")
+    else { return nil }
+    let volume = values[3].flatMap(Double.init).flatMap {
+      $0.isFinite && $0 >= 0 ? $0 : nil
+    }
+    return TradeCatalogItem(
+      id: id,
+      name: name,
+      marketGroupID: marketGroupID,
+      packagedVolume: volume
     )
   }
 

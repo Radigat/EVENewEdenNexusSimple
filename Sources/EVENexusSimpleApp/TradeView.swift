@@ -133,6 +133,13 @@ struct TradeView: View {
   @State private var isLoadingTiles = false
   @State private var loadError: String?
   @State private var searchText = ""
+  @State private var itemSearchText = ""
+  /// Up to `itemSearchLimit + 1` matches; the extra one shows that more exist.
+  @State private var itemSearchMatches: [TradeCatalogItem] = []
+  @State private var isSearchingItems = false
+  @State private var itemSearchFailed = false
+  @State private var itemSearchSourceSide = TradeQuoteSide.minSell
+  @State private var itemSearchTargetSide = TradeQuoteSide.minSell
   @State private var sourceSides: [Int64: TradeQuoteSide] = [:]
   @State private var targetSides: [Int64: TradeQuoteSide] = [:]
   @State private var sort = AppTableSortDescriptor(
@@ -202,6 +209,7 @@ struct TradeView: View {
     }
     .task { await loadMarketGroups() }
     .task(id: selectedMarketGroupID) { await loadTiles() }
+    .task(id: itemSearchQuery) { await searchItems() }
     .task(id: transportKey) {
       await runtime.refreshTradeTransportBasis(for: mode.route)
     }
@@ -629,16 +637,33 @@ struct TradeView: View {
   @ViewBuilder
   private var marketGroupNavigation: some View {
     if let marketGroups, marketGroups.availability == .available {
-      Panel(title: "Market group") {
+      Panel(title: "Market group and item") {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           breadcrumb(groups: marketGroups.groups)
-          TextField("Search market group", text: $searchText)
-            .textFieldStyle(.roundedBorder)
-            .frame(maxWidth: 360)
-            .accessibilityIdentifier("trade.market-group-search")
+          HStack(spacing: DesignTokens.spacingSM) {
+            TextField("Search market group", text: $searchText)
+              .textFieldStyle(.roundedBorder)
+              .frame(maxWidth: 360)
+              .accessibilityIdentifier("trade.market-group-search")
+            TextField("Search item", text: $itemSearchText)
+              .textFieldStyle(.roundedBorder)
+              .frame(maxWidth: 360)
+              .accessibilityIdentifier("trade.item-search")
+            if !itemSearchText.isEmpty {
+              Button {
+                itemSearchText = ""
+              } label: {
+                Image(systemName: "xmark.circle.fill")
+              }
+              .buttonStyle(.borderless)
+              .help(AppLocalization.text("Clear item search"))
+              .accessibilityLabel("Clear item search")
+              .accessibilityIdentifier("trade.item-search.clear")
+            }
+          }
           if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
             groupList(searchResults(in: marketGroups.groups), groups: marketGroups.groups)
-          } else if selectedNode == nil {
+          } else if selectedNode == nil, !isItemSearchActive {
             Text("Select a market group. Its subgroups become the tiles.")
               .foregroundStyle(DesignTokens.textSecondary)
             groupList(
@@ -753,6 +778,8 @@ struct TradeView: View {
           .accessibilityIdentifier("trade.open-sde-settings")
       }
       .frame(maxWidth: .infinity, minHeight: 240)
+    } else if isItemSearchActive {
+      itemSearchTile
     } else if selectedNode != nil {
       if isLoadingTiles {
         ProgressView("Loading items…")
@@ -780,6 +807,74 @@ struct TradeView: View {
               tileView(tile)
             }
           }
+        }
+      }
+    }
+  }
+
+  /// Matches of the item search over the whole market tree. It replaces the
+  /// group tiles while a query is active; the selected group stays stored.
+  private var itemSearchTile: some View {
+    let items = Array(itemSearchMatches.prefix(itemSearchLimit))
+    let rows = TradeRowSorter.sorted(
+      calculatedRows(
+        items: items,
+        sourceSide: itemSearchSourceSide,
+        targetSide: itemSearchTargetSide
+      ),
+      by: sort.column,
+      ascending: sort.direction == .ascending,
+      volumeWindow: volumeWindow
+    )
+    return tileFrame(identifier: "trade.item-search-tile") {
+      Text("Item search")
+        .font(.title3.weight(.semibold))
+      HStack(spacing: DesignTokens.spacingSM) {
+        hubChip(role: mode.sourceRole, prefix: "Source:", tint: DesignTokens.highlight)
+        hubChip(role: mode.targetRole, prefix: "Target:", tint: DesignTokens.accent)
+        countChip(AppLocalization.format("Items: %lld", Int64(items.count)))
+      }
+      sidePickers(
+        source: $itemSearchSourceSide,
+        target: $itemSearchTargetSide,
+        identifierPrefix: "trade.item-search-tile"
+      )
+      if itemSearchFailed {
+        Label(
+          "The item search of the active static data catalog failed.",
+          systemImage: "exclamationmark.triangle.fill"
+        )
+        .foregroundStyle(DesignTokens.negative)
+      } else if rows.isEmpty {
+        if isSearchingItems {
+          ProgressView("Loading items…")
+            .frame(maxWidth: .infinity, minHeight: 80)
+        } else {
+          Label(
+            AppLocalization.format("No market item matches “%@”.", itemSearchQuery),
+            systemImage: "tray"
+          )
+          .foregroundStyle(DesignTokens.textSecondary)
+          .padding(.vertical, DesignTokens.spacingSM)
+        }
+      } else {
+        tileTable(
+          rows: rows,
+          sourceSide: itemSearchSourceSide,
+          targetSide: itemSearchTargetSide,
+          sort: $sort,
+          rowIdentifierPrefix: "trade.item-search-tile.row",
+          showsReturnOnInvestment: true
+        )
+        if itemSearchMatches.count > itemSearchLimit {
+          Text(
+            AppLocalization.format(
+              "Showing the first %lld matches. Refine the search to see the others.",
+              Int64(itemSearchLimit)
+            )
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
         }
       }
     }
@@ -1840,6 +1935,7 @@ struct TradeView: View {
     VolumeHistoryKey(
       regionID: runtime.tradeRegionID(for: mode.targetRole),
       typeIDs: Set(tiles.flatMap(\.items).map(\.id))
+        .union(itemSearchMatches.prefix(itemSearchLimit).map(\.id))
     )
   }
 
@@ -1849,6 +1945,42 @@ struct TradeView: View {
     let key = volumeHistoryKey
     guard let regionID = key.regionID, !key.typeIDs.isEmpty else { return }
     await runtime.refreshTradeVolumeHistory(typeIDs: key.typeIDs, regionID: regionID)
+  }
+
+  private let itemSearchLimit = 50
+
+  private var itemSearchQuery: String {
+    itemSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Matches the catalog's minimum query length.
+  private var isItemSearchActive: Bool { itemSearchQuery.count >= 2 }
+
+  /// Waits briefly while typing; a newer query cancels this one.
+  private func searchItems() async {
+    guard isItemSearchActive else {
+      itemSearchMatches = []
+      itemSearchFailed = false
+      isSearchingItems = false
+      return
+    }
+    isSearchingItems = true
+    try? await Task.sleep(for: .milliseconds(200))
+    guard !Task.isCancelled else { return }
+    do {
+      let matches = try await runtime.searchTradeItems(
+        matching: itemSearchQuery,
+        limit: itemSearchLimit + 1
+      )
+      guard !Task.isCancelled else { return }
+      itemSearchMatches = matches
+      itemSearchFailed = false
+    } catch {
+      guard !Task.isCancelled else { return }
+      itemSearchMatches = []
+      itemSearchFailed = true
+    }
+    isSearchingItems = false
   }
 
   private func loadMarketGroups() async {

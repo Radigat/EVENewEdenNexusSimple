@@ -500,6 +500,17 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
   - Ein Katalog ohne Marktgruppen (Adapter 1–4) zeigt „SDE-Neuimport nötig“.
     Ohne aktiven Katalog erscheint „Kein SDE-Katalog“. Beide Zustände verlinken
     die SDE-Einstellungen.
+- **Item-Suche:**
+  - Das Feld „Item suchen“ findet ab zwei Zeichen veröffentlichte Markt-Items
+    über alle Marktgruppen, nach englischem oder deutschem Namen.
+  - Solange eine Suche aktiv ist, ersetzt die Kachel „Item-Suche“ die
+    Marktgruppen-Kacheln. Sie zeigt dieselbe Tabelle plus ROI für die gewählte
+    Route, in der Sortierung der Tabellenspalten.
+  - Angezeigt werden höchstens 50 Treffer; gibt es mehr, weist die Kachel
+    darauf hin. Die Auswahl bevorzugt exakte Treffer, dann Namensanfänge, dann
+    kurze Namen. Kein Treffer und eine fehlgeschlagene Suche sind eigene Zustände.
+  - Der Suchtext wird nicht gespeichert. Die gewählte Marktgruppe bleibt erhalten
+    und erscheint wieder, sobald das Feld geleert ist.
 - **Kachel:**
   - Kopfzeile mit Chips für Quelle, Ziel und Anzahl der Items.
   - Umschalter Min-Sell/Max-Buy für Quelle und Ziel. Quelle Min-Sell bedeutet

@@ -2665,6 +2665,12 @@
 "Show details" = "Details anzeigen";
 "Market group" = "Marktgruppe";
 "Search market group" = "Marktgruppe suchen";
+"Market group and item" = "Marktgruppe und Item";
+"Clear item search" = "Item-Suche leeren";
+"Item search" = "Item-Suche";
+"The item search of the active static data catalog failed." = "Die Item-Suche im aktiven Katalog der statischen Daten ist fehlgeschlagen.";
+"No market item matches “%@”." = "Kein Markt-Item passt zu „%@“.";
+"Showing the first %lld matches. Refine the search to see the others." = "Die ersten %lld Treffer werden angezeigt. Verfeinere die Suche, um die übrigen zu sehen.";
 "Select a market group. Its subgroups become the tiles." = "Wähle eine Marktgruppe. Ihre Untergruppen werden zu Kacheln.";
 "All market groups" = "Alle Marktgruppen";
 "Open this market group" = "Diese Marktgruppe öffnen";

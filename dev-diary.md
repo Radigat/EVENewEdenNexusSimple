@@ -1,5 +1,16 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 30. Oktober 2026 – Handel: Item-Suche über alle Marktgruppen
+
+Auftrag (Eigentümer-Screenshot): gezielt nach einem Gegenstand suchen, ohne sich
+durch den Marktgruppenbaum zu klicken. Ergebnis: Feld „Item suchen“ neben der
+Marktgruppensuche und Kachel „Item-Suche“ mit der bestehenden Tabelle plus ROI;
+neue Katalogabfrage `searchTradeItems` (englische und deutsche Namen, ab zwei
+Zeichen, höchstens 50 Treffer). Rechenregeln bleiben unverändert. Geprüft:
+`swift test` und Xcode-Tests (je 658 Tests), `EVEStaticDataKit` (13 Tests) grün,
+`git diff --check` fehlerfrei. Offen: Sichtprüfung in der App und Abnahme; die
+Ansicht selbst ist nicht automatisch getestet.
+
 ## 30. Oktober 2026 – Item-Verlauf: Y-Achse ohne wissenschaftliche Schreibweise
 
 Auftrag (Eigentümer-Screenshot): Die Skala im Bestandsverlauf zeigte „3,0E9“.

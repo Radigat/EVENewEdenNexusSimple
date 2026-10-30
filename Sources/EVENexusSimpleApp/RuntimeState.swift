@@ -6143,6 +6143,13 @@ extension RuntimeState {
     try await catalog.tradeItems(inMarketGroupSubtree: marketGroupID)
   }
 
+  func searchTradeItems(
+    matching query: String,
+    limit: Int
+  ) async throws -> [TradeCatalogItem] {
+    try await catalog.searchTradeItems(matching: query, limit: limit)
+  }
+
   func tradeLocation(for role: OpportunityHubRole) -> ProcurementLocation? {
     switch role {
     case .main: productionBasis.mainTradingLocation?.location

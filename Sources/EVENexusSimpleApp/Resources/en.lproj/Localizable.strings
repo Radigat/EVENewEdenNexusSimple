@@ -2036,6 +2036,12 @@
 "Show details" = "Show details";
 "Market group" = "Market group";
 "Search market group" = "Search market group";
+"Market group and item" = "Market group and item";
+"Clear item search" = "Clear item search";
+"Item search" = "Item search";
+"The item search of the active static data catalog failed." = "The item search of the active static data catalog failed.";
+"No market item matches “%@”." = "No market item matches “%@”.";
+"Showing the first %lld matches. Refine the search to see the others." = "Showing the first %lld matches. Refine the search to see the others.";
 "Select a market group. Its subgroups become the tiles." = "Select a market group. Its subgroups become the tiles.";
 "All market groups" = "All market groups";
 "Open this market group" = "Open this market group";
