@@ -740,6 +740,8 @@ Handel (siehe dort), der Item-Verlauf und die Ansicht **Marktbestand**.
   - **Graph über 30 Tage** für Main, Home und Coalition; ein Hub am Ort eines
     anderen erscheint einmal („Main Hub = Home Hub“).
   - **Umschaltbar:** Sell-Bestand, Buy-Nachfrage, niedrigster Sell-Preis.
+  - **Skala:** Die Y-Achse zeigt verkürzte Einheiten (Tsd., Mio., B für
+    10⁹, T für 10¹²), keine wissenschaftliche Schreibweise.
   - **Punkte:** In den letzten 7 Tagen jeder gespeicherte Punkt, davor ein
     Tageswert je UTC-Tag zum Zeitpunkt seines letzten Punkts.
   - **Lücken:** Ein Tag ohne Punkt oder ein fehlender Preis unterbricht die

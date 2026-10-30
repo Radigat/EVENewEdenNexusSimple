@@ -1,5 +1,13 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 30. Oktober 2026 – Item-Verlauf: Y-Achse ohne wissenschaftliche Schreibweise
+
+Auftrag (Eigentümer-Screenshot): Die Skala im Bestandsverlauf zeigte „3,0E9“.
+Ergebnis: Die Y-Achse nutzt jetzt `MarketStockAxisFormat` mit Tsd., Mio., B
+(10⁹) und T (10¹²), z. B. „3 B“ und „500 Mio.“. Daten und Rechenregeln bleiben
+unverändert. Geprüft: `swift test` und Xcode-Tests (je 657 Tests),
+`EVEStaticDataKit` (13 Tests) grün. Sichtprüfung in der App und Abnahme offen.
+
 ## 30. Oktober 2026 – Planer: Finanzübersicht bei gekaufter BPO
 
 Fehler (Eigentümer-Screenshots, Plan „Ark 1 3 2“): BPC/BPO,

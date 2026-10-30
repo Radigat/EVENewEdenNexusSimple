@@ -12,6 +12,31 @@ struct MarketStockItemRequest: Identifiable, Equatable {
   var id: Int64 { typeID }
 }
 
+/// Y-axis labels of the item chart: scaled units instead of scientific
+/// notation. A value that rounds up to 1000 moves to the next unit.
+enum MarketStockAxisFormat {
+  static func label(_ value: Double, locale: Locale) -> String {
+    let units: [(threshold: Double, suffix: String)] = [
+      (1, ""),
+      (1_000, "Tsd.".localizedUI),
+      (1_000_000, "Mio.".localizedUI),
+      (1_000_000_000, "B"),
+      (1_000_000_000_000, "T"),
+    ]
+    var index = 0
+    while index < units.count - 1,
+      (abs(value) / units[index].threshold * 100).rounded() / 100 >= 1_000
+    {
+      index += 1
+    }
+    let unit = units[index]
+    let number = (value / unit.threshold).formatted(
+      .number.locale(locale).precision(.fractionLength(0...2))
+    )
+    return unit.suffix.isEmpty ? number : "\(number) \(unit.suffix)"
+  }
+}
+
 /// Item detail: 30-day chart for Main, Home and Coalition (single points of
 /// the last 7 days, daily values before; gaps stay gaps) and a sortable
 /// daily table of one hub.
@@ -187,6 +212,17 @@ struct MarketStockItemDetailView: View {
         )
         .chartXScale(domain: start...now)
         .chartYAxisLabel(metricTitle)
+        .chartYAxis {
+          AxisMarks { value in
+            AxisGridLine()
+            AxisTick()
+            AxisValueLabel {
+              if let number = value.as(Double.self) {
+                Text(MarketStockAxisFormat.label(number, locale: locale))
+              }
+            }
+          }
+        }
         .accessibilityLabel(Text(metricTitle))
       }
     }
