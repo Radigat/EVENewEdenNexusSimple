@@ -9,8 +9,18 @@ enum TradeLogbookText {
     case .inTransit: AppLocalization.text("In transit")
     case .listed: AppLocalization.text("Listed")
     case .sold: AppLocalization.text("Sold")
-    case .manufacturingIgnored: AppLocalization.text("Manufacturing, ignored")
+    case .manufacturingIgnored: AppLocalization.text("Production")
+    case .consumed: AppLocalization.text("Consumption")
     case .excluded: AppLocalization.text("Excluded")
+    }
+  }
+
+  static func usage(_ usage: TradeLogbookUsage) -> String {
+    switch usage {
+    case .sale(let role):
+      AppLocalization.format("Sale at %@", TradeHubText.roleName(role))
+    case .production: AppLocalization.text("Production")
+    case .consumption: AppLocalization.text("Consumption")
     }
   }
 
@@ -50,7 +60,7 @@ enum TradeNumberText {
   static var locale: Locale { AppLocalization.currentLanguage.locale }
 
   static func parse(_ text: String) -> Double? {
-    let trimmed = text.trimmingCharacters(in: .whitespaces)
+    let trimmed = GroupedNumberText.ungrouped(text, locale: locale)
     guard !trimmed.isEmpty else { return nil }
     let formatter = NumberFormatter()
     formatter.locale = locale
@@ -617,10 +627,14 @@ struct TradeLogbookView: View {
       number(TradeNumberText.format(entry.buyUnitPrice))
       number(dash(TradeNumberText.format(entry.costPerUnit)))
       Group {
-        if let name = entry.targetLocationName {
+        if case .sale = entry.usage, let name = entry.targetLocationName {
           EVEEntityText(value: name, font: .callout, lineLimit: 1)
+        } else if case .sale(let role) = entry.usage {
+          Text(verbatim: TradeHubText.roleName(role)).font(.callout)
         } else {
-          Text(verbatim: TradeHubText.roleName(entry.targetRole)).font(.callout)
+          Text(verbatim: TradeLogbookText.usage(entry.usage))
+            .font(.callout)
+            .foregroundStyle(DesignTokens.textSecondary)
         }
       }
       .frame(width: 120, alignment: .leading)
@@ -804,6 +818,7 @@ struct TradeLogbookEditor: View {
         Section("Purchase") {
           DatePicker("Purchased", selection: $purchasedAt)
           TextField("Quantity", text: $quantityText)
+            .groupedNumberInput($quantityText, allowsFraction: false)
             .accessibilityIdentifier("trade-logbook.editor.quantity")
           Picker("Purchase type", selection: $buySide) {
             ForEach(TradeQuoteSide.allCases, id: \.self) { side in
@@ -816,41 +831,28 @@ struct TradeLogbookEditor: View {
               .foregroundStyle(DesignTokens.textSecondary)
           }
           TextField("Price per unit (ISK, without broker fee)", text: $buyPriceText)
+            .groupedNumberInput($buyPriceText)
             .accessibilityIdentifier("trade-logbook.editor.buy-price")
           if buySide == .maxBuy {
             TextField("Broker fee at purchase (%)", text: $buyBrokerText)
           }
           rolePicker("Bought at", selection: $sourceRole)
         }
-        Section("Sale plan") {
-          rolePicker("Sell at", selection: $targetRole)
-          TextField("Planned sale price per unit (ISK)", text: $plannedText)
-          if request.entry.transportEstimated, !transportEdited {
-            Text("Transport estimated for this quantity; replace it with the actual cost.")
-              .font(.caption)
-              .foregroundStyle(DesignTokens.caution)
-          }
-          // Only typing marks the transport as the user's own value.
-          TextField(
-            "Transport for the whole quantity (ISK)",
-            text: Binding(
-              get: { transportText },
-              set: {
-                transportText = $0
-                transportEdited = true
-              }
-            )
-          )
-          TextField("Sales tax (%)", text: $taxText)
-          TextField("Broker fee for the sell order (%)", text: $sellBrokerText)
-          Picker("Status", selection: $status) {
-            ForEach(TradeLogbookStatus.allCases, id: \.self) { status in
-              Text(verbatim: TradeLogbookText.status(status)).tag(status)
+        Section(isSale ? LocalizedStringKey("Sale plan") : LocalizedStringKey("Usage")) {
+          Picker("Usage", selection: usageBinding) {
+            ForEach(TradeLogbookUsage.allCases, id: \.self) { usage in
+              Text(verbatim: TradeLogbookText.usage(usage)).tag(usage)
             }
+          }
+          .accessibilityIdentifier("trade-logbook.editor.usage")
+          if isSale {
+            salePlanFields
           }
           TextField("Notes", text: $notes, axis: .vertical)
         }
-        salesSection
+        if isSale || !sales.isEmpty {
+          salesSection
+        }
       }
       .formStyle(.grouped)
       if let validationMessage {
@@ -875,6 +877,65 @@ struct TradeLogbookEditor: View {
     .onChange(of: buyPriceText) { _, _ in recalculateTransport() }
     .onChange(of: buySide) { _, _ in recalculateTransport() }
     .task(id: searchText) { await search() }
+  }
+
+  private var isSale: Bool {
+    if case .sale = usageBinding.wrappedValue { return true }
+    return false
+  }
+
+  /// Usage as one choice: the hubs keep the sale plan, production and
+  /// consumption close the whole entry (`TradeLogbookEntry.setUsage`).
+  private var usageBinding: Binding<TradeLogbookUsage> {
+    Binding(
+      get: {
+        var entry = request.entry
+        entry.targetRole = targetRole
+        entry.status = status
+        return entry.usage
+      },
+      set: { usage in
+        var entry = request.entry
+        entry.targetRole = targetRole
+        entry.status = status
+        entry.setUsage(usage)
+        targetRole = entry.targetRole
+        status = entry.status
+      }
+    )
+  }
+
+  @ViewBuilder
+  private var salePlanFields: some View {
+    TextField("Planned sale price per unit (ISK)", text: $plannedText)
+      .groupedNumberInput($plannedText)
+    if request.entry.transportEstimated, !transportEdited {
+      Text("Transport estimated for this quantity; replace it with the actual cost.")
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+    }
+    // Only typing marks the transport as the user's own value.
+    TextField(
+      "Transport for the whole quantity (ISK)",
+      text: Binding(
+        get: { transportText },
+        set: {
+          transportText = $0
+          transportEdited = true
+        }
+      )
+    )
+    .groupedNumberInput($transportText)
+    TextField("Sales tax (%)", text: $taxText)
+    TextField("Broker fee for the sell order (%)", text: $sellBrokerText)
+    Picker("Status", selection: $status) {
+      // Production and consumption are chosen as the usage above.
+      ForEach(
+        TradeLogbookStatus.allCases.filter { !$0.isUsage }, id: \.self
+      ) { status in
+        Text(verbatim: TradeLogbookText.status(status)).tag(status)
+      }
+    }
   }
 
   @ViewBuilder
@@ -941,7 +1002,9 @@ struct TradeLogbookEditor: View {
       }
       DatePicker("Sold", selection: $saleDate)
       TextField("Sold quantity", text: $saleQuantityText)
+        .groupedNumberInput($saleQuantityText, allowsFraction: false)
       TextField("Sale price per unit (ISK)", text: $salePriceText)
+        .groupedNumberInput($salePriceText)
       Picker("Sale type", selection: $saleKind) {
         ForEach(TradeSaleKind.allCases, id: \.self) { kind in
           Text(verbatim: TradeLogbookText.saleKind(kind)).tag(kind)

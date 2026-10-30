@@ -30,6 +30,31 @@ struct StockSaleComparisonTests {
   }
 
   @Test
+  func assetCopyWithGroupBeforeQuantityAndExtraColumnsUsesFirstNumericColumn() {
+    let result = StockSalePasteParser.parse(
+      """
+      Arazu\tForce Recon Ship\t5
+      Scourge Precision Cruise Missile\tAdvanced Cruise Missile\t66889
+      Tremor S\tAdvanced Artillery Ammo\t92.000\tCharge\t\t920 m3\t1.234.567,00 ISK
+      Expanded Cargohold II\tExpanded Cargohold\t62\tModule\tLow
+      Guardian\tLogistics\t\tShip\t\t115.000 m3
+      Damage Control II\tDamage Control\t1 500\t
+      """
+    )
+    #expect(result.errors.isEmpty)
+    #expect(
+      result.lines.map(\.candidates) == [
+        [StockSaleNameCandidate(name: "Arazu", quantity: 5)],
+        [StockSaleNameCandidate(name: "Scourge Precision Cruise Missile", quantity: 66_889)],
+        [StockSaleNameCandidate(name: "Tremor S", quantity: 92_000)],
+        [StockSaleNameCandidate(name: "Expanded Cargohold II", quantity: 62)],
+        [StockSaleNameCandidate(name: "Guardian", quantity: 1)],
+        [StockSaleNameCandidate(name: "Damage Control II", quantity: 1_500)],
+      ]
+    )
+  }
+
+  @Test
   func linesWithoutTabTryTheWholeNameBeforeATrailingQuantity() {
     let result = StockSalePasteParser.parse(
       """
@@ -61,7 +86,9 @@ struct StockSaleComparisonTests {
 
   @Test
   func invalidQuantitiesAndLimitsStayExplicitErrors() {
-    let result = StockSalePasteParser.parse("Tritanium\t0\nPyerite\tabc\nMexallon\t5")
+    let result = StockSalePasteParser.parse(
+      "Tritanium\t0\nPyerite\tMineral\t99999999999999999\nMexallon\t5"
+    )
     #expect(result.lines.map(\.candidates.first?.name) == ["Mexallon"])
     #expect(result.errors.map(\.reason) == [.invalidQuantity, .invalidQuantity])
     #expect(result.errors.map(\.lineNumber) == [1, 2])
@@ -125,6 +152,10 @@ struct StockSaleComparisonTests {
 
     let decoded = try StockSaleEntryList.decode(StockSaleEntryList.encode(merged))
     #expect(decoded == merged)
+
+    let cleaned = StockSaleEntryList.removingUnresolved(merged)
+    #expect(cleaned.map(\.typeID) == [34, 35])
+    #expect(cleaned.map(\.quantity) == [15, 2])
   }
 
   // MARK: Calculator

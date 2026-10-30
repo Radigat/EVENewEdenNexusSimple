@@ -25,6 +25,9 @@ struct StockSaleComparisonView: View {
   @AppStorage("market-opportunities.cost.blueprint.own-rights", store: AppDefaults.store)
   private var usesOwnBlueprintRights = false
 
+  @AppStorage("stock-sale.shows-cost-details", store: AppDefaults.store)
+  private var showsCostDetails = true
+
   @State private var entries: [StockSaleEntry] = []
   @State private var hasLoadedEntries = false
   @State private var pasteText = ""
@@ -39,10 +42,17 @@ struct StockSaleComparisonView: View {
   @State private var scanRowsByType: [Int64: ManufacturingOpportunityRow] = [:]
   @State private var scanRowsAnalysisID: UUID?
   @State private var loyaltyStoreBlueprintOffers: [Int64: [LoyaltyStoreBlueprintOffer]] = [:]
+  @State private var availableTableWidth: CGFloat = 0
 
+  private let removeWidth: CGFloat = 22
   private let nameMinimumWidth: CGFloat = 220
   private let numberWidth: CGFloat = 112
   private let efficiencyWidth: CGFloat = 52
+  private let recommendationWidth: CGFloat = 170
+  /// Quantity, both minimum prices, own order and the four profit columns.
+  private let essentialNumberColumnCount = 8
+  /// Cost breakdown, new production, best sell, best buy and buy depth.
+  private let detailNumberColumnCount = 8
 
   private var hubRole: OpportunityHubRole {
     OpportunityHubRole(rawValue: hubRoleRawValue) ?? .main
@@ -231,10 +241,11 @@ struct StockSaleComparisonView: View {
         Label("Refresh hub markets", systemImage: "arrow.clockwise")
       }
     }
-    .disabled(isScanningHubs)
+    .disabled(isScanningHubs || runtime.isHubScanBlockedByESICache)
     .help(
-      AppLocalization.text(
-        "Runs the Main, Home and Coalition Hub scan that also updates the Hub opportunities.")
+      runtime.hubScanBlockedText
+        ?? AppLocalization.text(
+          "Runs the Main, Home and Coalition Hub scan that also updates the Hub opportunities.")
     )
     .accessibilityIdentifier("stock-sale.refresh-hub-markets")
   }
@@ -332,11 +343,19 @@ struct StockSaleComparisonView: View {
   private var pastePanel: some View {
     Panel(title: "Paste items") {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-        Text(
-          "Select the items in the EVE inventory, copy them (Cmd+C) and paste them here. One item per line; English and German client names are recognized."
-        )
+        VStack(alignment: .leading, spacing: 2) {
+          Text(
+            "Select the items in the EVE inventory or asset list, copy them (Cmd+C) and paste them here. One item per line; English and German client names are recognized."
+          )
+          Text(
+            "Format per line: Item ⇥ Type ⇥ Quantity. The first column is the item name, the first purely numeric column is the quantity. Additional columns shown in the client (category, volume, estimated price, …) are ignored. Without a quantity the item counts once."
+          )
+          Text(verbatim: "Arazu ⇥ Force Recon Ship ⇥ 5")
+            .font(.caption.monospaced())
+        }
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
+        .accessibilityIdentifier("stock-sale.paste-help")
         TextEditor(text: $pasteText)
           .font(.callout.monospaced())
           .frame(minHeight: 90, maxHeight: 160)
@@ -345,6 +364,10 @@ struct StockSaleComparisonView: View {
               .stroke(DesignTokens.textSecondary.opacity(0.3))
           )
           .accessibilityIdentifier("stock-sale.paste")
+          .onChange(of: pasteText) { _, newValue in
+            guard !newValue.isEmpty else { return }
+            clearPasteHints()
+          }
         HStack(spacing: DesignTokens.spacingSM) {
           Button("Replace list") {
             Task { await applyPaste(replacing: true) }
@@ -421,50 +444,94 @@ struct StockSaleComparisonView: View {
   private var tablePanel: some View {
     let rows = displayRows
     Panel(title: "Comparison") {
-      if rows.isEmpty {
-        Text("No items yet. Paste items copied from the EVE client.")
-          .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        ScrollView(.horizontal) {
-          VStack(alignment: .leading, spacing: 0) {
-            tableHeader
-            Divider()
-            LazyVStack(alignment: .leading, spacing: 0) {
-              ForEach(rows) { row in
-                tableRow(row)
-                Divider().opacity(0.4)
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        Toggle("Show cost and market details", isOn: $showsCostDetails)
+          .toggleStyle(.switch)
+          .controlSize(.small)
+          .help(
+            AppLocalization.text(
+              "Off shows only item, quantity, ME, TE, minimum prices, own order, profits and recommendation."
+            )
+          )
+          .accessibilityIdentifier("stock-sale.show-details")
+          .onChange(of: showsCostDetails) {
+            // A hidden column must not keep sorting the table invisibly.
+            if !showsCostDetails, Self.detailSortColumns.contains(sort.column) {
+              sort = AppTableSortDescriptor(column: .recommendation, direction: .descending)
+            }
+          }
+        if rows.isEmpty {
+          Text("No items yet. Paste items copied from the EVE client.")
+            .foregroundStyle(DesignTokens.textSecondary)
+        } else {
+          // The columns stretch to the visible width and scroll only when
+          // the window is narrower than their minimum widths.
+          ScrollView(.horizontal) {
+            VStack(alignment: .leading, spacing: 0) {
+              tableHeader
+              Divider()
+              LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(rows) { row in
+                  tableRow(row)
+                  Divider().opacity(0.4)
+                }
               }
             }
+            .frame(width: max(availableTableWidth, minimumTableWidth), alignment: .leading)
+          }
+          .onGeometryChange(for: CGFloat.self) { $0.size.width } action: {
+            availableTableWidth = $0
           }
         }
       }
     }
   }
 
+  private static let detailSortColumns: Set<StockSaleSortColumn> = [
+    .materialCostPerUnit, .installationCostPerUnit, .blueprintCostPerUnit,
+    .logisticsCostPerUnit, .costPerUnit, .bestSellPrice, .bestBuyPrice, .bestBuyVolume,
+  ]
+
+  private var minimumTableWidth: CGFloat {
+    let numberColumns =
+      essentialNumberColumnCount + (showsCostDetails ? detailNumberColumnCount : 0)
+    // Remove button, name, ME, TE and recommendation besides the numbers.
+    let columnCount = numberColumns + 5
+    return removeWidth + nameMinimumWidth + 2 * efficiencyWidth + recommendationWidth
+      + CGFloat(numberColumns) * numberWidth
+      + CGFloat(columnCount - 1) * DesignTokens.spacingXS
+  }
+
   private var tableHeader: some View {
     HStack(spacing: DesignTokens.spacingXS) {
-      Color.clear.frame(width: 22)
+      Color.clear.frame(width: removeWidth)
       SortableTableHeader(title: "Item", column: StockSaleSortColumn.name, sort: $sort)
-        .frame(width: nameMinimumWidth, alignment: .leading)
+        .frame(minWidth: nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
       numberHeader("Quantity", .quantity)
       numberHeader("ME", .materialEfficiency, width: efficiencyWidth)
       numberHeader("TE", .timeEfficiency, width: efficiencyWidth)
-      numberHeader("Material/unit", .materialCostPerUnit)
-      numberHeader("Installation/unit", .installationCostPerUnit)
-      numberHeader("Blueprint/unit", .blueprintCostPerUnit)
-      numberHeader("Logistics/unit", .logisticsCostPerUnit)
-      numberHeader("New production/unit", .costPerUnit)
+      if showsCostDetails {
+        numberHeader("Material/unit", .materialCostPerUnit)
+        numberHeader("Installation/unit", .installationCostPerUnit)
+        numberHeader("Blueprint/unit", .blueprintCostPerUnit)
+        numberHeader("Logistics/unit", .logisticsCostPerUnit)
+        numberHeader("New production/unit", .costPerUnit)
+      }
       numberHeader("Min. price sell order", .minimumListingPrice)
       numberHeader("Min. price direct sale", .minimumDirectSalePrice)
-      numberHeader("Best sell", .bestSellPrice)
+      if showsCostDetails {
+        numberHeader("Best sell", .bestSellPrice)
+      }
       numberHeader("Own order", .ownSellOrderPrice)
-      numberHeader("Best buy", .bestBuyPrice)
-      numberHeader("Buy depth", .bestBuyVolume)
+      if showsCostDetails {
+        numberHeader("Best buy", .bestBuyPrice)
+        numberHeader("Buy depth", .bestBuyVolume)
+      }
       numberHeader("Profit/unit sell order", .listingProfitPerUnit)
       numberHeader("Profit total sell order", .listingProfitTotal)
       numberHeader("Profit/unit direct sale", .directProfitPerUnit)
       numberHeader("Profit total direct sale", .directProfitTotal)
-      numberHeader("Recommendation", .recommendation, width: 170)
+      numberHeader("Recommendation", .recommendation, width: recommendationWidth)
     }
     .font(.caption.weight(.semibold))
     .padding(.vertical, DesignTokens.spacingXS)
@@ -482,7 +549,11 @@ struct StockSaleComparisonView: View {
       defaultDirection: .descending,
       alignment: .trailing
     )
-    .frame(width: width ?? numberWidth, alignment: .trailing)
+    .frame(
+      minWidth: width ?? numberWidth,
+      maxWidth: width ?? .infinity,
+      alignment: .trailing
+    )
   }
 
   private func tableRow(_ display: StockSaleDisplayRow) -> some View {
@@ -514,25 +585,32 @@ struct StockSaleComparisonView: View {
             .accessibilityLabel(Text(display.issues.joined(separator: " ")))
         }
       }
-      .frame(width: nameMinimumWidth, alignment: .leading)
+      .frame(minWidth: nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
       numberCell(formatInteger(row.quantity))
       efficiencyCell(display, kind: .material)
       efficiencyCell(display, kind: .time)
-      numberCell(formatNumber(row.cost?.materialCostPerUnit))
-      numberCell(formatNumber(row.cost?.installationCostPerUnit))
-      numberCell(formatNumber(row.cost?.blueprintCostPerUnit))
-      numberCell(formatNumber(row.cost?.logisticsCostPerUnit))
-      numberCell(formatNumber(row.costPerUnit))
-        .help(costHelp(row))
+      if showsCostDetails {
+        numberCell(formatNumber(row.cost?.materialCostPerUnit))
+        numberCell(formatNumber(row.cost?.installationCostPerUnit))
+        numberCell(formatNumber(row.cost?.blueprintCostPerUnit))
+        numberCell(formatNumber(row.cost?.logisticsCostPerUnit))
+        numberCell(formatNumber(row.costPerUnit))
+          .help(costHelp(row))
+      }
       numberCell(formatNumber(row.minimumListingPrice))
+        .help(showsCostDetails ? "" : costHelp(row))
       numberCell(formatNumber(row.minimumDirectSalePrice))
-      numberCell(formatNumber(row.bestSellPrice))
+      if showsCostDetails {
+        numberCell(formatNumber(row.bestSellPrice))
+      }
       numberCell(formatNumber(row.ownSellOrderPrice), tint: reachTint(row.listingReachesMinimum))
-      numberCell(formatNumber(row.bestBuyPrice), tint: reachTint(row.directReachesMinimum))
-      numberCell(
-        formatInteger(row.bestBuyVolume),
-        tint: row.directDepth == .insufficient ? DesignTokens.caution : DesignTokens.textPrimary
-      )
+      if showsCostDetails {
+        numberCell(formatNumber(row.bestBuyPrice), tint: reachTint(row.directReachesMinimum))
+        numberCell(
+          formatInteger(row.bestBuyVolume),
+          tint: row.directDepth == .insufficient ? DesignTokens.caution : DesignTokens.textPrimary
+        )
+      }
       numberCell(formatNumber(row.listingProfitPerUnit), tint: signTint(row.listingProfitPerUnit))
       numberCell(formatWholeNumber(row.listingProfitTotal), tint: signTint(row.listingProfitTotal))
       numberCell(formatNumber(row.directProfitPerUnit), tint: signTint(row.directProfitPerUnit))
@@ -549,7 +627,7 @@ struct StockSaleComparisonView: View {
       Image(systemName: "minus.circle")
     }
     .buttonStyle(.borderless)
-    .frame(width: 22)
+    .frame(width: removeWidth)
     .help(AppLocalization.text("Remove from list"))
     .accessibilityLabel("Remove from list")
     .accessibilityIdentifier("stock-sale.remove.\(entry.id.uuidString)")
@@ -627,7 +705,7 @@ struct StockSaleComparisonView: View {
           .foregroundStyle(signTint(row.recommendedProfitTotal))
       }
     }
-    .frame(width: 170, alignment: .trailing)
+    .frame(width: recommendationWidth, alignment: .trailing)
   }
 
   private func numberCell(
@@ -638,7 +716,7 @@ struct StockSaleComparisonView: View {
       .font(.callout.monospacedDigit())
       .foregroundStyle(tint)
       .lineLimit(1)
-      .frame(width: numberWidth, alignment: .trailing)
+      .frame(minWidth: numberWidth, maxWidth: .infinity, alignment: .trailing)
   }
 
   private func reachTint(_ reaches: Bool?) -> Color {
@@ -835,6 +913,15 @@ struct StockSaleComparisonView: View {
     updateEntries(updated)
   }
 
+  /// A new input starts a fresh paste: hints and unrecognized lines of the
+  /// previous paste are removed, resolved entries stay.
+  private func clearPasteHints(keepingMessages: Bool = false) {
+    if !keepingMessages, !pasteMessages.isEmpty { pasteMessages = [] }
+    if entries.contains(where: { !$0.isResolved }) {
+      updateEntries(StockSaleEntryList.removingUnresolved(entries))
+    }
+  }
+
   private func applyPaste(replacing: Bool) async {
     let parsed = StockSalePasteParser.parse(pasteText)
     var messages: [String] = []
@@ -870,6 +957,7 @@ struct StockSaleComparisonView: View {
       do {
         resolutions = try await runtime.resolveItemTypeNames(names)
       } catch {
+        clearPasteHints()
         pasteMessages = [
           AppLocalization.format(
             "Item names could not be checked against the SDE catalog: %@",
@@ -886,8 +974,15 @@ struct StockSaleComparisonView: View {
       messages.append(AppLocalization.text("Paste at least one item line."))
     }
     pasteMessages = messages
-    guard !pasted.isEmpty else { return }
-    updateEntries(StockSaleEntryList.merging(entries, with: pasted, replacing: replacing))
+    guard !pasted.isEmpty else {
+      clearPasteHints(keepingMessages: true)
+      return
+    }
+    // Only the errors of the current paste are shown.
+    updateEntries(
+      StockSaleEntryList.merging(
+        StockSaleEntryList.removingUnresolved(entries), with: pasted, replacing: replacing)
+    )
     pasteText = ""
   }
 

@@ -1242,6 +1242,75 @@ struct MarketBrowserTests {
   }
 
   @Test
+  func opportunityLogisticsFollowsTheChosenMainLegs() {
+    let row = sortableOpportunityRow(
+      name: "Product",
+      value: 18,
+      demand: 1,
+      materialQuantity: 18,
+      materialUnitPrice: 10,
+      materialVolume: 5
+    )
+    let procurement = ManufacturingOpportunityScenarioProjector.procurement(
+      for: row,
+      factualWarehouseQuantities: [34: 12],
+      protectedQuantities: [34: 2],
+      reservedQuantities: [34: 3]
+    )
+    var configuration = LogisticsConfiguration(
+      isEnabled: true,
+      includeInboundMaterials: true,
+      includeOutboundProducts: false,
+      productionLocationName: "Home Factory",
+      homeTradeHub: .legacy(name: "Home Factory")
+    )
+    configuration.hubTransport.set(
+      HubTransportLegSetting(
+        leg: .mainToHome,
+        method: .jumpFreighterService,
+        service: JumpFreighterServiceRate(
+          iskPerCubicMeter: 100,
+          collateralRate: 0.01
+        )
+      )
+    )
+    configuration.hubTransport.set(
+      HubTransportLegSetting(
+        leg: .homeToMain,
+        method: .jumpFreighterService,
+        service: JumpFreighterServiceRate(
+          iskPerCubicMeter: 200,
+          collateralRate: 0
+        )
+      )
+    )
+    // Inbound 55 m³ × 100 + 1 % of 110; outbound 18 m³ × 200. No Profile
+    // courier rate is needed.
+    let logistics = ManufacturingOpportunityScenarioProjector.logistics(
+      for: row,
+      procurement: procurement,
+      configuration: configuration,
+      mainHub: .jita,
+      warehouseIsAvailable: true
+    )
+    #expect(logistics.legs.count == 2)
+    #expect(abs((logistics.cost ?? -1) - 9_101.1) < 1e-9)
+
+    configuration.hubTransport.set(
+      HubTransportLegSetting(leg: .homeToMain, method: .selfJump)
+    )
+    let selfJump = ManufacturingOpportunityScenarioProjector.logistics(
+      for: row,
+      procurement: procurement,
+      configuration: configuration,
+      mainHub: .jita,
+      warehouseIsAvailable: true
+    )
+    #expect(selfJump.cost == nil)
+    #expect(selfJump.warnings.map(\.code) == ["logistics.main-self-jump-unsupported"])
+  }
+
+  @Test
   func missingProductionWarehouseKeepsLogisticsProfitAndROIUnavailable() {
     let row = sortableOpportunityRow(
       name: "Product",
@@ -2420,6 +2489,42 @@ struct MarketBrowserTests {
   }
 
   @Test
+  func coalitionTransportBasisPricesJumpFreighterService() {
+    let service = OpportunityCoalitionTransportBasis.jumpFreighterService(
+      homeHub: .legacy(name: "Home Factory"),
+      coalitionHub: Self.roleTestHomeHub,
+      rate: JumpFreighterServiceRate(iskPerCubicMeter: 100, collateralRate: 0)
+    )
+    let row = sortableOpportunityRow(
+      name: "Product",
+      value: 18,
+      demand: 1,
+      materialQuantity: 18,
+      materialUnitPrice: 10,
+      materialVolume: 5
+    )
+    // 18 m³ × 100 ISK without the Profile courier's 1M rounding.
+    #expect(service.transport(for: row).cost == 1_800)
+    let carrier = sortableOpportunityRow(
+      name: "Carrier",
+      value: 1,
+      demand: 1,
+      categoryName: "Ship",
+      groupName: "Carrier"
+    )
+    #expect(
+      service.transport(for: carrier).warnings.map(\.code)
+        == ["capital-self-jump.contract-leg"]
+    )
+    let incomplete = OpportunityCoalitionTransportBasis.jumpFreighterService(
+      homeHub: .legacy(name: "Home Factory"),
+      coalitionHub: Self.roleTestHomeHub,
+      rate: JumpFreighterServiceRate(iskPerCubicMeter: 100)
+    )
+    #expect(incomplete.transport(for: row).cost == nil)
+  }
+
+  @Test
   func coalitionTransportBasisPricesCourierAndKeepsCapitalsUnavailable() throws {
     let home = ProcurementLocation.legacy(name: "Home Factory")
     let courier = OpportunityCoalitionTransportBasis.courier(
@@ -3037,99 +3142,6 @@ struct MarketBrowserTests {
     #expect(sorted(.contractPrice, .descending) == ["Missing", "Expensive", "Cheap"])
     #expect(sorted(.contractProfit, .ascending).last == "Missing")
     #expect(entries.first?.1.contract?.unitPrice == nil)
-  }
-
-  @Test
-  func hubTopListRanksTheHubProjectionAndSkipsRowsWithoutPotential() throws {
-    let rows: [ManufacturingOpportunityRow] = (1...8).map { (index: Int) in
-      let demand: Int64? = index == 3 ? nil : Int64(index)
-      return sortableOpportunityRow(
-        name: "Product \(index)",
-        value: Int64(index) * 10,
-        demand: demand
-      )
-    }
-    let source = SourceIdentity(provider: "Fixture", version: "1")
-    let snapshot = ManufacturingOpportunitySnapshot(
-      settings: ManufacturingOpportunitySettings(),
-      mainHub: .jita,
-      productionWarehouseScope: ProductionWarehouseScope(locations: []),
-      logisticsConfiguration: LogisticsConfiguration(
-        isEnabled: true,
-        includeInboundMaterials: true,
-        includeOutboundProducts: false,
-        productionLocationName: ProcurementLocation.jita.name,
-        homeTradeHub: .jita,
-        iskPerCubicMeter: 100
-      ),
-      rows: rows,
-      coverage: ManufacturingOpportunityCoverage(
-        completeManufacturingDefinitionCount: rows.count,
-        mainHubActiveOrderTypeCount: rows.count,
-        candidateCount: rows.count,
-        candidatesWithSellOrders: rows.count,
-        candidatesWithBuyOrders: 0
-      ),
-      sdeSource: source,
-      marketSource: source,
-      warnings: []
-    )
-    // The hub view's own projection; the Dashboard only ranks it.
-    func projectedCosts(
-      _ row: ManufacturingOpportunityRow
-    ) -> ManufacturingOpportunityCostProjection {
-      ManufacturingOpportunityScenarioProjector.costs(
-        for: row,
-        sheet: ManufacturingOpportunityCostSheet(),
-        logistics: ManufacturingOpportunityLogisticsProjection(
-          cost: 0,
-          legs: [],
-          warnings: []
-        ),
-        contract: ManufacturingOpportunityContractContext(
-          references: nil,
-          contractFeeRate: nil
-        )
-      )
-    }
-    let candidates: [(ManufacturingOpportunityRow, ManufacturingOpportunityCostProjection)] =
-      snapshot.rows.map { ($0, projectedCosts($0)) }
-    let result = HubTopOpportunityResult.rank(
-      role: .main,
-      snapshotID: snapshot.id,
-      candidates: candidates
-    )
-    let top: [HubTopOpportunityEntry] = result.entries
-    #expect(top.count == HubTopOpportunityResult.limit)
-    #expect(!top.contains { $0.productName == "Product 3" })
-    let potentials = top.map { (entry: HubTopOpportunityEntry) in entry.dailyProfitPotential }
-    #expect(potentials == potentials.sorted(by: >))
-    for entry in top {
-      let candidate = try #require(
-        candidates.first { $0.0.productTypeID == entry.productTypeID }
-      )
-      #expect(
-        ManufacturingOpportunityScenarioProjector.dailyProfitPotential(
-          for: candidate.0,
-          costs: candidate.1
-        ) == entry.dailyProfitPotential
-      )
-    }
-    // Equal potentials keep a stable type-ID order.
-    for (lhs, rhs) in zip(top, top.dropFirst())
-    where lhs.dailyProfitPotential == rhs.dailyProfitPotential {
-      #expect(lhs.productTypeID < rhs.productTypeID)
-    }
-    // The calculation time alone is no change.
-    #expect(
-      result
-        == HubTopOpportunityResult(
-          role: .main,
-          snapshotID: snapshot.id,
-          calculatedAt: .distantPast,
-          entries: top
-        )
-    )
   }
 
   private func sortableOpportunityRow(

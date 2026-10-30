@@ -1944,6 +1944,7 @@ public struct IndustryPlanner: Sendable {
       includeInboundMaterials:
         context.productionBasis?.logistics.includeInboundMaterials == true,
       includeOutboundProducts: false,
+      leg: .mainToHome,
       catalog: context.catalog,
       refiningOptimization: nil
     )
@@ -1962,6 +1963,7 @@ public struct IndustryPlanner: Sendable {
         includeInboundMaterials:
           context.productionBasis?.logistics.includeInboundMaterials == true,
         includeOutboundProducts: false,
+        leg: .mainToHome,
         catalog: context.catalog,
         refiningOptimization: optimization
       )
@@ -2015,6 +2017,7 @@ public struct IndustryPlanner: Sendable {
         includeInboundMaterials: false,
         // The configured Main Hub is a standard high-security NPC hub.
         includeOutboundProducts: true,
+        leg: .homeToMain,
         catalog: context.catalog
       )
     } else {
@@ -2059,8 +2062,17 @@ public struct IndustryPlanner: Sendable {
       requests: requests,
       nodes: state.nodes
     )
+    // Home → Coalition follows the leg choice of the logistics settings
+    // (owner request 27.10.2026). Without a stored choice it is the own Jump
+    // Freighter when jump logistics is enabled, otherwise the Profile courier.
+    let coalitionLegUsesOwnJumpFreighter =
+      context.productionBasis?.logistics.legPricing(for: .homeToCoalition)
+      == .selfJump
+    let coalitionUsesJumpLogistics =
+      coalitionLegUsesOwnJumpFreighter
+      && jumpFreighterConfiguration?.isEnabled == true
     if let configuredCoalitionHub,
-      jumpFreighterConfiguration?.isEnabled == true,
+      coalitionUsesJumpLogistics,
       !configuredHomeHub.representsSameLocation(as: configuredCoalitionHub),
       let jumpFreighterConfiguration
     {
@@ -2128,6 +2140,22 @@ public struct IndustryPlanner: Sendable {
       }) {
         warnings.append(warning)
       }
+    } else if let configuredCoalitionHub, coalitionLegUsesOwnJumpFreighter,
+      !configuredHomeHub.representsSameLocation(as: configuredCoalitionHub)
+    {
+      coalitionOutboundLogistics = (
+        nil,
+        nil,
+        [
+          DomainWarning(
+            code: "jump-freighter.leg-disabled",
+            message:
+              "Home Hub → Coalition Hub is set to an own Jump Freighter, but jump logistics is switched off. Enable it or choose another transport for this leg.",
+            severity: .blocking
+          )
+        ]
+      )
+      warnings.append(contentsOf: coalitionOutboundLogistics.warnings)
     } else if let configuredCoalitionHub, let coalitionMarketBook,
       selfJumpingCapitals.isEmpty
     {
@@ -2141,6 +2169,7 @@ public struct IndustryPlanner: Sendable {
         marketBook: coalitionMarketBook,
         includeInboundMaterials: false,
         includeOutboundProducts: true,
+        leg: .homeToCoalition,
         catalog: context.catalog
       )
       for warning in coalitionOutboundLogistics.warnings
@@ -2194,7 +2223,7 @@ public struct IndustryPlanner: Sendable {
           reason: "Home Hub and Coalition Hub are the same location."
         )
       }
-      if jumpFreighterConfiguration?.isEnabled == true {
+      if coalitionUsesJumpLogistics {
         let reason = coalitionJumpFreighterWarnings.map(\.message)
           .joined(separator: " ")
         let status = coalitionJumpFreighterStatus ?? .unavailable
@@ -2351,7 +2380,7 @@ public struct IndustryPlanner: Sendable {
         inboundLogisticsAssessment: inboundAssessment,
         outboundLogisticsAssessment: coalitionOutboundAssessment,
         outboundLogistics:
-          jumpFreighterConfiguration?.isEnabled == true
+          coalitionUsesJumpLogistics
           ? nil : coalitionOutboundLogistics.breakdown,
         outboundLogisticsCost: coalitionOutboundAssessment?.cost
       )
@@ -3197,6 +3226,7 @@ public struct IndustryPlanner: Sendable {
     marketBook: PreparedMarketOrderBook,
     includeInboundMaterials: Bool,
     includeOutboundProducts: Bool,
+    leg: HubTransportLeg,
     catalog: any IndustryCatalogQuerying,
     refiningOptimization: OreRefiningOptimizationResult? = nil
   ) async throws -> (
@@ -3213,32 +3243,23 @@ public struct IndustryPlanner: Sendable {
     guard !mainHub.representsSameLocation(as: homeHub) else {
       return (nil, 0, [])
     }
-    guard let rate = configuration.effectiveISKPerCubicMeter else {
+    // Each call covers one direction; its leg chooses Profile courier or a
+    // Jump Freighter service (owner request 27.10.2026).
+    let pricing: LogisticsContractPricing
+    switch configuration.legPricing(for: leg) {
+    case .contract(let legPricing):
+      pricing = legPricing
+    case .unavailable(let warning):
+      return (nil, nil, [warning])
+    case .selfJump:
       return (
         nil,
         nil,
         [
           DomainWarning(
-            code: "logistics.missing-volume-rate",
+            code: "logistics.self-jump-not-contract",
             message:
-              "Logistics is enabled, but the ISK per m³ rate is missing or invalid.",
-            severity: .blocking
-          )
-        ]
-      )
-    }
-    guard
-      let maximumContractVolume =
-        configuration.effectiveMaximumContractVolumeM3
-    else {
-      return (
-        nil,
-        nil,
-        [
-          DomainWarning(
-            code: "logistics.invalid-volume-limit",
-            message:
-              "Logistics is enabled, but the contract volume limit is invalid.",
+              "This leg is carried by an own Jump Freighter and has no courier contracts.",
             severity: .blocking
           )
         ]
@@ -3299,8 +3320,7 @@ public struct IndustryPlanner: Sendable {
           cargo: inboundCargo.map {
             ($0.typeID, $0.quantity, $0.collateral)
           },
-          rate: rate,
-          maximumContractVolume: maximumContractVolume,
+          pricing: pricing,
           catalog: catalog
         )
         legs.append(contentsOf: result.legs)
@@ -3342,8 +3362,7 @@ public struct IndustryPlanner: Sendable {
           origin: origin,
           destination: mainHub.name,
           cargo: cargo,
-          rate: rate,
-          maximumContractVolume: maximumContractVolume,
+          pricing: pricing,
           catalog: catalog
         )
         legs.append(contentsOf: result.legs)
@@ -3371,11 +3390,10 @@ public struct IndustryPlanner: Sendable {
     return (
       LogisticsCostBreakdown(
         ruleVersion: configuration.effectiveRuleVersion,
-        iskPerCubicMeter: rate,
-        collateralRate: LogisticsConfiguration.collateralRate,
-        maximumContractVolumeM3:
-          maximumContractVolume,
-        roundingIncrement: LogisticsConfiguration.roundingIncrement,
+        iskPerCubicMeter: pricing.iskPerCubicMeter,
+        collateralRate: pricing.collateralRate,
+        maximumContractVolumeM3: pricing.maximumContractVolumeM3,
+        roundingIncrement: pricing.breakdownRoundingIncrement,
         legs: legs,
         total: total
       ),
@@ -3795,8 +3813,7 @@ public struct IndustryPlanner: Sendable {
     guard let configuration,
       configuration.isEnabled,
       configuration.includeInboundMaterials,
-      let rate = configuration.effectiveISKPerCubicMeter,
-      let maximumVolume = configuration.effectiveMaximumContractVolumeM3
+      case .contract(let pricing) = configuration.legPricing(for: .mainToHome)
     else {
       return (
         nil,
@@ -3815,8 +3832,7 @@ public struct IndustryPlanner: Sendable {
       origin: origin.name,
       destination: destinationName,
       cargo: cargo,
-      rate: rate,
-      maximumContractVolume: maximumVolume,
+      pricing: pricing,
       catalog: catalog
     )
     guard !result.warnings.contains(where: { $0.severity == .blocking }) else {
@@ -3857,8 +3873,7 @@ public struct IndustryPlanner: Sendable {
     origin: String,
     destination: String,
     cargo: [(typeID: Int64, quantity: Int64, collateral: Double?)],
-    rate: Double,
-    maximumContractVolume: Double,
+    pricing: LogisticsContractPricing,
     catalog: any IndustryCatalogQuerying
   ) async throws -> (
     legs: [LogisticsCostLeg],
@@ -3886,8 +3901,7 @@ public struct IndustryPlanner: Sendable {
       origin: origin,
       destination: destination,
       cargo: acceptedCargo,
-      iskPerCubicMeter: rate,
-      maximumContractVolumeM3: maximumContractVolume
+      pricing: pricing
     )
   }
 
@@ -4002,8 +4016,7 @@ public struct IndustryPlanner: Sendable {
     let logistics = basis.logistics
     if !context.defaultPurchaseLocation.representsSameLocation(as: homeHub) {
       guard logistics.isEnabled,
-        logistics.effectiveISKPerCubicMeter != nil,
-        logistics.effectiveMaximumContractVolumeM3 != nil
+        case .contract = logistics.legPricing(for: .mainToHome)
       else {
         return OreRefiningOptimizationResult(
           purchases: [],
@@ -4401,16 +4414,14 @@ public struct IndustryPlanner: Sendable {
     configuration: LogisticsConfiguration
   ) -> Double? {
     if origin.representsSameLocation(as: homeHub) { return 0 }
-    guard let rate = configuration.effectiveISKPerCubicMeter,
-      let maximum = configuration.effectiveMaximumContractVolumeM3
+    guard case .contract(let pricing) = configuration.legPricing(for: .mainToHome)
     else { return nil }
     let result = LogisticsCostCalculator.calculateLegs(
       kind: .inboundMaterials,
       origin: origin.name,
       destination: homeHub.name,
       cargo: cargo,
-      iskPerCubicMeter: rate,
-      maximumContractVolumeM3: maximum
+      pricing: pricing
     )
     guard !result.warnings.contains(where: { $0.severity == .blocking })
     else { return nil }

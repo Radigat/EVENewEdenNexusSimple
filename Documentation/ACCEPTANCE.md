@@ -3,6 +3,22 @@
 Aktueller Konsolidierungsnachweis: [Prüfbericht 25.09.2026](Consolidation/VALIDATION.md).
 Die folgenden Einträge bleiben datierte Fach-, Live- und Eigentümernachweise.
 
+## Marktbestand P1–P8, 2026-10-29
+
+Plan und Owner-Testleitfaden: [MARKTBESTAND_PLAN.md](MARKTBESTAND_PLAN.md),
+Abschnitt I. Automatisch geprüft mit synthetischen Daten; ein erster
+Live-Lauf lieferte Protokollwerte, aber noch keinen gespeicherten Punkt.
+
+| Area | Automated evidence | Local-data evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| Bestandspunkt und Order-Delta | `MarketStockHistoryTests` (Netto = Zugang − Abgang, Zufallstest, Jita-Größe) | Live 29.10.: Main 18.990 Items, 326.796 Orders, Auswertung 0,41–0,57 s | offen |
+| SQLite-Speicher, Verdichtung, Sicherung | `MarketStockHistoryStoreTests`, Messung `measureNinetyDays` (ungünstigster Fall 423 MB / 90 T) | Datei 12,6 MB nach ersten Punkten; Größe nach 7 Tagen offen | Größe akzeptiert, Neubewertung nach 7 Tagen |
+| Termine, Nachholen, Downtime | `MarketStockScheduleTests` | offen | offen |
+| ESI: kein Scan vor `Expires` | `reportsTheLatestUnexpiredExpiresOfMatchingURLs`, `onlyCatalogWideOrderBookPagesBlockAHubScan` | Befund `early=388–404` vor der Sperre; nach der Sperre offen | offen |
+| Hintergrundbetrieb | `BackgroundOperationTests` | GUI-Probe aus der Sandbox nicht möglich; Login-Start, Fenster, Ruhezustand offen | offen |
+| Handel-Spalten | `overviewFeedsTradeVolumesNetChangesAndStock`, `stockColumnsSortByTypedValueWithUnknownLast` | offen | offen |
+| Item-Verlauf und Ansicht Marktbestand | `itemChartKeepsGapsAndSwitchesFromDailyValuesToPoints`, `overviewRowsSortTypedWithUnknownValuesAndNamesLast` | offen | offen |
+
 ## Lagerverkauf-Abgleich P1–P4, 2026-10-25
 
 Plan und Owner-Testleitfaden: [LAGERVERKAUF_PLAN.md](LAGERVERKAUF_PLAN.md),
@@ -46,7 +62,7 @@ Abschnitt E.
 | P4/P6 Home-/Coalition-Scan | pass: Zielauflösung (nicht konfiguriert, gleich Main/Home, NPC, Struktur, unvollständig), leerer Grundzustand, Coalition-Transportgrundlage (Kurierpreis, blockiertes Capital, unverfügbar, Gesamtlogistik, Speicherformat) | not run; DOTLAN-, Structure-Market- und ACL-Pfad nicht live geprüft | open |
 | P5/P7 Hub-Ansichten | pass: getrennte Filterschlüssel, Rollenroute, Textanpassung, Navigation, Zielmarkt-Übergabe, Weitertransport-Sortierung | not run | open (visuell) |
 | P8 Vertragspreise | pass: Vertragsprojektion (bestätigte Gebühr, vor Gebühr, ungültiger Satz, vorläufig, kein Angebot, fehlende Kosten), Sortierung beider Spalten | not run; Laufzeit mit vollständigem echtem Index nicht gemessen | open |
-| P9 Top-Chancen | pass: Rangfolge (Grenze, ohne Wert ausgeschlossen, absteigend, Standardprojektion, stabile Reihenfolge), Bauen-Übergabe | not run | open (visuell) |
+| P9 Top-Chancen | entfernt am 26.10.2026 (Eigentümerauftrag); Tests mit dem Code entfernt | – | entfällt |
 | P10 Zielmarkt | pass: Vorschlag, Speicherformat alt/neu, Spaltenrang und Text | not run | open |
 | P11 Allianzmarkt | pass: Teilabnahme, Standardgebühr, Angebotstext, Unverfügbarkeit (Preis, Route, Coalition, mehrere Produkte, Kosten, ungültige Gebühr), Vorschlag, alte Snapshots, Eingabeparser | not run | open |
 | P12 Kaufort-Hinweis | pass: Zuordnung nur analysierter Materialien, fehlendes Angebot, unvollständige Main-Hub-Tiefe, Multibuy je Ort, gemeinsamer Formatierer, Sortierung | not run | open |

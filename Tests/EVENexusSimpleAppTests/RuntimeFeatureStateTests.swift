@@ -68,11 +68,18 @@ struct RuntimeFeatureStateTests {
   func stockSaleComparisonFollowsTradeLogbookAndPersistsItsList() throws {
     let sections = NavigationSection.allCases
     let logbook = sections.firstIndex(of: .tradeLogbook)
+    // Owner decision 29.10.2026: Market stock sits between the logbook and
+    // the stock sale comparison.
     #expect(
       logbook != nil
-        && sections.firstIndex(of: .stockSaleComparison) == logbook.map { $0 + 1 }
+        && sections.firstIndex(of: .marketStock) == logbook.map { $0 + 1 }
+        && sections.firstIndex(of: .stockSaleComparison) == logbook.map { $0 + 2 }
     )
     #expect(NavigationSection.establishedCases.contains(.stockSaleComparison))
+    #expect(NavigationSection.establishedCases.contains(.marketStock))
+    // The default basis has only the default Main Hub; Home and Coalition
+    // are not listed until configured.
+    #expect(RuntimeState(startBackgroundServices: false).marketStockHubRoles == [.main])
 
     let schema = Schema(versionedSchema: EVENexusSchemaV2.self)
     let container = try ModelContainer(
@@ -147,6 +154,63 @@ struct RuntimeFeatureStateTests {
 
     await runtime.deleteTradeLogbookEntry(id: entry.id)
     #expect(runtime.tradeLogbookEntries.isEmpty)
+  }
+
+  @Test
+  func hubScansRecordMarketStockPointsInTheirOwnFile() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("market-stock-runtime-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtime = RuntimeState(dataRoot: root, startBackgroundServices: false)
+    #expect(
+      runtime.marketStockHistoryURL.path
+        == root.appendingPathComponent("market/market-stock-history.sqlite").path
+    )
+    let start = Date(timeIntervalSince1970: 1_793_253_600)
+    func book(_ volume: Int64, at capturedAt: Date, state: DataFreshness = .fresh)
+      -> MarketOrderSnapshot
+    {
+      MarketOrderSnapshot(
+        id: UUID(),
+        regionID: 10_000_002,
+        locationID: 60_003_760,
+        capturedAt: capturedAt,
+        state: state,
+        ordersByType: [
+          34: [
+            MarketOrder(
+              id: 1, typeID: 34, locationID: 60_003_760, systemID: 30_000_142,
+              side: .sell, price: 5, volumeRemaining: volume, minimumVolume: 1,
+              issued: start)
+          ]
+        ],
+        source: SourceIdentity(provider: "fixture", version: "1", capturedAt: capturedAt)
+      )
+    }
+    await runtime.recordMarketStock(book(100, at: start), role: .main, trigger: .manualScan)
+    #expect(runtime.marketStockLatestPointAt[.main] == start)
+    #expect(runtime.marketStockError == nil)
+    // An incomplete order book writes no point.
+    await runtime.recordMarketStock(
+      book(1, at: start.addingTimeInterval(3_600), state: .partial),
+      role: .main,
+      trigger: .automaticScan
+    )
+    #expect(runtime.marketStockLatestPointAt[.main] == start)
+    let later = start.addingTimeInterval(6 * 3_600)
+    await runtime.recordMarketStock(book(60, at: later), role: .main, trigger: .scheduled)
+    #expect(runtime.marketStockLatestPointAt[.main] == later)
+
+    let store = try await MarketStockHistoryStore.open(url: runtime.marketStockHistoryURL)
+    let points = try await store.itemPoints(
+      role: .main, locationID: 60_003_760, typeID: 34, now: later)
+    #expect(points.map(\.trigger) == [.manualScan, .scheduled])
+    #expect(points.last?.sell == MarketStockSideDelta(added: 0, partiallyFilled: 40, vanished: 0))
+    await store.close()
+
+    // Without background services no term is planned.
+    runtime.scheduleMarketStockTerms()
+    #expect(runtime.marketStockNextTermAt == nil)
   }
 
   @Test
@@ -760,26 +824,6 @@ struct RuntimeFeatureStateTests {
   }
 
   @Test
-  func dashboardTopOpportunityBuildCarriesBatchAndTargetMarket() {
-    let request = DashboardNavigationRequest(
-      section: .planner,
-      plannerLaunch: MainHubOpportunityPlannerHandoff.request(
-        productTypeID: 100,
-        productName: "Fixture Product",
-        requestedRuns: 3,
-        wantedQuantity: 3,
-        materialEfficiency: 10,
-        timeEfficiency: 20,
-        targetMarket: .coalition
-      )
-    )
-    #expect(request.section == .planner)
-    #expect(request.plannerLaunch?.targetMarket == .coalition)
-    #expect(request.plannerLaunch?.requestedRuns == 3)
-    #expect(DashboardNavigationRequest(section: .dashboard).plannerLaunch == nil)
-  }
-
-  @Test
   func productionOverviewTargetMarketHasRankAndExplicitUnchosenText() {
     typealias Presentation = ProductionOverviewTargetMarketPresentation
     #expect(Presentation.rank(.mainHub) == 0)
@@ -867,6 +911,24 @@ struct RuntimeFeatureStateTests {
     )
     #expect(
       Parser.number("6.600.000.000,25", locale: german) == .value(6_600_000_000.25)
+    )
+  }
+
+  @Test
+  func groupedNumberInputKeepsTypedFractionsAndFeedsPlainParsers() throws {
+    let german = Locale(identifier: "de_DE")
+    let english = Locale(identifier: "en_US")
+    #expect(GroupedNumberText.editingText("100000000", locale: german) == "100.000.000")
+    // Trailing fraction zeros stay while typing.
+    #expect(GroupedNumberText.editingText("12,0", locale: german) == "12,0")
+    #expect(GroupedNumberText.editingText("769,10", locale: german) == "769,10")
+
+    #expect(GroupedNumberText.ungrouped("100.000.000", locale: german) == "100000000")
+    #expect(Int64(GroupedNumberText.ungrouped("800.000", locale: german)) == 800_000)
+    #expect(GroupedNumberText.ungrouped("1,234,567.8", locale: english) == "1234567.8")
+    #expect(
+      try ISKAmount.parse(GroupedNumberText.ungrouped("65.590.000,5", locale: german))
+        .hundredths == 6_559_000_050
     )
   }
 

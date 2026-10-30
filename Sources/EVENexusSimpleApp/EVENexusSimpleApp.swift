@@ -34,6 +34,8 @@ enum EVENexusApplicationEntry {
 }
 
 struct EVENexusSimpleApp: App {
+  @NSApplicationDelegateAdaptor(AppBackgroundDelegate.self)
+  private var backgroundDelegate
   @StateObject private var consolidation = ConsolidationController()
   @StateObject private var runtimeOwner: RuntimeStateOwner
   @AppStorage(AppLanguage.storageKey, store: AppDefaults.store)
@@ -42,6 +44,8 @@ struct EVENexusSimpleApp: App {
   private var storedTextSize = AppTextSize.standard.rawValue
   @AppStorage(AppAppearanceStyle.storageKey, store: AppDefaults.store)
   private var storedAppearance = AppAppearanceStyle.system.rawValue
+  @AppStorage(BackgroundOperation.keepRunningStorageKey, store: AppDefaults.store)
+  private var keepsRunningInBackground = BackgroundOperation.keepRunningDefault
   private let modelContainer: ModelContainer?
   private let persistenceFolderURL: URL?
 
@@ -63,14 +67,14 @@ struct EVENexusSimpleApp: App {
     let startsBackgroundServices =
       openedModelContainer != nil
       && environment["EVE_NEXUS_DISABLE_BACKGROUND_SERVICES"] != "1"
+    let runtime = RuntimeState(
+      dataRoot: paths?.dataRoot,
+      ccpUserAgentOwnerContact: ownerContact,
+      startBackgroundServices: startsBackgroundServices
+    )
+    AppBackgroundDelegate.runtime = runtime
     _runtimeOwner = StateObject(
-      wrappedValue: RuntimeStateOwner(
-        runtime: RuntimeState(
-          dataRoot: paths?.dataRoot,
-          ccpUserAgentOwnerContact: ownerContact,
-          startBackgroundServices: startsBackgroundServices
-        )
-      )
+      wrappedValue: RuntimeStateOwner(runtime: runtime)
     )
     if environment["EVE_NEXUS_PERSISTENCE_ACCEPTANCE_EXIT"] == "1" {
       exit(openedModelContainer == nil ? 2 : 0)
@@ -100,7 +104,7 @@ struct EVENexusSimpleApp: App {
   }
 
   var body: some Scene {
-    WindowGroup {
+    WindowGroup(id: BackgroundOperation.mainWindowID) {
       Group {
         if let modelContainer {
           ContentView(runtime: runtimeOwner.runtime)
@@ -136,6 +140,20 @@ struct EVENexusSimpleApp: App {
           FullStoreRecovery.requestAndQuit(paths: try? AppDataPaths.live(), context: modelContainer?.mainContext)
         }
       }
+    }
+    // Only while keep running is on (owner decision 29.10.2026). Removing
+    // the item from the menu bar does not change the setting.
+    MenuBarExtra(
+      isInserted: Binding(
+        get: { keepsRunningInBackground },
+        set: { _ in }
+      )
+    ) {
+      BackgroundMenuBarContent(runtime: runtimeOwner.runtime)
+        .environment(\.locale, appLanguage.locale)
+    } label: {
+      Image(systemName: "chart.bar.xaxis")
+        .accessibilityLabel(Text("EVE New Eden Nexus"))
     }
   }
 }

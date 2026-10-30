@@ -692,9 +692,10 @@ public enum ReactionProfitabilityAnalyzer {
     }
     let configuration = context.configuration
     guard configuration.isEnabled else { return (0, []) }
+    // Main → Home follows the leg choice of the logistics settings (owner
+    // request 27.10.2026).
     guard configuration.includeInboundMaterials,
-      let rate = configuration.effectiveISKPerCubicMeter,
-      let maximumVolume = configuration.effectiveMaximumContractVolumeM3
+      case .contract(let pricing) = configuration.legPricing(for: .mainToHome)
     else {
       return (
         nil,
@@ -721,8 +722,7 @@ public enum ReactionProfitabilityAnalyzer {
           packagedVolumePerUnit: context.packagedVolumes[$0.typeID]
         )
       },
-      iskPerCubicMeter: rate,
-      maximumContractVolumeM3: maximumVolume
+      pricing: pricing
     )
     guard !result.warnings.contains(where: { $0.severity == .blocking }) else {
       return (nil, result.warnings)

@@ -225,6 +225,53 @@ struct TradeLogbookTests {
   }
 
   @Test
+  func usageClosesTheWholeEntryAndReturnsToASale() async throws {
+    var value = entry(quantity: 800, target: .home)
+    #expect(value.usage == .sale(.home))
+
+    value.setUsage(.production)
+    #expect(value.status == .manufacturingIgnored)
+    #expect(value.usage == .production)
+    #expect(value.openQuantity == 0)
+    #expect(value.targetRole == .home)
+
+    value.setUsage(.consumption)
+    #expect(value.status == .consumed)
+    #expect(value.usage == .consumption)
+    #expect(value.openQuantity == 0)
+    #expect(TradeLogbookSummary.openQuantities([value], targetRole: .home).isEmpty)
+
+    // A sale reopens the entry; an existing open status stays untouched.
+    value.setUsage(.sale(.coalition))
+    #expect(value.status == .bought)
+    #expect(value.usage == .sale(.coalition))
+    #expect(value.openQuantity == 800)
+    value.status = .listed
+    value.setUsage(.sale(.main))
+    #expect(value.status == .listed)
+
+    // Hubs first, then production and consumption.
+    let consumed = entry(quantity: 3, status: .consumed, target: .main)
+    let produced = entry(quantity: 2, status: .manufacturingIgnored, target: .main)
+    let coalition = entry(quantity: 1, target: .coalition)
+    #expect(
+      TradeLogbookSorter.sorted([consumed, produced, coalition], by: .targetHub, ascending: true)
+        .map(\.quantity) == [1, 2, 3]
+    )
+
+    let url = temporaryStoreURL()
+    defer {
+      try? FileManager.default.removeItem(
+        at: url.deletingLastPathComponent().deletingLastPathComponent()
+      )
+    }
+    let store = try await TradeLogbookStore.open(url: url)
+    try await store.save(consumed)
+    #expect(try await store.entries().first?.usage == .consumption)
+    await store.close()
+  }
+
+  @Test
   func sortingUsesTypedValuesAndKeepsUnknownCostsLast() {
     var cheap = entry(quantity: 10)
     cheap.buyUnitPrice = 1

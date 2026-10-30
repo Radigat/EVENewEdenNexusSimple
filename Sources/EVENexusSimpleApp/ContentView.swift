@@ -12,6 +12,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case coalitionHubOpportunities
   case trade
   case tradeLogbook
+  case marketStock
   case stockSaleComparison
   case publicContracts
   case reactions
@@ -39,6 +40,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .coalitionHubOpportunities: "Coalition Hub Opportunities"
     case .trade: "Trade"
     case .tradeLogbook: "Trade logbook"
+    case .marketStock: "Market stock"
     case .stockSaleComparison: "Stock sale comparison"
     case .publicContracts: "Public Contracts"
     case .reactions: "Reactions"
@@ -62,6 +64,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .coalitionHubOpportunities: "flag.fill"
     case .trade: "arrow.left.arrow.right"
     case .tradeLogbook: "book.closed.fill"
+    case .marketStock: "chart.bar.xaxis"
     case .stockSaleComparison: "scalemass.fill"
     case .publicContracts: "doc.text.magnifyingglass"
     case .reactions: "atom"
@@ -80,8 +83,6 @@ enum NavigationSection: String, CaseIterable, Identifiable {
 struct DashboardNavigationRequest {
   let section: NavigationSection
   var negativeReactionsOnly = false
-  /// Opens the Planner with this batch instead of only switching sections.
-  var plannerLaunch: PlannerLaunchRequest? = nil
 }
 
 enum DataSettingsSection: String, CaseIterable, Identifiable {
@@ -400,10 +401,6 @@ struct ContentView: View {
           case .dashboard:
             DashboardView { request in
               opensNegativeReactions = request.negativeReactionsOnly
-              if let launch = request.plannerLaunch {
-                historicalPlannerRequest = nil
-                plannerLaunchRequest = launch
-              }
               guardedSelection.wrappedValue = request.section
             }
           case .planner:
@@ -468,6 +465,8 @@ struct ContentView: View {
             )
           case .tradeLogbook:
             TradeLogbookView()
+          case .marketStock:
+            MarketStockView()
           case .stockSaleComparison:
             StockSaleComparisonView(
               onOpenMarketSettings: {
@@ -843,6 +842,14 @@ struct SidebarAutomaticDataStatus: View {
           progress: secondaryHubAutomaticProgress(.coalition)
         )
         automaticStatusRow(
+          title: "Market stock",
+          detail: marketStockAutomaticStatus,
+          systemImage: "chart.bar.xaxis",
+          color: marketStockAutomaticStatusColor,
+          progress: nil
+        )
+        .help(marketStockAutomaticHelp)
+        automaticStatusRow(
           title: "Loyalty Stores",
           detail: loyaltyStoreAutomaticStatus,
           systemImage: "rosette",
@@ -1055,6 +1062,72 @@ struct SidebarAutomaticDataStatus: View {
       )
     }
     return AppLocalization.text("Preparing")
+  }
+
+  /// Market stock history (MARKTBESTAND_PLAN P3): latest Main-Hub point and
+  /// the next fixed term; the help lists every hub.
+  private var marketStockAutomaticStatus: String {
+    if runtime.marketStockError != nil {
+      return AppLocalization.text("Saving failed")
+    }
+    guard runtime.mainHubMarketAutomaticUpdatesEnabled else {
+      return AppLocalization.text("Paused")
+    }
+    if runtime.isMarketStockWaitingForESI {
+      return AppLocalization.text("Waiting for ESI")
+    }
+    let latest = runtime.marketStockLatestPointAt.values.max()
+    switch (latest, runtime.marketStockNextTermAt) {
+    case (let latest?, let next?):
+      return AppLocalization.format(
+        "Point %@ · next %@",
+        Self.marketStockTime(latest),
+        Self.marketStockTime(next)
+      )
+    case (nil, let next?):
+      return AppLocalization.format("Next %@", Self.marketStockTime(next))
+    case (let latest?, nil):
+      return AppLocalization.format("Updated %@", Self.marketStockTime(latest))
+    case (nil, nil):
+      return AppLocalization.text("Preparing")
+    }
+  }
+
+  private var marketStockAutomaticStatusColor: Color {
+    if runtime.marketStockError != nil { return DesignTokens.negative }
+    if runtime.isMarketStockWaitingForESI { return DesignTokens.caution }
+    return runtime.mainHubMarketAutomaticUpdatesEnabled
+      ? DesignTokens.positive : DesignTokens.textSecondary
+  }
+
+  private var marketStockAutomaticHelp: String {
+    let hubs: [(OpportunityHubRole, String)] = [
+      (.main, AppLocalization.text("Main Hub")),
+      (.home, AppLocalization.text("Home Hub")),
+      (.coalition, AppLocalization.text("Coalition Hub")),
+    ]
+    var lines = hubs.map { role, name in
+      AppLocalization.format(
+        "%@: last point %@",
+        name,
+        runtime.marketStockLatestPointAt[role].map(Self.marketStockTime) ?? "—"
+      )
+    }
+    lines.append(
+      AppLocalization.text(
+        "Fixed terms 06:00 and 13:00; a successful hub scan up to 3 hours earlier counts for the term."
+      )
+    )
+    if let error = runtime.marketStockError {
+      lines.append(AppLocalization.text(error))
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  private static func marketStockTime(_ date: Date) -> String {
+    Calendar.current.isDateInToday(date)
+      ? date.formatted(date: .omitted, time: .shortened)
+      : date.formatted(.dateTime.day().month(.twoDigits).hour().minute())
   }
 
   /// Daily Loyalty Store catalog plus the LP known per character.
@@ -1679,7 +1752,12 @@ struct DashboardView: View {
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
-  @Query(sort: \AppSetting.key)
+  // Only the Dashboard's own rows (industry jobs, wealth history): unrelated
+  // settings writes neither reload their values nor re-render the view.
+  @Query(
+    filter: #Predicate<AppSetting> { $0.key.starts(with: "dashboard.") },
+    sort: \AppSetting.key
+  )
   private var settings: [AppSetting]
   @State private var blueprintNames: [Int64: String] = [:]
   @State private var industrySnapshot = DashboardIndustrySnapshot.empty
@@ -1691,16 +1769,19 @@ struct DashboardView: View {
   @State private var refreshingWalletCharacterIDs: Set<Int64> = []
   @State private var walletRefreshErrors: [Int64: String] = [:]
   @State private var selectedDashboardWealthSeries: DashboardWealthSeries = .total
-  @State private var wealthHistoryCache = DashboardWealthHistoryCache()
+  @State private var authorizationCache = DashboardAuthorizationCache()
   @AppStorage("reactions.analysis-runs", store: AppDefaults.store)
   private var sharedReactionRuns = 100
   @AppStorage("reactions.market-hub-id", store: AppDefaults.store)
   private var sharedReactionHubID = ""
+  private var wealthHistoryCache: DashboardWealthHistoryCache { .shared }
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 60)) { context in
-      ScrollView {
-        VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-          header
+    ScrollView {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+        header
+        // Only the job panels depend on the clock; the minute tick must not
+        // re-render the finance and market sections.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
           dashboardSection(
             title: "Industry & jobs",
             systemImage: "hammer.fill"
@@ -1712,46 +1793,62 @@ struct DashboardView: View {
               largestJobsPanel(now: context.date)
             }
           }
-          dashboardSection(
-            title: "Finances",
-            systemImage: "creditcard.fill"
-          ) {
-            DashboardCardLayout(weights: [1, 2], minimumWidths: [280, 560]) {
-              walletPanel
-              netWorthPanel
-            }
-          }
-          dashboardSection(
-            title: "Market & opportunities",
-            systemImage: "chart.line.uptrend.xyaxis"
-          ) {
-            mineralTickerPanel
-            DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340]) {
-              reactionOpportunityPanel
-              purchasePanel(kind: .moonMaterials)
-              purchasePanel(kind: .minerals)
-            }
-            DashboardTopOpportunitiesPanel(onNavigate: onNavigate)
+        }
+        dashboardSection(
+          title: "Finances",
+          systemImage: "creditcard.fill"
+        ) {
+          DashboardCardLayout(weights: [1, 2], minimumWidths: [280, 560]) {
+            walletPanel
+            netWorthPanel
           }
         }
-        .frame(maxWidth: 1_440, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .top)
-        .padding(DesignTokens.spacingLG)
+        dashboardSection(
+          title: "Market & opportunities",
+          systemImage: "chart.line.uptrend.xyaxis"
+        ) {
+          mineralTickerPanel
+          DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340]) {
+            reactionOpportunityPanel
+            purchasePanel(kind: .moonMaterials)
+            purchasePanel(kind: .minerals)
+          }
+        }
       }
+      .frame(maxWidth: 1_440, alignment: .leading)
+      .frame(maxWidth: .infinity, alignment: .top)
+      .padding(DesignTokens.spacingLG)
     }
     .navigationTitle(AppLocalization.text("Dashboard"))
     .task(id: dashboardIndustryRefreshIdentity) {
+      let identity = dashboardIndustryRefreshIdentity
+      let cache = DashboardIndustrySnapshotCache.shared
+      // Returning to the Dashboard reuses the snapshot prepared for the same
+      // inputs instead of decoding every job snapshot again.
+      if let cached = cache.entry(for: identity) {
+        industrySnapshot = cached.snapshot
+        blueprintNames = cached.blueprintNames
+        return
+      }
       let inputs = dashboardIndustryInputs
       let prepared = await Task.detached(priority: .utility) {
         DashboardIndustrySnapshotBuilder.build(inputs: inputs)
       }.value
       guard !Task.isCancelled else { return }
       industrySnapshot = prepared
-      blueprintNames = await runtime.resolveAssetTypeNames(prepared.jobTypeIDs)
+      let names = await runtime.resolveAssetTypeNames(prepared.jobTypeIDs)
+      guard !Task.isCancelled else { return }
+      blueprintNames = names
+      cache.store(identity: identity, snapshot: prepared, blueprintNames: names)
     }
     .task(id: wealthInputIdentity) {
       guard hasFinishedDashboardStartupRefresh else { return }
-      await runtime.refreshDashboardWealth(inputs: wealthInputs)
+      // A running full refresh values the portfolio itself once all
+      // characters are synchronized, and a running valuation would discard
+      // these inputs anyway; skip decoding every snapshot for nothing.
+      guard !isRefreshingDashboardData, !runtime.isRefreshingDashboardWealth
+      else { return }
+      await runtime.refreshDashboardWealth(inputs: await loadWealthInputs())
       if runtime.dashboardWealthError == nil,
         let snapshot = runtime.dashboardWealthSnapshot
       {
@@ -1993,7 +2090,8 @@ struct DashboardView: View {
   }
 
   private var walletPanel: some View {
-    Panel(title: "Wallet", fillsAvailableHeight: true) {
+    let walletPortfolio = walletPortfolio
+    return Panel(title: "Wallet", fillsAvailableHeight: true) {
       if characters.isEmpty {
         ContentUnavailableView(
           "No connected characters",
@@ -2263,7 +2361,8 @@ struct DashboardView: View {
   }
 
   private var reactionOpportunityPanel: some View {
-    Panel(title: "Reactions with negative value creation") {
+    let filteredNegativeReactions = filteredNegativeReactions
+    return Panel(title: "Reactions with negative value creation") {
       HStack {
         Text("Negative value creation means buying is cheaper than reacting.")
           .font(.caption)
@@ -2405,6 +2504,7 @@ struct DashboardView: View {
 
   @ViewBuilder private var netWorthDetails: some View {
       if let snapshot = runtime.dashboardWealthSnapshot {
+        let characterSamples = characterWealthSamples
         LazyVGrid(
           columns: [GridItem(.adaptive(minimum: 128))],
           alignment: .leading,
@@ -2474,16 +2574,7 @@ struct DashboardView: View {
             }
             Spacer()
             DashboardWealthChart(
-              samples: wealthHistory.compactMap { history in
-                history.characters.first {
-                  $0.characterID == character.characterID
-                }?.knownValue.map {
-                  DashboardWealthChartSample(
-                    date: history.capturedAt,
-                    value: $0
-                  )
-                }
-              },
+              samples: characterSamples[character.characterID] ?? [],
               color: DesignTokens.accent
             )
             .frame(width: 92, height: 28)
@@ -2697,24 +2788,43 @@ struct DashboardView: View {
       .walletLastSyncAt
   }
 
-  private var wealthInputs: [DashboardWealthCharacterInput] {
-    characters.map { character in
-      DashboardWealthCharacterInput(
+  /// Captures the persisted sources on the main actor and decodes the large
+  /// asset, blueprint and job snapshots on a background task.
+  private func loadWealthInputs() async -> [DashboardWealthCharacterInput] {
+    let rawInputs = characters.map { character in
+      DashboardWealthRawInput(
         character: CharacterIdentity(
           id: character.characterID,
           name: character.characterName,
           corporationID: character.corporationID
         ),
-        wallet: storedWalletBalance(character),
-        assets: storedAssetSnapshot(character),
-        openOrders: storedOpenOrders(character),
-        privateContracts: storedPrivateContracts(character),
-        corporationAssets: storedCorporationAssetSnapshot(character),
-        corporationWallet: storedCorporationWallet(character),
-        industryJobs: storedIndustryJobs(character),
-        blueprints: storedBlueprintSnapshot(character)
+        lastSyncAt: character.lastSyncAt,
+        walletLastSyncAt: character.walletLastSyncAt,
+        wallet: character.walletBalanceSnapshot,
+        assets: character.assetSnapshot,
+        corporationAssets: character.corporationAssetSnapshot,
+        blueprints: character.blueprintSnapshot,
+        openOrders: storedSettingValue(
+          key: AppSettingKey.openOrders(characterID: character.characterID)
+        ),
+        privateContracts: storedSettingValue(
+          key: AppSettingKey.privateContracts(
+            characterID: character.characterID
+          )
+        ),
+        corporationWallet: storedSettingValue(
+          key: AppSettingKey.corporationWallet(
+            characterID: character.characterID
+          )
+        ),
+        industryJobs: storedSettingValue(
+          key: AppSettingKey.industryJobs(characterID: character.characterID)
+        )
       )
     }
+    return await Task.detached(priority: .userInitiated) {
+      rawInputs.map(\.decoded)
+    }.value
   }
 
   private var wealthInputIdentity: String {
@@ -2735,6 +2845,23 @@ struct DashboardView: View {
     )
   }
 
+  /// Per-character sparkline samples in one pass over the history; the
+  /// first matching row of each snapshot counts, as before.
+  private var characterWealthSamples: [Int64: [DashboardWealthChartSample]] {
+    var samples: [Int64: [DashboardWealthChartSample]] = [:]
+    for history in wealthHistory {
+      var seen = Set<Int64>()
+      for row in history.characters where seen.insert(row.characterID).inserted {
+        if let value = row.knownValue {
+          samples[row.characterID, default: []].append(
+            DashboardWealthChartSample(date: history.capturedAt, value: value)
+          )
+        }
+      }
+    }
+    return samples
+  }
+
   private var wealthTotalText: String {
     guard let snapshot = runtime.dashboardWealthSnapshot,
       let value = snapshot.knownTotalValue
@@ -2751,29 +2878,6 @@ struct DashboardView: View {
     return row.isComplete
       ? formatISK(value)
       : AppLocalization.format("Known: %@", formatISK(value))
-  }
-
-  private func storedAssetSnapshot(
-    _ character: StoredCharacter
-  ) -> Sourced<AssetSnapshot> {
-    if let data = character.assetSnapshot,
-      let value = try? JSONDecoder().decode(
-        Sourced<AssetSnapshot>.self,
-        from: data
-      )
-    {
-      return value
-    }
-    return Sourced(
-      state: .unavailable,
-      value: nil,
-      source: SourceIdentity(
-        provider: "Local",
-        version: "not-synchronized",
-        capturedAt: character.lastSyncAt ?? .distantPast
-      ),
-      diagnostics: ["assets.not-synchronized"]
-    )
   }
 
   private func persistWealthSnapshot(_ snapshot: DashboardWealthSnapshot) {
@@ -2834,7 +2938,7 @@ struct DashboardView: View {
     let failures = result.failedCharacterNames
 
     if !runtime.isRefreshingDashboardWealth {
-      await runtime.refreshDashboardWealth(inputs: wealthInputs)
+      await runtime.refreshDashboardWealth(inputs: await loadWealthInputs())
       if runtime.dashboardWealthError == nil,
         let snapshot = runtime.dashboardWealthSnapshot
       {
@@ -2907,140 +3011,15 @@ struct DashboardView: View {
   }
 
   private func storedWalletBalance(_ character: StoredCharacter) -> Sourced<Double> {
-    if let data = character.walletBalanceSnapshot,
-      let value = try? JSONDecoder().decode(Sourced<Double>.self, from: data)
-    {
-      return value
-    }
-    return Sourced(
-      state: .unavailable,
-      value: nil,
-      source: SourceIdentity(
-        provider: "Local",
-        version: "not-synchronized",
-        capturedAt: character.walletLastSyncAt ?? .distantPast
-      ),
-      diagnostics: ["wallet.not-synchronized"]
+    DashboardWealthRawInput.walletBalance(
+      character.walletBalanceSnapshot,
+      walletLastSyncAt: character.walletLastSyncAt
     )
   }
 
-  private func storedOpenOrders(
-    _ character: StoredCharacter
-  ) -> Sourced<[ESICharacterOrderDTO]> {
-    storedSettingSnapshot(
-      key: AppSettingKey.openOrders(characterID: character.characterID),
-      capturedAt: character.lastSyncAt,
-      diagnostic: "orders.not-synchronized"
-    )
-  }
-
-  private func storedPrivateContracts(
-    _ character: StoredCharacter
-  ) -> Sourced<PrivateContractSnapshot> {
-    storedSettingSnapshot(
-      key: AppSettingKey.privateContracts(
-        characterID: character.characterID
-      ),
-      capturedAt: character.lastSyncAt,
-      diagnostic: "private-contracts.not-synchronized"
-    )
-  }
-
-  private func storedIndustryJobs(
-    _ character: StoredCharacter
-  ) -> Sourced<[ESIIndustryJobDTO]> {
-    storedSettingSnapshot(
-      key: AppSettingKey.industryJobs(characterID: character.characterID),
-      capturedAt: character.lastSyncAt,
-      diagnostic: "industry-jobs.not-synchronized"
-    )
-  }
-
-  private func storedBlueprintSnapshot(
-    _ character: StoredCharacter
-  ) -> Sourced<[OwnedBlueprintInstance]> {
-    guard let data = character.blueprintSnapshot,
-      let value = try? JSONDecoder().decode(
-        Sourced<[OwnedBlueprintInstance]>.self,
-        from: data
-      )
-    else {
-      return unavailableStoredSource(
-        capturedAt: character.lastSyncAt,
-        diagnostic: "blueprints.not-synchronized"
-      )
-    }
-    return value
-  }
-
-  private func storedCorporationWallet(
-    _ character: StoredCharacter
-  ) -> Sourced<CorporationWalletSnapshot> {
-    storedSettingSnapshot(
-      key: AppSettingKey.corporationWallet(
-        characterID: character.characterID
-      ),
-      capturedAt: character.lastSyncAt,
-      diagnostic: "corporation-wallet.not-synchronized"
-    )
-  }
-
-  private func storedCorporationAssetSnapshot(
-    _ character: StoredCharacter
-  ) -> Sourced<AssetSnapshot> {
-    if let data = character.corporationAssetSnapshot,
-      let value = try? JSONDecoder().decode(
-        Sourced<AssetSnapshot>.self,
-        from: data
-      )
-    {
-      return value
-    }
-    return unavailableStoredSource(
-      capturedAt: character.lastSyncAt,
-      diagnostic: "corporation-assets.not-synchronized"
-    )
-  }
-
-  private func storedSettingSnapshot<Value: Codable & Sendable>(
-    key: String,
-    capturedAt: Date?,
-    diagnostic: String
-  ) -> Sourced<Value> {
-    let persistedValue: String?
-    do {
-      persistedValue = try modelContext.appSettingValue(for: key)
-    } catch {
-      persistedValue = nil
-    }
-    guard
-      let encoded = persistedValue
-        ?? settings.first(where: { $0.key == key })?.value,
-      let data = Data(base64Encoded: encoded),
-      let value = try? JSONDecoder().decode(Sourced<Value>.self, from: data)
-    else {
-      return unavailableStoredSource(
-        capturedAt: capturedAt,
-        diagnostic: diagnostic
-      )
-    }
-    return value
-  }
-
-  private func unavailableStoredSource<Value: Codable & Sendable>(
-    capturedAt: Date?,
-    diagnostic: String
-  ) -> Sourced<Value> {
-    Sourced(
-      state: .unavailable,
-      value: nil,
-      source: SourceIdentity(
-        provider: "Local",
-        version: "not-synchronized",
-        capturedAt: capturedAt ?? .distantPast
-      ),
-      diagnostics: [diagnostic]
-    )
+  private func storedSettingValue(key: String) -> String? {
+    (try? modelContext.appSettingValue(for: key))
+      ?? settings.first(where: { $0.key == key })?.value
   }
 
   private var filteredNegativeReactions: [ReactionAnalysisRow] {
@@ -3059,12 +3038,7 @@ struct DashboardView: View {
   }
 
   private var authorizationSnapshots: [AuthorizationSnapshot] {
-    characters.compactMap {
-      try? JSONDecoder().decode(
-        AuthorizationSnapshot.self,
-        from: $0.authorizationSnapshot
-      )
-    }
+    authorizationCache.snapshots(characters.map(\.authorizationSnapshot))
   }
 
   private func activityTitle(
@@ -3134,10 +3108,179 @@ struct DashboardWealthChartSample {
   let value: Double
 }
 
+/// Persisted Dashboard valuation sources as raw bytes. They are captured on
+/// the main actor and decoded on a background task, because asset, blueprint
+/// and job snapshots of all characters amount to several megabytes of JSON.
+/// Missing or undecodable sources stay explicitly unavailable.
+struct DashboardWealthRawInput: Sendable {
+  let character: CharacterIdentity
+  let lastSyncAt: Date?
+  let walletLastSyncAt: Date?
+  let wallet: Data?
+  let assets: Data?
+  let corporationAssets: Data?
+  let blueprints: Data?
+  /// Base64-encoded `AppSetting` values.
+  let openOrders: String?
+  let privateContracts: String?
+  let corporationWallet: String?
+  let industryJobs: String?
+
+  var decoded: DashboardWealthCharacterInput {
+    DashboardWealthCharacterInput(
+      character: character,
+      wallet: Self.walletBalance(wallet, walletLastSyncAt: walletLastSyncAt),
+      assets: Self.decode(
+        assets,
+        capturedAt: lastSyncAt,
+        diagnostic: "assets.not-synchronized"
+      ),
+      openOrders: Self.decode(
+        base64: openOrders,
+        capturedAt: lastSyncAt,
+        diagnostic: "orders.not-synchronized"
+      ),
+      privateContracts: Self.decode(
+        base64: privateContracts,
+        capturedAt: lastSyncAt,
+        diagnostic: "private-contracts.not-synchronized"
+      ),
+      corporationAssets: Self.decode(
+        corporationAssets,
+        capturedAt: lastSyncAt,
+        diagnostic: "corporation-assets.not-synchronized"
+      ),
+      corporationWallet: Self.decode(
+        base64: corporationWallet,
+        capturedAt: lastSyncAt,
+        diagnostic: "corporation-wallet.not-synchronized"
+      ),
+      industryJobs: Self.decode(
+        base64: industryJobs,
+        capturedAt: lastSyncAt,
+        diagnostic: "industry-jobs.not-synchronized"
+      ),
+      blueprints: Self.decode(
+        blueprints,
+        capturedAt: lastSyncAt,
+        diagnostic: "blueprints.not-synchronized"
+      )
+    )
+  }
+
+  static func walletBalance(
+    _ data: Data?,
+    walletLastSyncAt: Date?
+  ) -> Sourced<Double> {
+    decode(
+      data,
+      capturedAt: walletLastSyncAt,
+      diagnostic: "wallet.not-synchronized"
+    )
+  }
+
+  private static func decode<Value: Codable & Sendable>(
+    base64 encoded: String?,
+    capturedAt: Date?,
+    diagnostic: String
+  ) -> Sourced<Value> {
+    decode(
+      encoded.flatMap { Data(base64Encoded: $0) },
+      capturedAt: capturedAt,
+      diagnostic: diagnostic
+    )
+  }
+
+  private static func decode<Value: Codable & Sendable>(
+    _ data: Data?,
+    capturedAt: Date?,
+    diagnostic: String
+  ) -> Sourced<Value> {
+    if let data,
+      let value = try? JSONDecoder().decode(Sourced<Value>.self, from: data)
+    {
+      return value
+    }
+    return Sourced(
+      state: .unavailable,
+      value: nil,
+      source: SourceIdentity(
+        provider: "Local",
+        version: "not-synchronized",
+        capturedAt: capturedAt ?? .distantPast
+      ),
+      diagnostics: [diagnostic]
+    )
+  }
+}
+
+/// Decodes each character's stored authorization once per stored value
+/// instead of on every Dashboard evaluation. Not observed, like
+/// `DashboardWealthHistoryCache`.
+@MainActor
+final class DashboardAuthorizationCache {
+  private var decoded: [Data: AuthorizationSnapshot] = [:]
+
+  func snapshots(_ encoded: [Data]) -> [AuthorizationSnapshot] {
+    var next: [Data: AuthorizationSnapshot] = [:]
+    let result = encoded.compactMap { data -> AuthorizationSnapshot? in
+      if let snapshot = next[data] ?? decoded[data] {
+        next[data] = snapshot
+        return snapshot
+      }
+      guard
+        let snapshot = try? JSONDecoder().decode(
+          AuthorizationSnapshot.self,
+          from: data
+        )
+      else { return nil }
+      next[data] = snapshot
+      return snapshot
+    }
+    decoded = next
+    return result
+  }
+}
+
+/// Keeps the last prepared industry snapshot for its exact inputs, so a
+/// return to the Dashboard shows it at once instead of rebuilding it.
+@MainActor
+private final class DashboardIndustrySnapshotCache {
+  static let shared = DashboardIndustrySnapshotCache()
+
+  struct Entry {
+    let identity: DashboardIndustryRefreshIdentity
+    let snapshot: DashboardIndustrySnapshot
+    let blueprintNames: [Int64: String]
+  }
+
+  private var entry: Entry?
+
+  func entry(for identity: DashboardIndustryRefreshIdentity) -> Entry? {
+    entry?.identity == identity ? entry : nil
+  }
+
+  func store(
+    identity: DashboardIndustryRefreshIdentity,
+    snapshot: DashboardIndustrySnapshot,
+    blueprintNames: [Int64: String]
+  ) {
+    entry = Entry(
+      identity: identity,
+      snapshot: snapshot,
+      blueprintNames: blueprintNames
+    )
+  }
+}
+
 /// Decodes the persisted net-worth history once per stored value instead of
 /// on every read during view evaluation. The cache is not observed; views
 /// keep one instance in `@State` and stay driven by their settings query.
+/// One instance is shared by Dashboard and Net worth, so returning to either
+/// view does not decode the year-long history again.
+@MainActor
 final class DashboardWealthHistoryCache {
+  static let shared = DashboardWealthHistoryCache()
   private var encodedHistory: String?
   private var history: [DashboardWealthSnapshot] = []
 
@@ -3653,6 +3796,8 @@ private struct GeneralSettingsView: View {
             }
           }
         }
+
+        BackgroundOperationPanel()
 
         ConsolidationBackupView()
       }
@@ -4697,225 +4842,5 @@ struct StartupDataStatusSection: View {
     case .known(.partial), .known(.stale): DesignTokens.caution
     case .known(.forbidden), .known(.unavailable): DesignTokens.negative
     }
-  }
-}
-
-/// Dashboard card "Top opportunities" (HUB_CHANCEN_PLAN P9). It calculates
-/// nothing itself: every column shows the rows its hub view last calculated
-/// with its own filters, Warehouse, cost, contract and Loyalty Store basis.
-struct DashboardTopOpportunitiesPanel: View {
-  let onNavigate: (DashboardNavigationRequest) -> Void
-  @Environment(RuntimeState.self) private var runtime
-
-  private static let roles: [OpportunityHubRole] = [.main, .home, .coalition]
-
-  var body: some View {
-    Panel(title: "Top opportunities") {
-      Text(
-        "Ranked by daily profit potential exactly as calculated in the Main, Home and Coalition Hub opportunity lists, with their filters, Warehouse, cost settings, contract and Loyalty Store basis. A hub updates its column whenever it is opened."
-      )
-      .font(.caption)
-      .foregroundStyle(DesignTokens.textSecondary)
-      DashboardCardLayout(
-        weights: [1, 1, 1],
-        minimumWidths: [300, 300, 300]
-      ) {
-        ForEach(Self.roles, id: \.self) { role in
-          hubColumn(role)
-        }
-      }
-    }
-    .accessibilityIdentifier("dashboard.top-opportunities")
-  }
-
-  private func snapshot(
-    for role: OpportunityHubRole
-  ) -> ManufacturingOpportunitySnapshot? {
-    switch role {
-    case .main:
-      return runtime.manufacturingOpportunityAnalysis
-    case .home, .coalition:
-      // Only a scan of the currently configured exact hub is ranked.
-      guard runtime.opportunityScanTarget(for: role).requiresScan,
-        let analysis = runtime.opportunityState(for: role).analysis,
-        analysis.resolvedSaleHub.locationID == configuredLocationID(role)
-      else { return nil }
-      return analysis
-    }
-  }
-
-  private func configuredLocationID(_ role: OpportunityHubRole) -> Int64? {
-    switch role {
-    case .main: runtime.productionBasis.mainTradingLocation?.location.locationID
-    case .home: runtime.productionBasis.homeTradingLocation?.location.locationID
-    case .coalition:
-      runtime.productionBasis.coalitionTradingLocation?.location.locationID
-    }
-  }
-
-  private static func section(for role: OpportunityHubRole) -> NavigationSection {
-    switch role {
-    case .main: .manufacturingOpportunities
-    case .home: .homeHubOpportunities
-    case .coalition: .coalitionHubOpportunities
-    }
-  }
-
-  private static func title(for role: OpportunityHubRole) -> LocalizedStringKey {
-    switch role {
-    case .main: "Main Hub Opportunities"
-    case .home: "Home Hub Opportunities"
-    case .coalition: "Coalition Hub Opportunities"
-    }
-  }
-
-  @ViewBuilder
-  private func hubColumn(_ role: OpportunityHubRole) -> some View {
-    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      Button {
-        onNavigate(DashboardNavigationRequest(section: Self.section(for: role)))
-      } label: {
-        Label(Self.title(for: role), systemImage: "chevron.right")
-          .font(.callout.weight(.semibold))
-          .labelStyle(.titleAndIcon)
-      }
-      .buttonStyle(.borderless)
-      .help("Open this opportunity list")
-      if let hint = unavailableHint(role) {
-        Text(hint.localizedUI)
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-      } else if let result = runtime.hubTopOpportunities[role] {
-        if result.snapshotID != snapshot(for: role)?.id {
-          Label(
-            "A newer scan exists. Open this hub to recalculate the list.",
-            systemImage: "clock.arrow.circlepath"
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.caution)
-        }
-        if result.entries.isEmpty {
-          Text("No visible row of this hub has an available daily profit potential.")
-            .font(.caption)
-            .foregroundStyle(DesignTokens.textSecondary)
-        } else {
-          ForEach(result.entries) { entry in
-            entryRow(entry, role: role)
-          }
-        }
-        Text(
-          AppLocalization.format(
-            "Calculated in the hub %@",
-            result.calculatedAt.formatted(date: .abbreviated, time: .shortened)
-          )
-        )
-        .font(.caption2)
-        .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        Text("Not calculated yet. Open this hub once to calculate its list.")
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-  }
-
-  private func unavailableHint(_ role: OpportunityHubRole) -> String? {
-    if role != .main {
-      switch runtime.opportunityScanTarget(for: role) {
-      case .notConfigured:
-        return role == .home
-          ? "No Home Hub configured" : "No Coalition Hub configured"
-      case .sharesMainHub:
-        return "Uses Main Hub data"
-      case .sharesHomeHub:
-        return "Uses Home Hub data"
-      case .unresolved:
-        return role == .home
-          ? "Home Hub location incomplete" : "Coalition Hub location incomplete"
-      case .npcStation, .playerStructure:
-        break
-      }
-    } else if runtime.productionBasis.mainTradingLocation == nil {
-      return "Main Hub not configured"
-    }
-    return snapshot(for: role) == nil
-      ? "No saved scan yet. It runs automatically with the next Main Hub scan."
-      : nil
-  }
-
-  private func entryRow(
-    _ entry: HubTopOpportunityEntry,
-    role: OpportunityHubRole
-  ) -> some View {
-    HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
-      EVEItemText(
-        value: entry.productName,
-        typeID: entry.productTypeID,
-        font: .caption
-      )
-      Spacer()
-      VStack(alignment: .trailing, spacing: 2) {
-        Text(
-          AppLocalization.format(
-            "%@ / day",
-            Self.formatSignedISK(entry.dailyProfitPotential)
-          )
-        )
-        .font(.caption.monospacedDigit())
-        .foregroundStyle(
-          entry.dailyProfitPotential >= 0
-            ? DesignTokens.positive : DesignTokens.negative
-        )
-        Text(
-          AppLocalization.format(
-            "ROI %@",
-            Self.formatPercent(entry.returnOnInvestment)
-          )
-        )
-        .font(.caption2.monospacedDigit())
-        .foregroundStyle(DesignTokens.textSecondary)
-      }
-      Button("Add to Planner") {
-        onNavigate(
-          DashboardNavigationRequest(
-            section: .planner,
-            plannerLaunch: MainHubOpportunityPlannerHandoff.request(
-              productTypeID: entry.productTypeID,
-              productName: entry.productName,
-              requestedRuns: entry.runs,
-              wantedQuantity: Int(clamping: entry.producedQuantity),
-              materialEfficiency: entry.materialEfficiency ?? 0,
-              timeEfficiency: entry.timeEfficiency ?? 0,
-              targetMarket: role
-            )
-          )
-        )
-      }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
-      .font(.caption)
-      .help("Adds this saved batch as a new line to the Planner draft.")
-      .accessibilityLabel("Add to Planner")
-    }
-  }
-
-  private static func formatSignedISK(_ value: Double) -> String {
-    let formatted = abs(value).formatted(
-      .currency(code: "ISK")
-        .locale(AppLocalization.currentLanguage.locale)
-        .grouping(.automatic)
-        .precision(.fractionLength(0))
-    )
-    return value > 0 ? "+\(formatted)" : value < 0 ? "−\(formatted)" : formatted
-  }
-
-  private static func formatPercent(_ value: Double?) -> String {
-    value?.formatted(
-      .percent
-        .locale(AppLocalization.currentLanguage.locale)
-        .grouping(.automatic)
-        .precision(.fractionLength(1))
-    ) ?? "—"
   }
 }

@@ -109,7 +109,8 @@ Checkliste, Prompts und Owner-Testleitfaden:
   - Home- und Coalition-Hub-Chancen mit eigenen Scans, Bedarfsledgern und
     Ansichten sowie Transport Home → Coalition;
   - Vertragspreise in allen Chancenansichten;
-  - Dashboard-Karte „Top-Chancen“;
+  - Dashboard-Karte „Top-Chancen“ (am 26.10.2026 auf Eigentümerauftrag
+    wieder entfernt);
   - Zielmarkt im Planner und Allianzmarkt als manuelles zehntes Szenario;
   - Kaufort-Hinweis für Mineralien und Mondmaterialien mit Multibuy je
     Kaufort.

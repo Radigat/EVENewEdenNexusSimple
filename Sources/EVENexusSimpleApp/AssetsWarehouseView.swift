@@ -355,7 +355,7 @@ struct AssetsWarehouseView: View {
         TextField(
           "Target quantity",
           value: $targetQuantity,
-          format: .number
+          format: .number.locale(AppLocalization.currentLanguage.locale)
         )
         .textFieldStyle(.roundedBorder)
         .frame(width: 150)
@@ -1470,7 +1470,11 @@ private struct WarehouseMinimumEditor: View {
   }
 
   var body: some View {
-    TextField("Minimum", value: $draftValue, format: .number)
+    TextField(
+      "Minimum",
+      value: $draftValue,
+      format: .number.locale(AppLocalization.currentLanguage.locale)
+    )
       .textFieldStyle(.roundedBorder)
       .multilineTextAlignment(.trailing)
       .frame(width: 105)

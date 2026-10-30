@@ -1920,6 +1920,104 @@ struct IndustryPlannerTests {
   }
 
   @Test
+  func inboundLegUsesTheChosenJumpFreighterServiceWithoutRounding()
+    async throws
+  {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let product = BlueprintDefinition(
+      blueprintTypeID: 401,
+      productTypeID: 41,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 42, quantity: 10)],
+        products: [
+          BlueprintProduct(typeID: 41, quantity: 1, probability: nil)
+        ]
+      ),
+      source: source
+    )
+    let catalog = FixtureCatalog(
+      names: [41: "Finished Product", 42: "Purchased Material"],
+      definitions: [41: product],
+      packagedVolumes: [41: 100, 42: 20]
+    )
+    var logisticsConfiguration = LogisticsConfiguration(
+      isEnabled: true,
+      productionLocationName: "Production",
+      marketLocationName: "Jita",
+      iskPerCubicMeter: 2_000
+    )
+    logisticsConfiguration.hubTransport.set(
+      HubTransportLegSetting(
+        leg: .mainToHome,
+        method: .jumpFreighterService,
+        service: JumpFreighterServiceRate(
+          iskPerCubicMeter: 500,
+          collateralRate: 0.01
+        )
+      )
+    )
+    let basis = ProductionBasis(
+      marketTaxes: MarketTaxConfiguration(
+        traderCharacterID: 1,
+        salesTaxRate: 0.05,
+        brokerFeeRate: 0.01,
+        calculation: feeCalculation(source: source)
+      ),
+      logistics: logisticsConfiguration
+    )
+    let context = IndustryPlanningContext(
+      manufacturingProfile: ManufacturingProfile(),
+      productionBasis: basis,
+      catalog: catalog,
+      market: MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: EVEConstants.jitaIV4StationID,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: [
+          41: [
+            makeOrder(typeID: 41, side: .buy, price: 250_000_000),
+            makeOrder(typeID: 41, side: .sell, price: 300_000_000),
+          ],
+          42: [makeOrder(typeID: 42, side: .sell, price: 100)],
+        ],
+        source: source
+      ),
+      adjustedPrices: [
+        42: AdjustedPrice(typeID: 42, adjustedPrice: 50, averagePrice: 50)
+      ],
+      systemIndices: [
+        IndustrySystemIndex(
+          solarSystemID: EVEConstants.jitaSystemID,
+          activity: .manufacturing,
+          costIndex: 0.01
+        )
+      ],
+      sdeBuild: 1,
+      salesTaxRate: basis.marketTaxes.effectiveSalesTaxRate,
+      brokerFeeRate: basis.marketTaxes.effectiveBrokerFeeRate
+    )
+
+    let plan = try await IndustryPlanner().plan(
+      input: "Finished Product 1 0 0 BPC 7000000",
+      context: context
+    )
+
+    // 200 m³ × 500 ISK plus 1 % of 1,000 ISK collateral, not rounded to 1M.
+    let logistics = try #require(plan.costBreakdown?.logistics)
+    #expect(logistics.legs.count == 1)
+    #expect(logistics.legs.first?.roundedCharge == 100_010)
+    #expect(logistics.roundingIncrement == 0)
+    #expect(logistics.collateralRate == 0.01)
+    #expect(plan.costBreakdown?.logisticsCost == 100_010)
+
+  }
+
+  @Test
   func includesRoundedLogisticsAndSeparatesEveryFee() async throws {
     let source = SourceIdentity(provider: "fixture", version: "1")
     let product = BlueprintDefinition(

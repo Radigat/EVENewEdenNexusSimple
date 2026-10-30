@@ -2,13 +2,16 @@ import EVENexusCore
 import SwiftUI
 
 /// The separately presented trade routes (HANDEL_PLAN.md, P4 and the
-/// owner change of 22.10.2026: no station trading, Home ↔ Coalition added).
+/// owner change of 22.10.2026: no station trading, Home ↔ Coalition added;
+/// Home → Main and Coalition → Main added on 27.10.2026).
 /// Raw values are stored; an unknown stored value falls back to Main → Home.
 enum TradeModeOption: String, CaseIterable, Identifiable {
   case importHome
   case importCoalition
   case homeToCoalition
   case coalitionToHome
+  case homeToMain
+  case coalitionToMain
 
   var id: Self { self }
 
@@ -18,6 +21,8 @@ enum TradeModeOption: String, CaseIterable, Identifiable {
     case .importCoalition: .mainToCoalition
     case .homeToCoalition: .homeToCoalition
     case .coalitionToHome: .coalitionToHome
+    case .homeToMain: .homeToMain
+    case .coalitionToMain: .coalitionToMain
     }
   }
 
@@ -27,6 +32,8 @@ enum TradeModeOption: String, CaseIterable, Identifiable {
     case .importCoalition: "Main → Coalition"
     case .homeToCoalition: "Home → Coalition"
     case .coalitionToHome: "Coalition → Home"
+    case .homeToMain: "Home → Main"
+    case .coalitionToMain: "Coalition → Main"
     }
   }
 }
@@ -82,8 +89,16 @@ enum TradeHubText {
       AppLocalization.text("Home Hub and Coalition Hub must both be configured for this route.")
     case "jump-freighter.isotope-price-unavailable":
       AppLocalization.text("A Main Hub isotope price is missing, so the Jump Freighter fuel cost is unavailable.")
+    case "trade.jf-service-rate-missing":
+      AppLocalization.text("The Jump Freighter service prices of a leg are incomplete in the logistics settings.")
+    case "trade.main-jump-profile-missing":
+      AppLocalization.text("A self-jump to or from the Main Hub needs a jump-route profile ending in a jumpable system near the Main Hub.")
+    case "trade.jump-profile-unavailable":
+      AppLocalization.text("The jump-route profile chosen for a leg is missing or incomplete.")
+    case "jump-freighter.pilot-unavailable":
+      AppLocalization.text("No eligible Jump Freighter pilot with fresh skills is available.")
     default:
-      AppLocalization.text("The Jump Freighter route from the Home Hub to the Coalition Hub is unavailable.")
+      AppLocalization.text("The Jump Freighter route of a leg is unavailable.")
     }
   }
 }
@@ -125,6 +140,7 @@ struct TradeView: View {
     direction: .ascending
   )
   @State private var logbookRequest: TradeLogbookEditorRequest?
+  @State private var stockHistoryRequest: MarketStockItemRequest?
   @State private var topSourceSide = TradeQuoteSide.minSell
   @State private var topTargetSide = TradeQuoteSide.minSell
   /// The Top-20 tile's own sort; `nil` follows the metric, descending
@@ -190,6 +206,13 @@ struct TradeView: View {
       await runtime.refreshTradeTransportBasis(for: mode.route)
     }
     .task(id: volumeHistoryKey) { await loadVolumeHistory() }
+    .task(id: marketStockKey) {
+      await runtime.refreshMarketStockOverviews(
+        for: [mode.sourceRole, mode.targetRole],
+        consumer: "trade"
+      )
+    }
+    .onDisappear { runtime.releaseMarketStockOverviews(consumer: "trade") }
     .task {
       if runtime.tradeLogbookState == .notLoaded {
         await runtime.loadTradeLogbook()
@@ -197,6 +220,10 @@ struct TradeView: View {
     }
     .sheet(item: $logbookRequest) { request in
       TradeLogbookEditor(request: request)
+        .environment(runtime)
+    }
+    .sheet(item: $stockHistoryRequest) { request in
+      MarketStockItemDetailView(request: request)
         .environment(runtime)
     }
   }
@@ -288,8 +315,12 @@ struct TradeView: View {
         Label("Refresh hub markets", systemImage: "arrow.clockwise")
       }
     }
-    .disabled(isScanningHubs)
-    .help(AppLocalization.text("Runs the Main, Home and Coalition Hub scan that also updates the Hub opportunities."))
+    .disabled(isScanningHubs || runtime.isHubScanBlockedByESICache)
+    .help(
+      runtime.hubScanBlockedText
+        ?? AppLocalization.text(
+          "Runs the Main, Home and Coalition Hub scan that also updates the Hub opportunities.")
+    )
     .accessibilityIdentifier("trade.refresh-hub-markets")
   }
 
@@ -432,13 +463,24 @@ struct TradeView: View {
   private func transportDescription(_ leg: TradeTransportLeg) -> String {
     switch leg {
     case .courier(let courier):
-      AppLocalization.format(
-        "Courier %@ → %@: %@ ISK per m³, at least %@ of the collateral, per unit without contract rounding.",
-        courier.origin,
-        courier.destination,
-        formatNumber(courier.iskPerCubicMeter),
-        formatPercent(courier.collateralRate)
-      )
+      switch courier.provider {
+      case .profileCourier:
+        AppLocalization.format(
+          "Courier %@ → %@: %@ ISK per m³, at least %@ of the collateral, per unit without contract rounding.",
+          courier.origin,
+          courier.destination,
+          formatNumber(courier.iskPerCubicMeter),
+          formatPercent(courier.collateralRate)
+        )
+      case .jumpFreighterService:
+        AppLocalization.format(
+          "Jump Freighter service %@ → %@: %@ ISK per m³ plus %@ of the collateral, without rounding.",
+          courier.origin,
+          courier.destination,
+          formatNumber(courier.iskPerCubicMeter),
+          formatPercent(courier.collateralRate)
+        )
+      }
     case .jumpFreighter(let freighter):
       AppLocalization.format(
         "Jump Freighter %@ → %@: %@ ISK per flight for %@ m³; per unit assuming a full load.",
@@ -496,18 +538,67 @@ struct TradeView: View {
     }
   }
 
+  private typealias Indicator = TradeDifferenceIndicator
+
+  private var increasePercentRange: ClosedRange<Int> {
+    Indicator.percentRange.lowerBound...(Indicator.percentRange.upperBound
+      - Indicator.minimumPercentGap)
+  }
+
+  /// The double arrow can never be set below single arrow + 1 %.
+  private var strongIncreasePercentRange: ClosedRange<Int> {
+    (coupledPercents.increase + Indicator.minimumPercentGap)...Indicator.percentRange.upperBound
+  }
+
+  /// Stored values may predate the coupling, so every read is normalised.
+  private var coupledPercents: (increase: Int, strongIncrease: Int) {
+    Indicator.coupledPercents(increase: increasePercent, strongIncrease: strongIncreasePercent)
+  }
+
+  /// Raising the single arrow pushes the double arrow up with it.
+  private var coupledIncreasePercent: Binding<Int> {
+    Binding(
+      get: { coupledPercents.increase },
+      set: { newValue in
+        let coupled = Indicator.coupledPercents(
+          increase: newValue,
+          strongIncrease: strongIncreasePercent
+        )
+        increasePercent = coupled.increase
+        strongIncreasePercent = coupled.strongIncrease
+      }
+    )
+  }
+
+  private var coupledStrongIncreasePercent: Binding<Int> {
+    Binding(
+      get: { coupledPercents.strongIncrease },
+      set: { newValue in
+        let coupled = Indicator.coupledPercents(
+          increase: increasePercent,
+          strongIncrease: newValue
+        )
+        increasePercent = coupled.increase
+        strongIncreasePercent = coupled.strongIncrease
+      }
+    )
+  }
+
   private var indicatorSettings: some View {
     HStack(spacing: DesignTokens.spacingMD) {
-      Stepper(value: $increasePercent, in: 1...1_000) {
+      Stepper(value: coupledIncreasePercent, in: increasePercentRange) {
         Label(
-          AppLocalization.format("Arrow from %lld %%", Int64(increasePercent)),
+          AppLocalization.format("Arrow from %lld %%", Int64(coupledPercents.increase)),
           systemImage: "chevron.up"
         )
       }
       .accessibilityIdentifier("trade.indicator.increase")
-      Stepper(value: $strongIncreasePercent, in: 1...1_000) {
+      Stepper(value: coupledStrongIncreasePercent, in: strongIncreasePercentRange) {
         Label(
-          AppLocalization.format("Double arrow from %lld %%", Int64(strongIncreasePercent)),
+          AppLocalization.format(
+            "Double arrow from %lld %%",
+            Int64(coupledPercents.strongIncrease)
+          ),
           systemImage: "chevron.up.2"
         )
       }
@@ -676,12 +767,12 @@ struct TradeView: View {
       } else {
         VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
           topTile
-          // Compact tiles need the name (200) plus four number columns
-          // (4 × 96 + spacing) and the tile padding, about 632 pt.
+          // Tiles sit side by side only when every tile fits its full
+          // compact table; otherwise they stack in one column.
           LazyVGrid(
             columns: showsDetails
               ? [GridItem(.flexible(), alignment: .top)]
-              : [GridItem(.adaptive(minimum: 660), alignment: .top)],
+              : [GridItem(.adaptive(minimum: compactTileMinimumWidth), alignment: .top)],
             alignment: .leading,
             spacing: DesignTokens.spacingMD
           ) {
@@ -922,14 +1013,28 @@ struct TradeView: View {
         )
       }
     } else {
-      table(
-        rows: rows,
-        sourceSide: sourceSide,
-        targetSide: targetSide,
-        sort: sort,
-        rowIdentifierPrefix: rowIdentifierPrefix,
-        showsReturnOnInvestment: showsReturnOnInvestment
-      )
+      // A window narrower than one compact table scrolls inside the tile
+      // instead of clipping the right-hand columns.
+      ViewThatFits(in: .horizontal) {
+        table(
+          rows: rows,
+          sourceSide: sourceSide,
+          targetSide: targetSide,
+          sort: sort,
+          rowIdentifierPrefix: rowIdentifierPrefix,
+          showsReturnOnInvestment: showsReturnOnInvestment
+        )
+        ScrollView(.horizontal) {
+          table(
+            rows: rows,
+            sourceSide: sourceSide,
+            targetSide: targetSide,
+            sort: sort,
+            rowIdentifierPrefix: rowIdentifierPrefix,
+            showsReturnOnInvestment: showsReturnOnInvestment
+          )
+        }
+      }
     }
   }
 
@@ -1004,10 +1109,11 @@ struct TradeView: View {
   ) -> [TradeDisplayRow] {
     let source = runtime.tradeMarketState(for: mode.sourceRole)?.value
     let target = runtime.tradeMarketState(for: mode.targetRole)?.value
-    let demand = runtime.tradeDemand(for: mode.targetRole)
+    let targetStock = runtime.marketStockOverview(for: mode.targetRole)
+    let sourceStock = runtime.marketStockOverview(for: mode.sourceRole)
     let histories = runtime.tradeVolumeHistory(for: mode.targetRole)
     let hubUsesRegion = hubVolumeUsesRegion
-    let now = Date.now
+    let selectedWindow = volumeWindow
     let openQuantities = TradeLogbookSummary.openQuantities(
       runtime.tradeLogbookEntries,
       targetRole: mode.targetRole
@@ -1031,22 +1137,29 @@ struct TradeView: View {
       targetFees: runtime.tradeHubFees(for: mode.targetRole),
       transport: transport
     ).map { row in
-      let summary = demand?.dailySummary(for: row.typeID)
       let history = histories?.historiesByType[row.typeID]
+      // MARKTBESTAND_PLAN C4: partial fills from the market stock history.
       var hubVolumes: [MarketHistoryWindow: HubTradedVolume] = [:]
+      var netChanges: [MarketHistoryWindow: MarketStockNetChange] = [:]
       for window in MarketHistoryWindow.allCases {
         hubVolumes[window] =
           hubUsesRegion
           ? history.map { HubTradedVolume.regionHistory($0, window: window) }
-          : demand?.hubTradedVolume(for: row.typeID, window: window, now: now)
+          : targetStock?.hubTradedVolume(for: row.typeID, window: window)
+        netChanges[window] = targetStock?.netChange(for: row.typeID, window: window)
       }
+      let today = targetStock?.hubTradedVolume(for: row.typeID, window: .oneDay)
+      let average = targetStock?.hubTradedVolume(for: row.typeID, window: selectedWindow)
       return TradeDisplayRow(
         row: row,
-        currentDailyDemand: summary?.currentUnits,
-        averageDailyDemand: summary?.averageUnits,
+        currentDailyDemand: today?.units,
+        averageDailyDemand: average.map { Int64($0.averagePerRecordedDay.rounded()) },
         openLogbookQuantity: openQuantities[row.typeID] ?? 0,
         volumeHistory: history,
-        hubTradedVolumes: hubVolumes
+        hubTradedVolumes: hubVolumes,
+        sourceStock: sourceStock?.currentStock(for: row.typeID),
+        targetStock: targetStock?.currentStock(for: row.typeID),
+        targetNetChanges: netChanges
       )
     }
   }
@@ -1055,6 +1168,15 @@ struct TradeView: View {
 
   private let nameMinimumWidth: CGFloat = 200
   private let numberWidth: CGFloat = 96
+  /// Number columns of a compact group tile (without ROI and details).
+  private let compactNumberColumnCount = 11
+
+  /// Name, the compact number columns with their spacing and the tile padding.
+  private var compactTileMinimumWidth: CGFloat {
+    let columns = CGFloat(compactNumberColumnCount)
+    return nameMinimumWidth + columns * (numberWidth + DesignTokens.spacingXS)
+      + 2 * DesignTokens.spacingMD
+  }
 
   private var detailColumns: [(TradeSortColumn, LocalizedStringKey)] {
     var columns: [(TradeSortColumn, LocalizedStringKey)] = [
@@ -1071,6 +1193,7 @@ struct TradeView: View {
       (.averageDailyVolume, "Ø region/day"),
       (.averageDailyDemand, "Ø demand/day"),
       (.currentDailyDemand, "Demand today"),
+      (.sourceStock, "Stock source"),
       (.targetDepth, "Depth"),
       (.openLogbookQuantity, "Logbook open"),
     ]
@@ -1128,6 +1251,15 @@ struct TradeView: View {
           )
         ),
         column: .hubTradedVolume,
+        tint: DesignTokens.accent,
+        sort: sort
+      )
+      numberHeader("Stock target", column: .targetStock, tint: DesignTokens.accent, sort: sort)
+      numberHeader(
+        LocalizedStringKey(
+          AppLocalization.format("Net target %lld d", Int64(volumeWindow.days))
+        ),
+        column: .targetNetChange,
         tint: DesignTokens.accent,
         sort: sort
       )
@@ -1228,6 +1360,21 @@ struct TradeView: View {
         .help(AppLocalization.text("Add to logbook"))
         .accessibilityLabel("Add to logbook")
         .accessibilityIdentifier("\(identifierPrefix).\(row.typeID).add-to-logbook")
+        // Stock history of the item (MARKTBESTAND_PLAN P6), also separate
+        // from the copy click.
+        Button {
+          stockHistoryRequest = MarketStockItemRequest(
+            typeID: row.typeID,
+            name: row.name,
+            preferredRole: mode.targetRole
+          )
+        } label: {
+          Image(systemName: "chart.xyaxis.line")
+        }
+        .buttonStyle(.borderless)
+        .help(AppLocalization.text("Market stock history"))
+        .accessibilityLabel("Market stock history")
+        .accessibilityIdentifier("\(identifierPrefix).\(row.typeID).stock-history")
         if !row.issues.isEmpty {
           Image(systemName: "info.circle")
             .foregroundStyle(DesignTokens.caution)
@@ -1249,6 +1396,8 @@ struct TradeView: View {
         detailCell(display, column: .returnOnInvestment)
       }
       hubTradedVolumeCell(display)
+      stockCell(display.targetStock, role: mode.targetRole)
+      netChangeCell(display)
       tradedVolumeCell(display)
       detailCell(display, column: .dailyProfitPotential)
       hubProfitPotentialCell(display)
@@ -1277,8 +1426,23 @@ struct TradeView: View {
     case .margin: numberCell(formatPercent(row.margin), tint: signTint(row.margin))
     case .returnOnInvestment:
       numberCell(formatPercent(row.returnOnInvestment), tint: signTint(row.returnOnInvestment))
-    case .averageDailyDemand: numberCell(formatInteger(display.averageDailyDemand))
-    case .currentDailyDemand: numberCell(formatInteger(display.currentDailyDemand))
+    case .averageDailyDemand:
+      numberCell(formatInteger(display.averageDailyDemand))
+        .help(
+          AppLocalization.format(
+            "Ø units surely traded per recorded day at the target hub in the last %lld days (partial fills from its market stock history).",
+            Int64(volumeWindow.days)
+          )
+        )
+    case .currentDailyDemand:
+      numberCell(formatInteger(display.currentDailyDemand))
+        .help(
+          AppLocalization.text(
+            "Units surely traded at the target hub today since 00:00 UTC (partial fills from its market stock history)."
+          )
+        )
+    case .sourceStock:
+      stockCell(display.sourceStock, role: mode.sourceRole)
     case .targetDepth: numberCell(formatInteger(row.targetVolumeAtPrice))
     case .openLogbookQuantity:
       numberCell(formatInteger(display.openLogbookQuantity))
@@ -1309,7 +1473,7 @@ struct TradeView: View {
       AppLocalization.text(
         hubVolumeUsesRegion
           ? "Profit per unit × units traded at the target hub in the selected window, taken from the regional ESI market history because the target hub is the only market of its region. An upper bound: other traders share this volume."
-          : "Profit per unit × units traded at the target hub in the selected window, estimated from its Hub scans. Days without a scan are not counted; other traders share this volume."
+          : "Profit per unit × units surely traded at the target hub in the selected window (partial fills from its market stock history). Days without a known change are not counted; other traders share this volume."
       )
     )
   }
@@ -1371,7 +1535,7 @@ struct TradeView: View {
       guard let value = display.hubTradedVolume(window) else {
         return AppLocalization.format("%lld d: no recorded day", Int64(window.days))
       }
-      return AppLocalization.format(
+      let line = AppLocalization.format(
         "%lld d: %@ units from %lld of %lld days (Ø %@ per recorded day)",
         Int64(window.days),
         formatInteger(value.units),
@@ -1379,6 +1543,18 @@ struct TradeView: View {
         Int64(value.windowDays),
         formatNumber(value.averagePerRecordedDay)
       )
+      guard let upperBound = value.upperBoundUnits else { return line }
+      var details = line + " · " + AppLocalization.format(
+        "at most %@ incl. vanished orders",
+        formatInteger(upperBound)
+      )
+      if value.partialDays > 0 {
+        details += " · " + AppLocalization.format(
+          "%lld days only partly recorded",
+          Int64(value.partialDays)
+        )
+      }
+      return details
     }
     let explanation =
       hubVolumeUsesRegion
@@ -1386,7 +1562,7 @@ struct TradeView: View {
         "Regional ESI market history used as the target hub's volume, because the target hub is marked as the only market of its region in Market Settings. Up to yesterday (UTC); buy and sell side are not separated."
       )
       : AppLocalization.text(
-        "Traded at the target hub itself, estimated from its Hub scans: units that disappeared from orders still listed between two scans, one 24-hour estimate per UTC day. A lower bound; days without a scan are unknown and not counted."
+        "Surely traded at the target hub itself: units by which still listed sell orders shrank between two market stock points (partial fills), summed per UTC day. The upper bound also counts orders that vanished completely (sold, cancelled or expired). Days without a known change are unknown and not counted."
       )
     let text = explanation + "\n" + windows.joined(separator: "\n")
     let valueText = formatInteger(volume?.units)
@@ -1415,6 +1591,96 @@ struct TradeView: View {
       )
     )
     .accessibilityHint(Text(text))
+  }
+
+  /// Sell units listed at a hub at its latest market stock point; the help
+  /// adds orders, buy side and time (owner decision 29.10.2026).
+  private func stockCell(
+    _ stock: MarketStockItemValue?,
+    role: OpportunityHubRole
+  ) -> some View {
+    let hub = TradeHubText.roleName(role)
+    let text: String
+    if let stock {
+      text = AppLocalization.format(
+        "%@: %@ units in %lld sell orders, %@ units in %lld buy orders at the latest market stock point (%@).",
+        hub,
+        formatInteger(stock.sell.units),
+        Int64(stock.sell.orderCount),
+        formatInteger(stock.buy.units),
+        Int64(stock.buy.orderCount),
+        runtime.marketStockOverview(for: role)?.latestCapturedAt.map {
+          $0.formatted(date: .abbreviated, time: .shortened)
+        } ?? "—"
+      )
+    } else {
+      text = AppLocalization.format(
+        "%@: no market stock point yet. It is written by the next successful hub scan.",
+        hub
+      )
+    }
+    return numberCell(formatInteger(stock?.sell.units))
+      .help(text)
+      .accessibilityLabel(Text(text))
+  }
+
+  /// Sell-side added minus removed units at the target hub in the selected
+  /// window; caution colour while days are missing or partial.
+  private func netChangeCell(_ display: TradeDisplayRow) -> some View {
+    let change = display.targetNetChange(volumeWindow)
+    let windows = MarketHistoryWindow.allCases.map { window in
+      guard let value = display.targetNetChange(window) else {
+        return AppLocalization.format("%lld d: no known change", Int64(window.days))
+      }
+      return AppLocalization.format(
+        "%lld d: added %@, partly sold %@, vanished %@, net %@ (%lld of %lld days)",
+        Int64(window.days),
+        formatInteger(value.sell.added),
+        formatInteger(value.sell.partiallyFilled),
+        formatInteger(value.sell.vanished),
+        formatSignedInteger(value.net),
+        Int64(value.recordedDays),
+        Int64(value.windowDays)
+      )
+    }
+    let text =
+      AppLocalization.text(
+        "Change of the sell units listed at the target hub: new orders minus partial fills and vanished orders (sold, cancelled or expired). Days without a known change are not counted."
+      ) + "\n" + windows.joined(separator: "\n")
+    let tint: Color =
+      change.map {
+        $0.isComplete ? signTint(Double($0.net)) : DesignTokens.caution
+      } ?? DesignTokens.textPrimary
+    return numberCell(change.map { formatSignedInteger($0.net) } ?? "—", tint: tint)
+      .help(text)
+      .accessibilityLabel(
+        Text(
+          AppLocalization.format(
+            "Net target %lld d: %@",
+            Int64(volumeWindow.days),
+            change.map { formatSignedInteger($0.net) } ?? "—"
+          )
+        )
+      )
+      .accessibilityHint(Text(text))
+  }
+
+  private func formatSignedInteger(_ value: Int64) -> String {
+    value.formatted(.number.sign(strategy: .always(includingZero: false)).locale(locale))
+  }
+
+  private struct MarketStockKey: Equatable {
+    let mode: TradeMode
+    let locations: [Int64?]
+  }
+
+  private var marketStockKey: MarketStockKey {
+    MarketStockKey(
+      mode: mode,
+      locations: [mode.sourceRole, mode.targetRole].map {
+        runtime.tradeLocation(for: $0)?.locationID
+      }
+    )
   }
 
   /// The target hub is marked as the only market of its region.
@@ -1452,8 +1718,8 @@ struct TradeView: View {
   private func differenceCell(_ fraction: Double?) -> some View {
     let indicator = TradeDifferenceIndicator.classify(
       fraction,
-      increaseThreshold: Double(increasePercent) / 100,
-      strongIncreaseThreshold: Double(strongIncreasePercent) / 100
+      increaseThreshold: Double(coupledPercents.increase) / 100,
+      strongIncreaseThreshold: Double(coupledPercents.strongIncrease) / 100
     )
     let (symbol, tint): (String?, Color) =
       switch indicator {

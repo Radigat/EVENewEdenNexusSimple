@@ -2459,14 +2459,6 @@
 "The local Public Contracts index is not ready. Contract prices remain unavailable." = "Der lokale Public-Contracts-Index ist nicht bereit. Vertragspreise bleiben unverfügbar.";
 "The local Public Contracts index could not be read. Contract prices remain unavailable." = "Der lokale Public-Contracts-Index konnte nicht gelesen werden. Vertragspreise bleiben unverfügbar.";
 
-/* Dashboard top opportunities (HUB_CHANCEN_PLAN P9) */
-"Top opportunities" = "Top-Chancen";
-"Ranked by daily profit potential from the saved scans with standard assumptions: every material is bought, installation, sales tax and broker fee are included, no Blueprint allocation and no purchase budget. Open a hub for Warehouse-aware values." = "Rangfolge nach täglichem Gewinnpotenzial aus den gespeicherten Scans mit Standardannahmen: alle Materialien werden gekauft, Installation, Verkaufssteuer und Brokergebühr sind enthalten, ohne Blueprint-Umlage und ohne Einkaufsbudget. Werte mit Lagerbezug zeigt die jeweilige Chancenansicht.";
-"Open this opportunity list" = "Diese Chancenliste öffnen";
-"No saved row has an available daily profit potential." = "Keine gespeicherte Zeile hat ein verfügbares tägliches Gewinnpotenzial.";
-"No saved scan yet. It runs automatically with the next Main Hub scan." = "Noch kein gespeicherter Scan. Er läuft automatisch mit dem nächsten Main-Hub-Scan.";
-"%@ / day" = "%@ / Tag";
-"ROI %@" = "ROI %@";
 "Transfer this saved batch to the Planner." = "Diese gespeicherte Charge an den Planner übergeben.";
 
 /* Planner target market (HUB_CHANCEN_PLAN P10) */
@@ -2618,11 +2610,6 @@
 "Tech II/III, Loyalty Store, Faction and Storyline Blueprints exist only as BPCs. Their acquisition is priced with the cheapest available route: expected invention cost (Tech II/III), the cheapest attributable BPC contracts in the selected contract regions, or the Loyalty Store when a character has enough LP (ISK cost, required items and LP at the self-calculated LP value). Enable this when you already own the BPCs; the acquisition is then not priced and the optional Blueprint allocation applies instead." = "Tech-II/III-, Loyalty-Store-, Fraktions- und Storyline-Blaupausen gibt es nur als BPC. Ihre Beschaffung wird über die günstigste verfügbare Route eingepreist: erwartete Erfindungskosten (Tech II/III), die günstigsten zuordenbaren BPC-Verträge in den gewählten Vertragsregionen oder den LP-Store, wenn ein Charakter genug LP hat (ISK-Kosten, Pflichtgegenstände und LP zum selbst berechneten LP-Wert). Einschalten, wenn die BPCs bereits vorhanden sind; die Beschaffung wird dann nicht eingepreist und stattdessen gilt die optionale Blueprint-Umlage.";
 "The saved Loyalty Points could not be read. They remain unknown, not zero." = "Die gespeicherten LP konnten nicht gelesen werden. Sie bleiben unbekannt, nicht null.";
 "Loyalty Points could not be updated. The previous values were kept." = "Die LP konnten nicht aktualisiert werden. Die bisherigen Werte bleiben erhalten.";
-"Ranked by daily profit potential exactly as calculated in the Main, Home and Coalition Hub opportunity lists, with their filters, Warehouse, cost settings, contract and Loyalty Store basis. A hub updates its column whenever it is opened." = "Sortiert nach täglichem Gewinnpotenzial, genau wie in den Main-, Home- und Coalition-Hub-Chancen berechnet, mit deren Filtern, Warehouse, Kosteneinstellungen sowie Vertrags- und LP-Store-Grundlage. Ein Hub aktualisiert seine Spalte, sobald er geöffnet wird.";
-"A newer scan exists. Open this hub to recalculate the list." = "Es gibt einen neueren Scan. Den Hub öffnen, um die Liste neu zu berechnen.";
-"No visible row of this hub has an available daily profit potential." = "Keine sichtbare Zeile dieses Hubs hat ein verfügbares tägliches Gewinnpotenzial.";
-"Calculated in the hub %@" = "Im Hub berechnet: %@";
-"Not calculated yet. Open this hub once to calculate its list." = "Noch nicht berechnet. Den Hub einmal öffnen, um seine Liste zu berechnen.";
 "Loyalty Stores" = "LP-Stores";
 "%lld offers · %@" = "%1$lld Angebote · %2$@";
 "Not loaded yet" = "Noch nicht geladen";
@@ -2642,6 +2629,8 @@
 "Trade" = "Handel";
 "Main → Home" = "Main → Home";
 "Main → Coalition" = "Main → Coalition";
+"Home → Main" = "Home → Main";
+"Coalition → Main" = "Coalition → Main";
 "No usable price at the source hub." = "Am Quell-Hub gibt es keinen verwendbaren Preis.";
 "No usable price at the target hub." = "Am Ziel-Hub gibt es keinen verwendbaren Preis.";
 "The broker fee of the source hub is unknown." = "Die Broker-Gebühr des Quell-Hubs ist unbekannt.";
@@ -2719,7 +2708,9 @@
 "Bought" = "Gekauft";
 "Listed" = "Gelistet";
 "Sold" = "Verkauft";
-"Manufacturing, ignored" = "Fertigung, ignoriert";
+"Usage" = "Verwendung";
+"Consumption" = "Verbrauch";
+"Sale at %@" = "Verkauf in %@";
 "Excluded" = "Ausgeschlossen";
 "Instant buy (Min-Sell)" = "Sofortkauf (Min-Sell)";
 "Own buy order (Max-Buy)" = "Eigene Buy-Order (Max-Buy)";
@@ -2875,7 +2866,6 @@
 /* Hub opportunities: Add to Planner (24.10.2026) */
 "Add to Planner" = "Zum Planner hinzufügen";
 "Adds this row's visible quantity, Runs, ME and TE as a new line to the Planner draft. Concrete Blueprint sources are selected and verified there." = "Fügt die sichtbare Menge, Runs, ME und TE dieser Zeile als neue Zeile an den Planner-Entwurf an. Die konkreten Bauplanquellen werden dort ausgewählt und geprüft.";
-"Adds this saved batch as a new line to the Planner draft." = "Fügt diese gespeicherte Charge als neue Zeile an den Planner-Entwurf an.";
 
 /* Hub opportunities: build intermediates yourself (24.10.2026) */
 "Build intermediates yourself" = "Zwischenprodukte selbst bauen";
@@ -2933,6 +2923,8 @@
 "Clear list" = "Liste leeren";
 "Clear the stock sale list?" = "Lagerverkauf-Liste leeren?";
 "Comparison" = "Abgleich";
+"Show cost and market details" = "Kosten- und Marktdetails anzeigen";
+"Off shows only item, quantity, ME, TE, minimum prices, own order, profits and recommendation." = "Aus zeigt nur Item, Menge, ME, TE, Mindestpreise, eigene Order, Gewinne und Empfehlung.";
 "Direct sale" = "Direktverkauf";
 "Hub" = "Hub";
 "Hub and basis" = "Hub und Grundlage";
@@ -2969,7 +2961,8 @@
 "Remove from list" = "Aus der Liste entfernen";
 "Replace list" = "Liste ersetzen";
 "Sales tax %@ · Broker fee %@" = "Verkaufssteuer %@ · Maklergebühr %@";
-"Select the items in the EVE inventory, copy them (Cmd+C) and paste them here. One item per line; English and German client names are recognized." = "Markiere die Items im EVE-Inventar, kopiere sie (Cmd+C) und füge sie hier ein. Ein Item je Zeile; englische und deutsche Clientnamen werden erkannt.";
+"Select the items in the EVE inventory or asset list, copy them (Cmd+C) and paste them here. One item per line; English and German client names are recognized." = "Markiere die Items im EVE-Inventar oder in der Asset-Liste, kopiere sie (Cmd+C) und füge sie hier ein. Ein Item je Zeile; englische und deutsche Clientnamen werden erkannt.";
+"Format per line: Item ⇥ Type ⇥ Quantity. The first column is the item name, the first purely numeric column is the quantity. Additional columns shown in the client (category, volume, estimated price, …) are ignored. Without a quantity the item counts once." = "Format je Zeile: Item ⇥ Typ ⇥ Anzahl. Die erste Spalte ist der Itemname, die erste rein numerische Spalte die Anzahl. Weitere im Client eingeblendete Spalten (Kategorie, Volumen, geschätzter Preis, …) werden ignoriert. Ohne Anzahl zählt das Item einmal.";
 "Sell order" = "Sell-Order";
 "Several items carry this name." = "Mehrere Items tragen diesen Namen.";
 "The %@ is the same place as the %@ and uses its scan and market data." = "Der %@ ist derselbe Ort wie der %@ und nutzt dessen Scan- und Marktdaten.";
@@ -2988,3 +2981,135 @@
 "on" = "an";
 "Material Efficiency of the new production, 0–10." = "Materialeffizienz der Neuproduktion, 0–10.";
 "Time Efficiency of the new production, 0–20." = "Zeiteffizienz der Neuproduktion, 0–20.";
+
+/* Trade transport per leg (27.10.2026) */
+"Trade transport per leg" = "Handelstransport je Etappe";
+"Via Home Hub (two legs)" = "Über Home Hub (zwei Etappen)";
+"Direct (one leg)" = "Direkt (eine Etappe)";
+"Profile courier" = "Profil-Kurier";
+"Own Jump Freighter" = "Selbst springen (eigener Jump Freighter)";
+"Jump Freighter service" = "JF-Service";
+"This leg is not used by the current Main ↔ Coalition routing." = "Diese Etappe wird bei der aktuellen Main-↔-Coalition-Führung nicht genutzt.";
+"Uses the Profile courier rate above in this direction." = "Nutzt den Profil-Kuriersatz von oben in dieser Richtung.";
+"Jump-route profile" = "Sprungroutenprofil";
+"No profile" = "Kein Profil";
+"Jump Freighter class profile or automatic DOTLAN route" = "Profil der Klasse Jump Freighter oder automatische DOTLAN-Route";
+"A Jump Freighter cannot jump into the high-security Main Hub. The profile's system nearest the Main Hub (last waypoint towards Main, first waypoint from Main) is the jump endpoint; the rest is flown by gate without fuel cost." = "Ein Jump Freighter kann nicht in den Highsec-Main-Hub springen. Das System des Profils nächst dem Main Hub (letzter Wegpunkt Richtung Main, erster Wegpunkt ab Main) ist der Sprungendpunkt; der Rest wird per Gate ohne Treibstoffkosten geflogen.";
+"Jump logistics above is switched off, so hull, pilot, cargo and route profiles cannot be edited there. Its last saved values are still used for this leg." = "Die Sprunglogistik oben ist ausgeschaltet; Rumpf, Pilot, Ladung und Routenprofile lassen sich dort nicht bearbeiten. Ihre zuletzt gespeicherten Werte gelten für diese Etappe trotzdem.";
+"Hull, pilot and usable cargo come from the jump logistics above; fuel is the average Main-Hub sell price of the four racial isotopes." = "Rumpf, Pilot und nutzbare Ladung stammen aus der Sprunglogistik oben; Treibstoff ist der Ø Main-Hub-Verkaufspreis der vier Rassen-Isotope.";
+"Volume price" = "Volumenpreis";
+"ISK per m³" = "ISK je m³";
+"Percent" = "Prozent";
+"Maximum m³" = "Maximal m³";
+"Each contract costs volume × rate plus collateral × percentage, without rounding." = "Jeder Vertrag kostet Volumen × Satz plus Collateral × Prozentsatz, ohne Rundung.";
+"Enter volume price and collateral percentage of the service; until then this leg stays unavailable." = "Volumenpreis und Collateral-Prozentsatz des Service eintragen; bis dahin bleibt diese Etappe unverfügbar.";
+"Main → Coalition (direct)" = "Main → Coalition (direkt)";
+"Coalition → Main (direct)" = "Coalition → Main (direkt)";
+"The Jump Freighter service prices of a leg are incomplete in the logistics settings." = "Die JF-Service-Preise einer Etappe sind in den Logistikeinstellungen unvollständig.";
+"A self-jump to or from the Main Hub needs a jump-route profile ending in a jumpable system near the Main Hub." = "Selbst springen zum oder vom Main Hub braucht ein Sprungroutenprofil, das in einem anspringbaren System nahe dem Main Hub endet.";
+"The jump-route profile chosen for a leg is missing or incomplete." = "Das für eine Etappe gewählte Sprungroutenprofil fehlt oder ist unvollständig.";
+"No eligible Jump Freighter pilot with fresh skills is available." = "Kein geeigneter Jump-Freighter-Pilot mit aktuellen Skills verfügbar.";
+"The Jump Freighter route of a leg is unavailable." = "Die Jump-Freighter-Route einer Etappe ist nicht verfügbar.";
+"Jump Freighter service %@ → %@: %@ ISK per m³ plus %@ of the collateral, without rounding." = "JF-Service %1$@ → %2$@: %3$@ ISK je m³ plus %4$@ des Collaterals, ohne Rundung.";
+"Choose per directed leg whether the Profile courier, your own Jump Freighter or a Jump Freighter service carries the goods. Trade, Planner, Hub opportunities and Reactions use this choice; outside Trade the switch above still turns all courier and service costs on or off. A self-jump to or from the Main Hub is calculated only in Trade. Missing prices, routes or pilots keep a leg unavailable and never become 0 ISK." = "Wähle je Etappe und Richtung, ob der Profil-Kurier, dein eigener Jump Freighter oder ein JF-Service die Ware transportiert. Handel, Planer, Hub-Chancen und Reaktionen nutzen diese Auswahl; außerhalb des Handels schaltet der Schalter oben weiterhin alle Kurier- und Servicekosten ein oder aus. Selbst springen zum oder vom Main Hub rechnet nur der Handel. Fehlende Preise, Routen oder Piloten lassen eine Etappe unverfügbar und werden nie zu 0 ISK.";
+"Maximum %@ m³ per contract · oversized routes are split automatically · Jump Freighter service without rounding" = "Höchstens %@ m³ je Vertrag · zu große Routen werden automatisch aufgeteilt · JF-Service ohne Rundung";
+"A self-jump to or from the Main Hub is calculated only in Trade. Choose the Profile courier or a Jump Freighter service for this leg." = "Selbst springen zum oder vom Main Hub rechnet nur der Handel. Für diese Etappe Profil-Kurier oder JF-Service wählen.";
+"A self-jump to or from the Main Hub is calculated only in Trade." = "Selbst springen zum oder vom Main Hub rechnet nur der Handel.";
+"The Jump Freighter service prices of this leg are incomplete in the logistics settings." = "Die JF-Service-Preise dieser Etappe sind in den Logistikeinstellungen unvollständig.";
+"Home Hub → Coalition Hub is set to an own Jump Freighter, but jump logistics is switched off. Enable it or choose another transport for this leg." = "Home Hub → Coalition Hub ist auf eigenen Jump Freighter gestellt, aber die Sprunglogistik ist ausgeschaltet. Schalte sie ein oder wähle für diese Etappe einen anderen Transport.";
+"At least one produced capital must self-jump from the Home Hub to the Coalition Hub. The Home → Coalition leg uses a Jump Freighter service, so the hull is not treated as service cargo." = "Mindestens ein produziertes Capital muss selbst vom Home Hub zum Coalition Hub springen. Die Etappe Home → Coalition nutzt einen JF-Service; der Rumpf wird nicht als Service-Fracht behandelt.";
+"This leg is carried by an own Jump Freighter and has no courier contracts." = "Diese Etappe fliegt ein eigener Jump Freighter; es gibt keine Kurierverträge.";
+
+/* Market stock history (MARKTBESTAND_PLAN P3) */
+"Market stock" = "Marktbestand";
+"Saving failed" = "Speichern fehlgeschlagen";
+"Waiting for ESI" = "Wartet auf ESI";
+"Point %@ · next %@" = "Stand %1$@ · nächster %2$@";
+"%@: last point %@" = "%1$@: letzter Stand %2$@";
+"Fixed terms 06:00 and 13:00; a successful hub scan up to 3 hours earlier counts for the term." = "Feste Termine 06:00 und 13:00; ein erfolgreicher Hub-Scan bis zu 3 Stunden vorher zählt für den Termin.";
+"The market stock history could not be opened. Hub scans continue without new stock points." = "Die Marktbestand-Historie konnte nicht geöffnet werden. Hub-Scans laufen ohne neue Bestandspunkte weiter.";
+"A market stock point could not be stored. The earlier history was kept." = "Ein Bestandspunkt konnte nicht gespeichert werden. Die bisherige Historie bleibt erhalten.";
+
+/* Background operation (MARKTBESTAND_PLAN P4) */
+"Background operation" = "Hintergrundbetrieb";
+"Keep running after the window closes" = "Nach dem Schließen im Hintergrund weiterlaufen";
+"The app then stays in the menu bar without a Dock icon and keeps the fixed market stock terms (06:00 and 13:00) and the automatic hub scans running. When switched off, closing the window quits the app." = "Die App bleibt dann ohne Dock-Symbol in der Menüleiste und führt die festen Marktbestand-Termine (06:00 und 13:00) sowie die automatischen Hub-Scans weiter aus. Ausgeschaltet beendet das Schließen des Fensters die App.";
+"Start at login" = "Beim Anmelden starten";
+"The app starts hidden when you log in." = "Die App startet beim Anmelden unsichtbar.";
+"Registered, but macOS still needs your approval in System Settings → General → Login Items." = "Angemeldet, aber macOS braucht noch deine Freigabe unter Systemeinstellungen → Allgemein → Anmeldeobjekte.";
+"The app does not start at login." = "Die App startet nicht beim Anmelden.";
+"macOS cannot register this copy of the app as a login item. Start it from the Applications folder and try again." = "macOS kann diese Kopie der App nicht als Anmeldeobjekt eintragen. Starte sie aus dem Programme-Ordner und versuche es erneut.";
+"Open Login Items settings" = "Anmeldeobjekte öffnen";
+"macOS refused the change: %@" = "macOS hat die Änderung abgelehnt: %@";
+"A Mac in sleep misses a term; the app catches up once after waking. No term wakes the Mac." = "Ein Mac im Ruhezustand verpasst einen Termin; die App holt ihn nach dem Aufwachen einmal nach. Kein Termin weckt den Mac.";
+"Open window" = "Fenster öffnen";
+"Fetch market stock now" = "Marktbestand jetzt abrufen";
+"Hub markets are being updated" = "Hub-Märkte werden aktualisiert";
+"No market stock point yet" = "Noch kein Bestandspunkt";
+"Last market stock point %@" = "Letzter Bestandspunkt %@";
+"Next term waits for ESI" = "Nächster Termin wartet auf ESI";
+"No term planned" = "Kein Termin geplant";
+"Next term %@" = "Nächster Termin %@";
+
+/* Trade stock columns (MARKTBESTAND_PLAN P5) */
+"Stock target" = "Bestand Ziel";
+"Stock source" = "Bestand Quelle";
+"Net target %lld d" = "Netto Ziel %lld T";
+"Ø units surely traded per recorded day at the target hub in the last %lld days (partial fills from its market stock history)." = "Ø sicher gehandelte Stück je erfasstem Tag am Zielhub in den letzten %lld Tagen (Teilverkäufe aus der Bestandshistorie).";
+"Units surely traded at the target hub today since 00:00 UTC (partial fills from its market stock history)." = "Heute seit 00:00 UTC am Zielhub sicher gehandelte Stück (Teilverkäufe aus der Bestandshistorie).";
+"Profit per unit × units surely traded at the target hub in the selected window (partial fills from its market stock history). Days without a known change are not counted; other traders share this volume." = "Gewinn je Stück × im gewählten Zeitraum am Zielhub sicher gehandelte Stück (Teilverkäufe aus der Bestandshistorie). Tage ohne bekannte Änderung zählen nicht; andere Händler teilen sich dieses Volumen.";
+"at most %@ incl. vanished orders" = "höchstens %@ inkl. verschwundener Orders";
+"%lld days only partly recorded" = "%lld Tage nur teilweise erfasst";
+"Surely traded at the target hub itself: units by which still listed sell orders shrank between two market stock points (partial fills), summed per UTC day. The upper bound also counts orders that vanished completely (sold, cancelled or expired). Days without a known change are unknown and not counted." = "Am Zielhub selbst sicher gehandelt: Stück, um die noch gelistete Verkaufsorders zwischen zwei Bestandspunkten kleiner wurden (Teilverkäufe), je UTC-Tag summiert. Die Obergrenze zählt auch ganz verschwundene Orders (verkauft, storniert oder abgelaufen). Tage ohne bekannte Änderung sind unbekannt und zählen nicht.";
+"%@: %@ units in %lld sell orders, %@ units in %lld buy orders at the latest market stock point (%@)." = "%1$@: %2$@ Stück in %3$lld Verkaufsorders, %4$@ Stück in %5$lld Kauforders beim letzten Bestandspunkt (%6$@).";
+"%@: no market stock point yet. It is written by the next successful hub scan." = "%@: noch kein Bestandspunkt. Er entsteht beim nächsten erfolgreichen Hub-Scan.";
+"%lld d: no known change" = "%lld T: keine bekannte Änderung";
+"%lld d: added %@, partly sold %@, vanished %@, net %@ (%lld of %lld days)" = "%1$lld T: Zugang %2$@, Teilverkauf %3$@, verschwunden %4$@, netto %5$@ (%6$lld von %7$lld Tagen)";
+"Change of the sell units listed at the target hub: new orders minus partial fills and vanished orders (sold, cancelled or expired). Days without a known change are not counted." = "Veränderung der am Zielhub gelisteten Verkaufsstück: neue Orders minus Teilverkäufe und verschwundene Orders (verkauft, storniert oder abgelaufen). Tage ohne bekannte Änderung zählen nicht.";
+"Net target %lld d: %@" = "Netto Ziel %1$lld T: %2$@";
+"The market stock history could not be read. Stock values in Trade stay unavailable." = "Die Marktbestand-Historie konnte nicht gelesen werden. Bestandswerte im Handel bleiben unverfügbar.";
+
+/* Hub scans respect ESI cache time (29.10.2026) */
+"The order books of the last hub scan are still inside ESI's cache time. CCP asks not to request them again before it ends; a new scan is possible from %@." = "Die Orderbücher des letzten Hub-Scans liegen noch in der ESI-Cachezeit. CCP verlangt, sie vorher nicht erneut abzurufen; ein neuer Scan ist ab %@ möglich.";
+"Fetching possible from %@" = "Abruf möglich ab %@";
+
+/* Market stock item detail (MARKTBESTAND_PLAN P6) */
+"Market stock history" = "Bestandsverlauf";
+"No hub with a known location is configured." = "Kein Hub mit bekanntem Ort konfiguriert.";
+"Loading market stock history…" = "Bestandsverlauf wird geladen …";
+"Sell stock" = "Sell-Bestand";
+"Buy demand" = "Buy-Nachfrage";
+"Lowest sell price" = "Niedrigster Sell-Preis";
+"Last 7 days: every stored point. Before: one daily value per UTC day (its last point). A day without a point leaves a gap; it is never drawn as 0." = "Letzte 7 Tage: jeder gespeicherte Punkt. Davor: ein Tageswert je UTC-Tag (sein letzter Punkt). Ein Tag ohne Punkt bleibt eine Lücke und wird nie als 0 gezeichnet.";
+"Daily table" = "Tagestabelle";
+"No stored market stock point for this item yet." = "Für dieses Item gibt es noch keinen gespeicherten Bestandspunkt.";
+"Date (UTC)" = "Datum (UTC)";
+"Added" = "Zugang";
+"Partly sold" = "Teilverkauf";
+"Vanished" = "Verschwunden";
+"Net" = "Netto";
+"No market stock point on this day: unknown, not 0." = "An diesem Tag gibt es keinen Bestandspunkt: unbekannt, nicht 0.";
+"Stock known, but no change to an earlier point is known for this day." = "Bestand bekannt, aber für diesen Tag ist keine Änderung zu einem früheren Punkt bekannt.";
+"Only partly recorded: one point of this day has no known change to its predecessor." = "Nur teilweise erfasst: Ein Punkt dieses Tages hat keine bekannte Änderung zu seinem Vorgänger.";
+"Stock at the day's last point. Added: new orders; partly sold: surely traded; vanished: sold, cancelled or expired." = "Bestand beim letzten Punkt des Tages. Zugang: neue Orders; Teilverkauf: sicher gehandelt; verschwunden: verkauft, storniert oder abgelaufen.";
+
+/* Market stock view (MARKTBESTAND_PLAN P7) */
+"No hub with a known location is configured. Set the Main, Home or Coalition Hub in Market Settings." = "Kein Hub mit bekanntem Ort konfiguriert. Lege Main, Home oder Coalition Hub in den Markteinstellungen fest.";
+"Every item listed at a hub at its latest market stock point, with the change of its sell stock. Partly sold units are surely traded; vanished orders were sold, cancelled or expired." = "Alle Items, die beim letzten Bestandspunkt an einem Hub gelistet sind, mit der Veränderung ihres Sell-Bestands. Teilverkäufe sind sicher gehandelt; verschwundene Orders wurden verkauft, storniert oder sind abgelaufen.";
+"Search item" = "Item suchen";
+"%lld d: %lld of %lld days recorded" = "%1$lld T: %2$lld von %3$lld Tagen erfasst";
+"Latest point %@ · %lld items" = "Letzter Punkt %1$@ · %2$lld Items";
+"Loading market stock…" = "Marktbestand wird geladen …";
+"No market stock point for this hub yet. It is written by the next successful hub scan." = "Für diesen Hub gibt es noch keinen Bestandspunkt. Er entsteht beim nächsten erfolgreichen Hub-Scan.";
+"Lowest sell" = "Niedrigster Sell";
+"Buy orders" = "Buy-Orders";
+"Highest buy" = "Höchster Buy";
+"Net 1 d" = "Netto 1 T";
+"Removed 1 d" = "Abgang 1 T";
+"Net 7 d" = "Netto 7 T";
+"Removed 7 d" = "Abgang 7 T";
+"Net 30 d" = "Netto 30 T";
+"Removed 30 d" = "Abgang 30 T";
+"Days of this window are missing or only partly recorded; the value covers only the recorded days." = "Tage dieses Zeitraums fehlen oder sind nur teilweise erfasst; der Wert umfasst nur die erfassten Tage.";
+"Unresolved type (ID %lld)" = "Ungelöster Typ (ID %lld)";
+"The active SDE has no name for this type." = "Das aktive SDE kennt keinen Namen für diesen Typ.";

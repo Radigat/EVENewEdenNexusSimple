@@ -41,6 +41,22 @@ public enum PerformanceLog {
     return now.timeIntervalSince1970 - started
   }
 
+  /// Current and lifetime-peak physical footprint of this process in bytes
+  /// (`task_vm_info`); `nil` when the kernel does not answer.
+  public static func memoryFootprint() -> (current: Int64, peak: Int64)? {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(
+      MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size
+    )
+    let status = withUnsafeMutablePointer(to: &info) {
+      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+        task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+      }
+    }
+    guard status == KERN_SUCCESS else { return nil }
+    return (Int64(info.phys_footprint), Int64(info.ledger_phys_footprint_peak))
+  }
+
   static func milliseconds(_ duration: Duration) -> String {
     let components = duration.components
     let value =

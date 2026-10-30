@@ -124,6 +124,27 @@ Jeder domänenübergreifende Snapshot soll mindestens Quellidentität, Zeitpunkt
 Schema- oder Kompatibilitätsstand, Aktualität und mögliche Teilfehler bewahren.
 SDE-Definitionen, ESI-Live-Daten und lokale Annahmen bleiben unterscheidbar.
 
+### Zahleneingaben
+
+Preise, ISK-Beträge und Mengen erscheinen in der Sprache der App gruppiert:
+deutsch mit Punkt als Tausendertrenner und Komma für Dezimalstellen
+(`65.590.000,5`), englisch `65,590,000.5`.
+- Eigene Eingaben in Text-Feldern werden beim Tippen gruppiert
+  (gemeinsame Komponente `groupedNumberInput`, `GroupedNumberText`). Ein
+  getipptes Dezimaltrennzeichen und Nachkommastellen bleiben stehen;
+  Mengenfelder erlauben keine Nachkommastellen. Andere Zeichen werden
+  verworfen; ein Punkt gilt in der deutschen Oberfläche als Tausendertrenner,
+  nicht als Dezimalzeichen.
+- Betroffen: Handelslogbuch (Menge, Preise, Transport, Verkäufe),
+  Marktübersicht (Preis- und Mengenfilter), Industrie-Chancen
+  (Blueprint-Kosten, Materialbudget, Kostenbaum), Planer (Blueprint-Kosten,
+  Allianzverkauf), Konsolidierung (Bestand, Warnschwelle, Belege,
+  Science-Kosten).
+- Formatierte Wertfelder (Transportprofile ISK je m³ und m³, Warehouse-
+  Zielmengen, Produktionsbuch-Beträge) gruppieren beim Bestätigen in der
+  App-Sprache statt in der Systemsprache.
+- Prozent-, Runs-, ME/TE- und Tagesfelder bleiben ungruppiert.
+
 ## Funktionsbereiche
 
 Die Navigation bildet die folgenden Arbeitsbereiche ab:
@@ -132,7 +153,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | --- | --- |
 | Dashboard | verdichteter Überblick über Jobs, persönliche Wallet-Salden, Finanzen und Markt; übernimmt die Charakterdaten aus dem zentralen Startablauf |
 | Planner | Produktionsgraph, Build/Buy/Warehouse-Auswahl, Installation, Logistik, Gebühren, Erlös, Profit und ROI |
-| Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen und festen Capital-Routen im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
+| Daten & Einstellungen → Logistik | Pflege der Main-Hub-Kurierwerte, Jump-Freighter-Annahmen, festen Capital-Routen und der Transportart je Handelsetappe (Profil-Kurier, selbst springen, JF-Service) im horizontalen Einstellungsmenü; Änderungen werden erst beim Speichern in die gemeinsame Production Basis übernommen |
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Zum Planner hinzufügen** hängt die konkrete Charge an den Planner-Entwurf an |
 | Home Hub Opportunities | dieselbe Chancenansicht für Verkäufe am Home Hub (Material vom Main Hub, ohne Rückweg); eigene Filter, gemeinsamer Scan mit dem Main Hub |
 | Coalition Hub Opportunities | Chancenansicht für Verkäufe am Coalition Hub inklusive sortierbarem Transport Home → Coalition (Jump Freighter oder Kurier); eigene Filter, gemeinsamer Scan |
@@ -261,29 +282,6 @@ Negativfilter. Ein früher gespeicherter Dashboard-Gruppenfilter begrenzt die
 Treffer nicht mehr. Nach Konfigurationsänderungen werden unpassende
 Empfehlungen bis zur gemeinsamen Aktualisierung ausdrücklich zurückgehalten.
 
-Unter den drei Marktkarten steht die Karte **Top-Chancen** mit je bis zu fünf
-Einträgen für Main, Home und Coalition Hub.
-
-- **Grundlage:** Die Karte rechnet nicht selbst. Jede Hub-Chancenansicht
-  meldet nach jeder Berechnung ihre sichtbaren Zeilen, also mit denselben
-  Filtern, Warehouse-Beständen, Planreservierungen, Kosteneinstellungen,
-  Zeilen-Runs/ME/TE und derselben Vertrags- und LP-Store-Grundlage. Die
-  Meldung wird lokal gespeichert (`market/hub-top-opportunities.json`) und
-  überdauert einen Neustart. Die Karte startet keinen ESI-Abruf.
-- **Aktualität:** Ein Hub aktualisiert seine Spalte, sobald er geöffnet ist.
-  Gibt es einen neueren Scan als den gemeldeten, weist die Spalte darauf hin;
-  ohne Meldung fordert sie zum einmaligen Öffnen des Hubs auf. Unter jeder
-  Spalte steht der Berechnungszeitpunkt.
-- **Rangfolge:** nach täglichem Gewinnpotenzial. Zeilen ohne verfügbares
-  Gewinnpotenzial werden nicht gerankt; gleiche Werte folgen der Typ-ID.
-- **Einträge:** Jeder Eintrag zeigt das Produkt mit Icon und kopierbarem Namen,
-  das tägliche Gewinnpotenzial und den ROI.
-- **Bedienung:** Ein Klick auf den Hub-Titel öffnet die Chancenansicht.
-  **Zum Planner hinzufügen** hängt die gespeicherte Charge mit Zielmarkt an den
-  Planner-Entwurf an.
-- **Hinweise:** Ein nicht konfigurierter, gleicher oder unvollständiger Hub
-  bekommt einen Hinweis, ebenso ein Hub ohne Scan.
-
 Mondmaterialien und Mineralien erhalten je eine kompakte Einkaufsliste mit
 Material, günstigstem konfiguriertem Kaufort und Stückpreis, ebenfalls mit
 Fünfer-Vorschau und vollständiger Aufklappansicht. Die Fachansichten zeigen
@@ -309,6 +307,19 @@ derselben Mineralien-Einkaufsanalyse. Regionale Tagesdurchschnittspreise und
 Tagesänderungen gehören nicht mehr zu diesem Ticker. Ansichtenwechsel teilen
 laufende Aktualisierungen und nutzen passende vorhandene Ergebnisse innerhalb
 des fünfminütigen Wiederverwendungsfensters. Aufklappen startet keine Analyse.
+
+Ressourcenverhalten des Dashboards: Gespeicherte Asset-, Blueprint-, Job-,
+Order-, Vertrags- und Wallet-Snapshots werden für die Vermögensbewertung im
+Hintergrund dekodiert; auch die Bewertungsprojektionen laufen außerhalb des
+Main-Threads. Während eines vollständigen Dashboard-Abgleichs bewertet das
+Dashboard das Vermögen einmal nach dem Sync aller Charaktere statt nach jedem
+einzelnen; läuft bereits eine Bewertung, werden die Eingaben nicht erneut
+dekodiert. Nur die Jobkarten aktualisieren sich minütlich. Das Dashboard liest
+nur seine eigenen Einstellungszeilen (`dashboard.*`). Der vorbereitete
+Jobsnapshot und der dekodierte Vermögensverlauf bleiben für unveränderte
+Eingaben im Arbeitsspeicher, sodass eine Rückkehr zum Dashboard sie ohne
+erneutes Dekodieren zeigt. Inhalte, Rechenregeln und fehlende Datenzustände
+sind unverändert.
 
 Beim Programmstart lädt die App alle Daten automatisch in einem zentralen
 Ablauf (Eigentümerentscheid 20.10.2026, [Entscheidung](Documentation/Consolidation/DECISIONS.md)).
@@ -474,8 +485,9 @@ Coalition-Hub-Chancen. Er vergleicht Marktgruppen zwischen den Hubs nach dem
 Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
 [Handel-Plan, Abschnitt C](Documentation/HANDEL_PLAN.md).
 
-- **Routen:** Main → Home, Main → Coalition, Home → Coalition und Coalition →
-  Home. Die Routen sind getrennt, die zuletzt gewählte wird gespeichert.
+- **Routen:** Main → Home, Main → Coalition, Home → Coalition, Coalition →
+  Home, Home → Main und Coalition → Main. Die Routen sind getrennt, die
+  zuletzt gewählte wird gespeichert.
   Station Trading innerhalb eines Hubs gibt es nicht (Eigentümerentscheid
   22.10.2026). Sind Quell- und Ziel-Hub derselbe Ort, weist die Ansicht darauf
   hin, dass es keine Handelsroute gibt.
@@ -499,10 +511,20 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     Fehlen Gewinn oder Packvolumen, zeigt die Spalte „—“.
   - Pfeile: ab einstellbaren 25 % ein Pfeil nach oben (gelb), ab 30 % ein
     Doppelpfeil (rot), bei negativer Differenz ein Pfeil nach unten (grün).
+    Die beiden Schwellen sind gekoppelt: Der Doppelpfeil liegt immer
+    mindestens 1 % über dem Pfeil. Wird der Pfeil darüber hinaus erhöht,
+    wandert der Doppelpfeil mit; der Doppelpfeil lässt sich nicht unter
+    Pfeil + 1 % senken. Ältere gespeicherte Werte werden beim Lesen ebenso
+    angehoben.
   - **Details anzeigen** ergänzt die Spalten Einkauf, Transport,
     Netto-Verkauf, Gewinn, Marge, ROI, Ø Bedarf/Tag, Nachfrage heute und Tiefe
     (Stückzahl zum Zielpreis) und Offen (Logbuch). Die Detailtabelle scrollt
     innerhalb der Kachel horizontal.
+  - Ohne Details stehen Gruppenkacheln nur dann nebeneinander, wenn jede
+    Kachel ihre vollständige Tabelle (Name und neun Zahlenspalten, rund
+    1.130 pt) aufnehmen kann; sonst stehen sie untereinander und füllen die
+    Fensterbreite. Ist das Fenster schmaler als eine Tabelle, scrollt sie
+    innerhalb der Kachel horizontal, statt Spalten abzuschneiden.
   - Ohne Details zeigt ein Buch-Symbol neben dem Namen die offene
     Logbuch-Menge.
   - **Ins Logbuch** (Plus-Symbol neben dem Namen, getrennt vom Kopier-Klick)
@@ -521,15 +543,29 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
   - Es gibt zwei getrennt beschriftete Werte: **Zielhub N T** (hub-genau) und
     **Region N T** (ganze Region des Zielhubs). ESI bietet keine Markthistorie
     je Station oder Struktur.
-  - **Zielhub N T** stammt aus dem Bedarfsledger des Zielhubs, also aus dessen
-    Hub-Scans, auch bei Spielerstrukturen. Je UTC-Tag mit Scan gibt es eine
-    24-Stunden-Schätzung der Stück, die aus weiterhin gelisteten Orders
-    verschwunden sind; das ist eine Untergrenze. Die Spalte summiert die
-    erfassten Tage der N UTC-Tage bis heute. Tage ohne Scan sind unbekannt und
-    werden nicht als 0 gezählt; fehlt ein Tag des Zeitraums, steht der Wert in
-    Warnfarbe. Der Tooltip nennt je Zeitraum Stück, erfasste Tage von N und
-    Ø je erfasstem Tag. Ohne erfassten Tag zeigt die Spalte „—“. Der Ledger
-    hält höchstens 30 Tage.
+  - **Zielhub N T** stammt aus der Bestandshistorie des Zielhubs (siehe
+    [Marktbestand-Historie](#marktbestand-historie-erfassung), Regeln im
+    [Handel-Plan, Abschnitt M](Documentation/HANDEL_PLAN.md)). Der Wert ist
+    die Summe der **Teilverkäufe**, also der Stück, um die noch gelistete
+    Verkaufsorders zwischen zwei Bestandspunkten kleiner wurden. Das ist eine
+    Untergrenze.
+    - Der Tooltip nennt je Zeitraum die Obergrenze inklusive ganz
+      verschwundener Orders (verkauft, storniert oder abgelaufen), die
+      erfassten Tage von N und das Ø je erfasstem Tag.
+    - Tage ohne bekannte Änderung zählen nicht. Fehlt ein Tag oder ist einer
+      nur teilweise erfasst (erster Punkt, Lücke über 72 Stunden), steht der
+      Wert in Warnfarbe.
+    - Ohne Bestandspunkt oder ohne bekannte Änderung im Zeitraum zeigt die
+      Spalte „—“.
+  - **Bestand Ziel** (immer sichtbar) zeigt die Sell-Stück des Zielhubs beim
+    letzten Bestandspunkt. Der Tooltip nennt Sell-Orders, Buy-Stück,
+    Buy-Orders und den Zeitpunkt. **Bestand Quelle** zeigt dasselbe für den
+    Quell-Hub, nur mit „Details anzeigen“.
+  - **Netto Ziel N T** (immer sichtbar) ist die Veränderung der gelisteten
+    Sell-Stück: Zugang minus Teilverkäufe minus verschwundene Orders.
+    Positiv grün, negativ rot, unvollständig in Warnfarbe. Der Tooltip
+    schlüsselt jeden Zeitraum auf.
+  - Die Bestandswerte werden nur geladen, solange der Handel angezeigt wird.
   - **Einziger Markt der Region:** Ein Schalter je Handelsort in den
     Markteinstellungen („Einziger Markt der Region“, Standard aus) erklärt,
     dass die Region keinen weiteren Markt hat. Ist er beim Zielhub an, zeigt
@@ -545,15 +581,16 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     getrennt noch geschätzt.
   - Ein Umschalter 1/2/5/7/30 T wählt den Zeitraum; die Wahl wird gespeichert,
     der Standard ist 7 T.
-  - Immer sichtbar sind die Spalten **Zielhub N T**, **Region N T** (Stück)
-    und **Gewinn/Tag (Region)**. Gewinn/Tag (Region) ist Gewinn je Stück × Ø
+  - Immer sichtbar sind die Spalten **Zielhub N T**, **Bestand Ziel**,
+    **Netto Ziel N T**, **Region N T** (Stück) und **Gewinn/Tag (Region)**. Gewinn/Tag (Region) ist Gewinn je Stück × Ø
     in der Region gehandelte Stück pro Tag. Das ist eine Obergrenze, weil sich
     andere Händler dieses Volumen teilen. Ein negativer Gewinn bleibt negativ.
   - Daneben stehen immer **Gewinnpot. Zielhub N T** und **Gewinnpot. Region
     N T**: Gewinn je Stück × im gewählten Zeitraum am Zielhub bzw. in der
     Region gehandelte Stück, in ganzen ISK, sortierbar. Ohne Gewinn oder
-    Volumen bleibt der Wert unbekannt („—“). Bei unvollständig gescanntem
-    Zielhub-Zeitraum erscheint der Wert in Warnfarbe; bei „Einziger Markt der
+    Volumen bleibt der Wert unbekannt („—“). Der Zielhub-Wert rechnet mit den
+    Teilverkäufen. Bei unvollständig erfasstem Zielhub-Zeitraum erscheint
+    der Wert in Warnfarbe; bei „Einziger Markt der
     Region“ heißt die Spalte „Gewinnpot. Zielhub N T (Region)“. Beides sind
     Obergrenzen. Regeln: [Handel-Plan, Abschnitt O](Documentation/HANDEL_PLAN.md).
   - Die Details ergänzen **Ø Region/Tag**.
@@ -581,9 +618,10 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     Zahl der Items ohne Historie bzw. eine unbekannte Region.
   - Die neuen Spalten sind sortierbar, und zwar nach dem Wert des gewählten
     Zeitraums. Die Top-20-Rangfolge bleibt unverändert.
-  - **Ø Bedarf/Tag** und **Nachfrage heute** nutzen denselben Bedarfsledger
-    wie „Zielhub N T“: Ø über alle erfassten Tage bzw. die aktuelle
-    24-Stunden-Schätzung.
+  - **Ø Bedarf/Tag** sind die Teilverkäufe des gewählten Zeitraums je
+    erfasstem Tag, **Nachfrage heute** die Teilverkäufe des laufenden
+    UTC-Tags. Beide stammen aus der Bestandshistorie, auch bei „Einziger
+    Markt der Region“.
 - **Top-20-Kachel** (Regeln im [Handel-Plan, Abschnitte J und K](Documentation/HANDEL_PLAN.md)):
   - Sie steht als erste Kachel über den Untergruppen-Kacheln und umfasst alle
     Items der gewählten Marktgruppe.
@@ -622,13 +660,34 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
   **Hub-Märkte aktualisieren** startet denselben Main-, Home- und
   Coalition-Scan wie die Hub-Chancen.
 - **Transport:**
-  - Main → Home ist eine Kurier-Etappe.
-  - Main → Coalition besteht aus dieser Etappe plus Home → Coalition. Dafür
-    nutzt die App den Jump Freighter, wenn er aktiviert ist (DOTLAN-Route,
-    Ø Isotopenpreis im Main Hub), sonst den Profil-Kurier.
-  - Home → Coalition und Coalition → Home nutzen nur diese Etappe, für
-    Coalition → Home in umgekehrter Richtung. Die Treibstoffkosten je
-    Jump-Freighter-Flug gelten in beiden Richtungen als gleich.
+  - Jede Route besteht aus gerichteten Etappen. Main ↔ Home und Home ↔
+    Coalition sind je eine Etappe. Main → Coalition und Coalition → Main
+    laufen wahlweise über Home (zwei Etappen) oder direkt (eine Etappe);
+    die Wahl gilt je Richtung.
+  - Je Etappe und Richtung wählt der Nutzer unter **Daten & Einstellungen →
+    Logistik → Handelstransport je Etappe** eine Transportart:
+    - **Profil-Kurier:** Satz je m³ und Vertragsgrenze des Profil-Kuriers, in
+      jeder Richtung gleich; je Vertrag der höhere Wert aus Volumen- und
+      Collateral-Anteil (0,5 %), auf 1 Mio. ISK aufgerundet.
+    - **Selbst springen:** eigener Jump Freighter (Rumpf, Pilot, nutzbare
+      Ladung aus der Sprunglogistik), DOTLAN-geprüfte Route, Treibstoff zum
+      Ø Main-Hub-Verkaufspreis der vier Rassen-Isotope. Ohne eigenes
+      Etappenprofil nutzt Home ↔ Coalition das Profil der Klasse Jump
+      Freighter oder die automatische DOTLAN-Route. Etappen mit Main brauchen
+      ein Sprungroutenprofil: Jita liegt im Highsec, Sprungendpunkt ist das
+      Profilsystem nächst dem Main Hub; der Gate-Rest kostet keinen
+      Treibstoff. Die Treibstoffkosten je Flug gelten in beiden Richtungen als
+      gleich, wenn dasselbe Profil genutzt wird.
+    - **JF-Service:** vom Nutzer je Etappe eingetragene Preise (ISK je m³,
+      Collateral-Prozentsatz, Vertragsgrenze); je Vertrag Volumen × Satz plus
+      Collateral × Prozentsatz, ohne Rundung. Fehlende Preise halten die
+      Etappe unverfügbar.
+  - Ohne eigene Auswahl gilt die frühere Regel: Main ↔ Home per
+    Profil-Kurier, Home ↔ Coalition per eigenem Jump Freighter bei aktiver
+    Sprunglogistik, sonst per Profil-Kurier, Main ↔ Coalition über Home.
+  - Dieselbe Auswahl gilt auch in Planer, Hub-Chancen und Reaktionen (siehe
+    dort). Selbst springen zum oder vom Main Hub rechnet nur der Handel.
+  - Im Handel ist ein JF-Service unabhängig vom Profil-Logistikschalter.
   - Die Etappen werden mit ihren Sätzen angezeigt; fehlende Angaben verlinken
     die Logistikeinstellungen.
 - **Rechenregeln:**
@@ -642,6 +701,143 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
   - Jump Freighter je Einheit: Kosten bei voller Ladung.
   - Fehlende Preise, Gebühren, Packvolumen oder Transportwege bleiben
     unbekannt und werden nie als 0 angesetzt.
+
+### Marktbestand-Historie (Erfassung)
+
+Grundlage ist der [Marktbestand-Plan](Documentation/MARKTBESTAND_PLAN.md).
+Umgesetzt sind die Erfassung, der Hintergrundbetrieb, die Bestandsspalten im
+Handel (siehe dort), der Item-Verlauf und die Ansicht **Marktbestand**.
+
+- **Ansicht Marktbestand:** eigener Eintrag in der Seitenleiste, zwischen
+  Handelslogbuch und Lagerverkauf-Abgleich.
+  - **Hub-Auswahl:** Main, Home, Coalition; nur Hubs mit eigenem Ort. Die
+    Auswahl wird gespeichert.
+  - **Tabelle:** alle Items des letzten Bestandspunkts samt im Zeitraum
+    ausverkaufter Items (bekannter Bestand 0). Spalten:
+    - Sell-Bestand, Sell-Orders, niedrigster Sell,
+    - Buy-Nachfrage, Buy-Orders, höchster Buy,
+    - Netto und Abgang (Teilverkäufe plus verschwundene Orders) für 1, 7 und
+      30 Tage.
+  - **Sortierung:** native Tabelle, alle Spalten sortierbar nach dem
+    typisierten Wert. Unbekannte Werte und ungelöste Namen stehen aufsteigend
+    am Ende. Die Sortierung bleibt erhalten, wenn neue Punkte eintreffen;
+    Standard ist Sell-Bestand absteigend.
+  - **Unbekannte und unvollständige Werte:** Ein Zeitraum ohne bekannte
+    Änderung zeigt „—“. Fehlen Tage oder sind sie nur teilweise erfasst,
+    stehen Netto und Abgang in Warnfarbe. Die Statuszeile nennt den letzten
+    Punkt, die Zahl der Items und die erfassten Tage je Zeitraum.
+  - **Suche** nach Itemnamen und **Marktgruppen-Filter** über die oberste
+    Ebene des SDE-Marktgruppenbaums.
+  - **Namen:** Itemnamen sind kopierbar. Ein Typ ohne SDE-Namen erscheint
+    ausdrücklich als „Ungelöster Typ (ID …)“.
+  - **Verlauf:** Das Verlaufssymbol öffnet den Item-Verlauf mit diesem Hub
+    als Tabellen-Hub.
+  - Die Werte werden nur geladen, solange die Ansicht oder der Handel
+    angezeigt wird.
+
+- **Item-Verlauf (Handel):** Das Verlaufssymbol neben einem Item öffnet den
+  Bestandsverlauf. Es ist getrennt vom Kopier-Klick und vom Logbuch-Plus.
+  - **Graph über 30 Tage** für Main, Home und Coalition; ein Hub am Ort eines
+    anderen erscheint einmal („Main Hub = Home Hub“).
+  - **Umschaltbar:** Sell-Bestand, Buy-Nachfrage, niedrigster Sell-Preis.
+  - **Punkte:** In den letzten 7 Tagen jeder gespeicherte Punkt, davor ein
+    Tageswert je UTC-Tag zum Zeitpunkt seines letzten Punkts.
+  - **Lücken:** Ein Tag ohne Punkt oder ein fehlender Preis unterbricht die
+    Linie und wird nie als 0 gezeichnet.
+  - **Tagestabelle** je Hub (Standard: Zielhub der Route) über 30 Tage mit
+    Datum (UTC), Sell-Bestand, Zugang, Teilverkauf, Verschwunden und Netto.
+    - Alle Spalten sind sortierbar, unbekannte Werte stehen am Ende.
+    - Netto ist positiv grün und negativ rot.
+    - Nur teilweise erfasste Tage stehen in Warnfarbe; der Tooltip nennt
+      den Grund.
+  - Der Itemname ist kopierbar.
+
+- **Bestandspunkte:** Nach jedem erfolgreichen Main-, Home- und
+  Coalition-Scan schreibt die App aus dem vollständigen Orderbuch des exakten
+  Hubs einen Bestandspunkt. Er enthält je Item:
+  - Sell- und Buy-Stück,
+  - Anzahl Orders,
+  - besten Preis,
+  - je Seite gegenüber dem vorigen Punkt Zugang, Teilverkauf (sicher
+    gehandelt) und verschwundene Orders (verkauft, storniert oder abgelaufen).
+- **Was keinen Punkt erzeugt:**
+  - Ein unvollständiges Orderbuch erzeugt keinen Punkt.
+  - Ein Punkt weniger als 30 Minuten nach dem letzten desselben Hubs wird
+    verworfen.
+- **Unbekannte Deltas:** Liegen zwei Punkte mehr als 72 Stunden auseinander
+  oder fehlt ein voriger Punkt, bleibt das Delta unbekannt, nicht 0.
+- **Speicherung:** eigene Datei `market/market-stock-history.sqlite` im
+  Datenordner.
+  - Einzelpunkte bleiben 7 Tage, Tageswerte nach UTC-Tag 90 Tage.
+  - Aufgeräumt wird einmal je UTC-Tag.
+  - Die Datei ist Teil der Sicherung.
+- **Feste Termine:** Um 06:00 und 13:00 Ortszeit startet die App den
+  normalen gemeinsamen Hub-Scan als automatische Arbeit.
+  - **Termin entfällt:** wenn ein Hub-Scan höchstens 3 Stunden vorher
+    erfolgreich war.
+  - **Nachholen:** Verpasste Termine (App geschlossen, Mac im Ruhezustand)
+    holt die App nach dem Start oder Aufwachen einmal nach, nur den
+    jüngsten. Ein fehlgeschlagener Termin wird erst beim nächsten Termin,
+    Neustart oder Aufwachen erneut versucht.
+  - **Warten:** Während der Downtime (11:00–11:20 UTC) und bei einer laut
+    EVE-Statusseite gestörten ESI oder Wartung wartet der Termin und prüft
+    alle 5 Minuten erneut. Er wartet auch, solange ein anderer Scan oder eine
+    Planner-Berechnung läuft.
+  - **Pause:** Die Pause der Main-Hub-Aktualisierung im Menü von
+    **Automatic data** gilt auch für die Termine.
+  - Termine nutzen keine eigenen ESI-Anfragen. Während eines Scans hält die
+    App App Nap an; der Ruhezustand des Macs bleibt erlaubt.
+- **ESI-Cachezeit (gilt für jeden Hub-Scan):** Der Hub-Scan wirft die
+  regionalen Orderbuch-Seiten nach dem Scan aus dem Zwischenspeicher. Ein
+  neuer Hub-Scan startet deshalb erst, wenn das späteste `Expires` dieser
+  Seiten abgelaufen ist, typisch 5 Minuten (Eigentümerauftrag 29.10.2026).
+  - „Hub-Märkte aktualisieren“ (Handel, Lagerverkauf-Abgleich) und
+    „Aktualisieren“ in den Hub-Chancen sind bis dahin gesperrt; der Tooltip
+    nennt die Uhrzeit.
+  - Automatik und Termine verschieben sich entsprechend.
+  - Einzelabfragen des Planners je Item zählen nicht.
+  - Die Ablaufzeit kennt die App nur für den laufenden Programmstart.
+- **Status:** Die Karte **Automatic data** zeigt die Zeile **Marktbestand**:
+  - letzter Stand und nächster Termin,
+  - oder „Wartet auf ESI“, „Pausiert“ bzw. „Speichern fehlgeschlagen“.
+  - Der Tooltip nennt den letzten Stand je Hub.
+- **Hintergrundbetrieb:** Die Einstellungen stehen unter **Daten &
+  Einstellungen → Allgemein → Hintergrundbetrieb**.
+  - **Nach dem Schließen im Hintergrund weiterlaufen** (Standard an): Nach
+    dem Schließen des Fensters läuft die App weiter, ohne Dock-Symbol, nur
+    mit einem Menüleisten-Symbol. Termine und automatische Hub-Scans laufen
+    weiter.
+    - Ein geöffnetes oder im Dock abgelegtes Fenster bringt das Dock-Symbol
+      zurück.
+    - Ausgeschaltet beendet das Schließen des letzten Fensters die App.
+  - **Menüleisten-Symbol:** Es erscheint nur, solange dieser Schalter an ist.
+    Es enthält:
+    - **Fenster öffnen**,
+    - letzter Bestandspunkt und nächster Termin,
+    - **Marktbestand jetzt abrufen**: derselbe gemeinsame Hub-Scan als
+      automatische Arbeit, ohne Warten auf einen Termin. Der Knopf ist
+      gesperrt, solange ein Scan läuft, die Orderbücher noch in der
+      ESI-Cachezeit liegen oder kein neuer Bestandspunkt gespeichert würde,
+      also unter 30 Minuten nach dem letzten Punkt jedes Hubs. Die Zeile
+      „Abruf möglich ab …“ nennt die Uhrzeit,
+    - **Beenden**.
+  - **Beim Anmelden starten** (Standard aus): Die App wird über macOS als
+    Anmeldeobjekt eingetragen. Die Einstellung zeigt den Status, auch
+    „Freigabe in den Systemeinstellungen nötig“ mit Knopf zu den
+    Anmeldeobjekten.
+  - **Ablauf beim Login-Start:** Die App startet ohne sichtbares Fenster und
+    ohne Dock-Symbol. Das Fenster existiert verborgen nur, bis der
+    Startablauf (Konfiguration, Charakter-Sync, Freigabe der automatischen
+    Scans) fertig ist, und wird dann geschlossen.
+    - Ist „Weiterlaufen“ aus, bleibt es verborgen offen, weil das Schließen
+      die App beenden würde.
+    - Öffnet der Nutzer das Fenster vorher, bleibt es offen.
+  - **Ohne Fenster:** Es gibt keine zusätzlichen Abrufe, nur Termine,
+    6-Stunden-Scan und den Menüleisten-Knopf. Die Ansichten sind dann
+    geschlossen.
+- **Messung:** Jede Erfassung schreibt Dauer, Speicher-Footprint und
+  Dateigröße in das Leistungsprotokoll (`PerformanceLog`, Ereignis
+  `market-stock`), ohne Item- oder Ortsnamen.
 
 ### Handelslogbuch
 
@@ -661,8 +857,22 @@ SwiftData-Datenbank bleibt unberührt.
   - Geplanter VK, Transport für die gesamte Menge, eingefrorene Umsatzsteuer
     und Sell-Broker, Status und Notizen.
   - Leere Felder bleiben unbekannt, nie 0.
-- **Status:** gekauft, im Transport, gelistet, verkauft, Fertigung ignoriert,
-  ausgeschlossen. Nur die ersten drei zählen als offen.
+- **Verwendung:** Das Feld **Verwendung** (früher „Verkaufen in“) bietet
+  „Verkauf in“ Main, Home oder Koalitions-Hub sowie **Produktion** und
+  **Verbrauch** an. Die Verwendung gilt immer für den ganzen Eintrag, nicht für
+  Teilmengen.
+  - Produktion und Verbrauch schließen den Eintrag: keine offene Menge, keine
+    Anrechnung in der Spalte „Offen (Logbuch)“ im Handel und keine Zuordnung
+    von Wallet-Verkäufen. Verkaufsplan-Felder und Status sind dann ausgeblendet;
+    schon erfasste Verkäufe bleiben sichtbar.
+  - Zurück auf einen Hub gesetzt, wird der Eintrag wieder „gekauft“; der
+    zuvor gespeicherte Ziel-Hub bleibt bei Produktion/Verbrauch unverändert.
+  - Die Spalte Ziel zeigt bei Produktion/Verbrauch diese Angabe statt eines
+    Orts und sortiert nach Main, Home, Coalition, Produktion, Verbrauch.
+  - Produktion entspricht dem früheren Status „Fertigung, ignoriert“
+    (gespeicherter Wert `manufacturingIgnored` unverändert, keine Migration).
+- **Status:** gekauft, im Transport, gelistet, verkauft, Produktion,
+  Verbrauch, ausgeschlossen. Nur die ersten drei zählen als offen.
 - **Verkäufe:** Datum, Menge, Preis und Art (eigene Sell-Order oder
   Direktverkauf). Sind alle Einheiten verkauft, wechselt ein offener Eintrag
   beim Speichern auf „verkauft“.
@@ -679,7 +889,7 @@ SwiftData-Datenbank bleibt unberührt.
   in Prozent. Es gibt keine Systembenachrichtigung.
 - **Tabelle:** Filter für offene Einträge, alle Einträge oder einen Status.
   Alle Spalten sind typisiert sortierbar; unbekannte Werte stehen aufsteigend
-  hinten, Status nach Lebenszyklus, Hubs Main/Home/Coalition. Bearbeiten und
+  hinten, Status nach Lebenszyklus, Ziel nach Verwendung. Bearbeiten und
   Löschen sitzen vorn in jeder Zeile; Löschen nur nach Bestätigung.
 - **Manueller Eintrag:** **Neuer Eintrag** mit Gegenstandssuche über den
   SDE-Katalog (mindestens 3 Zeichen).
@@ -721,8 +931,8 @@ SwiftData-Datenbank bleibt unberührt.
     - Ziel-Hub: Main → Home, Home → Coalition und Coalition → Home, jeweils
       wenn der andere Hub ein eigener Ort ist; sonst bleibt der Kauf-Hub das
       Ziel.
-    - Käufe von Materialien aktiver Planner-Pläne erhalten „Fertigung,
-      ignoriert“.
+    - Käufe von Materialien aktiver Planner-Pläne erhalten die Verwendung
+      „Produktion“.
     - Der Transport wird für die Menge mit der aktuellen Transportbasis
       geschätzt und als geschätzt markiert. Bleibt das Ziel der Kauf-Hub, ist
       er 0.
@@ -754,7 +964,8 @@ SwiftData-Datenbank bleibt unberührt.
 
 ### Lagerverkauf-Abgleich
 
-Der **Lagerverkauf-Abgleich** steht in der Seitenleiste direkt unter dem
+Der **Lagerverkauf-Abgleich** steht in der Seitenleiste unter dem
+Marktbestand, also zwei Einträge unter dem
 Handelslogbuch. Er beantwortet, zu welchem Preis vorrätige oder schon
 produzierte Items am gewählten Hub mindestens verkauft werden müssen, damit
 der Verkauf Gewinn gegenüber einer Neuproduktion bringt. Verbindliche Regeln
@@ -765,15 +976,27 @@ und Eigentümerentscheide: [Lagerverkauf-Plan](Documentation/LAGERVERKAUF_PLAN.m
   den Markteinstellungen des Hubs. **Hub-Märkte aktualisieren** startet den
   gemeinsamen Hub-Scan. Ein Hub am selben Ort wie Main bzw. Home nutzt dessen
   Scan und Marktdaten.
-- **Einfügen:** Items im EVE-Inventar markieren, kopieren und einfügen.
-  Erkannt werden die Inventarliste (Name Tab Menge, leere Menge = 1) sowie
-  `Name x Menge` und `Name Menge`; Mengen mit englischen oder deutschen
-  Tausendertrennern. **Liste ersetzen** oder **Zur Liste hinzufügen**; gleiche
+- **Einfügen:** Items im EVE-Inventar oder in der Asset-Liste markieren,
+  kopieren und einfügen. Über dem Eingabefeld steht der Hinweis zum Format
+  (Item ⇥ Typ ⇥ Anzahl) mit Beispielzeile. Bei Tab-getrennten Zeilen ist die
+  erste Spalte der Name und die erste rein numerische Spalte danach die
+  Anzahl; Spalten mit Buchstaben oder Einheiten (Gruppe/Typ, Kategorie,
+  `m3`, `ISK`, …) werden ignoriert, sodass im Client zusätzlich eingeblendete
+  Spalten nicht stören. Ohne numerische Spalte zählt das Item einmal; eine
+  numerische Spalte mit 0 oder zu großer Menge ist eine ungültige Menge.
+  Rein numerische Zusatzspalten (etwa Meta-Stufe) sollten im Client hinter
+  der Anzahl stehen, sonst gilt bei leerer Anzahl deren Wert. Ohne Tab
+  werden `Name x Menge` und `Name Menge` erkannt; Mengen mit englischen oder
+  deutschen Tausendertrennern. **Liste ersetzen** oder **Zur Liste hinzufügen**; gleiche
   Items werden summiert. Englische und deutsche Clientnamen werden über den
   SDE-Katalog aufgelöst; deutsche Namen erst nach einem Neuimport mit
   Katalogadapter 7. Nicht erkannte Zeilen (unbekannt, mehrdeutig, deutsche
   Namen nicht verfügbar, ungültige Menge) stehen mit Grund in einem eigenen
-  Abschnitt und lassen sich entfernen.
+  Abschnitt und lassen sich entfernen. Angezeigt werden nur die Fehler der
+  aktuellen Eingabe: Sobald neuer Text in die Eingabebox kommt, verschwinden
+  die nicht erkannten Zeilen und Hinweise der vorherigen Eingabe; jede
+  Übernahme ersetzt sie durch die Fehler der neuen Eingabe. Erkannte Items
+  bleiben dabei unverändert.
 - **Speicherung:** Die Liste samt ME/TE-Wahl liegt als JSON im
   Einstellungsschlüssel `stock-sale.items.v1`; keine Schemaänderung. **Liste
   leeren** fragt vorher nach.
@@ -794,8 +1017,16 @@ und Eigentümerentscheide: [Lagerverkauf-Plan](Documentation/LAGERVERKAUF_PLAN.m
   Mindestpreis erreichen, sonst rot. **Empfehlung:** Sell-Order oder
   Direktverkauf mit dem höheren positiven Gesamtgewinn (Gleichstand:
   Direktverkauf), sonst „Behalten“.
-- **Tabelle:** alle Spalten immer sichtbar und sortierbar, horizontal
-  scrollbar; beim Öffnen nach Empfehlung (Gesamtgewinn) absteigend.
+- **Tabelle:** alle Spalten sortierbar; die Spalten dehnen sich auf die
+  sichtbare Breite und scrollen nur horizontal, wenn das Fenster schmaler als
+  ihre Mindestbreiten ist; beim Öffnen nach Empfehlung (Gesamtgewinn)
+  absteigend. Der Schalter **„Kosten- und Marktdetails anzeigen“** (Standard
+  an, gespeichert) blendet bei „aus“ Material-, Installations-, Blueprint- und
+  Logistikkosten, Neuproduktion/Stück, bester Sell, bester Buy und Buy-Tiefe
+  aus; sichtbar bleiben Item, Menge, ME, TE, beide Mindestpreise, eigene
+  Order, Gewinn je Stück und gesamt für Sell-Order und Direktverkauf sowie
+  die Empfehlung. Rechenwerte ändern sich dadurch nicht; war eine ausgeblendete Spalte
+  die Sortierung, gilt wieder Empfehlung absteigend.
   Unbekannte Werte stehen in dieser Ansicht in beiden Richtungen am Ende
   (dokumentierte Regel dieser Ansicht), danach entscheidet die Typ-ID.
   Itemnamen sind englische SDE-Namen und per Klick kopierbar; ein Symbol nennt
@@ -1219,7 +1450,10 @@ Main-Hub-Chancen.
   Runs/ME/TE, Favoriten und **Zum Planner hinzufügen**.
 - **Daten:** der gespeicherte Home-Hub-Scan.
 - **Logistik:** nur der Hintransport vom Main Hub zur Produktion, ohne Rückweg
-  zum Main Hub.
+  zum Main Hub. Er folgt der Transportart der Etappe Main → Home
+  (Profil-Kurier oder JF-Service); ein Abstecher von einem abweichenden
+  Produktionsort zum Home Hub bleibt beim Profil-Kurier. Main-Hub-Chancen
+  rechnen Hin- und Rückweg mit den Etappen Main → Home und Home → Main.
 - **Gespeicherte Filter:** eigene Schlüssel
   (`market-opportunities.home.…`, `manufacturing-opportunity.home.…`).
   Suche, Kategorie, Gruppe, Ergebniswert, Produktarten, Produktionsklassen,
@@ -1249,12 +1483,17 @@ mit denselben Regeln.
   Coalition-Händlerprofil.
 - **Kein eigener Scan:** Ist der Coalition Hub gleich dem Main oder dem Home
   Hub, läuft kein zweiter Scan.
-- **Transport Home → Coalition:** Wie im Planner gilt für jede Zeile:
-  - Ist die Sprunglogistik aktiv, rechnet die App einen Jump-Freighter-Frachtflug
-    mit der DOTLAN-Route des konfigurierten Rumpfs und Piloten und den
-    Isotopenpreisen des Main Hubs.
-  - Sonst rechnet sie den Profil-Kurier (m³-Tarif, 0,5-%-Sicherheitsuntergrenze,
-    Millionenrundung).
+- **Transport Home → Coalition:** Wie im Planner gilt für jede Zeile die
+  Transportart der Etappe Home → Coalition (Daten & Einstellungen → Logistik →
+  Handelstransport je Etappe):
+  - **Selbst springen** (Standard bei aktiver Sprunglogistik): ein
+    Jump-Freighter-Frachtflug mit der DOTLAN-Route des konfigurierten Rumpfs
+    und Piloten und den Isotopenpreisen des Main Hubs. Ist die Sprunglogistik
+    aus, bleibt die Etappe unverfügbar.
+  - **Profil-Kurier** (Standard ohne Sprunglogistik): m³-Tarif,
+    0,5-%-Sicherheitsuntergrenze, Millionenrundung.
+  - **JF-Service:** Volumen × Satz plus Collateral × Prozentsatz, ohne Rundung;
+    ein selbstspringendes Capital bleibt dabei blockiert.
   - Die Grundlage wird im Snapshot gespeichert, die Kosten entstehen je Zeile aus
     Menge und Erlös.
 - **Wann der Transport unverfügbar bleibt:**
@@ -1273,9 +1512,9 @@ mit denselben Regeln.
 - **Strukturmärkte (Home und Coalition):** Ist der Hub eine Spielerstruktur,
   lädt jeder Scan, auch der automatische beim Start, das **vollständige**
   Orderbuch der Struktur.
-  - Bedarfsledger und Marktübersicht erfassen damit alle dort gelisteten Items,
-    nicht nur Fertigungsprodukte. Das ist die Grundlage für den
-    Bereich Handel.
+  - Bedarfsledger, Marktbestand-Historie und Marktübersicht erfassen damit alle
+    dort gelisteten Items, nicht nur Fertigungsprodukte. Das ist die
+    Grundlage für den Bereich Handel.
   - Die Chancenanalyse erhält das Orderbuch weiterhin auf die
     Fertigungsprodukte beschränkt; ihre Ergebnisse und Abdeckungszahlen bleiben
     unverändert.
@@ -2044,9 +2283,22 @@ Zeilen der Produktionshistorie behalten dagegen die beim damaligen Speichern
 ermittelten Logistik- und Refiningwerte. Aktuelle Tarife, Anlagen oder
 Erzentscheidungen schreiben diese historischen Nachweise nicht nachträglich um.
 
+**Transportart je Etappe im Planner:** Main → Home (Einkauf, Make-or-Buy,
+Erzvergleich), Home → Main (Verkauf am Main Hub) und Home → Coalition folgen
+der Auswahl unter **Daten & Einstellungen → Logistik → Handelstransport je
+Etappe**. Ein JF-Service wird wie ein Kurier in Verträge geteilt, kostet aber
+Volumen × Satz plus Collateral × Prozentsatz ohne Rundung; die Kostenkarte
+nennt dann „ohne Rundung“. Selbst springen zum oder vom Main Hub bleibt im
+Planner unverfügbar (`logistics.main-self-jump-unsupported`). Der
+Profil-Logistikschalter schaltet weiterhin alle Kurier- und Servicekosten des
+Planners ein oder aus. Dieselben Regeln gelten für den Main-→-Home-Transport
+der Reaktionen. Ein selbstspringendes Capital bleibt blockiert, wenn Home →
+Coalition per Kurier oder JF-Service läuft.
+
 Für die Route **Home Hub → Coalition Hub** kann unter **Daten & Einstellungen →
 Logistik** statt des Kurierpreises eine Sprungtreibstoff-Rechnung aktiviert
-werden. Normale
+werden. Sie gilt, solange die Etappe Home → Coalition auf „selbst springen“
+steht (Standard bei aktiver Sprunglogistik). Normale
 Produkte werden als Fracht eines auswählbaren Jump Freighters transportiert;
 wählbar sind Rhea, Nomad, Anshar und Ark. Ein selbst sprungfähiges, im Plan
 gebautes Capital wird dagegen vor der Frachtaufteilung entfernt und erhält je
@@ -2853,8 +3105,7 @@ Standardsatz getrennt.
    festlegen.
 8. Nach jedem Start lädt die App Charaktere, Analysen und die Hub-Scans
    automatisch; den Stand zeigt die Seitenleisten-Karte **Automatic data**.
-9. Auf dem Dashboard (**Top-Chancen**) oder in den Main-, Home- und
-   Coalition-Hub-Chancen ein Produkt nach Gewinn, ROI, Bedarf oder eigener
+9. In den Main-, Home- und Coalition-Hub-Chancen ein Produkt nach Gewinn, ROI, Bedarf oder eigener
    Entscheidung wählen und mit **Zum Planner hinzufügen** an den Planner
    übergeben.
 10. Schutzbestände setzen und im Planner Bestände und Blueprints, Marktdeckung, Produktionszweige,

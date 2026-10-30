@@ -212,7 +212,11 @@ public enum TradeCalculator {
         issues.append(.transportUnavailable)
         legCost = nil
       case .courier(let courier):
-        guard validPositive(courier.iskPerCubicMeter) != nil,
+        let rate =
+          courier.provider == .jumpFreighterService
+          ? validVolume(courier.iskPerCubicMeter)
+          : validPositive(courier.iskPerCubicMeter)
+        guard rate != nil,
           validRate(courier.collateralRate) != nil
         else {
           issues.append(.transportUnavailable)
@@ -231,12 +235,7 @@ public enum TradeCalculator {
           break
         }
         legCost = collateral.flatMap {
-          finite(
-            max(
-              volume * courier.iskPerCubicMeter,
-              $0 * courier.collateralRate
-            )
-          )
+          finite(courier.unitCharge(volume: volume, collateral: $0))
         }
       case .jumpFreighter(let freighter):
         guard let capacity = validPositive(freighter.usableCargoCapacityM3),
@@ -312,7 +311,10 @@ public enum TradeCalculator {
             )
           ],
           iskPerCubicMeter: courier.iskPerCubicMeter,
-          maximumContractVolumeM3: courier.maximumContractVolumeM3
+          maximumContractVolumeM3: courier.maximumContractVolumeM3,
+          collateralRate: courier.collateralRate,
+          sumsVolumeAndCollateral: courier.provider.sumsVolumeAndCollateral,
+          roundingIncrement: courier.provider.roundingIncrement
         )
         warnings.append(contentsOf: result.warnings)
         if result.warnings.contains(where: {

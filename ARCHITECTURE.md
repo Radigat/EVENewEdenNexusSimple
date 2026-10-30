@@ -504,8 +504,10 @@ that file changes.
 The Trade area (`TradeView`, `NavigationSection.trade`) is pure
 presentation. It reads hub market summaries, demand snapshots, fees and
 resolved transport legs through `RuntimeState` (`tradeMarketState`,
-`tradeDemand`, `tradeHubFees`, `tradeTransportBases`, and the catalog
-pass-throughs `tradeMarketGroups` / `tradeItems`).
+`marketStockOverview`, `tradeHubFees`, `tradeTransportBases`, and the catalog
+pass-throughs `tradeMarketGroups` / `tradeItems`). Hub-exact traded volume,
+stock and net change come from the market stock history (below); the demand
+ledger now serves only the Hub opportunities.
 
 Tile formation, the Diff % indicator and sorting are tested core types in
 `TradeTiles.swift`:
@@ -542,6 +544,41 @@ refused untouched.
   the entries.
 - `TradeLogbookView` and the Trade row action write through
   `saveTradeLogbookEntry`.
+
+Market stock history ([MARKTBESTAND_PLAN.md](Documentation/MARKTBESTAND_PLAN.md)):
+- **Core:**
+  - `MarketStockHistoryCalculator`: pure; builds a `MarketStockPoint` and a
+    sorted compact `MarketStockOrderBaseline` from a complete exact-hub
+    order book in one pass, and compares two baselines in one merge pass
+    (added, partially filled, vanished; unknown beyond 72 h).
+  - `MarketStockSchedule`: pure fixed-term decisions (06:00/13:00 local,
+    3-hour satisfaction window, single catch-up, downtime and status wait).
+- **Storage:** `MarketStockHistoryStore` is a sidecar SQLite actor at
+  `dataRoot/market/market-stock-history.sqlite`, following the
+  `TradeLogbookStore` pattern with its own reusable prepared statements.
+  - Each point, its values, the incrementally maintained UTC daily values,
+    the day counters and the new baseline (binary blob) are written in one
+    transaction.
+  - `compactIfDue` keeps single points 7 days and daily values 90 days.
+  - The file is captured by `ConsolidationBackup` like every SQLite file of
+    the data folder.
+- **Runtime:**
+  - `RuntimeState.recordMarketStock` runs after every Main, Home and
+    Coalition order book of the joint hub scan, off the main actor, and logs
+    `market-stock` to `PerformanceLog`.
+  - The term scheduler starts the same joint scan as automatic work.
+  - `hubScanAvailableAt` (from `MeasuringESITransport.latestExpiry` over
+    catalog-wide order-book pages) blocks every hub scan before `Expires`.
+  - Overviews for Trade and the Market stock view are loaded per consumer
+    and released when the last one disappears.
+- **Views:**
+  - `MarketStockItemDetailView`: Swift Charts with
+    `MarketStockChartBuilder`, sortable `MarketStockDayRow` table.
+  - `MarketStockView`: native `Table` with `MarketStockOverviewComparator`.
+- **Background operation:** `BackgroundOperation.swift` holds
+  `AppBackgroundDelegate` (keep running, Dock policy, hidden login launch
+  until `StartupDataLoad` completes), the `MenuBarExtra` content and the
+  `SMAppService.mainApp` settings panel.
 
 `TradeHubMarketService.structureOrderSnapshot(typeIDs:)` accepts `nil` for a
 complete structure book. Home and Coalition opportunity scans of player
@@ -746,19 +783,6 @@ projections; Net Worth consumes active Manufacturing and Reaction jobs for its
 explicitly estimated in-production component. Missing, stale, partial or
 forbidden job sources retain their prior source-state semantics and never
 become an empty authoritative list.
-
-`ManufacturingOpportunityTopRanking.rank` projects a saved opportunity snapshot
-with fixed standard assumptions:
-
-- no Warehouse stock,
-- installation, sales tax and broker fee included,
-- no Blueprint allocation,
-- the snapshot's `saleRoute(for:)`.
-
-It returns the highest daily profit potentials, with a stable type-ID tie
-order. `DashboardTopOpportunitiesPanel` runs it off the main actor for the Main,
-Home and Coalition snapshots. It hands "Add to Planner" through
-`DashboardNavigationRequest.plannerLaunch` and performs no network work.
 
 `DashboardInProgressIndustryProjector.projectJobs` supplies the same per-job
 material values to the open-job ranking and the in-production aggregate.
@@ -1577,9 +1601,7 @@ opportunities price the LP route in Core (`LoyaltyPointValuation`,
 `ManufacturingOpportunityBlueprintAcquisitionProjector`) with a self-calculated
 LP value per corporation and only when a character holds enough LP
 (`LoyaltyPointsSyncService`, own JSON store, no SwiftData schema change); run
-counts are inferred from unresearched contract BPCs. The Dashboard top list is
-not a separate calculation: each hub view publishes its visible rows as
-`HubTopOpportunityResult` through `RuntimeState`.
+counts are inferred from unresearched contract BPCs.
 
 The selected tree forces complete logistics policy: purchased lines are grouped
 by the facility that consumes them for Main-Hub-to-facility legs, and every

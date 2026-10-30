@@ -29,10 +29,17 @@ public enum LogisticsCostCalculator {
     destination: String,
     cargo: [LogisticsCargoItem],
     iskPerCubicMeter: Double,
-    maximumContractVolumeM3: Double
+    maximumContractVolumeM3: Double,
+    collateralRate: Double = LogisticsConfiguration.collateralRate,
+    sumsVolumeAndCollateral: Bool = false,
+    roundingIncrement: Double? = LogisticsConfiguration.roundingIncrement
   ) -> (legs: [LogisticsCostLeg], warnings: [DomainWarning]) {
     guard !cargo.isEmpty else { return ([], []) }
-    guard iskPerCubicMeter.isFinite, iskPerCubicMeter > 0 else {
+    // A Jump Freighter service may price volume at 0 ISK and charge only
+    // collateral; the Profile courier keeps its positive-rate requirement.
+    guard iskPerCubicMeter.isFinite,
+      iskPerCubicMeter > 0 || (sumsVolumeAndCollateral && iskPerCubicMeter == 0)
+    else {
       return (
         [],
         [
@@ -289,14 +296,16 @@ public enum LogisticsCostCalculator {
     var legs: [LogisticsCostLeg] = []
     for (offset, contract) in contracts.enumerated() {
       let volumeCharge = contract.volume * iskPerCubicMeter
-      let collateralCharge =
-        contract.collateral * LogisticsConfiguration.collateralRate
+      let collateralCharge = contract.collateral * collateralRate
       let chargedBy: LogisticsChargeBasis =
         volumeCharge >= collateralCharge ? .volume : .collateral
-      let unroundedCharge = max(volumeCharge, collateralCharge)
+      let unroundedCharge =
+        sumsVolumeAndCollateral
+        ? volumeCharge + collateralCharge
+        : max(volumeCharge, collateralCharge)
       let roundedCharge =
-        ceil(unroundedCharge / LogisticsConfiguration.roundingIncrement)
-        * LogisticsConfiguration.roundingIncrement
+        roundingIncrement.map { ceil(unroundedCharge / $0) * $0 }
+        ?? unroundedCharge
       guard volumeCharge.isFinite, collateralCharge.isFinite,
         roundedCharge.isFinite, roundedCharge >= 0
       else {

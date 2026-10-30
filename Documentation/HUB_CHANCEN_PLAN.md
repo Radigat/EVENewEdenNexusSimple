@@ -282,6 +282,9 @@ Owner-Abnahmen.
 
 ### P9 – Dashboard-Kacheln „Top-Chancen“
 
+> Am 26.10.2026 auf Eigentümerauftrag samt Code, Speicher und Tests wieder
+> entfernt; der folgende Abschnitt ist nur noch Historie.
+
 > Füge eine Dashboard-Karte mit den Top 5 je Hub (Main/Home/Coalition) hinzu,
 > sortiert nach täglichem Gewinnpotenzial aus den gespeicherten Snapshots. Ein
 > Klick öffnet die jeweilige Chancenansicht, **Bauen** öffnet den Planner. Keine

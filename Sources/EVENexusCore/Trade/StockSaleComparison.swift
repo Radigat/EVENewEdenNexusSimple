@@ -60,8 +60,13 @@ public struct StockSalePasteResult: Equatable, Sendable {
 
 /// Parses text copied from the EVE client together with item quantities.
 ///
-/// - A line containing a tab (inventory list view) carries the name in the
-///   first and the quantity in the second column; an empty quantity is 1.
+/// - A line containing a tab (inventory or asset list view) carries the name
+///   in the first column. The quantity is the first further column that
+///   consists only of digits and thousands separators; columns with letters
+///   or units (group, category, `m3`, `ISK`, …) are ignored, so the copy may
+///   contain any additional columns the client shows. Without such a column
+///   the quantity is 1. A numeric column that is zero or too large is an
+///   invalid quantity.
 /// - Any other line is first tried as a complete name with quantity 1, then
 ///   as `Name x Quantity` or `Name Quantity`.
 /// - Quantities may contain the thousands separators `.`, `,`, spaces, NBSP
@@ -123,8 +128,7 @@ public enum StockSalePasteParser {
       let name = fields[0]
       guard !name.isEmpty else { return .failure(.missingName) }
       guard name.utf8.count <= maximumNameBytes else { return .failure(.nameTooLong) }
-      let quantityText = fields.count > 1 ? fields[1] : ""
-      if quantityText.isEmpty {
+      guard let quantityText = fields.dropFirst().first(where: isQuantityColumn) else {
         return .success([StockSaleNameCandidate(name: name, quantity: 1)])
       }
       guard let quantity = parseQuantity(quantityText) else {
@@ -169,6 +173,13 @@ public enum StockSalePasteParser {
       let quantity = parseQuantity(quantityText)
     else { return nil }
     return StockSaleNameCandidate(name: name, quantity: quantity)
+  }
+
+  /// A tab column holding only digits and thousands separators, including
+  /// the space variants `parseQuantity` accepts.
+  private static func isQuantityColumn(_ field: String) -> Bool {
+    field.allSatisfy { ($0.isASCII && $0.isNumber) || ".,'’ \u{00A0}\u{202F}".contains($0) }
+      && field.contains(where: { $0.isASCII && $0.isNumber })
   }
 
   private static func isQuantityToken(_ token: String) -> Bool {
@@ -264,6 +275,12 @@ public enum StockSaleEntryList {
       }
     }
     return result
+  }
+
+  /// Drops the unrecognized lines and keeps resolved entries in order. Used
+  /// when a new paste starts, so hints of an earlier paste do not linger.
+  public static func removingUnresolved(_ entries: [StockSaleEntry]) -> [StockSaleEntry] {
+    entries.filter(\.isResolved)
   }
 
   public static func encode(_ entries: [StockSaleEntry]) throws -> Data {

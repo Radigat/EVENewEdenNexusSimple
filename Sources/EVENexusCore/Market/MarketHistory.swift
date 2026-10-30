@@ -179,15 +179,29 @@ public struct HubTradedVolume: Equatable, Sendable {
   public let units: Int64
   public let recordedDays: Int
   public let windowDays: Int
+  /// Market stock history only: partial fills plus vanished orders (traded,
+  /// cancelled or expired), an upper bound for `units`.
+  public let upperBoundUnits: Int64?
+  /// Market stock history only: recorded days whose sums cover only part of
+  /// the day (first point, gap).
+  public let partialDays: Int
 
-  public init(units: Int64, recordedDays: Int, windowDays: Int) {
+  public init(
+    units: Int64,
+    recordedDays: Int,
+    windowDays: Int,
+    upperBoundUnits: Int64? = nil,
+    partialDays: Int = 0
+  ) {
     self.units = units
     self.recordedDays = recordedDays
     self.windowDays = windowDays
+    self.upperBoundUnits = upperBoundUnits
+    self.partialDays = partialDays
   }
 
-  /// Every day of the window has a record.
-  public var isComplete: Bool { recordedDays >= windowDays }
+  /// Every day of the window has a complete record.
+  public var isComplete: Bool { recordedDays >= windowDays && partialDays == 0 }
 
   /// `units ÷ recordedDays`.
   public var averagePerRecordedDay: Double {
@@ -236,5 +250,94 @@ extension ManufacturingOpportunityDemandSnapshot {
       recordedDays: unitsByDay.count,
       windowDays: window.days
     )
+  }
+}
+
+/// Sell-side stock change at a hub during a window (MARKTBESTAND_PLAN C4).
+public struct MarketStockNetChange: Equatable, Sendable {
+  /// Sums of the known deltas of the window.
+  public let sell: MarketStockSideDelta
+  public let recordedDays: Int
+  public let partialDays: Int
+  public let windowDays: Int
+
+  public init(
+    sell: MarketStockSideDelta,
+    recordedDays: Int,
+    partialDays: Int,
+    windowDays: Int
+  ) {
+    self.sell = sell
+    self.recordedDays = recordedDays
+    self.partialDays = partialDays
+    self.windowDays = windowDays
+  }
+
+  /// Units listed now minus units listed at the window start.
+  public var net: Int64 { sell.net }
+
+  public var isComplete: Bool { recordedDays >= windowDays && partialDays == 0 }
+}
+
+extension MarketStockHubOverview {
+  /// Coverage of `window`, when the overview was built for it.
+  public func coverage(for window: MarketHistoryWindow) -> MarketStockWindowCoverage? {
+    coverage.first { $0.days == window.days }
+  }
+
+  /// Stock of the latest point; a known 0 for an item not listed then.
+  /// `nil` without any stored point of this hub.
+  public func currentStock(for typeID: Int64) -> MarketStockItemValue? {
+    guard latestCapturedAt != nil else { return nil }
+    return itemsByType[typeID]?.current
+      ?? MarketStockItemValue(typeID: typeID, sell: .empty, buy: .empty)
+  }
+
+  /// Sell-side partial fills of `typeID` during `window` (C4): surely traded
+  /// units, with the total of partial fills and vanished orders as upper
+  /// bound. `nil` while no day of the window has a known delta; an item
+  /// without changes then is a known 0.
+  public func hubTradedVolume(
+    for typeID: Int64,
+    window: MarketHistoryWindow
+  ) -> HubTradedVolume? {
+    guard let (sell, coverage) = knownSellTotals(for: typeID, window: window)
+    else { return nil }
+    return HubTradedVolume(
+      units: sell.partiallyFilled,
+      recordedDays: coverage.daysWithKnownDelta,
+      windowDays: window.days,
+      upperBoundUnits: sell.removed,
+      partialDays: coverage.daysWithUnknownDelta
+    )
+  }
+
+  /// Sell-side added, partially filled, vanished and net units during
+  /// `window`; `nil` while no day of the window has a known delta.
+  public func netChange(
+    for typeID: Int64,
+    window: MarketHistoryWindow
+  ) -> MarketStockNetChange? {
+    guard let (sell, coverage) = knownSellTotals(for: typeID, window: window)
+    else { return nil }
+    return MarketStockNetChange(
+      sell: sell,
+      recordedDays: coverage.daysWithKnownDelta,
+      partialDays: coverage.daysWithUnknownDelta,
+      windowDays: window.days
+    )
+  }
+
+  private func knownSellTotals(
+    for typeID: Int64,
+    window: MarketHistoryWindow
+  ) -> (MarketStockSideDelta, MarketStockWindowCoverage)? {
+    guard latestCapturedAt != nil,
+      let index = coverage.firstIndex(where: { $0.days == window.days }),
+      coverage[index].daysWithKnownDelta > 0
+    else { return nil }
+    let totals = itemsByType[typeID]?.totals
+    let sell = totals.flatMap { $0.indices.contains(index) ? $0[index].sell : nil }
+    return (sell ?? .zero, coverage[index])
   }
 }

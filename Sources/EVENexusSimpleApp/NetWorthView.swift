@@ -167,7 +167,7 @@ struct NetWorthView: View {
   @State private var captureMessage: String?
   @State private var localError: String?
   @State private var unpricedDetails: DashboardWealthCharacterValue?
-  @State private var wealthHistoryCache = DashboardWealthHistoryCache()
+  private var wealthHistoryCache: DashboardWealthHistoryCache { .shared }
   @State private var characterSort = AppTableSortDescriptor(
     column: NetWorthCharacterSortColumn.character,
     direction: .ascending

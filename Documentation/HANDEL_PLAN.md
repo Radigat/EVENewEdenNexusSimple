@@ -580,16 +580,45 @@ ESI-Markthistorie gibt es nur je Region. Entscheidung des Eigentümers: zusätzl
 ein hub-genaues Volumen je Zeitraum aus dem Bedarfsledger des Zielhubs zeigen
 und die Regionsspalte klar als Region beschriften.
 
-Formel (`ManufacturingOpportunityDemandSnapshot.hubTradedVolume`):
-- Grundlage sind die Tagesdatensätze des Ledgers: je UTC-Tag mit Scan die
-  zuletzt gültige 24-Stunden-Schätzung der Stück, die aus weiterhin gelisteten
-  Orders des Zielhubs verschwunden sind (Untergrenze; Methode
-  `exact-hub-rolling-24h-surviving-order-depletion-daily-history-v3`).
-- Zielhub(N) = Summe dieser Tageswerte der UTC-Tage heute−N+1 … heute, dazu
-  die Zahl der erfassten Tage. Tage ohne Datensatz für das Item sind unbekannt
-  und zählen nicht als 0. Ohne erfassten Tag ist der Wert unbekannt.
-- Sortiert wird nach der Summe; ein unvollständiger Zeitraum wird in
-  Warnfarbe gezeigt und im Tooltip mit „k von N Tagen“ belegt.
+**Seit 29.10.2026 ersetzt** (Eigentümerauftrag, [Marktbestand-Plan](MARKTBESTAND_PLAN.md)
+P5, Abschnitt C4): „Zielhub N T“ stammt nicht mehr aus dem Bedarfsledger,
+sondern aus der Bestandshistorie des Zielhubs. Der Bedarfsledger bleibt für die
+Hub-Chancen.
+
+Formel (`MarketStockHubOverview.hubTradedVolume`):
+- Grundlage sind die Bestandspunkte des Zielhubs und ihr Vergleich auf
+  Order-Ebene. Je UTC-Tag werden die bekannten Deltas summiert.
+- Zielhub(N) = Summe der **Teilverkäufe** (Sell-Seite: Rückgang noch
+  gelisteter Verkaufsorders) der UTC-Tage heute−N+1 … heute. Das sind sicher
+  gehandelte Stück, eine Untergrenze.
+- Obergrenze im Tooltip: Teilverkäufe plus ganz verschwundene Orders
+  (verkauft, storniert oder abgelaufen; ESI unterscheidet das nicht).
+- Erfasste Tage: Tage mit mindestens einem bekannten Delta. Tage mit einem
+  unbekannten Delta (erster Punkt, Lücke über 72 Stunden) gelten als nur
+  teilweise erfasst.
+- **Vollständig** ist ein Zeitraum, wenn alle N Tage erfasst und keiner nur
+  teilweise erfasst ist; sonst steht der Wert in Warnfarbe.
+- Ohne bekanntes Delta im Zeitraum ist der Wert unbekannt („—“), ohne
+  Bestandspunkt ebenfalls. Gibt es bekannte Deltas, ist ein Item ohne
+  Änderung eine bekannte 0.
+- **Ø Bedarf/Tag** = Zielhub(N) ÷ erfasste Tage des gewählten Zeitraums.
+  **Nachfrage heute** = Teilverkäufe des laufenden UTC-Tags.
+- Sortiert wird nach der Summe.
+
+Zusätzliche Spalten (P5):
+- **Bestand Ziel**: Sell-Stück des Zielhubs beim letzten Bestandspunkt.
+  Ein dort nicht gelistetes Item ist eine bekannte 0, ohne Bestandspunkt
+  bleibt der Wert unbekannt. Der Tooltip nennt Sell-Orders, Buy-Stück,
+  Buy-Orders und den Zeitpunkt. Die Spalte ist immer sichtbar.
+- **Netto Ziel N T**: Zugang minus Teilverkäufe minus verschwundene Orders
+  der Sell-Seite. Positiv grün, negativ rot, unvollständig in Warnfarbe. Der
+  Tooltip zeigt die Aufschlüsselung je Zeitraum. Die Spalte ist immer
+  sichtbar.
+- **Bestand Quelle**: wie Bestand Ziel, für den Quell-Hub; nur mit „Details
+  anzeigen“.
+
+Ein Hub am Ort des Main oder Home Hubs nutzt dessen Bestandshistorie. Die
+Werte werden nur geladen, solange der Handel angezeigt wird.
 
 Beschriftung: „Zielhub N T“, „Region N T“, „Gewinn/Tag (Region)“,
 „Ø Region/Tag“. Gewinn/Tag rechnet weiter mit dem Regionsvolumen.
@@ -610,6 +639,8 @@ Regeln:
 - Ist es beim Zielhub der Route gesetzt, gilt für „Zielhub N T“
   `HubTradedVolume.regionHistory`: Gehandelt(N) der Regionshistorie (Abschnitt
   L), N von N Tagen erfasst. Die Spalte heißt dann „Zielhub N T (Region)“.
+- Bestand Ziel, Netto Ziel, Ø Bedarf/Tag und Nachfrage heute kommen auch dann
+  aus der Bestandshistorie (Abschnitt M).
 - Die App prüft nicht, ob die Region wirklich nur einen Markt hat; das ist eine
   Aussage des Eigentümers.
 
@@ -621,8 +652,8 @@ Region.
 
 Formeln (`TradeDisplayRow.hubProfitPotential`, `regionProfitPotential`):
 - Gewinnpot. Zielhub(N) = Gewinn je Stück (Abschnitt C) × Zielhub(N)
-  (Abschnitt M, bzw. Regionshistorie bei „Einziger Markt der Region“,
-  Abschnitt N).
+  (Abschnitt M: Teilverkäufe aus der Bestandshistorie, bzw. Regionshistorie bei
+  „Einziger Markt der Region“, Abschnitt N).
 - Gewinnpot. Region(N) = Gewinn je Stück × Gehandelt(N) (Abschnitt L).
 - Ohne Gewinn oder Volumen unbekannt, nie 0; ein negativer Gewinn bleibt
   negativ. Beide sind Obergrenzen, weil sich andere Händler das Volumen

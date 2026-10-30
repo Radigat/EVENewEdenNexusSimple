@@ -1862,14 +1862,6 @@
 "The local Public Contracts index is not ready. Contract prices remain unavailable." = "The local Public Contracts index is not ready. Contract prices remain unavailable.";
 "The local Public Contracts index could not be read. Contract prices remain unavailable." = "The local Public Contracts index could not be read. Contract prices remain unavailable.";
 
-/* Dashboard top opportunities (HUB_CHANCEN_PLAN P9) */
-"Top opportunities" = "Top opportunities";
-"Ranked by daily profit potential from the saved scans with standard assumptions: every material is bought, installation, sales tax and broker fee are included, no Blueprint allocation and no purchase budget. Open a hub for Warehouse-aware values." = "Ranked by daily profit potential from the saved scans with standard assumptions: every material is bought, installation, sales tax and broker fee are included, no Blueprint allocation and no purchase budget. Open a hub for Warehouse-aware values.";
-"Open this opportunity list" = "Open this opportunity list";
-"No saved row has an available daily profit potential." = "No saved row has an available daily profit potential.";
-"No saved scan yet. It runs automatically with the next Main Hub scan." = "No saved scan yet. It runs automatically with the next Main Hub scan.";
-"%@ / day" = "%@ / day";
-"ROI %@" = "ROI %@";
 "Transfer this saved batch to the Planner." = "Transfer this saved batch to the Planner.";
 
 /* Planner target market (HUB_CHANCEN_PLAN P10) */
@@ -1989,11 +1981,6 @@
 "Tech II/III, Loyalty Store, Faction and Storyline Blueprints exist only as BPCs. Their acquisition is priced with the cheapest available route: expected invention cost (Tech II/III), the cheapest attributable BPC contracts in the selected contract regions, or the Loyalty Store when a character has enough LP (ISK cost, required items and LP at the self-calculated LP value). Enable this when you already own the BPCs; the acquisition is then not priced and the optional Blueprint allocation applies instead." = "Tech II/III, Loyalty Store, Faction and Storyline Blueprints exist only as BPCs. Their acquisition is priced with the cheapest available route: expected invention cost (Tech II/III), the cheapest attributable BPC contracts in the selected contract regions, or the Loyalty Store when a character has enough LP (ISK cost, required items and LP at the self-calculated LP value). Enable this when you already own the BPCs; the acquisition is then not priced and the optional Blueprint allocation applies instead.";
 "The saved Loyalty Points could not be read. They remain unknown, not zero." = "The saved Loyalty Points could not be read. They remain unknown, not zero.";
 "Loyalty Points could not be updated. The previous values were kept." = "Loyalty Points could not be updated. The previous values were kept.";
-"Ranked by daily profit potential exactly as calculated in the Main, Home and Coalition Hub opportunity lists, with their filters, Warehouse, cost settings, contract and Loyalty Store basis. A hub updates its column whenever it is opened." = "Ranked by daily profit potential exactly as calculated in the Main, Home and Coalition Hub opportunity lists, with their filters, Warehouse, cost settings, contract and Loyalty Store basis. A hub updates its column whenever it is opened.";
-"A newer scan exists. Open this hub to recalculate the list." = "A newer scan exists. Open this hub to recalculate the list.";
-"No visible row of this hub has an available daily profit potential." = "No visible row of this hub has an available daily profit potential.";
-"Calculated in the hub %@" = "Calculated in the hub %@";
-"Not calculated yet. Open this hub once to calculate its list." = "Not calculated yet. Open this hub once to calculate its list.";
 "Loyalty Stores" = "Loyalty Stores";
 "%lld offers · %@" = "%lld offers · %@";
 "Not loaded yet" = "Not loaded yet";
@@ -2013,6 +2000,8 @@
 "Trade" = "Trade";
 "Main → Home" = "Main → Home";
 "Main → Coalition" = "Main → Coalition";
+"Home → Main" = "Home → Main";
+"Coalition → Main" = "Coalition → Main";
 "No usable price at the source hub." = "No usable price at the source hub.";
 "No usable price at the target hub." = "No usable price at the target hub.";
 "The broker fee of the source hub is unknown." = "The broker fee of the source hub is unknown.";
@@ -2091,7 +2080,9 @@
 "Bought" = "Bought";
 "Listed" = "Listed";
 "Sold" = "Sold";
-"Manufacturing, ignored" = "Manufacturing, ignored";
+"Usage" = "Usage";
+"Consumption" = "Consumption";
+"Sale at %@" = "Sale at %@";
 "Excluded" = "Excluded";
 "Instant buy (Min-Sell)" = "Instant buy (Min-Sell)";
 "Own buy order (Max-Buy)" = "Own buy order (Max-Buy)";
@@ -2248,7 +2239,6 @@
 /* Hub opportunities: Add to Planner (24.10.2026) */
 "Add to Planner" = "Add to Planner";
 "Adds this row's visible quantity, Runs, ME and TE as a new line to the Planner draft. Concrete Blueprint sources are selected and verified there." = "Adds this row's visible quantity, Runs, ME and TE as a new line to the Planner draft. Concrete Blueprint sources are selected and verified there.";
-"Adds this saved batch as a new line to the Planner draft." = "Adds this saved batch as a new line to the Planner draft.";
 
 /* Hub opportunities: build intermediates yourself (24.10.2026) */
 "Build intermediates yourself" = "Build intermediates yourself";
@@ -2306,6 +2296,8 @@
 "Clear list" = "Clear list";
 "Clear the stock sale list?" = "Clear the stock sale list?";
 "Comparison" = "Comparison";
+"Show cost and market details" = "Show cost and market details";
+"Off shows only item, quantity, ME, TE, minimum prices, own order, profits and recommendation." = "Off shows only item, quantity, ME, TE, minimum prices, own order, profits and recommendation.";
 "Direct sale" = "Direct sale";
 "Hub" = "Hub";
 "Hub and basis" = "Hub and basis";
@@ -2342,7 +2334,8 @@
 "Remove from list" = "Remove from list";
 "Replace list" = "Replace list";
 "Sales tax %@ · Broker fee %@" = "Sales tax %@ · Broker fee %@";
-"Select the items in the EVE inventory, copy them (Cmd+C) and paste them here. One item per line; English and German client names are recognized." = "Select the items in the EVE inventory, copy them (Cmd+C) and paste them here. One item per line; English and German client names are recognized.";
+"Select the items in the EVE inventory or asset list, copy them (Cmd+C) and paste them here. One item per line; English and German client names are recognized." = "Select the items in the EVE inventory or asset list, copy them (Cmd+C) and paste them here. One item per line; English and German client names are recognized.";
+"Format per line: Item ⇥ Type ⇥ Quantity. The first column is the item name, the first purely numeric column is the quantity. Additional columns shown in the client (category, volume, estimated price, …) are ignored. Without a quantity the item counts once." = "Format per line: Item ⇥ Type ⇥ Quantity. The first column is the item name, the first purely numeric column is the quantity. Additional columns shown in the client (category, volume, estimated price, …) are ignored. Without a quantity the item counts once.";
 "Sell order" = "Sell order";
 "Several items carry this name." = "Several items carry this name.";
 "The %@ is the same place as the %@ and uses its scan and market data." = "The %@ is the same place as the %@ and uses its scan and market data.";
@@ -2361,3 +2354,135 @@
 "on" = "on";
 "Material Efficiency of the new production, 0–10." = "Material Efficiency of the new production, 0–10.";
 "Time Efficiency of the new production, 0–20." = "Time Efficiency of the new production, 0–20.";
+
+/* Trade transport per leg (27.10.2026) */
+"Trade transport per leg" = "Trade transport per leg";
+"Via Home Hub (two legs)" = "Via Home Hub (two legs)";
+"Direct (one leg)" = "Direct (one leg)";
+"Profile courier" = "Profile courier";
+"Own Jump Freighter" = "Own Jump Freighter";
+"Jump Freighter service" = "Jump Freighter service";
+"This leg is not used by the current Main ↔ Coalition routing." = "This leg is not used by the current Main ↔ Coalition routing.";
+"Uses the Profile courier rate above in this direction." = "Uses the Profile courier rate above in this direction.";
+"Jump-route profile" = "Jump-route profile";
+"No profile" = "No profile";
+"Jump Freighter class profile or automatic DOTLAN route" = "Jump Freighter class profile or automatic DOTLAN route";
+"A Jump Freighter cannot jump into the high-security Main Hub. The profile's system nearest the Main Hub (last waypoint towards Main, first waypoint from Main) is the jump endpoint; the rest is flown by gate without fuel cost." = "A Jump Freighter cannot jump into the high-security Main Hub. The profile's system nearest the Main Hub (last waypoint towards Main, first waypoint from Main) is the jump endpoint; the rest is flown by gate without fuel cost.";
+"Jump logistics above is switched off, so hull, pilot, cargo and route profiles cannot be edited there. Its last saved values are still used for this leg." = "Jump logistics above is switched off, so hull, pilot, cargo and route profiles cannot be edited there. Its last saved values are still used for this leg.";
+"Hull, pilot and usable cargo come from the jump logistics above; fuel is the average Main-Hub sell price of the four racial isotopes." = "Hull, pilot and usable cargo come from the jump logistics above; fuel is the average Main-Hub sell price of the four racial isotopes.";
+"Volume price" = "Volume price";
+"ISK per m³" = "ISK per m³";
+"Percent" = "Percent";
+"Maximum m³" = "Maximum m³";
+"Each contract costs volume × rate plus collateral × percentage, without rounding." = "Each contract costs volume × rate plus collateral × percentage, without rounding.";
+"Enter volume price and collateral percentage of the service; until then this leg stays unavailable." = "Enter volume price and collateral percentage of the service; until then this leg stays unavailable.";
+"Main → Coalition (direct)" = "Main → Coalition (direct)";
+"Coalition → Main (direct)" = "Coalition → Main (direct)";
+"The Jump Freighter service prices of a leg are incomplete in the logistics settings." = "The Jump Freighter service prices of a leg are incomplete in the logistics settings.";
+"A self-jump to or from the Main Hub needs a jump-route profile ending in a jumpable system near the Main Hub." = "A self-jump to or from the Main Hub needs a jump-route profile ending in a jumpable system near the Main Hub.";
+"The jump-route profile chosen for a leg is missing or incomplete." = "The jump-route profile chosen for a leg is missing or incomplete.";
+"No eligible Jump Freighter pilot with fresh skills is available." = "No eligible Jump Freighter pilot with fresh skills is available.";
+"The Jump Freighter route of a leg is unavailable." = "The Jump Freighter route of a leg is unavailable.";
+"Jump Freighter service %@ → %@: %@ ISK per m³ plus %@ of the collateral, without rounding." = "Jump Freighter service %1$@ → %2$@: %3$@ ISK per m³ plus %4$@ of the collateral, without rounding.";
+"Choose per directed leg whether the Profile courier, your own Jump Freighter or a Jump Freighter service carries the goods. Trade, Planner, Hub opportunities and Reactions use this choice; outside Trade the switch above still turns all courier and service costs on or off. A self-jump to or from the Main Hub is calculated only in Trade. Missing prices, routes or pilots keep a leg unavailable and never become 0 ISK." = "Choose per directed leg whether the Profile courier, your own Jump Freighter or a Jump Freighter service carries the goods. Trade, Planner, Hub opportunities and Reactions use this choice; outside Trade the switch above still turns all courier and service costs on or off. A self-jump to or from the Main Hub is calculated only in Trade. Missing prices, routes or pilots keep a leg unavailable and never become 0 ISK.";
+"Maximum %@ m³ per contract · oversized routes are split automatically · Jump Freighter service without rounding" = "Maximum %@ m³ per contract · oversized routes are split automatically · Jump Freighter service without rounding";
+"A self-jump to or from the Main Hub is calculated only in Trade. Choose the Profile courier or a Jump Freighter service for this leg." = "A self-jump to or from the Main Hub is calculated only in Trade. Choose the Profile courier or a Jump Freighter service for this leg.";
+"A self-jump to or from the Main Hub is calculated only in Trade." = "A self-jump to or from the Main Hub is calculated only in Trade.";
+"The Jump Freighter service prices of this leg are incomplete in the logistics settings." = "The Jump Freighter service prices of this leg are incomplete in the logistics settings.";
+"Home Hub → Coalition Hub is set to an own Jump Freighter, but jump logistics is switched off. Enable it or choose another transport for this leg." = "Home Hub → Coalition Hub is set to an own Jump Freighter, but jump logistics is switched off. Enable it or choose another transport for this leg.";
+"At least one produced capital must self-jump from the Home Hub to the Coalition Hub. The Home → Coalition leg uses a Jump Freighter service, so the hull is not treated as service cargo." = "At least one produced capital must self-jump from the Home Hub to the Coalition Hub. The Home → Coalition leg uses a Jump Freighter service, so the hull is not treated as service cargo.";
+"This leg is carried by an own Jump Freighter and has no courier contracts." = "This leg is carried by an own Jump Freighter and has no courier contracts.";
+
+/* Market stock history (MARKTBESTAND_PLAN P3) */
+"Market stock" = "Market stock";
+"Saving failed" = "Saving failed";
+"Waiting for ESI" = "Waiting for ESI";
+"Point %@ · next %@" = "Point %1$@ · next %2$@";
+"%@: last point %@" = "%1$@: last point %2$@";
+"Fixed terms 06:00 and 13:00; a successful hub scan up to 3 hours earlier counts for the term." = "Fixed terms 06:00 and 13:00; a successful hub scan up to 3 hours earlier counts for the term.";
+"The market stock history could not be opened. Hub scans continue without new stock points." = "The market stock history could not be opened. Hub scans continue without new stock points.";
+"A market stock point could not be stored. The earlier history was kept." = "A market stock point could not be stored. The earlier history was kept.";
+
+/* Background operation (MARKTBESTAND_PLAN P4) */
+"Background operation" = "Background operation";
+"Keep running after the window closes" = "Keep running after the window closes";
+"The app then stays in the menu bar without a Dock icon and keeps the fixed market stock terms (06:00 and 13:00) and the automatic hub scans running. When switched off, closing the window quits the app." = "The app then stays in the menu bar without a Dock icon and keeps the fixed market stock terms (06:00 and 13:00) and the automatic hub scans running. When switched off, closing the window quits the app.";
+"Start at login" = "Start at login";
+"The app starts hidden when you log in." = "The app starts hidden when you log in.";
+"Registered, but macOS still needs your approval in System Settings → General → Login Items." = "Registered, but macOS still needs your approval in System Settings → General → Login Items.";
+"The app does not start at login." = "The app does not start at login.";
+"macOS cannot register this copy of the app as a login item. Start it from the Applications folder and try again." = "macOS cannot register this copy of the app as a login item. Start it from the Applications folder and try again.";
+"Open Login Items settings" = "Open Login Items settings";
+"macOS refused the change: %@" = "macOS refused the change: %@";
+"A Mac in sleep misses a term; the app catches up once after waking. No term wakes the Mac." = "A Mac in sleep misses a term; the app catches up once after waking. No term wakes the Mac.";
+"Open window" = "Open window";
+"Fetch market stock now" = "Fetch market stock now";
+"Hub markets are being updated" = "Hub markets are being updated";
+"No market stock point yet" = "No market stock point yet";
+"Last market stock point %@" = "Last market stock point %@";
+"Next term waits for ESI" = "Next term waits for ESI";
+"No term planned" = "No term planned";
+"Next term %@" = "Next term %@";
+
+/* Trade stock columns (MARKTBESTAND_PLAN P5) */
+"Stock target" = "Stock target";
+"Stock source" = "Stock source";
+"Net target %lld d" = "Net target %lld d";
+"Ø units surely traded per recorded day at the target hub in the last %lld days (partial fills from its market stock history)." = "Ø units surely traded per recorded day at the target hub in the last %lld days (partial fills from its market stock history).";
+"Units surely traded at the target hub today since 00:00 UTC (partial fills from its market stock history)." = "Units surely traded at the target hub today since 00:00 UTC (partial fills from its market stock history).";
+"Profit per unit × units surely traded at the target hub in the selected window (partial fills from its market stock history). Days without a known change are not counted; other traders share this volume." = "Profit per unit × units surely traded at the target hub in the selected window (partial fills from its market stock history). Days without a known change are not counted; other traders share this volume.";
+"at most %@ incl. vanished orders" = "at most %@ incl. vanished orders";
+"%lld days only partly recorded" = "%lld days only partly recorded";
+"Surely traded at the target hub itself: units by which still listed sell orders shrank between two market stock points (partial fills), summed per UTC day. The upper bound also counts orders that vanished completely (sold, cancelled or expired). Days without a known change are unknown and not counted." = "Surely traded at the target hub itself: units by which still listed sell orders shrank between two market stock points (partial fills), summed per UTC day. The upper bound also counts orders that vanished completely (sold, cancelled or expired). Days without a known change are unknown and not counted.";
+"%@: %@ units in %lld sell orders, %@ units in %lld buy orders at the latest market stock point (%@)." = "%1$@: %2$@ units in %3$lld sell orders, %4$@ units in %5$lld buy orders at the latest market stock point (%6$@).";
+"%@: no market stock point yet. It is written by the next successful hub scan." = "%@: no market stock point yet. It is written by the next successful hub scan.";
+"%lld d: no known change" = "%lld d: no known change";
+"%lld d: added %@, partly sold %@, vanished %@, net %@ (%lld of %lld days)" = "%1$lld d: added %2$@, partly sold %3$@, vanished %4$@, net %5$@ (%6$lld of %7$lld days)";
+"Change of the sell units listed at the target hub: new orders minus partial fills and vanished orders (sold, cancelled or expired). Days without a known change are not counted." = "Change of the sell units listed at the target hub: new orders minus partial fills and vanished orders (sold, cancelled or expired). Days without a known change are not counted.";
+"Net target %lld d: %@" = "Net target %1$lld d: %2$@";
+"The market stock history could not be read. Stock values in Trade stay unavailable." = "The market stock history could not be read. Stock values in Trade stay unavailable.";
+
+/* Hub scans respect ESI cache time (29.10.2026) */
+"The order books of the last hub scan are still inside ESI's cache time. CCP asks not to request them again before it ends; a new scan is possible from %@." = "The order books of the last hub scan are still inside ESI's cache time. CCP asks not to request them again before it ends; a new scan is possible from %@.";
+"Fetching possible from %@" = "Fetching possible from %@";
+
+/* Market stock item detail (MARKTBESTAND_PLAN P6) */
+"Market stock history" = "Market stock history";
+"No hub with a known location is configured." = "No hub with a known location is configured.";
+"Loading market stock history…" = "Loading market stock history…";
+"Sell stock" = "Sell stock";
+"Buy demand" = "Buy demand";
+"Lowest sell price" = "Lowest sell price";
+"Last 7 days: every stored point. Before: one daily value per UTC day (its last point). A day without a point leaves a gap; it is never drawn as 0." = "Last 7 days: every stored point. Before: one daily value per UTC day (its last point). A day without a point leaves a gap; it is never drawn as 0.";
+"Daily table" = "Daily table";
+"No stored market stock point for this item yet." = "No stored market stock point for this item yet.";
+"Date (UTC)" = "Date (UTC)";
+"Added" = "Added";
+"Partly sold" = "Partly sold";
+"Vanished" = "Vanished";
+"Net" = "Net";
+"No market stock point on this day: unknown, not 0." = "No market stock point on this day: unknown, not 0.";
+"Stock known, but no change to an earlier point is known for this day." = "Stock known, but no change to an earlier point is known for this day.";
+"Only partly recorded: one point of this day has no known change to its predecessor." = "Only partly recorded: one point of this day has no known change to its predecessor.";
+"Stock at the day's last point. Added: new orders; partly sold: surely traded; vanished: sold, cancelled or expired." = "Stock at the day's last point. Added: new orders; partly sold: surely traded; vanished: sold, cancelled or expired.";
+
+/* Market stock view (MARKTBESTAND_PLAN P7) */
+"No hub with a known location is configured. Set the Main, Home or Coalition Hub in Market Settings." = "No hub with a known location is configured. Set the Main, Home or Coalition Hub in Market Settings.";
+"Every item listed at a hub at its latest market stock point, with the change of its sell stock. Partly sold units are surely traded; vanished orders were sold, cancelled or expired." = "Every item listed at a hub at its latest market stock point, with the change of its sell stock. Partly sold units are surely traded; vanished orders were sold, cancelled or expired.";
+"Search item" = "Search item";
+"%lld d: %lld of %lld days recorded" = "%1$lld d: %2$lld of %3$lld days recorded";
+"Latest point %@ · %lld items" = "Latest point %1$@ · %2$lld items";
+"Loading market stock…" = "Loading market stock…";
+"No market stock point for this hub yet. It is written by the next successful hub scan." = "No market stock point for this hub yet. It is written by the next successful hub scan.";
+"Lowest sell" = "Lowest sell";
+"Buy orders" = "Buy orders";
+"Highest buy" = "Highest buy";
+"Net 1 d" = "Net 1 d";
+"Removed 1 d" = "Removed 1 d";
+"Net 7 d" = "Net 7 d";
+"Removed 7 d" = "Removed 7 d";
+"Net 30 d" = "Net 30 d";
+"Removed 30 d" = "Removed 30 d";
+"Days of this window are missing or only partly recorded; the value covers only the recorded days." = "Days of this window are missing or only partly recorded; the value covers only the recorded days.";
+"Unresolved type (ID %lld)" = "Unresolved type (ID %lld)";
+"The active SDE has no name for this type." = "The active SDE has no name for this type.";

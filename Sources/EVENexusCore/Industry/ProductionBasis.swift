@@ -2165,6 +2165,8 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
   public var iskPerCubicMeter: Double?
   public var maximumContractVolumeM3: Double
   public var jumpFreighter: JumpFreighterLogisticsConfiguration
+  /// Transport method per directed hub leg; used by the Trade view.
+  public var hubTransport: HubTransportConfiguration
   public var ruleVersion: String
 
   public init(
@@ -2179,6 +2181,7 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
     maximumContractVolumeM3: Double =
       LogisticsConfiguration.defaultMaximumContractVolumeM3,
     jumpFreighter: JumpFreighterLogisticsConfiguration = .init(),
+    hubTransport: HubTransportConfiguration = .init(),
     ruleVersion: String = LogisticsConfiguration.ruleVersion
   ) {
     self.isEnabled = isEnabled
@@ -2191,6 +2194,7 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
     self.iskPerCubicMeter = iskPerCubicMeter
     self.maximumContractVolumeM3 = maximumContractVolumeM3
     self.jumpFreighter = jumpFreighter
+    self.hubTransport = hubTransport
     self.ruleVersion = ruleVersion
   }
 
@@ -2214,7 +2218,8 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
   private enum CodingKeys: String, CodingKey {
     case isEnabled, includeInboundMaterials, includeOutboundProducts
     case productionLocationName, marketLocationName, homeTradeHub
-    case iskPerCubicMeter, maximumContractVolumeM3, jumpFreighter, ruleVersion
+    case iskPerCubicMeter, maximumContractVolumeM3, jumpFreighter, hubTransport
+    case ruleVersion
   }
 
   public init(from decoder: Decoder) throws {
@@ -2240,6 +2245,11 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
       try container.decodeIfPresent(
         JumpFreighterLogisticsConfiguration.self,
         forKey: .jumpFreighter
+      ) ?? .init()
+    hubTransport =
+      try container.decodeIfPresent(
+        HubTransportConfiguration.self,
+        forKey: .hubTransport
       ) ?? .init()
     ruleVersion =
       try container.decodeIfPresent(String.self, forKey: .ruleVersion) ?? Self.ruleVersion

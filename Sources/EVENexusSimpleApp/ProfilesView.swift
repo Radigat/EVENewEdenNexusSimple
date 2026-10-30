@@ -1223,6 +1223,10 @@ struct LogisticsSettingsView: View {
         header
         courierConfiguration
         jumpConfiguration
+        HubTransportLegEditor(
+          configuration: $logistics.hubTransport,
+          jumpFreighter: logistics.jumpFreighter
+        )
       }
       .frame(maxWidth: 1_040, alignment: .leading)
       .frame(maxWidth: .infinity, alignment: .top)
@@ -1335,7 +1339,7 @@ struct LogisticsSettingsView: View {
             TextField(
               "ISK per m³",
               value: $logistics.iskPerCubicMeter,
-              format: .number
+              format: .number.locale(AppLocalization.currentLanguage.locale)
             )
             .multilineTextAlignment(.trailing)
             .frame(width: DesignTokens.compactNumberWidth)
@@ -1364,7 +1368,7 @@ struct LogisticsSettingsView: View {
             TextField(
               "Maximum m³",
               value: $logistics.maximumContractVolumeM3,
-              format: .number
+              format: .number.locale(AppLocalization.currentLanguage.locale)
             )
             .multilineTextAlignment(.trailing)
             .frame(width: DesignTokens.compactNumberWidth)
@@ -1465,7 +1469,7 @@ struct LogisticsSettingsView: View {
             TextField(
               "m³",
               value: $logistics.jumpFreighter.usableCargoCapacityM3,
-              format: .number
+              format: .number.locale(AppLocalization.currentLanguage.locale)
             )
             .multilineTextAlignment(.trailing)
             .frame(width: DesignTokens.compactNumberWidth)
@@ -1617,6 +1621,204 @@ struct LogisticsSettingsView: View {
       }
       statusMessage = "Save failed."
       profileNavigationGuard.completeSave(success: false)
+    }
+  }
+}
+
+/// Transport method per directed hub leg for Trade, Planner, Hub
+/// opportunities and Reactions (owner request 27.10.2026).
+private struct HubTransportLegEditor: View {
+  @Binding var configuration: HubTransportConfiguration
+  let jumpFreighter: JumpFreighterLogisticsConfiguration
+
+  var body: some View {
+    Panel(title: "Trade transport per leg") {
+      Text(
+        "Choose per directed leg whether the Profile courier, your own Jump Freighter or a Jump Freighter service carries the goods. Trade, Planner, Hub opportunities and Reactions use this choice; outside Trade the switch above still turns all courier and service costs on or off. A self-jump to or from the Main Hub is calculated only in Trade. Missing prices, routes or pilots keep a leg unavailable and never become 0 ISK."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      Picker("Main → Coalition", selection: $configuration.mainToCoalitionRouting) {
+        routingOptions
+      }
+      Picker("Coalition → Main", selection: $configuration.coalitionToMainRouting) {
+        routingOptions
+      }
+      ForEach(HubTransportLeg.allCases) { leg in
+        legEditor(leg)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var routingOptions: some View {
+    Text("Via Home Hub (two legs)").tag(HubTransportRouting.viaHome)
+    Text("Direct (one leg)").tag(HubTransportRouting.direct)
+  }
+
+  private func legEditor(_ leg: HubTransportLeg) -> some View {
+    let setting = settingBinding(for: leg)
+    return VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Picker(Self.title(leg), selection: setting.method) {
+        Text("Profile courier").tag(HubTransportMethod.profileCourier)
+        Text("Own Jump Freighter").tag(HubTransportMethod.selfJump)
+        Text("Jump Freighter service").tag(HubTransportMethod.jumpFreighterService)
+      }
+      .font(.headline)
+      if !isUsed(leg) {
+        Text("This leg is not used by the current Main ↔ Coalition routing.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      switch setting.wrappedValue.method {
+      case .profileCourier:
+        Text("Uses the Profile courier rate above in this direction.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      case .selfJump:
+        selfJumpContent(leg, setting: setting)
+      case .jumpFreighterService:
+        serviceContent(setting: setting.service)
+      }
+    }
+    .padding(DesignTokens.spacingMD)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+        .stroke(DesignTokens.border)
+    }
+  }
+
+  @ViewBuilder
+  private func selfJumpContent(
+    _ leg: HubTransportLeg,
+    setting: Binding<HubTransportLegSetting>
+  ) -> some View {
+    Picker("Jump-route profile", selection: setting.jumpRouteProfileID) {
+      Text(
+        leg.touchesMain
+          ? "No profile" : "Jump Freighter class profile or automatic DOTLAN route"
+      )
+      .tag(nil as UUID?)
+      ForEach(jumpFreighter.routeProfiles) { profile in
+        Text(profile.name).tag(Optional(profile.id))
+      }
+    }
+    if leg.touchesMain {
+      Text(
+        "A Jump Freighter cannot jump into the high-security Main Hub. The profile's system nearest the Main Hub (last waypoint towards Main, first waypoint from Main) is the jump endpoint; the rest is flown by gate without fuel cost."
+      )
+      .font(.caption)
+      .foregroundStyle(
+        setting.wrappedValue.jumpRouteProfileID == nil
+          ? DesignTokens.caution : DesignTokens.textSecondary
+      )
+    }
+    if !jumpFreighter.isEnabled {
+      Text(
+        "Jump logistics above is switched off, so hull, pilot, cargo and route profiles cannot be edited there. Its last saved values are still used for this leg."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.caution)
+    }
+    Text(
+      "Hull, pilot and usable cargo come from the jump logistics above; fuel is the average Main-Hub sell price of the four racial isotopes."
+    )
+    .font(.caption)
+    .foregroundStyle(DesignTokens.textSecondary)
+  }
+
+  @ViewBuilder
+  private func serviceContent(
+    setting: Binding<JumpFreighterServiceRate>
+  ) -> some View {
+    LabeledContent("Volume price") {
+      HStack(spacing: DesignTokens.spacingSM) {
+        TextField(
+          "ISK per m³",
+          value: setting.iskPerCubicMeter,
+          format: .number.locale(AppLocalization.currentLanguage.locale)
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+        Text("ISK / m³")
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    LabeledContent("Collateral charge") {
+      HStack(spacing: DesignTokens.spacingSM) {
+        TextField(
+          "Percent",
+          value: percentBinding(setting.collateralRate),
+          format: .number.locale(AppLocalization.currentLanguage.locale)
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+        Text(verbatim: "%")
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    LabeledContent("Contract volume limit") {
+      HStack(spacing: DesignTokens.spacingSM) {
+        TextField(
+          "Maximum m³",
+          value: setting.maximumContractVolumeM3,
+          format: .number.locale(AppLocalization.currentLanguage.locale)
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+        Text("m³")
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    Text(
+      setting.wrappedValue.isComplete
+        ? "Each contract costs volume × rate plus collateral × percentage, without rounding."
+        : "Enter volume price and collateral percentage of the service; until then this leg stays unavailable."
+    )
+    .font(.caption)
+    .foregroundStyle(
+      setting.wrappedValue.isComplete
+        ? DesignTokens.textSecondary : DesignTokens.caution
+    )
+  }
+
+  private func isUsed(_ leg: HubTransportLeg) -> Bool {
+    TradeMode.allCases.contains {
+      configuration.legs(for: $0.route).contains(leg)
+    }
+  }
+
+  private func settingBinding(
+    for leg: HubTransportLeg
+  ) -> Binding<HubTransportLegSetting> {
+    Binding(
+      get: {
+        configuration.setting(
+          for: leg,
+          jumpFreighterEnabled: jumpFreighter.isEnabled
+        )
+      },
+      set: { configuration.set($0) }
+    )
+  }
+
+  private func percentBinding(_ fraction: Binding<Double?>) -> Binding<Double?> {
+    Binding(
+      get: { fraction.wrappedValue.map { $0 * 100 } },
+      set: { fraction.wrappedValue = $0.map { $0 / 100 } }
+    )
+  }
+
+  static func title(_ leg: HubTransportLeg) -> LocalizedStringKey {
+    switch leg {
+    case .mainToHome: "Main → Home"
+    case .homeToMain: "Home → Main"
+    case .homeToCoalition: "Home → Coalition"
+    case .coalitionToHome: "Coalition → Home"
+    case .mainToCoalition: "Main → Coalition (direct)"
+    case .coalitionToMain: "Coalition → Main (direct)"
     }
   }
 }

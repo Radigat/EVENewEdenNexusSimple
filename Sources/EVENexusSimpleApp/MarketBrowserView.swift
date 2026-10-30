@@ -287,8 +287,11 @@ struct MarketBrowserView: View {
           TextField("Region contains", text: $filter.regionQuery)
           TextField("Location or system contains", text: $filter.locationQuery)
           TextField("Minimum price", text: $minimumPriceText)
+            .groupedNumberInput($minimumPriceText)
           TextField("Maximum price", text: $maximumPriceText)
+            .groupedNumberInput($maximumPriceText)
           TextField("Minimum quantity", text: $minimumQuantityText)
+            .groupedNumberInput($minimumQuantityText, allowsFraction: false)
         }
         .textFieldStyle(.roundedBorder)
         LazyVGrid(
@@ -732,7 +735,7 @@ struct MarketBrowserView: View {
     var accepted = filter
     accepted.minimumPrice = parseDouble(minimumPriceText)
     accepted.maximumPrice = parseDouble(maximumPriceText)
-    accepted.minimumQuantity = Int64(minimumQuantityText)
+    accepted.minimumQuantity = Int64(GroupedNumberText.ungrouped(minimumQuantityText))
     return accepted
   }
 
@@ -771,7 +774,7 @@ struct MarketBrowserView: View {
   }
 
   private func parseDouble(_ value: String) -> Double? {
-    let accepted = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    let accepted = GroupedNumberText.ungrouped(value)
       .replacingOccurrences(of: ",", with: ".")
     guard let parsed = Double(accepted), parsed.isFinite, parsed >= 0 else {
       return nil
@@ -1411,29 +1414,6 @@ struct ManufacturingOpportunitiesView: View {
       guard !Task.isCancelled else { return }
       loyaltyStoreBlueprintOffers = offers
     }
-    .task(id: HubTopPublishTrigger(
-      candidates: candidateTrigger,
-      isPrepared: candidatesAreCurrent,
-      valueFilter: valueFilter.rawValue,
-      maximumMaterialPurchase: maximumMaterialPurchaseISKText,
-      minimumAverageDailyDemand: minimumAverageDailyDemand,
-      runs: requestedRunsByTypeID,
-      materialEfficiency: requestedMEByTypeID,
-      timeEfficiency: requestedTEByTypeID
-    )) {
-      guard candidatesAreCurrent, let snapshot = analysis,
-        let visible = preparedCandidates
-      else {
-        return
-      }
-      runtime.publishHubTopOpportunities(
-        HubTopOpportunityResult.rank(
-          role: hubRole,
-          snapshotID: snapshot.id,
-          candidates: visible.map { ($0.row, $0.costs) }
-        )
-      )
-    }
     .task(id: planPayloads) {
       let prepared = await StoredPlanReservationProjection.prepare(
         payloads: planPayloads
@@ -1621,6 +1601,8 @@ struct ManufacturingOpportunitiesView: View {
           Label("Update", systemImage: "arrow.clockwise")
         }
         .buttonStyle(.borderedProminent)
+        .disabled(runtime.isHubScanBlockedByESICache)
+        .help(runtime.hubScanBlockedText ?? "")
         .accessibilityIdentifier("market-opportunities.scan")
       }
     }
@@ -1850,9 +1832,10 @@ struct ManufacturingOpportunitiesView: View {
       compactToggle("Include blueprint allocation", isOn: $costIncludesBlueprint)
       TextField(
         "ISK per run",
-        text: groupedISKBinding($blueprintCostPerRunText)
+        text: $blueprintCostPerRunText
       )
       .textFieldStyle(.roundedBorder)
+      .groupedNumberInput($blueprintCostPerRunText)
       .disabled(!costIncludesBlueprint)
       if costIncludesBlueprint, parsedBlueprintCost == nil {
         OpportunityExplanationButton(
@@ -1866,9 +1849,10 @@ struct ManufacturingOpportunitiesView: View {
       }
       TextField(
         "Maximum material purchases (ISK)",
-        text: groupedISKBinding($maximumMaterialPurchaseISKText)
+        text: $maximumMaterialPurchaseISKText
       )
       .textFieldStyle(.roundedBorder)
+      .groupedNumberInput($maximumMaterialPurchaseISKText)
       .accessibilityHint(
         "Limits new wallet cash for material shortfalls; Warehouse stock keeps its replacement value but does not consume this budget."
       )
@@ -3548,6 +3532,9 @@ struct ManufacturingOpportunitiesView: View {
           )
         )
         .textFieldStyle(.roundedBorder)
+        .groupedNumberInput(
+          treeBlueprintCostBinding(blueprintTypeID: blueprint.blueprintTypeID)
+        )
         .frame(width: 150)
         .onSubmit { reloadProductionTree(opportunity) }
       }
@@ -5256,23 +5243,6 @@ struct ManufacturingOpportunitiesView: View {
     OpportunityCostInputs.parseNonnegativeISK(text)
   }
 
-  private func groupedISKBinding(_ source: Binding<String>) -> Binding<String> {
-    Binding(
-      get: { source.wrappedValue },
-      set: { proposed in
-        let decimalSeparator =
-          AppLocalization.currentLanguage.locale.decimalSeparator ?? "."
-        if proposed.isEmpty || proposed.hasSuffix(decimalSeparator) {
-          source.wrappedValue = proposed
-        } else if let value = parseNonnegativeISK(proposed) {
-          source.wrappedValue = formatEditableISK(value)
-        } else {
-          source.wrappedValue = proposed
-        }
-      }
-    )
-  }
-
   private func normalizeStoredISKFields() {
     if let value = parseNonnegativeISK(blueprintCostPerRunText) {
       blueprintCostPerRunText = formatEditableISK(value)
@@ -6595,17 +6565,6 @@ private struct LoyaltyStoreOfferTrigger: Equatable {
   let catalogID: UUID?
   let loyaltyPoints: CharacterLoyaltyPointsSnapshot?
   let wallets: [String: Double]
-}
-
-private struct HubTopPublishTrigger: Hashable {
-  let candidates: ManufacturingOpportunityCandidateProjectionTrigger
-  let isPrepared: Bool
-  let valueFilter: String
-  let maximumMaterialPurchase: String
-  let minimumAverageDailyDemand: Int
-  let runs: [Int64: Int]
-  let materialEfficiency: [Int64: Int]
-  let timeEfficiency: [Int64: Int]
 }
 
 private struct ContractReferenceTrigger: Equatable {

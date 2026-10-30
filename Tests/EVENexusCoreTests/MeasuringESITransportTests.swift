@@ -81,6 +81,37 @@ struct MeasuringESITransportTests {
   }
 
   @Test
+  func reportsTheLatestUnexpiredExpiresOfMatchingURLs() async throws {
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let base = RecordingTransport(
+      responses: [
+        .init(status: 200, body: "[]", headers: ["Expires": "Fri, 15 Jan 2027 08:04:00 GMT"]),
+        .init(status: 200, body: "[]", headers: ["Expires": "Fri, 15 Jan 2027 08:05:00 GMT"]),
+        .init(status: 200, body: "[]", headers: ["Expires": "Fri, 15 Jan 2027 09:00:00 GMT"]),
+      ]
+    )
+    let transport = MeasuringESITransport(
+      base: base,
+      now: { clock.now },
+      summaryInterval: nil
+    )
+    _ = try await transport.data(for: esiRequest("/markets/10000002/orders/?page=1"))
+    _ = try await transport.data(for: esiRequest("/markets/10000002/orders/?page=2"))
+    _ = try await transport.data(for: esiRequest("/markets/prices/"))
+    let isOrderPage: (URL) -> Bool = {
+      MeasuringESITransport.routeFamily(of: $0) == "/markets/{id}/orders/"
+    }
+    // 1_800_000_000 is Fri, 15 Jan 2027 08:00:00 GMT.
+    #expect(
+      transport.latestExpiry(matching: isOrderPage)
+        == Date(timeIntervalSince1970: 1_800_000_300)
+    )
+    clock.now = Date(timeIntervalSince1970: 1_800_000_300)
+    #expect(transport.latestExpiry(matching: isOrderPage) == nil)
+    #expect(await base.requests.count == 3)
+  }
+
+  @Test
   func countsARequestSentAgainBeforeItsExpiresTime() async throws {
     let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
     let expires = "Fri, 15 Jan 2027 08:05:00 GMT"

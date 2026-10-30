@@ -79,44 +79,13 @@ enum PlannerAllianceInputParser {
     return .value(value)
   }
 
-  /// Regroups typed number text while editing: thousands get the locale's
-  /// grouping separator, the locale's decimal separator is kept (also
-  /// trailing, so a fraction can still be typed). Other characters are
-  /// dropped; `allowsFraction == false` drops the fraction part.
+  /// Regroups typed number text while editing (`GroupedNumberText`).
   static func groupedEditingText(
     _ text: String,
     locale: Locale,
     allowsFraction: Bool = true
   ) -> String {
-    let decimal = locale.decimalSeparator ?? "."
-    let grouping = locale.groupingSeparator ?? ","
-    var integerDigits = ""
-    var fractionDigits = ""
-    var hasDecimal = false
-    for character in text {
-      if character.isASCII, character.isNumber {
-        if hasDecimal { fractionDigits.append(character) } else { integerDigits.append(character) }
-      } else if String(character) == decimal, !hasDecimal {
-        hasDecimal = true
-      }
-    }
-    if !allowsFraction {
-      hasDecimal = false
-      fractionDigits = ""
-    }
-    if integerDigits.count > 1 {
-      integerDigits = String(integerDigits.drop { $0 == "0" })
-      if integerDigits.isEmpty { integerDigits = "0" }
-    }
-    if hasDecimal, integerDigits.isEmpty { integerDigits = "0" }
-    var grouped = ""
-    for (offset, character) in integerDigits.enumerated() {
-      if offset > 0, (integerDigits.count - offset) % 3 == 0 {
-        grouped.append(grouping)
-      }
-      grouped.append(character)
-    }
-    return hasDecimal ? grouped + decimal + fractionDigits : grouped
+    GroupedNumberText.editingText(text, locale: locale, allowsFraction: allowsFraction)
   }
 
   /// Builds the input; `nil` when a field is invalid. The fee text is a
@@ -1009,6 +978,7 @@ struct PlannerView: View {
             text: plannerBlueprintCostBinding(blueprint.blueprintTypeID)
           )
           .textFieldStyle(.roundedBorder)
+          .groupedNumberInput(plannerBlueprintCostBinding(blueprint.blueprintTypeID))
           .frame(width: 190)
           .accessibilityIdentifier(
             "planner.blueprint-cost.\(blueprint.blueprintTypeID)"
@@ -3590,11 +3560,16 @@ struct PlannerView: View {
       }
       metric("Total logistics", logistics.total)
       Text(
-        AppLocalization.format(
-          "Maximum %@ m³ per contract · oversized routes are split automatically · each contract is rounded up in %@ steps",
-          logistics.maximumContractVolumeM3.formatted(),
-          formatISK(logistics.roundingIncrement)
-        )
+        logistics.roundingIncrement > 0
+          ? AppLocalization.format(
+            "Maximum %@ m³ per contract · oversized routes are split automatically · each contract is rounded up in %@ steps",
+            logistics.maximumContractVolumeM3.formatted(),
+            formatISK(logistics.roundingIncrement)
+          )
+          : AppLocalization.format(
+            "Maximum %@ m³ per contract · oversized routes are split automatically · Jump Freighter service without rounding",
+            logistics.maximumContractVolumeM3.formatted()
+          )
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -6666,13 +6641,7 @@ struct PlannerView: View {
             TextField("Required", text: $allianceUnitPriceText)
               .textFieldStyle(.roundedBorder)
               .onSubmit { applyAllianceInput() }
-              .onChange(of: allianceUnitPriceText) { _, newValue in
-                let grouped = PlannerAllianceInputParser.groupedEditingText(
-                  newValue,
-                  locale: AppLocalization.currentLanguage.locale
-                )
-                if grouped != newValue { allianceUnitPriceText = grouped }
-              }
+              .groupedNumberInput($allianceUnitPriceText)
               .accessibilityIdentifier("planner.alliance.unit-price")
           }
           GridRow {
@@ -6681,14 +6650,7 @@ struct PlannerView: View {
               TextField("All produced units", text: $allianceAcceptedText)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { applyAllianceInput() }
-                .onChange(of: allianceAcceptedText) { _, newValue in
-                  let grouped = PlannerAllianceInputParser.groupedEditingText(
-                    newValue,
-                    locale: AppLocalization.currentLanguage.locale,
-                    allowsFraction: false
-                  )
-                  if grouped != newValue { allianceAcceptedText = grouped }
-                }
+                .groupedNumberInput($allianceAcceptedText, allowsFraction: false)
                 .onKeyPress(.upArrow) {
                   guard let producedQuantity else { return .ignored }
                   stepAllianceAcceptedUnits(by: 1, produced: producedQuantity)

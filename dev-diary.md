@@ -1,5 +1,745 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 30. Oktober 2026 – Marktbestand: Layoutsprung im Bestandsverlauf
+
+Fehler (Eigentümer-Screenshot): Im Detailfenster „Bestandsverlauf“ brach
+beim Umschalten auf „Niedrigster Sell-Preis“ das Label „Anzeigen“ zeichenweise
+senkrecht um; Auswahl, Graph und Text rutschten nach unten.
+
+Ursache: Der segmentierte Picker mit eingebautem Label war auf
+`maxWidth` begrenzt; der breitere fett gesetzte Segmenttext drückte das Label
+zusammen.
+
+Änderung (`MarketStockItemDetailView`): Label als eigener Text in
+Idealbreite, Picker mit `labelsHidden()` und `fixedSize()`; gleiche Anordnung
+für „Tagestabelle“. Accessibility-Label und -Bezeichner bleiben. Kein
+fachliches Verhalten geändert, daher keine PRODUCT.md-Änderung.
+
+Prüfung: `swift build` und `xcodebuild` Debug erfolgreich. Optische Prüfung in
+der App durch den Eigentümer offen.
+
+## 30. Oktober 2026 – Marktbestand P8: Abschluss
+
+Ziel: Prompt P8 aus `Documentation/MARKTBESTAND_PLAN.md`.
+
+Umfang (nur Dokumentation, keine Codeänderung):
+- ARCHITECTURE.md: Abschnitt Marktbestand-Historie (Kern, Speicher, Runtime,
+  Ansichten, Hintergrundbetrieb).
+- ROADMAP.md: Vorhaben von „Geplant“ nach „Umgesetzt, Abnahme offen“.
+- Documentation/ACCEPTANCE.md: Nachweistabelle Marktbestand P1–P8
+  (automatisch, lokale und Live-Daten, Eigentümerabnahme).
+- Marktbestand-Plan: Status, Checkliste, Owner-Testleitfaden (Abschnitt I,
+  zehn Schritte).
+- PRODUCT.md war durch P1–P7 bereits aktuell.
+
+Prüfung: `git diff --check` sauber. Tests nicht erneut ausgeführt, weil sich
+kein Code geändert hat; letzter Lauf in P7: `swift test` 656 + 81 grün,
+`xcodebuild … test` TEST SUCCEEDED.
+
+Offen (Live und Eigentümer):
+- erster gespeicherter Punkt und echte Schreibdauer,
+- ESI-Sperre live,
+- Login-Start, Fenster schließen, Ruhezustand,
+- Struktur-Märkte ohne Zugang,
+- Handel-Spalten, Graph und Ansicht Marktbestand mit echten Daten,
+- Dateigröße nach 7 Tagen.
+
+## 29. Oktober 2026 – Marktbestand P7: Ansicht „Marktbestand“
+
+Ziel: Prompt P7 aus `Documentation/MARKTBESTAND_PLAN.md`, nach P6. Rückfrage
+geklärt: Position nach dem Handelslogbuch.
+
+Umfang (implementiert):
+- Core: `MarketStockOverviewRow` (Zeilen aus der Hub-Übersicht, Netto und
+  Abgang nur für Zeiträume mit bekanntem Delta) und
+  `MarketStockOverviewComparator`. Der Sortierer ist ein `SortComparator`
+  für die native Tabelle: typisiert, unbekannte Werte und ungelöste Namen
+  aufsteigend am Ende, Type-ID als stabiler Gleichstandsbrecher.
+- `NavigationSection.marketStock` zwischen Handelslogbuch und
+  Lagerverkauf-Abgleich. Der bestehende Reihenfolge-Test wurde nach dem
+  Eigentümerentscheid angepasst.
+- Neue Datei `MarketStockView.swift` (im Xcode-Projekt):
+  - Hub-Auswahl (gespeichert), Suche, Marktgruppen-Filter (oberste Ebene),
+  - Statuszeile mit erfassten Tagen,
+  - native `Table` mit 13 Spalten und erhaltener Sortierung,
+  - Warnfarbe bei unvollständigen Zeiträumen,
+  - Verlaufssymbol öffnet das Item-Detail aus P6.
+- `RuntimeState`: Hub-Übersichten mit Verbrauchern (Handel, Marktbestand),
+  freigegeben erst nach dem letzten; `marketStockHubRoles`,
+  `marketStockTypeNames`.
+- PRODUCT.md, Plan, Texte de/en.
+- Test `overviewRowsSortTypedWithUnknownValuesAndNamesLast`.
+
+Prüfung (automatisch): `swift test` 656 + 81 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED, `git diff --check` sauber. Nicht in der App
+bedient; Darstellung und Tempo der Tabelle mit rund 19.000 Main-Hub-Items
+sind live offen; keine Eigentümerabnahme.
+
+Offen: P8 (Abschluss); Live-Prüfungen P3–P7.
+
+## 29. Oktober 2026 – Marktbestand P6: Item-Verlauf mit Graph
+
+Ziel: Eigentümerauftrag „P7 umsetzen“. Rückfrage geklärt: erst P6, dann P7;
+„Marktbestand“ steht nach dem Handelslogbuch.
+
+Umfang (implementiert):
+- Core:
+  - `MarketStockDailyValue.lastPointAt`,
+  - `MarketStockChartMetric`, `MarketStockChartBuilder` (Tageswerte vor dem
+    7-Tage-Fenster, Einzelpunkte darin; ein Tag ohne Punkt oder ein
+    fehlender Wert beginnt ein neues Segment),
+  - `MarketStockDayRow` mit typisierter Sortierung (Unbekannt am Ende) und
+    Kennzeichen „teilweise erfasst“.
+- `RuntimeState.marketStockItemHistory`: 30 Tage und 7 Tage Einzelpunkte je
+  eigenem Hub; ein Hub am selben Ort erscheint einmal.
+- Neue Datei `MarketStockItemDetailView.swift` (im Xcode-Projekt):
+  - Swift-Charts-Graph mit Umschalter Sell-Bestand, Buy-Nachfrage und
+    niedrigster Sell-Preis,
+  - Hub-Auswahl für die Tagestabelle,
+  - sortierbare Tabelle über die gemeinsame Kopfzeile,
+  - kopierbarer Itemname.
+- Handel: Verlaufssymbol je Item, getrennt von Kopier-Klick und
+  Logbuch-Plus.
+- PRODUCT.md, Plan, Texte de/en.
+- Test `itemChartKeepsGapsAndSwitchesFromDailyValuesToPoints`.
+
+Prüfung (automatisch): `swift test` 655 + 81 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED. Nicht in der App bedient, keine
+Eigentümerabnahme.
+
+## 29. Oktober 2026 – Hub-Scans warten auf die ESI-Cachezeit
+
+Ziel: Eigentümerauftrag nach dem Live-Protokoll. Kein neuer Abruf vor Ablauf
+der ESI-Cachezeit; der Menüleisten-Knopf erst, wenn ein Bestandspunkt
+wirklich gespeichert würde.
+
+Befund (Live-Protokoll 21:20–21:31):
+- Manuelle Scans um 21:23:38, 21:23:53 und 21:24:33 sowie der
+  Menüleisten-Abruf um 21:31 luden je 388–404 Orderbuch-Seiten vor ihrem
+  `Expires` (`early`). Der Menüleisten-Abruf allein brauchte 865 Anfragen
+  und 198 MB.
+- Ursache: Der Hub-Scan entfernt die regionalen Orderbuch-Seiten aus dem
+  Zwischenspeicher, und kein Knopf prüfte die Cachezeit.
+- Alle Punkte dieses Laufs wurden wegen des 30-Minuten-Abstands verworfen.
+
+Umfang (implementiert):
+- `MeasuringESITransport.latestExpiry(matching:)`: reine Leseabfrage des
+  spätesten noch gültigen `Expires`.
+- `RuntimeState`:
+  - `hubScanAvailableAt` nach jedem Hub-Scan aus den regionalen
+    Orderbuch-Seiten ohne `type_id` (`isHubOrderBookURL`); wird bei Ablauf
+    selbst gelöscht,
+  - Sperre am Anfang jedes Hub-Scans,
+  - 6-Stunden-Automatik und Termine planen frühestens danach,
+  - `marketStockScanAvailableAt` für den Menüleisten-Knopf (Cachezeit und
+    30 Minuten nach dem letzten Punkt jedes eigenen Hubs).
+- Knöpfe gesperrt mit Tooltip-Uhrzeit:
+  - Handel „Hub-Märkte aktualisieren“,
+  - Lagerverkauf-Abgleich,
+  - Hub-Chancen „Aktualisieren“,
+  - Menüleiste mit „Abruf möglich ab …“.
+- PRODUCT.md, Marktbestand-Plan (C6-Nachtrag, Live-Messwerte), Texte de/en.
+- Tests:
+  - `reportsTheLatestUnexpiredExpiresOfMatchingURLs`,
+  - `onlyCatalogWideOrderBookPagesBlockAHubScan`,
+  - `fetchNowWaitsUntilAPointWouldBeStored`,
+  - `noHubScanIsBlockedBeforeAnyOrderBookWasLoaded`.
+
+Prüfung (automatisch): `swift test` 654 + 81 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED, `git diff --check` sauber.
+
+Nicht geprüft:
+- Live nicht erneut geprüft.
+- Die Ablaufzeit gilt nur für den laufenden Programmstart; ein Neustart
+  innerhalb von 5 Minuten nach einem Scan kann noch einmal früh laden.
+
+## 29. Oktober 2026 – Marktbestand P5: Handel-Spalten aus der Bestandshistorie
+
+Ziel: Prompt P5 aus `Documentation/MARKTBESTAND_PLAN.md`. Rückfragen geklärt:
+- Ø Bedarf/Tag bezieht sich auf den gewählten Zeitraum je erfasstem Tag.
+- Nachfrage heute ist der laufende UTC-Tag.
+- Bestand Ziel und Netto Ziel sind immer sichtbar, Bestand Quelle nur in
+  den Details.
+- Der Bestand zeigt Sell-Stück, Buy-Angaben im Tooltip.
+- Die festen Termine bleiben 06:00/13:00; der Eigentümer hat den Auftrag
+  auf P5 beschränkt.
+
+Umfang (implementiert):
+- Core:
+  - `HubTradedVolume` mit Obergrenze und teilweise erfassten Tagen;
+    vollständig nur ohne Teil-Tage.
+  - `MarketStockNetChange`.
+  - Erweiterung von `MarketStockHubOverview`: `hubTradedVolume`
+    (Teilverkäufe), `netChange`, `currentStock`. Bekannte 0, sobald ein
+    Delta bekannt ist; sonst unbekannt.
+- `TradeDisplayRow`: Quell- und Zielbestand sowie Netto je Zeitraum; neue
+  Sortierspalten `sourceStock`, `targetStock`, `targetNetChange`.
+- `RuntimeState`: Hub-Übersichten nur bei angezeigtem Handel laden (nach
+  `tradeDataRole`), nach neuen Punkten auffrischen, beim Verlassen
+  freigeben; `tradeDemand` entfernt.
+- Handel:
+  - „Zielhub N T“, „Gewinnpot. Zielhub N T“, „Ø Bedarf/Tag“ und „Nachfrage
+    heute“ aus der Bestandshistorie,
+  - neue Spalten mit Tooltips und Warnfarbe bei unvollständigem Zeitraum,
+  - „Einziger Markt der Region“ und Region N T unverändert,
+  - die Hub-Chancen behalten den Bedarfsledger.
+- HANDEL_PLAN Abschnitte M bis O, PRODUCT.md (Handel, Marktbestand), Texte
+  de/en.
+- Tests `overviewFeedsTradeVolumesNetChangesAndStock` und
+  `stockColumnsSortByTypedValueWithUnknownLast`.
+
+Prüfung (automatisch): `swift test` 653 + 78 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED, `git diff --check` sauber. Nicht in der App
+bedient; mit echten Bestandspunkten nicht geprüft, keine Eigentümerabnahme.
+
+Offen: P6–P8; Live-Prüfungen P3–P5.
+
+## 29. Oktober 2026 – Marktbestand P4: Hintergrundbetrieb
+
+Ziel: Prompt P4 aus `Documentation/MARKTBESTAND_PLAN.md`. Rückfragen geklärt:
+- Weiterlaufen ist standardmäßig an, Login-Start aus.
+- Ohne Fenster wird das Dock-Symbol ausgeblendet.
+- Das Menüleisten-Symbol erscheint nur, solange „Weiterlaufen“ an ist.
+
+Befund: Der Startablauf (Konfiguration, Charakter-Sync,
+Markt-Zugänge, Freigabe der automatischen Scans) wird von `ContentView`
+gestartet. Er läuft danach in einer Task von `StartupDataLoad` weiter und
+übersteht das Schließen des Fensters. Ein wieder geöffnetes Fenster startet
+ihn nicht doppelt.
+
+Umfang (implementiert):
+- Neue Datei `Sources/EVENexusSimpleApp/BackgroundOperation.swift` (im
+  Xcode-Projekt eingetragen):
+  - `AppBackgroundDelegate`: Beenden nach dem letzten Fenster nur ohne
+    „Weiterlaufen“; Dock-Symbol ein und aus je nach sichtbarem Fenster;
+    Login-Start an `keyAELaunchedAsLogInItem` erkannt. Beim Login-Start
+    bleibt das Fenster verborgen und wird nach dem Startablauf geschlossen.
+  - Menüleisten-Inhalt: Fenster öffnen, Stand und nächster Termin,
+    „Marktbestand jetzt abrufen“, Beenden.
+  - Panel „Hintergrundbetrieb“ mit `SMAppService.mainApp` und Status inkl.
+    Freigabe-Hinweis.
+- `EVENexusSimpleApp`: Delegate-Adapter, `WindowGroup(id: "main")`,
+  `MenuBarExtra` mit `isInserted` am Schalter.
+- `RuntimeState`: gemeinsamer Startweg `startAutomaticJointHubScan` für
+  Termine und den Menüleisten-Knopf (`requestMarketStockScanNow`, Auslöser
+  manuell, automatische Arbeit).
+- Bundle-ID, Keychain-Dienste und Datenbankpfade unverändert.
+- PRODUCT.md (Hintergrundbetrieb), Texte de/en.
+- Tests `BackgroundOperationTests` (4): Dock-Regel, Login-Start-Erkennung,
+  Login-Status, Abruf-Knopf ohne Hintergrunddienste.
+
+Prüfung (automatisch): `swift test` 651 + 78 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED, `git diff --check` sauber.
+
+Nicht geprüft:
+- Eine isolierte GUI-Prüfung der Debug-App war aus der Sandbox dieser
+  Sitzung nicht möglich: Die App bekam keine Fenster. Der Prozess wurde
+  beendet.
+- Offen sind:
+  - Fenster schließen und weiterlaufen, Dock-Symbol, Menüleiste,
+  - Login-Start (verborgenes Fenster, Startablauf, Schließen),
+  - Freigabe in den Systemeinstellungen,
+  - Ruhezustand.
+- `SMAppService` setzt in der Regel eine signierte App im Programme-Ordner
+  voraus; für die Debug-Kopie ist das nicht geprüft.
+- Keine Eigentümerabnahme.
+
+Offen: P5–P8; Live-Prüfungen P3 und P4.
+
+## 29. Oktober 2026 – Marktbestand P3: Erfassung, feste Termine und Status
+
+Ziel: Prompt P3 aus `Documentation/MARKTBESTAND_PLAN.md`. Rückfragen geklärt:
+Ein Termin entfällt bei einem erfolgreichen Scan höchstens 3 Stunden vorher;
+die Pause der Main-Hub-Updates gilt auch für die Termine.
+
+Umfang (implementiert):
+- `MarketStockSchedule` (Core, neue Datei), reine Entscheidungen:
+  - Termine 06:00 und 13:00 Ortszeit,
+  - „erfüllt“ bei Scan ≤ 3 h vorher,
+  - nur der jüngste verpasste Termin, einmal; kein Wiederholen vor dem
+    nächsten Termin, Neustart oder Aufwachen,
+  - Warten in der Downtime 11:00–11:20 UTC und bei gestörter ESI oder
+    Wartung laut Statusseite (Prüfung alle 5 Minuten).
+- `PerformanceLog.memoryFootprint()` (aktueller und Spitzen-Footprint).
+- `RuntimeState`:
+  - nach jedem erfolgreichen Main-, Home- und Coalition-Scan
+    `recordMarketStock` (Auswertung abseits des Main Actors, Speichern,
+    `compactIfDue`, Ereignis `market-stock` im Leistungsprotokoll mit
+    Dauer, Footprint und Dateigröße); Fehler unterbrechen den Scan nicht,
+  - Auslöser (Termin, Automatik, manuell) wird durchgereicht,
+  - Terminplaner startet den normalen gemeinsamen Scan als automatische
+    Arbeit; er wartet auf laufende Scans und Planner-Vorrang,
+  - Aufwachen über `NSWorkspace.didWakeNotification`,
+  - App Nap während jedes Hub-Scans angehalten (Ruhezustand erlaubt).
+  - Bedarfsledger, 6-Stunden-Regel, Transportlimits und Recovery-Modus
+    unverändert.
+- Seitenleiste **Automatic data**: Zeile **Marktbestand** (Stand, nächster
+  Termin, „Wartet auf ESI“, „Pausiert“, „Speichern fehlgeschlagen“;
+  Tooltip je Hub); Texte de/en.
+- PRODUCT.md: neuer Abschnitt „Marktbestand-Historie (Erfassung)“.
+- Tests: `MarketStockScheduleTests` (4: Termine inkl. Sommerzeit-Ende,
+  3-Stunden-Regel, Nachholen ohne Stapel und ohne Schleife, Downtime und
+  Störung), `hubScansRecordMarketStockPointsInTheirOwnFile` (App-Test:
+  Punkte über `RuntimeState`, unvollständiges Buch ohne Punkt, kein Termin
+  ohne Hintergrunddienste).
+
+Prüfung (automatisch): `swift test` 651 + 74 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED, `git diff --check` sauber.
+
+Nicht geprüft:
+- Live nicht ausgeführt, weil Live-Abnahmen opt-in sind und echte
+  ESI-Abrufe erfordern.
+- Damit fehlen noch:
+  - die Messung von Spitzenspeicher und Schreibdauer je echtem Hub,
+  - der Protokollnachweis, dass ein Termin nicht mehr ESI-Anfragen erzeugt
+    als ein normaler Scan,
+  - die echte Dateigröße.
+- Nicht in der App bedient; keine Eigentümerabnahme.
+
+Offen: P4–P8; Live-Messung P3.
+
+## 29. Oktober 2026 – Marktbestand P2: SQLite-Speicher mit Verdichtung
+
+Ziel: Prompt P2 aus `Documentation/MARKTBESTAND_PLAN.md`. Rückfragen geklärt:
+- Tagesgrenze UTC.
+- Ein Punkt unter 30 Minuten nach dem letzten wird verworfen.
+- Die gemessene Dateigröße wird akzeptiert und live geprüft.
+
+Umfang (implementiert, noch nicht an die Scans angebunden):
+- `Sources/EVENexusCore/Market/MarketStockHistoryStore.swift`, im
+  Xcode-Projekt eingetragen. Eigene SQLite-Datei (WAL, keine
+  SwiftData-Änderung), eigene kleine SQLite-Schicht mit wiederverwendbaren
+  vorbereiteten Statements und Binärblock-Bindung ohne Kopie.
+- `record`:
+  - liest die vorige Baseline aus der Datei, vergleicht und schreibt Punkt,
+    Werte, Deltas, Tageswerte, Tageszähler und neue Baseline in einer
+    Transaktion,
+  - verwirft Punkte unter 30 Minuten Abstand und nicht neuere Punkte.
+- Tageswerte nach UTC-Tag:
+  - letzter Stand, Minimum und Maximum des Sell-Bestands, Summen nur
+    bekannter Deltas,
+  - ein im Tagesverlauf verschwundenes Item ist bekannt 0, ein neu
+    erschienenes hat Minimum 0.
+- `compactIfDue`: Einzelpunkte nach 7 Tagen, Tage nach 90 Tagen; höchstens
+  einmal je UTC-Tag, kleine Transaktionen.
+- Abfragen:
+  - `itemDays`: Tage ohne Punkt unbekannt, sonst bekannte 0,
+  - `itemPoints`,
+  - `hubOverview`: letzter Stand, Summen je Fenster, Abdeckung je Fenster,
+  - `latestPointCapturedAt`.
+- Sicherung: Die vorhandene Sicherung nimmt die Datei automatisch über die
+  SQLite-Online-Backup-API auf (Test mit offenem WAL).
+- Keine ESI-Anfrage, keine Oberfläche, keine Änderung bestehender
+  Rechenregeln; PRODUCT.md bleibt unverändert (kein sichtbares Verhalten).
+- Tests `MarketStockHistoryStoreTests`:
+  - 9 im normalen Lauf,
+  - dazu die Messung `measureNinetyDays` nur mit `MARKET_STOCK_MEASURE=1`.
+
+Messung (synthetisch, Debug, ungünstigster Fall mit 3 Hubs in Jita-Größe):
+- Dateigröße: 151 MB nach 7 Tagen, 423 MB nach 90 Tagen (Tageswerte 292 MB,
+  Einzelpunkte 114 MB, Baselines 14 MB).
+- Schreiben je Punkt: Mittel 0,20 s, höchstens 0,23 s.
+- Spitzenspeicher: 53 MB Zuwachs, davon 42 MB für die künstlichen
+  Testmärkte; dem Speicher zuzurechnen sind etwa 11 MB.
+- Realistische Schätzung: etwa 180 MB nach 90 Tagen.
+- Die Größe liegt im ungünstigsten Fall über der Plangrenze von 300 MB; der
+  Eigentümer hat sie mit Live-Prüfung akzeptiert.
+
+Prüfung (automatisch): `swift test` 647 + 73 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED, `git diff --check` sauber. Keine
+Live-Prüfung, keine Eigentümerabnahme.
+
+Offen: P3–P8; echte Dateigröße nach 7 Tagen Live-Betrieb.
+
+## 29. Oktober 2026 – Marktbestand P1: Rechenkern Bestandspunkt und Delta
+
+Ziel: Prompt P1 aus `Documentation/MARKTBESTAND_PLAN.md`. Rückfrage geklärt:
+Lückengrenze 72 Stunden (statt vorgeschlagener 36).
+
+Umfang (implementiert, noch nicht angebunden):
+- Neue Datei `Sources/EVENexusCore/Market/MarketStockHistory.swift`, im
+  Xcode-Projekt eingetragen.
+- `MarketStockHistoryCalculator.observe` erzeugt aus einem vollständigen
+  (`fresh`) Orderbuch in einem Durchlauf:
+  - einen `MarketStockPoint` (je Item Sell/Buy: Stück, Anzahl Orders,
+    bester Preis),
+  - eine sortierte, kompakte `MarketStockOrderBaseline` aus festen
+    Ganzzahlen.
+  - Andere Orte, ungültige Preise und leere Orders werden wie im
+    Bedarfsledger ignoriert. Doppelte Order-IDs zählen einmal. Ein nicht
+    vollständiges Orderbuch erzeugt keinen Punkt.
+- `MarketStockHistoryCalculator.compare` vergleicht zwei Baselines in einem
+  Durchlauf über beide sortierten Listen:
+  - je Item und Seite Zugang, Teilverkauf und Verschwunden; Abgang und
+    Netto sind berechnet,
+  - Gründe für ein unbekanntes Delta: kein voriger Punkt, Ortswechsel,
+    nicht chronologisch, über 72 Stunden,
+  - eine geänderte Item- oder Seitenangabe derselben Order-ID gilt als
+    Ersatz.
+- Keine ESI-Anfrage, kein Speicher, keine Oberfläche, keine Änderung
+  bestehender Rechenregeln. PRODUCT.md bleibt unverändert, weil sich das
+  sichtbare Verhalten nicht ändert.
+- Tests in `MarketStockHistoryTests` (7): Summen und Filter, unvollständige
+  Bücher, Aufschlüsselung, Ersatz, unbekannte Deltas mit 72-Stunden-Grenze,
+  Zufallstest Netto = Zugang − Abgang über fünf Runden, Jita-Größe.
+
+Prüfung (automatisch): `swift test` 638 + 73 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED, `git diff --check` sauber. Messung (Debug,
+synthetisch, 180.000 Orders): zwei Auswertungen plus Vergleich 0,42–0,47 s,
+rechnerischer Arbeitsspeicher 14,4 MB je Auswertung, Baseline 5,8 MB. Der
+echte Prozess-Spitzenspeicher ist noch nicht gemessen (P3). Keine
+Eigentümerabnahme.
+
+Offen: P2–P8.
+
+## 29. Oktober 2026 – Plan: Marktbestand und Bestandshistorie
+
+Ziel: Eigentümerauftrag. Die Bestandsableitung im Handel (Bedarfsledger) ist
+zu ungenau. Gewünscht ist ein Abbild der Märkte an Main, Home und Coalition
+Hub mit Bestand je Item, täglicher Historie, Deltas und Verlauf über 30 Tage,
+auch ohne geöffnete App. ESI-Regeln von CCP einhalten, Speicherlast während
+der Abrufe gering halten.
+
+Ergebnis (nur Planung): `Documentation/MARKTBESTAND_PLAN.md` mit allen
+Eigentümerentscheidungen aus drei Rückfragerunden, Ist-Stand, Fachregeln
+(Bestandspunkt, Order-Delta, Tageswert, Handelswerte, Termine, ESI-Regeln,
+Ressourcen), SQLite-Speicher, Anzeige, Checkliste und Prompt-Reihe P1–P8.
+ROADMAP ergänzt.
+
+Prüfung: keine Codeänderung, keine Tests nötig. Offen: Umsetzung P1–P8.
+Bewusst als Vorschlag markiert und im jeweiligen Prompt zu klären:
+Lückengrenze 36 Stunden, 30-Minuten-Ersetzung, Ortszeit- oder UTC-Tag,
+Position der Ansicht in der Seitenleiste, Speicherzielwert.
+
+## 27. Oktober 2026 – Transportart je Etappe in Planer, Hub-Chancen und Reaktionen
+
+Ziel: Eigentümerauftrag (Folgeschritt): Planer und Hub-Chancen auf die
+Etappenwahl umstellen. Rückfragen geklärt: Selbst springen auf Main-Etappen
+bleibt außerhalb des Handels vorerst unverfügbar; Reaktionen werden mit
+umgestellt.
+
+Umfang (implementiert):
+- Core: `LogisticsConfiguration.legPricing(for:)` liefert je Etappe
+  Vertragspreise (Profil-Kurier oder JF-Service), `selfJump` oder eine
+  blockierende Warnung (`logistics.jf-service-rate-missing`,
+  `logistics.main-self-jump-unsupported`); `LogisticsContractPricing` und
+  `LogisticsCostCalculator.calculateLegs(…, pricing:)`.
+- Planer: Einkauf und Make-or-Buy (Main → Home), Erzvergleich, Verkauf zum
+  Main Hub (Home → Main) und Home → Coalition nutzen die Etappenwahl;
+  Home → Coalition „selbst springen“ bei ausgeschalteter Sprunglogistik
+  meldet `jump-freighter.leg-disabled`. Die Kostenkarte nennt „ohne Rundung“
+  bei JF-Service.
+- Hub-Chancen: Main → Home und Home → Main der Logistikprojektion;
+  `OpportunityCoalitionTransportBasis.jumpFreighterService` für Home →
+  Coalition (Capitals bleiben dabei blockiert).
+- Reaktionen: Main → Home über die Etappenwahl.
+- Profil-Logistik: Paneltext nennt alle Nutzer der Auswahl.
+- Unverändert: Ohne gespeicherte Auswahl rechnen alle Bereiche wie bisher
+  (bestehende Tests unverändert grün); der Profil-Logistikschalter bleibt
+  außerhalb des Handels Hauptschalter, auch für JF-Services.
+- Tests `legPricingResolvesEveryMethod`,
+  `inboundLegUsesTheChosenJumpFreighterServiceWithoutRounding`,
+  `opportunityLogisticsFollowsTheChosenMainLegs`,
+  `coalitionTransportBasisPricesJumpFreighterService`.
+
+Prüfung (automatisch): `swift test` 631 + 73 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED. Nicht in der App bedient,
+keine Eigentümerabnahme.
+
+Offen: Selbst springen zum oder vom Main Hub in Planer, Hub-Chancen und
+Reaktionen; selbstspringende Capitals bei Kurier oder JF-Service auf Home →
+Coalition.
+
+## 27. Oktober 2026 – Handel: Transportart je Etappe
+
+Ziel: Eigentümerauftrag als Folge der Routen nach Main. Je Teilstrecke soll
+man selbst springen oder einen JF-Service nutzen können, Coalition ↔ Main
+auch direkt; für JF-Services gibt der Nutzer alle Preise ein.
+
+Rückfragen geklärt: alle Handelsrouten; JF-Service mit ISK/m³,
+Collateral-Prozentsatz und Vertragsgrenze, berechnet als Summe ohne Rundung;
+selbst springen mit Main über ein eigenes Routenprofil (Jita ist Highsec);
+Auswahl in der Profil-Logistik; Direktsprung in beiden Richtungen.
+Zuschnitt: zuerst Profil-Logistik und Handel, Planer und Hub-Chancen folgen
+in einem eigenen Schritt.
+
+Umfang (implementiert):
+- Core: `HubTransportLeg` (sechs gerichtete Etappen), `HubTransportMethod`,
+  `JumpFreighterServiceRate`, `HubTransportLegSetting`,
+  `HubTransportRouting`, `HubTransportConfiguration` als neues Feld
+  `LogisticsConfiguration.hubTransport` (fehlt es beim Laden, gilt der
+  Standard; keine Schema-Migration). Ohne gespeicherte Auswahl gilt die
+  bisherige Regel.
+- `TradeCourierLeg.provider` (Profil-Kurier / JF-Service);
+  `LogisticsCostCalculator.calculateLegs` mit optionalem Collateral-Satz,
+  Summenregel und Rundung (Standard unverändert).
+- `RuntimeState.tradeTransportBasis` baut die Etappen je Route aus der
+  Konfiguration; neue Funktion `tradeSelfJumpLeg` (ersetzt
+  `homeCoalitionLeg`) für eigene Sprünge, Main-Etappen nur mit Profil.
+- Profil-Logistik: neues Panel „Handelstransport je Etappe“; Handel zeigt
+  JF-Service-Etappen und neue Fehlertexte.
+- Tests `hubTransportKeepsEarlierLegsUntilALegIsChosen`,
+  `jumpFreighterServiceAddsVolumeAndCollateralWithoutRounding`.
+
+Prüfung (automatisch): `swift test` 627 + 73 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED. `EVEStaticDataKit` nicht berührt. Nicht in
+der App bedient; Sprungrouten mit Main nicht live gegen DOTLAN geprüft;
+keine Eigentümerabnahme.
+
+Offen: Planer (Einkaufslogistik Main → Home) und Hub-Chancen
+(Home → Coalition) auf die Etappenwahl umstellen. Routenprofile lassen sich
+nur bei eingeschalteter Sprunglogistik bearbeiten.
+
+## 27. Oktober 2026 – Handel: Routen Home → Main und Coalition → Main
+
+Ziel: Eigentümerauftrag (Screenshot Handel). Die Handelsrichtungen
+Home → Main und Coalition → Main ergänzen.
+
+Umfang (implementiert):
+- `TradeMode.homeToMain` und `.coalitionToMain` hinten angefügt (gespeicherte
+  Rohwerte behalten ihre Bedeutung); `TradeModeOption` mit zwei neuen
+  Reitern, Lokalisierung de/en.
+- Transport (`RuntimeState.tradeTransportBasis`): Home → Main ist der
+  Profil-Kurier in umgekehrter Richtung; Coalition → Main ist die Etappe
+  Coalition → Home (Jump Freighter oder Kurier) plus dieser Kurier. Annahme:
+  Der Profil-Kuriersatz gilt richtungsunabhängig.
+- Der Wallet-Abgleich des Handelslogbuchs bleibt unverändert (Käufe im Home
+  bzw. Coalition Hub behalten ihr bisheriges Ziel); er lädt die Transportbasis
+  aber für alle Routen.
+- Test `modesDescribeTheirHubsAndTransport` erweitert; PRODUCT (Handel,
+  Routen und Transport) ergänzt.
+
+Prüfung (automatisch): `swift test` 625 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED. `EVEStaticDataKit` nicht berührt und nicht
+erneut getestet. Nicht in der App bedient, keine Eigentümerabnahme.
+
+## 26. Oktober 2026 – Zahleneingaben appweit mit Tausenderpunkten
+
+Ziel: Eigentümerauftrag (Screenshot Logbuch, Eingabe `100000000`). Alle Preise
+und Beträge sollen Tausenderpunkte und Dezimalkomma zeigen, auch selbst
+getippte Werte. Rückfrage geklärt: ganze App.
+
+Befund: Anzeigen waren bereits gruppiert; Text-Eingaben blieben roh. Es gab
+zwei getrennte Gruppierungen (Planer-Allianzfelder beim Tippen,
+`groupedISKBinding` in den Industrie-Chancen, die getippte Nachkommanullen wie
+`12,0` verschluckte). Mehrere Parser (`Int64(text)`, `ISKAmount.parse`) lasen
+gruppierten Text nicht.
+
+Umfang (implementiert):
+- Neue gemeinsame Komponente `GroupedNumberInput.swift`
+  (`GroupedNumberText.editingText`/`ungrouped`, Modifier `groupedNumberInput`);
+  Planer-Logik dorthin verschoben, `groupedISKBinding` entfernt.
+- Gruppierung beim Tippen in Logbuch, Marktfiltern, Industrie-Chancen,
+  Planer und Konsolidierung; deren Parser lesen über `ungrouped`.
+- Formatierte Wertfelder in Profilen, Warehouse und Produktionsbuch nutzen
+  die App-Sprache.
+- Test `groupedNumberInputKeepsTypedFractionsAndFeedsPlainParsers`; PRODUCT
+  (Abschnitt Zahleneingaben) ergänzt.
+
+Prüfung (automatisch): `swift test` 625 + 73 Tests grün, `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED, `git diff --check` sauber. Nicht in der App
+bedient, keine Eigentümerabnahme.
+
+## 26. Oktober 2026 – Handelslogbuch: Verwendung Produktion und Verbrauch
+
+Ziel: Eigentümerauftrag (Screenshot Logbuch-Eintrag). Ein Einkauf soll statt
+eines Verkaufs auch als Produktion oder Verbrauch gekennzeichnet werden können.
+Rückfragen geklärt: Auswahl im Feld „Verkaufen in“, Verwendung gilt für den
+ganzen Eintrag, „Fertigung, ignoriert“ wird zu „Produktion“.
+
+Umfang (implementiert):
+- `TradeLogbookStatus.consumed` neu; `manufacturingIgnored` heißt in der
+  Oberfläche „Produktion“ (Rohwert unverändert, keine Schema-Änderung).
+- `TradeLogbookUsage` (Verkauf je Hub, Produktion, Verbrauch) mit
+  `TradeLogbookEntry.usage`/`setUsage`; Zielspalte sortiert nach Verwendung.
+- Editor: Picker „Verwendung“ ersetzt „Verkaufen in“; bei Produktion/Verbrauch
+  sind Verkaufsplan-Felder, Status und Verkäufe (sofern leer) ausgeblendet.
+- Test `usageClosesTheWholeEntryAndReturnsToASale`; PRODUCT ergänzt.
+
+Prüfung (automatisch): `swift test` 625 + 72 Tests grün, `EVEStaticDataKit`
+grün, `xcodebuild … test` (Debug, arm64) TEST SUCCEEDED. Nicht in der App
+bedient, keine Eigentümerabnahme. Offen: `Documentation/HANDEL_PLAN.md` nennt
+historisch noch „Fertigung, ignoriert“.
+
+## 26. Oktober 2026 – Handel: Kachelbreite an Fensterbreite angepasst
+
+Ziel: Eigentümerauftrag (Screenshot). Die Gruppentabellen im Handel ragten
+nebeneinander über den Bildschirmrand; sie sollen sich an die Breite anpassen
+und sonst untereinander stehen.
+
+Befund: Das Kachelraster nutzte noch `GridItem(.adaptive(minimum: 660))` aus
+der Zeit mit vier Zahlenspalten; die kompakte Tabelle hat inzwischen neun
+(Name 200 + 9 × (96 + 4) + Kachelrand 32 ≈ 1.132 pt), daher wurden rechte
+Spalten abgeschnitten.
+
+Umfang (implementiert): `TradeView.compactTileMinimumWidth` berechnet die
+Mindestbreite aus den Spaltenkonstanten und steuert das adaptive Raster.
+Die kompakte Tabelle liegt in `ViewThatFits`; passt sie nicht, scrollt sie
+innerhalb der Kachel horizontal. Rechenregeln unverändert. PRODUCT ergänzt.
+
+Prüfung (automatisch): `swift build` grün, `swift test` (Root und
+`EVEStaticDataKit`) grün, `xcodebuild … test` (Debug, arm64) TEST SUCCEEDED.
+Nicht in der App sichtgeprüft, keine Eigentümerabnahme.
+
+## 26. Oktober 2026 – Handel: Pfeilschwellen gekoppelt
+
+Ziel: Eigentümerauftrag. Pfeil- und Doppelpfeilschwelle sollen sich bedingen;
+der Doppelpfeil muss mindestens 1 % über dem Pfeil liegen.
+
+Umfang (implementiert):
+- `TradeDifferenceIndicator.coupledPercents` normalisiert beide Werte
+  (Bereich 1–1.000 %, Doppelpfeil ≥ Pfeil + 1 %); `classify` hebt eine zu
+  niedrige Doppelpfeilschwelle ebenso auf Pfeil + 1 % an.
+- `TradeView`: Stepper über gekoppelte Bindings; Erhöhen des Pfeils schiebt
+  den Doppelpfeil mit, die Untergrenze des Doppelpfeil-Steppers ist Pfeil + 1.
+  Gespeicherte Altwerte werden beim Lesen normalisiert.
+- Tests in `TradeCalculatorTests`; PRODUCT ergänzt.
+
+Prüfung (automatisch): `swift build` grün, `swift test` 624 + 72 Tests grün,
+`xcodebuild … test` (Debug, arm64) TEST SUCCEEDED. Nicht in der App bedient,
+keine Eigentümerabnahme.
+
+## 26. Oktober 2026 – Dashboard: Leistung und Ressourcenverbrauch
+
+Ziel: Eigentümerauftrag. Das Dashboard ist sehr langsam; es soll schneller und
+ressourcenschonender werden, ohne Funktionen einzuschränken.
+
+Befund (Codeanalyse, gemessene Blobgrößen des lokalen Stores nur lesend):
+rund 15 Charaktere mit zusammen etwa 3,5 MB Asset-, 2,2 MB Blueprint- und
+1,3 MB Job-Snapshots. `wealthInputs` dekodierte all das auf dem Main-Thread,
+und zwar bei jeder Änderung eines `lastSyncAt` – während eines Abgleichs also
+je synchronisiertem Charakter, auch wenn die Bewertung danach wegen einer
+laufenden Bewertung sofort verworfen wurde. Die Bewertungsprojektionen liefen
+ebenfalls auf dem Main-Actor. Der `@Query` lud alle `AppSetting`-Werte
+(≈1,35 MB), jede fremde Einstellungsänderung renderte das Dashboard neu; der
+minütliche `TimelineView` renderte das ganze Dashboard; Autorisierungen,
+Wallet-Portfolio und negative Reaktionen wurden pro Auswertung mehrfach
+dekodiert bzw. sortiert; Charakter-Sparklines suchten quadratisch im Verlauf.
+
+Umfang (implementiert):
+- `DashboardWealthRawInput`: Rohdaten werden auf dem Main-Actor gelesen und
+  per `Task.detached` dekodiert; Nichtverfügbar-Zustände und Diagnosen wie
+  bisher.
+- Bewertungs-Task überspringt das Dekodieren während eines vollständigen
+  Abgleichs (dieser bewertet am Ende selbst) und während einer laufenden
+  Bewertung (die Eingaben wären ohnehin verworfen worden).
+- `RuntimeState.refreshDashboardWealth`: Job-, In-Produktion- und
+  Vermögensprojektion laufen außerhalb des Main-Actors.
+- `@Query` auf `dashboard.*` begrenzt; `TimelineView` nur um die Jobkarten.
+- Caches ohne Beobachtung: Autorisierungen, gemeinsamer Vermögensverlauf
+  (Dashboard und Nettowert), vorbereiteter Jobsnapshot je Eingabeidentität.
+- Wallet-Portfolio und negative Reaktionen einmal je Auswertung,
+  Charakter-Sparklines in einem Durchlauf.
+- Tests `DashboardWealthRawInputTests`; PRODUCT ergänzt.
+
+Prüfung (automatisch): `swift build` grün, `swift test` 623 Tests grün (vor
+Hinzufügen der neuen Testdatei), danach `DashboardWealthRawInputTests` 2 Tests
+grün; `EVEStaticDataKit` 13 Tests grün; `xcodebuild … test` (Debug, arm64)
+TEST SUCCEEDED. Keine Laufzeitmessung in der App, nicht live geprüft, keine
+Eigentümerabnahme.
+
+Offen: Sichtprüfung und Geschwindigkeitseindruck durch den Eigentümer; bei
+weiterhin spürbaren Hängern gezielte Messung (Instruments/`sample`) während
+eines Dashboard-Abgleichs.
+
+## 26. Oktober 2026 – Lagerverkauf-Abgleich: nur aktuelle Fehler anzeigen
+
+Ziel: Eigentümerauftrag. Hinweise und nicht erkannte Zeilen sollen bei einer
+neuen Eingabe verschwinden; es sollen immer nur aktuelle Fehler zu sehen sein.
+
+Umfang (implementiert):
+- `StockSaleEntryList.removingUnresolved` entfernt nicht erkannte Einträge
+  und behält erkannte in Reihenfolge.
+- `StockSaleComparisonView`: Nicht leere Änderung der Eingabebox leert
+  Einfügehinweise und nicht erkannte Zeilen (gespeicherte Liste wird
+  aktualisiert). „Liste ersetzen“/„Zur Liste hinzufügen“ verwerfen alte
+  nicht erkannte Zeilen vor dem Zusammenführen, auch wenn die neue Eingabe
+  keine Einträge ergibt oder die SDE-Prüfung scheitert.
+- Test in `StockSaleComparisonTests` ergänzt; PRODUCT aktualisiert.
+
+Prüfung (automatisch): `swift test` 623 Tests grün,
+`EVEStaticDataKit` 13 Tests grün, `xcodebuild … test` (Debug, arm64)
+TEST SUCCEEDED. Nicht live in der App geprüft, keine Eigentümerabnahme.
+
+Offen: Sichtprüfung in der App durch den Eigentümer.
+
+## 26. Oktober 2026 – Lagerverkauf-Abgleich: Tabellenbreite und Detailschalter
+
+Ziel: Eigentümerauftrag. Die Abgleichstabelle soll die Fensterbreite nutzen
+und per Kippschalter auf die wesentlichen Spalten reduziert werden können.
+
+Umfang (implementiert):
+- `StockSaleComparisonView`: Name- und Zahlenspalten sind flexibel und
+  dehnen sich auf die gemessene sichtbare Breite; unter der Mindestbreite
+  bleibt die Tabelle horizontal scrollbar. ME, TE, Entfernen und Empfehlung
+  behalten feste Breiten.
+- Schalter „Kosten- und Marktdetails anzeigen“ (`stock-sale.shows-cost-details`,
+  Standard an) blendet Material-, Installations-, Blueprint-, Logistikkosten,
+  Neuproduktion/Stück, bester Sell, bester Buy und Buy-Tiefe aus. Die
+  Kostenerklärung wandert bei ausgeblendeten Details als Hilfetext auf den
+  Mindestpreis Sell-Order. Rechenregeln und Sortierung unverändert.
+- Lokalisierung de/en, PRODUCT, Lagerverkauf-Plan.
+
+Prüfung (automatisch): `swift build` und `swift test` 623 Tests grün;
+`xcodebuild … test` (Debug, arm64) TEST SUCCEEDED. `EVEStaticDataKit`
+unverändert, nicht erneut getestet. Nicht live in der App geprüft, keine
+Eigentümerabnahme.
+
+- War eine der ausgeblendeten Spalten die aktive Sortierung, fällt die
+  Sortierung beim Ausblenden auf Empfehlung absteigend zurück.
+
+Offen: Sichtprüfung in der App durch den Eigentümer.
+
+## 26. Oktober 2026 – Dashboard: Karte „Top-Chancen“ entfernt
+
+Ziel: Eigentümerauftrag. Die Karte „Top-Chancen“ (P9 des Hub-Chancen-Plans)
+vom Dashboard entfernen, einschließlich aller nicht mehr benötigten Codereste.
+
+Umfang (implementiert):
+- Dashboard: `DashboardTopOpportunitiesPanel` und
+  `DashboardNavigationRequest.plannerLaunch` samt Übergabe in `ContentView`
+  entfernt.
+- Hub-Chancenansicht: Meldung der sichtbaren Zeilen (`HubTopPublishTrigger`,
+  `publishHubTopOpportunities`) entfernt.
+- `RuntimeState`: `hubTopOpportunities`, Laden beim Start und
+  `HubTopOpportunityStore` entfernt.
+- Core: `HubTopOpportunityEntry`, `HubTopOpportunityResult` und
+  `HubTopOpportunityStore` entfernt.
+- Nur von der Karte genutzte Lokalisierungen (de/en) und die beiden
+  zugehörigen Tests entfernt.
+- Doku: PRODUCT, ARCHITECTURE, PROJECT_STATE, ACCEPTANCE, Hub-Chancen-Plan.
+
+Prüfung (automatisch): `swift test` 623 Tests grün; `xcodebuild … test`
+(Debug, arm64) TEST SUCCEEDED. `EVEStaticDataKit` unverändert, nicht erneut
+getestet. Nicht live in der App geprüft, keine Eigentümerabnahme.
+
+Offen: Eine früher geschriebene Datei `market/hub-top-opportunities.json` im
+Datenordner wird nicht mehr gelesen und wurde nicht gelöscht.
+
+## 26. Oktober 2026 – Lagerverkauf-Abgleich: Einfügen aus der Asset-Liste
+
+Ziel: Eigentümerauftrag. Kopien aus der EVE-Asset-Liste im Format
+`Item ⇥ Typ ⇥ Anzahl` direkt einfügen können; weitere im Client
+eingeblendete Spalten ignorieren; Eingabehinweis über dem Eingabefeld.
+
+Umfang (implementiert):
+- `StockSalePasteParser`: Bei Tab-Zeilen ist die Anzahl nicht mehr fest
+  Spalte 2, sondern die erste weitere Spalte aus nur Ziffern und
+  Tausendertrennern. Text- und Einheitenspalten werden übersprungen; ohne
+  numerische Spalte gilt 1, 0/Überlauf bleibt `invalidQuantity`.
+  Folge: `Name ⇥ abc` ist kein Fehler mehr, sondern Menge 1.
+- `StockSaleComparisonView`: Hinweis über dem Feld mit Formatbeschreibung
+  und Beispielzeile (de/en).
+- Doku: PRODUCT (Lagerverkauf-Abgleich, Einfügen), Lagerverkauf-Plan B.
+
+Bekannte Grenze: Steht eine rein numerische Zusatzspalte (z. B. Meta-Stufe)
+vor einer leeren Anzahl, wird deren Wert als Menge gelesen.
+
+Prüfung (automatisch): `swift test` 624 Tests grün, darunter neuer Test mit
+den Zeilen aus der Eigentümer-Kopie und Zusatzspalten;
+`xcodebuild … test` (Debug, arm64) TEST SUCCEEDED. Nicht live in der App
+geprüft, keine Eigentümerabnahme.
+
 ## 25. Oktober 2026 – Lagerverkauf-Abgleich
 
 Ziel: Eigentümerauftrag. Vorrätige oder produzierte Items je Hub gegen eine

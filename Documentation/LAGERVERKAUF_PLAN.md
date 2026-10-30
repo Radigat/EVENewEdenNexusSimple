@@ -22,7 +22,7 @@ Blueprint-Anteil und Logistik; der Verkauf enthält die Marktgebühren.
 | Platzierung | eigener Seitenleisten-Eintrag direkt unter dem Handelslogbuch, Hub-Auswahl in der Ansicht |
 | Annahmen | dieselben Schalter und ME/TE-Standards wie die Hub-Chancen; ME/TE je Zeile änderbar |
 | Speicherung | Liste bleibt gespeichert, bis sie geleert wird; „Ersetzen“ oder „Ergänzen“ beim Einfügen |
-| Spalten | alle Spalten immer sichtbar, horizontal scrollbar |
+| Spalten | Breite folgt dem Fenster (horizontal scrollbar nur bei zu schmalem Fenster); Schalter blendet Kosten- und Marktdetails aus (Eigentümerauftrag 26.10.2026, ersetzt „alle Spalten immer sichtbar“) |
 | Name | englischer SDE-Name, kopierbar; Hinweis mit Originaltext bei abweichendem eingefügtem Namen |
 | Hervorhebung | Marktpreis grün ab Mindestpreis, sonst rot; Spalte „Empfehlung“ |
 | Sortierung | beim Öffnen Gewinn gesamt (Empfehlung) absteigend; unbekannte Werte in beiden Richtungen am Ende |
@@ -30,7 +30,11 @@ Blueprint-Anteil und Logistik; der Verkauf enthält die Marktgebühren.
 
 ## B. Einfügen und Namen
 
-- Zeile mit Tab (Inventarliste): Spalte 1 Name, Spalte 2 Menge; leere Menge = 1.
+- Zeile mit Tab (Inventar- oder Asset-Liste, z. B. `Item ⇥ Typ ⇥ Anzahl`):
+  Spalte 1 Name, Menge ist die erste weitere Spalte aus nur Ziffern und
+  Tausendertrennern; Spalten mit Buchstaben oder Einheiten werden ignoriert.
+  Keine solche Spalte = 1; 0 oder Überlauf = ungültige Menge (Eigentümerauftrag
+  26.10.2026).
 - Zeile ohne Tab: zuerst die ganze Zeile als Name, sonst `Name x Menge`,
   `Name xMenge` oder `Name Menge`.
 - Mengen dürfen die Tausendertrenner `.`, `,`, Leerzeichen, NBSP und

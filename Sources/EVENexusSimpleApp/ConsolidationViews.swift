@@ -102,7 +102,7 @@ func optionalCents(_ text: String) throws -> Int64? {
   let value = text.trimmingCharacters(in: .whitespaces)
   if value.isEmpty { return nil }
   if ["0", "0.00", "0,00"].contains(value) { return 0 }
-  return try ISKAmount.parse(value).hundredths
+  return try ISKAmount.parse(GroupedNumberText.ungrouped(value)).hundredths
 }
 
 struct ConsolidationQuantityRow: Identifiable {
@@ -176,7 +176,9 @@ private struct ConsolidationWarehousesView: View {
         }
         TextField("CCP Typ-ID", text: $typeText)
         TextField("Bestand (positive Ganzzahl; ersetzt vorhandene Menge)", text: $quantity)
+          .groupedNumberInput($quantity, allowsFraction: false)
         TextField("Zusätzliche Warnschwelle (leer = unverändert)", text: $threshold)
+          .groupedNumberInput($threshold, allowsFraction: false)
         HStack {
           Button("Bestandsänderung prüfen") { Task { await setStock() } }.disabled(
             warehouse == nil || warehouse?.archived == true)
@@ -218,7 +220,7 @@ private struct ConsolidationWarehousesView: View {
   }
   private func setStock() async {
     do {
-      guard let type = Int64(typeText), type > 0, let amount = Int64(quantity), amount > 0,
+      guard let type = Int64(typeText), type > 0, let amount = Int64(GroupedNumberText.ungrouped(quantity)), amount > 0,
         let id = warehouseID
       else { throw ConsolidationError.invalid("Positive Typ-ID und Menge eingeben.") }
       let build = runtime.activeSDEBuild
@@ -233,7 +235,7 @@ private struct ConsolidationWarehousesView: View {
         w.warehouses[i].stock[type] = amount
         w.warehouses[i].names[type] = resolved
         if !threshold.isEmpty {
-          guard let t = Int64(threshold), t >= 0 else {
+          guard let t = Int64(GroupedNumberText.ungrouped(threshold)), t >= 0 else {
             throw ConsolidationError.invalid("Ungültige Warnschwelle.")
           }
           w.warningThresholds[type] = t
@@ -355,7 +357,9 @@ private struct ConsolidationSalesView: View {
       ).font(.caption)
       Button("Verkäufe aus letzter Wallet-Synchronisierung prüfen") { importWallet() }
       TextField("Menge", text: $quantity)
+        .groupedNumberInput($quantity, allowsFraction: false)
       TextField("Manueller Einzelpreis in ISK", text: $price)
+        .groupedNumberInput($price)
       DatePicker("Belegdatum", selection: $date)
       Button("Manuellen Verkaufsbeleg prüfen") { manualReceipt() }
       Picker("Journalbeleg (Typ und Menge aus ausgewählter Produktion)", selection: $journalID) {
@@ -441,7 +445,7 @@ private struct ConsolidationSalesView: View {
         let entry = sync.walletJournal.value?.first(where: { $0.journalID == journalID }),
         entry.refType != "market_transaction",
         let amount = entry.amount, amount.isFinite, amount > 0, amount * 100 < Double(Int64.max),
-        let qty = Int64(quantity), qty > 0
+        let qty = Int64(GroupedNumberText.ungrouped(quantity)), qty > 0
       else {
         throw ConsolidationError.invalid(
           "Frischen positiven Journalbeleg und Artikelmenge auswählen.")
@@ -460,10 +464,10 @@ private struct ConsolidationSalesView: View {
   private func manualReceipt() {
     do {
       let cost = try ensureCost()
-      guard let qty = Int64(quantity) else { throw ConsolidationError.invalid("Ungültige Menge.") }
+      guard let qty = Int64(GroupedNumberText.ungrouped(quantity)) else { throw ConsolidationError.invalid("Ungültige Menge.") }
       let receipt = ProductionSaleEvidence(
         id: "manual:\(UUID())", typeID: cost.typeID, quantity: qty,
-        unitPrice: try ISKAmount.parse(price), recordedAt: date, source: "Manueller Beleg")
+        unitPrice: try ISKAmount.parse(GroupedNumberText.ungrouped(price)), recordedAt: date, source: "Manueller Beleg")
       controller.propose([
         "Manueller Beleg: \(qty) × \(receipt.unitPrice?.displayText ?? "nicht verfügbar") ISK."
       ]) { try $0.addEvidence(receipt) }
@@ -479,7 +483,7 @@ private struct ConsolidationSalesView: View {
         "\(quantity) Einheiten der Produktion dem ausgewählten Verkaufsbeleg zuordnen.",
         "Im Belegmodus ersetzen bestätigte Zuordnungen die manuelle Verkaufsschätzung; historische Werte bleiben gesichert.",
       ]) { w in
-        guard let evidenceID, let qty = Int64(quantity) else {
+        guard let evidenceID, let qty = Int64(GroupedNumberText.ungrouped(quantity)) else {
           throw ConsolidationError.invalid("Beleg und Menge auswählen.")
         }
         if let i = w.costs.firstIndex(where: { $0.id == cost.id }), !w.costs[i].evidenceMode {

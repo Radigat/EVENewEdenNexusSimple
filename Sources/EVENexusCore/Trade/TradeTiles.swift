@@ -144,6 +144,28 @@ public enum TradeDifferenceIndicator: String, Equatable, Sendable {
 
   public static let defaultIncreaseThreshold = 0.25
   public static let defaultStrongIncreaseThreshold = 0.30
+  /// The double arrow always needs at least this many percentage points more
+  /// than the single arrow.
+  public static let minimumPercentGap = 1
+  public static let percentRange = 1...1_000
+
+  /// Couples the two configured percentages: both stay inside
+  /// `percentRange`, and the double-arrow threshold is raised to at least
+  /// `increase + minimumPercentGap`.
+  public static func coupledPercents(
+    increase: Int,
+    strongIncrease: Int
+  ) -> (increase: Int, strongIncrease: Int) {
+    let increase = min(
+      max(increase, percentRange.lowerBound),
+      percentRange.upperBound - minimumPercentGap
+    )
+    let strongIncrease = min(
+      max(strongIncrease, increase + minimumPercentGap),
+      percentRange.upperBound
+    )
+    return (increase, strongIncrease)
+  }
 
   public static func classify(
     _ fraction: Double?,
@@ -152,7 +174,8 @@ public enum TradeDifferenceIndicator: String, Equatable, Sendable {
   ) -> TradeDifferenceIndicator? {
     guard let fraction, fraction.isFinite else { return nil }
     if fraction < 0 { return .decrease }
-    if fraction >= max(increaseThreshold, strongIncreaseThreshold) {
+    let minimumStrongThreshold = increaseThreshold + Double(minimumPercentGap) / 100
+    if fraction >= max(minimumStrongThreshold, strongIncreaseThreshold) {
       return .strongIncrease
     }
     if fraction >= increaseThreshold { return .increase }
@@ -160,7 +183,7 @@ public enum TradeDifferenceIndicator: String, Equatable, Sendable {
   }
 }
 
-/// A calculated row plus the target hub's observed daily demand.
+/// A calculated row plus the target hub's observed demand and stock.
 public struct TradeDisplayRow: Identifiable, Equatable, Sendable {
   public var id: Int64 { row.typeID }
   public let row: TradeRow
@@ -172,9 +195,18 @@ public struct TradeDisplayRow: Identifiable, Equatable, Sendable {
   /// Regional ESI market history of the target hub's region; `nil` while
   /// unknown (not loaded, failed or region unknown), never zero.
   public let volumeHistory: MarketTypeVolumeHistory?
-  /// Units traded at the exact target hub per window from its demand
-  /// ledger; a missing window is unknown, never zero.
+  /// Units traded at the exact target hub per window from its market stock
+  /// history (partial fills, MARKTBESTAND_PLAN C4), or the regional history
+  /// for a hub that is the only market of its region; a missing window is
+  /// unknown, never zero.
   public let hubTradedVolumes: [MarketHistoryWindow: HubTradedVolume]
+  /// Latest stock at the source and target hub; `nil` without a stored
+  /// point, a known 0 when the item was not listed.
+  public let sourceStock: MarketStockItemValue?
+  public let targetStock: MarketStockItemValue?
+  /// Sell-side stock change at the target hub per window; a missing window
+  /// is unknown, never zero.
+  public let targetNetChanges: [MarketHistoryWindow: MarketStockNetChange]
 
   public init(
     row: TradeRow,
@@ -182,7 +214,10 @@ public struct TradeDisplayRow: Identifiable, Equatable, Sendable {
     averageDailyDemand: Int64?,
     openLogbookQuantity: Int64 = 0,
     volumeHistory: MarketTypeVolumeHistory? = nil,
-    hubTradedVolumes: [MarketHistoryWindow: HubTradedVolume] = [:]
+    hubTradedVolumes: [MarketHistoryWindow: HubTradedVolume] = [:],
+    sourceStock: MarketStockItemValue? = nil,
+    targetStock: MarketStockItemValue? = nil,
+    targetNetChanges: [MarketHistoryWindow: MarketStockNetChange] = [:]
   ) {
     self.row = row
     self.currentDailyDemand = currentDailyDemand
@@ -190,6 +225,13 @@ public struct TradeDisplayRow: Identifiable, Equatable, Sendable {
     self.openLogbookQuantity = openLogbookQuantity
     self.volumeHistory = volumeHistory
     self.hubTradedVolumes = hubTradedVolumes
+    self.sourceStock = sourceStock
+    self.targetStock = targetStock
+    self.targetNetChanges = targetNetChanges
+  }
+
+  public func targetNetChange(_ window: MarketHistoryWindow) -> MarketStockNetChange? {
+    targetNetChanges[window]
   }
 
   /// Units traded at the exact target hub during `window`.
@@ -263,6 +305,9 @@ public enum TradeSortColumn: String, CaseIterable, Hashable, Sendable {
   case hubTradedVolume
   case hubProfitPotential
   case regionProfitPotential
+  case sourceStock
+  case targetStock
+  case targetNetChange
 }
 
 /// Sorts by the typed value of a column. Unknown values follow known values
@@ -329,6 +374,9 @@ public enum TradeRowSorter {
     case .hubTradedVolume: display.hubTradedVolume(volumeWindow).map { Double($0.units) }
     case .hubProfitPotential: display.hubProfitPotential(volumeWindow)
     case .regionProfitPotential: display.regionProfitPotential(volumeWindow)
+    case .sourceStock: display.sourceStock.map { Double($0.sell.units) }
+    case .targetStock: display.targetStock.map { Double($0.sell.units) }
+    case .targetNetChange: display.targetNetChange(volumeWindow).map { Double($0.net) }
     }
   }
 }

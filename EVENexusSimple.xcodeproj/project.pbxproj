@@ -11,6 +11,12 @@
 		012EB53DCA55C2E96CBDD71F /* IndustrySystemIndexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0678C7755C3B0CF484CA6376 /* IndustrySystemIndexService.swift */; };
 		019FBDB4A2CA78E19C87A002 /* MoonMaterialPurchaseAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBDB4A2CA78E19C87A001 /* MoonMaterialPurchaseAnalysisView.swift */; };
 		019FBE470000000000000011 /* MarketBrowserModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000001 /* MarketBrowserModels.swift */; };
+		01A0C0030000000000000011 /* MarketStockHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000001 /* MarketStockHistory.swift */; };
+		01A0C0030000000000000012 /* MarketStockHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000002 /* MarketStockHistoryStore.swift */; };
+		01A0C0030000000000000015 /* MarketStockSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000005 /* MarketStockSchedule.swift */; };
+		01A0C0030000000000000016 /* MarketStockScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000006 /* MarketStockScheduleTests.swift */; };
+		01A0C0030000000000000014 /* MarketStockHistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000004 /* MarketStockHistoryStoreTests.swift */; };
+		01A0C0030000000000000013 /* MarketStockHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000003 /* MarketStockHistoryTests.swift */; };
 		019FBE470000000000000012 /* MarketBrowserService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000002 /* MarketBrowserService.swift */; };
 		019FBE470000000000000013 /* MarketBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000003 /* MarketBrowserView.swift */; };
 		019FBE470000000000000014 /* MarketBrowserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000004 /* MarketBrowserTests.swift */; };
@@ -30,6 +36,10 @@
 		01A0C001000000000000001A /* TradeWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C001000000000000000A /* TradeWallet.swift */; };
 		01A0C001000000000000001B /* TradeWalletReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C001000000000000000B /* TradeWalletReconciler.swift */; };
 		01A0C0010000000000000018 /* TradeLogbookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000008 /* TradeLogbookView.swift */; };
+		01A0C00100000000000000F9 /* GroupedNumberInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C00100000000000000F8 /* GroupedNumberInput.swift */; };
+		01A0C0030000000000000017 /* BackgroundOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000007 /* BackgroundOperation.swift */; };
+		01A0C0030000000000000019 /* MarketStockItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000009 /* MarketStockItemDetailView.swift */; };
+		01A0C003000000000000001A /* MarketStockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C003000000000000000A /* MarketStockView.swift */; };
 		01A0C0020000000000000012 /* StockSaleComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0020000000000000002 /* StockSaleComparisonView.swift */; };
 		01A0C0010000000000000019 /* TradeLogbookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000009 /* TradeLogbookTests.swift */; };
 		01A0C0010000000000000013 /* TradeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000003 /* TradeCalculatorTests.swift */; };
@@ -233,6 +243,12 @@
 		0125A339DC2931CACBE9D073 /* EVENexusSimpleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVENexusSimpleApp.swift; sourceTree = "<group>"; };
 		019FBDB4A2CA78E19C87A001 /* MoonMaterialPurchaseAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonMaterialPurchaseAnalysisView.swift; sourceTree = "<group>"; };
 		019FBE470000000000000001 /* MarketBrowserModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserModels.swift; sourceTree = "<group>"; };
+		01A0C0030000000000000001 /* MarketStockHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockHistory.swift; sourceTree = "<group>"; };
+		01A0C0030000000000000002 /* MarketStockHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockHistoryStore.swift; sourceTree = "<group>"; };
+		01A0C0030000000000000005 /* MarketStockSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockSchedule.swift; sourceTree = "<group>"; };
+		01A0C0030000000000000006 /* MarketStockScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockScheduleTests.swift; sourceTree = "<group>"; };
+		01A0C0030000000000000004 /* MarketStockHistoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockHistoryStoreTests.swift; sourceTree = "<group>"; };
+		01A0C0030000000000000003 /* MarketStockHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockHistoryTests.swift; sourceTree = "<group>"; };
 		019FBE470000000000000002 /* MarketBrowserService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserService.swift; sourceTree = "<group>"; };
 		019FBE470000000000000003 /* MarketBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserView.swift; sourceTree = "<group>"; };
 		019FBE470000000000000004 /* MarketBrowserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserTests.swift; sourceTree = "<group>"; };
@@ -252,6 +268,10 @@
 		01A0C001000000000000000A /* TradeWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeWallet.swift; sourceTree = "<group>"; };
 		01A0C001000000000000000B /* TradeWalletReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeWalletReconciler.swift; sourceTree = "<group>"; };
 		01A0C0010000000000000008 /* TradeLogbookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbookView.swift; sourceTree = "<group>"; };
+		01A0C00100000000000000F8 /* GroupedNumberInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedNumberInput.swift; sourceTree = "<group>"; };
+		01A0C0030000000000000007 /* BackgroundOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundOperation.swift; sourceTree = "<group>"; };
+		01A0C0030000000000000009 /* MarketStockItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockItemDetailView.swift; sourceTree = "<group>"; };
+		01A0C003000000000000000A /* MarketStockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockView.swift; sourceTree = "<group>"; };
 		01A0C0020000000000000002 /* StockSaleComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockSaleComparisonView.swift; sourceTree = "<group>"; };
 		01A0C0010000000000000009 /* TradeLogbookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbookTests.swift; sourceTree = "<group>"; };
 		01A0C0010000000000000003 /* TradeCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeCalculatorTests.swift; sourceTree = "<group>"; };
@@ -499,6 +519,9 @@
 				D774BDC3DB16984A0AE06E68 /* JitaMarketService.swift */,
 				01A0D1010000000000000001 /* MarketHistory.swift */,
 				019FBE470000000000000001 /* MarketBrowserModels.swift */,
+				01A0C0030000000000000001 /* MarketStockHistory.swift */,
+				01A0C0030000000000000002 /* MarketStockHistoryStore.swift */,
+				01A0C0030000000000000005 /* MarketStockSchedule.swift */,
 				019FBE470000000000000002 /* MarketBrowserService.swift */,
 				01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */,
 				01A09B0C0000000000000002 /* LoyaltyStoreValuation.swift */,
@@ -647,6 +670,10 @@
 				019FC10B0000000000000004 /* PublicContractsView.swift */,
 				01A0C0010000000000000005 /* TradeView.swift */,
 				01A0C0010000000000000008 /* TradeLogbookView.swift */,
+				01A0C00100000000000000F8 /* GroupedNumberInput.swift */,
+				01A0C0030000000000000007 /* BackgroundOperation.swift */,
+				01A0C0030000000000000009 /* MarketStockItemDetailView.swift */,
+				01A0C003000000000000000A /* MarketStockView.swift */,
 				01A0C0020000000000000002 /* StockSaleComparisonView.swift */,
 				312D142B1E16A8C378F71587 /* RuntimeState.swift */,
 				B95C5D772248BAA6E187FCEE /* StoredAssetWarehouseProjection.swift */,
@@ -673,6 +700,9 @@
 				01A0B0020000000000000001 /* JumpFreighterLogisticsTests.swift */,
 				E7873B3F1E4F8B663707F998 /* InventionReadinessTests.swift */,
 				019FBE470000000000000004 /* MarketBrowserTests.swift */,
+				01A0C0030000000000000003 /* MarketStockHistoryTests.swift */,
+				01A0C0030000000000000004 /* MarketStockHistoryStoreTests.swift */,
+				01A0C0030000000000000006 /* MarketStockScheduleTests.swift */,
 				BBBDCD301666D06C8735887C /* MarketPricingTests.swift */,
 				01A0C0010000000000000003 /* TradeCalculatorTests.swift */,
 				01A0D1010000000000000002 /* MarketHistoryTests.swift */,
@@ -903,6 +933,9 @@
 				01A0C0010000000000000019 /* TradeLogbookTests.swift in Sources */,
 				7F3AFE42523B5E194D8DA2C8 /* InventionReadinessTests.swift in Sources */,
 				019FBE470000000000000014 /* MarketBrowserTests.swift in Sources */,
+				01A0C0030000000000000013 /* MarketStockHistoryTests.swift in Sources */,
+				01A0C0030000000000000014 /* MarketStockHistoryStoreTests.swift in Sources */,
+				01A0C0030000000000000016 /* MarketStockScheduleTests.swift in Sources */,
 				356CA43B1852389B5D0DE060 /* MarketPricingTests.swift in Sources */,
 				EEDD4F60A1E90EF08684F7D8 /* PersistenceStabilityTests.swift in Sources */,
 				FCA1B225E89C22DE8A61E6C8 /* ProductionBasisTests.swift in Sources */,
@@ -959,6 +992,10 @@
 				019FC10B0000000000000014 /* PublicContractsView.swift in Sources */,
 				01A0C0010000000000000015 /* TradeView.swift in Sources */,
 				01A0C0010000000000000018 /* TradeLogbookView.swift in Sources */,
+				01A0C00100000000000000F9 /* GroupedNumberInput.swift in Sources */,
+				01A0C0030000000000000017 /* BackgroundOperation.swift in Sources */,
+				01A0C0030000000000000019 /* MarketStockItemDetailView.swift in Sources */,
+				01A0C003000000000000001A /* MarketStockView.swift in Sources */,
 				01A0C0020000000000000012 /* StockSaleComparisonView.swift in Sources */,
 				42BA88660D950E4031482CB1 /* RuntimeState.swift in Sources */,
 				D62B077B861F9F4B2F8E9A9E /* StoredAssetWarehouseProjection.swift in Sources */,
@@ -1016,6 +1053,9 @@
 				BC8A106455EAE98782C571DE /* KeychainRefreshTokenStore.swift in Sources */,
 				C06F91A81025FE554EB56413 /* LoopbackCallbackServer.swift in Sources */,
 				019FBE470000000000000011 /* MarketBrowserModels.swift in Sources */,
+				01A0C0030000000000000011 /* MarketStockHistory.swift in Sources */,
+				01A0C0030000000000000012 /* MarketStockHistoryStore.swift in Sources */,
+				01A0C0030000000000000015 /* MarketStockSchedule.swift in Sources */,
 				019FBE470000000000000012 /* MarketBrowserService.swift in Sources */,
 				01A09B090000000000000012 /* LoyaltyStoreCatalog.swift in Sources */,
 				01A09B0C0000000000000012 /* LoyaltyStoreValuation.swift in Sources */,

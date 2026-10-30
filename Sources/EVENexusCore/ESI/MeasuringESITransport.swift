@@ -151,6 +151,24 @@ public final class MeasuringESITransport: ESIHTTPTransporting,
     lock.withLock { snapshotValue }
   }
 
+  /// The latest `Expires` among tracked GET responses whose URL satisfies
+  /// `matches`, if it lies after now. A pure read of what was observed: it
+  /// never delays or sends a request. Callers use it to start no new
+  /// request for these URLs before CCP's cache time has passed.
+  public func latestExpiry(matching matches: (URL) -> Bool) -> Date? {
+    let current = now()
+    return lock.withLock {
+      expiresByURL.compactMap { key, expires -> Date? in
+        guard expires > current,
+          let separator = key.firstIndex(of: "|"),
+          let url = URL(string: String(key[key.index(after: separator)...])),
+          matches(url)
+        else { return nil }
+        return expires
+      }.max()
+    }
+  }
+
   public func data(for request: URLRequest) async throws
     -> (Data, HTTPURLResponse)
   {

@@ -26,6 +26,17 @@ Noch keine weiteren Vorhaben festgelegt.
 
 ## Umgesetzt, Abnahme offen
 
+- [Marktbestand-Plan](Documentation/MARKTBESTAND_PLAN.md) (29.10.2026, P1–P8
+  implementiert und automatisch geprüft):
+  - Bestandshistorie je Item für Main, Home und Coalition Hub aus den
+    vorhandenen Hub-Scans (Zugang, Teilverkauf, verschwundene Orders,
+    Netto).
+  - Feste Termine 06:00/13:00; kein Hub-Scan vor ESI-`Expires`.
+  - Hintergrundbetrieb mit Menüleiste und Login-Start.
+  - Eigene SQLite-Datei: 7 Tage Einzelpunkte, 90 Tage Tageswerte.
+  - Handel-Spalten aus der Historie, Item-Graph und Ansicht „Marktbestand“.
+  - Live- und Eigentümerabnahme offen (Leitfaden in Abschnitt I).
+
 - [Lagerverkauf-Plan](Documentation/LAGERVERKAUF_PLAN.md) (25.10.2026,
   implementiert und automatisch geprüft): Lagerverkauf-Abgleich je Hub mit
   eingefügten Items (englische und deutsche Namen, Katalogadapter 7),
@@ -41,5 +52,5 @@ Noch keine weiteren Vorhaben festgelegt.
   - Live- und Eigentümerabnahme offen (Checkliste in Abschnitt H).
 - [Hub-Chancen-Plan](Documentation/HUB_CHANCEN_PLAN.md) (20./21.10.2026,
   implementiert und automatisch geprüft): zentraler Startablauf, Home- und
-  Coalition-Hub-Chancen, Verträge in den Chancen, Top-Chancen, Zielmarkt und
+  Coalition-Hub-Chancen, Verträge in den Chancen, Top-Chancen (am 26.10.2026 entfernt), Zielmarkt und
   Allianzmarkt im Planner, Kaufort-Hinweis. Live- und Eigentümerabnahme offen.

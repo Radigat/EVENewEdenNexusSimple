@@ -396,10 +396,15 @@ struct TradeCalculatorTests {
 
   @Test
   func modesDescribeTheirHubsAndTransport() {
-    // Station trading was removed; Home ↔ Coalition exists both ways.
+    // Station trading was removed; Home ↔ Coalition exists both ways and
+    // Home and Coalition can also sell back to Main.
     #expect(TradeMode.allCases == [
       .mainToHome, .mainToCoalition, .homeToCoalition, .coalitionToHome,
+      .homeToMain, .coalitionToMain,
     ])
+    #expect(TradeMode.homeToMain.route == TradeRoute(source: .home, target: .main))
+    #expect(TradeMode.coalitionToMain.route == TradeRoute(source: .coalition, target: .main))
+    #expect(TradeMode(rawValue: "coalitionToHome") == .coalitionToHome)
     #expect(TradeMode.mainToCoalition.sourceRole == .main)
     #expect(TradeMode.mainToCoalition.targetRole == .coalition)
     #expect(TradeMode.homeToCoalition.route == TradeRoute(source: .home, target: .coalition))
@@ -407,6 +412,168 @@ struct TradeCalculatorTests {
     #expect(TradeMode.allCases.allSatisfy { $0.requiresTransport })
     #expect(!TradeRoute(source: .home, target: .home).requiresTransport)
     #expect(!TradeCalculator.includesOrderModificationFees)
+  }
+
+  @Test
+  func hubTransportKeepsEarlierLegsUntilALegIsChosen() throws {
+    var transport = HubTransportConfiguration()
+    #expect(transport.legs(for: TradeMode.mainToCoalition.route) == [
+      .mainToHome, .homeToCoalition,
+    ])
+    #expect(transport.legs(for: TradeMode.coalitionToMain.route) == [
+      .coalitionToHome, .homeToMain,
+    ])
+    #expect(transport.legs(for: TradeRoute(source: .home, target: .home)).isEmpty)
+    #expect(
+      transport.setting(for: .homeToCoalition, jumpFreighterEnabled: true)
+        .method == .selfJump
+    )
+    #expect(
+      transport.setting(for: .homeToCoalition, jumpFreighterEnabled: false)
+        .method == .profileCourier
+    )
+    #expect(
+      transport.setting(for: .homeToMain, jumpFreighterEnabled: true)
+        .method == .profileCourier
+    )
+
+    transport.coalitionToMainRouting = .direct
+    transport.set(
+      HubTransportLegSetting(
+        leg: .coalitionToMain,
+        method: .jumpFreighterService,
+        service: JumpFreighterServiceRate(
+          iskPerCubicMeter: 800,
+          collateralRate: 0.01
+        )
+      )
+    )
+    #expect(transport.legs(for: TradeMode.coalitionToMain.route) == [.coalitionToMain])
+    #expect(transport.legs(for: TradeMode.mainToCoalition.route) == [
+      .mainToHome, .homeToCoalition,
+    ])
+    let chosen = transport.setting(for: .coalitionToMain, jumpFreighterEnabled: false)
+    #expect(chosen.method == .jumpFreighterService)
+    #expect(chosen.service.isComplete)
+    #expect(!JumpFreighterServiceRate(iskPerCubicMeter: 800).isComplete)
+    #expect(HubTransportLeg.homeToMain.touchesMain)
+    #expect(!HubTransportLeg.coalitionToHome.touchesMain)
+
+    // Stored logistics from before 27.10.2026 decode with the default.
+    var logistics = LogisticsConfiguration(iskPerCubicMeter: 900)
+    logistics.hubTransport = transport
+    let encoded = try JSONEncoder().encode(logistics)
+    #expect(try JSONDecoder().decode(LogisticsConfiguration.self, from: encoded) == logistics)
+    var legacy = try #require(
+      try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    legacy.removeValue(forKey: "hubTransport")
+    let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+    let decoded = try JSONDecoder().decode(LogisticsConfiguration.self, from: legacyData)
+    #expect(decoded.hubTransport == HubTransportConfiguration())
+  }
+
+  @Test
+  func legPricingResolvesEveryMethod() {
+    var logistics = LogisticsConfiguration(isEnabled: true, iskPerCubicMeter: 900)
+    #expect(
+      logistics.legPricing(for: .mainToHome)
+        == .contract(
+          LogisticsContractPricing(
+            iskPerCubicMeter: 900,
+            maximumContractVolumeM3: LogisticsConfiguration
+              .defaultMaximumContractVolumeM3
+          )
+        )
+    )
+    logistics.jumpFreighter.isEnabled = true
+    #expect(logistics.legPricing(for: .homeToCoalition) == .selfJump)
+    logistics.hubTransport.set(
+      HubTransportLegSetting(leg: .homeToMain, method: .selfJump)
+    )
+    guard case .unavailable(let warning) = logistics.legPricing(for: .homeToMain)
+    else {
+      Issue.record("A Main self-jump must stay unavailable outside Trade.")
+      return
+    }
+    #expect(warning.code == "logistics.main-self-jump-unsupported")
+    logistics.hubTransport.set(
+      HubTransportLegSetting(leg: .homeToMain, method: .jumpFreighterService)
+    )
+    guard case .unavailable(let missing) = logistics.legPricing(for: .homeToMain)
+    else {
+      Issue.record("Incomplete service prices must stay unavailable.")
+      return
+    }
+    #expect(missing.code == "logistics.jf-service-rate-missing")
+  }
+
+  @Test
+  func jumpFreighterServiceAddsVolumeAndCollateralWithoutRounding() {
+    let service = TradeTransportBasis(legs: [
+      .courier(
+        TradeCourierLeg(
+          origin: "Coalition",
+          destination: "Jita",
+          iskPerCubicMeter: 800,
+          maximumContractVolumeM3: 300_000,
+          collateralRate: 0.01,
+          provider: .jumpFreighterService
+        )
+      )
+    ])
+    // 10 m³ × 800 + 1 % of 1,000,000 = 8,000 + 10,000.
+    let perUnit = TradeCalculator.transportPerUnit(
+      packagedVolume: 10,
+      collateral: 1_000_000,
+      transport: service
+    )
+    #expect(close(perUnit.cost, 18_000))
+    #expect(perUnit.issues.isEmpty)
+    let quote = TradeCalculator.transportQuote(
+      typeID: 34,
+      name: "Fixture",
+      quantity: 3,
+      packagedVolumePerUnit: 10,
+      unitCollateral: 1_000_000,
+      transport: service
+    )
+    #expect(close(quote.total, 54_000))
+    // A collateral-only service (0 ISK per m³) is valid.
+    let collateralOnly = TradeTransportBasis(legs: [
+      .courier(
+        TradeCourierLeg(
+          origin: "Coalition",
+          destination: "Jita",
+          iskPerCubicMeter: 0,
+          collateralRate: 0.02,
+          provider: .jumpFreighterService
+        )
+      )
+    ])
+    #expect(
+      close(
+        TradeCalculator.transportQuote(
+          typeID: 34,
+          name: "Fixture",
+          quantity: 1,
+          packagedVolumePerUnit: 10,
+          unitCollateral: 1_000_000,
+          transport: collateralOnly
+        ).total,
+        20_000
+      )
+    )
+    // The Profile courier keeps the higher charge and 1M rounding.
+    let courier = TradeCalculator.transportQuote(
+      typeID: 34,
+      name: "Fixture",
+      quantity: 3,
+      packagedVolumePerUnit: 10,
+      unitCollateral: 1_000_000,
+      transport: courierOnly
+    )
+    #expect(close(courier.total, 1_000_000))
   }
 
   private let noFees = TradeHubFees(salesTaxRate: nil, brokerFeeRate: nil)
@@ -522,11 +689,34 @@ struct TradeTileTests {
       Indicator.classify(0.15, increaseThreshold: 0.1, strongIncreaseThreshold: 0.2)
         == .increase
     )
-    // A strong threshold below the single one never hides the single arrow.
+    // A strong threshold below the single one is raised to single + 1 %.
     #expect(
-      Indicator.classify(0.15, increaseThreshold: 0.1, strongIncreaseThreshold: 0.05)
+      Indicator.classify(0.105, increaseThreshold: 0.1, strongIncreaseThreshold: 0.05)
+        == .increase
+    )
+    #expect(
+      Indicator.classify(0.11, increaseThreshold: 0.1, strongIncreaseThreshold: 0.05)
         == .strongIncrease
     )
+    #expect(
+      Indicator.classify(0.105, increaseThreshold: 0.1, strongIncreaseThreshold: 0.1)
+        == .increase
+    )
+  }
+
+  @Test
+  func differenceIndicatorPercentsKeepTheDoubleArrowOnePercentAbove() {
+    typealias Indicator = TradeDifferenceIndicator
+    func coupled(_ increase: Int, _ strong: Int) -> [Int] {
+      let result = Indicator.coupledPercents(increase: increase, strongIncrease: strong)
+      return [result.increase, result.strongIncrease]
+    }
+    #expect(coupled(25, 30) == [25, 30])
+    #expect(coupled(30, 30) == [30, 31])
+    #expect(coupled(40, 30) == [40, 41])
+    #expect(coupled(0, 0) == [1, 2])
+    #expect(coupled(1_000, 1_000) == [999, 1_000])
+    #expect(coupled(5, 2_000) == [5, 1_000])
   }
 
   @Test
@@ -581,6 +771,45 @@ struct TradeTileTests {
       TradeRowSorter.sorted(rows, by: .name, ascending: false).map(\.id)
         == [4, 3, 2, 1]
     )
+  }
+
+  @Test
+  func stockColumnsSortByTypedValueWithUnknownLast() {
+    func display(_ id: Int64, target: Int64?, net: Int64?) -> TradeDisplayRow {
+      TradeDisplayRow(
+        row: TradeRow(
+          typeID: id, name: "Item \(id)", packagedVolume: nil, sourcePrice: nil,
+          targetPrice: nil, differenceFraction: nil, purchaseCost: nil,
+          transportCost: nil, netSale: nil, profit: nil, margin: nil,
+          returnOnInvestment: nil, targetSpreadFraction: nil, issues: []
+        ),
+        currentDailyDemand: nil,
+        averageDailyDemand: nil,
+        targetStock: target.map {
+          MarketStockItemValue(
+            typeID: id,
+            sell: MarketStockSideValue(units: $0, orderCount: 1, bestPrice: 1),
+            buy: .empty
+          )
+        },
+        targetNetChanges: net.map {
+          [
+            .sevenDays: MarketStockNetChange(
+              sell: MarketStockSideDelta(added: max($0, 0), partiallyFilled: max(-$0, 0), vanished: 0),
+              recordedDays: 7, partialDays: 0, windowDays: 7)
+          ]
+        } ?? [:]
+      )
+    }
+    let rows = [
+      display(1, target: 50, net: -10),
+      display(2, target: nil, net: nil),
+      display(3, target: 0, net: 25),
+    ]
+    #expect(TradeRowSorter.sorted(rows, by: .targetStock, ascending: true).map(\.id) == [3, 1, 2])
+    #expect(TradeRowSorter.sorted(rows, by: .targetStock, ascending: false).map(\.id) == [2, 1, 3])
+    #expect(TradeRowSorter.sorted(rows, by: .targetNetChange, ascending: true).map(\.id) == [1, 3, 2])
+    #expect(TradeRowSorter.sorted(rows, by: .sourceStock, ascending: true).map(\.id) == [1, 2, 3])
   }
 
   private func rankingRow(

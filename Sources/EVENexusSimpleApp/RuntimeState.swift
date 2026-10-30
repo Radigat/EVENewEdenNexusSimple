@@ -226,6 +226,7 @@ private struct SecondaryHubOpportunityScanContext: Sendable {
   let intermediateMaterialEfficiency: Int
   let productionBlacklist: ProductionBlacklistConfiguration
   let isAutomatic: Bool
+  let stockTrigger: MarketStockTrigger
 }
 
 struct CharacterBatchSyncResult: Equatable, Sendable {
@@ -419,6 +420,19 @@ final class RuntimeState {
   private(set) var mainHubMarketAutomaticUpdatesEnabled = true
   private(set) var mainHubMarketNextAutomaticRunAt: Date?
   private(set) var isAutomaticallyRefreshingMainHubMarket = false
+  /// Market stock history (MARKTBESTAND_PLAN P3): latest stored point per
+  /// hub, the next fixed term and whether that term waits for ESI.
+  private(set) var marketStockLatestPointAt: [OpportunityHubRole: Date] = [:]
+  private(set) var marketStockNextTermAt: Date?
+  private(set) var isMarketStockWaitingForESI = false
+  private(set) var marketStockError: String?
+  /// Until this time the catalog-wide order books of the last hub scan are
+  /// still inside CCP's cache time (`Expires`); no hub scan reloads them
+  /// earlier (owner request 29.10.2026, MARKTBESTAND_PLAN C6).
+  private(set) var hubScanAvailableAt: Date?
+  /// Hub overviews of the stock history for the Trade area (P5), loaded only
+  /// while it is shown and released afterwards.
+  private(set) var marketStockOverviews: [OpportunityHubRole: MarketStockHubOverview] = [:]
   private(set) var dashboardWealthSnapshot: DashboardWealthSnapshot?
   private(set) var dashboardWealthError: String?
   private(set) var dashboardIndustryJobValues: [DashboardIndustryJobValue] = []
@@ -511,10 +525,7 @@ final class RuntimeState {
   private(set) var loyaltyPointsMissingScopeCharacters: Set<String> =
     []
   private(set) var loyaltyPointsError: String?
-  /// Top opportunities as calculated by each hub view (Dashboard source).
-  private(set) var hubTopOpportunities: [OpportunityHubRole: HubTopOpportunityResult] = [:]
   private let characterLoyaltyPointsStore: CharacterLoyaltyPointsStore
-  private let hubTopOpportunityStore: HubTopOpportunityStore
   var isWorking = false {
     didSet { plannerFeatureState.invalidate() }
   }
@@ -611,6 +622,17 @@ final class RuntimeState {
   private var mainHubMarketAutomaticScanTask: Task<Void, Never>?
   private var automaticMainHubScanNeedsResume = false
   private var preparedMainHubMarketIdentity: String?
+  private var marketStockStore: MarketStockHistoryStore?
+  private var marketStockSchedulerTask: Task<Void, Never>?
+  private var marketStockWakeTask: Task<Void, Never>?
+  /// The term attempted in this app run; it is not repeated before the next
+  /// term, a restart or a wake (no retry loop, C6).
+  private var marketStockLastAttemptedTerm: Date?
+  private var marketStockOverviewKeys: [OpportunityHubRole: String] = [:]
+  /// Views currently showing stock overviews (Trade, Market stock); the
+  /// overviews are released when the last one disappears.
+  private var marketStockOverviewConsumers: Set<String> = []
+  private var hubScanAvailabilityTask: Task<Void, Never>?
   private var manufacturingOpportunityProgressThrottle =
     ProgressPublicationThrottle(minimumInterval: 2)
   private var publicContractProgressThrottle =
@@ -712,12 +734,6 @@ final class RuntimeState {
         .appendingPathComponent("market", isDirectory: true)
         .appendingPathComponent("character-loyalty-points.json")
     )
-    hubTopOpportunityStore = HubTopOpportunityStore(
-      fileURL:
-        resolvedDataRoot
-        .appendingPathComponent("market", isDirectory: true)
-        .appendingPathComponent("hub-top-opportunities.json")
-    )
     let catalog = SQLiteStaticCatalog(
       rootURL:
         resolvedDataRoot
@@ -762,7 +778,6 @@ final class RuntimeState {
       )
       async let loyaltyStores: Void = loadAndRefreshLoyaltyStoreCatalog()
       async let loyaltyPoints: Void = loadCharacterLoyaltyPoints()
-      async let hubTop: Void = loadHubTopOpportunities()
       async let contracts: Void = preparePublicContractStore(
         at: contractStoreURL
       )
@@ -775,8 +790,7 @@ final class RuntimeState {
         coalitionOpportunities,
         contracts,
         loyaltyStores,
-        loyaltyPoints,
-        hubTop
+        loyaltyPoints
       )
     }
   }
@@ -882,6 +896,7 @@ final class RuntimeState {
       automaticMainHubScanNeedsResume = false
       mainHubMarketNextAutomaticRunAt = nil
       preparedMainHubMarketIdentity = nil
+      scheduleMarketStockTerms()
       return
     }
     let identity = "\(regionID):\(locationID)"
@@ -897,6 +912,7 @@ final class RuntimeState {
       preparedMainHubMarketIdentity = identity
     }
     scheduleAutomaticMainHubMarketRefresh()
+    scheduleMarketStockTerms()
   }
 
   func setMainHubMarketAutomaticUpdatesEnabled(_ enabled: Bool) {
@@ -910,6 +926,8 @@ final class RuntimeState {
       automaticMainHubScanNeedsResume = false
       mainHubMarketNextAutomaticRunAt = nil
       isAutomaticallyRefreshingMainHubMarket = false
+      // Owner decision 29.10.2026: the pause includes the fixed terms.
+      scheduleMarketStockTerms()
     }
   }
 
@@ -925,13 +943,18 @@ final class RuntimeState {
     else { return }
     let now = Date()
     let lastObservedAt = matchingMainHubLastObservedAt
-    let scheduledAt =
+    let plannedAt =
       retryAfter.map { now.addingTimeInterval($0) }
       ?? ManufacturingOpportunityAutomaticRefreshPolicy.nextAutomaticRunAt(
         lastObservedAt: lastObservedAt,
         hasSessionMarket: hasSessionMainHubMarket,
         now: now
       )
+    // Never before the order books of the last scan expire (C6).
+    let scheduledAt = max(
+      plannedAt,
+      hubScanAvailableAt.map { $0.addingTimeInterval(1) } ?? plannedAt
+    )
     mainHubMarketNextAutomaticRunAt = scheduledAt
     mainHubMarketAutomationTask = Task(priority: .utility) { [weak self] in
       do {
@@ -2945,24 +2968,43 @@ final class RuntimeState {
 
   func analyzeManufacturingOpportunities(
     settings: ManufacturingOpportunitySettings,
-    isAutomatic: Bool = false
+    isAutomatic: Bool = false,
+    stockTrigger: MarketStockTrigger? = nil
   ) async {
     await ESIRequestContext.withPriority(
       isAutomatic ? .automatic : .interactive
     ) {
       await performManufacturingOpportunityAnalysis(
         settings: settings,
-        isAutomatic: isAutomatic
+        isAutomatic: isAutomatic,
+        stockTrigger: stockTrigger
+          ?? (isAutomatic ? .automaticScan : .manualScan)
       )
     }
   }
 
   private func performManufacturingOpportunityAnalysis(
     settings: ManufacturingOpportunitySettings,
-    isAutomatic: Bool
+    isAutomatic: Bool,
+    stockTrigger: MarketStockTrigger
   ) async {
     let opportunitySettings = settings.mainHubOpportunityBaseline
     guard !isAnalyzingManufacturingOpportunities else { return }
+    if let availableAt = hubScanAvailableAt, availableAt > Date() {
+      // The order books of the last scan have not expired yet (C6).
+      PerformanceLog.event(
+        "main-hub-scan",
+        "blocked-until-expires automatic=\(isAutomatic) trigger=\(stockTrigger.rawValue)"
+      )
+      return
+    }
+    // Keeps App Nap from stretching a scan while the window is hidden; idle
+    // system sleep stays allowed (MARKTBESTAND_PLAN C5).
+    let scanActivity = ProcessInfo.processInfo.beginActivity(
+      options: .userInitiatedAllowingIdleSystemSleep,
+      reason: "Hub market scan"
+    )
+    defer { ProcessInfo.processInfo.endActivity(scanActivity) }
     if !isAutomatic {
       mainHubMarketAutomationTask?.cancel()
       mainHubMarketAutomationTask = nil
@@ -2972,6 +3014,7 @@ final class RuntimeState {
     manufacturingOpportunityError = nil
     resetManufacturingOpportunityProgress()
     defer {
+      updateHubScanAvailability()
       isAnalyzingManufacturingOpportunities = false
       if !isAutomatic {
         scheduleAutomaticMainHubMarketRefresh(
@@ -2985,7 +3028,7 @@ final class RuntimeState {
       let esiBeforeScan = measuringESITransport.snapshot()
       defer {
         scanStopwatch.finish(
-          "automatic=\(isAutomatic) esi: "
+          "automatic=\(isAutomatic) trigger=\(stockTrigger.rawValue) esi: "
             + measuringESITransport.snapshot().subtracting(esiBeforeScan)
             .summary()
         )
@@ -3057,6 +3100,8 @@ final class RuntimeState {
           "The Main Hub scan completed, but its demand observation could not be stored. Existing observations were not replaced."
       }
       scanStopwatch.lap("demand-observation")
+      await recordMarketStock(market, role: .main, trigger: stockTrigger)
+      scanStopwatch.lap("market-stock")
       let productTypeIDs = Set(definitions.map(\.productTypeID))
       let allTypeIDs = Set(
         definitions.flatMap {
@@ -3146,7 +3191,8 @@ final class RuntimeState {
           reactionFacility: reactionFacility,
           intermediateMaterialEfficiency: intermediateMaterialEfficiency,
           productionBlacklist: productionBlacklist,
-          isAutomatic: isAutomatic
+          isAutomatic: isAutomatic,
+          stockTrigger: stockTrigger
         )
       try await analyzeSecondaryHubOpportunities(
         role: .home,
@@ -3941,36 +3987,47 @@ final class RuntimeState {
         jobDefinitions: definitionsByProductTypeID,
         prices: prices.prices
       )
-      let jobValues = DashboardInProgressIndustryProjector.projectJobs(
-        inputs: inputs, prices: prices.prices,
-        definitionsByProductTypeID: definitionsByProductTypeID,
-        fallbackUnitValues: fallbackUnitValues
-      )
+      // The projections walk every asset, job and blueprint of all
+      // characters; they are pure, so they run off the main actor.
+      let (jobValues, inProgressIndustryValues) = await Task.detached(
+        priority: .userInitiated
+      ) {
+        let jobValues = DashboardInProgressIndustryProjector.projectJobs(
+          inputs: inputs, prices: prices.prices,
+          definitionsByProductTypeID: definitionsByProductTypeID,
+          fallbackUnitValues: fallbackUnitValues
+        )
+        let inProgressIndustryValues =
+          DashboardInProgressIndustryProjector.project(
+            inputs: inputs,
+            prices: prices.prices,
+            definitionsByProductTypeID: definitionsByProductTypeID,
+            fallbackUnitValues: fallbackUnitValues,
+            jobValues: jobValues
+          )
+        return (jobValues, inProgressIndustryValues)
+      }.value
       let productIDs = Set(jobValues.compactMap { $0.ownedJob.job.productTypeID })
       dashboardIndustryProductNames = (try? await catalog.typeNames(ids: productIDs)) ?? [:]
       dashboardIndustryJobValues = jobValues
-      let inProgressIndustryValues =
-        DashboardInProgressIndustryProjector.project(
-          inputs: inputs,
-          prices: prices.prices,
-          definitionsByProductTypeID: definitionsByProductTypeID,
-          fallbackUnitValues: fallbackUnitValues,
-          jobValues: jobValues
-        )
       let blueprintValuation = await dashboardBlueprintValuation(
         inputs: inputs,
         prices: prices,
         assetClassifications: assetClassifications
       )
       guard !Task.isCancelled else { return }
-      dashboardWealthSnapshot = DashboardWealthProjector.project(
-        inputs: inputs,
-        prices: prices,
-        typeNames: typeNames,
-        assetClassifications: assetClassifications,
-        inProgressIndustryValues: inProgressIndustryValues,
-        blueprintValuation: blueprintValuation
-      )
+      let snapshot = await Task.detached(priority: .userInitiated) {
+        DashboardWealthProjector.project(
+          inputs: inputs,
+          prices: prices,
+          typeNames: typeNames,
+          assetClassifications: assetClassifications,
+          inProgressIndustryValues: inProgressIndustryValues,
+          blueprintValuation: blueprintValuation
+        )
+      }.value
+      guard !Task.isCancelled else { return }
+      dashboardWealthSnapshot = snapshot
     } catch {
       dashboardWealthError =
         "The current ESI reference prices could not be loaded."
@@ -5194,23 +5251,6 @@ final class RuntimeState {
     }
   }
 
-  // MARK: Hub top opportunities (Dashboard)
-
-  func loadHubTopOpportunities() async {
-    if let stored = try? await hubTopOpportunityStore.load() {
-      hubTopOpportunities = stored
-    }
-  }
-
-  /// Called by a hub view after it prepared its candidates, so the Dashboard
-  /// shows exactly the hub's own values.
-  func publishHubTopOpportunities(_ result: HubTopOpportunityResult) {
-    guard hubTopOpportunities[result.role] != result else { return }
-    hubTopOpportunities[result.role] = result
-    let all = hubTopOpportunities
-    Task { try? await hubTopOpportunityStore.save(all) }
-  }
-
   func rememberMarketAuthorizations(
     _ authorizations: [AuthorizationSnapshot],
     clientID: String,
@@ -5492,6 +5532,7 @@ final class RuntimeState {
           $0.error = Self.secondaryHubMessage(.demandNotStored, role: role)
         }
       }
+      await recordMarketStock(saleMarket, role: role, trigger: context.stockTrigger)
       let coalitionTransport =
         role == .coalition
         ? await coalitionTransportBasis(mainMarket: context.mainMarket)
@@ -5568,8 +5609,9 @@ final class RuntimeState {
     }
   }
 
-  /// Home → Coalition transport basis, following the Planner: Jump Freighter
-  /// cargo when jump logistics is enabled, otherwise the Profile courier.
+  /// Home → Coalition transport basis, following the leg choice of the
+  /// logistics settings like the Planner (owner request 27.10.2026): own
+  /// Jump Freighter cargo, Profile courier or Jump Freighter service.
   /// Missing hubs, route, pilot or tariff keep the transport unavailable.
   private func coalitionTransportBasis(
     mainMarket: MarketOrderSnapshot
@@ -5585,7 +5627,16 @@ final class RuntimeState {
       )
     }
     let logistics = productionBasis.logistics
-    if logistics.jumpFreighter.isEnabled {
+    let setting = logistics.transportSetting(for: .homeToCoalition)
+    if setting.method == .selfJump, !logistics.jumpFreighter.isEnabled {
+      return .unavailable(
+        homeHub: home,
+        code: "jump-freighter.leg-disabled",
+        message:
+          "Home Hub → Coalition Hub is set to an own Jump Freighter, but jump logistics is switched off. Enable it or choose another transport for this leg."
+      )
+    }
+    if setting.method == .selfJump {
       let load = await plannerJumpFreighterRouteLoad(
         configuration: logistics.jumpFreighter,
         homeHub: home,
@@ -5620,6 +5671,13 @@ final class RuntimeState {
         code: "coalition-transport.logistics-disabled",
         message:
           "Profile logistics is disabled, so the Home Hub to Coalition Hub courier transport and Coalition Hub profit remain unavailable."
+      )
+    }
+    if setting.method == .jumpFreighterService {
+      return .jumpFreighterService(
+        homeHub: home,
+        coalitionHub: coalition,
+        rate: setting.service
       )
     }
     guard let rate = logistics.effectiveISKPerCubicMeter,
@@ -5756,6 +5814,8 @@ final class RuntimeState {
     }
     areStartupAutomaticScansReleased = true
     prepareMainHubMarketAutomation()
+    startMarketStockWakeObservation()
+    await loadMarketStockStatus()
     if publicContractAutomaticUpdatesEnabled {
       await scheduleAutomaticPublicContractSynchronization()
     }
@@ -6113,16 +6173,6 @@ extension RuntimeState {
     }
   }
 
-  func tradeDemand(
-    for role: OpportunityHubRole
-  ) -> ManufacturingOpportunityDemandSnapshot? {
-    switch tradeDataRole(for: role) {
-    case nil: nil
-    case .main: manufacturingOpportunityDemand
-    case let dataRole?: opportunityState(for: dataRole).demand
-    }
-  }
-
   /// Whether the owner marked the role's trading location as the only market
   /// of its region; the Trade area then uses the regional history as the
   /// hub's traded volume.
@@ -6230,101 +6280,157 @@ extension RuntimeState {
     tradeTransportBases[route] = await tradeTransportBasis(for: route)
   }
 
-  /// Transport legs per route (owner decisions 22.10.2026):
-  /// - Main → Home: Profile courier;
-  /// - Main → Coalition: that courier plus the Home → Coalition leg;
-  /// - Home ↔ Coalition: the Home → Coalition leg of the Hub opportunities
-  ///   (Jump Freighter when enabled, otherwise the Profile courier), for
-  ///   Coalition → Home with origin and destination swapped. Jump fuel per
-  ///   flight is taken as equal in both directions.
+  /// Transport legs per route: the route's directed hub legs
+  /// (`HubTransportConfiguration.legs(for:)`), each carried by the method
+  /// chosen in the logistics settings (owner request 27.10.2026). Legs
+  /// between identical places are skipped.
   private func tradeTransportBasis(
     for route: TradeRoute
   ) async -> TradeTransportBasis {
     guard route.requiresTransport else { return .none }
     let logistics = productionBasis.logistics
-    switch (route.source, route.target) {
-    case (.main, .home), (.main, .coalition):
-      guard let main = tradeLocation(for: .main),
-        let home = tradeLocation(for: .home)
+    var legs: [TradeTransportLeg] = []
+    for leg in logistics.hubTransport.legs(for: route) {
+      guard let origin = tradeLocation(for: leg.origin),
+        let destination = tradeLocation(for: leg.destination)
       else {
-        return TradeTransportBasis(
-          legs: [.unavailable(code: "trade.home-hub-missing")]
-        )
+        legs.append(.unavailable(code: tradeMissingHubCode(leg)))
+        continue
       }
-      var legs: [TradeTransportLeg] = []
-      if !main.representsSameLocation(as: home) {
-        legs.append(tradeCourierLeg(from: main, to: home, logistics: logistics))
-      }
-      guard route.target == .coalition else {
-        return TradeTransportBasis(legs: legs)
-      }
-      guard let coalition = tradeLocation(for: .coalition) else {
-        return TradeTransportBasis(
-          legs: legs + [.unavailable(code: "trade.coalition-hub-missing")]
-        )
-      }
-      if let leg = await homeCoalitionLeg(
-        home: home,
-        coalition: coalition,
-        towardsCoalition: true,
-        logistics: logistics
-      ) {
-        legs.append(leg)
-      }
-      return TradeTransportBasis(legs: legs)
-    case (.home, .coalition), (.coalition, .home):
-      guard let home = tradeLocation(for: .home),
-        let coalition = tradeLocation(for: .coalition)
-      else {
-        return TradeTransportBasis(
-          legs: [.unavailable(code: "trade.route-hub-missing")]
-        )
-      }
-      let leg = await homeCoalitionLeg(
-        home: home,
-        coalition: coalition,
-        towardsCoalition: route.target == .coalition,
-        logistics: logistics
+      guard !origin.representsSameLocation(as: destination) else { continue }
+      let setting = logistics.hubTransport.setting(
+        for: leg,
+        jumpFreighterEnabled: logistics.jumpFreighter.isEnabled
       )
-      return TradeTransportBasis(legs: leg.map { [$0] } ?? [])
-    default:
-      return TradeTransportBasis(
-        legs: [.unavailable(code: "trade.route-hub-missing")]
-      )
+      switch setting.method {
+      case .profileCourier:
+        legs.append(
+          tradeCourierLeg(from: origin, to: destination, logistics: logistics)
+        )
+      case .jumpFreighterService:
+        let service = setting.service
+        if let rate = service.effectiveISKPerCubicMeter,
+          let collateralRate = service.effectiveCollateralRate,
+          let maximumVolume = service.effectiveMaximumContractVolumeM3
+        {
+          legs.append(
+            .courier(
+              TradeCourierLeg(
+                origin: origin.name,
+                destination: destination.name,
+                iskPerCubicMeter: rate,
+                maximumContractVolumeM3: maximumVolume,
+                collateralRate: collateralRate,
+                provider: .jumpFreighterService
+              )
+            )
+          )
+        } else {
+          legs.append(.unavailable(code: "trade.jf-service-rate-missing"))
+        }
+      case .selfJump:
+        legs.append(
+          await tradeSelfJumpLeg(
+            leg,
+            origin: origin,
+            destination: destination,
+            profileID: setting.jumpRouteProfileID,
+            configuration: logistics.jumpFreighter
+          )
+        )
+      }
     }
+    return TradeTransportBasis(legs: legs)
   }
 
-  /// The Home ↔ Coalition leg; `nil` when both hubs are the same place.
-  private func homeCoalitionLeg(
-    home: ProcurementLocation,
-    coalition: ProcurementLocation,
-    towardsCoalition: Bool,
-    logistics: LogisticsConfiguration
-  ) async -> TradeTransportLeg? {
-    guard !coalition.representsSameLocation(as: home) else { return nil }
-    let origin = towardsCoalition ? home : coalition
-    let destination = towardsCoalition ? coalition : home
-    guard logistics.jumpFreighter.isEnabled else {
-      return tradeCourierLeg(from: origin, to: destination, logistics: logistics)
+  private func tradeMissingHubCode(_ leg: HubTransportLeg) -> String {
+    if tradeLocation(for: .coalition) == nil,
+      leg.origin == .coalition || leg.destination == .coalition
+    {
+      return "trade.coalition-hub-missing"
     }
-    let load = await plannerJumpFreighterRouteLoad(
-      configuration: logistics.jumpFreighter,
-      homeHub: home,
-      coalitionHub: coalition,
-      capabilities: rememberedCapabilities,
-      capitalProducts: []
-    )
-    guard let routeState = load.route, routeState.state == .fresh,
-      let route = routeState.value,
-      route.request.hull == logistics.jumpFreighter.hull,
-      let capacity = logistics.jumpFreighter.effectiveUsableCargoCapacityM3
-    else {
-      return .unavailable(
-        code: load.warnings.first?.code ?? "jump-freighter.route-unavailable"
+    return leg.origin == .main || leg.destination == .main
+      ? "trade.home-hub-missing" : "trade.route-hub-missing"
+  }
+
+  /// Own Jump Freighter on one leg. Without a leg profile, Home ↔ Coalition
+  /// uses the Jump Freighter class profile or automatic DOTLAN routing, like
+  /// the Hub opportunities. A leg touching the high-security Main Hub needs
+  /// a leg profile; its Main-side end (first waypoint from Main, last
+  /// waypoint towards Main) is the jump endpoint, the rest is travelled by
+  /// gate at no fuel cost. Jump fuel uses the Hub-opportunity basis: the
+  /// average lowest Main-Hub sell price of the four racial isotopes.
+  private func tradeSelfJumpLeg(
+    _ leg: HubTransportLeg,
+    origin: ProcurementLocation,
+    destination: ProcurementLocation,
+    profileID: UUID?,
+    configuration: JumpFreighterLogisticsConfiguration
+  ) async -> TradeTransportLeg {
+    guard let capacity = configuration.effectiveUsableCargoCapacityM3 else {
+      return .unavailable(code: "jump-freighter.route-unavailable")
+    }
+    let effectiveProfileID =
+      profileID
+      ?? (leg.touchesMain
+        ? nil : configuration.assignedProfileID(for: .jumpFreighter))
+    var profile: JumpRouteProfile?
+    if let effectiveProfileID {
+      guard
+        let found = configuration.routeProfiles.first(where: {
+          $0.id == effectiveProfileID
+        }), found.isResolved
+      else { return .unavailable(code: "trade.jump-profile-unavailable") }
+      profile = found
+    }
+    if leg.touchesMain, profile?.waypoints.isEmpty ?? true {
+      return .unavailable(code: "trade.main-jump-profile-missing")
+    }
+    guard
+      let pilot = JumpFreighterPilotSelector.select(
+        configuration: configuration,
+        capabilities: rememberedCapabilities
       )
+    else { return .unavailable(code: "jump-freighter.pilot-unavailable") }
+    let originName: String
+    let destinationName: String
+    do {
+      if leg.origin == .main, let first = profile?.waypoints.first {
+        originName = first.solarSystemName
+      } else {
+        guard let systemID = origin.solarSystemID else {
+          return .unavailable(code: "jump-freighter.system-unresolved")
+        }
+        originName = try await solarSystemSearch.details(systemID: systemID).name
+      }
+      if leg.destination == .main, let last = profile?.waypoints.last {
+        destinationName = last.solarSystemName
+      } else {
+        guard let systemID = destination.solarSystemID else {
+          return .unavailable(code: "jump-freighter.system-unresolved")
+        }
+        destinationName = try await solarSystemSearch.details(systemID: systemID)
+          .name
+      }
+    } catch {
+      return .unavailable(code: "jump-freighter.system-unresolved")
     }
-    // Same fuel basis as the Hub opportunities: the average lowest Main-Hub
-    // sell price of the four racial isotopes.
+    let request = JumpRouteRequest(
+      originSystemName: originName,
+      destinationSystemName: destinationName,
+      hull: configuration.hull,
+      pilot: pilot
+    )
+    let route: JumpRouteSnapshot
+    do {
+      if let profile {
+        route = try await dotlanJumpRouteService.route(for: request, via: profile)
+      } else {
+        route = try await dotlanJumpRouteService.route(for: request)
+      }
+    } catch {
+      return .unavailable(code: "jump-freighter.dotlan-unavailable")
+    }
     let prices = JumpFuelIsotope.allCases.compactMap { isotope -> Double? in
       guard
         let price = mainHubMarketState?.value?.pricesByType[isotope.typeID]?
@@ -6476,8 +6582,8 @@ extension RuntimeState {
         hubNames[role] = location.name
         fees[role] = tradeHubFees(for: role)
       }
-      // Every route a purchase can take (Main → Home, Main → Coalition,
-      // Home ↔ Coalition) between configured hubs.
+      // Every trade route (Main → Home, Main → Coalition, Home ↔ Coalition,
+      // Home → Main, Coalition → Main) between configured hubs.
       for mode in TradeMode.allCases
       where hubLocations[mode.sourceRole] != nil
         && hubLocations[mode.targetRole] != nil
@@ -6622,4 +6728,466 @@ extension RuntimeState {
 struct TradeVolumeHistoryProgress: Equatable, Sendable {
   let completed: Int
   let total: Int
+}
+
+// MARK: Market stock history (MARKTBESTAND_PLAN P3)
+
+extension RuntimeState {
+  var marketStockHistoryURL: URL {
+    dataRoot
+      .appendingPathComponent("market", isDirectory: true)
+      .appendingPathComponent("market-stock-history.sqlite")
+  }
+
+  private func openedMarketStockStore() async throws -> MarketStockHistoryStore {
+    if let marketStockStore { return marketStockStore }
+    let store = try await MarketStockHistoryStore.open(url: marketStockHistoryURL)
+    marketStockStore = store
+    return store
+  }
+
+  /// Latest stored point per configured hub, shown before the first scan of
+  /// this run.
+  func loadMarketStockStatus() async {
+    do {
+      let store = try await openedMarketStockStore()
+      var latest: [OpportunityHubRole: Date] = [:]
+      for role in OpportunityHubRole.allCases {
+        guard let locationID = tradeLocation(for: role)?.locationID else {
+          continue
+        }
+        latest[role] = try await store.latestPointCapturedAt(
+          role: role,
+          locationID: locationID
+        )
+      }
+      marketStockLatestPointAt = latest
+      marketStockError = nil
+    } catch is CancellationError {
+      return
+    } catch {
+      marketStockError =
+        "The market stock history could not be opened. Hub scans continue without new stock points."
+    }
+  }
+
+  /// Turns one complete exact-hub order book into a stock point (C1/C2)
+  /// and stores it. The calculation runs off the main actor (C7); a failure
+  /// never interrupts the hub scan. No ESI request is made here (C6).
+  func recordMarketStock(
+    _ market: MarketOrderSnapshot,
+    role: OpportunityHubRole,
+    trigger: MarketStockTrigger
+  ) async {
+    let clock = ContinuousClock()
+    let started = clock.now
+    let before = PerformanceLog.memoryFootprint()
+    let observeTask = Task.detached(priority: .utility) {
+      MarketStockHistoryCalculator.observe(market)
+    }
+    guard let observation = await observeTask.value else {
+      PerformanceLog.event(
+        "market-stock",
+        "role=\(role.rawValue) skipped=incomplete-order-book "
+          + "state=\(market.state.rawValue)"
+      )
+      return
+    }
+    let observed = clock.now
+    do {
+      let store = try await openedMarketStockStore()
+      let outcome = try await store.record(observation, role: role, trigger: trigger)
+      let recorded = clock.now
+      let compaction = try await store.compactIfDue(now: .now)
+      let compacted = clock.now
+      if case .recorded = outcome {
+        marketStockLatestPointAt[role] = observation.point.capturedAt
+        if !marketStockOverviewConsumers.isEmpty, marketStockOverviews[role] != nil {
+          await loadMarketStockOverview(dataRole: role)
+        }
+      }
+      marketStockError = nil
+      let after = PerformanceLog.memoryFootprint()
+      PerformanceLog.event(
+        "market-stock",
+        "role=\(role.rawValue) trigger=\(trigger.rawValue) "
+          + "outcome=\(Self.marketStockOutcomeText(outcome)) "
+          + "items=\(observation.point.itemsByType.count) "
+          + "orders=\(observation.baseline.entries.count) "
+          + "observe=\(observed - started) record=\(recorded - observed) "
+          + "compaction=\(compacted - recorded) "
+          + "removed=\(compaction.removedPoints)p/\(compaction.removedDays)d "
+          + "footprint=\(before?.current ?? -1)->\(after?.current ?? -1) "
+          + "peak=\(after?.peak ?? -1) "
+          + "fileBytes=\(Self.marketStockFileBytes(marketStockHistoryURL))"
+      )
+    } catch is CancellationError {
+      return
+    } catch {
+      marketStockError =
+        "A market stock point could not be stored. The earlier history was kept."
+      PerformanceLog.event("market-stock", "role=\(role.rawValue) failed=store")
+    }
+  }
+
+  /// The stock overview whose hub data applies to `role` (a hub at the Main
+  /// or Home Hub's location uses that hub's history).
+  func marketStockOverview(
+    for role: OpportunityHubRole
+  ) -> MarketStockHubOverview? {
+    guard let dataRole = tradeDataRole(for: role),
+      let overview = marketStockOverviews[dataRole],
+      overview.locationID == tradeLocation(for: dataRole)?.locationID
+    else { return nil }
+    return overview
+  }
+
+  /// Loads the overviews a view needs; unchanged history on the same UTC
+  /// day is not read again.
+  func refreshMarketStockOverviews(
+    for roles: [OpportunityHubRole],
+    consumer: String
+  ) async {
+    marketStockOverviewConsumers.insert(consumer)
+    for dataRole in Set(roles.compactMap { tradeDataRole(for: $0) }) {
+      await loadMarketStockOverview(dataRole: dataRole)
+    }
+  }
+
+  /// Releases the overviews when the last showing view disappears, so no
+  /// view data stays in memory (P4).
+  func releaseMarketStockOverviews(consumer: String) {
+    marketStockOverviewConsumers.remove(consumer)
+    guard marketStockOverviewConsumers.isEmpty else { return }
+    marketStockOverviews = [:]
+    marketStockOverviewKeys = [:]
+  }
+
+  /// Hubs with their own stock history (a hub at another hub's place uses
+  /// that hub's history and is not listed separately).
+  var marketStockHubRoles: [OpportunityHubRole] {
+    OpportunityHubRole.allCases.filter {
+      tradeDataRole(for: $0) == $0 && tradeLocation(for: $0)?.locationID != nil
+    }
+  }
+
+  /// SDE names for the Market stock view; unresolved IDs stay absent.
+  func marketStockTypeNames(ids: Set<Int64>) async -> [Int64: String] {
+    (try? await catalog.typeNames(ids: ids)) ?? [:]
+  }
+
+  private func loadMarketStockOverview(dataRole: OpportunityHubRole) async {
+    guard let locationID = tradeLocation(for: dataRole)?.locationID else {
+      marketStockOverviews[dataRole] = nil
+      return
+    }
+    let now = Date()
+    let key =
+      "\(locationID)|\(MarketStockHistoryStore.utcDay(containing: now))|"
+      + "\(marketStockLatestPointAt[dataRole]?.timeIntervalSince1970 ?? 0)"
+    guard marketStockOverviewKeys[dataRole] != key else { return }
+    do {
+      let store = try await openedMarketStockStore()
+      let overview = try await store.hubOverview(
+        role: dataRole,
+        locationID: locationID,
+        windows: MarketHistoryWindow.allCases.map(\.days),
+        now: now
+      )
+      guard !marketStockOverviewConsumers.isEmpty else { return }
+      marketStockOverviews[dataRole] = overview
+      marketStockOverviewKeys[dataRole] = key
+    } catch is CancellationError {
+      return
+    } catch {
+      marketStockError =
+        "The market stock history could not be read. Stock values in Trade stay unavailable."
+    }
+  }
+
+  /// History of one item at every configured hub for the item detail (P6):
+  /// 30 daily values and the single points of the last 7 days. A hub at the
+  /// Main or Home Hub's location is shown once, under the hub whose data it
+  /// uses.
+  func marketStockItemHistory(typeID: Int64) async -> [MarketStockItemHubHistory] {
+    let now = Date()
+    var result: [MarketStockItemHubHistory] = []
+    var seen = Set<OpportunityHubRole>()
+    for role in OpportunityHubRole.allCases {
+      guard let dataRole = tradeDataRole(for: role), seen.insert(dataRole).inserted,
+        let locationID = tradeLocation(for: dataRole)?.locationID
+      else { continue }
+      do {
+        let store = try await openedMarketStockStore()
+        let days = try await store.itemDays(
+          role: dataRole, locationID: locationID, typeID: typeID, days: 30, now: now)
+        let points = try await store.itemPoints(
+          role: dataRole, locationID: locationID, typeID: typeID, days: 7, now: now)
+        result.append(
+          MarketStockItemHubHistory(
+            role: dataRole,
+            sharedRoles: OpportunityHubRole.allCases.filter {
+              $0 != dataRole && tradeDataRole(for: $0) == dataRole
+            },
+            days: days,
+            points: points
+          )
+        )
+      } catch is CancellationError {
+        return result
+      } catch {
+        marketStockError =
+          "The market stock history could not be read. Stock values in Trade stay unavailable."
+      }
+    }
+    return result
+  }
+
+  private static func marketStockOutcomeText(
+    _ outcome: MarketStockRecordOutcome
+  ) -> String {
+    switch outcome {
+    case .recorded(_, .compared): "recorded"
+    case .recorded(_, .unavailable(let reason)): "recorded-delta-\(reason.rawValue)"
+    case .skippedTooClose: "skipped-too-close"
+    case .skippedOutOfOrder: "skipped-out-of-order"
+    }
+  }
+
+  private static func marketStockFileBytes(_ url: URL) -> Int64 {
+    ["", "-wal"].reduce(0) { total, suffix in
+      let size =
+        (try? FileManager.default.attributesOfItem(atPath: url.path + suffix)[.size]
+          as? NSNumber)?.int64Value ?? 0
+      return total + size
+    }
+  }
+
+  /// Plans the next fixed term (06:00/13:00 local, C5). Paused automatic
+  /// Main-Hub updates pause the terms too (owner decision 29.10.2026).
+  func scheduleMarketStockTerms(after delay: TimeInterval? = nil) {
+    marketStockSchedulerTask?.cancel()
+    marketStockSchedulerTask = nil
+    guard startsBackgroundServices,
+      areStartupAutomaticScansReleased,
+      mainHubMarketAutomaticUpdatesEnabled,
+      preparedMainHubMarketIdentity != nil
+    else {
+      marketStockNextTermAt = nil
+      isMarketStockWaitingForESI = false
+      return
+    }
+    let now = Date()
+    let wakeAt: Date
+    if let delay {
+      wakeAt = now.addingTimeInterval(delay)
+    } else {
+      switch MarketStockSchedule.decision(
+        now: now,
+        lastSuccessfulScanAt: matchingMainHubLastObservedAt,
+        lastAttemptedTerm: marketStockLastAttemptedTerm
+      ) {
+      case .wait(let until):
+        wakeAt = until
+        marketStockNextTermAt = until
+        isMarketStockWaitingForESI = false
+      case .run(let term):
+        // A missed term runs once, after the startup scans had their turn.
+        wakeAt = now.addingTimeInterval(
+          ManufacturingOpportunityAutomaticRefreshPolicy.startupDelay + 5
+        )
+        marketStockNextTermAt = term
+      }
+    }
+    marketStockSchedulerTask = Task(priority: .utility) { [weak self] in
+      do {
+        try await Task.sleep(for: .seconds(max(0, wakeAt.timeIntervalSinceNow)))
+      } catch {
+        return
+      }
+      guard let self else { return }
+      self.marketStockSchedulerTask = nil
+      await self.runMarketStockTermIfDue()
+    }
+  }
+
+  /// Starts the normal joint hub scan as automatic work when a term is due.
+  /// It waits for downtime, ESI problems, running scans and Planner work,
+  /// and never makes requests of its own (C6).
+  private func runMarketStockTermIfDue() async {
+    guard mainHubMarketAutomaticUpdatesEnabled else {
+      scheduleMarketStockTerms()
+      return
+    }
+    guard
+      case .run(let term) = MarketStockSchedule.decision(
+        now: .now,
+        lastSuccessfulScanAt: matchingMainHubLastObservedAt,
+        lastAttemptedTerm: marketStockLastAttemptedTerm
+      )
+    else {
+      scheduleMarketStockTerms()
+      return
+    }
+    await refreshEVEOnlineServiceStatus()
+    if let until = MarketStockSchedule.serviceDelay(
+      now: .now,
+      status: eveOnlineServiceStatus
+    ) {
+      isMarketStockWaitingForESI = true
+      marketStockNextTermAt = until
+      scheduleMarketStockTerms(after: max(60, until.timeIntervalSinceNow))
+      return
+    }
+    isMarketStockWaitingForESI = false
+    if let availableAt = hubScanAvailableAt, availableAt > Date() {
+      scheduleMarketStockTerms(after: availableAt.timeIntervalSinceNow + 1)
+      return
+    }
+    // A running scan satisfies the term once it succeeds; look again later.
+    guard !isAnalyzingManufacturingOpportunities,
+      mainHubMarketAutomaticScanTask == nil,
+      interactivePlannerWorkCoordinator.beginAutomaticWork(.mainHubMarket)
+    else {
+      scheduleMarketStockTerms(after: 60)
+      return
+    }
+    marketStockLastAttemptedTerm = term
+    marketStockNextTermAt = nil
+    startAutomaticJointHubScan(trigger: .scheduled)
+  }
+
+  /// Menu bar button "Fetch market stock now" (P4): the same joint hub scan
+  /// as automatic work, without waiting for a term (C6). Ignored while a
+  /// scan or Planner work is running.
+  func requestMarketStockScanNow() {
+    guard startsBackgroundServices,
+      areStartupAutomaticScansReleased,
+      marketStockScanAvailableAt == nil,
+      !isAnalyzingManufacturingOpportunities,
+      mainHubMarketAutomaticScanTask == nil,
+      interactivePlannerWorkCoordinator.beginAutomaticWork(.mainHubMarket)
+    else { return }
+    startAutomaticJointHubScan(trigger: .manualScan)
+  }
+
+  /// Whether a hub scan would reload order books before `Expires`.
+  var isHubScanBlockedByESICache: Bool {
+    hubScanAvailableAt.map { $0 > Date() } ?? false
+  }
+
+  /// Explanation for a disabled hub-scan button, or `nil` while it may run.
+  var hubScanBlockedText: String? {
+    guard let availableAt = hubScanAvailableAt, availableAt > Date() else {
+      return nil
+    }
+    return AppLocalization.format(
+      "The order books of the last hub scan are still inside ESI's cache time. CCP asks not to request them again before it ends; a new scan is possible from %@.",
+      availableAt.formatted(date: .omitted, time: .standard)
+    )
+  }
+
+  /// When "Fetch market stock now" may run again (owner request 29.10.2026):
+  /// only once the order books have expired (C6) and a new point would be
+  /// stored for at least one configured hub, i.e. 30 minutes after its last
+  /// point. `nil` means now.
+  var marketStockScanAvailableAt: Date? {
+    let now = Date()
+    let storable = Self.marketStockStorableAt(
+      latestPoints: OpportunityHubRole.allCases.compactMap { role in
+        tradeDataRole(for: role) == role && tradeLocation(for: role)?.locationID != nil
+          ? .some(marketStockLatestPointAt[role]) : nil
+      }
+    )
+    let earliest = [storable, hubScanAvailableAt].compactMap { $0 }.max()
+    return earliest.flatMap { $0 > now ? $0 : nil }
+  }
+
+  /// The earliest time a new point is stored for at least one hub; `nil`
+  /// when a hub has no point yet or no hub is configured.
+  nonisolated static func marketStockStorableAt(latestPoints: [Date?]) -> Date? {
+    guard !latestPoints.isEmpty, !latestPoints.contains(where: { $0 == nil })
+    else { return nil }
+    return latestPoints.compactMap { $0 }
+      .map { $0.addingTimeInterval(MarketStockHistoryStore.minimumPointSpacing) }
+      .min()
+  }
+
+  /// Reads the latest `Expires` of the catalog-wide order-book pages (not the
+  /// per-item Planner requests) and clears the block once it has passed.
+  func updateHubScanAvailability() {
+    hubScanAvailabilityTask?.cancel()
+    hubScanAvailabilityTask = nil
+    let availableAt = measuringESITransport.latestExpiry(
+      matching: Self.isHubOrderBookURL
+    )
+    hubScanAvailableAt = availableAt
+    guard let availableAt else { return }
+    hubScanAvailabilityTask = Task { [weak self] in
+      do {
+        try await Task.sleep(for: .seconds(max(0, availableAt.timeIntervalSinceNow) + 1))
+      } catch {
+        return
+      }
+      guard let self else { return }
+      self.hubScanAvailabilityTask = nil
+      self.updateHubScanAvailability()
+    }
+  }
+
+  /// Catalog-wide regional order-book pages; the hub scan drops them from
+  /// the response cache, so a repeat before `Expires` would reach ESI.
+  nonisolated static func isHubOrderBookURL(_ url: URL) -> Bool {
+    guard MeasuringESITransport.routeFamily(of: url) == "/markets/{id}/orders/"
+    else { return false }
+    let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+    return !items.contains { $0.name == "type_id" }
+  }
+
+  /// Runs the normal joint Main-, Home- and Coalition-Hub scan as automatic
+  /// work; the caller has begun the automatic work slot.
+  private func startAutomaticJointHubScan(trigger: MarketStockTrigger) {
+    mainHubMarketAutomationTask?.cancel()
+    mainHubMarketAutomationTask = nil
+    mainHubMarketNextAutomaticRunAt = nil
+    isAutomaticallyRefreshingMainHubMarket = true
+    mainHubMarketAutomaticScanTask = Task(priority: .utility) { [weak self] in
+      guard let self else { return }
+      await self.analyzeManufacturingOpportunities(
+        settings:
+          self.manufacturingOpportunityAnalysis?.settings
+          ?? ManufacturingOpportunitySettings(),
+        isAutomatic: true,
+        stockTrigger: trigger
+      )
+      self.finishAutomaticMainHubMarketScan()
+      self.scheduleMarketStockTerms()
+    }
+  }
+
+  /// After a wake the latest missed or failed term may run once more.
+  private func startMarketStockWakeObservation() {
+    guard startsBackgroundServices, marketStockWakeTask == nil else { return }
+    marketStockWakeTask = Task { [weak self] in
+      let wakes = NSWorkspace.shared.notificationCenter.notifications(
+        named: NSWorkspace.didWakeNotification
+      )
+      for await _ in wakes {
+        guard let self else { return }
+        self.marketStockLastAttemptedTerm = nil
+        self.scheduleMarketStockTerms()
+      }
+    }
+  }
+}
+
+
+/// One hub's history of an item (MARKTBESTAND_PLAN P6).
+struct MarketStockItemHubHistory: Identifiable, Equatable, Sendable {
+  var id: OpportunityHubRole { role }
+  let role: OpportunityHubRole
+  /// Other roles configured at the same place, shown with this hub.
+  let sharedRoles: [OpportunityHubRole]
+  let days: [MarketStockDailyEntry]
+  let points: [MarketStockPointEntry]
 }

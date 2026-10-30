@@ -1,24 +1,50 @@
 import Foundation
 
-/// Life cycle of a logged purchase. `manufacturingIgnored` and `excluded`
-/// keep the record but take it out of open quantities (HANDEL_PLAN P5/P7).
+/// Life cycle of a logged purchase. `manufacturingIgnored` (shown as
+/// production), `consumed` and `excluded` keep the record but take it out of
+/// open quantities (HANDEL_PLAN P5/P7). The raw value `manufacturingIgnored`
+/// stays for stored rows.
 public enum TradeLogbookStatus: String, Codable, CaseIterable, Sendable {
   case bought
   case inTransit
   case listed
   case sold
   case manufacturingIgnored
+  case consumed
   case excluded
 
   /// Units of an open entry still wait for their sale.
   public var isOpen: Bool {
     switch self {
     case .bought, .inTransit, .listed: true
-    case .sold, .manufacturingIgnored, .excluded: false
+    case .sold, .manufacturingIgnored, .consumed, .excluded: false
     }
   }
 
+  /// Statuses that state the use instead of a sale life cycle.
+  public var isUsage: Bool {
+    self == .manufacturingIgnored || self == .consumed
+  }
+
   /// Documented sort rank: the order of the life cycle above.
+  public var sortRank: Int {
+    Self.allCases.firstIndex(of: self) ?? Self.allCases.count
+  }
+}
+
+/// What a whole logged purchase is for: a sale at one hub, own production or
+/// consumption. Production and consumption close the entry.
+public enum TradeLogbookUsage: Hashable, Sendable {
+  case sale(OpportunityHubRole)
+  case production
+  case consumption
+
+  public static var allCases: [TradeLogbookUsage] {
+    OpportunityHubRole.allCases.map(Self.sale) + [.production, .consumption]
+  }
+
+  /// Documented rank: the hubs Main, Home, Coalition, then production and
+  /// consumption.
   public var sortRank: Int {
     Self.allCases.firstIndex(of: self) ?? Self.allCases.count
   }
@@ -181,6 +207,29 @@ public struct TradeLogbookEntry: Identifiable, Equatable, Sendable {
     self.walletLink = walletLink
     self.buySideSource = buySideSource
     self.transportEstimated = transportEstimated
+  }
+
+  public var usage: TradeLogbookUsage {
+    switch status {
+    case .manufacturingIgnored: .production
+    case .consumed: .consumption
+    default: .sale(targetRole)
+    }
+  }
+
+  /// Sets the use of the whole entry. Returning to a sale reopens a
+  /// production or consumption entry as bought; the target hub of such an
+  /// entry stays unchanged.
+  public mutating func setUsage(_ usage: TradeLogbookUsage) {
+    switch usage {
+    case .sale(let role):
+      targetRole = role
+      if status.isUsage { status = .bought }
+    case .production:
+      status = .manufacturingIgnored
+    case .consumption:
+      status = .consumed
+    }
   }
 
   public var soldQuantity: Int64 {
@@ -369,8 +418,9 @@ public enum TradeLogbookSortColumn: String, CaseIterable, Hashable, Sendable {
 }
 
 /// Typed logbook sorting: unknown values follow known ones ascending and
-/// precede them descending; the entry ID is the final tie-breaker. Hubs sort
-/// Main, Home, Coalition; statuses by their documented life-cycle rank.
+/// precede them descending; the entry ID is the final tie-breaker. The target
+/// column sorts by the usage rank (Main, Home, Coalition, production,
+/// consumption); statuses by their documented life-cycle rank.
 public enum TradeLogbookSorter {
   public static func sorted(
     _ entries: [TradeLogbookEntry],
@@ -415,8 +465,7 @@ public enum TradeLogbookSorter {
     case .openQuantity: Double(entry.openQuantity)
     case .buyUnitPrice: entry.buyUnitPrice
     case .costPerUnit: entry.costPerUnit
-    case .targetHub:
-      Double(OpportunityHubRole.allCases.firstIndex(of: entry.targetRole) ?? 0)
+    case .targetHub: Double(entry.usage.sortRank)
     case .plannedSellUnitPrice: entry.plannedSellUnitPrice
     case .averageSalePrice: entry.averageSalePrice
     case .currentBestSell: currentBestSell[entry.id]

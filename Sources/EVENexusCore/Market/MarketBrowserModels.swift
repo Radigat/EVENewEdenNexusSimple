@@ -2336,12 +2336,21 @@ public enum OpportunityCoalitionTransportBasis: Codable, Sendable {
     route: JumpRouteSnapshot,
     isotopeMarket: MarketOrderSnapshot
   )
+  /// Jump Freighter service with user-entered prices for the Home →
+  /// Coalition leg (owner request 27.10.2026): volume plus collateral
+  /// charge, without rounding.
+  case jumpFreighterService(
+    homeHub: ProcurementLocation,
+    coalitionHub: ProcurementLocation,
+    rate: JumpFreighterServiceRate
+  )
   /// No usable transport; profit stays unavailable.
   case unavailable(homeHub: ProcurementLocation?, code: String, message: String)
 
   public var homeHub: ProcurementLocation? {
     switch self {
     case .courier(let homeHub, _, _, _): homeHub
+    case .jumpFreighterService(let homeHub, _, _): homeHub
     case .jumpFreighter(let homeHub, _, _, _): homeHub
     case .unavailable(let homeHub, _, _): homeHub
     }
@@ -2386,6 +2395,52 @@ public enum OpportunityCoalitionTransportBasis: Codable, Sendable {
         cargo: cargo,
         iskPerCubicMeter: rate,
         maximumContractVolumeM3: maximumVolume
+      )
+      guard !result.warnings.contains(where: { $0.severity == .blocking })
+      else { return (nil, result.warnings) }
+      let total = result.legs.reduce(0) { $0 + $1.roundedCharge }
+      return total.isFinite && total >= 0 ? (total, result.warnings) : (nil, result.warnings)
+    case .jumpFreighterService(let homeHub, let coalitionHub, let rate):
+      if selfJumps {
+        return (
+          nil,
+          [
+            DomainWarning(
+              code: "capital-self-jump.contract-leg",
+              message:
+                "At least one produced capital must self-jump from the Home Hub to the Coalition Hub. The Home → Coalition leg uses a Jump Freighter service, so the hull is not treated as service cargo.",
+              severity: .blocking
+            )
+          ]
+        )
+      }
+      guard let iskPerCubicMeter = rate.effectiveISKPerCubicMeter,
+        let collateralRate = rate.effectiveCollateralRate,
+        let maximumVolume = rate.effectiveMaximumContractVolumeM3
+      else {
+        return (
+          nil,
+          [
+            DomainWarning(
+              code: "logistics.jf-service-rate-missing",
+              message:
+                "The Jump Freighter service prices of this leg are incomplete in the logistics settings.",
+              severity: .blocking
+            )
+          ]
+        )
+      }
+      let result = LogisticsCostCalculator.calculateLegs(
+        kind: .outboundProducts,
+        origin: homeHub.name,
+        destination: coalitionHub.name,
+        cargo: cargo,
+        pricing: LogisticsContractPricing(
+          iskPerCubicMeter: iskPerCubicMeter,
+          maximumContractVolumeM3: maximumVolume,
+          collateralRate: collateralRate,
+          provider: .jumpFreighterService
+        )
       )
       guard !result.warnings.contains(where: { $0.severity == .blocking })
       else { return (nil, result.warnings) }
@@ -4529,20 +4584,17 @@ public enum ManufacturingOpportunityScenarioProjector {
           "The Main Hub and Home Hub differ, but Profile logistics is disabled. Round-trip logistics and profit remain unavailable instead of being treated as zero."
       )
     }
-    guard let rate = configuration.effectiveISKPerCubicMeter else {
-      return unavailableLogistics(
-        code: "logistics.missing-volume-rate",
-        message:
-          "Logistics is enabled in Profile, but the ISK per m³ rate is missing or invalid."
-      )
+    // Main → Home and Home → Main follow the leg choice of the logistics
+    // settings (owner request 27.10.2026).
+    let inboundPricing: LogisticsContractPricing
+    switch contractPricing(configuration, leg: .mainToHome) {
+    case .success(let pricing): inboundPricing = pricing
+    case .failure(let failure): return failure.projection
     }
-    guard let maximumVolume = configuration.effectiveMaximumContractVolumeM3
-    else {
-      return unavailableLogistics(
-        code: "logistics.invalid-volume-limit",
-        message:
-          "Logistics is enabled in Profile, but the contract volume limit is invalid."
-      )
+    let outboundPricing: LogisticsContractPricing
+    switch contractPricing(configuration, leg: .homeToMain) {
+    case .success(let pricing): outboundPricing = pricing
+    case .failure(let failure): return failure.projection
     }
 
     var legs: [LogisticsCostLeg] = []
@@ -4578,8 +4630,7 @@ public enum ManufacturingOpportunityScenarioProjector {
       origin: mainHub.name,
       destination: productionLocation,
       cargo: cargo,
-      iskPerCubicMeter: rate,
-      maximumContractVolumeM3: maximumVolume
+      pricing: inboundPricing
     )
     legs.append(contentsOf: inbound.legs)
     warnings.append(contentsOf: inbound.warnings)
@@ -4595,8 +4646,7 @@ public enum ManufacturingOpportunityScenarioProjector {
           packagedVolumePerUnit: row.packagedVolumePerUnit
         )
       ],
-      iskPerCubicMeter: rate,
-      maximumContractVolumeM3: maximumVolume
+      pricing: outboundPricing
     )
     legs.append(contentsOf: outbound.legs)
     warnings.append(contentsOf: outbound.warnings)
@@ -4680,19 +4730,36 @@ public enum ManufacturingOpportunityScenarioProjector {
           "The Main Hub, production location and sale hub differ, but Profile logistics is disabled. Logistics and profit remain unavailable instead of being treated as zero."
       )
     }
-    guard let rate = configuration.effectiveISKPerCubicMeter else {
-      return unavailableLogistics(
-        code: "logistics.missing-volume-rate",
-        message:
-          "Logistics is enabled in Profile, but the ISK per m³ rate is missing or invalid."
-      )
+    // Main → Home follows the leg choice (owner request 27.10.2026); a hop
+    // from a differing production location to the Home Hub stays with the
+    // Profile courier.
+    var inboundPricing: LogisticsContractPricing?
+    if !productionIsMainHub {
+      switch contractPricing(configuration, leg: .mainToHome) {
+      case .success(let pricing): inboundPricing = pricing
+      case .failure(let failure): return failure.projection
+      }
     }
-    guard let maximumVolume = configuration.effectiveMaximumContractVolumeM3
-    else {
-      return unavailableLogistics(
-        code: "logistics.invalid-volume-limit",
-        message:
-          "Logistics is enabled in Profile, but the contract volume limit is invalid."
+    var homeHopPricing: LogisticsContractPricing?
+    if !productionIsHomeHub {
+      guard let rate = configuration.effectiveISKPerCubicMeter else {
+        return unavailableLogistics(
+          code: "logistics.missing-volume-rate",
+          message:
+            "Logistics is enabled in Profile, but the ISK per m³ rate is missing or invalid."
+        )
+      }
+      guard let maximumVolume = configuration.effectiveMaximumContractVolumeM3
+      else {
+        return unavailableLogistics(
+          code: "logistics.invalid-volume-limit",
+          message:
+            "Logistics is enabled in Profile, but the contract volume limit is invalid."
+        )
+      }
+      homeHopPricing = LogisticsContractPricing(
+        iskPerCubicMeter: rate,
+        maximumContractVolumeM3: maximumVolume
       )
     }
     guard warehouseIsAvailable else {
@@ -4704,19 +4771,18 @@ public enum ManufacturingOpportunityScenarioProjector {
     }
     var legs: [LogisticsCostLeg] = []
     var warnings: [DomainWarning] = []
-    if !productionIsMainHub {
+    if let inboundPricing {
       let inbound = LogisticsCostCalculator.calculateLegs(
         kind: .inboundMaterials,
         origin: mainHub.name,
         destination: productionLocation,
         cargo: inboundCargo(for: row, procurement: procurement),
-        iskPerCubicMeter: rate,
-        maximumContractVolumeM3: maximumVolume
+        pricing: inboundPricing
       )
       legs.append(contentsOf: inbound.legs)
       warnings.append(contentsOf: inbound.warnings)
     }
-    if !productionIsHomeHub {
+    if let homeHopPricing {
       let toHomeHub = LogisticsCostCalculator.calculateLegs(
         kind: .outboundProducts,
         origin: productionLocation,
@@ -4729,8 +4795,7 @@ public enum ManufacturingOpportunityScenarioProjector {
             packagedVolumePerUnit: row.packagedVolumePerUnit
           )
         ],
-        iskPerCubicMeter: rate,
-        maximumContractVolumeM3: maximumVolume
+        pricing: homeHopPricing
       )
       legs.append(contentsOf: toHomeHub.legs)
       warnings.append(contentsOf: toHomeHub.warnings)
@@ -4755,6 +4820,39 @@ public enum ManufacturingOpportunityScenarioProjector {
       warnings: warnings,
       onwardTransportCost: recordedOnwardCost
     )
+  }
+
+  private struct LegPricingFailure: Error {
+    let projection: ManufacturingOpportunityLogisticsProjection
+  }
+
+  private static func contractPricing(
+    _ configuration: LogisticsConfiguration,
+    leg: HubTransportLeg
+  ) -> Result<LogisticsContractPricing, LegPricingFailure> {
+    switch configuration.legPricing(for: leg) {
+    case .contract(let pricing):
+      return .success(pricing)
+    case .unavailable(let warning):
+      return .failure(
+        LegPricingFailure(
+          projection: unavailableLogistics(
+            code: warning.code,
+            message: warning.message
+          )
+        )
+      )
+    case .selfJump:
+      return .failure(
+        LegPricingFailure(
+          projection: unavailableLogistics(
+            code: "logistics.main-self-jump-unsupported",
+            message:
+              "A self-jump to or from the Main Hub is calculated only in Trade."
+          )
+        )
+      )
+    }
   }
 
   private static func sameLocationName(_ lhs: String, _ rhs: String) -> Bool {
@@ -5015,140 +5113,6 @@ public enum ManufacturingOpportunityScenarioProjector {
 
   private static func finite(_ value: Double) -> Double? {
     value.isFinite ? value : nil
-  }
-}
-
-/// One row of a hub's top list as calculated by that hub's opportunity view
-/// (Dashboard, HUB_CHANCEN_PLAN P9).
-public struct HubTopOpportunityEntry: Codable, Equatable, Identifiable, Sendable {
-  public var id: Int64 { productTypeID }
-  public let productTypeID: Int64
-  public let productName: String
-  public let runs: Int
-  public let producedQuantity: Int64
-  public let materialEfficiency: Int?
-  public let timeEfficiency: Int?
-  public let dailyProfitPotential: Double
-  public let returnOnInvestment: Double?
-
-  public init(
-    productTypeID: Int64,
-    productName: String,
-    runs: Int,
-    producedQuantity: Int64,
-    materialEfficiency: Int?,
-    timeEfficiency: Int?,
-    dailyProfitPotential: Double,
-    returnOnInvestment: Double?
-  ) {
-    self.productTypeID = productTypeID
-    self.productName = productName
-    self.runs = runs
-    self.producedQuantity = producedQuantity
-    self.materialEfficiency = materialEfficiency
-    self.timeEfficiency = timeEfficiency
-    self.dailyProfitPotential = dailyProfitPotential
-    self.returnOnInvestment = returnOnInvestment
-  }
-}
-
-/// The Dashboard top list of one hub. It is never calculated separately: the
-/// hub view publishes the rows it shows (same filters, Warehouse, plan
-/// reservations, cost settings, contract and Loyalty Store basis), ranked by
-/// daily profit potential.
-public struct HubTopOpportunityResult: Codable, Sendable {
-  public let role: OpportunityHubRole
-  public let snapshotID: UUID
-  public let calculatedAt: Date
-  public let entries: [HubTopOpportunityEntry]
-
-  public init(
-    role: OpportunityHubRole,
-    snapshotID: UUID,
-    calculatedAt: Date,
-    entries: [HubTopOpportunityEntry]
-  ) {
-    self.role = role
-    self.snapshotID = snapshotID
-    self.calculatedAt = calculatedAt
-    self.entries = entries
-  }
-
-  public static let limit = 5
-
-  /// Ranks candidates the hub view already prepared.
-  public static func rank(
-    role: OpportunityHubRole,
-    snapshotID: UUID,
-    candidates: [(ManufacturingOpportunityRow, ManufacturingOpportunityCostProjection)],
-    calculatedAt: Date = .now
-  ) -> HubTopOpportunityResult {
-    let entries = candidates.compactMap { row, costs -> HubTopOpportunityEntry? in
-      guard
-        let potential = ManufacturingOpportunityScenarioProjector
-          .dailyProfitPotential(for: row, costs: costs)
-      else { return nil }
-      return HubTopOpportunityEntry(
-        productTypeID: row.productTypeID,
-        productName: row.productName,
-        runs: row.runs,
-        producedQuantity: row.producedQuantity,
-        materialEfficiency: row.displayedMaterialEfficiency,
-        timeEfficiency: row.displayedTimeEfficiency,
-        dailyProfitPotential: potential,
-        returnOnInvestment: costs.returnOnInvestment
-      )
-    }.sorted {
-      if $0.dailyProfitPotential != $1.dailyProfitPotential {
-        return $0.dailyProfitPotential > $1.dailyProfitPotential
-      }
-      return $0.productTypeID < $1.productTypeID
-    }
-    return HubTopOpportunityResult(
-      role: role,
-      snapshotID: snapshotID,
-      calculatedAt: calculatedAt,
-      entries: Array(entries.prefix(limit))
-    )
-  }
-}
-
-extension HubTopOpportunityResult: Equatable {
-  /// The calculation time alone is no change.
-  public static func == (lhs: Self, rhs: Self) -> Bool {
-    lhs.role == rhs.role && lhs.snapshotID == rhs.snapshotID
-      && lhs.entries == rhs.entries
-  }
-}
-
-public actor HubTopOpportunityStore {
-  private let fileURL: URL
-
-  public init(fileURL: URL) {
-    self.fileURL = fileURL
-  }
-
-  public func load() throws -> [OpportunityHubRole: HubTopOpportunityResult] {
-    guard FileManager.default.fileExists(atPath: fileURL.path) else {
-      return [:]
-    }
-    let results = try JSONDecoder().decode(
-      [HubTopOpportunityResult].self,
-      from: Data(contentsOf: fileURL)
-    )
-    return Dictionary(
-      results.map { ($0.role, $0) },
-      uniquingKeysWith: { $1 }
-    )
-  }
-
-  public func save(_ results: [OpportunityHubRole: HubTopOpportunityResult]) throws {
-    try FileManager.default.createDirectory(
-      at: fileURL.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    let ordered = results.values.sorted { $0.role.rawValue < $1.role.rawValue }
-    try JSONEncoder().encode(ordered).write(to: fileURL, options: .atomic)
   }
 }
 

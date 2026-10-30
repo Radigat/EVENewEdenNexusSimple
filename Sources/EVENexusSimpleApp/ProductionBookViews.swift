@@ -1158,7 +1158,9 @@ private struct ProductionOverviewGrid: View {
             onSave()
           }
         ),
-        format: .number.precision(.fractionLength(0...2))
+        format: .number
+          .locale(AppLocalization.currentLanguage.locale)
+          .precision(.fractionLength(0...2))
       )
       .textFieldStyle(.plain)
       .font(.caption.monospacedDigit())
@@ -1206,7 +1208,9 @@ private struct ProductionOverviewGrid: View {
             onSave()
           }
         ),
-        format: .number.precision(.fractionLength(0...2))
+        format: .number
+          .locale(AppLocalization.currentLanguage.locale)
+          .precision(.fractionLength(0...2))
       )
       .textFieldStyle(.plain)
       .font(.caption.monospacedDigit())
@@ -1279,7 +1283,7 @@ private struct ProductionOverviewGrid: View {
               onSave()
             }
           ),
-          format: .number
+          format: .number.locale(AppLocalization.currentLanguage.locale)
         )
         .textFieldStyle(.plain)
         .font(.caption.monospacedDigit())

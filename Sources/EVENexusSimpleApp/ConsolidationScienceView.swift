@@ -103,11 +103,15 @@ struct ConsolidationScienceView: View {
         TextField(
           activity == .invention
             ? "Installationskosten je Versuch (ISK)" : "Installationskosten gesamt (ISK)",
-          text: $installation)
+          text: $installation
+        )
+        .groupedNumberInput($installation)
         TextField(
           activity == .invention
             ? "Material, Decryptor und Input-BPC je Versuch (ISK)" : "Materialkosten gesamt (ISK)",
-          text: $materials)
+          text: $materials
+        )
+        .groupedNumberInput($materials)
         Text(
           "Kosten ausdrücklich eintragen, auch wenn sie null sind. Die vorhandenen Fachrechner verwenden diese Beträge; fehlende Kosten werden nicht als null behandelt."
         ).font(.caption)
