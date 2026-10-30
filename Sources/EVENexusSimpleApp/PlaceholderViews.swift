@@ -817,18 +817,20 @@ struct PlannerView: View {
         .foregroundStyle(DesignTokens.caution)
       }
 
-      if action == .useOwnedBPC || action == .useOwnedBPO {
+      if action == .useOwnedBPC || action == .useOwnedBPCWithContracts
+        || action == .useOwnedBPO
+      {
         let selectedOwnedOption = selectedPlannerOwnedEfficiencyOption(
           for: step,
           action: action
         )
         let owners =
           selectedOwnedOption?.ownerNames
-          ?? (action == .useOwnedBPC
+          ?? (action != .useOwnedBPO
             ? blueprint.exactLocationBPCOwnerNames
             : blueprint.exactLocationBPOOwnerNames)
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
-          Text(action == .useOwnedBPC ? "BPC owner" : "BPO owner")
+          Text(action != .useOwnedBPO ? "BPC owner" : "BPO owner")
             .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           ForEach(owners, id: \.self) { owner in
@@ -837,7 +839,7 @@ struct PlannerView: View {
         }
         let sourceStates =
           selectedOwnedOption?.sourceStates
-          ?? (action == .useOwnedBPC
+          ?? (action != .useOwnedBPO
             ? blueprint.exactLocationBPCSourceStates
             : blueprint.exactLocationBPOSourceStates)
         if sourceStates.contains(where: { $0 != .fresh }) {
@@ -5753,7 +5755,8 @@ struct PlannerView: View {
       .manualExternalBPC,
       .buyContractBPO, .buyMarketBPO, .buyLoyaltyStoreBPC:
       true
-    case .buyContractBPC, .useOwnedReactionFormula, .unavailable, .unresolved:
+    case .buyContractBPC, .useOwnedBPCWithContracts, .useOwnedReactionFormula,
+      .unavailable, .unresolved:
       false
     }
   }
@@ -5772,6 +5775,7 @@ struct PlannerView: View {
   ) -> String {
     switch action {
     case .useOwnedBPC: "Use owned BPC".localizedUI
+    case .useOwnedBPCWithContracts: "Use owned BPC, rest from contracts".localizedUI
     case .useOwnedBPO: "Use owned BPO".localizedUI
     case .copyOwnedBPO: "Copy owned BPO".localizedUI
     case .invent: "Invent BPC".localizedUI
@@ -5824,7 +5828,9 @@ struct PlannerView: View {
           action: effectivePlannerBlueprintAction(for: step),
           manualAmount: costs[blueprint.blueprintTypeID],
           attributableBPCContractPrice:
-            blueprint.attributableBPCContractPrice,
+            effectivePlannerBlueprintAction(for: step) == .useOwnedBPCWithContracts
+            ? blueprint.remainderBPCContractPrice
+            : blueprint.attributableBPCContractPrice,
           attributableBPCContractCount:
             blueprint.attributableBPCContractSelectionCount,
           attributableBPCContractRuns: blueprint.attributableBPCContractRuns,
@@ -5866,6 +5872,8 @@ struct PlannerView: View {
     for (blueprintTypeID, allocation) in allocations
     where allocation.source
       == ProductionTreeBlueprintCostProjector.ownedWithoutEnteredCostSource
+      || allocation.source
+        == ProductionTreeBlueprintCostProjector.ownedBPCWithContractsSource
     {
       for job in supplyPlans[blueprintTypeID]?.manufacturingJobs ?? [] {
         guard case .ownedBPC = job.allocation.source else { continue }
@@ -5920,8 +5928,15 @@ struct PlannerView: View {
         blueprintTypeID: blueprintTypeID,
         productName: allocation.productName,
         kind: .bpc,
-        amount: known.reduce(0) { $0 + $1.amount },
-        source: treatment
+        amount: known.reduce(
+          allocation.source
+            == ProductionTreeBlueprintCostProjector.ownedBPCWithContractsSource
+            ? allocation.amount : 0
+        ) { $0 + $1.amount },
+        source:
+          allocation.source
+            == ProductionTreeBlueprintCostProjector.ownedBPCWithContractsSource
+          ? allocation.source : treatment
       )
     }
     return result

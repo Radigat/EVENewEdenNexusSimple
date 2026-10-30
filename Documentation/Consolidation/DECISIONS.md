@@ -280,3 +280,20 @@ Schritt P1.
     Quelle ungeklärt. Der BPO-Kaufpreis bleibt als Kapitalbedarf sichtbar.
 - **Ersetzt:** die Regel, dass ein BPO-Kauf immer eine eingetragene Umlage
   benötigt.
+
+## 30.10.2026 – Feste Blueprint-Quelle im Planer
+
+- **Anlass:** Der Planer soll möglichst automatisch den kostengünstigsten Weg
+  wählen. Bisher galt BPC am Ort vor BPO und danach eigene Blueprints an anderen
+  Orten.
+- **Entscheidung (Eigentümer):** Feste Reihenfolge: eigene BPO am Produktionsort,
+  eigene BPC am Produktionsort mit Rest aus BPC-Verträgen, BPC-Vertrag mit den
+  niedrigsten Material- plus Vertragskosten, dann BPO-Vertrag, Markt-BPO, Loyalty
+  Store, manuelle externe BPC. Eigene Blueprints an anderen Orten bleiben nur
+  manuell wählbar.
+- **Umsetzungsregel:** Fehlt für einen Vertragsvergleich ein Materialwert, bleibt
+  die Quelle ungeklärt. Der Vergleich rechnet Materialien ab Anlage, also
+  einschließlich Transportanteil.
+- **Ersetzt:** die bisherige Prioritätskette der Blueprint-Empfehlung.
+- **Noch offen:** Einkaufsorte, automatische Übernahme und neue Oberfläche
+  folgen in den Prompts 2 bis 4 der Reihe.

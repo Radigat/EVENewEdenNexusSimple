@@ -9,6 +9,8 @@ public enum ProductionTreeStockCoverage: String, Sendable {
 
 public enum ProductionTreeBlueprintAction: String, CaseIterable, Sendable {
   case useOwnedBPC
+  /// Owned BPCs at the production location plus BPC Contracts for the rest.
+  case useOwnedBPCWithContracts
   case useOwnedBPO
   case copyOwnedBPO
   case invent
@@ -76,6 +78,10 @@ public enum ProductionTreeBlueprintCostProjector {
   /// run. Without such a Contract it stays unresolved.
   public static let purchasedBPOValuedByBPCContractsSource =
     "Bought BPO valued at the cheapest public BPC Contract price per run"
+  /// Owner decision 2026-10-30: owned BPC runs at the production location plus
+  /// whole BPC Contracts for the rest. Owned runs add their value when known.
+  public static let ownedBPCWithContractsSource =
+    "Owned BPC runs plus whole public BPC Contract prices"
 
   public static func allocations(
     for choices: [ProductionTreeBlueprintCostChoice]
@@ -98,6 +104,18 @@ public enum ProductionTreeBlueprintCostProjector {
           amount: price,
           source:
             "\(max(0, choice.attributableBPCContractCount)) exact Main Hub single-line BPC Contract(s), \(runs) runs"
+        )
+      case .useOwnedBPCWithContracts:
+        guard
+          let amount = manualAmount
+            ?? choice.attributableBPCContractPrice.flatMap(validAmount)
+        else { return }
+        allocation = IndustryBlueprintCostAllocation(
+          blueprintTypeID: choice.blueprintTypeID,
+          productName: choice.productName,
+          kind: .bpc,
+          amount: amount,
+          source: ownedBPCWithContractsSource
         )
       case .useOwnedBPC where manualAmount == nil:
         allocation = IndustryBlueprintCostAllocation(
@@ -214,6 +232,11 @@ public struct ProductionTreeBPCContractSelection: Sendable {
   public let requiredRuns: Int
   public let coveredRuns: Int
   public let totalPrice: Double
+  /// Materials of the covered runs at each Contract's ME; 0 when the selection
+  /// was made by price alone.
+  public let materialCost: Double
+  /// The order in which runs are drawn from the Contracts, best ME first.
+  public let allocationRecordIDs: [Int64]
 
   public var contractCount: Int { offers.count }
 
@@ -221,8 +244,12 @@ public struct ProductionTreeBPCContractSelection: Sendable {
     offers: [PublicContractSearchResult],
     requiredRuns: Int,
     coveredRuns: Int,
-    totalPrice: Double
+    totalPrice: Double,
+    materialCost: Double = 0,
+    allocationRecordIDs: [Int64] = []
   ) {
+    self.materialCost = materialCost
+    self.allocationRecordIDs = allocationRecordIDs
     self.offers = offers
     self.requiredRuns = requiredRuns
     self.coveredRuns = coveredRuns
@@ -230,29 +257,102 @@ public struct ProductionTreeBPCContractSelection: Sendable {
   }
 }
 
+/// Values the direct materials of a manufacturing Blueprint at any ME, so
+/// Contract BPCs with different research can be compared
+/// (owner decision 2026-10-30). A missing unit value makes the cost unknown.
+public struct BlueprintMaterialValuation: Sendable {
+  public struct Input: Sendable {
+    public let typeID: Int64
+    public let quantityPerRun: Int64
+    public let unitValue: Double?
+
+    public init(typeID: Int64, quantityPerRun: Int64, unitValue: Double?) {
+      self.typeID = typeID
+      self.quantityPerRun = quantityPerRun
+      self.unitValue = unitValue
+    }
+  }
+
+  public let inputs: [Input]
+  public let facilityMultiplier: Double
+
+  public init(inputs: [Input], facilityMultiplier: Double) {
+    self.inputs = inputs
+    self.facilityMultiplier = facilityMultiplier
+  }
+
+  public func cost(runs: Int, materialEfficiency: Int) -> Double? {
+    var total = 0.0
+    for input in inputs {
+      guard let unitValue = input.unitValue,
+        unitValue.isFinite, unitValue >= 0
+      else { return nil }
+      total +=
+        Double(
+          IndustryPlanner.manufacturingMaterialQuantity(
+            baseQuantity: input.quantityPerRun,
+            runs: runs,
+            materialEfficiency: materialEfficiency,
+            facilityMultiplier: facilityMultiplier
+          )
+        ) * unitValue
+    }
+    return total.isFinite ? total : nil
+  }
+}
+
 /// Selects a deterministic set of attributable BPC Contracts that covers the
-/// requested runs. The policy prefers the lowest total price among a
-/// price-per-run coverage and every valid offer used as an explicit anchor.
+/// requested runs. The policy prefers the lowest total of Contract prices and,
+/// when `materialCost` is given, the materials at each Contract's ME, among a
+/// coverage by cost per run and every valid offer used as an explicit anchor.
 /// This remains bounded for a large public-Contract index and never divides a
 /// bundle price across unrelated items.
 public enum ProductionTreeBPCContractSelector {
   public static func select(
     requiredRuns: Int,
-    from offers: [PublicContractSearchResult]
+    from offers: [PublicContractSearchResult],
+    materialCost: ((_ runs: Int, _ materialEfficiency: Int) -> Double?)? = nil
   ) -> ProductionTreeBPCContractSelection? {
     let required = max(0, requiredRuns)
     guard required > 0 else { return nil }
+    var memo: [[Int]: Double?] = [:]
+    func material(runs: Int, efficiency: Int) -> Double? {
+      if let cached = memo[[runs, efficiency]] { return cached }
+      let value = materialCost?(runs, efficiency)
+      memo[[runs, efficiency]] = .some(value)
+      return value
+    }
+    func costPerRun(_ offer: PublicContractSearchResult) -> Double {
+      let runs = min(required, max(1, offer.runs ?? 0))
+      let price = offer.effectiveContractPrice ?? .greatestFiniteMagnitude
+      guard materialCost != nil else {
+        return price / Double(max(1, offer.runs ?? 0))
+      }
+      guard
+        let materials = material(
+          runs: runs,
+          efficiency: offer.materialEfficiency ?? 0
+        )
+      else { return .greatestFiniteMagnitude }
+      return (price + materials) / Double(runs)
+    }
     let candidates = Dictionary(
       grouping: offers.filter {
         $0.isAttributableBlueprintOffer
           && $0.isBlueprintCopy == true
           && ($0.runs ?? 0) > 0
           && $0.effectiveContractPrice != nil
+          && (materialCost == nil || $0.materialEfficiency != nil)
       },
       by: \.contractID
     ).compactMap { _, duplicates in
       duplicates.sorted(by: offerOrder).first
-    }.sorted(by: runPriceOrder)
+    }.sorted {
+      let lhs = costPerRun($0)
+      let rhs = costPerRun($1)
+      if lhs != rhs { return lhs < rhs }
+      return offerOrder($0, $1)
+    }
     guard !candidates.isEmpty else { return nil }
 
     var selections: [[PublicContractSearchResult]] = []
@@ -271,8 +371,42 @@ public enum ProductionTreeBPCContractSelector {
       }
     }
 
-    return selections.compactMap {
-      selection($0, requiredRuns: required)
+    return selections.compactMap { offers -> ProductionTreeBPCContractSelection? in
+      guard let base = selection(offers, requiredRuns: required) else {
+        return nil
+      }
+      // Runs come from the best research first; the last Contract may stay
+      // partly unused but is still charged in full.
+      let drawOrder = offers.sorted {
+        let lhs = $0.materialEfficiency ?? -1
+        let rhs = $1.materialEfficiency ?? -1
+        if lhs != rhs { return lhs > rhs }
+        return runPriceOrder($0, $1)
+      }
+      var remaining = required
+      var materials = 0.0
+      if materialCost != nil {
+        for offer in drawOrder where remaining > 0 {
+          let used = min(remaining, max(0, offer.runs ?? 0))
+          guard
+            let value = material(
+              runs: used,
+              efficiency: offer.materialEfficiency ?? 0
+            )
+          else { return nil }
+          materials += value
+          remaining -= used
+        }
+      }
+      guard materials.isFinite else { return nil }
+      return ProductionTreeBPCContractSelection(
+        offers: base.offers,
+        requiredRuns: base.requiredRuns,
+        coveredRuns: base.coveredRuns,
+        totalPrice: base.totalPrice,
+        materialCost: materials,
+        allocationRecordIDs: drawOrder.map(\.recordID)
+      )
     }.min(by: selectionOrder)
   }
 
@@ -283,7 +417,7 @@ public enum ProductionTreeBPCContractSelector {
     guard requiredRuns > 0 else { return [] }
     var covered = 0
     var selected: [PublicContractSearchResult] = []
-    for offer in offers.sorted(by: runPriceOrder) where covered < requiredRuns {
+    for offer in offers where covered < requiredRuns {
       covered = saturatedAdd(covered, max(0, offer.runs ?? 0))
       selected.append(offer)
     }
@@ -315,6 +449,9 @@ public enum ProductionTreeBPCContractSelector {
     _ lhs: ProductionTreeBPCContractSelection,
     _ rhs: ProductionTreeBPCContractSelection
   ) -> Bool {
+    let lhsTotal = lhs.totalPrice + lhs.materialCost
+    let rhsTotal = rhs.totalPrice + rhs.materialCost
+    if lhsTotal != rhsTotal { return lhsTotal < rhsTotal }
     if lhs.totalPrice != rhs.totalPrice {
       return lhs.totalPrice < rhs.totalPrice
     }
@@ -480,6 +617,15 @@ public struct ProductionTreeBlueprintAssessment: Sendable {
   /// Total price of the selected exact-Main-Hub single-line BPC Contracts that
   /// together cover the known required runs for this production node.
   public let attributableBPCContractPrice: Double?
+  /// The automatic BPC Contract choice in the order its runs are drawn.
+  public let selectedBPCContractRecordIDs: [Int64]
+  /// Contracts for the runs that owned BPCs at the production location leave
+  /// open, in the order their runs are drawn.
+  public let remainderBPCContractRecordIDs: [Int64]
+  public let remainderBPCContractPrice: Double?
+  /// Contracts cover the runs, but a material without a price keeps the
+  /// cost comparison, and therefore the choice, unresolved.
+  public let bpcContractMaterialCostUnresolved: Bool
   /// Full purchase price of the cheapest attributable BPO Contract. It is
   /// shown separately and never silently charged to one production batch.
   public let attributableBPOContractPrice: Double?
@@ -556,6 +702,75 @@ public enum BlueprintSupplyPlanner {
       var capitalPurchaseCost: Double?
       var batchAllocationCost = validCost(manualCosts[blueprintTypeID])
 
+      /// Draws runs from BPC Contracts: an explicit choice first, then the
+      /// automatic selection, then by price per run. Returns the summed
+      /// whole-Contract prices.
+      func allocateContractBPCs(
+        remaining: inout Int,
+        selectedRecordIDs: [Int64]
+      ) -> Double {
+        let order =
+          preferredSourceOrder.isEmpty
+          ? Dictionary(
+            selectedRecordIDs.enumerated().map {
+              (
+                BlueprintSourceReference.contractBPC(recordID: $0.element)
+                  .stableID,
+                $0.offset
+              )
+            },
+            uniquingKeysWith: { current, _ in current }
+          )
+          : preferredSourceOrder
+        var totalCost = 0.0
+        let candidates = assessment.attributableContractOptions.filter {
+          $0.kind == .copy && ($0.runs ?? 0) > 0
+        }.sorted {
+          if let preferred = sourceOrder(
+            .contractBPC(recordID: $0.recordID),
+            .contractBPC(recordID: $1.recordID),
+            preferredOrder: order
+          ) {
+            return preferred
+          }
+          let lhs = $0.price / Double(max(1, $0.runs ?? 0))
+          let rhs = $1.price / Double(max(1, $1.runs ?? 0))
+          if lhs != rhs { return lhs < rhs }
+          return $0.recordID < $1.recordID
+        }
+        for candidate in candidates where remaining > 0 {
+          let available = max(0, candidate.runs ?? 0)
+          let used = min(remaining, available)
+          guard used > 0,
+            let me = candidate.materialEfficiency,
+            let te = candidate.timeEfficiency
+          else { continue }
+          totalCost += candidate.price
+          let allocation = BlueprintRunAllocation(
+            source: .contractBPC(recordID: candidate.recordID),
+            provenance: .contractCopy,
+            availableRuns: available,
+            allocatedRuns: used,
+            remainingRuns: available - used,
+            materialEfficiency: me,
+            timeEfficiency: te,
+            locationID: candidate.locationID,
+            locationName: candidate.locationName,
+            sourceState: .fresh,
+            acquisitionCost: candidate.price
+          )
+          jobs.append(makeJob(allocation: allocation, runs: used))
+          appendTransferIfNeeded(
+            allocation: allocation,
+            assessment: assessment,
+            transfers: &transfers,
+            warnings: &warnings
+          )
+          remaining -= used
+        }
+        return totalCost
+      }
+
       func makeJob(
         allocation: BlueprintRunAllocation,
         runs: Int
@@ -574,14 +789,15 @@ public enum BlueprintSupplyPlanner {
       }
 
       switch action {
-      case .useOwnedBPC:
+      case .useOwnedBPC, .useOwnedBPCWithContracts:
         var remaining = requiredRuns
         let exactItemIDs = Set(
           assessment.exactLocationInstanceOptions.map(\.itemID)
         )
         let candidates =
           (assessment.exactLocationInstanceOptions
-          + assessment.otherLocationInstanceOptions).filter {
+          + (action == .useOwnedBPC
+            ? assessment.otherLocationInstanceOptions : [])).filter {
             $0.kind == .copy
               && max(0, $0.runs ?? 0)
                 > reservedByItemID[$0.itemID, default: 0]
@@ -636,6 +852,13 @@ public enum BlueprintSupplyPlanner {
             )
           )
           remaining -= used
+        }
+        if action == .useOwnedBPCWithContracts {
+          let contractCost = allocateContractBPCs(
+            remaining: &remaining,
+            selectedRecordIDs: assessment.remainderBPCContractRecordIDs
+          )
+          batchAllocationCost = contractCost.isFinite ? contractCost : nil
         }
         appendShortfallWarning(
           remainingRuns: remaining,
@@ -698,52 +921,10 @@ public enum BlueprintSupplyPlanner {
         }
       case .buyContractBPC:
         var remaining = requiredRuns
-        var totalCost = 0.0
-        let candidates = assessment.attributableContractOptions.filter {
-          $0.kind == .copy && ($0.runs ?? 0) > 0
-        }.sorted {
-          if let preferred = sourceOrder(
-            .contractBPC(recordID: $0.recordID),
-            .contractBPC(recordID: $1.recordID),
-            preferredOrder: preferredSourceOrder
-          ) {
-            return preferred
-          }
-          let lhs = $0.price / Double(max(1, $0.runs ?? 0))
-          let rhs = $1.price / Double(max(1, $1.runs ?? 0))
-          if lhs != rhs { return lhs < rhs }
-          return $0.recordID < $1.recordID
-        }
-        for candidate in candidates where remaining > 0 {
-          let available = max(0, candidate.runs ?? 0)
-          let used = min(remaining, available)
-          guard used > 0,
-            let me = candidate.materialEfficiency,
-            let te = candidate.timeEfficiency
-          else { continue }
-          totalCost += candidate.price
-          let allocation = BlueprintRunAllocation(
-            source: .contractBPC(recordID: candidate.recordID),
-            provenance: .contractCopy,
-            availableRuns: available,
-            allocatedRuns: used,
-            remainingRuns: available - used,
-            materialEfficiency: me,
-            timeEfficiency: te,
-            locationID: candidate.locationID,
-            locationName: candidate.locationName,
-            sourceState: .fresh,
-            acquisitionCost: candidate.price
-          )
-          jobs.append(makeJob(allocation: allocation, runs: used))
-          appendTransferIfNeeded(
-            allocation: allocation,
-            assessment: assessment,
-            transfers: &transfers,
-            warnings: &warnings
-          )
-          remaining -= used
-        }
+        let totalCost = allocateContractBPCs(
+          remaining: &remaining,
+          selectedRecordIDs: assessment.selectedBPCContractRecordIDs
+        )
         batchAllocationCost = totalCost.isFinite ? totalCost : nil
         appendShortfallWarning(
           remainingRuns: remaining,
@@ -1105,7 +1286,9 @@ public enum ManufacturingProductionTreeProjector {
     publicContractCoverageComplete: Bool,
     loyaltyStoreBlueprintTypeIDs: Set<Int64> = [],
     inventionDefinitions: [Int64: BlueprintDefinition],
-    productionScope: ProductionWarehouseScope
+    productionScope: ProductionWarehouseScope,
+    blueprintMaterialValuations: [Int64: BlueprintMaterialValuation] = [:],
+    blueprintRunReservations: [BlueprintRunReservation] = []
   ) -> ManufacturingProductionTreeSnapshot {
     let referencedChildren = Set(referencePlan.nodes.flatMap(\.children))
     let rootIDs = referencePlan.nodes.filter {
@@ -1119,15 +1302,26 @@ public enum ManufacturingProductionTreeProjector {
     let inventoryComplete =
       !blueprintPortfolio.sourceStates.isEmpty
       && blueprintPortfolio.sourceStates.allSatisfy { $0 == .fresh }
-    let requiredRunsByBlueprintTypeID = referencePlan.nodes.reduce(
-      into: [Int64: Int]()
-    ) { result, node in
-      guard node.action == .produce, let blueprintTypeID = node.blueprintTypeID
-      else { return }
-      result[blueprintTypeID] = saturatedAdd(
-        result[blueprintTypeID, default: 0],
-        max(0, node.runs ?? 0)
-      )
+    func producedRuns(in plan: IndustryPlanSnapshot) -> [Int64: Int] {
+      plan.nodes.reduce(into: [Int64: Int]()) { result, node in
+        guard node.action == .produce,
+          let blueprintTypeID = node.blueprintTypeID
+        else { return }
+        result[blueprintTypeID] = saturatedAdd(
+          result[blueprintTypeID, default: 0],
+          max(0, node.runs ?? 0)
+        )
+      }
+    }
+    // The selected plan decides the real jobs, including used stock. Only a
+    // Blueprint it no longer builds keeps its reference runs.
+    let requiredRunsByBlueprintTypeID = producedRuns(in: referencePlan)
+      .merging(producedRuns(in: selectedPlan)) { _, selected in selected }
+    let reservedRunsByItemID = Dictionary(
+      grouping: blueprintRunReservations,
+      by: \.blueprintItemID
+    ).mapValues { values in
+      values.reduce(0) { saturatedAdd($0, max(0, $1.runs)) }
     }
     let nodes = referencePlan.nodes.map { node in
       let material = materials[node.typeID]
@@ -1185,7 +1379,9 @@ public enum ManufacturingProductionTreeProjector {
             loyaltyStoreBlueprintTypeIDs.contains(blueprintTypeID),
           inventionDefinition: inventionDefinitions[blueprintTypeID],
           productionScope: productionScope,
-          mainHub: mainHub
+          mainHub: mainHub,
+          materialValuation: blueprintMaterialValuations[blueprintTypeID],
+          reservedRunsByItemID: reservedRunsByItemID
         )
       }
       return ManufacturingProductionTreeNode(
@@ -1314,7 +1510,9 @@ public enum ManufacturingProductionTreeProjector {
     hasLoyaltyStoreOffer: Bool,
     inventionDefinition: BlueprintDefinition?,
     productionScope: ProductionWarehouseScope,
-    mainHub: ProcurementLocation
+    mainHub: ProcurementLocation,
+    materialValuation: BlueprintMaterialValuation?,
+    reservedRunsByItemID: [Int64: Int]
   ) -> ProductionTreeBlueprintAssessment {
     let productionActivity: IndustryActivitySystem? =
       switch activity {
@@ -1376,10 +1574,16 @@ public enum ManufacturingProductionTreeProjector {
       rootLocationByItemID[entry.instance.id]?.id
         ?? entry.instance.locationID
     }
+    func unreservedRuns(_ entry: BlueprintPortfolioEntry) -> Int {
+      max(
+        0,
+        entry.instance.runs - reservedRunsByItemID[entry.instance.id, default: 0]
+      )
+    }
     let exactBPC = selectableEntries.filter {
       $0.instance.kind == .copy
         && productionLocationIDs.contains(locationID(for: $0))
-        && $0.instance.runs > 0
+        && unreservedRuns($0) > 0
     }
     let exactBPO = selectableEntries.filter {
       $0.instance.kind == .original
@@ -1428,7 +1632,7 @@ public enum ManufacturingProductionTreeProjector {
     }
     let attributableBPOs = attributableContracts.filter { $0.runs == -1 }
     let exactBPCRuns = exactBPC.reduce(0) {
-      saturatedAdd($0, max(0, $1.instance.runs))
+      saturatedAdd($0, unreservedRuns($1))
     }
     let ownedEfficiencyOptions = ownedBlueprintEfficiencyOptions(
       bpcs: exactBPC,
@@ -1486,19 +1690,42 @@ public enum ManufacturingProductionTreeProjector {
     var ownedCoveredRuns = 0
     var ownedRequiredCount = 0
     for entry in sortedOwnedBPCs where ownedCoveredRuns < requiredRuns {
-      ownedCoveredRuns = saturatedAdd(
-        ownedCoveredRuns,
-        max(0, entry.instance.runs)
-      )
+      ownedCoveredRuns = saturatedAdd(ownedCoveredRuns, unreservedRuns(entry))
       ownedRequiredCount += 1
     }
     // Mixed and equal BPC qualities may cover one demand together, but every
     // concrete copy remains a separate job with its own ME/TE and rounding.
     let ownedBPCCoversRuns = requiredRuns == 0 || exactBPCRuns >= requiredRuns
+    let materialCost: ((Int, Int) -> Double?)? = materialValuation.map { valuation in
+      { runs, efficiency in
+        valuation.cost(runs: runs, materialEfficiency: efficiency)
+      }
+    }
     let contractSelection = ProductionTreeBPCContractSelector.select(
       requiredRuns: requiredRuns,
-      from: attributableBPCs
+      from: attributableBPCs,
+      materialCost: materialCost
     )
+    let remainderRuns = max(0, requiredRuns - exactBPCRuns)
+    let remainderSelection =
+      !exactBPC.isEmpty && remainderRuns > 0
+      ? ProductionTreeBPCContractSelector.select(
+        requiredRuns: remainderRuns,
+        from: attributableBPCs,
+        materialCost: materialCost
+      ) : nil
+    func coverageExists(runs: Int) -> Bool {
+      ProductionTreeBPCContractSelector.select(
+        requiredRuns: runs,
+        from: attributableBPCs
+      ) != nil
+    }
+    let openContractRuns = exactBPC.isEmpty ? requiredRuns : remainderRuns
+    let contractMaterialCostUnresolved =
+      materialCost != nil
+      && (exactBPC.isEmpty ? contractSelection : remainderSelection) == nil
+      && openContractRuns > 0
+      && coverageExists(runs: openContractRuns)
     let cheapestBPO = attributableBPOs.min {
       ($0.effectiveContractPrice ?? .greatestFiniteMagnitude)
         < ($1.effectiveContractPrice ?? .greatestFiniteMagnitude)
@@ -1542,8 +1769,8 @@ public enum ManufacturingProductionTreeProjector {
     let allOwnedBPCRuns = saturatedAdd(
       exactBPCRuns,
       otherLocationEntries.filter {
-        $0.instance.kind == .copy && $0.instance.runs > 0
-      }.reduce(0) { saturatedAdd($0, $1.instance.runs) }
+        $0.instance.kind == .copy && unreservedRuns($0) > 0
+      }.reduce(0) { saturatedAdd($0, unreservedRuns($1)) }
     )
     let allOwnedBPCCoversRuns = requiredRuns == 0 || allOwnedBPCRuns >= requiredRuns
     let hasAnyOwnedBPO =
@@ -1555,21 +1782,25 @@ public enum ManufacturingProductionTreeProjector {
     if allOwnedBPCCoversRuns && allOwnedBPCRuns > 0 {
       actions.insert(.useOwnedBPC)
     }
+    if remainderSelection != nil { actions.insert(.useOwnedBPCWithContracts) }
     if hasAnyOwnedBPO { actions.insert(.useOwnedBPO) }
     if contractSelection != nil { actions.insert(.buyContractBPC) }
     if cheapestBPO != nil { actions.insert(.buyContractBPO) }
     if !marketBPOOptions.isEmpty { actions.insert(.buyMarketBPO) }
     if hasLoyaltyStoreOffer { actions.insert(.buyLoyaltyStoreBPC) }
     if activity == .manufacturing { actions.insert(.manualExternalBPC) }
+    // Fixed order (owner decision 2026-10-30): a cheaper later source never
+    // beats an earlier one. Owned Blueprints elsewhere stay manual choices.
     let recommendation: ProductionTreeBlueprintAction
-    if ownedBPCCoversRuns && !exactBPC.isEmpty {
-      recommendation = .useOwnedBPC
-    } else if !exactBPO.isEmpty {
+    if !exactBPO.isEmpty {
       recommendation = .useOwnedBPO
-    } else if allOwnedBPCCoversRuns && allOwnedBPCRuns > 0 {
+    } else if ownedBPCCoversRuns && !exactBPC.isEmpty {
       recommendation = .useOwnedBPC
-    } else if hasAnyOwnedBPO {
-      recommendation = .useOwnedBPO
+    } else if remainderSelection != nil {
+      recommendation = .useOwnedBPCWithContracts
+    } else if contractMaterialCostUnresolved {
+      recommendation = .unresolved
+      actions.insert(.unresolved)
     } else if contractSelection != nil {
       recommendation = .buyContractBPC
     } else if cheapestBPO != nil {
@@ -1659,6 +1890,11 @@ public enum ManufacturingProductionTreeProjector {
         contractSelection?.offers.compactMap(\.timeEfficiency) ?? []
       ),
       attributableBPCContractPrice: contractSelection?.totalPrice,
+      selectedBPCContractRecordIDs: contractSelection?.allocationRecordIDs ?? [],
+      remainderBPCContractRecordIDs:
+        remainderSelection?.allocationRecordIDs ?? [],
+      remainderBPCContractPrice: remainderSelection?.totalPrice,
+      bpcContractMaterialCostUnresolved: contractMaterialCostUnresolved,
       attributableBPOContractPrice: cheapestBPO?.effectiveContractPrice,
       lowestWholeContractPrice: exactContracts.compactMap {
         $0.price ?? $0.buyout

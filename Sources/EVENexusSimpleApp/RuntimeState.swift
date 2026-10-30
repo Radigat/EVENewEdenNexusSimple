@@ -2624,6 +2624,14 @@ final class RuntimeState {
         }
       }
     }
+    let blueprintMaterialValuations = try await planner.blueprintMaterialValuations(
+      plan: referencePlan,
+      context: context(
+        availableStock: [:],
+        preferences: [:],
+        warnings: inputWarnings
+      )
+    )
     let preflightTree = ManufacturingProductionTreeProjector.project(
       targetQuantity: targetQuantity,
       mainHub: configuredMainHub.location,
@@ -2643,7 +2651,9 @@ final class RuntimeState {
       publicContractCoverageComplete: publicContractCoverageComplete,
       loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
       inventionDefinitions: inventionDefinitions,
-      productionScope: calculatorBasis.productionWarehouseScope
+      productionScope: calculatorBasis.productionWarehouseScope,
+      blueprintMaterialValuations: blueprintMaterialValuations,
+      blueprintRunReservations: existingBlueprintReservations
     )
     let selectedPlanID = UUID()
     let blueprintSupplyPlans = BlueprintSupplyPlanner.plans(
@@ -2666,7 +2676,7 @@ final class RuntimeState {
         $0.isFinite && $0 >= 0 ? $0 : nil
       }
       switch action {
-      case .buyContractBPC:
+      case .buyContractBPC, .useOwnedBPCWithContracts:
         if let supply = blueprintSupplyPlans[blueprintTypeID],
           let totalPrice = supply.batchAllocationCost
         {
@@ -2676,7 +2686,9 @@ final class RuntimeState {
             kind: .bpc,
             amount: totalPrice,
             source:
-              "\(supply.manufacturingJobs.count) concrete Main Hub BPC Contract(s), \(supply.requiredRuns) allocated runs"
+              action == .useOwnedBPCWithContracts
+              ? ProductionTreeBlueprintCostProjector.ownedBPCWithContractsSource
+              : "\(supply.manufacturingJobs.count) concrete Main Hub BPC Contract(s), \(supply.requiredRuns) allocated runs"
           )
         }
       case .useOwnedBPC, .invent, .buyLoyaltyStoreBPC, .manualExternalBPC:
@@ -2692,7 +2704,28 @@ final class RuntimeState {
               : "Explicit BPC acquisition or activity cost"
           )
         }
-      case .useOwnedBPO, .copyOwnedBPO, .buyContractBPO, .buyMarketBPO:
+      case .buyContractBPO, .buyMarketBPO:
+        // The same rule as the Planner: a bought BPO without an entered amount
+        // is valued by the BPC runs it replaces, or stays unresolved.
+        let jobs = blueprintSupplyPlans[blueprintTypeID]?.manufacturingJobs ?? []
+        let choice = ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: blueprintTypeID,
+          productName: productName,
+          action: action,
+          manualAmount: manualAmount,
+          usedRuns: jobs.reduce(0) { $0 + max(0, $1.allocation.allocatedRuns) },
+          materialEfficiency: jobs.map(\.allocation.materialEfficiency).min() ?? 0,
+          timeEfficiency: jobs.map(\.allocation.timeEfficiency).min() ?? 0,
+          contractOptions: preflightTree.nodes.lazy.compactMap(\.blueprint)
+            .first { $0.blueprintTypeID == blueprintTypeID }?
+            .attributableContractOptions ?? []
+        )
+        if let allocation = ProductionTreeBlueprintCostProjector.allocations(
+          for: [choice]
+        )[blueprintTypeID] {
+          blueprintCosts[blueprintTypeID] = allocation
+        }
+      case .useOwnedBPO, .copyOwnedBPO:
         if let manualAmount {
           blueprintCosts[blueprintTypeID] = IndustryBlueprintCostAllocation(
             blueprintTypeID: blueprintTypeID,
@@ -2748,7 +2781,9 @@ final class RuntimeState {
       publicContractCoverageComplete: publicContractCoverageComplete,
       loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
       inventionDefinitions: inventionDefinitions,
-      productionScope: calculatorBasis.productionWarehouseScope
+      productionScope: calculatorBasis.productionWarehouseScope,
+      blueprintMaterialValuations: blueprintMaterialValuations,
+      blueprintRunReservations: existingBlueprintReservations
     )
   }
 

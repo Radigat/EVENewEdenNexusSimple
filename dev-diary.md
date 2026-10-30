@@ -9355,3 +9355,26 @@ Prüfung: `swift test` 662 + 84 Tests, davon drei neue; `EVEStaticDataKit` 13 Te
 `xcodebuild … test` 662 Tests, `TEST SUCCEEDED`.
 
 Nicht geprüft: Sichtprüfung und Rechenzeit mit Live-Daten, Abnahme.
+
+## 30.10.2026 – Planer: feste Blueprint-Quelle (Prompt 1 von 4)
+
+Auftrag: Reihenfolge eigene BPO am Produktionsort, eigene BPC am Produktionsort,
+Kauf aus Verträgen; beste BPC nach Material- plus Vertragskosten.
+
+Ergebnis:
+- `blueprintAssessment` nutzt die neue feste Kette. Eigene Blueprints an anderen
+  Orten bleiben nur manuell wählbar.
+- Neue Quelle `useOwnedBPCWithContracts`: eigene BPC-Runs am Ort, Rest aus Verträgen.
+- `ProductionTreeBPCContractSelector` bewertet über `BlueprintMaterialValuation`
+  Material plus Vertragspreis; der Supply-Planner folgt derselben Auswahl.
+- Bewertung und Versorgung nutzen dieselben Runs und Reservierungen. Die
+  Baumrechnung bewertet gekaufte BPOs wie der Planner.
+
+Prüfung: `swift test` 673 + 84 Tests, davon elf neue; `EVEStaticDataKit` 13 Tests;
+`xcodebuild … test` 673 Tests, `TEST SUCCEEDED`; `git diff --check` fehlerfrei.
+
+Nicht geprüft: Sichtprüfung und Vergleich mit Live-Daten, Abnahme.
+
+Offen: Bereits in der Sitzung festgeschriebene Quellen werden erst mit Prompt 3
+von neuen Empfehlungen getrennt. Einkaufsorte, Automatik und Oberfläche folgen in
+den Prompts 2 bis 4.

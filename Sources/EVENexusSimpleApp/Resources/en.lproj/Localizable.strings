@@ -2509,3 +2509,5 @@
 "vs. direct purchase" = "vs. direct purchase";
 "Supply chain" = "Supply chain";
 "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics." = "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics.";
+"Use owned BPC, rest from contracts" = "Use owned BPC, rest from contracts";
+"Owned BPC runs plus whole public BPC Contract prices" = "Owned BPC runs plus whole public BPC Contract prices";

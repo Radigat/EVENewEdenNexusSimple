@@ -3478,19 +3478,21 @@ struct ManufacturingOpportunitiesView: View {
         .labelsHidden()
         .frame(maxWidth: 225, alignment: .leading)
       }
-      if action == .useOwnedBPC || action == .useOwnedBPO {
+      if action == .useOwnedBPC || action == .useOwnedBPCWithContracts
+        || action == .useOwnedBPO
+      {
         ForEach(blueprint.productionLocationNames, id: \.self) { name in
           EVEEntityText(value: name, font: .caption2, lineLimit: 1)
         }
         let owners =
-          action == .useOwnedBPC
+          action != .useOwnedBPO
           ? blueprint.exactLocationBPCOwnerNames
           : blueprint.exactLocationBPOOwnerNames
         ForEach(owners, id: \.self) { owner in
           EVEEntityText(value: owner, font: .caption2, lineLimit: 1)
         }
         let sourceStates =
-          action == .useOwnedBPC
+          action != .useOwnedBPO
           ? blueprint.exactLocationBPCSourceStates
           : blueprint.exactLocationBPOSourceStates
         if sourceStates.contains(where: { $0 != .fresh }) {
@@ -4912,6 +4914,8 @@ struct ManufacturingOpportunitiesView: View {
     assessment: ProductionTreeBlueprintAssessment? = nil
   ) -> String {
     switch action {
+    case .useOwnedBPCWithContracts:
+      return "Use owned BPC, rest from contracts".localizedUI
     case .useOwnedBPC:
       if let assessment,
         let count = assessment.exactLocationBPCRequiredCount
@@ -4975,7 +4979,8 @@ struct ManufacturingOpportunitiesView: View {
     _ action: ProductionTreeBlueprintAction
   ) -> Color {
     switch action {
-    case .useOwnedBPC, .useOwnedBPO, .useOwnedReactionFormula:
+    case .useOwnedBPC, .useOwnedBPCWithContracts, .useOwnedBPO,
+      .useOwnedReactionFormula:
       DesignTokens.positive
     case .copyOwnedBPO, .invent:
       DesignTokens.information
@@ -6445,7 +6450,8 @@ extension ProductionTreeBlueprintAction {
       .manualExternalBPC,
       .buyContractBPO, .buyMarketBPO, .buyLoyaltyStoreBPC:
       true
-    case .buyContractBPC, .useOwnedReactionFormula, .unavailable, .unresolved:
+    case .buyContractBPC, .useOwnedBPCWithContracts, .useOwnedReactionFormula,
+      .unavailable, .unresolved:
       false
     }
   }

@@ -427,8 +427,9 @@ Capital Cargo Bay 25 10 20 BPO 5000000
 The amount is the total blueprint cost allocated to that production line.
 `BPC` is treated as a consumed copy acquisition cost. A `BPO` remains a
 reusable owned original, so the entered amount is an explicit owner allocation
-or amortization share, never an inferred full market purchase price. Missing
-entries remain visibly excluded rather than silently guessed. Industry stores
+or amortization share, never an inferred full market purchase price. Without an
+entry, the Planner values sources by the rules in
+[PRODUCT.md](../PRODUCT.md); a source it cannot value stays unresolved. Industry stores
 the line-level kind, amount and treatment, totals them separately, and includes
 the accepted total in production cost, profit, margin and ROI.
 

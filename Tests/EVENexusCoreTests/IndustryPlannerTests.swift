@@ -1273,6 +1273,331 @@ struct IndustryPlannerTests {
     #expect(assessment.inventoryIsComplete == false)
   }
 
+  // MARK: Blueprint source order (owner decision 30.10.2026)
+
+  private func sourceRuleAssessment(
+    owned: [(id: Int64, runs: Int, atProduction: Bool)] = [],
+    offers: [PublicContractSearchResult] = [],
+    valuation: BlueprintMaterialValuation? = nil,
+    reservations: [BlueprintRunReservation] = [],
+    selectedInput: String? = nil
+  ) async throws -> (
+    assessment: ProductionTreeBlueprintAssessment,
+    plan: IndustryPlanSnapshot
+  ) {
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 40 0 0",
+      context: intermediateChoiceContext(
+        preference: MaterialProcurementPreference(
+          supplyMode: .produce,
+          purchaseLocation: .jita
+        )
+      )
+    )
+    let selectedPlan: IndustryPlanSnapshot
+    if let selectedInput {
+      selectedPlan = try await IndustryPlanner().plan(
+        input: selectedInput,
+        context: intermediateChoiceContext(
+          preference: MaterialProcurementPreference(
+            supplyMode: .produce,
+            purchaseLocation: .jita
+          )
+        )
+      )
+    } else {
+      selectedPlan = plan
+    }
+    let production: Int64 = 1_000_000_000_101
+    let source = SourceIdentity(provider: "ESI", version: "fixture")
+    let tree = ManufacturingProductionTreeProjector.project(
+      targetQuantity: 40,
+      mainHub: .jita,
+      referencePlan: plan,
+      selectedPlan: selectedPlan,
+      warehouse: AssetWarehouse(inventories: []),
+      warehouseHasSnapshot: true,
+      protectedQuantities: [:],
+      reservedQuantities: [:],
+      preferences: [:],
+      blueprintPortfolio: BlueprintPortfolio(
+        inventories: [
+          OwnedBlueprintInventory(
+            ownerID: 7,
+            ownerName: "Builder",
+            blueprints: Sourced(
+              state: .fresh,
+              value: owned.map {
+                OwnedBlueprintInstance(
+                  id: $0.id,
+                  blueprintTypeID: 802,
+                  locationID: $0.atProduction ? production : production + 1,
+                  quantity: $0.runs < 0 ? -1 : -2,
+                  runs: $0.runs,
+                  materialEfficiency: 5,
+                  timeEfficiency: 10,
+                  source: source
+                )
+              },
+              source: source
+            )
+          )
+        ]
+      ),
+      blueprintNames: [801: "Product Blueprint", 802: "Component Blueprint"],
+      blueprintContractOffers: [802: offers],
+      publicContractCoverageComplete: true,
+      inventionDefinitions: [:],
+      productionScope: ProductionWarehouseScope(
+        locations: [
+          ProductionWarehouseLocation(
+            locationID: production,
+            structureName: "Production",
+            solarSystemID: 30_000_001,
+            solarSystemName: "Test",
+            activities: [.manufacturing]
+          )
+        ]
+      ),
+      blueprintMaterialValuations: valuation.map { [802: $0] } ?? [:],
+      blueprintRunReservations: reservations
+    )
+    let node = try #require(
+      tree.nodes.first { $0.typeID == 82 && $0.action == .produce }
+    )
+    return (try #require(node.blueprint), plan)
+  }
+
+  /// One material per run at the given value, without a facility bonus.
+  private func unitValuation(_ unitValue: Double?) -> BlueprintMaterialValuation {
+    BlueprintMaterialValuation(
+      inputs: [
+        .init(typeID: 83, quantityPerRun: 1_000, unitValue: unitValue)
+      ],
+      facilityMultiplier: 1
+    )
+  }
+
+  @Test
+  func ownedBPOAtProductionBeatsOwnedBPCAndContracts() async throws {
+    let result = try await sourceRuleAssessment(
+      owned: [(1, -1, true), (2, 1_000, true)],
+      offers: [bpcContract(contractID: 1, runs: 1_000, price: 1)]
+    )
+    #expect(result.assessment.recommendation == .useOwnedBPO)
+  }
+
+  @Test
+  func ownedBlueprintsElsewhereStayManualAndContractsWin() async throws {
+    let result = try await sourceRuleAssessment(
+      owned: [(1, -1, false), (2, 1_000, false)],
+      offers: [bpcContract(contractID: 1, runs: 1_000, price: 1)]
+    )
+    #expect(result.assessment.recommendation == .buyContractBPC)
+    #expect(result.assessment.availableActions.contains(.useOwnedBPO))
+    #expect(result.assessment.availableActions.contains(.useOwnedBPC))
+  }
+
+  @Test
+  func ownedBPCAtProductionCoveringAllRunsBeatsContracts() async throws {
+    let result = try await sourceRuleAssessment(
+      owned: [(2, 1_000, true)],
+      offers: [bpcContract(contractID: 1, runs: 1_000, price: 1)]
+    )
+    #expect(result.assessment.recommendation == .useOwnedBPC)
+  }
+
+  @Test
+  func partialOwnedBPCTakesTheRestFromContracts() async throws {
+    let probe = try await sourceRuleAssessment()
+    let required = probe.assessment.requiredRuns
+    #expect(required > 1)
+    let result = try await sourceRuleAssessment(
+      owned: [(2, 1, true)],
+      offers: [bpcContract(contractID: 1, runs: required, price: 500)]
+    )
+    let assessment = result.assessment
+    #expect(assessment.recommendation == .useOwnedBPCWithContracts)
+    #expect(assessment.remainderBPCContractPrice == 500)
+
+    let supply = try #require(
+      BlueprintSupplyPlanner.plans(
+        referencePlan: result.plan,
+        assessments: [assessment],
+        actions: [:],
+        manualCosts: [:],
+        preferredEfficiencies: [:],
+        planID: UUID(),
+        existingReservations: []
+      )[802]
+    )
+    #expect(supply.manufacturingJobs.map(\.runs) == [1, required - 1])
+    #expect(supply.batchAllocationCost == 500)
+    #expect(supply.reservations.map(\.runs) == [1])
+    #expect(supply.warnings.isEmpty)
+    #expect(
+      supply.manufacturingJobs.reduce(0) { $0 + $1.allocation.allocatedRuns }
+        == required
+    )
+    let allocation = ProductionTreeBlueprintCostProjector.allocations(
+      for: [
+        ProductionTreeBlueprintCostChoice(
+          blueprintTypeID: 802,
+          productName: "Component",
+          action: .useOwnedBPCWithContracts,
+          attributableBPCContractPrice: assessment.remainderBPCContractPrice
+        )
+      ]
+    )[802]
+    #expect(allocation?.amount == 500)
+  }
+
+  @Test
+  func partialOwnedBPCWithoutContractsFallsThroughWithoutShortfall() async throws {
+    let result = try await sourceRuleAssessment(owned: [(2, 1, true)])
+    #expect(result.assessment.recommendation == .manualExternalBPC)
+  }
+
+  @Test
+  func reservedOwnedBPCRunsDoNotCountAsCovered() async throws {
+    let probe = try await sourceRuleAssessment()
+    let required = probe.assessment.requiredRuns
+    let result = try await sourceRuleAssessment(
+      owned: [(2, required, true)],
+      offers: [bpcContract(contractID: 1, runs: required, price: 500)],
+      reservations: [
+        BlueprintRunReservation(
+          planID: UUID(),
+          blueprintItemID: 2,
+          runs: required
+        )
+      ]
+    )
+    #expect(result.assessment.recommendation == .buyContractBPC)
+    #expect(result.assessment.exactLocationBPCRuns == 0)
+  }
+
+  @Test
+  func dearerContractWithBetterMEWinsOnMaterialPlusContractCost() async throws {
+    let probe = try await sourceRuleAssessment()
+    let required = probe.assessment.requiredRuns
+    let cheap = bpcContract(
+      contractID: 1,
+      runs: required,
+      price: 100,
+      materialEfficiency: 0
+    )
+    let researched = bpcContract(
+      contractID: 2,
+      runs: required,
+      price: 1_000,
+      materialEfficiency: 10
+    )
+    let byPrice = try await sourceRuleAssessment(offers: [cheap, researched])
+    #expect(byPrice.assessment.selectedBPCContractRecordIDs == [10])
+
+    let byTotal = try await sourceRuleAssessment(
+      offers: [cheap, researched],
+      valuation: unitValuation(1)
+    )
+    #expect(byTotal.assessment.recommendation == .buyContractBPC)
+    #expect(byTotal.assessment.selectedBPCContractRecordIDs == [20])
+    let supply = try #require(
+      BlueprintSupplyPlanner.plans(
+        referencePlan: byTotal.plan,
+        assessments: [byTotal.assessment],
+        actions: [:],
+        manualCosts: [:],
+        preferredEfficiencies: [:],
+        planID: UUID(),
+        existingReservations: []
+      )[802]
+    )
+    #expect(supply.manufacturingJobs.map(\.allocation.materialEfficiency) == [10])
+    #expect(supply.batchAllocationCost == 1_000)
+  }
+
+  @Test
+  func expensiveContractStaysLosingWhenMaterialsAreCheap() async throws {
+    let required = try await sourceRuleAssessment().assessment.requiredRuns
+    let result = try await sourceRuleAssessment(
+      offers: [
+        bpcContract(
+          contractID: 1,
+          runs: required,
+          price: 100,
+          materialEfficiency: 0
+        ),
+        bpcContract(
+          contractID: 2,
+          runs: required,
+          price: 1_000_000_000,
+          materialEfficiency: 10
+        ),
+      ],
+      valuation: unitValuation(0.001)
+    )
+    #expect(result.assessment.selectedBPCContractRecordIDs == [10])
+  }
+
+  @Test
+  func missingMaterialPriceKeepsTheContractChoiceUnresolved() async throws {
+    let required = try await sourceRuleAssessment().assessment.requiredRuns
+    let result = try await sourceRuleAssessment(
+      offers: [bpcContract(contractID: 1, runs: required, price: 100)],
+      valuation: unitValuation(nil)
+    )
+    #expect(result.assessment.recommendation == .unresolved)
+    #expect(result.assessment.bpcContractMaterialCostUnresolved)
+    #expect(result.assessment.selectedBPCContractRecordIDs.isEmpty)
+  }
+
+  @Test
+  func requiredRunsFollowTheSelectedPlan() async throws {
+    let reference = try await sourceRuleAssessment()
+    let smallerRuns = try await sourceRuleAssessment(
+      selectedInput: "Choice Product 1 0 0"
+    ).assessment.requiredRuns
+    #expect(smallerRuns < reference.assessment.requiredRuns)
+    // A copy that only covers the selected plan's smaller demand is enough.
+    let selected = try await sourceRuleAssessment(
+      owned: [(2, smallerRuns, true)],
+      selectedInput: "Choice Product 1 0 0"
+    )
+    #expect(selected.assessment.recommendation == .useOwnedBPC)
+  }
+
+  @Test
+  func materialValuationsFollowMEAndKeepMissingPricesUnknown() async throws {
+    let context = intermediateChoiceContext(
+      preference: MaterialProcurementPreference(
+        supplyMode: .produce,
+        purchaseLocation: .jita
+      )
+    )
+    let planner = IndustryPlanner()
+    let plan = try await planner.plan(
+      input: "Choice Product 40 0 0",
+      context: context
+    )
+    let valuation = try #require(
+      try await planner.blueprintMaterialValuations(
+        plan: plan,
+        context: context
+      )[802]
+    )
+    #expect(!valuation.inputs.isEmpty)
+    let atME0 = try #require(valuation.cost(runs: 10, materialEfficiency: 0))
+    let atME10 = try #require(valuation.cost(runs: 10, materialEfficiency: 10))
+    #expect(atME10 < atME0)
+    #expect(
+      BlueprintMaterialValuation(
+        inputs: [.init(typeID: 1, quantityPerRun: 1, unitValue: nil)],
+        facilityMultiplier: 1
+      ).cost(runs: 1, materialEfficiency: 0) == nil
+    )
+  }
+
   @Test
   func bpcContractSelectionCombinesAttributableContractsForRequiredRuns() throws {
     let offers = [
@@ -4748,7 +5073,9 @@ struct IndustryPlannerTests {
     contractID: Int64,
     runs: Int,
     price: Double,
-    offeredLineCount: Int = 1
+    offeredLineCount: Int = 1,
+    materialEfficiency: Int = 10,
+    timeEfficiency: Int = 20
   ) -> PublicContractSearchResult {
     PublicContractSearchResult(
       contractID: contractID,
@@ -4766,8 +5093,8 @@ struct IndustryPlannerTests {
       isIncluded: true,
       quantity: 1,
       isBlueprintCopy: true,
-      materialEfficiency: 10,
-      timeEfficiency: 20,
+      materialEfficiency: materialEfficiency,
+      timeEfficiency: timeEfficiency,
       runs: runs,
       offeredLineCount: offeredLineCount,
       requestedLineCount: 0

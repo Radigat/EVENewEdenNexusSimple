@@ -3809,6 +3809,74 @@ public struct IndustryPlanner: Sendable {
     return result
   }
 
+  /// Values the direct materials of each manufactured Blueprint in `plan` for
+  /// the BPC Contract comparison. A material counts at its cheaper complete
+  /// supply per unit, delivered to the facility: bought or built along the
+  /// cheapest chain. Otherwise it counts at its market price, or stays unknown.
+  public func blueprintMaterialValuations(
+    plan: IndustryPlanSnapshot,
+    context: IndustryPlanningContext
+  ) async throws -> [Int64: BlueprintMaterialValuation] {
+    let book = PreparedMarketOrderBook(snapshot: context.market)
+    let materials = Dictionary(
+      plan.materials.map { ($0.typeID, $0) },
+      uniquingKeysWith: { current, _ in current }
+    )
+    func unitValue(typeID: Int64, quantity: Int64) -> Double? {
+      if let analysis = materials[typeID]?.makeOrBuyAnalysis,
+        analysis.requiredQuantity > 0,
+        let total = [analysis.purchaseTotalCost, analysis.buildTotalCost]
+          .compactMap({ $0 }).min()
+      {
+        return total / Double(analysis.requiredQuantity)
+      }
+      let quote = book.quote(
+        typeID: typeID,
+        quantity: max(1, quantity),
+        scenario: .materialBuy
+      )
+      return quote.isComplete ? quote.weightedUnitPrice : nil
+    }
+    var runsByBlueprint: [Int64: (productTypeID: Int64, runs: Int)] = [:]
+    for node in plan.nodes
+    where node.action == .produce && node.activity == .manufacturing {
+      guard let blueprintTypeID = node.blueprintTypeID else { continue }
+      let runs = runsByBlueprint[blueprintTypeID]?.runs ?? 0
+      runsByBlueprint[blueprintTypeID] = (node.typeID, runs + max(0, node.runs ?? 0))
+    }
+    var result: [Int64: BlueprintMaterialValuation] = [:]
+    for (blueprintTypeID, entry) in runsByBlueprint {
+      guard
+        let definition = try await context.catalog.productionDefinition(
+          productTypeID: entry.productTypeID
+        ), definition.activity.kind == .manufacturing
+      else { continue }
+      let classification = try await context.catalog.industryClassification(
+        productTypeID: entry.productTypeID
+      )
+      let category = classification?.manufacturingCategory ?? .module
+      result[blueprintTypeID] = BlueprintMaterialValuation(
+        inputs: definition.activity.materials.map { material in
+          BlueprintMaterialValuation.Input(
+            typeID: material.typeID,
+            quantityPerRun: material.quantity,
+            unitValue: unitValue(
+              typeID: material.typeID,
+              quantity: Self.saturatedMultiply(
+                Int64(max(1, entry.runs)),
+                material.quantity
+              )
+            )
+          )
+        },
+        facilityMultiplier:
+          context.productionBasis?.selection(for: category)?.materialMultiplier
+          ?? context.manufacturingProfile.effectiveMaterialMultiplier
+      )
+    }
+    return result
+  }
+
   private func unroundedChainLogistics(
     typeID: Int64,
     quantity: Int64,

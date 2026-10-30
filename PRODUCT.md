@@ -1800,7 +1800,8 @@ Skills oder Marktpreise ist keine Schätzung möglich. Der Faktor 2 % für die
 Inventionsgebühr ist im EVE University Wiki nur für Kopieren belegt und für
 Invention eine Annahme. Ein eingetragener Erwerbs-, Aktivitätsbetrag oder eine Umlage
 ersetzt diese 0 ISK. Kopieren, Invention, Loyalty-Store- und manuell externe BPCs
-sowie gekaufte BPOs benötigen weiterhin einen ausdrücklichen Betrag. Beim Kauf über
+benötigen weiterhin einen ausdrücklichen Betrag; gekaufte BPOs folgen der
+BPC-Vertragsbewertung weiter unten. Beim Kauf über
 öffentliche Verträge werden nur aktive Item-Exchange-Verträge am exakten Main
 Hub automatisch zugerechnet, wenn Preis, BPC-Kennung, Runs, ME und TE bekannt
 sind und der Vertrag genau eine angebotene Blueprintposition ohne angeforderte
@@ -2012,10 +2013,33 @@ aktive Plan bleibt bis zu einer erfolgreichen neuen Berechnung aktiv. Die
 gekennzeichnete Screening-Hypothese. Der normale Produktpicker innerhalb des
 Planners fügt dagegen weiterhin bewusst eine weitere Zeile an.
 
+**Automatische Blueprint-Quelle** (Eigentümerentscheidung 30.10.2026). Die
+Reihenfolge ist fest; eine billigere spätere Stufe schlägt keine frühere:
+
+1. Eigene BPO am Produktionsort, mit ihren tatsächlichen ME/TE aus den Bauplänen.
+2. Eigene BPC am Produktionsort. Decken sie nicht alle Runs, kommt der Rest aus
+   BPC-Verträgen (**Vorhandene BPC verwenden, Rest aus Verträgen**). Für den
+   Rest zählen die vollen Vertragspreise, für die eigenen Runs ihr Wert, soweit
+   er bekannt ist.
+3. BPC-Verträge: Es gewinnt die Auswahl mit den niedrigsten Materialkosten
+   plus Vertragspreisen, auch wenn ein anderer Vertrag billiger ist. Jedes
+   direkte Material zählt mit seinem günstigeren vollständigen Stückwert ab
+   Anlage, gekauft oder über die günstigste Kette gebaut; ohne solche Analyse
+   mit dem Main-Hub-Marktpreis. Runs werden zuerst aus dem besten ME gezogen.
+   Fehlt für ein Material jeder Wert, bleibt die Quelle **ungeklärt**, statt
+   einen Vertrag nur nach Preis zu wählen.
+4. BPO-Vertrag, Markt-BPO, Loyalty Store, manuelle externe BPC.
+
+Eigene BPOs und BPCs an anderen Orten werden nie automatisch gewählt, bleiben
+aber manuell wählbar. Eine bereits getroffene Auswahl bleibt in der laufenden
+Sitzung bestehen. Bewertung und Versorgung rechnen mit denselben Runs des
+gewählten Plans; von anderen Plänen reservierte BPC-Runs zählen nicht als
+verfügbar. Die Empfehlung gilt nur für die Quelle; Bauen oder Kaufen entscheidet
+weiter die Make-or-Buy-Empfehlung.
+
 Die BPO-/BPC-Auswahl des Planners verwendet dasselbe gespeicherte
 persönliche Blueprint-Inventar wie der Blaupausenbereich. Eigene BPCs und BPOs
-werden nur bei einem konkret gespeicherten Bestand und nur am eindeutig
-passenden konfigurierten Produktionsort angeboten; Charaktername, Standort,
+werden nur bei einem konkret gespeicherten Bestand angeboten; Charaktername, Standort,
 Anzahl und verfügbare BPC-Runs bleiben sichtbar. Ein frischer, teilweiser oder
 ausdrücklich als veraltet beibehaltener Snapshot darf eine konkrete Instanz
 belegen. Nicht-frische Evidenz wird sichtbar gewarnt und macht den Gesamtbestand
@@ -2047,7 +2071,7 @@ Knoten genau einmal und verwendet den gemeinsamen konkreten Quellenbestand.
 Eine leere erste oder eine andere vollständig leere Planner-Eingabezeile wird
 ignoriert; sie erzeugt weder einen Auftrag noch einen Fehler und verändert die
 Zeilennummern der folgenden Eingabe nicht.
-Reichen sie nicht, kann der Planner mehrere eindeutig
+Reichen eigene BPCs nicht, kann der Planner mehrere eindeutig
 zuordenbare Einzel-BPC-Verträge am exakten Main Hub zu einer Run-Abdeckung
 zusammenstellen und deren vollständige Vertragspreise als BPC-Kosten der
 Charge ansetzen. Bündelverträge, fehlende Blueprint-Details und unvollständige
