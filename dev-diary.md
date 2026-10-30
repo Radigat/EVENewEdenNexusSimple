@@ -1,5 +1,20 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 30. Oktober 2026 – CI: Weckbeobachtung für Swift 6.1
+
+Fehler: CI-Lauf zu `1b23ba5` (macOS 15, Swift 6.1) brach in
+`RuntimeState.startMarketStockWakeObservation` ab: `notifications(named:)`
+liefert nicht-`Sendable` `Notification`-Werte über die Iterator-Grenze. Der
+lokale Compiler (Swift 6.4) meldet das nicht.
+
+Änderung: Beobachtung von `NSWorkspace.didWakeNotification` über
+`addObserver` und einen `AsyncStream<Void>`; Beobachter wird beim Ende der
+Aufgabe entfernt. Verhalten unverändert.
+
+Prüfung lokal: `swift test` (656 Swift-Testing-Tests, XCTest ohne Fehler),
+EVEStaticDataKit `swift test` (13), `xcodebuild` Debug erfolgreich. Swift 6.1
+nur in CI prüfbar.
+
 ## 30. Oktober 2026 – Marktbestand: Layoutsprung im Bestandsverlauf
 
 Fehler (Eigentümer-Screenshot): Im Detailfenster „Bestandsverlauf“ brach

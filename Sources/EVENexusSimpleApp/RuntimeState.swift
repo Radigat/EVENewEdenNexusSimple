@@ -7169,9 +7169,16 @@ extension RuntimeState {
   private func startMarketStockWakeObservation() {
     guard startsBackgroundServices, marketStockWakeTask == nil else { return }
     marketStockWakeTask = Task { [weak self] in
-      let wakes = NSWorkspace.shared.notificationCenter.notifications(
-        named: NSWorkspace.didWakeNotification
-      )
+      // Void stream instead of `notifications(named:)`: `Notification` is not
+      // Sendable, which Swift 6.1 (CI) rejects at the iterator boundary.
+      let center = NSWorkspace.shared.notificationCenter
+      let (wakes, continuation) = AsyncStream<Void>.makeStream()
+      let observer = center.addObserver(
+        forName: NSWorkspace.didWakeNotification,
+        object: nil,
+        queue: nil
+      ) { _ in continuation.yield() }
+      defer { center.removeObserver(observer) }
       for await _ in wakes {
         guard let self else { return }
         self.marketStockLastAttemptedTerm = nil
