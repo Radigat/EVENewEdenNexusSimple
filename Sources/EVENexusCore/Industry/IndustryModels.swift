@@ -485,6 +485,9 @@ public struct MaterialMakeOrBuyAnalysis: Codable, Sendable {
   public let chainBuiltTypeIDs: [Int64]?
   /// Materials the recommended build buys, at any depth below this material.
   public let chainBoughtTypeIDs: [Int64]?
+  /// Blueprint cost inside `buildTotalCost`. `nil` when none is known or the
+  /// comparison does not count Blueprint costs.
+  public let buildBlueprintCost: Double?
 
   public init(
     requiredQuantity: Int64,
@@ -502,8 +505,10 @@ public struct MaterialMakeOrBuyAnalysis: Codable, Sendable {
     savings: Double?,
     warnings: [DomainWarning],
     chainBuiltTypeIDs: [Int64]? = nil,
-    chainBoughtTypeIDs: [Int64]? = nil
+    chainBoughtTypeIDs: [Int64]? = nil,
+    buildBlueprintCost: Double? = nil
   ) {
+    self.buildBlueprintCost = buildBlueprintCost
     self.chainBuiltTypeIDs = chainBuiltTypeIDs
     self.chainBoughtTypeIDs = chainBoughtTypeIDs
     self.requiredQuantity = requiredQuantity
@@ -540,7 +545,8 @@ public struct MakeOrBuyRecommendationApplication: Sendable {
   public init(
     materials: [MaterialRequirement],
     existingPreferences: [Int64: MaterialProcurementPreference],
-    mainHub: ProcurementLocation
+    mainHub: ProcurementLocation,
+    lockedTypeIDs: Set<Int64> = []
   ) {
     var resolved = existingPreferences
     var produceCount = 0
@@ -555,7 +561,9 @@ public struct MakeOrBuyRecommendationApplication: Sendable {
       {
         resolved[material.typeID] = procurement
       }
-      guard material.canProduce else { continue }
+      guard material.canProduce, !lockedTypeIDs.contains(material.typeID) else {
+        continue
+      }
       guard let analysis = material.makeOrBuyAnalysis else {
         unavailableCount += 1
         continue
@@ -591,7 +599,7 @@ public struct MakeOrBuyRecommendationApplication: Sendable {
     // material with its own recommendation in this plan keeps it.
     let ownRecommendations = Set(
       materials.lazy.filter { $0.makeOrBuyAnalysis != nil }.map(\.typeID)
-    )
+    ).union(lockedTypeIDs)
     for typeID in chainBuilt.subtracting(ownRecommendations) {
       resolved[typeID] = MaterialProcurementPreference(
         supplyMode: .produce,
@@ -730,6 +738,9 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
   /// Where `toBuy` comes from. `nil` for snapshots from before the selectable
   /// purchase locations (30.10.2026) and for single-market plans without a price.
   public let purchaseAllocations: [PurchaseLocationAllocation]?
+  /// Whether the owner fixed this supply by hand. `nil` for plans without
+  /// automatic supply decisions.
+  public internal(set) var isManualSupply: Bool? = nil
 
   public init(
     typeID: Int64,
@@ -1757,7 +1768,7 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public let createdAt: Date
   public let requests: [ProductionRequestLine]
   public let nodes: [PlanNode]
-  public let materials: [MaterialRequirement]
+  public internal(set) var materials: [MaterialRequirement]
   public let stockAllocations: [StockAllocation]
   public let jobs: [IndustryJobCost]
   public let materialCost: Double?
@@ -1795,7 +1806,7 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public var estimatedMakespanSeconds: Int64? {
     slotSchedule?.isComplete == false ? nil : makespanSeconds
   }
-  public let warnings: [DomainWarning]
+  public internal(set) var warnings: [DomainWarning]
   public let explanations: [ExplanationEdge]
   public let provenance: PlanProvenance
 

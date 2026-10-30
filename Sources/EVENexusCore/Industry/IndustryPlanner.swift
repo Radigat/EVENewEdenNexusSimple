@@ -51,7 +51,7 @@ public struct IndustryPlanningContext: Sendable {
   public let adjustedPrices: [Int64: AdjustedPrice]
   public let systemIndices: [IndustrySystemIndex]
   public let availableStock: [Int64: Int64]
-  public let procurementPreferences: [Int64: MaterialProcurementPreference]
+  public internal(set) var procurementPreferences: [Int64: MaterialProcurementPreference]
   public let defaultPurchaseLocation: ProcurementLocation
   /// The markets materials may be bought from; `nil` buys only at the Main Hub.
   public let purchaseMarkets: [PlannerPurchaseMarket]?
@@ -80,6 +80,12 @@ public struct IndustryPlanningContext: Sendable {
   public let capitalJumpRouteWarnings: [DomainWarning]
   /// Per-plan choice whether final products and intermediates are split.
   public let jobSplitting: IndustryJobSplitting
+  /// The cheapest supply decides every material without a preference; the
+  /// preferences then hold only the owner's manual choices (30.10.2026).
+  public let automaticSupply: Bool
+  /// The owner's manual choices of a Planner run. Non-`nil` also values builds
+  /// with the Blueprint cost and the ME of the chosen source.
+  public let manualSupplyTypeIDs: Set<Int64>?
 
   public init(
     manufacturingProfile: ManufacturingProfile,
@@ -121,8 +127,12 @@ public struct IndustryPlanningContext: Sendable {
     jumpFreighterRouteWarnings: [DomainWarning] = [],
     capitalJumpRoutes: [Int64: Sourced<CapitalJumpRouteSnapshot>] = [:],
     capitalJumpRouteWarnings: [DomainWarning] = [],
-    jobSplitting: IndustryJobSplitting = .init()
+    jobSplitting: IndustryJobSplitting = .init(),
+    automaticSupply: Bool = false,
+    manualSupplyTypeIDs: Set<Int64>? = nil
   ) {
+    self.automaticSupply = automaticSupply
+    self.manualSupplyTypeIDs = manualSupplyTypeIDs
     self.manufacturingProfile = manufacturingProfile
     self.reactionProfile = reactionProfile
     self.productionBasis = productionBasis
@@ -494,6 +504,87 @@ public struct IndustryPlanner: Sendable {
   }
 
   private func plan(
+    requests: [ProductionRequestLine],
+    productTypeIDsByRequestID: [UUID: Int64],
+    context: IndustryPlanningContext,
+    reusableMakeOrBuyAnalyses: [Int64: MaterialMakeOrBuyAnalysis]
+  ) async throws -> IndustryPlanSnapshot {
+    var passContext = context
+    var reusable = reusableMakeOrBuyAnalyses
+    var snapshot = try await singlePlan(
+      requests: requests,
+      productTypeIDsByRequestID: productTypeIDsByRequestID,
+      context: passContext,
+      reusableMakeOrBuyAnalyses: reusable
+    )
+    if context.automaticSupply {
+      // Each pass applies the recommendations of the previous one. A bought
+      // parent hides its inputs and changes quantities, so the graph settles
+      // over a few passes; the pass limit keeps a rounding flip deterministic.
+      let locked =
+        context.manualSupplyTypeIDs ?? Set(context.procurementPreferences.keys)
+      var settled = false
+      for _ in 1..<Self.maximumAutomaticSupplyPasses {
+        let decided = MakeOrBuyRecommendationApplication(
+          materials: snapshot.materials,
+          existingPreferences: passContext.procurementPreferences,
+          mainHub: context.defaultPurchaseLocation,
+          lockedTypeIDs: locked
+        ).preferences.reduce(into: [Int64: MaterialProcurementPreference]()) {
+          result, entry in
+          var preference = entry.value
+          if !locked.contains(entry.key) {
+            preference.usesAvailableStockFirst = true
+          }
+          result[entry.key] = preference
+        }
+        settled = snapshot.materials.allSatisfy {
+          guard let procurement = $0.procurement,
+            let next = decided[$0.typeID]
+          else { return true }
+          return procurement.supplyMode == next.supplyMode
+            && procurement.usesAvailableStockFirst == next.usesAvailableStockFirst
+        }
+        if settled { break }
+        passContext.procurementPreferences = decided
+        reusable = Dictionary(
+          uniqueKeysWithValues: snapshot.materials.compactMap { material in
+            material.makeOrBuyAnalysis.map { (material.typeID, $0) }
+          }
+        )
+        snapshot = try await singlePlan(
+          requests: requests,
+          productTypeIDsByRequestID: productTypeIDsByRequestID,
+          context: passContext,
+          reusableMakeOrBuyAnalyses: reusable
+        )
+      }
+      if !settled {
+        snapshot.warnings.append(
+          DomainWarning(
+            code: "planner.automatic-supply-not-settled",
+            message:
+              "The automatic build or buy choice did not settle; the plan shows the last calculated choice.",
+            severity: .information
+          )
+        )
+      }
+    }
+    if let manual = context.manualSupplyTypeIDs
+      ?? (context.automaticSupply
+        ? Set(context.procurementPreferences.keys) : nil)
+    {
+      for index in snapshot.materials.indices {
+        snapshot.materials[index].isManualSupply =
+          manual.contains(snapshot.materials[index].typeID)
+      }
+    }
+    return snapshot
+  }
+
+  private static let maximumAutomaticSupplyPasses = 5
+
+  private func singlePlan(
     requests: [ProductionRequestLine],
     productTypeIDsByRequestID: [UUID: Int64],
     context: IndustryPlanningContext,
@@ -1060,7 +1151,8 @@ public struct IndustryPlanner: Sendable {
         context.procurementPreferences[material.typeID]
         ?? MaterialProcurementPreference(
           supplyMode: defaultMode,
-          purchaseLocation: context.defaultPurchaseLocation
+          purchaseLocation: context.defaultPurchaseLocation,
+          usesAvailableStockFirst: context.automaticSupply
         )
       if preference.supplyMode == .produce, !canProduce {
         preference.supplyMode = .buy
@@ -3736,6 +3828,11 @@ public struct IndustryPlanner: Sendable {
     )
     warnings.append(contentsOf: buildLogistics.warnings)
 
+    let usesPlannerBlueprintBasis =
+      context.automaticSupply || context.manualSupplyTypeIDs != nil
+    let buildBlueprintCost =
+      usesPlannerBlueprintBasis
+      ? context.blueprintCostAllocations[definition.blueprintTypeID]?.amount : nil
     let purchaseTotal =
       marketMatchesMainHub && purchaseIsTransportable
       ? Self.acceptedCostTotal([
@@ -3752,12 +3849,14 @@ public struct IndustryPlanner: Sendable {
         acceptedBuildMaterialCost,
         installation.cost,
         buildLogistics.cost,
+        buildBlueprintCost ?? 0,
       ]) : nil
     // The cheapest chain below this material (owner decision 30.10.2026). It
     // replaces the one-level build only when its summed shopping list, priced
     // as a whole, is actually cheaper or the one-level build is incomplete.
     var chainBuiltTypeIDs: [Int64] = []
     var chainBoughtTypeIDs = inputQuantities.map(\.typeID)
+    var chainBlueprintCost = 0.0
     if marketMatchesMainHub, let ownInstallation = installation.cost {
       var chain = MakeOrBuyChainSupply.empty
       var chainComplete = true
@@ -3814,10 +3913,12 @@ public struct IndustryPlanner: Sendable {
         let chainInstallation = ownInstallation + chain.installation
         if let chainTotal = Self.acceptedCostTotal([
           chainMaterial, chainInstallation, chainLogistics.cost,
+          (buildBlueprintCost ?? 0) + chain.blueprintCost,
         ]), buildTotal.map({ chainTotal < $0 }) ?? true {
           acceptedBuildMaterialCost = chainMaterial
           buildInstallationCost = chainInstallation
           buildLogisticsCost = chainLogistics.cost
+          chainBlueprintCost = chain.blueprintCost
           buildTotal = chainTotal
           chainBuiltTypeIDs = chain.builtTypeIDs.sorted()
           chainBoughtTypeIDs = chain.purchases.keys.sorted()
@@ -3863,7 +3964,10 @@ public struct IndustryPlanner: Sendable {
       savings: savings,
       warnings: Self.deduplicatedWarnings(warnings),
       chainBuiltTypeIDs: chainBuiltTypeIDs,
-      chainBoughtTypeIDs: chainBoughtTypeIDs
+      chainBoughtTypeIDs: chainBoughtTypeIDs,
+      buildBlueprintCost:
+        buildBlueprintCost == nil && chainBlueprintCost == 0
+        ? nil : (buildBlueprintCost ?? 0) + chainBlueprintCost
     )
   }
 
@@ -3954,9 +4058,14 @@ public struct IndustryPlanner: Sendable {
           systemIndexLookup: systemIndexLookup
         )
         if let installationCost = nodeInstallation.cost {
+          let nodeBlueprintCost =
+            context.automaticSupply || context.manualSupplyTypeIDs != nil
+            ? context.blueprintCostAllocations[definition.blueprintTypeID]?.amount
+              ?? 0 : 0
           var supply = MakeOrBuyChainSupply.empty
-          supply.comparisonCost = installationCost
+          supply.comparisonCost = installationCost + nodeBlueprintCost
           supply.installation = installationCost
+          supply.blueprintCost = nodeBlueprintCost
           supply.builtTypeIDs = [typeID]
           var complete = true
           var childPath = path
@@ -4129,8 +4238,13 @@ public struct IndustryPlanner: Sendable {
     let category = classification?.manufacturingCategory ?? .module
     let facilitySelection =
       isReaction ? nil : context.productionBasis?.selection(for: category)
+    let sourceME =
+      context.automaticSupply || context.manualSupplyTypeIDs != nil
+      ? context.productionEfficiencies[definition.productTypeID]?.materialEfficiency
+      : nil
     let me =
-      context.productionBasis?.defaultIntermediateME
+      sourceME
+      ?? context.productionBasis?.defaultIntermediateME
       ?? context.manufacturingProfile.defaultIntermediateME
     return definition.activity.materials.map { material in
       let rawRequired = Self.saturatedMultiply(Int64(runs), material.quantity)
@@ -5610,6 +5724,7 @@ private struct MakeOrBuyChainKey: Hashable {
 private struct MakeOrBuyChainSupply {
   var comparisonCost: Double
   var installation: Double
+  var blueprintCost = 0.0
   var purchases: [Int64: Int64]
   var builtTypeIDs: Set<Int64>
 
@@ -5623,6 +5738,7 @@ private struct MakeOrBuyChainSupply {
   mutating func add(_ other: MakeOrBuyChainSupply) {
     comparisonCost += other.comparisonCost
     installation += other.installation
+    blueprintCost += other.blueprintCost
     builtTypeIDs.formUnion(other.builtTypeIDs)
     purchases.merge(other.purchases) { lhs, rhs in
       let (sum, overflow) = lhs.addingReportingOverflow(rhs)

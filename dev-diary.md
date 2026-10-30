@@ -9403,3 +9403,27 @@ Nicht geprüft: GUI-Durchlauf mit isoliertem Testbestand, Live-Märkte, Abnahme.
 
 Offen: Bauplan-Baum und Materialwert des Vertragsvergleichs rechnen weiter mit
 Main-Hub-Preisen. Automatik und Oberfläche folgen in den Prompts 3 und 4.
+
+## 30.10.2026 – Planer: Automatik (Prompt 3 von 4)
+
+Auftrag: günstigste Variante als Standard, Blueprint-Kosten und echtes ME in der
+Bauseite, Trennung automatischer und manueller Wahl, automatisches Neurechnen.
+
+Ergebnis:
+- `IndustryPlanningContext.automaticSupply` lässt den Planner Bauen oder Kaufen in
+  bis zu fünf Durchläufen selbst festlegen; andere Bereiche bleiben unverändert.
+- Die Bauseite zählt im Planer Blueprint-Kosten und das ME der Quelle mit.
+- `PlannerManualDecisions` hält nur Eingriffe, `PlannerCalculationScheduler` bündelt
+  Änderungen, bricht alte Läufe ab und holt den letzten Wunsch nach.
+- „Empfehlungen übernehmen“ ist durch „Manuelle Eingriffe zurücksetzen“ ersetzt.
+
+Prüfung: `swift test` 688 + 84 Tests, davon neun neue; `EVEStaticDataKit` 13 Tests;
+`xcodebuild … test` 688 Tests, `TEST SUCCEEDED`; `git diff --check` fehlerfrei.
+
+Nicht geprüft: Die isoliert gestartete App lief zwölf Sekunden ohne Absturz, aber
+Fensteraufnahme und Bedienung kamen nicht zustande, und der Testbestand hatte keine
+Planer-Grundlage. Automatik und Neurechnen wurden also nie in der App ausgelöst.
+Live-Märkte und Abnahme stehen ebenfalls aus.
+
+Offen: Die Blueprint-Wahl entscheidet zuerst mit Main-Hub-Preisen. Oberfläche folgt in
+Prompt 4; „Berechnen“ und „BPO/BPC übernehmen“ bestehen bis dahin als Sofortstart.

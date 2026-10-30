@@ -15,6 +15,8 @@ enum AppSettingKey {
   /// Selected purchase locations, JSON-encoded trading location UUIDs; a
   /// missing row means the Main Hub only.
   static let plannerPurchaseLocationsDraft = "planner.purchase-locations.draft.v1"
+  /// The owner's manual Planner choices, JSON-encoded `PlannerManualDecisions`.
+  static let plannerManualDecisionsDraft = "planner.manual-decisions.draft.v1"
   /// Planner draft input of the manual alliance sale (P11), JSON-encoded
   /// `PlannerAllianceSaleInput`.
   static let plannerAllianceSaleDraft = "planner.alliance-sale.draft.v1"

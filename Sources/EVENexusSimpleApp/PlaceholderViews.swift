@@ -166,8 +166,8 @@ struct PlannerView: View {
     store: AppDefaults.store
   )
   private var includeCorporationHangars = false
-  @State private var calculationTask: Task<Void, Never>?
-  @State private var calculationID: UUID?
+  @State private var calculationScheduler = PlannerCalculationScheduler()
+  @State private var calculatedAutomaticKey: PlannerAutomaticCalculationKey?
   @State private var calculationPhase: PlannerCalculationPhase?
   @State private var supersededActivePlanIDs: Set<UUID> = []
   @State private var blueprintTree: ManufacturingProductionTreeSnapshot?
@@ -176,7 +176,7 @@ struct PlannerView: View {
   @State private var blueprintEfficiencies: [Int64: IndustryProductionEfficiency] = [:]
   @State private var handedOffBlueprintSupplyPlans: [Int64: BlueprintSupplyPlan] = [:]
   @State private var handedOffBlueprintSnapshotIDs: [UUID] = []
-  @AppStorage("planner.blueprint-supply-draft.v2", store: AppDefaults.store)
+  @AppStorage("planner.blueprint-supply-draft.v3", store: AppDefaults.store)
   private var blueprintSupplyDraftData = Data()
   @State private var blueprintOwnedEfficiencyOptionIDs: [Int64: String] = [:]
   @State private var preferredBlueprintSources: [Int64: [BlueprintSourceReference]] = [:]
@@ -272,7 +272,6 @@ struct PlannerView: View {
   private var isRecentProductionsExpanded = false
   @State private var procurementPreferences: [Int64: MaterialProcurementPreference] = [:]
   @State private var jobSplitting = IndustryJobSplitting()
-  @State private var recommendationApplicationMessage: String?
   @State private var historicalPlan: HistoricalPlanPresentation?
   /// Explicit target market of the draft; `nil` means not chosen (P10).
   @State private var storedPurchaseLocationIDs: Set<UUID>?
@@ -321,7 +320,7 @@ struct PlannerView: View {
   }
 
   private var isPlannerCalculationActive: Bool {
-    calculationPhase != nil || calculationTask != nil
+    calculationPhase != nil || calculationScheduler.isRunning
   }
 
   var body: some View {
@@ -382,7 +381,7 @@ struct PlannerView: View {
                   calculationPhase == .cancelling ? "Cancelling…" : "Cancel"
                 ) {
                   self.calculationPhase = .cancelling
-                  calculationTask?.cancel()
+                  calculationScheduler.cancelAll()
                 }
                 .buttonStyle(.bordered)
                 .disabled(calculationPhase == .cancelling)
@@ -512,12 +511,23 @@ struct PlannerView: View {
 
     .onAppear {
       restoreStateIfNeeded()
+      if calculatedAutomaticKey == nil {
+        calculatedAutomaticKey = automaticCalculationKey
+      }
       openRequestedHistoricalPlanIfNeeded()
       applyPlannerLaunchRequestIfNeeded()
       parseResult = ProductionInputParser.parse(input)
+      scheduleAutomaticCalculationIfNeeded()
+    }
+    .onChange(of: automaticCalculationKey) {
+      persistManualDecisions()
+      scheduleAutomaticCalculationIfNeeded()
+    }
+    .onChange(of: isAutomaticCalculationReady) {
+      scheduleAutomaticCalculationIfNeeded()
     }
     .onDisappear {
-      calculationTask?.cancel()
+      calculationScheduler.cancelAll()
       persistDraft(reportErrors: false)
       consolidation.error = nil
       consolidation.preview = nil
@@ -526,7 +536,6 @@ struct PlannerView: View {
       parseResult = ProductionInputParser.parse(input)
       persistenceMessage = nil
       shoppingListCopyStatus = nil
-      recommendationApplicationMessage = nil
       blueprintSelectionNeedsRecalculation = blueprintTree != nil
     }
     .onChange(of: historicalPlannerRequest?.id) {
@@ -3927,66 +3936,34 @@ struct PlannerView: View {
   private func makeOrBuyRecommendationPanel(
     _ plan: IndustryPlanSnapshot
   ) -> some View {
-    let application = MakeOrBuyRecommendationApplication(
-      materials: plan.materials,
-      existingPreferences: procurementPreferences,
-      mainHub: configuredMainHubLocation
-    )
+    let manualCount = plan.materials.filter { $0.isManualSupply == true }.count
 
-    return Panel(title: "Apply make-or-buy analysis") {
+    return Panel(title: "Automatic build or buy") {
       Text(
-        "Applies every available build or buy recommendation, recalculates all costs, and then creates the matching production jobs and Main Hub shopping list. Raw-material and unavailable choices remain unchanged."
+        "The Planner chooses the cheapest build or buy option for every material and recalculates after each change. A choice you make by hand stays until you reset it."
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
-      if application.hasApplicableRecommendations {
-        Text(
-          AppLocalization.format(
-            "Recommendations: %lld total · %lld build · %lld buy · %lld unavailable. Unavailable choices remain unchanged.",
-            Int64(application.appliedCount),
-            Int64(application.produceCount),
-            Int64(application.buyCount),
-            Int64(application.unavailableCount)
-          )
+      Text(
+        AppLocalization.format(
+          "Set by hand: %lld materials.",
+          Int64(manualCount)
         )
-        .font(.callout.monospacedDigit())
-      } else {
-        Label(
-          "No usable recommendation is available. Calculate the plan first or resolve its warnings.",
-          systemImage: "exclamationmark.triangle"
-        )
-        .font(.callout)
-        .foregroundStyle(DesignTokens.caution)
-      }
+      )
+      .font(.callout.monospacedDigit())
 
       Button {
-        applyMakeOrBuyRecommendations(application)
+        resetManualDecisions()
       } label: {
         Label(
-          "Apply recommendations and calculate",
-          systemImage: "wand.and.stars"
+          "Reset manual choices",
+          systemImage: "arrow.uturn.backward"
         )
       }
-      .buttonStyle(.borderedProminent)
-      .disabled(
-        !application.hasApplicableRecommendations
-          || runtime.isWorking
-          || historicalPlan != nil
-          || !parseResult.isValid
-          || isPreparingAssetWarehouse
-          || !runtime.isPlannerConfigurationReady
-      )
-      .accessibilityIdentifier("planner.make-or-buy.apply")
-
-      if let recommendationApplicationMessage {
-        Label(
-          recommendationApplicationMessage,
-          systemImage: "checkmark.circle.fill"
-        )
-        .font(.callout)
-        .foregroundStyle(DesignTokens.positive)
-      }
+      .buttonStyle(.bordered)
+      .disabled(currentManualDecisions.isEmpty || historicalPlan != nil)
+      .accessibilityIdentifier("planner.manual-decisions.reset")
     }
   }
 
@@ -5059,7 +5036,6 @@ struct PlannerView: View {
     historicalLoadError = nil
     persistenceMessage = nil
     shoppingListCopyStatus = nil
-    recommendationApplicationMessage = nil
   }
 
   private func closeHistoricalPlan() {
@@ -5126,18 +5102,23 @@ struct PlannerView: View {
       allianceInput = fromPlan
     }
     fillAllianceFields(from: allianceInput)
-    if let plan = restored.plan {
-      procurementPreferences = Dictionary(
-        uniqueKeysWithValues: plan.materials.compactMap { material in
-          material.procurement.map { (material.typeID, $0) }
-        }
+    if let stored = try? modelContext.appSettingValue(
+      for: AppSettingKey.plannerManualDecisionsDraft
+    ), let manual = try? JSONDecoder().decode(
+      PlannerManualDecisions.self,
+      from: Data(stored.utf8)
+    ) {
+      procurementPreferences = manual.procurement
+      blueprintActions = manual.blueprintActions.compactMapValues(
+        ProductionTreeBlueprintAction.init(rawValue:)
       )
+      preferredBlueprintSources = manual.blueprintSources
     }
     let savedSupplyPlans =
       (try? JSONDecoder().decode(
         [BlueprintSupplyPlan].self,
         from: blueprintSupplyDraftData
-      )) ?? restored.plan?.blueprintSupplyPlans ?? []
+      )) ?? []
     handedOffBlueprintSupplyPlans = Dictionary(
       uniqueKeysWithValues: savedSupplyPlans.map { ($0.blueprintTypeID, $0) }
     )
@@ -5253,9 +5234,7 @@ struct PlannerView: View {
   }
 
   private func resetCurrentPlannerCalculationForReplacement() {
-    calculationTask?.cancel()
-    calculationTask = nil
-    calculationID = nil
+    calculationScheduler.cancelAll()
     calculationPhase = nil
     supersededActivePlanIDs = Set(activePlans.map(\.id))
     runtime.plan = nil
@@ -5273,7 +5252,6 @@ struct PlannerView: View {
     blueprintResolutionError = nil
     blueprintSelectionNeedsRecalculation = false
     procurementPreferences.removeAll()
-    recommendationApplicationMessage = nil
     shoppingListCopyStatus = nil
   }
 
@@ -6042,7 +6020,6 @@ struct PlannerView: View {
           modelContext.rollback()
           persistenceError = error.localizedDescription
         }
-        calculatePlan()
       }
     )
   }
@@ -6059,8 +6036,6 @@ struct PlannerView: View {
         var requestedPreferences = procurementPreferences
         requestedPreferences[material.typeID] = updated
         procurementPreferences = requestedPreferences
-        recommendationApplicationMessage = nil
-        calculatePlan(preferences: requestedPreferences)
       }
     )
   }
@@ -6071,256 +6046,349 @@ struct PlannerView: View {
     material.canProduce ? [.produce, .buy, .warehouse] : [.buy, .warehouse]
   }
 
-  private func applyMakeOrBuyRecommendations(
-    _ application: MakeOrBuyRecommendationApplication
-  ) {
-    guard application.hasApplicableRecommendations else { return }
-    procurementPreferences = application.preferences
-    recommendationApplicationMessage = nil
-    let successMessage = AppLocalization.format(
-      "Applied %lld recommendations (%lld build, %lld buy). Costs, production jobs and the Main Hub shopping list were recalculated. Unavailable choices left unchanged: %lld.",
-      Int64(application.appliedCount),
-      Int64(application.produceCount),
-      Int64(application.buyCount),
-      Int64(application.unavailableCount)
-    )
-    calculatePlan(
-      preferences: application.preferences,
-      recommendationSuccessMessage: successMessage
+  private var currentManualDecisions: PlannerManualDecisions {
+    PlannerManualDecisions(
+      procurement: procurementPreferences,
+      blueprintActions: blueprintActions.mapValues(\.rawValue),
+      blueprintSources: preferredBlueprintSources
     )
   }
 
-  private func calculatePlan(
-    preferences: [Int64: MaterialProcurementPreference]? = nil,
-    recommendationSuccessMessage: String? = nil
-  ) {
-    guard !isPlannerCalculationActive else { return }
-    let requestedCalculationID = UUID()
-    calculationID = requestedCalculationID
-    calculationPhase = .preparing
-    calculationTask = Task { @MainActor in
-      defer {
-        if calculationID == requestedCalculationID {
-          calculationTask = nil
-          calculationID = nil
-          calculationPhase = nil
-        }
+  private func persistManualDecisions() {
+    guard let data = try? JSONEncoder().encode(currentManualDecisions) else { return }
+    do {
+      try modelContext.upsertAppSetting(
+        key: AppSettingKey.plannerManualDecisionsDraft,
+        value: String(decoding: data, as: UTF8.self)
+      )
+      try modelContext.save()
+    } catch {
+      modelContext.rollback()
+      persistenceError = error.localizedDescription
+    }
+  }
+
+  private func resetManualDecisions() {
+    let kept = currentManualDecisions.reset(
+      keepingBlueprintTypeIDs: Set(handedOffBlueprintSupplyPlans.keys)
+    )
+    procurementPreferences = kept.procurement
+    blueprintActions = kept.blueprintActions.compactMapValues(
+      ProductionTreeBlueprintAction.init(rawValue:)
+    )
+    preferredBlueprintSources = kept.blueprintSources
+    blueprintOwnedEfficiencyOptionIDs.removeAll()
+    blueprintGroupMessages.removeAll()
+  }
+
+  /// Everything that changes the result. Opening a saved plan sets the baseline
+  /// and does not count as a change.
+  private var automaticCalculationKey: PlannerAutomaticCalculationKey {
+    PlannerAutomaticCalculationKey(
+      input: input,
+      purchaseLocationIDs: effectivePurchaseLocationIDs,
+      stockIdentity: assetProjectionIdentity,
+      basisIdentity: runtime.marketAnalysisContextIdentity,
+      manualDecisions: currentManualDecisions,
+      blueprintCosts: blueprintCostTexts,
+      blueprintEfficiencies: blueprintEfficiencies,
+      ownedEfficiencyOptions: blueprintOwnedEfficiencyOptionIDs,
+      handedOffBlueprintTypeIDs: Set(handedOffBlueprintSupplyPlans.keys),
+      jobSplitting: jobSplitting
+    )
+  }
+
+  private var isAutomaticCalculationReady: Bool {
+    parseResult.isValid
+      && historicalPlan == nil
+      && !effectivePurchaseLocationIDs.isEmpty
+      && !isPreparingAssetWarehouse
+      && runtime.isPlannerConfigurationReady
+      && (isPlannerCalculationActive || !runtime.isWorking)
+  }
+
+  private func scheduleAutomaticCalculationIfNeeded() {
+    let key = automaticCalculationKey
+    // The basis loads after the saved plan opens; that is no owner change.
+    if !runtime.isPlannerConfigurationReady {
+      calculatedAutomaticKey?.basisIdentity = key.basisIdentity
+      return
+    }
+    guard key != calculatedAutomaticKey, isAutomaticCalculationReady else { return }
+    calculationScheduler.request(after: .seconds(1)) {
+      await performPlanCalculation()
+    }
+  }
+
+  private func calculatePlan() {
+    calculationScheduler.request {
+      await performPlanCalculation()
+    }
+  }
+
+  /// Sources, costs and efficiencies of the Blueprints for one set of build or
+  /// buy decisions. Reports its own errors and returns `nil` after them.
+  private func resolvePlannerBlueprintBasis(
+    preferences: [Int64: MaterialProcurementPreference],
+    automaticSupply: Bool,
+    firstRequest: ProductionRequestLine,
+    totalTargetQuantity: Int64,
+    plannerInput: String,
+    warehouse: AssetWarehouse,
+    warehouseHasSnapshot: Bool,
+    stockTargets: [Int64: Int64],
+    existingBlueprintReservations: [BlueprintRunReservation],
+    capabilities: [CharacterCapabilitySnapshot]
+  ) async -> PlannerBlueprintBasis? {
+    calculationPhase = .resolvingBlueprints
+    let inventories = plannerBlueprintInventories
+    let costs = parsedPlannerBlueprintCosts
+    let loyaltyStoreBlueprintTypeIDs = runtime.loyaltyStoreOfferedTypeIDSet
+    let requestedEfficiencies =
+      blueprintTree.map(plannerProductionEfficiencies) ?? blueprintEfficiencies
+    func tree(
+      actions: [Int64: ProductionTreeBlueprintAction],
+      efficiencies: [Int64: IndustryProductionEfficiency]
+    ) async throws -> ManufacturingProductionTreeSnapshot {
+      try await runtime.manufacturingProductionTree(
+        productName: firstRequest.productName,
+        targetQuantity: totalTargetQuantity,
+        materialEfficiency: firstRequest.materialEfficiency,
+        timeEfficiency: firstRequest.timeEfficiency,
+        assetWarehouse: warehouse,
+        warehouseHasSnapshot: warehouseHasSnapshot,
+        stockTargets: stockTargets,
+        existingReservations: [],
+        existingBlueprintReservations: existingBlueprintReservations,
+        procurementPreferences: preferences,
+        blueprintInventories: inventories,
+        blueprintActions: actions,
+        blueprintManualCosts: costs,
+        productionEfficiencies: efficiencies,
+        preferredBlueprintSources: preferredBlueprintSources,
+        loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
+        plannerInputOverride: plannerInput,
+        requiresCompleteBlueprintCostsInSelectedPlan: false,
+        usesExactPlannerPreferences: true,
+        automaticSupply: automaticSupply
+      )
+    }
+    var resolvedTree: ManufacturingProductionTreeSnapshot
+    do {
+      resolvedTree = try await tree(
+        actions: blueprintActions,
+        efficiencies: requestedEfficiencies
+      )
+    } catch is CancellationError {
+      return nil
+    } catch {
+      blueprintTree = nil
+      blueprintResolutionError = AppLocalization.format(
+        "BPO/BPC sources could not be resolved: %@",
+        error.localizedDescription
+      )
+      return nil
+    }
+    guard !Task.isCancelled else { return nil }
+    blueprintTree = resolvedTree
+    blueprintResolutionError = nil
+    let selectedEfficiencies = plannerProductionEfficiencies(in: resolvedTree)
+    if selectedEfficiencies != requestedEfficiencies {
+      calculationPhase = .applyingBlueprintEfficiencies
+      // The recommendation stays fixed for this run only; `blueprintActions`
+      // keeps just the owner's choices.
+      var actions = blueprintActions
+      for step in plannerBlueprintSteps(in: resolvedTree)
+      where actions[step.blueprint.blueprintTypeID] == nil {
+        actions[step.blueprint.blueprintTypeID] = step.blueprint.recommendation
       }
-      await Task.yield()
-      guard runtime.isPlannerConfigurationReady else { return }
-      let interactivePreparationID =
-        runtime.beginInteractivePlannerPreparation()
-      defer {
-        runtime.finishInteractivePlannerPreparation(
-          id: interactivePreparationID
-        )
-      }
-      let requestedPreferences = preferences ?? procurementPreferences
-      let requestedJobSplitting = jobSplitting
-      let authorizationPayloads = storedCharacters.map(\.authorizationSnapshot)
-      let capabilityPayloads = storedCharacters.compactMap(\.capabilitySnapshot)
-      consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.stockRelevantSourceStates.allSatisfy { $0 == .fresh })
-      let plannerInput = input
-      let plannerManualStockInput = manualStockInput
-      let plannerWarehouse = assetWarehouse
-      let warehouseHasSnapshot = plannerWarehouseHasSnapshot
-      let targets = targetQuantities
-      let blueprintAssessmentTargets =
-        runtime.warehouseStockEnabled
-        ? targets : plannerWarehouse.factualQuantities
-      let inventories = plannerBlueprintInventories
-      let requestedBlueprintActions = blueprintActions
-      let requestedBlueprintCosts = parsedPlannerBlueprintCosts
-      let requestedProductionEfficiencies =
-        blueprintTree.map(
-          plannerProductionEfficiencies
-        ) ?? blueprintEfficiencies
-      let loyaltyStoreBlueprintTypeIDs = runtime.loyaltyStoreOfferedTypeIDSet
-      persistDraft()
-      let workspaceRevision = consolidation.workspace.revision
-      let previousPlan = runtime.plan
-      let scienceReservations = consolidation.workspace.scienceRunReservations()
-      let preparedInputs = await Task.detached(priority: .userInitiated) {
-        let reservations: [StockAllocation] = []
-        let authorizations = authorizationPayloads.compactMap {
-          try? JSONDecoder().decode(
-            AuthorizationSnapshot.self,
-            from: $0
-          )
-        }
-        let capabilities = capabilityPayloads.compactMap {
-          try? JSONDecoder().decode(
-            CharacterCapabilitySnapshot.self,
-            from: $0
-          )
-        }
-        return (
-          reservations,
-          scienceReservations,
-          authorizations,
-          capabilities
-        )
-      }.value
-      guard !Task.isCancelled else { return }
-      let parsed = ProductionInputParser.parse(plannerInput)
-      guard parsed.isValid, let firstRequest = parsed.requests.first else {
-        return
-      }
-      let totalTargetQuantity = parsed.requests.reduce(into: Int64(0)) {
-        $0 = AssetWarehouse.saturatedAdd($0, Int64($1.wantedQuantity))
-      }
-      calculationPhase = .resolvingBlueprints
-      var resolvedBlueprintTree: ManufacturingProductionTreeSnapshot
       do {
-        resolvedBlueprintTree = try await runtime.manufacturingProductionTree(
-          productName: firstRequest.productName,
-          targetQuantity: totalTargetQuantity,
-          materialEfficiency: firstRequest.materialEfficiency,
-          timeEfficiency: firstRequest.timeEfficiency,
-          assetWarehouse: plannerWarehouse,
-          warehouseHasSnapshot: warehouseHasSnapshot,
-          stockTargets: blueprintAssessmentTargets,
-          existingReservations: preparedInputs.0,
-          existingBlueprintReservations: preparedInputs.1,
-          procurementPreferences: requestedPreferences,
-          blueprintInventories: inventories,
-          blueprintActions: requestedBlueprintActions,
-          blueprintManualCosts: requestedBlueprintCosts,
-          productionEfficiencies: requestedProductionEfficiencies,
-          preferredBlueprintSources: preferredBlueprintSources,
-          loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
-          plannerInputOverride: plannerInput,
-          requiresCompleteBlueprintCostsInSelectedPlan: false,
-          usesExactPlannerPreferences: true
+        resolvedTree = try await tree(
+          actions: actions,
+          efficiencies: selectedEfficiencies
         )
       } catch is CancellationError {
-        return
+        return nil
       } catch {
-        guard calculationID == requestedCalculationID else { return }
         blueprintTree = nil
         blueprintResolutionError = AppLocalization.format(
-          "BPO/BPC sources could not be resolved: %@",
+          "BPO/BPC efficiencies could not be applied: %@",
           error.localizedDescription
         )
-        return
+        return nil
       }
-      guard !Task.isCancelled, calculationID == requestedCalculationID else {
-        return
+    }
+    guard !Task.isCancelled else { return nil }
+    blueprintTree = resolvedTree
+    var supplyPlans = Dictionary(
+      uniqueKeysWithValues: (resolvedTree.selectedPlan.blueprintSupplyPlans ?? [])
+        .map { ($0.blueprintTypeID, $0) }
+    )
+    for (blueprintTypeID, handedOffPlan) in handedOffBlueprintSupplyPlans
+    where supplyPlans[blueprintTypeID]?.requiredRuns == handedOffPlan.requiredRuns {
+      supplyPlans[blueprintTypeID] = handedOffPlan
+    }
+    var allocations = plannerBlueprintAllocations(
+      from: resolvedTree,
+      contractSupplyPlans: supplyPlans
+    )
+    for (type, supplied) in supplyPlans where !supplied.scienceJobs.isEmpty {
+      if let cost = supplied.batchAllocationCost {
+        allocations[type] = IndustryBlueprintCostAllocation(blueprintTypeID: type, productName: supplied.productName, kind: supplied.manufacturingJobs.first?.allocation.source.isOriginal == true ? .bpo : .bpc, amount: cost, source: "Konkreter Wissenschaftsauftrag")
       }
-      blueprintTree = resolvedBlueprintTree
-      blueprintResolutionError = nil
-      for step in plannerBlueprintSteps(in: resolvedBlueprintTree)
-      where blueprintActions[step.blueprint.blueprintTypeID] == nil {
-        blueprintActions[step.blueprint.blueprintTypeID] =
-          step.blueprint.recommendation
-      }
-      let selectedProductionEfficiencies = plannerProductionEfficiencies(
-        in: resolvedBlueprintTree
+    }
+    allocations = await valuingOwnedBPCs(
+      allocations,
+      supplyPlans: supplyPlans,
+      tree: resolvedTree,
+      capabilities: capabilities
+    )
+    guard !Task.isCancelled else { return nil }
+    return PlannerBlueprintBasis(
+      tree: resolvedTree,
+      supplyPlans: supplyPlans,
+      allocations: allocations
+    )
+  }
+
+  private func performPlanCalculation() async {
+    calculatedAutomaticKey = automaticCalculationKey
+    calculationPhase = .preparing
+    defer { calculationPhase = nil }
+    await Task.yield()
+    guard runtime.isPlannerConfigurationReady else { return }
+    let interactivePreparationID =
+      runtime.beginInteractivePlannerPreparation()
+    defer {
+      runtime.finishInteractivePlannerPreparation(
+        id: interactivePreparationID
       )
-      if selectedProductionEfficiencies != requestedProductionEfficiencies {
-        calculationPhase = .applyingBlueprintEfficiencies
-        do {
-          resolvedBlueprintTree = try await runtime.manufacturingProductionTree(
-            productName: firstRequest.productName,
-            targetQuantity: totalTargetQuantity,
-            materialEfficiency: firstRequest.materialEfficiency,
-            timeEfficiency: firstRequest.timeEfficiency,
-            assetWarehouse: plannerWarehouse,
-            warehouseHasSnapshot: warehouseHasSnapshot,
-            stockTargets: blueprintAssessmentTargets,
-            existingReservations: preparedInputs.0,
-            existingBlueprintReservations: preparedInputs.1,
-            procurementPreferences: requestedPreferences,
-            blueprintInventories: inventories,
-            blueprintActions: blueprintActions,
-            blueprintManualCosts: requestedBlueprintCosts,
-            productionEfficiencies: selectedProductionEfficiencies,
-            preferredBlueprintSources: preferredBlueprintSources,
-            loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
-            plannerInputOverride: plannerInput,
-            requiresCompleteBlueprintCostsInSelectedPlan: false,
-            usesExactPlannerPreferences: true
-          )
-        } catch is CancellationError {
-          return
-        } catch {
-          guard calculationID == requestedCalculationID else { return }
-          blueprintTree = nil
-          blueprintResolutionError = AppLocalization.format(
-            "BPO/BPC efficiencies could not be applied: %@",
-            error.localizedDescription
-          )
-          return
-        }
+    }
+    let manualPreferences = procurementPreferences
+    let manualTypeIDs = Set(manualPreferences.keys)
+    let requestedJobSplitting = jobSplitting
+    let authorizationPayloads = storedCharacters.map(\.authorizationSnapshot)
+    let capabilityPayloads = storedCharacters.compactMap(\.capabilitySnapshot)
+    consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.stockRelevantSourceStates.allSatisfy { $0 == .fresh })
+    let plannerInput = input
+    let plannerManualStockInput = manualStockInput
+    let plannerWarehouse = assetWarehouse
+    let warehouseHasSnapshot = plannerWarehouseHasSnapshot
+    let targets = targetQuantities
+    let blueprintAssessmentTargets =
+      runtime.warehouseStockEnabled
+      ? targets : plannerWarehouse.factualQuantities
+    persistDraft()
+    let workspaceRevision = consolidation.workspace.revision
+    let previousPlan = runtime.plan
+    let scienceReservations = consolidation.workspace.scienceRunReservations()
+    let preparedInputs = await Task.detached(priority: .userInitiated) {
+      let authorizations = authorizationPayloads.compactMap {
+        try? JSONDecoder().decode(
+          AuthorizationSnapshot.self,
+          from: $0
+        )
       }
-      blueprintTree = resolvedBlueprintTree
-      var finalBlueprintSupplyPlans = Dictionary(
-        uniqueKeysWithValues: (resolvedBlueprintTree.selectedPlan.blueprintSupplyPlans ?? [])
-          .map { ($0.blueprintTypeID, $0) }
+      let capabilities = capabilityPayloads.compactMap {
+        try? JSONDecoder().decode(
+          CharacterCapabilitySnapshot.self,
+          from: $0
+        )
+      }
+      return (authorizations, capabilities)
+    }.value
+    guard !Task.isCancelled else { return }
+    let parsed = ProductionInputParser.parse(plannerInput)
+    guard parsed.isValid, let firstRequest = parsed.requests.first else {
+      return
+    }
+    let totalTargetQuantity = parsed.requests.reduce(into: Int64(0)) {
+      $0 = AssetWarehouse.saturatedAdd($0, Int64($1.wantedQuantity))
+    }
+    func basis(
+      preferences: [Int64: MaterialProcurementPreference],
+      automaticSupply: Bool
+    ) async -> PlannerBlueprintBasis? {
+      await resolvePlannerBlueprintBasis(
+        preferences: preferences,
+        automaticSupply: automaticSupply,
+        firstRequest: firstRequest,
+        totalTargetQuantity: totalTargetQuantity,
+        plannerInput: plannerInput,
+        warehouse: plannerWarehouse,
+        warehouseHasSnapshot: warehouseHasSnapshot,
+        stockTargets: blueprintAssessmentTargets,
+        existingBlueprintReservations: scienceReservations,
+        capabilities: preparedInputs.1
       )
-      for (blueprintTypeID, handedOffPlan) in handedOffBlueprintSupplyPlans
-      where finalBlueprintSupplyPlans[blueprintTypeID]?.requiredRuns
-        == handedOffPlan.requiredRuns
-      {
-        finalBlueprintSupplyPlans[blueprintTypeID] = handedOffPlan
-      }
-      var allocations = plannerBlueprintAllocations(
-        from: resolvedBlueprintTree,
-        contractSupplyPlans: finalBlueprintSupplyPlans
-      )
-      for (type, supplied) in finalBlueprintSupplyPlans where !supplied.scienceJobs.isEmpty {
-        if let cost = supplied.batchAllocationCost {
-          allocations[type] = IndustryBlueprintCostAllocation(blueprintTypeID: type, productName: supplied.productName, kind: supplied.manufacturingJobs.first?.allocation.source.isOriginal == true ? .bpo : .bpc, amount: cost, source: "Konkreter Wissenschaftsauftrag")
-        }
-      }
-      allocations = await valuingOwnedBPCs(
-        allocations,
-        supplyPlans: finalBlueprintSupplyPlans,
-        tree: resolvedBlueprintTree,
-        capabilities: preparedInputs.3
-      )
-      guard !Task.isCancelled, calculationID == requestedCalculationID else {
-        return
-      }
+    }
+    func calculate(
+      _ basis: PlannerBlueprintBasis,
+      preferences: [Int64: MaterialProcurementPreference],
+      automaticSupply: Bool
+    ) async {
       calculationPhase = .calculating
       purchaseLocationsNeedRecalculation = false
       await runtime.calculate(
         input: plannerInput,
         manualStockInput: plannerManualStockInput,
-        existingReservations: preparedInputs.0,
+        existingReservations: [],
         assetWarehouse: plannerWarehouse,
         stockTargets: targets,
-        procurementPreferences: requestedPreferences,
+        procurementPreferences: preferences,
         purchaseLocationIDs: effectivePurchaseLocationIDs,
-        blueprintCostAllocations: allocations,
+        blueprintCostAllocations: basis.allocations,
         requiresCompleteBlueprintCosts: true,
-        productionEfficiencies: plannerProductionEfficiencies(
-          in: resolvedBlueprintTree
-        ),
-        blueprintSupplyPlans: finalBlueprintSupplyPlans,
+        productionEfficiencies: plannerProductionEfficiencies(in: basis.tree),
+        blueprintSupplyPlans: basis.supplyPlans,
         blueprintSourceSnapshotIDs: handedOffBlueprintSnapshotIDs,
-        authorizations: preparedInputs.2,
-        capabilities: preparedInputs.3,
+        authorizations: preparedInputs.0,
+        capabilities: preparedInputs.1,
         clientID: EVEConstants.ssoClientID,
-        jobSplitting: requestedJobSplitting
+        jobSplitting: requestedJobSplitting,
+        automaticSupply: automaticSupply,
+        manualSupplyTypeIDs: manualTypeIDs
       )
-      guard !Task.isCancelled else { return }
-      guard workspaceRevision == consolidation.workspace.revision else {
-        persistenceError = "Wissenschaftsaufträge oder Ausgangsdaten wurden während der Berechnung geändert. Bitte erneut berechnen."
-        runtime.plan = previousPlan
-        return
-      }
-      guard runtime.errorMessage == nil, let plan = runtime.plan else { return }
-      blueprintSelectionNeedsRecalculation = false
-      procurementPreferences = Dictionary(
-        uniqueKeysWithValues: plan.materials.compactMap { material in
-          material.procurement.map { (material.typeID, $0) }
-        }
-      )
-      calculationPhase = .saving
-      guard await saveActivePlan(plan) else { return }
-      recommendationApplicationMessage = recommendationSuccessMessage
     }
+    guard
+      let firstBasis = await basis(
+        preferences: manualPreferences,
+        automaticSupply: true
+      )
+    else { return }
+    await calculate(firstBasis, preferences: manualPreferences, automaticSupply: true)
+    guard !Task.isCancelled else { return }
+    // The tree decides at Main Hub prices, the calculation at the selected
+    // purchase locations and with Blueprint costs. When they differ, the
+    // Blueprints are resolved again for the calculated build steps and those
+    // steps are kept, so costs and supply always describe the same graph.
+    if runtime.errorMessage == nil, let decided = runtime.plan,
+      Self.producedTypeIDs(decided) != Self.producedTypeIDs(firstBasis.tree.selectedPlan)
+    {
+      let decisions = manualPreferences.merging(
+        decided.materials.compactMap { material in
+          material.procurement.map { (material.typeID, $0) }
+        },
+        uniquingKeysWith: { manual, _ in manual }
+      )
+      guard let finalBasis = await basis(preferences: decisions, automaticSupply: false)
+      else { return }
+      await calculate(finalBasis, preferences: decisions, automaticSupply: false)
+      guard !Task.isCancelled else { return }
+    }
+    guard workspaceRevision == consolidation.workspace.revision else {
+      persistenceError = "Wissenschaftsaufträge oder Ausgangsdaten wurden während der Berechnung geändert. Bitte erneut berechnen."
+      runtime.plan = previousPlan
+      return
+    }
+    guard runtime.errorMessage == nil, let plan = runtime.plan else { return }
+    blueprintSelectionNeedsRecalculation = false
+    calculationPhase = .saving
+    _ = await saveActivePlan(plan)
+  }
+
+  private static func producedTypeIDs(_ plan: IndustryPlanSnapshot) -> Set<Int64> {
+    Set(plan.materials.filter { $0.toProduce > 0 }.map(\.typeID))
   }
 
   private func persistDraft(reportErrors: Bool = true) {
@@ -6331,9 +6399,10 @@ struct PlannerView: View {
         existingDraft: plannerDrafts.first,
         in: modelContext
       )
-      var byType = Dictionary(uniqueKeysWithValues: (blueprintTree?.selectedPlan.blueprintSupplyPlans ?? []).map { ($0.blueprintTypeID, $0) })
-      for (id, supply) in handedOffBlueprintSupplyPlans { byType[id] = supply }
-      let plans = byType.values.sorted { $0.blueprintTypeID < $1.blueprintTypeID }
+      // Only concrete handoffs stay fixed; the automatic sources are decided anew.
+      let plans = handedOffBlueprintSupplyPlans.values.sorted {
+        $0.blueprintTypeID < $1.blueprintTypeID
+      }
       blueprintSupplyDraftData = try JSONEncoder().encode(plans)
     } catch {
       if reportErrors {
@@ -10299,4 +10368,23 @@ enum EVEConnectionErrorText {
       "The EVE connection failed for an unknown reason."
     )
   }
+}
+
+private struct PlannerBlueprintBasis {
+  let tree: ManufacturingProductionTreeSnapshot
+  let supplyPlans: [Int64: BlueprintSupplyPlan]
+  let allocations: [Int64: IndustryBlueprintCostAllocation]
+}
+
+private struct PlannerAutomaticCalculationKey: Equatable {
+  var input: String
+  var purchaseLocationIDs: Set<UUID>
+  var stockIdentity: String
+  var basisIdentity: String
+  var manualDecisions: PlannerManualDecisions
+  var blueprintCosts: [Int64: String]
+  var blueprintEfficiencies: [Int64: IndustryProductionEfficiency]
+  var ownedEfficiencyOptions: [Int64: String]
+  var handedOffBlueprintTypeIDs: Set<Int64>
+  var jobSplitting: IndustryJobSplitting
 }

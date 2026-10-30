@@ -690,3 +690,9 @@ are no longer current product requirements.
 | Area | Automated evidence | Live evidence | Owner acceptance |
 | --- | --- | --- | --- |
 | Multi-location purchasing | pass: fixtures cover cheapest location, depth split, transport flipping the choice, missing route, oversized item, no selection, per-location Multibuy and saved plans without allocations | not run: no selected Home or Coalition market was loaded in the app | pending: compare one split plan with EVE market prices and the courier cost per origin |
+
+## Automatic Planner decisions, 2026-10-30
+
+| Area | Automated evidence | Live evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| Automatic build or buy and recalculation | pass: fixtures cover the choice without a click, the chain, manual choices and reset, Blueprint cost, source ME, debounce, cancellation and the latest wish | not run: the running app was not exercised | pending: change item, location and a manual choice in the app and compare the plan with EVE |

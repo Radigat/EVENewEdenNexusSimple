@@ -2515,3 +2515,7 @@
 "Select at least one purchase location." = "Select at least one purchase location.";
 "Recalculate to apply the purchase locations." = "Recalculate to apply the purchase locations.";
 "Each EVE Multibuy list contains the uncovered quantity to buy at that purchase location." = "Each EVE Multibuy list contains the uncovered quantity to buy at that purchase location.";
+"Automatic build or buy" = "Automatic build or buy";
+"The Planner chooses the cheapest build or buy option for every material and recalculates after each change. A choice you make by hand stays until you reset it." = "The Planner chooses the cheapest build or buy option for every material and recalculates after each change. A choice you make by hand stays until you reset it.";
+"Set by hand: %lld materials." = "Set by hand: %lld materials.";
+"Reset manual choices" = "Reset manual choices";

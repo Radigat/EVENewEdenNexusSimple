@@ -4484,7 +4484,10 @@ struct IndustryPlannerTests {
     productPrice: Double,
     intermediatePrice: Double,
     rawPrice: Double,
-    preferences: [Int64: MaterialProcurementPreference] = [:]
+    preferences: [Int64: MaterialProcurementPreference] = [:],
+    automaticSupply: Bool = false,
+    blueprintCosts: [Int64: IndustryBlueprintCostAllocation] = [:],
+    efficiencies: [Int64: IndustryProductionEfficiency] = [:]
   ) async throws -> IndustryPlanSnapshot {
     let source = SourceIdentity(provider: "fixture", version: "1")
     func definition(
@@ -4582,7 +4585,10 @@ struct IndustryPlannerTests {
       ],
       procurementPreferences: preferences,
       defaultPurchaseLocation: .jita,
-      sdeBuild: 1
+      sdeBuild: 1,
+      blueprintCostAllocations: blueprintCosts,
+      productionEfficiencies: efficiencies,
+      automaticSupply: automaticSupply
     )
     return try await IndustryPlanner().plan(
       input: "Chain Product 1 0 0",
@@ -4678,6 +4684,132 @@ struct IndustryPlannerTests {
       mainHub: .jita
     )
     #expect(application.preferences[192]?.supplyMode == .buy)
+  }
+
+  @Test
+  func automaticSupplyBuysCheaperMaterialWithoutAnyChoice() async throws {
+    let plan = try await chainPlan(
+      componentPrice: 1,
+      productPrice: 100_000,
+      intermediatePrice: 100,
+      rawPrice: 1,
+      automaticSupply: true
+    )
+    let component = try #require(plan.materials.first { $0.typeID == 192 })
+    #expect(component.toBuy == 10)
+    #expect(component.toProduce == 0)
+    #expect(component.isManualSupply == false)
+    #expect(!plan.materials.contains { $0.typeID == 193 })
+  }
+
+  @Test
+  func automaticSupplyFollowsCheapestChainDownToRawMaterial() async throws {
+    let plan = try await chainPlan(
+      componentPrice: 600,
+      productPrice: 100_000,
+      intermediatePrice: 100,
+      rawPrice: 1,
+      automaticSupply: true
+    )
+    #expect(plan.materials.first { $0.typeID == 192 }?.toProduce == 10)
+    // The quantities follow the default intermediate ME of the fixture.
+    #expect((plan.materials.first { $0.typeID == 193 }?.toProduce ?? 0) > 0)
+    #expect((plan.materials.first { $0.typeID == 194 }?.toBuy ?? 0) > 0)
+  }
+
+  @Test
+  func manualChoiceSurvivesAutomaticCalculationUntilReset() async throws {
+    var manual = PlannerManualDecisions(
+      procurement: [
+        192: MaterialProcurementPreference(supplyMode: .produce, purchaseLocation: .jita)
+      ]
+    )
+    let pinned = try await chainPlan(
+      componentPrice: 1,
+      productPrice: 100_000,
+      intermediatePrice: 1,
+      rawPrice: 100,
+      preferences: manual.procurement,
+      automaticSupply: true
+    )
+    let component = try #require(pinned.materials.first { $0.typeID == 192 })
+    #expect(component.toProduce == 10)
+    #expect(component.isManualSupply == true)
+    // Below the pinned material the Planner still decides itself.
+    let intermediate = try #require(pinned.materials.first { $0.typeID == 193 })
+    #expect(intermediate.toBuy > 0)
+    #expect(intermediate.toProduce == 0)
+    #expect(intermediate.isManualSupply == false)
+
+    manual = manual.reset(keepingBlueprintTypeIDs: [])
+    #expect(manual.isEmpty)
+    let automatic = try await chainPlan(
+      componentPrice: 1,
+      productPrice: 100_000,
+      intermediatePrice: 1,
+      rawPrice: 100,
+      preferences: manual.procurement,
+      automaticSupply: true
+    )
+    #expect(automatic.materials.first { $0.typeID == 192 }?.toBuy == 10)
+  }
+
+  @Test
+  func manualResetKeepsHandedOffBlueprints() {
+    let decisions = PlannerManualDecisions(
+      blueprintActions: [1: "useOwnedBPO", 2: "buyMarketBPO"]
+    )
+    #expect(decisions.reset(keepingBlueprintTypeIDs: [2]).blueprintActions == [2: "buyMarketBPO"])
+  }
+
+  @Test
+  func blueprintCostCountsInAutomaticBuildComparison() async throws {
+    // Building costs 100, buying 10 * 20 = 200, until the BPC adds 500.
+    func plan(_ costs: [Int64: IndustryBlueprintCostAllocation]) async throws
+      -> IndustryPlanSnapshot
+    {
+      try await chainPlan(
+        componentPrice: 20,
+        productPrice: 100_000,
+        intermediatePrice: 1,
+        rawPrice: 100,
+        automaticSupply: true,
+        blueprintCosts: costs,
+        efficiencies: [192: IndustryProductionEfficiency(materialEfficiency: 0, timeEfficiency: 0)]
+      )
+    }
+    let free = try await plan([:])
+    #expect(free.materials.first { $0.typeID == 192 }?.toProduce == 10)
+    let costly = try await plan([
+      292: IndustryBlueprintCostAllocation(
+        blueprintTypeID: 292,
+        productName: "Component",
+        kind: .bpc,
+        amount: 500,
+        source: "fixture"
+      )
+    ])
+    let component = try #require(costly.materials.first { $0.typeID == 192 })
+    #expect(component.toBuy == 10)
+    #expect(component.makeOrBuyAnalysis?.buildBlueprintCost == 500)
+    #expect((component.makeOrBuyAnalysis?.buildTotalCost ?? 0) >= 600)
+  }
+
+  @Test
+  func sourceMaterialEfficiencyDecidesAutomaticBuild() async throws {
+    // Buying costs 95; building needs 100 at ME 0 and 90 at ME 10.
+    func plan(me: Int) async throws -> IndustryPlanSnapshot {
+      try await chainPlan(
+        componentPrice: 9.5,
+        productPrice: 100_000,
+        intermediatePrice: 1,
+        rawPrice: 100,
+        automaticSupply: true,
+        efficiencies: [192: IndustryProductionEfficiency(materialEfficiency: me, timeEfficiency: 0)]
+      )
+    }
+    #expect(try await plan(me: 0).materials.first { $0.typeID == 192 }?.toBuy == 10)
+    #expect(try await plan(me: 10).materials.first { $0.typeID == 192 }?.toProduce == 10)
   }
 
   private func makeOrder(
@@ -5440,5 +5572,54 @@ extension ProductionSchedulingConfiguration {
       )
     )
     return scheduling
+  }
+}
+
+@MainActor
+@Suite
+struct PlannerCalculationSchedulerTests {
+  @Test
+  func severalChangesWithinTheWaitingTimeGiveOneRun() async {
+    let scheduler = PlannerCalculationScheduler()
+    var runs: [Int] = []
+    for number in 1...5 {
+      scheduler.request(after: .milliseconds(30)) { runs.append(number) }
+    }
+    for _ in 0..<500 where runs.isEmpty {
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+    try? await Task.sleep(for: .milliseconds(100))
+    #expect(runs == [5])
+  }
+
+  @Test
+  func newWishCancelsRunningCalculationAndFollowsIt() async {
+    let scheduler = PlannerCalculationScheduler()
+    var events: [String] = []
+    scheduler.request {
+      events.append("first started")
+      try? await Task.sleep(for: .seconds(30))
+      events.append(Task.isCancelled ? "first cancelled" : "first finished")
+    }
+    for _ in 0..<500 where events.isEmpty {
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+    scheduler.request { events.append("second") }
+    scheduler.request { events.append("latest") }
+    for _ in 0..<500 where events.last != "latest" {
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(events == ["first started", "first cancelled", "latest"])
+    #expect(!scheduler.isRunning)
+  }
+
+  @Test
+  func cancelAllLeavesNoFollowUp() async {
+    let scheduler = PlannerCalculationScheduler()
+    var runs = 0
+    scheduler.request(after: .milliseconds(20)) { runs += 1 }
+    scheduler.cancelAll()
+    try? await Task.sleep(for: .milliseconds(80))
+    #expect(runs == 0)
   }
 }

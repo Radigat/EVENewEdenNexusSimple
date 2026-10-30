@@ -3142,3 +3142,7 @@
 "Select at least one purchase location." = "Wähle mindestens einen Einkaufsort aus.";
 "Recalculate to apply the purchase locations." = "Neu berechnen, um die Einkaufsorte zu übernehmen.";
 "Each EVE Multibuy list contains the uncovered quantity to buy at that purchase location." = "Jede EVE-Multibuy-Liste enthält die ungedeckte Menge, die an diesem Einkaufsort zu kaufen ist.";
+"Automatic build or buy" = "Automatisch bauen oder kaufen";
+"The Planner chooses the cheapest build or buy option for every material and recalculates after each change. A choice you make by hand stays until you reset it." = "Der Planer wählt für jedes Material die günstigste Option aus Bauen und Kaufen und rechnet nach jeder Änderung neu. Eine Wahl von Hand bleibt, bis du sie zurücksetzt.";
+"Set by hand: %lld materials." = "Von Hand festgelegt: %lld Materialien.";
+"Reset manual choices" = "Manuelle Eingriffe zurücksetzen";

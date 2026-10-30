@@ -1085,7 +1085,7 @@ Informationshinweis.
 - **Auswahl:** Über der Eingabe stehen Main, Home und Coalition Hub zur Wahl,
   weil nur für sie Transportstrecken konfiguriert sind. Die Wahl bleibt
   gespeichert; ohne Wahl gilt der Main Hub, und er ist abwählbar. Ohne jeden Ort
-  lässt sich nicht rechnen. Eine Änderung wirkt erst bei der nächsten Berechnung.
+  lässt sich nicht rechnen.
 - **Einkauf:** Je Material füllt der Planner die Menge aus den Sell Orders aller
   gewählten Orte, zuerst die im Stückpreis einschließlich Transportanteil
   günstigste Order. Reicht die Tiefe eines Orts nicht, wird aufgeteilt. Der
@@ -1116,7 +1116,8 @@ Informationshinweis.
   für Zwischenprodukte, Anlage je Kategorie, Sperrliste, höchstens 12 Ebenen,
   keine Rezeptzyklen. Was sich nicht bauen lässt, bleibt Kaufware.
 - **Ursprungsmaterialien:** Jeder vollständig baubare Knoten wird gebaut, auch
-  wenn Kaufen günstiger wäre.
+  wenn Kaufen günstiger wäre. Diese Variante zeigt die Kettenanalyse zum Vergleich;
+  der Plan selbst folgt der Planer-Automatik (siehe unten).
 - **Günstigste Variante:** Je Knoten entscheidet Kauf gegen Eigenbau einschließlich
   ungerundetem Transportanteil. Danach werden die Mischung und beide reinen
   Varianten über ihre summierte Einkaufsliste endgültig bewertet; der niedrigste
@@ -1176,15 +1177,36 @@ und der günstigsten Kette bis zu den Rohstoffen (Eigentümerentscheidung
 der Direktkauf. Die Kette folgt den Planner-Regeln für Mengen, Anlage,
 Installation und Sperrliste, rundet je Knoten ohne Auftragsaufteilung, geht
 höchstens 12 Ebenen tief und rechnet den Transport nur zur Anlage des bewerteten
-Materials. Sie ist eine Empfehlungsgrundlage. Die Planzahlen rechnet erst der
-Planner nach der Übernahme. **Empfehlungen übernehmen** setzt auch noch verdeckte
-Stufen der Kette in einem Schritt. Ohne Übernahme oder eigene Wahl bleibt jedes
-baubare Material auf Bauen.
+Materials. Außerhalb des Planers ist sie eine Empfehlungsgrundlage.
+
+**Planer-Automatik** (Eigentümerentscheidung 30.10.2026):
+
+- **Bauen oder Kaufen:** Der Planer übernimmt die günstigere Seite je Material
+  selbst, einschließlich verdeckter Kettenstufen, und rechnet so lange erneut, bis
+  die Wahl stabil ist (höchstens fünf Durchläufe, sonst Hinweis). Endprodukte werden
+  gebaut, vorhandenes Lager wird zuerst verbraucht. Handel und Chancen rechnen
+  unverändert.
+- **Baukosten:** Im Planer zählt die Bauseite die Blueprint-Kosten der gewählten
+  Quelle mit und rechnet mit deren ME. Eine Quelle ohne bekannte Kosten zählt beim
+  Vergleich nicht mit; der Plan weist sie weiter als ungeklärt aus.
+- **Zwei Schritte:** Die Blueprint-Wahl entscheidet zuerst mit Main-Hub-Preisen, die
+  Rechnung dann mit den gewählten Einkaufsorten und Blueprint-Kosten. Weichen die
+  gebauten Materialien ab, werden die Blueprints einmal für das Ergebnis neu bestimmt
+  und diese Wahl festgehalten. Der Plan ist dadurch stimmig, aber nicht in jedem Fall
+  das rechnerische Optimum.
+- **Manuelle Eingriffe:** Nur eine Wahl von Hand (Bauen, Kaufen, Lager, Blueprint-
+  Quelle) wird im Entwurf gespeichert und bleibt bei jedem Neurechnen. „Manuelle
+  Eingriffe zurücksetzen“ gibt sie frei; Übergaben aus anderen Bereichen und
+  Wissenschaftsaufträge bleiben konkret gebunden.
+- **Neurechnen:** Änderungen an Items, Orten, Lager, Einstellungen, Quellen oder
+  Eingriffen starten nach einer Sekunde Pause eine Rechnung. Eine laufende Rechnung
+  wird abgebrochen und mit dem letzten Stand wiederholt. **Abbrechen** stoppt ohne
+  Wiederholung. Ein gespeicherter Plan wird beim Öffnen nicht neu gerechnet.
 Make-or-Buy bewertet Kauf und Bau mit den gewählten Einkaufsorten.
 Passt ein Item verpackt nicht in das konfigurierte Transportlimit je Vertrag
 (zum Beispiel ein Freighter-Rumpf bei 350.000 m³), ist der Kauf am Main Hub nicht
 möglich: Kaufkosten und Kauflogistik bleiben nicht verfügbar, die Empfehlung lautet
-**Bauen** an der Produktionsanlage, und „Empfehlungen übernehmen“ setzt es auf Bauen.
+**Bauen** an der Produktionsanlage, und der Planer baut es.
 Liegt der Main Hub an derselben Station wie die Anlage, entfällt der Transport und
 der Kauf bleibt vergleichbar.
 Oberhalb der freien Planereingabe steht eine geführte Produktauswahl. Die Suche
@@ -2060,7 +2082,8 @@ aber manuell wählbar. Eine bereits getroffene Auswahl bleibt in der laufenden
 Sitzung bestehen. Bewertung und Versorgung rechnen mit denselben Runs des
 gewählten Plans; von anderen Plänen reservierte BPC-Runs zählen nicht als
 verfügbar. Die Empfehlung gilt nur für die Quelle; Bauen oder Kaufen entscheidet
-weiter die Make-or-Buy-Empfehlung.
+die Planer-Automatik. Automatisch gewählte Quellen werden nicht festgeschrieben und
+bei jeder Rechnung neu bestimmt.
 
 Die BPO-/BPC-Auswahl des Planners verwendet dasselbe gespeicherte
 persönliche Blueprint-Inventar wie der Blaupausenbereich. Eigene BPCs und BPOs
@@ -2151,8 +2174,7 @@ Abschnitt sofort; der Kalkulator dockt an und übernimmt den frei werdenden
 Platz. Die Chancenliste füllt die gesamte verbleibende Fläche; ein unterer
 Lager-/Main-Hub-/Einkaufs-/Kosten-Arbeitsbereich wird nicht mehr dargestellt.
 
-Mehrere Make-or-Buy-Änderungen werden weiterhin zunächst lokal gesammelt und
-erst über eine gemeinsame Neuberechnung angewendet. Der Rechenkern löst Namen,
+Der Rechenkern löst Namen,
 Klassifikationen und verpackte Transportvolumina für den gesamten begrenzten
 Produktionsgraphen gebündelt auf. Der unmittelbar folgende ausgewählte
 Szenariolauf darf einen Make-or-Buy-Vergleich aus seinem Referenzlauf nur bei

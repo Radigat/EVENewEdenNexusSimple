@@ -311,3 +311,15 @@ Schritt P1.
   Freighter hat keine Kurierpreise und gilt als unbekannt. Das Feld
   `purchaseLocation` der Materialwahl steuert den Einkauf nicht mehr; maßgeblich
   sind die `purchaseAllocations` des Plans.
+
+## 30.10.2026 – Automatik im Planer
+
+- **Entscheidung (Eigentümer):** Der Planer rechnet bei Änderungen selbst und
+  übernimmt Bauen oder Kaufen und Blueprints. Manuelle Eingriffe bleiben und sind
+  zurücksetzbar. Ein gespeicherter Plan wird beim Öffnen nicht neu gerechnet.
+- **Ersetzt:** „Baubar heißt Bauen ohne Übernahme“ im Planer. Handel und Chancen
+  behalten ihre Regeln (`automaticSupply` nur im Planer).
+- **Umsetzungsregeln:** Neue Entwurfswerte `planner.manual-decisions.draft.v1` und
+  `planner.blueprint-supply-draft.v3`. Der neue Schlüssel enthält nur echte Übergaben;
+  der alte v2-Entwurf mischte sie mit automatischen Quellen und wird nicht mehr
+  gelesen. Eine dort noch offene Übergabe muss neu angestoßen werden.

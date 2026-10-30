@@ -1526,7 +1526,9 @@ final class RuntimeState {
     authorizations: [AuthorizationSnapshot] = [],
     capabilities: [CharacterCapabilitySnapshot] = [],
     clientID: String = "",
-    jobSplitting: IndustryJobSplitting = .init()
+    jobSplitting: IndustryJobSplitting = .init(),
+    automaticSupply: Bool = false,
+    manualSupplyTypeIDs: Set<Int64>? = nil
   ) async {
     plannerCalculationGeneration &+= 1
     let calculationGeneration = plannerCalculationGeneration
@@ -1911,7 +1913,9 @@ final class RuntimeState {
           jumpFreighterRouteWarnings: loadedJumpFreighterRoute.warnings,
           capitalJumpRoutes: loadedJumpFreighterRoute.capitalRoutes,
           capitalJumpRouteWarnings: loadedJumpFreighterRoute.capitalWarnings,
-          jobSplitting: jobSplitting
+          jobSplitting: jobSplitting,
+          automaticSupply: automaticSupply,
+          manualSupplyTypeIDs: manualSupplyTypeIDs
         )
         let calculatedPlan = try await planner.plan(
           preparation: preparation,
@@ -2383,7 +2387,8 @@ final class RuntimeState {
     plannerInputOverride: String? = nil,
     requiresCompleteBlueprintCostsInSelectedPlan: Bool = true,
     availableStockOverride: [Int64: Int64]? = nil,
-    usesExactPlannerPreferences: Bool = false
+    usesExactPlannerPreferences: Bool = false,
+    automaticSupply: Bool = false
   ) async throws -> ManufacturingProductionTreeSnapshot {
     guard targetQuantity > 0,
       (0...10).contains(materialEfficiency),
@@ -2526,7 +2531,8 @@ final class RuntimeState {
       blueprintCosts: [Int64: IndustryBlueprintCostAllocation] = [:],
       requiresCompleteBlueprintCosts: Bool = false,
       blueprintSupplyPlans: [Int64: BlueprintSupplyPlan] = [:],
-      planID: UUID? = nil
+      planID: UUID? = nil,
+      automaticSupply: Bool = false
     ) -> IndustryPlanningContext {
       IndustryPlanningContext(
         manufacturingProfile: manufacturingProfile,
@@ -2549,7 +2555,8 @@ final class RuntimeState {
         requiresCompleteBlueprintCosts: requiresCompleteBlueprintCosts,
         productionEfficiencies: productionEfficiencies,
         blueprintSupplyPlans: blueprintSupplyPlans,
-        planID: planID
+        planID: planID,
+        automaticSupply: automaticSupply
       )
     }
 
@@ -2569,8 +2576,8 @@ final class RuntimeState {
     var selectedPreferences = recommendations.preferences
     if usesExactPlannerPreferences {
       // The Planner's final calculation uses exactly its own preferences and
-      // otherwise builds whatever can be built. The Blueprint tree must
-      // resolve the same build steps and run counts, or Blueprint supply and
+      // decides the rest itself or builds whatever can be built. The Blueprint
+      // tree must resolve the same build steps and run counts, or Blueprint supply and
       // costs are planned for a different production graph.
       selectedPreferences = procurementPreferences.mapValues { preference in
         MaterialProcurementPreference(
@@ -2651,19 +2658,24 @@ final class RuntimeState {
         AssetWarehouse.saturatedAdd($0, max(0, $1.quantity))
       }
     }
-    let preflightPlan = try await planner.plan(
-      preparation: preparation,
-      context: context(
-        availableStock: allocatableStock,
-        preferences: selectedPreferences,
-        warnings: inputWarnings
-      ),
-      reusingMakeOrBuyAnalysesFrom: referencePlan
+    let preflightContext = context(
+      availableStock: allocatableStock,
+      preferences: selectedPreferences,
+      warnings: inputWarnings,
+      automaticSupply: automaticSupply
     )
+    // The reference analyses use the default ME, not the automatic basis.
+    let preflightPlan =
+      automaticSupply
+      ? try await planner.plan(preparation: preparation, context: preflightContext)
+      : try await planner.plan(
+        preparation: preparation,
+        context: preflightContext,
+        reusingMakeOrBuyAnalysesFrom: referencePlan
+      )
     if usesExactPlannerPreferences {
       // Types without an explicit preference follow the planner's own
-      // decision (build when possible, blacklist respected), not the
-      // make-or-buy recommendation shown for the reference plan.
+      // decision, not the make-or-buy recommendation of the reference plan.
       for material in preflightPlan.materials
       where selectedPreferences[material.typeID] == nil {
         if let decided = material.procurement {
