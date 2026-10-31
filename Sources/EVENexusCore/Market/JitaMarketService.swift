@@ -227,11 +227,28 @@ public struct TradeHubMarketService: Sendable {
     )
   }
 
+  /// Sell orders of every station in the region. Reaction formulas are sold by
+  /// NPCs at stations away from the trade hub, so one hub would miss them.
+  public func regionWideSellOrderSnapshot(
+    typeIDs: Set<Int64>,
+    regionID: Int64,
+    referenceLocationID: Int64
+  ) async throws -> MarketOrderSnapshot {
+    try await regionalOrderSnapshot(
+      typeIDs: typeIDs,
+      regionID: regionID,
+      locationID: referenceLocationID,
+      orderType: "sell",
+      keepsEveryLocation: true
+    )
+  }
+
   private func regionalOrderSnapshot(
     typeIDs: Set<Int64>,
     regionID: Int64,
     locationID: Int64,
-    orderType: String
+    orderType: String,
+    keepsEveryLocation: Bool = false
   ) async throws -> MarketOrderSnapshot {
     var ordersByType: [Int64: [MarketOrder]] = [:]
     var source = SourceIdentity(
@@ -254,7 +271,7 @@ public struct TradeHubMarketService: Sendable {
           try await fetchOrders(
             typeID: typeID,
             regionID: regionID,
-            locationID: locationID,
+            locationID: keepsEveryLocation ? nil : locationID,
             orderType: orderType
           )
         }
@@ -273,7 +290,7 @@ public struct TradeHubMarketService: Sendable {
             try await fetchOrders(
               typeID: typeID,
               regionID: regionID,
-              locationID: locationID,
+              locationID: keepsEveryLocation ? nil : locationID,
               orderType: orderType
             )
           }
@@ -294,7 +311,7 @@ public struct TradeHubMarketService: Sendable {
   private func fetchOrders(
     typeID: Int64,
     regionID: Int64,
-    locationID: Int64,
+    locationID: Int64?,
     orderType: String
   ) async throws -> MarketOrderBatch {
     try Task.checkCancellation()
@@ -315,7 +332,7 @@ public struct TradeHubMarketService: Sendable {
       // stations only increases peak memory during large plans and reaction
       // analyses.
       orders: response.value.lazy.filter {
-        $0.typeID == typeID && $0.locationID == locationID
+        $0.typeID == typeID && (locationID == nil || $0.locationID == locationID)
       }.map {
         MarketOrder(
           id: $0.orderID,
@@ -326,7 +343,8 @@ public struct TradeHubMarketService: Sendable {
           price: $0.price,
           volumeRemaining: $0.volumeRemain,
           minimumVolume: $0.minVolume,
-          issued: $0.issued
+          issued: $0.issued,
+          durationDays: $0.duration
         )
       },
       source: response.source

@@ -1542,7 +1542,9 @@ struct IndustryPlannerTests {
     offers: [PublicContractSearchResult] = [],
     valuation: BlueprintMaterialValuation? = nil,
     reservations: [BlueprintRunReservation] = [],
-    selectedInput: String? = nil
+    selectedInput: String? = nil,
+    activity: BlueprintActivityDefinition.Kind = .manufacturing,
+    ownedAtMainHub: Set<Int64> = []
   ) async throws -> (
     assessment: ProductionTreeBlueprintAssessment,
     plan: IndustryPlanSnapshot
@@ -1553,7 +1555,8 @@ struct IndustryPlannerTests {
         preference: MaterialProcurementPreference(
           supplyMode: .produce,
           purchaseLocation: .jita
-        )
+        ),
+        intermediateActivity: activity
       )
     )
     let selectedPlan: IndustryPlanSnapshot
@@ -1593,7 +1596,9 @@ struct IndustryPlannerTests {
                 OwnedBlueprintInstance(
                   id: $0.id,
                   blueprintTypeID: 802,
-                  locationID: $0.atProduction ? production : production + 1,
+                  locationID: ownedAtMainHub.contains($0.id)
+                    ? EVEConstants.jitaIV4StationID
+                    : $0.atProduction ? production : production + 1,
                   quantity: $0.runs < 0 ? -1 : -2,
                   runs: $0.runs,
                   materialEfficiency: 5,
@@ -1617,7 +1622,7 @@ struct IndustryPlannerTests {
             structureName: "Production",
             solarSystemID: 30_000_001,
             solarSystemName: "Test",
-            activities: [.manufacturing]
+            activities: activity == .reaction ? [.reaction] : [.manufacturing]
           )
         ]
       ),
@@ -1647,6 +1652,86 @@ struct IndustryPlannerTests {
       offers: [bpcContract(contractID: 1, runs: 1_000, price: 1)]
     )
     #expect(result.assessment.recommendation == .useOwnedBPO)
+  }
+
+  @Test
+  func reactionFormulaAtMainHubCountsAsAvailable() async throws {
+    let result = try await sourceRuleAssessment(
+      owned: [(1, -1, false)],
+      activity: .reaction,
+      ownedAtMainHub: [1]
+    )
+    #expect(result.assessment.recommendation == .useOwnedBPO)
+    #expect(result.assessment.exactLocationInstanceOptions.map(\.itemID) == [1])
+  }
+
+  @Test
+  func onlyAChosenFormulaAtTheMainHubIsShipped() async throws {
+    let atHub = try await sourceRuleAssessment(
+      owned: [(1, -1, false)],
+      activity: .reaction,
+      ownedAtMainHub: [1]
+    ).assessment
+    let shipment = PlannerFormulaShipment.shipment(
+      for: atHub, action: .useOwnedBPO, preferredSources: [], mainHub: .jita
+    )
+    #expect(shipment?.blueprintTypeID == 802)
+    #expect(shipment?.originName == ProcurementLocation.jita.name)
+    #expect(
+      PlannerFormulaShipment.shipment(
+        for: atHub, action: .buyMarketBPO, preferredSources: [], mainHub: .jita
+      ) == nil
+    )
+    let atFacility = try await sourceRuleAssessment(
+      owned: [(1, -1, false), (2, -1, true)],
+      activity: .reaction,
+      ownedAtMainHub: [1]
+    ).assessment
+    #expect(
+      PlannerFormulaShipment.shipment(
+        for: atFacility, action: .useOwnedBPO, preferredSources: [], mainHub: .jita
+      ) == nil
+    )
+    #expect(
+      PlannerFormulaShipment.shipment(
+        for: atFacility,
+        action: .useOwnedBPO,
+        preferredSources: [.ownedBPO(itemID: 1)],
+        mainHub: .jita
+      )?.blueprintTypeID == 802
+    )
+  }
+
+  @Test
+  func reactionFormulaAtFacilityIsPreferredOverOneAtMainHub() async throws {
+    let result = try await sourceRuleAssessment(
+      owned: [(1, -1, false), (2, -1, true)],
+      activity: .reaction,
+      ownedAtMainHub: [1]
+    )
+    #expect(result.assessment.recommendation == .useOwnedBPO)
+    #expect(result.assessment.exactLocationInstanceOptions.map(\.itemID) == [2])
+  }
+
+  @Test
+  func reactionFormulaElsewhereDoesNotCountAsAvailable() async throws {
+    let result = try await sourceRuleAssessment(
+      owned: [(1, -1, false)],
+      activity: .reaction
+    )
+    #expect(result.assessment.exactLocationInstanceOptions.isEmpty)
+    #expect(result.assessment.availableActions.contains(.useOwnedBPO))
+    #expect(result.assessment.recommendation != .useOwnedBPO)
+  }
+
+  @Test
+  func manufacturingBPOAtMainHubStaysAManualChoice() async throws {
+    let result = try await sourceRuleAssessment(
+      owned: [(1, -1, false)],
+      ownedAtMainHub: [1]
+    )
+    #expect(result.assessment.exactLocationInstanceOptions.isEmpty)
+    #expect(result.assessment.recommendation != .useOwnedBPO)
   }
 
   @Test
@@ -2558,6 +2643,123 @@ struct IndustryPlannerTests {
     #expect(
       plan.materials.first { $0.typeID == 33 }?.toBuy == 5
     )
+  }
+
+  @Test
+  func shippedFormulaAddsVolumeAndCollateralToTheInboundCargo() async throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let product = BlueprintDefinition(
+      blueprintTypeID: 401,
+      productTypeID: 41,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 42, quantity: 10)],
+        products: [BlueprintProduct(typeID: 41, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let catalog = FixtureCatalog(
+      names: [41: "Finished Product", 42: "Purchased Material", 401: "Formula"],
+      definitions: [41: product],
+      packagedVolumes: [41: 100, 42: 20, 401: 0.01]
+    )
+    var logistics = LogisticsConfiguration(
+      isEnabled: true,
+      productionLocationName: "Production",
+      marketLocationName: "Jita",
+      iskPerCubicMeter: 2_000
+    )
+    logistics.hubTransport.set(
+      HubTransportLegSetting(
+        leg: .mainToHome,
+        method: .jumpFreighterService,
+        service: JumpFreighterServiceRate(iskPerCubicMeter: 500, collateralRate: 0.01)
+      )
+    )
+    let basis = ProductionBasis(
+      marketTaxes: MarketTaxConfiguration(
+        traderCharacterID: 1,
+        salesTaxRate: 0.05,
+        brokerFeeRate: 0.01,
+        calculation: feeCalculation(source: source)
+      ),
+      logistics: logistics
+    )
+    func plan(
+      _ shipments: [PlannerFormulaShipment],
+      formulaAveragePrice: Double? = nil
+    ) async throws -> IndustryPlanSnapshot {
+      try await IndustryPlanner().plan(
+        input: "Finished Product 1 0 0 BPC 7000000",
+        context: IndustryPlanningContext(
+          manufacturingProfile: ManufacturingProfile(),
+          productionBasis: basis,
+          catalog: catalog,
+          market: MarketOrderSnapshot(
+            id: UUID(),
+            regionID: EVEConstants.theForgeRegionID,
+            locationID: EVEConstants.jitaIV4StationID,
+            capturedAt: .now,
+            state: .fresh,
+            ordersByType: [
+              41: [makeOrder(typeID: 41, side: .sell, price: 300_000_000)],
+              42: [makeOrder(typeID: 42, side: .sell, price: 100)],
+            ],
+            source: source
+          ),
+          adjustedPrices: [
+            42: AdjustedPrice(typeID: 42, adjustedPrice: 50, averagePrice: 50),
+            401: AdjustedPrice(typeID: 401, adjustedPrice: 0, averagePrice: formulaAveragePrice),
+          ],
+          systemIndices: [
+            IndustrySystemIndex(
+              solarSystemID: EVEConstants.jitaSystemID,
+              activity: .manufacturing,
+              costIndex: 0.01
+            )
+          ],
+          sdeBuild: 1,
+          salesTaxRate: basis.marketTaxes.effectiveSalesTaxRate,
+          brokerFeeRate: basis.marketTaxes.effectiveBrokerFeeRate,
+          formulaShipments: shipments
+        )
+      )
+    }
+    func shipment(typeID: Int64, collateral: Double?) -> PlannerFormulaShipment {
+      PlannerFormulaShipment(
+        blueprintTypeID: typeID,
+        formulaName: "Formula",
+        originName: "Jita",
+        collateral: collateral
+      )
+    }
+
+    // 200.01 m³ × 500 ISK plus 1 % of 15,001,000 ISK collateral.
+    let shipped = try await plan([shipment(typeID: 401, collateral: 15_000_000)])
+    let cost = try #require(shipped.costBreakdown?.logisticsCost)
+    #expect(abs(cost - 250_015) < 0.01)
+    #expect(shipped.formulaShipments?.count == 1)
+
+    // Without a regional NPC order, the ESI average price is the value.
+    let averaged = try await plan(
+      [shipment(typeID: 401, collateral: nil)],
+      formulaAveragePrice: 15_000_000
+    )
+    #expect(abs((averaged.costBreakdown?.logisticsCost ?? 0) - 250_015) < 0.01)
+    #expect(!averaged.warnings.contains { $0.code == "planner.formula-shipment-value-unavailable" })
+
+    // Without any known value the transport stays out and says so.
+    let unknown = try await plan([shipment(typeID: 401, collateral: nil)])
+    #expect(unknown.costBreakdown?.logisticsCost == 100_010)
+    #expect(unknown.formulaShipments?.count == 1)
+    #expect(unknown.warnings.contains { $0.code == "planner.formula-shipment-value-unavailable" })
+
+    // A formula whose reaction is not built does not travel.
+    let notBuilt = try await plan([shipment(typeID: 999, collateral: 15_000_000)])
+    #expect(notBuilt.costBreakdown?.logisticsCost == 100_010)
+    #expect(notBuilt.formulaShipments == nil)
   }
 
   @Test
@@ -5621,5 +5823,113 @@ struct PlannerCalculationSchedulerTests {
     scheduler.cancelAll()
     try? await Task.sleep(for: .milliseconds(80))
     #expect(runs == 0)
+  }
+}
+
+@Suite
+struct PlannerStatusTests {
+  private func status(
+    calculating: Bool = false,
+    error: Bool = false,
+    plan: Bool = true,
+    started: Bool = false,
+    completed: Bool = false,
+    changed: Bool = false
+  ) -> PlannerCalculationStatus {
+    .resolve(
+      isCalculating: calculating,
+      hasError: error,
+      hasPlan: plan,
+      startedThisSession: started,
+      matchesCompletedCalculation: completed,
+      hasChangesSinceOpening: changed
+    )
+  }
+
+  @Test
+  func statusSeparatesSavedCurrentAndOutdatedPlans() {
+    #expect(status() == .saved)
+    #expect(status(changed: true) == .outdated)
+    #expect(status(started: true, completed: true) == .current)
+    #expect(status(started: true) == .outdated)
+    #expect(status(calculating: true, error: true) == .calculating)
+    #expect(status(error: true) == .failed)
+    #expect(status(plan: false) == .noPlan)
+  }
+
+  @Test
+  func blueprintStagesFollowTheFixedOrder() {
+    #expect(BlueprintSourceStage(action: .useOwnedBPO).rawValue == 1)
+    #expect(BlueprintSourceStage(action: .useOwnedBPCWithContracts).rawValue == 2)
+    #expect(BlueprintSourceStage(action: .buyContractBPC).rawValue == 3)
+    #expect(BlueprintSourceStage(action: .buyMarketBPO).rawValue == 4)
+    #expect(BlueprintSourceStage(action: .unresolved) == .none)
+  }
+
+  @Test
+  func missingCatalogAndMainHubAreReported() {
+    var basis = ProductionBasis()
+    basis.mainTradingLocationID = nil
+    #expect(
+      PlannerSetupIssue.issues(hasStaticData: false, basis: basis)
+        == [.staticDataMissing, .mainHubMissing]
+    )
+    #expect(PlannerSetupIssue.issues(hasStaticData: true, basis: basis) == [.mainHubMissing])
+  }
+}
+
+@Suite
+struct ReactionFormulaCostTests {
+  @Test
+  func boughtFormulaCountsAtItsFullMarketPrice() {
+    let allocations = ProductionTreeBlueprintCostProjector.allocations(for: [
+      ProductionTreeBlueprintCostChoice(
+        blueprintTypeID: 46160,
+        productName: "Fullerene Intercalated Graphite",
+        action: .buyMarketBPO,
+        formulaMarketPrice: 15_000_000
+      )
+    ])
+    #expect(allocations[46160]?.amount == 15_000_000)
+    #expect(allocations[46160]?.kind == .formula)
+  }
+
+  @Test
+  func onlyYearLongOrdersCountAsNPCSeeded() {
+    func order(_ days: Int?) -> MarketOrder {
+      MarketOrder(
+        id: 1, typeID: 46160, locationID: 1, systemID: 1, side: .sell,
+        price: 15_000_000, volumeRemaining: 1, minimumVolume: 1, issued: .now,
+        durationDays: days
+      )
+    }
+    #expect(order(365).isNPCSeeded)
+    #expect(!order(90).isNPCSeeded)
+    #expect(!order(nil).isNPCSeeded)
+  }
+
+  @Test
+  func ownedFormulaAddsNoFurtherCost() {
+    let allocations = ProductionTreeBlueprintCostProjector.allocations(for: [
+      ProductionTreeBlueprintCostChoice(
+        blueprintTypeID: 46160,
+        productName: "Fullerene Intercalated Graphite",
+        action: .useOwnedBPO,
+        formulaMarketPrice: 15_000_000
+      )
+    ])
+    #expect(allocations[46160]?.amount == 0)
+  }
+
+  @Test
+  func manufacturingBPOWithoutContractsStaysUnresolved() {
+    let allocations = ProductionTreeBlueprintCostProjector.allocations(for: [
+      ProductionTreeBlueprintCostChoice(
+        blueprintTypeID: 1,
+        productName: "Module",
+        action: .buyMarketBPO
+      )
+    ])
+    #expect(allocations[1] == nil)
   }
 }

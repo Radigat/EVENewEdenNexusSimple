@@ -120,6 +120,7 @@
 		A5E4B7A644B743FE3142871D /* ProductionJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A555FBA531B59AA843FDF2BD /* ProductionJournal.swift */; };
 		B26DFBC6B437551764D94E8A /* ProductionInputParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED06FCDEA88E08CFA55E851 /* ProductionInputParser.swift */; };
 		B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */; };
+		C41FF0265C375712A7BD97B2 /* PlannerAutomationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */; };
 		B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */; };
 		B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AC75DF5C57565C1C95D785 /* ContentView.swift */; };
 		B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */; };
@@ -376,6 +377,7 @@
 		F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesView.swift; sourceTree = "<group>"; };
 		F4E6D99D0A74D9DCEC012888 /* KeychainRefreshTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainRefreshTokenStore.swift; sourceTree = "<group>"; };
 		F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPersistenceController.swift; sourceTree = "<group>"; };
+		C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerAutomationViews.swift; sourceTree = "<group>"; };
 		FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		FEE2812212934D7FCB3FA513 /* EVEStaticDataKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = EVEStaticDataKit; path = Packages/EVEStaticDataKit; sourceTree = SOURCE_ROOT; };
 		0F9FE09B2DC20F96EAAB86DD /* ConsolidationBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationBackup.swift; sourceTree = "<group>"; };
@@ -662,6 +664,7 @@
 				019FD0410000000000000003 /* PersistenceSchemaV1.swift */,
 				5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */,
 				F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */,
+				C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */,
 				653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */,
 				E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */,
 				F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */,
@@ -982,6 +985,7 @@
 				019FD0410000000000000013 /* PersistenceSchemaV1.swift in Sources */,
 				A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */,
 				B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */,
+				C41FF0265C375712A7BD97B2 /* PlannerAutomationViews.swift in Sources */,
 				FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */,
 				29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */,
 				9492F8F84CA2B812F38B0730 /* ProfilesView.swift in Sources */,

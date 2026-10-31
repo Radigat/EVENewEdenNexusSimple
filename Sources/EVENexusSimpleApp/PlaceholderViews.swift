@@ -131,6 +131,7 @@ struct PlannerView: View {
   @Binding var historicalPlannerRequest: HistoricalPlannerRequest?
   @Binding var launchRequest: PlannerLaunchRequest?
   let runtime: RuntimeState
+  let onOpenDataSettings: (DataSettingsSection) -> Void
   @ObservedObject private var featureState: RuntimeFeatureState
   @Environment(\.modelContext) private var modelContext
   @Query(filter: #Predicate<StoredPlan> { $0.isActive })
@@ -168,6 +169,10 @@ struct PlannerView: View {
   private var includeCorporationHangars = false
   @State private var calculationScheduler = PlannerCalculationScheduler()
   @State private var calculatedAutomaticKey: PlannerAutomaticCalculationKey?
+  @State private var completedAutomaticKey: PlannerAutomaticCalculationKey?
+  @State private var calculationStartedThisSession = false
+  @AppStorage("planner.disclosure.details", store: AppDefaults.store)
+  private var arePlannerDetailsExpanded = false
   @State private var calculationPhase: PlannerCalculationPhase?
   @State private var supersededActivePlanIDs: Set<UUID> = []
   @State private var blueprintTree: ManufacturingProductionTreeSnapshot?
@@ -275,7 +280,6 @@ struct PlannerView: View {
   @State private var historicalPlan: HistoricalPlanPresentation?
   /// Explicit target market of the draft; `nil` means not chosen (P10).
   @State private var storedPurchaseLocationIDs: Set<UUID>?
-  @State private var purchaseLocationsNeedRecalculation = false
   @State private var targetMarketSelection: PlannerTargetMarket?
   /// Manual alliance-sale draft (P11).
   @State private var allianceInput = PlannerAllianceSaleInput()
@@ -302,11 +306,13 @@ struct PlannerView: View {
   init(
     historicalPlannerRequest: Binding<HistoricalPlannerRequest?>,
     launchRequest: Binding<PlannerLaunchRequest?>,
-    runtime: RuntimeState
+    runtime: RuntimeState,
+    onOpenDataSettings: @escaping (DataSettingsSection) -> Void = { _ in }
   ) {
     _historicalPlannerRequest = historicalPlannerRequest
     _launchRequest = launchRequest
     self.runtime = runtime
+    self.onOpenDataSettings = onOpenDataSettings
     _featureState = ObservedObject(
       wrappedValue: runtime.plannerFeatureState
     )
@@ -320,7 +326,7 @@ struct PlannerView: View {
   }
 
   private var isPlannerCalculationActive: Bool {
-    calculationPhase != nil || calculationScheduler.isRunning
+    calculationPhase != nil
   }
 
   var body: some View {
@@ -340,6 +346,12 @@ struct PlannerView: View {
         if let historicalPlan {
           historicalPlanPanel(historicalPlan)
         } else if historicalPlannerRequest == nil {
+          if runtime.isPlannerConfigurationReady, !plannerSetupIssues.isEmpty {
+            PlannerSetupIssuesPanel(
+              issues: plannerSetupIssues,
+              onOpen: onOpenDataSettings
+            )
+          }
           purchaseLocationsPanel
           Panel(title: "Produce") {
             PlannerManufacturingProductAdder(runtime: runtime) { line in
@@ -358,6 +370,10 @@ struct PlannerView: View {
               .accessibilityLabel("Production jobs")
               .accessibilityIdentifier("planner.input")
             HStack {
+              PlannerCalculationStatusLabel(
+                status: plannerCalculationStatus,
+                planDate: runtime.plan?.createdAt
+              )
               Button("Calculate") {
                 calculatePlan()
               }
@@ -418,7 +434,7 @@ struct PlannerView: View {
               )
             )
             .help(
-              "Makes protected, unreserved warehouse quantities available. Stock is consumed only for raw materials that you explicitly set to Use warehouse."
+              "Makes protected, unreserved warehouse quantities available. The Planner uses them first."
             )
             if isPreparingAssetWarehouse {
               Label(
@@ -447,13 +463,10 @@ struct PlannerView: View {
               .padding(.top, DesignTokens.spacingSM)
             }
           }
-          plannerBlueprintPanel
+          if runtime.plan == nil, blueprintResolutionError != nil {
+            plannerBlueprintPanel
+          }
         }
-        RecentProductionsView(
-          rows: Array(productionOverviewRows.prefix(5)),
-          isExpanded: $isRecentProductionsExpanded,
-          onOpenHistoricalPlan: requestHistoricalPlan
-        )
         if historicalPlannerRequest == nil, let error = runtime.errorMessage {
           Panel(title: "Calculation stopped") {
             Label(error, systemImage: "xmark.octagon.fill")
@@ -501,6 +514,11 @@ struct PlannerView: View {
             .foregroundStyle(DesignTokens.textSecondary)
           }
         }
+        RecentProductionsView(
+          rows: Array(productionOverviewRows.prefix(5)),
+          isExpanded: $isRecentProductionsExpanded,
+          onOpenHistoricalPlan: requestHistoricalPlan
+        )
       }
       .padding(DesignTokens.spacingLG)
     }
@@ -517,14 +535,13 @@ struct PlannerView: View {
       openRequestedHistoricalPlanIfNeeded()
       applyPlannerLaunchRequestIfNeeded()
       parseResult = ProductionInputParser.parse(input)
-      scheduleAutomaticCalculationIfNeeded()
     }
-    .onChange(of: automaticCalculationKey) {
+    .onChange(of: automaticCalculationKey) { _, key in
       persistManualDecisions()
-      scheduleAutomaticCalculationIfNeeded()
-    }
-    .onChange(of: isAutomaticCalculationReady) {
-      scheduleAutomaticCalculationIfNeeded()
+      // The basis loads after the saved plan opens; that is no owner change.
+      if !runtime.isPlannerConfigurationReady {
+        calculatedAutomaticKey?.basisIdentity = key.basisIdentity
+      }
     }
     .onDisappear {
       calculationScheduler.cancelAll()
@@ -596,28 +613,6 @@ struct PlannerView: View {
               ForEach(groups) { group in
                 plannerBlueprintGroup(group)
               }
-              HStack {
-                if blueprintSelectionNeedsRecalculation {
-                  Label(
-                    "BPO/BPC selections or ME/TE values changed; recalculate before using the displayed totals.",
-                    systemImage: "arrow.triangle.2.circlepath"
-                  )
-                  .font(.caption)
-                  .foregroundStyle(DesignTokens.caution)
-                }
-                Spacer()
-                Button("Apply BPO/BPC and recalculate") {
-                  calculatePlan()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                  !parseResult.isValid || isPlannerCalculationActive
-                    || runtime.isWorking
-                    || isPreparingAssetWarehouse
-                    || !runtime.isPlannerConfigurationReady
-                )
-                .accessibilityIdentifier("planner.blueprints.recalculate")
-              }
             }
           } else if isPlannerCalculationActive || runtime.isWorking {
             HStack(spacing: DesignTokens.spacingSM) {
@@ -632,7 +627,7 @@ struct PlannerView: View {
             }
           } else {
             Label(
-              "Calculate the plan to resolve owned BPOs/BPCs, exact locations, required runs and attributable contract costs.",
+              "The next calculation resolves owned BPOs/BPCs, exact locations, required runs and attributable contract costs.",
               systemImage: "doc.on.doc"
             )
             .foregroundStyle(DesignTokens.textSecondary)
@@ -743,6 +738,17 @@ struct PlannerView: View {
           "planner.blueprint-source.\(blueprint.blueprintTypeID)"
         )
       }
+      PlannerBlueprintChoiceNote(
+        recommendation: blueprint.recommendation,
+        recommendationTitle: plannerBlueprintActionTitle(blueprint.recommendation),
+        isManual: blueprintActions[blueprint.blueprintTypeID] != nil
+          || preferredBlueprintSources[blueprint.blueprintTypeID] != nil,
+        isHandedOff: handedOffBlueprintSupplyPlans[blueprint.blueprintTypeID] != nil,
+        onReset: {
+          blueprintActions.removeValue(forKey: blueprint.blueprintTypeID)
+          preferredBlueprintSources.removeValue(forKey: blueprint.blueprintTypeID)
+        }
+      )
 
       if step.node.activity != .reaction {
         HStack(spacing: DesignTokens.spacingSM) {
@@ -1024,164 +1030,18 @@ struct PlannerView: View {
     _ plan: IndustryPlanSnapshot,
     isHistorical: Bool
   ) -> some View {
-    let homeLocation = runtime.productionBasis.homeTradingLocation?.location
-    let homeImmediateSale =
-      plan.homeImmediateSale
-      ?? unavailableSaleResult(
-        scenario: .immediateSale,
-        location: homeLocation,
-        outboundLogisticsCost: homeLocation == nil ? nil : 0
-      )
-    let homeListedSale =
-      plan.homeListedSale
-      ?? unavailableSaleResult(
-        scenario: .listedSale,
-        location: homeLocation,
-        outboundLogisticsCost: homeLocation == nil ? nil : 0
-      )
-    let mainContractSale =
-      plan.mainContractSale
-      ?? unavailableSaleResult(
-        scenario: .contractSale,
-        location: runtime.productionBasis.mainTradingLocation?.location
-      )
-    let homeContractSale =
-      plan.homeContractSale
-      ?? unavailableSaleResult(
-        scenario: .contractSale,
-        location: homeLocation,
-        outboundLogisticsCost: homeLocation == nil ? nil : 0
-      )
-    let coalitionLocation =
-      runtime.productionBasis.coalitionTradingLocation?.location
-    let coalitionImmediateSale =
-      plan.coalitionImmediateSale
-      ?? unavailableSaleResult(
-        scenario: .immediateSale,
-        location: coalitionLocation
-      )
-    let coalitionListedSale =
-      plan.coalitionListedSale
-      ?? unavailableSaleResult(
-        scenario: .listedSale,
-        location: coalitionLocation
-      )
-    let coalitionContractSale =
-      plan.coalitionContractSale
-      ?? unavailableSaleResult(
-        scenario: .contractSale,
-        location: coalitionLocation
-      )
-    financeOverviewPanel(plan)
-    if let refiningPlan = plan.compressedOreRefining {
-      compressedOreRefiningPanel(refiningPlan, plan: plan)
-    } else if runtime.productionBasis.compressedOreRefining.isEnabled
-      || plan.warnings.contains(where: {
-        $0.code == "refining.comparison-disabled"
-      })
-    {
-      compressedOreRefiningStatusPanel(plan)
-    }
-    targetMarketPanel(plan, isHistorical: isHistorical)
-    Panel(title: "Sale scenario overview") {
-      Text(
-        "Shared production and Main Hub to Home Hub delivery costs are shown once above. Every preview below already includes the logistics and fees required by that sale location."
-      )
-      .font(.caption)
-      .foregroundStyle(DesignTokens.textSecondary)
-      LazyVGrid(
-        columns: [
-          GridItem(
-            .adaptive(minimum: 420, maximum: 680),
-            alignment: .top
-          )
-        ],
-        alignment: .leading,
-        spacing: DesignTokens.spacingMD
-      ) {
-        saleScenarioPreview(
-          title: "Immediate sale · Main Hub",
-          result: plan.immediateSale,
-          hub: .main,
-          plan: plan
-        )
-        saleScenarioPreview(
-          title: "Listed sale · Main Hub",
-          result: plan.listedSale,
-          hub: .main,
-          plan: plan
-        )
-        saleScenarioPreview(
-          title: "Contract sale · Main Hub",
-          result: mainContractSale,
-          hub: .main,
-          plan: plan
-        )
-        saleScenarioPreview(
-          title: "Immediate sale · Home Hub",
-          result: homeImmediateSale,
-          hub: .home,
-          plan: plan
-        )
-        saleScenarioPreview(
-          title: "Listed sale · Home Hub",
-          result: homeListedSale,
-          hub: .home,
-          plan: plan
-        )
-        saleScenarioPreview(
-          title: "Contract sale · Home Hub",
-          result: homeContractSale,
-          hub: .home,
-          plan: plan
-        )
-        saleScenarioPreview(
-          title: "Immediate sale · Coalition Hub",
-          result: coalitionImmediateSale,
-          hub: .coalition,
-          plan: plan
-        )
-        saleScenarioPreview(
-          title: "Listed sale · Coalition Hub",
-          result: coalitionListedSale,
-          hub: .coalition,
-          plan: plan
-        )
-        saleScenarioPreview(
-          title: "Contract sale · Coalition Hub",
-          result: coalitionContractSale,
-          hub: .coalition,
-          plan: plan
-        )
-        allianceScenarioCard(plan, isHistorical: isHistorical)
-      }
-    }
-    materialPanel(
-      title: "Raw materials",
-      description:
-        "Choose Buy or Use warehouse for every raw input. Every purchase is assigned to the Profile Main Hub.",
-      sections: materialSections(
-        for: plan.materials.filter { !$0.isProducedMaterial },
-        fallback: "Other raw materials"
-      ),
-      allowsProcurement: true
-    )
-    materialPanel(
-      title: "Produced materials & intermediates",
-      description:
-        "Every component and reaction intermediate compares building with buying the complete required quantity at the Profile Main Hub, including logistics. You can still override the recommended source.",
-      sections: materialSections(
-        for: plan.materials.filter(\.isProducedMaterial),
-        fallback: "Other produced materials"
-      ),
-      allowsProcurement: true
-    )
     if !isHistorical {
-      makeOrBuyRecommendationPanel(plan)
+      PlannerRouteSummaryPanel(
+        summary: PlannerRouteSummary(plan: plan),
+        manualChoiceCount: manualChoiceCount,
+        onResetManualChoices: resetManualDecisions
+      )
     }
-    productionJobListPanel(plan)
-    warehouseReplenishmentPanel(plan)
+    financeOverviewPanel(plan)
+    targetMarketPanel(plan, isHistorical: isHistorical)
+    plannerSaleScenarioPanel(plan, isHistorical: isHistorical)
     shoppingListPanel(plan)
+    productionJobListPanel(plan)
     Panel(title: "Jobs") {
       LabeledContent("Jobs", value: "\(plan.jobs.count)")
       ExplainedPlannerMetricRow(
@@ -1257,6 +1117,187 @@ struct PlannerView: View {
         .accessibilityIdentifier("planner.warnings.disclosure")
       }
     }
+    if isHistorical {
+      plannerResultDetails(plan, isHistorical: true)
+    } else {
+      Panel(title: "Details") {
+        FullWidthDisclosure(isExpanded: $arePlannerDetailsExpanded) {
+          Text("Blueprints, materials and warehouse list")
+        } content: {
+          VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+            plannerBlueprintPanel
+            plannerResultDetails(plan, isHistorical: false)
+          }
+          .padding(.top, DesignTokens.spacingMD)
+        }
+        .accessibilityIdentifier("planner.details.disclosure")
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func plannerSaleScenarioPanel(
+    _ plan: IndustryPlanSnapshot,
+    isHistorical: Bool
+  ) -> some View {
+    let homeLocation = runtime.productionBasis.homeTradingLocation?.location
+    let homeImmediateSale =
+      plan.homeImmediateSale
+      ?? unavailableSaleResult(
+        scenario: .immediateSale,
+        location: homeLocation,
+        outboundLogisticsCost: homeLocation == nil ? nil : 0
+      )
+    let homeListedSale =
+      plan.homeListedSale
+      ?? unavailableSaleResult(
+        scenario: .listedSale,
+        location: homeLocation,
+        outboundLogisticsCost: homeLocation == nil ? nil : 0
+      )
+    let mainContractSale =
+      plan.mainContractSale
+      ?? unavailableSaleResult(
+        scenario: .contractSale,
+        location: runtime.productionBasis.mainTradingLocation?.location
+      )
+    let homeContractSale =
+      plan.homeContractSale
+      ?? unavailableSaleResult(
+        scenario: .contractSale,
+        location: homeLocation,
+        outboundLogisticsCost: homeLocation == nil ? nil : 0
+      )
+    let coalitionLocation =
+      runtime.productionBasis.coalitionTradingLocation?.location
+    let coalitionImmediateSale =
+      plan.coalitionImmediateSale
+      ?? unavailableSaleResult(
+        scenario: .immediateSale,
+        location: coalitionLocation
+      )
+    let coalitionListedSale =
+      plan.coalitionListedSale
+      ?? unavailableSaleResult(
+        scenario: .listedSale,
+        location: coalitionLocation
+      )
+    let coalitionContractSale =
+      plan.coalitionContractSale
+      ?? unavailableSaleResult(
+        scenario: .contractSale,
+        location: coalitionLocation
+      )
+    Panel(title: "Sale scenario overview") {
+      Text(
+        "Shared production and Main Hub to Home Hub delivery costs are shown once above. Every preview below already includes the logistics and fees required by that sale location."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      LazyVGrid(
+        columns: [
+          GridItem(
+            .adaptive(minimum: 420, maximum: 680),
+            alignment: .top
+          )
+        ],
+        alignment: .leading,
+        spacing: DesignTokens.spacingMD
+      ) {
+        saleScenarioPreview(
+          title: "Immediate sale · Main Hub",
+          result: plan.immediateSale,
+          hub: .main,
+          plan: plan
+        )
+        saleScenarioPreview(
+          title: "Listed sale · Main Hub",
+          result: plan.listedSale,
+          hub: .main,
+          plan: plan
+        )
+        saleScenarioPreview(
+          title: "Contract sale · Main Hub",
+          result: mainContractSale,
+          hub: .main,
+          plan: plan
+        )
+        saleScenarioPreview(
+          title: "Immediate sale · Home Hub",
+          result: homeImmediateSale,
+          hub: .home,
+          plan: plan
+        )
+        saleScenarioPreview(
+          title: "Listed sale · Home Hub",
+          result: homeListedSale,
+          hub: .home,
+          plan: plan
+        )
+        saleScenarioPreview(
+          title: "Contract sale · Home Hub",
+          result: homeContractSale,
+          hub: .home,
+          plan: plan
+        )
+        saleScenarioPreview(
+          title: "Immediate sale · Coalition Hub",
+          result: coalitionImmediateSale,
+          hub: .coalition,
+          plan: plan
+        )
+        saleScenarioPreview(
+          title: "Listed sale · Coalition Hub",
+          result: coalitionListedSale,
+          hub: .coalition,
+          plan: plan
+        )
+        saleScenarioPreview(
+          title: "Contract sale · Coalition Hub",
+          result: coalitionContractSale,
+          hub: .coalition,
+          plan: plan
+        )
+        allianceScenarioCard(plan, isHistorical: isHistorical)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func plannerResultDetails(
+    _ plan: IndustryPlanSnapshot,
+    isHistorical: Bool
+  ) -> some View {
+    if let refiningPlan = plan.compressedOreRefining {
+      compressedOreRefiningPanel(refiningPlan, plan: plan)
+    } else if runtime.productionBasis.compressedOreRefining.isEnabled
+      || plan.warnings.contains(where: {
+        $0.code == "refining.comparison-disabled"
+      })
+    {
+      compressedOreRefiningStatusPanel(plan)
+    }
+    materialPanel(
+      title: "Raw materials",
+      description:
+        "Every raw input is bought at the cheapest selected location unless you choose otherwise.",
+      sections: materialSections(
+        for: plan.materials.filter { !$0.isProducedMaterial },
+        fallback: "Other raw materials"
+      ),
+      allowsProcurement: true
+    )
+    materialPanel(
+      title: "Produced materials & intermediates",
+      description:
+        "The Planner uses the cheaper of building and buying, including logistics. A choice you make here stays until you reset it.",
+      sections: materialSections(
+        for: plan.materials.filter(\.isProducedMaterial),
+        fallback: "Other produced materials"
+      ),
+      allowsProcurement: true
+    )
+    warehouseReplenishmentPanel(plan)
   }
 
   /// Only warnings that change the result or require action: informational notes are hidden,
@@ -3862,7 +3903,17 @@ struct PlannerView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .frame(width: material.canProduce ? 315 : 210)
-                .disabled(runtime.isWorking)
+                .disabled(runtime.isWorking && !isPlannerCalculationActive)
+                if procurementPreferences[material.typeID] != nil {
+                  Button {
+                    procurementPreferences.removeValue(forKey: material.typeID)
+                  } label: {
+                    Label("Back to automatic", systemImage: "hand.point.up.left")
+                  }
+                  .buttonStyle(.borderless)
+                  .font(.caption)
+                  .help("Set by hand. Click to let the Planner choose again.")
+                }
                 Label(
                   purchaseLocationText(
                     material,
@@ -3884,7 +3935,7 @@ struct PlannerView: View {
         Label(
           AppLocalization.text(
             historicalPlan == nil
-              ? "Changing a source immediately recalculates materials, costs, production jobs, Main Hub shopping lists and transport."
+              ? "A changed source takes effect with the next calculation."
               : "The saved material sources are read-only in historical view."
           ),
           systemImage:
@@ -3930,40 +3981,6 @@ struct PlannerView: View {
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       number(value)
-    }
-  }
-
-  private func makeOrBuyRecommendationPanel(
-    _ plan: IndustryPlanSnapshot
-  ) -> some View {
-    let manualCount = plan.materials.filter { $0.isManualSupply == true }.count
-
-    return Panel(title: "Automatic build or buy") {
-      Text(
-        "The Planner chooses the cheapest build or buy option for every material and recalculates after each change. A choice you make by hand stays until you reset it."
-      )
-      .font(.caption)
-      .foregroundStyle(DesignTokens.textSecondary)
-
-      Text(
-        AppLocalization.format(
-          "Set by hand: %lld materials.",
-          Int64(manualCount)
-        )
-      )
-      .font(.callout.monospacedDigit())
-
-      Button {
-        resetManualDecisions()
-      } label: {
-        Label(
-          "Reset manual choices",
-          systemImage: "arrow.uturn.backward"
-        )
-      }
-      .buttonStyle(.bordered)
-      .disabled(currentManualDecisions.isEmpty || historicalPlan != nil)
-      .accessibilityIdentifier("planner.manual-decisions.reset")
     }
   }
 
@@ -4160,6 +4177,9 @@ struct PlannerView: View {
         }
       } content: {
         VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+          if let shipments = plan.formulaShipments {
+            PlannerFormulaShipmentList(shipments: shipments)
+          }
           if groups.isEmpty {
             Label(
               "This plan has no materials to buy.",
@@ -5815,7 +5835,9 @@ struct PlannerView: View {
           materialEfficiency:
             supplyJobs.map(\.allocation.materialEfficiency).min() ?? 0,
           timeEfficiency: supplyJobs.map(\.allocation.timeEfficiency).min() ?? 0,
-          contractOptions: blueprint.attributableContractOptions
+          contractOptions: blueprint.attributableContractOptions,
+          formulaMarketPrice: step.node.activity == .reaction
+            ? blueprint.marketBPOOptions.first?.price : nil
         )
       }
     var allocations = ProductionTreeBlueprintCostProjector.allocations(
@@ -6068,6 +6090,31 @@ struct PlannerView: View {
     }
   }
 
+  private var manualChoiceCount: Int {
+    let handedOff = Set(handedOffBlueprintSupplyPlans.keys)
+    let blueprints = Set(blueprintActions.keys).union(preferredBlueprintSources.keys)
+    return procurementPreferences.count + blueprints.subtracting(handedOff).count
+  }
+
+  private var plannerSetupIssues: [PlannerSetupIssue] {
+    PlannerSetupIssue.issues(
+      hasStaticData: runtime.activeSDEBuild != nil,
+      basis: runtime.productionBasis
+    )
+  }
+
+  private var plannerCalculationStatus: PlannerCalculationStatus {
+    let key = automaticCalculationKey
+    return PlannerCalculationStatus.resolve(
+      isCalculating: isPlannerCalculationActive,
+      hasError: runtime.errorMessage != nil,
+      hasPlan: runtime.plan != nil,
+      startedThisSession: calculationStartedThisSession,
+      matchesCompletedCalculation: key == completedAutomaticKey,
+      hasChangesSinceOpening: key != calculatedAutomaticKey
+    )
+  }
+
   private func resetManualDecisions() {
     let kept = currentManualDecisions.reset(
       keepingBlueprintTypeIDs: Set(handedOffBlueprintSupplyPlans.keys)
@@ -6081,8 +6128,8 @@ struct PlannerView: View {
     blueprintGroupMessages.removeAll()
   }
 
-  /// Everything that changes the result. Opening a saved plan sets the baseline
-  /// and does not count as a change.
+  /// Everything that changes the result; the status line compares it with the
+  /// last calculation. Opening a saved plan sets the baseline.
   private var automaticCalculationKey: PlannerAutomaticCalculationKey {
     PlannerAutomaticCalculationKey(
       input: input,
@@ -6096,28 +6143,6 @@ struct PlannerView: View {
       handedOffBlueprintTypeIDs: Set(handedOffBlueprintSupplyPlans.keys),
       jobSplitting: jobSplitting
     )
-  }
-
-  private var isAutomaticCalculationReady: Bool {
-    parseResult.isValid
-      && historicalPlan == nil
-      && !effectivePurchaseLocationIDs.isEmpty
-      && !isPreparingAssetWarehouse
-      && runtime.isPlannerConfigurationReady
-      && (isPlannerCalculationActive || !runtime.isWorking)
-  }
-
-  private func scheduleAutomaticCalculationIfNeeded() {
-    let key = automaticCalculationKey
-    // The basis loads after the saved plan opens; that is no owner change.
-    if !runtime.isPlannerConfigurationReady {
-      calculatedAutomaticKey?.basisIdentity = key.basisIdentity
-      return
-    }
-    guard key != calculatedAutomaticKey, isAutomaticCalculationReady else { return }
-    calculationScheduler.request(after: .seconds(1)) {
-      await performPlanCalculation()
-    }
   }
 
   private func calculatePlan() {
@@ -6247,12 +6272,25 @@ struct PlannerView: View {
     return PlannerBlueprintBasis(
       tree: resolvedTree,
       supplyPlans: supplyPlans,
-      allocations: allocations
+      allocations: allocations,
+      formulaShipments: plannerBlueprintSteps(in: resolvedTree).compactMap { step in
+        guard step.node.activity == .reaction,
+          let mainHub = runtime.productionBasis.mainTradingLocation?.location
+        else { return nil }
+        return PlannerFormulaShipment.shipment(
+          for: step.blueprint,
+          action: effectivePlannerBlueprintAction(for: step),
+          preferredSources: preferredBlueprintSources[step.blueprint.blueprintTypeID] ?? [],
+          mainHub: mainHub
+        )
+      }
     )
   }
 
   private func performPlanCalculation() async {
-    calculatedAutomaticKey = automaticCalculationKey
+    let requestedKey = automaticCalculationKey
+    calculatedAutomaticKey = requestedKey
+    calculationStartedThisSession = true
     calculationPhase = .preparing
     defer { calculationPhase = nil }
     await Task.yield()
@@ -6328,7 +6366,6 @@ struct PlannerView: View {
       automaticSupply: Bool
     ) async {
       calculationPhase = .calculating
-      purchaseLocationsNeedRecalculation = false
       await runtime.calculate(
         input: plannerInput,
         manualStockInput: plannerManualStockInput,
@@ -6347,7 +6384,8 @@ struct PlannerView: View {
         clientID: EVEConstants.ssoClientID,
         jobSplitting: requestedJobSplitting,
         automaticSupply: automaticSupply,
-        manualSupplyTypeIDs: manualTypeIDs
+        manualSupplyTypeIDs: manualTypeIDs,
+        formulaShipments: basis.formulaShipments
       )
     }
     guard
@@ -6362,20 +6400,57 @@ struct PlannerView: View {
     // purchase locations and with Blueprint costs. When they differ, the
     // Blueprints are resolved again for the calculated build steps and those
     // steps are kept, so costs and supply always describe the same graph.
-    if runtime.errorMessage == nil, let decided = runtime.plan,
-      Self.producedTypeIDs(decided) != Self.producedTypeIDs(firstBasis.tree.selectedPlan)
-    {
-      let decisions = manualPreferences.merging(
+    if runtime.errorMessage == nil, let decided = runtime.plan {
+      // A reaction without any formula source cannot run; it is bought instead
+      // of leaving the plan's total open. A manual choice stays.
+      let unusableReactions = Set(
+        decided.nodes.compactMap { node -> Int64? in
+          guard node.action == .produce, node.activity == .reaction,
+            let blueprintTypeID = node.blueprintTypeID,
+            firstBasis.allocations[blueprintTypeID] == nil,
+            !manualTypeIDs.contains(node.typeID),
+            !parsed.requests.contains(where: { $0.productName == node.name })
+          else { return nil }
+          return node.typeID
+        }
+      )
+      guard
+        !unusableReactions.isEmpty
+          || Self.producedTypeIDs(decided)
+            != Self.producedTypeIDs(firstBasis.tree.selectedPlan)
+      else {
+        return await finishPlanCalculation(
+          requestedKey: requestedKey,
+          workspaceRevision: workspaceRevision,
+          previousPlan: previousPlan
+        )
+      }
+      var decisions = manualPreferences.merging(
         decided.materials.compactMap { material in
           material.procurement.map { (material.typeID, $0) }
         },
         uniquingKeysWith: { manual, _ in manual }
       )
+      for typeID in unusableReactions {
+        decisions[typeID]?.supplyMode = .buy
+      }
       guard let finalBasis = await basis(preferences: decisions, automaticSupply: false)
       else { return }
       await calculate(finalBasis, preferences: decisions, automaticSupply: false)
       guard !Task.isCancelled else { return }
     }
+    await finishPlanCalculation(
+      requestedKey: requestedKey,
+      workspaceRevision: workspaceRevision,
+      previousPlan: previousPlan
+    )
+  }
+
+  private func finishPlanCalculation(
+    requestedKey: PlannerAutomaticCalculationKey,
+    workspaceRevision: Int64,
+    previousPlan: IndustryPlanSnapshot?
+  ) async {
     guard workspaceRevision == consolidation.workspace.revision else {
       persistenceError = "Wissenschaftsaufträge oder Ausgangsdaten wurden während der Berechnung geändert. Bitte erneut berechnen."
       runtime.plan = previousPlan
@@ -6384,7 +6459,9 @@ struct PlannerView: View {
     guard runtime.errorMessage == nil, let plan = runtime.plan else { return }
     blueprintSelectionNeedsRecalculation = false
     calculationPhase = .saving
-    _ = await saveActivePlan(plan)
+    if await saveActivePlan(plan) {
+      completedAutomaticKey = requestedKey
+    }
   }
 
   private static func producedTypeIDs(_ plan: IndustryPlanSnapshot) -> Set<Int64> {
@@ -6495,7 +6572,7 @@ struct PlannerView: View {
               )
             )
             .labelsHidden()
-            .disabled(isPlannerCalculationActive || runtime.isWorking)
+            .disabled(runtime.isWorking && !isPlannerCalculationActive)
             EVEEntityText(value: option.location.name, font: .body)
             Spacer()
           }
@@ -6507,13 +6584,6 @@ struct PlannerView: View {
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.caution)
-        } else if purchaseLocationsNeedRecalculation {
-          Label(
-            "Recalculate to apply the purchase locations.",
-            systemImage: "arrow.clockwise"
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
         }
       }
     }
@@ -6527,7 +6597,6 @@ struct PlannerView: View {
       selection.remove(id)
     }
     storedPurchaseLocationIDs = selection
-    purchaseLocationsNeedRecalculation = runtime.plan != nil
     do {
       let data = try JSONEncoder().encode(selection.map(\.uuidString).sorted())
       try modelContext.upsertAppSetting(
@@ -10374,6 +10443,7 @@ private struct PlannerBlueprintBasis {
   let tree: ManufacturingProductionTreeSnapshot
   let supplyPlans: [Int64: BlueprintSupplyPlan]
   let allocations: [Int64: IndustryBlueprintCostAllocation]
+  let formulaShipments: [PlannerFormulaShipment]
 }
 
 private struct PlannerAutomaticCalculationKey: Equatable {

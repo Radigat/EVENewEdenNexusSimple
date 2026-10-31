@@ -323,3 +323,36 @@ Schritt P1.
   `planner.blueprint-supply-draft.v3`. Der neue Schlüssel enthält nur echte Übergaben;
   der alte v2-Entwurf mischte sie mit automatischen Quellen und wird nicht mehr
   gelesen. Eine dort noch offene Übergabe muss neu angestoßen werden.
+
+## 30.10.2026 – Oberfläche des Planers
+
+- **Entscheidung (Eigentümer):** Aufbau Einkaufsorte, Item, Ergebnis, Einkaufsliste je
+  Ort, Aufträge, aufklappbare Details. „Berechnen“ als Pflichtschritt und die
+  Übernahmeknöpfe entfallen.
+- **Umsetzungsregeln:** „Jetzt neu berechnen“ bleibt für frische Preise. Zielmarkt und
+  Warnungen bleiben außerhalb der Details, weil sie das Ergebnis erklären.
+- **Abweichung:** Der Hinweis nennt nur SDE-Katalog und Main Hub. Eine fehlende Anlage
+  gibt es nicht, weil die Produktionsbasis immer eine Standardanlage anlegt.
+
+## 31.10.2026 – Planer rechnet nur auf Klick
+
+- **Entscheidung (Eigentümer):** Der Planer rechnet erst, wenn „Berechnen“ angeklickt
+  wird. Bauen oder Kaufen und Blueprints wählt die Rechnung weiter selbst.
+- **Ersetzt:** „Rechnet bei jeder Änderung neu“ und „Berechnen entfällt als Pflichtschritt“
+  aus den Einträgen vom 30.10.2026.
+
+## 31.10.2026 – Gekaufte Reaktionsformeln
+
+- **Auftrag (Eigentümer):** Fehlende Formeln ermitteln und die Automatik danach bauen.
+- **Befund:** Gekaufte BPOs wurden nur über ersetzte BPC-Runs bewertet. Formeln haben
+  keine BPC-Verträge, sie blieben daher ohne Kosten und hielten Gesamtkosten und Gewinn
+  offen. NPC-Orders liegen außerhalb von Jita 4-4, dort wurde nur der Hub gelesen.
+- **Entscheidung (Eigentümer):** Formelkosten kommen nur aus der NPC-Sell-Order und sind
+  einmalig; ist die Formel vorhanden, kommen keine weiteren Kosten dazu.
+- **Umsetzungsregeln:** NPC-Order heißt 365 Tage Laufzeit (ESI nennt keinen Verkäufer).
+  „Vorhanden“ heißt am Produktionsort oder am Main Hub, weil die Formel von dort mit den
+  Materialien mitgeht (Eigentümer). Dafür gibt es einen Listenhinweis und Transportkosten
+  nach Volumen und Collateral; als Collateral dient der NPC-Preis, sonst der
+  ESI-Durchschnittspreis (31.10.2026: bei 19 Formeln 10 bzw. 15 Mio. ISK wie die NPC-Orders);
+  ohne beide bleibt der Transport mit Warnung außerhalb der Kosten. Formeln an anderen Orten zählen nicht
+  automatisch. Ohne NPC-Order wird das Produkt gekauft.

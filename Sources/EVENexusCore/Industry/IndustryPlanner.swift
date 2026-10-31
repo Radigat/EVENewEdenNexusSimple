@@ -86,6 +86,8 @@ public struct IndustryPlanningContext: Sendable {
   /// The owner's manual choices of a Planner run. Non-`nil` also values builds
   /// with the Blueprint cost and the ME of the chosen source.
   public let manualSupplyTypeIDs: Set<Int64>?
+  /// Owned formulas that travel from the Main Hub with the materials.
+  public let formulaShipments: [PlannerFormulaShipment]
 
   public init(
     manufacturingProfile: ManufacturingProfile,
@@ -129,8 +131,10 @@ public struct IndustryPlanningContext: Sendable {
     capitalJumpRouteWarnings: [DomainWarning] = [],
     jobSplitting: IndustryJobSplitting = .init(),
     automaticSupply: Bool = false,
-    manualSupplyTypeIDs: Set<Int64>? = nil
+    manualSupplyTypeIDs: Set<Int64>? = nil,
+    formulaShipments: [PlannerFormulaShipment] = []
   ) {
+    self.formulaShipments = formulaShipments
     self.automaticSupply = automaticSupply
     self.manualSupplyTypeIDs = manualSupplyTypeIDs
     self.manufacturingProfile = manufacturingProfile
@@ -2062,6 +2066,33 @@ public struct IndustryPlanner: Sendable {
       )
     let configuredCoalitionHub =
       context.productionBasis?.coalitionTradingLocation?.location
+    let builtBlueprintTypeIDs = Set(
+      state.nodes.compactMap { $0.action == .produce ? $0.blueprintTypeID : nil }
+    )
+    // Without a regional NPC order, the ESI average price values the formula.
+    let formulaShipments = context.formulaShipments.filter {
+      builtBlueprintTypeIDs.contains($0.blueprintTypeID)
+    }.map { shipment in
+      PlannerFormulaShipment(
+        blueprintTypeID: shipment.blueprintTypeID,
+        formulaName: shipment.formulaName,
+        originName: shipment.originName,
+        collateral: shipment.collateral
+          ?? context.adjustedPrices[shipment.blueprintTypeID]?.averagePrice
+            .flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+      )
+    }
+    let formulaCargo = formulaShipments.filter { $0.collateral != nil }
+    for shipment in formulaShipments where shipment.collateral == nil {
+      warnings.append(
+        DomainWarning(
+          code: "planner.formula-shipment-value-unavailable",
+          message:
+            "\(shipment.formulaName) has no known ESI price, so its transport is not included in the logistics cost.",
+          severity: .warning
+        )
+      )
+    }
     let directInboundLogistics = try await logisticsBreakdown(
       configuration: context.productionBasis?.logistics,
       materials: materials,
@@ -2076,7 +2107,8 @@ public struct IndustryPlanner: Sendable {
       includeOutboundProducts: false,
       leg: .mainToHome,
       catalog: context.catalog,
-      refiningOptimization: nil
+      refiningOptimization: nil,
+      formulaCargo: formulaCargo
     )
     var inboundLogistics = directInboundLogistics
     if let optimization = refiningOptimization,
@@ -2096,7 +2128,8 @@ public struct IndustryPlanner: Sendable {
         includeOutboundProducts: false,
         leg: .mainToHome,
         catalog: context.catalog,
-        refiningOptimization: optimization
+        refiningOptimization: optimization,
+        formulaCargo: formulaCargo
       )
       if let directCost = directInboundLogistics.cost,
         let optimizedCost = optimizedInbound.cost,
@@ -2728,6 +2761,7 @@ public struct IndustryPlanner: Sendable {
       )
     )
     snapshot.jobSplitting = context.jobSplitting
+    snapshot.formulaShipments = formulaShipments.isEmpty ? nil : formulaShipments
     return snapshot
   }
 
@@ -3383,7 +3417,8 @@ public struct IndustryPlanner: Sendable {
     includeOutboundProducts: Bool,
     leg: HubTransportLeg,
     catalog: any IndustryCatalogQuerying,
-    refiningOptimization: OreRefiningOptimizationResult? = nil
+    refiningOptimization: OreRefiningOptimizationResult? = nil,
+    formulaCargo: [PlannerFormulaShipment] = []
   ) async throws -> (
     breakdown: LogisticsCostBreakdown?,
     cost: Double?,
@@ -3406,7 +3441,8 @@ public struct IndustryPlanner: Sendable {
         homeHub: homeHub,
         purchaseBook: purchaseBook,
         catalog: catalog,
-        refiningOptimization: refiningOptimization
+        refiningOptimization: refiningOptimization,
+        formulaCargo: formulaCargo
       )
     }
     guard !mainHub.representsSameLocation(as: homeHub) else {
@@ -3478,6 +3514,15 @@ public struct IndustryPlanner: Sendable {
             typeID: purchase.oreTypeID,
             quantity: purchase.quantity,
             collateral: purchase.purchaseQuote.total
+          )
+        )
+      }
+      for shipment in formulaCargo {
+        inboundCargo.append(
+          InboundCargo(
+            typeID: shipment.blueprintTypeID,
+            quantity: 1,
+            collateral: shipment.collateral
           )
         )
       }
@@ -3580,7 +3625,8 @@ public struct IndustryPlanner: Sendable {
     homeHub: ProcurementLocation,
     purchaseBook: PlannerPurchaseBook,
     catalog: any IndustryCatalogQuerying,
-    refiningOptimization: OreRefiningOptimizationResult?
+    refiningOptimization: OreRefiningOptimizationResult?,
+    formulaCargo: [PlannerFormulaShipment]
   ) async throws -> (
     breakdown: LogisticsCostBreakdown?,
     cost: Double?,
@@ -3618,9 +3664,20 @@ public struct IndustryPlanner: Sendable {
         (purchase.oreTypeID, purchase.quantity, purchase.purchaseQuote.total)
       )
     }
+    for shipment in formulaCargo {
+      cargoByOrigin[mainHub.id, default: []].append(
+        (shipment.blueprintTypeID, 1, shipment.collateral)
+      )
+    }
+    // A formula also leaves the Main Hub when no material is bought there.
+    var routes: [(location: ProcurementLocation, leg: HubTransportLeg?)] =
+      purchaseBook.sources.map { ($0.location, $0.leg) }
+    if !formulaCargo.isEmpty, !routes.contains(where: { $0.location.id == mainHub.id }) {
+      routes.append((mainHub, .mainToHome))
+    }
     var legs: [LogisticsCostLeg] = []
     var displayPricing: LogisticsContractPricing?
-    for source in purchaseBook.sources {
+    for source in routes {
       guard let cargo = cargoByOrigin[source.location.id], !cargo.isEmpty,
         let leg = source.leg,
         !source.location.representsSameLocation(as: homeHub)

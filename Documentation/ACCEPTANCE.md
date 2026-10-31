@@ -695,4 +695,16 @@ are no longer current product requirements.
 
 | Area | Automated evidence | Live evidence | Owner acceptance |
 | --- | --- | --- | --- |
-| Automatic build or buy and recalculation | pass: fixtures cover the choice without a click, the chain, manual choices and reset, Blueprint cost, source ME, debounce, cancellation and the latest wish | not run: the running app was not exercised | pending: change item, location and a manual choice in the app and compare the plan with EVE |
+| Automatic build or buy, calculation on click only since 2026-10-31 | pass: fixtures cover the choice without a click, the chain, manual choices and reset, Blueprint cost, source ME, debounce, cancellation and the latest wish | not run: the running app was not exercised | pending: change item, location and a manual choice in the app and compare the plan with EVE |
+
+## Planner layout, 2026-10-30
+
+| Area | Automated evidence | Live evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| Status, route, manual markers, setup links | pass: fixtures cover the status rules, Blueprint stages and setup issues | partial: isolated empty app, Planner layout, status and setup link checked; no calculation run | pending: walk through the Planner with real settings |
+
+## Bought reaction formulas, 2026-10-31
+
+| Area | Automated evidence | Live evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| Formula cost and fallback | pass: fixtures cover the full formula price and an unresolved manufacturing BPO | partial: public ESI orders of the four formulas on 2026-10-31 show 365-day orders at the base price and player orders at 90 days; the app calculation was not run | pending: recalculate the Ark plan and compare the formula prices |

@@ -1528,7 +1528,8 @@ final class RuntimeState {
     clientID: String = "",
     jobSplitting: IndustryJobSplitting = .init(),
     automaticSupply: Bool = false,
-    manualSupplyTypeIDs: Set<Int64>? = nil
+    manualSupplyTypeIDs: Set<Int64>? = nil,
+    formulaShipments: [PlannerFormulaShipment] = []
   ) async {
     plannerCalculationGeneration &+= 1
     let calculationGeneration = plannerCalculationGeneration
@@ -1915,7 +1916,8 @@ final class RuntimeState {
           capitalJumpRouteWarnings: loadedJumpFreighterRoute.capitalWarnings,
           jobSplitting: jobSplitting,
           automaticSupply: automaticSupply,
-          manualSupplyTypeIDs: manualSupplyTypeIDs
+          manualSupplyTypeIDs: manualSupplyTypeIDs,
+          formulaShipments: formulaShipments
         )
         let calculatedPlan = try await planner.plan(
           preparation: preparation,
@@ -2610,6 +2612,34 @@ final class RuntimeState {
       locationID: mainLocationID
     )
     snapshotIDs.append(blueprintMarket.source.snapshotID)
+    var blueprintMarketOrders = blueprintMarket.ordersByType
+    let formulaTypeIDs = Set(
+      referencePlan.nodes.filter { $0.activity == .reaction }
+        .compactMap(\.blueprintTypeID)
+    )
+    if !formulaTypeIDs.isEmpty {
+      do {
+        let formulaMarket = try await marketService.regionWideSellOrderSnapshot(
+          typeIDs: formulaTypeIDs,
+          regionID: mainRegionID,
+          referenceLocationID: mainLocationID
+        )
+        blueprintMarketOrders.merge(formulaMarket.ordersByType) { _, regionWide in
+          regionWide
+        }
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        inputWarnings.append(
+          DomainWarning(
+            code: "planner.formula-market-unavailable",
+            message:
+              "NPC prices of reaction formulas could not be loaded; reactions without an owned formula are bought or stay unresolved.",
+            severity: .warning
+          )
+        )
+      }
+    }
     var inventionDefinitions: [Int64: BlueprintDefinition] = [:]
     for blueprintTypeID in blueprintTypeIDs {
       if let definition = try await catalog.productionDefinition(
@@ -2704,7 +2734,7 @@ final class RuntimeState {
       blueprintPortfolio: blueprintPortfolio,
       blueprintNames: blueprintNames,
       blueprintContractOffers: contractOffers,
-      blueprintMarketOrders: blueprintMarket.ordersByType,
+      blueprintMarketOrders: blueprintMarketOrders,
       blueprintMarketSource: blueprintMarket.source,
       blueprintMarketState: blueprintMarket.state,
       publicContractCoverageComplete: publicContractCoverageComplete,
@@ -2777,7 +2807,12 @@ final class RuntimeState {
           timeEfficiency: jobs.map(\.allocation.timeEfficiency).min() ?? 0,
           contractOptions: preflightTree.nodes.lazy.compactMap(\.blueprint)
             .first { $0.blueprintTypeID == blueprintTypeID }?
-            .attributableContractOptions ?? []
+            .attributableContractOptions ?? [],
+          formulaMarketPrice: formulaTypeIDs.contains(blueprintTypeID)
+            ? preflightTree.nodes.lazy.compactMap(\.blueprint)
+              .first { $0.blueprintTypeID == blueprintTypeID }?
+              .marketBPOOptions.first?.price
+            : nil
         )
         if let allocation = ProductionTreeBlueprintCostProjector.allocations(
           for: [choice]
@@ -2834,7 +2869,7 @@ final class RuntimeState {
       blueprintPortfolio: blueprintPortfolio,
       blueprintNames: blueprintNames,
       blueprintContractOffers: contractOffers,
-      blueprintMarketOrders: blueprintMarket.ordersByType,
+      blueprintMarketOrders: blueprintMarketOrders,
       blueprintMarketSource: blueprintMarket.source,
       blueprintMarketState: blueprintMarket.state,
       publicContractCoverageComplete: publicContractCoverageComplete,

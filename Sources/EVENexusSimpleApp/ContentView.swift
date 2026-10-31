@@ -407,7 +407,11 @@ struct ContentView: View {
             PlannerView(
               historicalPlannerRequest: $historicalPlannerRequest,
               launchRequest: $plannerLaunchRequest,
-              runtime: runtime
+              runtime: runtime,
+              onOpenDataSettings: { section in
+                guardedDataSettingsSelection.wrappedValue = section
+                guardedSelection.wrappedValue = .data
+              }
             )
           case .manufacturingOpportunities:
             ManufacturingOpportunitiesView { request in

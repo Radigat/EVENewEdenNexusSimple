@@ -9427,3 +9427,68 @@ Live-Märkte und Abnahme stehen ebenfalls aus.
 
 Offen: Die Blueprint-Wahl entscheidet zuerst mit Main-Hub-Preisen. Oberfläche folgt in
 Prompt 4; „Berechnen“ und „BPO/BPC übernehmen“ bestehen bis dahin als Sofortstart.
+
+## 31.10.2026 – Planer: Design und Workflow (Prompt 4 von 4)
+
+Auftrag: neuer Aufbau, Status, Markierung und Zurücksetzen von Eingriffen, Blueprint-
+Stufe mit Grund, Weg zu fehlenden Einstellungen.
+
+Ergebnis:
+- Reihenfolge wie in `PRODUCT.md`; Details aufklappbar, historische Pläne ohne Einklappen.
+- Neue Datei `PlannerAutomationViews.swift`; Regeln für Status, Weg, Stufe und fehlende
+  Einstellungen in `PlannerAutomation.swift`.
+- „Berechnen“ heißt „Jetzt neu berechnen“; „BPO/BPC übernehmen“ und Neu-berechnen-Hinweise
+  entfallen. Eingriffe lassen sich je Zeile zurücknehmen.
+
+Abweichung vom Plan: Kein Hinweis auf fehlende Anlagen, weil immer eine Standardanlage besteht.
+
+Prüfung: `swift test` 691 + 84 Tests; `EVEStaticDataKit` 13 Tests; `xcodebuild … test`
+691 Tests, `TEST SUCCEEDED`; isolierte App per PID: Planer geöffnet, Status und Hinweisweg zu SDE bedient.
+
+Nicht geprüft: Mangels SDE im leeren Testbestand lief keine Berechnung in der App. Ergebnis,
+Details, Markierungen und automatisches Neurechnen wurden nicht gesehen. Live-Märkte und
+Abnahme stehen aus.
+
+## 31.10.2026 – Planer: Start nur über Berechnen
+
+Auftrag: Der Eigentümer meldet, dass der Planer nicht mehr funktioniert; die Rechnung
+soll erst über „Berechnen“ starten.
+
+Ergebnis: Automatischer Start entfernt, Knopf „Berechnen“ wiederhergestellt. Der
+Aktiv-Zustand hängt nicht mehr am nicht beobachteten Scheduler, der den Knopf gesperrt
+lassen konnte.
+
+Prüfung: `swift test` 691 + 84 Tests; `xcodebuild … test` `TEST SUCCEEDED`; `EVEStaticDataKit` unverändert.
+
+Nicht geprüft: Die gemeldete Störung wurde nicht nachgestellt, ihre Ursache ist nicht
+belegt. Eine Berechnung in der App und die Abnahme stehen aus.
+
+## 31.10.2026 – Planer: Gekaufte Reaktionsformeln
+
+Auftrag: Ursache der nicht verfügbaren Gewinne finden, Formeln ermitteln, Automatik bauen.
+
+Befund: Im Ark-Plan hatten vier Reaktionen keine Kosten. ESI zeigt ihre Formeln in The
+Forge ab 10 bzw. 15 Mio. ISK bei NPC-Stationen; in Jita 4-4 teurer oder gar nicht.
+
+Ergebnis: Formelkosten nur aus der günstigsten NPC-Order der Region (365 Tage Laufzeit),
+einmalig; eigene Formel ohne weitere Kosten; Kauf des Produkts, wenn keine Quelle besteht.
+
+Prüfung: `swift test` 695 + 84 Tests; `EVEStaticDataKit` 13 Tests; `xcodebuild … test` 695 Tests, `TEST SUCCEEDED`.
+
+Nicht geprüft: Ark-Plan in der App neu gerechnet; Abnahme.
+
+## 31.10.2026 – Planer: Formel am Main Hub
+
+Auftrag: Eine eigene Formel gilt auch am Main Hub als vorhanden, weil sie von dort mit den
+Materialien per JF-Service mitgeht.
+
+Ergebnis: Formel am Produktionsort oder Main Hub ohne Kosten, Produktionsort hat Vorrang.
+Fertigungs-BPOs bleiben unverändert. Die EVE-Einkaufsliste nennt die Formel unter „Mit den
+Materialien versenden“; Volumen und NPC-Preis, ersatzweise ESI-Durchschnittspreis, als
+Collateral laufen in die Eingangslogistik.
+
+Prüfung: `swift test` 701 + 84 Tests; `EVEStaticDataKit` 13 Tests; `xcodebuild … test` 701 Tests, `TEST SUCCEEDED`.
+
+Eigentümerrückmeldung: Der Ark-Plan zeigt nach „Berechnen“ wieder Gewinne.
+
+Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale Abnahme.

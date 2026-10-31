@@ -1080,6 +1080,16 @@ Informationshinweis.
 
 ### Blueprints, Industrie und Reaktionen
 
+**Planner: Aufbau** (Eigentümerentscheidung 30.10.2026): Von oben nach unten stehen
+fehlender SDE-Katalog oder Main Hub mit direktem Weg in den Datenbereich, Einkaufsorte, Items mit
+Statuszeile, gewählter Produktionsweg, Finanzen, Zielmarkt, Verkaufsszenarien,
+Einkaufsliste je Ort, Aufträge, Warnungen und aufklappbare Details (Blueprints,
+Materialien, Lagerliste), zuletzt die letzten Produktionen. Die Statuszeile
+nennt rechnet, aktuell, veraltet, gespeichert oder gestoppt samt Preisdatum. Jede Blueprint-Zeile
+nennt die automatische Stufe mit Grund. Eine Wahl von Hand zeigt „Zurück zur
+Automatik“; Übergaben sind als fest markiert. Historische Pläne zeigen dieselben
+Abschnitte ohne Einklappen und schreibgeschützt.
+
 **Planner: Einkaufsorte** (Eigentümerentscheidung 30.10.2026):
 
 - **Auswahl:** Über der Eingabe stehen Main, Home und Coalition Hub zur Wahl,
@@ -1198,10 +1208,22 @@ Materials. Außerhalb des Planers ist sie eine Empfehlungsgrundlage.
   Quelle) wird im Entwurf gespeichert und bleibt bei jedem Neurechnen. „Manuelle
   Eingriffe zurücksetzen“ gibt sie frei; Übergaben aus anderen Bereichen und
   Wissenschaftsaufträge bleiben konkret gebunden.
-- **Neurechnen:** Änderungen an Items, Orten, Lager, Einstellungen, Quellen oder
-  Eingriffen starten nach einer Sekunde Pause eine Rechnung. Eine laufende Rechnung
-  wird abgebrochen und mit dem letzten Stand wiederholt. **Abbrechen** stoppt ohne
-  Wiederholung. Ein gespeicherter Plan wird beim Öffnen nicht neu gerechnet.
+- **Reaktionsformeln** (Eigentümerentscheidung 31.10.2026): Eine eigene Formel am
+  Produktionsort oder am Main Hub kostet nichts weiter; vom Main Hub geht sie mit den
+  Materialien zur Anlage. Die EVE-Einkaufsliste nennt sie unter „Mit den Materialien
+  versenden“, und ihr Volumen läuft mit dem NPC-Preis als Collateral in die Eingangslogistik
+  ein. Fehlt in der Region eine NPC-Order, gilt der ESI-Durchschnittspreis. Nur ohne beide
+  Preise, etwa bei ESI-Ausfall, bleibt dieser Transport mit sichtbarer Warnung außerhalb der
+  Kosten. Die Bau-oder-Kauf-Entscheidung berücksichtigt ihn nicht. Liegen Formeln an beiden Orten, gilt die am Produktionsort. Fehlt sie dort und am
+  Main Hub, zählt einmalig die günstigste NPC-Sell-
+  Order der Main-Hub-Region; Spielerangebote und Verträge zählen nicht. NPC-Orders erkennt
+  der Planner an 365 Tagen Laufzeit, Spieler können höchstens 90 Tage einstellen. Die
+  Abholung zählt nicht als Transport. Ein von Hand eingetragener Betrag hat Vorrang. Ohne
+  NPC-Order kauft der Planer das Reaktionsprodukt; ein Endprodukt bleibt ungeklärt.
+- **Berechnen:** Eine Rechnung startet nur über **Berechnen** (Eigentümerentscheidung
+  31.10.2026). Änderungen an Items, Orten, Lager, Quellen oder Eingriffen wirken erst
+  dann; die Statuszeile zeigt solange „veraltet“. **Abbrechen** stoppt die Rechnung.
+  Ein gespeicherter Plan wird beim Öffnen nicht neu gerechnet.
 Make-or-Buy bewertet Kauf und Bau mit den gewählten Einkaufsorten.
 Passt ein Item verpackt nicht in das konfigurierte Transportlimit je Vertrag
 (zum Beispiel ein Freighter-Rumpf bei 350.000 m³), ist der Kauf am Main Hub nicht

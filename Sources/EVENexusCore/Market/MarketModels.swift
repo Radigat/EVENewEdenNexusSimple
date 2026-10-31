@@ -1758,6 +1758,11 @@ public struct MarketOrder: Identifiable, Codable, Hashable, Sendable {
   public let volumeRemaining: Int64
   public let minimumVolume: Int64
   public let issued: Date
+  /// Order duration from ESI, kept only where a caller needs it. Players can
+  /// list for at most 90 days, so 365 days marks an NPC seeded order.
+  public var durationDays: Int? = nil
+
+  public var isNPCSeeded: Bool { durationDays == 365 }
 }
 
 public struct MarketOrderSnapshot: Identifiable, Codable, Sendable {

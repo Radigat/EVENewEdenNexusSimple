@@ -1790,6 +1790,8 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   /// Per-plan job-splitting switches the jobs were built with; `nil` for
   /// snapshots saved before the switches existed (both split).
   public var jobSplitting: IndustryJobSplitting? = nil
+  /// Owned formulas to send along with the materials. Absent in older plans.
+  public var formulaShipments: [PlannerFormulaShipment]? = nil
   public let immediateSale: SaleScenarioResult
   public let listedSale: SaleScenarioResult
   public let mainContractSale: SaleScenarioResult?

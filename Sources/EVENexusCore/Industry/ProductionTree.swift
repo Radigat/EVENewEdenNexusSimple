@@ -38,6 +38,9 @@ public struct ProductionTreeBlueprintCostChoice: Sendable {
   public let materialEfficiency: Int
   public let timeEfficiency: Int
   public let contractOptions: [ProductionTreeContractBlueprintOption]
+  /// Cheapest market price of a reaction formula. A formula has no BPC runs to
+  /// compare with, so buying it counts at this full price.
+  public let formulaMarketPrice: Double?
 
   public init(
     blueprintTypeID: Int64,
@@ -50,8 +53,10 @@ public struct ProductionTreeBlueprintCostChoice: Sendable {
     usedRuns: Int = 0,
     materialEfficiency: Int = 0,
     timeEfficiency: Int = 0,
-    contractOptions: [ProductionTreeContractBlueprintOption] = []
+    contractOptions: [ProductionTreeContractBlueprintOption] = [],
+    formulaMarketPrice: Double? = nil
   ) {
+    self.formulaMarketPrice = formulaMarketPrice
     self.blueprintTypeID = blueprintTypeID
     self.productName = productName
     self.action = action
@@ -82,6 +87,11 @@ public enum ProductionTreeBlueprintCostProjector {
   /// whole BPC Contracts for the rest. Owned runs add their value when known.
   public static let ownedBPCWithContractsSource =
     "Owned BPC runs plus whole public BPC Contract prices"
+  /// Owner decision 2026-10-31: a reaction formula that has to be bought counts
+  /// once at its cheapest NPC sell order in the Main Hub region. An owned
+  /// formula adds no further cost.
+  public static let purchasedFormulaSource =
+    "Reaction formula bought once at the cheapest NPC sell order in the Main Hub region"
 
   public static func allocations(
     for choices: [ProductionTreeBlueprintCostChoice]
@@ -144,6 +154,15 @@ public enum ProductionTreeBlueprintCostProjector {
             choice.action == .buyLoyaltyStoreBPC
             ? "Configured Loyalty Store BPC ISK equivalent"
             : "Explicit BPC acquisition or activity cost"
+        )
+      case .buyMarketBPO where manualAmount == nil && choice.formulaMarketPrice != nil:
+        guard let price = choice.formulaMarketPrice.flatMap(validAmount) else { return }
+        allocation = IndustryBlueprintCostAllocation(
+          blueprintTypeID: choice.blueprintTypeID,
+          productName: choice.productName,
+          kind: .formula,
+          amount: price,
+          source: purchasedFormulaSource
         )
       case .buyContractBPO where manualAmount == nil,
         .buyMarketBPO where manualAmount == nil:
@@ -1580,14 +1599,23 @@ public enum ManufacturingProductionTreeProjector {
         entry.instance.runs - reservedRunsByItemID[entry.instance.id, default: 0]
       )
     }
+    // Owner decision 2026-10-31: a formula at the Main Hub counts as available
+    // because it ships with the materials. One at the facility is preferred.
+    let availableLocationIDs: Set<Int64> =
+      activity == .reaction
+        && !selectableEntries.contains {
+          productionLocationIDs.contains(locationID(for: $0))
+        }
+      ? productionLocationIDs.union([mainHub.locationID].compactMap { $0 })
+      : productionLocationIDs
     let exactBPC = selectableEntries.filter {
       $0.instance.kind == .copy
-        && productionLocationIDs.contains(locationID(for: $0))
+        && availableLocationIDs.contains(locationID(for: $0))
         && unreservedRuns($0) > 0
     }
     let exactBPO = selectableEntries.filter {
       $0.instance.kind == .original
-        && productionLocationIDs.contains(locationID(for: $0))
+        && availableLocationIDs.contains(locationID(for: $0))
     }
     let copyingBPO = selectableEntries.filter {
       $0.instance.kind == .original
@@ -1603,7 +1631,7 @@ public enum ManufacturingProductionTreeProjector {
     }
     let knownItemIDs = Set(entries.map { $0.instance.id })
     let exactUnknownCount = warehouse.locations
-      .filter { productionLocationIDs.contains($0.id) }
+      .filter { availableLocationIDs.contains($0.id) }
       .flatMap(\.owners).flatMap(\.items)
       .filter {
         $0.typeID == blueprintTypeID && !knownItemIDs.contains($0.id)
@@ -1734,7 +1762,8 @@ public enum ManufacturingProductionTreeProjector {
       marketOrders
       .filter {
         $0.side == .sell
-          && $0.locationID == mainHub.locationID
+          && (activity == .reaction
+            ? $0.isNPCSeeded : $0.locationID == mainHub.locationID)
           && $0.price.isFinite && $0.price > 0
           && $0.volumeRemaining > 0
           && $0.minimumVolume <= 1
@@ -1752,7 +1781,7 @@ public enum ManufacturingProductionTreeProjector {
         return $0.orderID < $1.orderID
       }
     let otherLocationEntries = selectableEntries.filter {
-      !productionLocationIDs.contains(locationID(for: $0))
+      !availableLocationIDs.contains(locationID(for: $0))
     }
     let otherLocationInstanceOptions = otherLocationEntries.map(
       ownedInstanceOption
@@ -1798,6 +1827,9 @@ public enum ManufacturingProductionTreeProjector {
       recommendation = .useOwnedBPC
     } else if remainderSelection != nil {
       recommendation = .useOwnedBPCWithContracts
+    } else if activity == .reaction, !marketBPOOptions.isEmpty {
+      // Owner decision 2026-10-31: a missing formula comes from the NPC order.
+      recommendation = .buyMarketBPO
     } else if contractMaterialCostUnresolved {
       recommendation = .unresolved
       actions.insert(.unresolved)
