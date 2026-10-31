@@ -1334,6 +1334,14 @@ struct PlannerView: View {
       )
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
+      if plan.materialValuationSources?.isEmpty == false {
+        Label(
+          "Warehouse consumption is the part of the cost of this order without warehouse that no longer has to be paid. The total stays the same with and without warehouse.",
+          systemImage: "info.circle"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
       LazyVGrid(
         columns: [
           GridItem(
@@ -1348,6 +1356,7 @@ struct PlannerView: View {
           section: .materials,
           title:
             plan.compressedOreRefining == nil
+              && plan.materialValuationSources?.isEmpty != false
             ? "Material replacement (Main Hub)"
             : "Selected material procurement",
           value: formatISK(plan.materialCost)
@@ -1362,7 +1371,7 @@ struct PlannerView: View {
             "Warehouse replacement value (included)",
             breakdown?.stockMaterialCost,
             explanation:
-              "Materials taken from the warehouse remain valued at their current Main Hub replacement cost. This amount is already part of material procurement."
+              "Warehouse materials count at their share of what this order would cost without warehouse. This amount is already part of material procurement."
           )
           if let refiningFee = breakdown?.refiningCost {
             costMetric(
@@ -1389,11 +1398,19 @@ struct PlannerView: View {
           annotation: "Included in material procurement"
         ) {
           costMetric(
-            "Main Hub value of warehouse consumption",
+            "Warehouse replacement value",
             plan.warehouseConsumptionValue,
             explanation:
-              "The current weighted Main Hub replacement value of materials consumed from the combined warehouse. It is shown separately for information and is not added again."
+              "The part of the cost without warehouse that the combined warehouse covers. It is shown separately for information and is not added again."
           )
+          if plan.materialValuationSources?.isEmpty == false {
+            costMetric(
+              "Market value of warehouse consumption (information)",
+              plan.warehouseMarketValue,
+              explanation:
+                "What the same units would cost at market prices. It is not part of the costs."
+            )
+          }
         }
         financeOverviewCard(
           section: .blueprints,
@@ -6352,6 +6369,8 @@ struct PlannerView: View {
     let totalTargetQuantity = parsed.requests.reduce(into: Int64(0)) {
       $0 = AssetWarehouse.saturatedAdd($0, Int64($1.wantedQuantity))
     }
+    var calculatesWithoutStock = false
+    var stockReferenceCost: Double?
     func basis(
       preferences: [Int64: MaterialProcurementPreference],
       automaticSupply: Bool
@@ -6364,7 +6383,9 @@ struct PlannerView: View {
         plannerInput: plannerInput,
         warehouse: plannerWarehouse,
         warehouseHasSnapshot: warehouseHasSnapshot,
-        stockTargets: blueprintAssessmentTargets,
+        stockTargets:
+          calculatesWithoutStock
+          ? plannerWarehouse.factualQuantities : blueprintAssessmentTargets,
         existingBlueprintReservations: scienceReservations,
         capabilities: preparedInputs.1
       )
@@ -6377,7 +6398,8 @@ struct PlannerView: View {
       calculationPhase = .calculating
       await runtime.calculate(
         input: plannerInput,
-        manualStockInput: plannerManualStockInput,
+        manualStockInput: calculatesWithoutStock ? "" : plannerManualStockInput,
+        availableStockOverride: calculatesWithoutStock ? [:] : nil,
         existingReservations: [],
         assetWarehouse: plannerWarehouse,
         stockTargets: targets,
@@ -6394,17 +6416,22 @@ struct PlannerView: View {
         jobSplitting: requestedJobSplitting,
         automaticSupply: automaticSupply,
         manualSupplyTypeIDs: manualTypeIDs,
-        formulaShipments: basis.formulaShipments
+        formulaShipments: basis.formulaShipments,
+        stockReferenceProductionCost:
+          calculatesWithoutStock ? nil : stockReferenceCost
       )
     }
+    /// One complete calculation; `false` after a cancellation or a failed
+    /// Blueprint resolution.
+    func runCalculation() async -> Bool {
     guard
       let firstBasis = await basis(
         preferences: manualPreferences,
         automaticSupply: true
       )
-    else { return }
+    else { return false }
     await calculate(firstBasis, preferences: manualPreferences, automaticSupply: true)
-    guard !Task.isCancelled else { return }
+    guard !Task.isCancelled else { return false }
     // The tree decides at Main Hub prices, the calculation at the selected
     // purchase locations and with Blueprint costs. When they differ, the
     // Blueprints are resolved again for the calculated build steps and those
@@ -6428,11 +6455,7 @@ struct PlannerView: View {
           || Self.producedTypeIDs(decided)
             != Self.producedTypeIDs(firstBasis.tree.selectedPlan)
       else {
-        return await finishPlanCalculation(
-          requestedKey: requestedKey,
-          workspaceRevision: workspaceRevision,
-          previousPlan: previousPlan
-        )
+        return true
       }
       var decisions = manualPreferences.merging(
         decided.materials.compactMap { material in
@@ -6444,10 +6467,26 @@ struct PlannerView: View {
         decisions[typeID]?.supplyMode = .buy
       }
       guard let finalBasis = await basis(preferences: decisions, automaticSupply: false)
-      else { return }
+      else { return false }
       await calculate(finalBasis, preferences: decisions, automaticSupply: false)
-      guard !Task.isCancelled else { return }
+      guard !Task.isCancelled else { return false }
     }
+    return true
+    }
+    // Owner decision 2026-10-31: stock must not change what the order costs, so
+    // the same order is calculated without stock first. Only the second result
+    // is kept and saved.
+    if runtime.warehouseStockEnabled
+      || !plannerManualStockInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+      calculatesWithoutStock = true
+      if await runCalculation(), runtime.errorMessage == nil {
+        stockReferenceCost = runtime.plan?.costBreakdown?.totalProductionCost
+      }
+      guard !Task.isCancelled else { return }
+      calculatesWithoutStock = false
+    }
+    guard await runCalculation() else { return }
     await finishPlanCalculation(
       requestedKey: requestedKey,
       workspaceRevision: workspaceRevision,

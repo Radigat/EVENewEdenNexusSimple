@@ -1529,7 +1529,8 @@ final class RuntimeState {
     jobSplitting: IndustryJobSplitting = .init(),
     automaticSupply: Bool = false,
     manualSupplyTypeIDs: Set<Int64>? = nil,
-    formulaShipments: [PlannerFormulaShipment] = []
+    formulaShipments: [PlannerFormulaShipment] = [],
+    stockReferenceProductionCost: Double? = nil
   ) async {
     plannerCalculationGeneration &+= 1
     let calculationGeneration = plannerCalculationGeneration
@@ -1917,7 +1918,8 @@ final class RuntimeState {
           jobSplitting: jobSplitting,
           automaticSupply: automaticSupply,
           manualSupplyTypeIDs: manualSupplyTypeIDs,
-          formulaShipments: formulaShipments
+          formulaShipments: formulaShipments,
+          stockReferenceProductionCost: stockReferenceProductionCost
         )
         let calculatedPlan = try await planner.plan(
           preparation: preparation,

@@ -122,6 +122,48 @@ struct PlannerPurchaseBook: Sendable {
     )
   }
 
+  /// Main Hub and Home Hub orders for valuing warehouse units, independent of
+  /// the selected purchase locations. Nothing is bought through this book.
+  static func stockValuation(context: IndustryPlanningContext)
+    -> PlannerPurchaseBook
+  {
+    var sources = [
+      Source(
+        location: context.defaultPurchaseLocation,
+        book: PreparedMarketOrderBook(snapshot: context.market),
+        leg: .mainToHome,
+        transport: .free
+      )
+    ]
+    if let home = context.homeMarket,
+      let location = context.productionBasis?.homeTradingLocation?.location,
+      !location.representsSameLocation(as: context.defaultPurchaseLocation)
+    {
+      sources.append(
+        Source(
+          location: location,
+          book: PreparedMarketOrderBook(snapshot: home),
+          leg: nil,
+          transport: .free
+        )
+      )
+    }
+    return PlannerPurchaseBook(
+      sources: sources,
+      fallbackSnapshot: context.market,
+      packagedVolumes: [:]
+    )
+  }
+
+  /// Units and value the visible orders can fill, even when they are too few.
+  func visibleFill(typeID: Int64, quantity: Int64) -> (filled: Int64, total: Double) {
+    let allocations = walk(typeID: typeID, quantity: quantity).allocations
+    return (
+      allocations.reduce(0) { $0 + $1.quantity },
+      allocations.reduce(0) { $0 + $1.total }
+    )
+  }
+
   func contains(_ location: ProcurementLocation) -> Bool {
     sources.contains { $0.location.representsSameLocation(as: location) }
   }

@@ -9493,10 +9493,13 @@ Eigentümerrückmeldung: Der Ark-Plan zeigt nach „Berechnen“ wieder Gewinne.
 
 Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale Abnahme.
 
-## 31.10.2026: Mehrprodukt-Weg im Planer
+## 31.10.2026: Lagerbewertung und Mehrprodukt-Weg im Planer
 
-- **Umfang:** Kosten, Zielmarkt und Allianzverkauf je Produkt; Panel „Produkte im Plan“; Produktionsübersicht übernimmt Produktanteile, Zielmarkt, Allianzpreis, Gebühr und Lieferung.
-- **Restlücken Produktionsübersicht:** Allianzmarkt ohne Preis übernimmt nicht mehr den Main-Hub-Preis; mehrere Produkte ohne Zielmarkt bleiben ohne Vorschlagspreis und erwarteten Gewinn; der Haken „Vollständig verkauft“ setzt die abgenommene Menge; ausstehende Kosten stehen als „~“ am Gewinn.
-- **Ergebnis:** Umgesetzt, Entscheidungen in `Documentation/Consolidation/DECISIONS.md`. Lagerbewertung und Info-Panel „So rechnet der Planer“ gehören nicht zu diesem Commit und bleiben uncommittet im Arbeitsbaum, auch die zugehörige Info-Panel-Aktualisierung.
-- **Prüfung:** Nur dieser Commit-Stand, isoliert exportiert: `swift test` (709 und 84 Tests), `EVEStaticDataKit` (13 Tests), natives `xcodebuild test` (709 Tests, `TEST SUCCEEDED`). Nicht geprüft: Liste, Haken und Panel in der laufenden App mit diesem Stand; Abnahme durch den Eigentümer.
-- **Offen:** Live-Abnahme mit einem Mehrprodukt-Plan durch den Eigentümer; vorhandene Zeilen der Produktionsübersicht bleiben absichtlich unverändert.
+- **Umfang:** Lagerverbrauch trotz fehlender Markttiefe bewerten (beide Hubs, dann günstigste Produktionskette); Kosten, Zielmarkt und Allianzverkauf je Produkt; Panel „Produkte im Plan“; Produktionsübersicht übernimmt Produktanteile und Zielmarkt.
+- **Anlass:** Im Ark-Plan fehlten alle Kosten und Gewinne, weil der Main Hub nur 486 von 614 Capital Linear Shield Emitter und 703 von 962 Capital Tesseract Capacitor Unit anbot, obwohl das Lager beide vollständig deckte.
+- **Ergebnis:** Umgesetzt, Entscheidungen in `Documentation/Consolidation/DECISIONS.md`.
+- **Korrektur am selben Tag:** Lagerverbrauch zählt zum günstigeren Wert aus Markt und Versorgungskette; der Ark-Plan lag zuvor mit 8,08 Mrd. ISK weit über dem Vergleichswert von Ravworks (rund 5,47 Mrd. ISK).
+- **Zweite Korrektur:** Lagerwert aus einem Referenzlauf ohne Lager, damit die Summe mit und ohne Lager gleich ist (Ark vorher 5.613 zu 5.416 Mio. ISK).
+- **Offen:** Live-Abnahme mit dem echten Ark-Plan und einem Mehrprodukt-Plan durch den Eigentümer; vorhandene Zeilen der Produktionsübersicht bleiben absichtlich unverändert.
+- **Restlücken Produktionsübersicht:** Allianzmarkt ohne Preis übernimmt nicht mehr den Main-Hub-Preis; mehrere Produkte ohne Zielmarkt bleiben ohne Vorschlagspreis und erwarteten Gewinn; der Haken „Vollständig verkauft“ setzt die abgenommene Menge; ausstehende Kosten stehen als „~“ am Gewinn, ausstehender Eingangstransport zählt in der Zeile wie im Panel als 0. Entscheidungen 6 und 7 in `Documentation/Consolidation/DECISIONS.md`.
+- **Prüfung:** Nur dieser Commit-Stand, isoliert exportiert: `swift test` (712 und 84 Tests), `EVEStaticDataKit` (13 Tests), natives `xcodebuild test` (712 Tests, `TEST SUCCEEDED`). Nicht geprüft: Ablauf in der laufenden App; Abnahme durch den Eigentümer. Das Info-Panel folgt im nächsten Commit.

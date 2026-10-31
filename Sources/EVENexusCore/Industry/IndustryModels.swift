@@ -718,6 +718,16 @@ public enum HighSecurityCapitalTransferPolicy {
   }
 }
 
+/// How a warehouse material was valued when not at the selected markets' price.
+public enum MaterialReplacementValuationSource: String, Codable, Sendable {
+  /// Real orders of the Main Hub and Home Hub together.
+  case combinedHubs
+  /// Units count at the cheapest production chain.
+  case productionChain
+  /// Share of the cost of the same order calculated without stock.
+  case planWithoutStock
+}
+
 public struct MaterialRequirement: Identifiable, Codable, Sendable {
   public var id: Int64 { typeID }
   public let typeID: Int64
@@ -741,6 +751,9 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
   /// Whether the owner fixed this supply by hand. `nil` for plans without
   /// automatic supply decisions.
   public internal(set) var isManualSupply: Bool? = nil
+  /// Unit value of warehouse units when a supply chain or the other hub is
+  /// cheaper than `replacementQuote`; `nil` means they count at that quote.
+  public internal(set) var stockUnitValue: Double? = nil
 
   public init(
     typeID: Int64,
@@ -789,7 +802,7 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
 
   public var warehouseConsumptionValue: Double? {
     guard fromStock > 0 else { return 0 }
-    guard let unitPrice = replacementQuote?.weightedUnitPrice,
+    guard let unitPrice = stockUnitValue ?? replacementQuote?.weightedUnitPrice,
       unitPrice.isFinite,
       unitPrice >= 0
     else {
@@ -1792,6 +1805,9 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public var targetMarket: PlannerTargetMarket? = nil
   /// Manual alliance-market scenario (P11); `nil` when never entered.
   public var allianceSale: PlannerAllianceSaleResult? = nil
+  /// Warehouse materials not valued from the selected markets alone; `nil`
+  /// when every value comes from them and in older snapshots.
+  public var materialValuationSources: [Int64: MaterialReplacementValuationSource]? = nil
   /// Causal cost shares per end product; `nil` in older snapshots.
   public var productEconomics: [PlannerProductCosts]? = nil
   /// Sale decisions per end product (request ID).
@@ -1823,6 +1839,17 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public internal(set) var warnings: [DomainWarning]
   public let explanations: [ExplanationEdge]
   public let provenance: PlanProvenance
+
+  /// Market value of the warehouse consumption, for information. `nil` when
+  /// the markets lack the depth for a stocked material.
+  public var warehouseMarketValue: Double? {
+    var total = 0.0
+    for material in materials where material.fromStock > 0 {
+      guard let value = material.stockQuote?.total else { return nil }
+      total += value
+    }
+    return total.isFinite ? total : nil
+  }
 
   public var warehouseConsumptionValue: Double? {
     var total = 0.0

@@ -181,17 +181,18 @@ struct PlannerPersistencePerformanceTests {
     try context.save()
 
     let plan = try await makeStockFirstPlan(multipleRequests: multipleRequests)
-    // Two requests share one aggregated 3-run intermediate job (39.5 ISK);
-    // the branch values 25.5 and 16 weight the request shares.
-    let first = 39.5 * 25.5 / 41.5
-    let expectedCosts = multipleRequests ? [first, 39.5 - first] : [23.0]
-    #expect(plan.materialCost == expectedCosts.reduce(0, +))
+    // Two requests share one aggregated 3-run intermediate job (29.66 ISK);
+    // the branch values 15.66 and 16 weight the request shares. The stocked
+    // unit counts at the cheaper production chain.
+    let first = 29.66 * 15.66 / 31.66
+    let expectedCosts = multipleRequests ? [first, 29.66 - first] : [16.16]
+    #expect(abs((plan.materialCost ?? -1) - expectedCosts.reduce(0, +)) < 1e-9)
     let recorded = try PlannerPersistenceController.recordProductionOverview(
       plan, productionBasis: ProductionBasis(), in: context
     )
     #expect(recorded.count == expectedCosts.count)
     for (row, expectedCost) in zip(recorded, expectedCosts) {
-      #expect(row.materialCost == expectedCost)
+      #expect(abs((row.materialCost ?? -1) - expectedCost) < 1e-9)
       let restored = try #require(PlannerPersistenceController.decodePlan(row))
       #expect(restored.materialCost == plan.materialCost)
       #expect(restored.costBreakdown?.materialCost == plan.materialCost)

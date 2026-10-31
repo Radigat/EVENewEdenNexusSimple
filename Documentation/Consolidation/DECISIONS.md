@@ -357,13 +357,16 @@ Schritt P1.
   ohne beide bleibt der Transport mit Warnung außerhalb der Kosten. Formeln an anderen Orten zählen nicht
   automatisch. Ohne NPC-Order wird das Produkt gekauft.
 
-## 31.10.2026: Verkauf je Produkt
+## 31.10.2026: Lagerbewertung und Verkauf je Produkt
 
 Entscheidungen des Eigentümers:
 
-1. Verkaufsort und Allianzpreis gelten je Produkt, dazu kommt eine Gesamtsumme.
-2. Gemeinsame Kosten werden nach Verursachung verteilt.
-3. In einem Plan mit mehreren Produkten zeigt ein Produkt ohne Zielmarkt in der Produktionsübersicht keinen Vorschlagspreis und keinen erwarteten Gewinn.
-4. Der Haken „Vollständig verkauft“ setzt bei einer Teilabnahme der Allianz die abgenommene Menge; das Feld „Verkauft“ bleibt bis zur produzierten Menge frei.
+1. Das Lager wird voll verbraucht. Reicht die Markttiefe nicht, wird der Verbrauch mit den günstigsten Orders von Main und Home Hub zusammen bewertet.
+2. Reichen beide nicht, gilt die günstigere Produktion aus Rohstoffen oder der Kauf von Zwischenprodukten.
+3. Mit und ohne Lager kostet ein Auftrag gleich viel: Lagerwert = Kosten ohne Lager − noch anfallende Kosten. Das ist eine reguläre Bewertung und darf als Zielmarkt vorgeschlagen werden. Der Einzelwert aus Marktpreis und Versorgungskette bleibt Gewichtung und Rückfall. Das ersetzt zwei zuvor am selben Tag getroffene Regeln (Kettenwert nur als Schätzung, günstigerer Wert je Material); Anlass waren der Vergleich mit Ravworks und die 196 Mio. ISK Abweichung der Ark zwischen beiden Rechnungen.
+4. Verkaufsort und Allianzpreis gelten je Produkt, dazu kommt eine Gesamtsumme.
+5. Gemeinsame Kosten werden nach Verursachung verteilt.
+6. In einem Plan mit mehreren Produkten zeigt ein Produkt ohne Zielmarkt in der Produktionsübersicht keinen Vorschlagspreis und keinen erwarteten Gewinn.
+7. Der Haken „Vollständig verkauft“ setzt bei einer Teilabnahme der Allianz die abgenommene Menge; das Feld „Verkauft“ bleibt bis zur produzierten Menge frei.
 
-Im freigegebenen Plan festgelegt: Bereits erfasste Zeilen der Produktionsübersicht bleiben unverändert.
+Im freigegebenen Plan festgelegt: Der Einkauf folgt weiter den gewählten Einkaufsorten, und bereits erfasste Zeilen der Produktionsübersicht bleiben unverändert.

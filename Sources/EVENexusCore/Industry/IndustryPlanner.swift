@@ -88,6 +88,10 @@ public struct IndustryPlanningContext: Sendable {
   public let manualSupplyTypeIDs: Set<Int64>?
   /// Owned formulas that travel from the Main Hub with the materials.
   public let formulaShipments: [PlannerFormulaShipment]
+  /// Production cost of the same order calculated without any stock. The stock
+  /// value makes this plan cost the same (owner decision 2026-10-31); `nil`
+  /// values each stocked material on its own.
+  public internal(set) var stockReferenceProductionCost: Double?
 
   public init(
     manufacturingProfile: ManufacturingProfile,
@@ -132,8 +136,10 @@ public struct IndustryPlanningContext: Sendable {
     jobSplitting: IndustryJobSplitting = .init(),
     automaticSupply: Bool = false,
     manualSupplyTypeIDs: Set<Int64>? = nil,
-    formulaShipments: [PlannerFormulaShipment] = []
+    formulaShipments: [PlannerFormulaShipment] = [],
+    stockReferenceProductionCost: Double? = nil
   ) {
+    self.stockReferenceProductionCost = stockReferenceProductionCost
     self.formulaShipments = formulaShipments
     self.automaticSupply = automaticSupply
     self.manualSupplyTypeIDs = manualSupplyTypeIDs
@@ -1413,21 +1419,70 @@ public struct IndustryPlanner: Sendable {
         scenario: .materialBuy
       )
       stockQuotes[typeID] = quote
-      warnings.append(contentsOf: quote.warnings)
     }
     var replacementMaterialCost = 0.0
     var materialCostComplete = true
+    var replacementValuationSources: [Int64: MaterialReplacementValuationSource] = [:]
+    var stockValuationBook: PlannerPurchaseBook?
+    var stockUnitValues: [Int64: Double] = [:]
+    var stockValuationChainMemo: [MakeOrBuyChainKey: MakeOrBuyChainSupply?] = [:]
     let replacementLeafTypeIDs = Set(state.toBuy.keys).union(
       state.stockUsed.keys
     )
     for typeID in replacementLeafTypeIDs.sorted() {
       let quantity = state.required[typeID, default: 0]
-      let quote = purchaseBook.quote(
+      var quote = purchaseBook.quote(
         typeID: typeID,
         quantity: quantity,
         scenario: .materialBuy
       )
+      // Owner decision 2026-10-31: market depth does not limit units that come
+      // from the warehouse. Their value falls back to both hubs and then to the
+      // cheapest production chain. A purchase the market cannot fill stays
+      // unavailable.
+      if !quote.isComplete, state.stockUsed[typeID, default: 0] > 0,
+        state.toBuy[typeID] == nil || purchaseQuotes[typeID]?.isComplete == true
+      {
+        let book =
+          stockValuationBook ?? PlannerPurchaseBook.stockValuation(context: context)
+        stockValuationBook = book
+        if let fallback = try await stockReplacementQuote(
+          typeID: typeID,
+          quantity: quantity,
+          book: book,
+          context: context,
+          systemIndexLookup: systemIndexLookup,
+          memo: &stockValuationChainMemo
+        ) {
+          quote = fallback.quote
+          replacementValuationSources[typeID] = fallback.source
+        }
+      }
+      // Owner decision 2026-10-31: warehouse units count at the cheaper of
+      // their market value and the cheapest supply chain.
+      if state.stockUsed[typeID, default: 0] > 0, quote.isComplete,
+        let unitPrice = quote.weightedUnitPrice
+      {
+        let book =
+          stockValuationBook ?? PlannerPurchaseBook.stockValuation(context: context)
+        stockValuationBook = book
+        if let cheapest = try await cheapestStockSupply(
+          typeID: typeID,
+          quantity: quantity,
+          book: book,
+          context: context,
+          systemIndexLookup: systemIndexLookup,
+          memo: &stockValuationChainMemo
+        ), cheapest.unitValue < unitPrice {
+          stockUnitValues[typeID] = cheapest.unitValue
+          replacementValuationSources[typeID] = cheapest.source
+        }
+      }
       replacementQuotes[typeID] = quote
+      // Depth warnings of the stock quote no longer apply to a valued material.
+      if !quote.isComplete {
+        warnings.append(contentsOf: stockQuotes[typeID]?.warnings ?? [])
+      }
       warnings.append(contentsOf: quote.warnings)
       // The full-demand quote supplies one replacement unit value for bought
       // and stocked inputs. Produced units are charged through their inputs.
@@ -1439,10 +1494,10 @@ public struct IndustryPlanner: Sendable {
         materialCostComplete = false
         continue
       }
-      let valuedQuantity =
-        Double(state.toBuy[typeID, default: 0])
+      let contribution =
+        Double(state.toBuy[typeID, default: 0]) * unitPrice
         + Double(state.stockUsed[typeID, default: 0])
-      let contribution = valuedQuantity * unitPrice
+        * (stockUnitValues[typeID] ?? unitPrice)
       let updatedCost = replacementMaterialCost + contribution
       if contribution.isFinite, contribution >= 0,
         updatedCost.isFinite, updatedCost >= 0
@@ -1456,7 +1511,9 @@ public struct IndustryPlanner: Sendable {
     var stockMaterialCost = 0.0
     var stockMaterialCostComplete = true
     for (typeID, quantity) in state.stockUsed.sorted(by: { $0.key < $1.key }) {
-      guard let unitPrice = replacementQuotes[typeID]?.weightedUnitPrice,
+      guard
+        let unitPrice = stockUnitValues[typeID]
+          ?? replacementQuotes[typeID]?.weightedUnitPrice,
         unitPrice.isFinite,
         unitPrice >= 0
       else {
@@ -1804,7 +1861,7 @@ public struct IndustryPlanner: Sendable {
       } else {
         analysis = nil
       }
-      materials.append(
+      var material =
         MaterialRequirement(
           typeID: typeID,
           name: resolvedName ?? "Type \(typeID)",
@@ -1829,7 +1886,8 @@ public struct IndustryPlanner: Sendable {
               quantity: state.toBuy[typeID, default: 0]
             )
         )
-      )
+      material.stockUnitValue = stockUnitValues[typeID]
+      materials.append(material)
     }
     materials.sort {
       $0.name.localizedCaseInsensitiveCompare($1.name)
@@ -2439,6 +2497,29 @@ public struct IndustryPlanner: Sendable {
         destination: hub.name
       )
     }
+    // Stock replaces part of the plan, it does not change its cost: the stock
+    // value is what the plan without stock costs beyond what is still paid here.
+    if let reference = context.stockReferenceProductionCost,
+      reference.isFinite, stockMaterialCost > 0,
+      materialCostComplete, stockMaterialCostComplete,
+      let blueprintCost, let acceptedInstallation, let logisticsCost
+    {
+      let stillPaid =
+        effectiveMaterialCost - stockMaterialCost
+        + blueprintCost + acceptedInstallation + logisticsCost
+      let stockValue = max(0, reference - stillPaid)
+      let factor = stockValue / stockMaterialCost
+      for index in materials.indices where materials[index].fromStock > 0 {
+        guard
+          let unitValue = materials[index].stockUnitValue
+            ?? materials[index].replacementQuote?.weightedUnitPrice
+        else { continue }
+        materials[index].stockUnitValue = unitValue * factor
+        replacementValuationSources[materials[index].typeID] = .planWithoutStock
+      }
+      effectiveMaterialCost += stockValue - stockMaterialCost
+      stockMaterialCost = stockValue
+    }
     let acceptedMaterialCost =
       materialCostComplete ? effectiveMaterialCost : nil
     let totalCost = IndustryCostBreakdown.total(
@@ -2762,6 +2843,8 @@ public struct IndustryPlanner: Sendable {
     )
     snapshot.jobSplitting = context.jobSplitting
     snapshot.formulaShipments = formulaShipments.isEmpty ? nil : formulaShipments
+    snapshot.materialValuationSources =
+      replacementValuationSources.isEmpty ? nil : replacementValuationSources
     let economicsTypeIDs = Set(state.nodes.map(\.typeID))
     snapshot.productEconomics = PlannerProductEconomics.costs(
       plan: snapshot,
@@ -4038,6 +4121,110 @@ public struct IndustryPlanner: Sendable {
   /// Uses the Planner's quantity, facility, installation and blacklist rules.
   /// Quantities round per node, without job splits; bought materials are costed
   /// to the analysed material's facility.
+  /// Replacement value of warehouse units the selected markets cannot fill:
+  /// first the visible orders of both hubs; units they lack count at the unit
+  /// cost of the cheapest production chain, unless building everything is even
+  /// cheaper. `nil` keeps the value unavailable.
+  private func stockReplacementQuote(
+    typeID: Int64,
+    quantity: Int64,
+    book: PlannerPurchaseBook,
+    context: IndustryPlanningContext,
+    systemIndexLookup: IndustrySystemIndexLookup,
+    memo: inout [MakeOrBuyChainKey: MakeOrBuyChainSupply?]
+  ) async throws -> (quote: PriceQuote, source: MaterialReplacementValuationSource)? {
+    guard quantity > 0 else { return nil }
+    let combined = book.quote(
+      typeID: typeID,
+      quantity: quantity,
+      scenario: .materialBuy
+    )
+    if combined.isComplete { return (combined, .combinedHubs) }
+    guard
+      let definition = try await context.catalog.productionDefinition(
+        productTypeID: typeID
+      )
+    else { return nil }
+    let facility = try await makeOrBuyFacility(
+      definition: definition,
+      context: context
+    )
+    guard
+      let chain = try await cheapestChainSupply(
+        typeID: typeID,
+        quantity: quantity,
+        depth: 0,
+        path: [],
+        facilityName: facility.name,
+        facilityLocationID: facility.locationID,
+        context: context,
+        marketBook: book,
+        systemIndexLookup: systemIndexLookup,
+        memo: &memo
+      )
+    else { return nil }
+    let visible = book.visibleFill(typeID: typeID, quantity: quantity)
+    let unitBuildCost = chain.comparisonCost / Double(quantity)
+    let total = min(
+      chain.comparisonCost,
+      visible.total + Double(quantity - visible.filled) * unitBuildCost
+    )
+    guard total.isFinite, total >= 0 else { return nil }
+    return (
+      PriceQuote(
+        id: UUID(),
+        typeID: typeID,
+        quantity: quantity,
+        scenario: .materialBuy,
+        total: total,
+        weightedUnitPrice: total / Double(quantity),
+        filledQuantity: quantity,
+        capturedAt: combined.capturedAt,
+        source: combined.source,
+        warnings: []
+      ),
+      .productionChain
+    )
+  }
+
+  /// Unit value of the cheapest supply of a producible material, bought at
+  /// either hub or built. `nil` when the material has no recipe or chain.
+  private func cheapestStockSupply(
+    typeID: Int64,
+    quantity: Int64,
+    book: PlannerPurchaseBook,
+    context: IndustryPlanningContext,
+    systemIndexLookup: IndustrySystemIndexLookup,
+    memo: inout [MakeOrBuyChainKey: MakeOrBuyChainSupply?]
+  ) async throws -> (unitValue: Double, source: MaterialReplacementValuationSource)? {
+    guard quantity > 0,
+      let definition = try await context.catalog.productionDefinition(
+        productTypeID: typeID
+      )
+    else { return nil }
+    let facility = try await makeOrBuyFacility(
+      definition: definition,
+      context: context
+    )
+    guard
+      let chain = try await cheapestChainSupply(
+        typeID: typeID,
+        quantity: quantity,
+        depth: 0,
+        path: [],
+        facilityName: facility.name,
+        facilityLocationID: facility.locationID,
+        context: context,
+        marketBook: book,
+        systemIndexLookup: systemIndexLookup,
+        memo: &memo
+      )
+    else { return nil }
+    let unitValue = chain.comparisonCost / Double(quantity)
+    guard unitValue.isFinite, unitValue >= 0 else { return nil }
+    return (unitValue, chain.builtTypeIDs.isEmpty ? .combinedHubs : .productionChain)
+  }
+
   private func cheapestChainSupply(
     typeID: Int64,
     quantity: Int64,

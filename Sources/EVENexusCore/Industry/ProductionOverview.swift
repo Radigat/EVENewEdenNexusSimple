@@ -521,7 +521,8 @@ public enum ProductionOverviewProjector {
         input.action == .useStock ? material.stockQuote : material.quote
       guard
         let unitPrice =
-          material.replacementQuote?.weightedUnitPrice
+          (input.action == .useStock ? material.stockUnitValue : nil)
+          ?? material.replacementQuote?.weightedUnitPrice
           ?? legacyQuote?.weightedUnitPrice,
         unitPrice.isFinite,
         unitPrice >= 0

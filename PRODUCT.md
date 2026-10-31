@@ -2209,7 +2209,8 @@ ESI-Antwortcache wird anschließend wie beim etablierten Planner begrenzt.
 
 Der etablierte Planner trennt die **Produktionskosten** von den
 Verkaufsstrategien. Die Kostenkarte addiert den vollständigen
-Main-Hub-Materialwiederbeschaffungswert einschließlich Lagerverbrauch, die
+Materialwert einschließlich Lagerverbrauch (Bewertung siehe „Lagerbewertung und
+mehrere Produkte“), die
 ausdrückliche BPC-/BPO-Umlage und Installation. Direkt darunter stehen einmalig
 die Produktionskosten pro Endprodukteinheit, die vollständige Lieferung
 **Main Hub → Home Hub** und die Produktionskosten einschließlich dieser
@@ -2342,9 +2343,20 @@ etwa nach Absprache in Slack.
 
 Die neun Marktszenarien und ihre Rechnung sind unverändert.
 
-### Mehrere Produkte im Plan
+### Lagerbewertung und mehrere Produkte
 
 Stand 31.10.2026. Der Stand ist automatisch geprüft, aber weder live noch vom Eigentümer abgenommen.
+
+**Bewertung des Lagerverbrauchs:** Das Lager ändert nicht, was ein Auftrag kostet, sondern nur, was noch eingekauft und gebaut werden muss (Eigentümerentscheidung 31.10.2026).
+
+1. Mit Lager rechnet der Planer denselben Auftrag zuerst vollständig ohne Lager. Dieser Lauf wird nicht gespeichert. Die Berechnung dauert dadurch länger.
+2. Lagerwert = Produktionskosten ohne Lager − Kosten, die mit Lager noch anfallen (Einkauf, Refining, BPC/BPO, Installation, Lieferung). Er wird nie negativ; deckt die Referenz die noch anfallenden Kosten nicht, liegt die Summe entsprechend darüber.
+3. Der Lagerwert wird auf die Lagermaterialien verteilt, gewichtet mit dem Einzelwert aus günstigstem Wert von Marktpreis und Versorgungskette.
+4. Ist die Rechnung ohne Lager nicht vollständig, gilt dieser Einzelwert selbst: gewählte Einkaufsorte, sonst Orders von Main und Home Hub zusammen, sonst Produktionskette. Gibt es weder Orders noch Kette, bleibt der Wert unverfügbar und wird nie 0.
+
+Die Karten zeigen den tatsächlichen Plan, die Installation zum Beispiel nur die noch anfallenden Jobs. Deshalb liegt die Materialkarte mit Lager höher, die Summe bleibt gleich. Die Karte **Lagerverbrauch** zeigt zusätzlich den Marktwert der Lagermengen als Information; er ist nicht Teil der Kosten und bleibt ohne ausreichende Markttiefe unverfügbar.
+
+Kaufmengen, die kein ausgewählter Markt deckt, bleiben unverfügbar. Der tatsächliche Einkauf folgt weiter den gewählten Einkaufsorten.
 
 **Plan mit mehreren Produkten:** Das Panel **Produkte im Plan** ersetzt Zielmarkt- und Szenariopanel. Einzelne Produkte behalten beide Panels.
 

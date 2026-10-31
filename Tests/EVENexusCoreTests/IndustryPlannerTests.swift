@@ -518,10 +518,12 @@ struct IndustryPlannerTests {
     #expect(intermediate.stockQuote?.total == 10)
     #expect(intermediate.replacementQuote?.total == 30)
     #expect(intermediate.replacementQuote?.weightedUnitPrice == 15)
-    #expect(intermediate.warehouseConsumptionValue == 15)
-    #expect(plan.warehouseConsumptionValue == 15)
-    #expect(plan.costBreakdown?.stockMaterialCost == 15)
-    #expect(plan.materialCost == 30)
+    // The stocked unit counts at the cheaper chain (8.16), the bought one at 15.
+    #expect(abs((intermediate.warehouseConsumptionValue ?? -1) - 8.16) < 1e-9)
+    #expect(abs((plan.warehouseConsumptionValue ?? -1) - 8.16) < 1e-9)
+    #expect(abs((plan.costBreakdown?.stockMaterialCost ?? -1) - 8.16) < 1e-9)
+    #expect(abs((plan.materialCost ?? -1) - 23.16) < 1e-9)
+    #expect(plan.warehouseMarketValue == 10)
     #expect(!plan.nodes.contains { $0.typeID == 82 && $0.action == .produce })
     #expect(!plan.materials.contains { $0.typeID == 83 })
   }
@@ -588,24 +590,28 @@ struct IndustryPlannerTests {
     #expect(intermediate.replacementQuote?.quantity == 2)
     #expect(intermediate.replacementQuote?.total == 30)
     #expect(intermediate.replacementQuote?.weightedUnitPrice == 15)
-    #expect(intermediate.warehouseConsumptionValue == 15)
+    #expect(abs((intermediate.warehouseConsumptionValue ?? -1) - 8.16) < 1e-9)
     #expect(plan.materials.first { $0.typeID == 83 }?.required == 4)
     #expect(plan.costBreakdown?.purchasedMaterialCost == 8)
-    #expect(plan.costBreakdown?.stockMaterialCost == 15)
-    #expect(plan.materialCost == 23)
-    #expect(plan.costBreakdown?.materialCost == 23)
+    #expect(abs((plan.costBreakdown?.stockMaterialCost ?? -1) - 8.16) < 1e-9)
+    #expect(abs((plan.materialCost ?? -1) - 16.16) < 1e-9)
+    #expect(abs((plan.costBreakdown?.materialCost ?? -1) - 16.16) < 1e-9)
     let request = try #require(plan.requests.first)
     #expect(
-      ProductionOverviewProjector.projection(for: request.id, in: plan)?
-        .materialCost == 23
+      abs(
+        (ProductionOverviewProjector.projection(for: request.id, in: plan)?
+          .materialCost ?? -1) - 16.16
+      ) < 1e-9
     )
     let restored = try JSONDecoder().decode(
       IndustryPlanSnapshot.self, from: JSONEncoder().encode(plan)
     )
-    #expect(restored.materialCost == 23)
+    #expect(abs((restored.materialCost ?? -1) - 16.16) < 1e-9)
     #expect(
-      ProductionOverviewProjector.projection(for: request.id, in: restored)?
-        .materialCost == 23
+      abs(
+        (ProductionOverviewProjector.projection(for: request.id, in: restored)?
+          .materialCost ?? -1) - 16.16
+      ) < 1e-9
     )
     #expect(
       plan.nodes.contains {
@@ -635,13 +641,14 @@ struct IndustryPlannerTests {
       )
     )
     let intermediate = try #require(plan.materials.first { $0.typeID == 82 })
-    let stockCost = Double(availableStock) * 15
+    // Building is cheaper than the market's 15 per unit.
+    let stockCost = Double(availableStock) * 8.16
     let rawCost = Double(2 - availableStock) * 8
     #expect(intermediate.fromStock == availableStock)
     #expect(intermediate.toProduce == 2 - availableStock)
-    #expect(plan.materialCost == stockCost + rawCost)
+    #expect(abs((plan.materialCost ?? -1) - (stockCost + rawCost)) < 1e-9)
     #expect(plan.costBreakdown?.purchasedMaterialCost == rawCost)
-    #expect(plan.costBreakdown?.stockMaterialCost == stockCost)
+    #expect(abs((plan.costBreakdown?.stockMaterialCost ?? -1) - stockCost) < 1e-9)
     if availableStock == 0 {
       #expect(intermediate.replacementQuote == nil)
     } else {
@@ -682,17 +689,17 @@ struct IndustryPlannerTests {
     // units (2 ISK each); separate branch jobs would need 4 + 8 = 12.
     #expect(plan.materials.first { $0.typeID == 83 }?.required == 11)
     #expect(plan.costBreakdown?.purchasedMaterialCost == 22)
-    #expect(plan.costBreakdown?.stockMaterialCost == 17.5)
-    #expect(plan.materialCost == 39.5)
+    #expect(abs((plan.costBreakdown?.stockMaterialCost ?? -1) - 7.66) < 1e-9)
+    #expect(abs((plan.materialCost ?? -1) - 29.66) < 1e-9)
     let costs = try plan.requests.map { request in
       try #require(
         ProductionOverviewProjector.projection(for: request.id, in: plan)?
           .materialCost
       )
     }
-    // Branch values 25.5 and 16 weight the requests; the shares are scaled
+    // Branch values 15.66 and 16 weight the requests; the shares are scaled
     // to the plan's material cost.
-    #expect(abs(costs[0] - 39.5 * 25.5 / 41.5) < 1e-9)
+    #expect(abs(costs[0] - 29.66 * 15.66 / 31.66) < 1e-9)
     #expect(costs.reduce(0, +) == plan.materialCost)
   }
 
@@ -951,7 +958,203 @@ struct IndustryPlannerTests {
   }
 
   @Test
-  func stockFirstStillRequiresMarketDepthForTheFullIntermediateDemand()
+  func stockValueFallsBackToBothHubsThenToTheProductionChain() async throws {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let component = BlueprintDefinition(
+      blueprintTypeID: 902,
+      productTypeID: 92,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 93, quantity: 1)],
+        products: [BlueprintProduct(typeID: 92, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    let product = BlueprintDefinition(
+      blueprintTypeID: 901,
+      productTypeID: 91,
+      maxProductionLimit: nil,
+      activity: BlueprintActivityDefinition(
+        kind: .manufacturing,
+        durationSeconds: 10,
+        materials: [BlueprintMaterial(typeID: 92, quantity: 10)],
+        products: [BlueprintProduct(typeID: 91, quantity: 1, probability: nil)]
+      ),
+      source: source
+    )
+    func order(_ id: Int64, _ typeID: Int64, _ location: Int64, _ price: Double, _ volume: Int64)
+      -> MarketOrder
+    {
+      MarketOrder(
+        id: id,
+        typeID: typeID,
+        locationID: location,
+        systemID: EVEConstants.jitaSystemID,
+        side: .sell,
+        price: price,
+        volumeRemaining: volume,
+        minimumVolume: 1,
+        issued: .now
+      )
+    }
+    let homeLocationID: Int64 = 60_008_494
+    let home = TradingLocationConfiguration(
+      location: ProcurementLocation(
+        id: "home-fixture",
+        name: "Home Fixture",
+        locationID: homeLocationID,
+        kind: .npcTradeHub,
+        solarSystemID: EVEConstants.jitaSystemID,
+        regionID: EVEConstants.theForgeRegionID
+      )
+    )
+    func snapshot(_ location: Int64, _ orders: [MarketOrder]) -> MarketOrderSnapshot {
+      MarketOrderSnapshot(
+        id: UUID(),
+        regionID: EVEConstants.theForgeRegionID,
+        locationID: location,
+        capturedAt: .now,
+        state: .fresh,
+        ordersByType: Dictionary(grouping: orders, by: \.typeID),
+        source: source
+      )
+    }
+    func run(homeVolume: Int64?, rawPrice: Double?) async throws -> IndustryPlanSnapshot {
+      var mainOrders = [order(1, 92, EVEConstants.jitaIV4StationID, 100, 6)]
+      if let rawPrice {
+        mainOrders.append(order(2, 93, EVEConstants.jitaIV4StationID, rawPrice, 100))
+      }
+      // Without a basis the manufacturing profile supplies the chain's facility.
+      let basis = homeVolume.map { _ in
+        ProductionBasis(
+          tradingLocations: [home],
+          homeTradingLocationID: home.id
+        )
+      }
+      return try await IndustryPlanner().plan(
+        input: "Stock Product 1 0 0",
+        context: IndustryPlanningContext(
+          manufacturingProfile: ManufacturingProfile(),
+          productionBasis: basis,
+          catalog: FixtureCatalog(
+            names: [91: "Stock Product", 92: "Stock Component", 93: "Stock Raw"],
+            definitions: [91: product, 92: component]
+          ),
+          market: snapshot(EVEConstants.jitaIV4StationID, mainOrders),
+          homeMarket: homeVolume.map {
+            snapshot(homeLocationID, [order(3, 92, homeLocationID, 50, $0)])
+          },
+          adjustedPrices: [
+            92: AdjustedPrice(typeID: 92, adjustedPrice: 5, averagePrice: 5),
+            93: AdjustedPrice(typeID: 93, adjustedPrice: 1, averagePrice: 1),
+          ],
+          systemIndices: [
+            IndustrySystemIndex(
+              solarSystemID: EVEConstants.jitaSystemID,
+              activity: .manufacturing,
+              costIndex: 0
+            )
+          ],
+          availableStock: [92: 10],
+          procurementPreferences: [
+            92: MaterialProcurementPreference(
+              supplyMode: .warehouse,
+              purchaseLocation: .jita
+            )
+          ],
+          sdeBuild: 1
+        )
+      )
+    }
+
+    let combined = try await run(homeVolume: 4, rawPrice: nil)
+    let hubs = try #require(combined.materials.first { $0.typeID == 92 })
+    #expect(hubs.fromStock == 10)
+    #expect(hubs.toBuy == 0)
+    // The cheaper Home Hub fills 4 units at 50, the Main Hub 6 at 100.
+    #expect(combined.costBreakdown?.stockMaterialCost == 800)
+    #expect(combined.materialValuationSources?[92] == .combinedHubs)
+
+    let unavailable = try await run(homeVolume: 1, rawPrice: nil)
+    #expect(unavailable.materialCost == nil)
+    #expect(unavailable.materialValuationSources == nil)
+    #expect(unavailable.warnings.contains { $0.code == "market.insufficient-depth" })
+
+    let chain = try await run(homeVolume: nil, rawPrice: 20)
+    #expect(chain.materialValuationSources?[92] == .productionChain)
+    #expect((chain.costBreakdown?.stockMaterialCost ?? 0) > 0)
+  }
+
+  @Test
+  func stockDoesNotChangeTheCostOfTheOrder() async throws {
+    let preference = MaterialProcurementPreference(
+      supplyMode: .produce,
+      purchaseLocation: .jita,
+      usesAvailableStockFirst: true
+    )
+    let withoutStock = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: intermediateChoiceContext(preference: preference)
+    )
+    let reference = try #require(withoutStock.costBreakdown?.totalProductionCost)
+    for stock in [Int64(1), 2] {
+      var context = intermediateChoiceContext(
+        preference: preference,
+        availableStock: stock
+      )
+      context.stockReferenceProductionCost = reference
+      let plan = try await IndustryPlanner().plan(
+        input: "Choice Product 1 0 0",
+        context: context
+      )
+      let total = try #require(plan.costBreakdown?.totalProductionCost)
+      #expect(abs(total - reference) < 1e-6)
+      #expect(plan.materialValuationSources?[82] == .planWithoutStock)
+      let stockValue = try #require(plan.warehouseConsumptionValue)
+      #expect(abs((plan.costBreakdown?.stockMaterialCost ?? -1) - stockValue) < 1e-6)
+      let request = try #require(plan.requests.first)
+      let projected = try #require(
+        ProductionOverviewProjector.projection(for: request.id, in: plan)?.materialCost
+      )
+      #expect(abs(projected - (plan.materialCost ?? -1)) < 1e-6)
+    }
+    // A reference below the remaining costs never makes the stock negative.
+    var low = intermediateChoiceContext(preference: preference, availableStock: 1)
+    low.stockReferenceProductionCost = 0
+    let floored = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: low
+    )
+    #expect(floored.costBreakdown?.stockMaterialCost == 0)
+  }
+
+  @Test
+  func stockCountsAtTheCheaperOfMarketAndProductionChain() async throws {
+    // The market offers enough at 10 and 20; building costs 4 units of raw.
+    let plan = try await IndustryPlanner().plan(
+      input: "Choice Product 1 0 0",
+      context: intermediateChoiceContext(
+        preference: MaterialProcurementPreference(
+          supplyMode: .warehouse,
+          purchaseLocation: .jita
+        ),
+        availableStock: 2
+      )
+    )
+    let material = try #require(plan.materials.first { $0.typeID == 82 })
+    #expect(material.fromStock == 2)
+    let market = try #require(material.replacementQuote?.weightedUnitPrice)
+    let stockValue = try #require(material.warehouseConsumptionValue)
+    #expect(plan.materialValuationSources?[82] == .productionChain)
+    #expect(plan.warehouseMarketValue == market * 2)
+    #expect(stockValue < market * 2)
+    #expect(plan.costBreakdown?.stockMaterialCost == stockValue)
+  }
+
+  @Test
+  func stockFirstValuesThinIntermediatesThroughTheProductionChain()
     async throws
   {
     let plan = try await IndustryPlanner().plan(
@@ -969,18 +1172,10 @@ struct IndustryPlannerTests {
     let intermediate = try #require(plan.materials.first { $0.typeID == 82 })
     #expect(intermediate.stockQuote?.total == 10)
     #expect(intermediate.replacementQuote?.quantity == 2)
-    #expect(intermediate.replacementQuote?.filledQuantity == 1)
-    #expect(intermediate.replacementQuote?.total == nil)
-    #expect(intermediate.replacementQuote?.weightedUnitPrice == nil)
-    #expect(plan.materialCost == nil)
-    #expect(plan.costBreakdown?.materialCost == nil)
-    #expect(plan.costBreakdown?.stockMaterialCost == nil)
+    #expect(plan.materialValuationSources?[82] == .productionChain)
+    #expect(plan.materialCost != nil)
+    #expect(plan.costBreakdown?.stockMaterialCost != nil)
     #expect(plan.costBreakdown?.purchasedMaterialCost == 8)
-    #expect(plan.costBreakdown?.totalProductionCost == nil)
-    #expect(plan.immediateSale.profit == nil)
-    #expect(plan.warnings.contains {
-      $0.code == "market.insufficient-depth" && $0.severity == .blocking
-    })
   }
 
   @Test
