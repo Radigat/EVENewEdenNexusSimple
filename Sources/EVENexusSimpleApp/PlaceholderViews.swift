@@ -33,7 +33,7 @@ enum PlannerFinanceSection: String, CaseIterable {
   case costPerItem
 }
 
-private enum PlannerCalculationPhase: Equatable {
+enum PlannerCalculationPhase: Equatable, CaseIterable {
   case preparing
   case resolvingBlueprints
   case applyingBlueprintEfficiencies
@@ -329,11 +329,16 @@ struct PlannerView: View {
     calculationPhase != nil
   }
 
+  @State private var isFlowGuidePresented = false
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-        Text("Production Planner")
-          .font(.largeTitle.bold())
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingMD) {
+          Text("Production Planner")
+            .font(.largeTitle.bold())
+          PlannerFlowGuideButton(isPresented: $isFlowGuidePresented)
+        }
         Text(
           AppLocalization.text(
             historicalPlannerRequest == nil
@@ -521,6 +526,11 @@ struct PlannerView: View {
         )
       }
       .padding(DesignTokens.spacingLG)
+    }
+    .overlay {
+      if isFlowGuidePresented {
+        PlannerFlowGuideOverlay(isPresented: $isFlowGuidePresented)
+      }
     }
     .navigationTitle(AppLocalization.text("Planner"))
     .onChange(of: consolidation.workspace.science.map { "\($0.id):\($0.archived)" }) {

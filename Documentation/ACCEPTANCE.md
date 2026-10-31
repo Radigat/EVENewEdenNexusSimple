@@ -697,6 +697,12 @@ are no longer current product requirements.
 | --- | --- | --- | --- |
 | Automatic build or buy, calculation on click only since 2026-10-31 | pass: fixtures cover the choice without a click, the chain, manual choices and reset, Blueprint cost, source ME, debounce, cancellation and the latest wish | not run: the running app was not exercised | pending: change item, location and a manual choice in the app and compare the plan with EVE |
 
+## Planner info panel, 2026-10-31
+
+| Area | Automated evidence | Live evidence | Owner acceptance |
+| --- | --- | --- | --- |
+| Overlay „So rechnet der Planer“ | pass: fixtures cover complete steps and arrows, short texts, both languages, calculation phases, arrow hit test and card placement | not applicable: the panel loads no live data | pending: read the panel in the app and compare it with a real calculation |
+
 ## Planner layout, 2026-10-30
 
 | Area | Automated evidence | Live evidence | Owner acceptance |

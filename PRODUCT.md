@@ -1090,6 +1090,15 @@ nennt die automatische Stufe mit Grund. Eine Wahl von Hand zeigt „Zurück zur
 Automatik“; Übergaben sind als fest markiert. Historische Pläne zeigen dieselben
 Abschnitte ohne Einklappen und schreibgeschützt.
 
+Der Button „So rechnet der Planer“ neben dem Titel öffnet ein Info-Panel als
+Overlay mit 80 % der Breite und Höhe des Arbeitsbereichs. Das Schaubild zeigt
+Eingaben, geladene Daten, Berechnungsschritte, Ergebnisse und die Eingriffe des
+Benutzers. Beim Überfahren eines Schritts oder Pfeils erscheint eine große
+Erklärungskarte mit höchstens drei kurzen Sätzen; ein Klick fixiert sie, Esc löst
+sie und schließt danach das Panel. Der Inhalt liegt in
+`Sources/EVENexusSimpleApp/PlannerFlowGuide.swift` und wird bei jeder
+Planer-Änderung mitgepflegt (Regel in `AGENTS.md`).
+
 **Planner: Einkaufsorte** (Eigentümerentscheidung 30.10.2026):
 
 - **Auswahl:** Über der Eingabe stehen Main, Home und Coalition Hub zur Wahl,
@@ -1764,7 +1773,7 @@ Aufteilung (Industrieeinstellungen → **Job Mode, Slots & Account**):
   einen Auftrag je Produkt; Höchstdauer, Slot-Verteilung und Reaktionsstapel
   gelten dann für diese Stufe nicht. Von einer BPO/BPC gedeckte Runs bleiben
   eigene Aufträge (eine 12er-Zeile mit BPCs über 4 und 2 Runs → 4, 2 und 6).
-  Jede Änderung berechnet den Plan sofort neu. Die Wahl wird im Planer-Entwurf
+  Eine Änderung wirkt bei der nächsten Berechnung. Die Wahl wird im Planer-Entwurf
   und im gespeicherten Plan abgelegt; die historische Ansicht zeigt sie
   schreibgeschützt. Pläne ohne gespeicherte Wahl gelten als „beide an“.
 - Bei aktiver Aufteilung werden mehrere Planzeilen desselben Endprodukts vor dem Teilen zu einem

@@ -123,6 +123,9 @@
 		B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */; };
 		C41FF0265C375712A7BD97B2 /* PlannerAutomationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */; };
 		A71E0C2D5B8F4A1096D3E7F2 /* PlannerProductEconomicsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */; };
+		F6BA628AFE464B40BCF7EA6A /* PlannerFlowGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */; };
+		7139788BC82D4237983AB835 /* PlannerFlowGuideLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */; };
+		FC46923AD7C44E2395783399 /* PlannerFlowGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */; };
 		B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */; };
 		B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AC75DF5C57565C1C95D785 /* ContentView.swift */; };
 		B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */; };
@@ -382,6 +385,9 @@
 		F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPersistenceController.swift; sourceTree = "<group>"; };
 		C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerAutomationViews.swift; sourceTree = "<group>"; };
 		A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProductEconomicsPanel.swift; sourceTree = "<group>"; };
+		F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuideView.swift; sourceTree = "<group>"; };
+		311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuideLayout.swift; sourceTree = "<group>"; };
+		46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuide.swift; sourceTree = "<group>"; };
 		FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		FEE2812212934D7FCB3FA513 /* EVEStaticDataKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = EVEStaticDataKit; path = Packages/EVEStaticDataKit; sourceTree = SOURCE_ROOT; };
 		0F9FE09B2DC20F96EAAB86DD /* ConsolidationBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationBackup.swift; sourceTree = "<group>"; };
@@ -671,6 +677,9 @@
 				F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */,
 				C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */,
 				A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */,
+				F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */,
+				311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */,
+				46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */,
 				653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */,
 				E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */,
 				F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */,
@@ -993,6 +1002,9 @@
 				B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */,
 				C41FF0265C375712A7BD97B2 /* PlannerAutomationViews.swift in Sources */,
 				A71E0C2D5B8F4A1096D3E7F2 /* PlannerProductEconomicsPanel.swift in Sources */,
+				F6BA628AFE464B40BCF7EA6A /* PlannerFlowGuideView.swift in Sources */,
+				7139788BC82D4237983AB835 /* PlannerFlowGuideLayout.swift in Sources */,
+				FC46923AD7C44E2395783399 /* PlannerFlowGuide.swift in Sources */,
 				FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */,
 				29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */,
 				9492F8F84CA2B812F38B0730 /* ProfilesView.swift in Sources */,

@@ -70,6 +70,12 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 - Preserve the selected sort while filters or live snapshots update during the current view lifetime.
 - Do not apply global row sorting to forms, card grids, key/value summaries, or hierarchical/tree tables where reordering would break parent-child or prescribed sequence semantics. If peer rows exist within a hierarchy, sort only within the same parent and keep the hierarchy intact.
 
+## Planer-Info-Panel
+
+- Das Info-Panel „So rechnet der Planer“ muss bei jeder Planer-Änderung stimmen. Jede Änderung an Ablauf, Eingaben, Eingriffen, Regeln oder Ergebnissen des Planers aktualisiert im selben Auftrag `Sources/EVENexusSimpleApp/PlannerFlowGuide.swift` und beide `Localizable.strings`.
+- Erklärungen bleiben kurz und prägnant: höchstens drei kurze Sätze je Schritt oder Pfeil.
+- `Scripts/check_planner_guide.py` prüft das vor jedem Commit und in der CI. Betrifft eine Änderung einer Planer-Quelle den Inhalt nachweislich nicht, steht in der Commit-Nachricht `Planer-Info: geprüft, keine Änderung nötig`.
+
 ## Continuous documentation
 
 - Keep `PRODUCT.md` current as part of every implementation, bug fix, migration, configuration change, or material behavior change. Documentation is part of the change, not a deferred follow-up.

@@ -1,5 +1,21 @@
 # EVE New Eden Nexus - Assets, Industry, Markets – Entwicklungstagebuch
 
+## 31. Oktober 2026 – Planer: Info-Panel „So rechnet der Planer“
+
+Auftrag: großes Overlay (80 % des Arbeitsbereichs) mit Ablaufschaubild, Eingaben,
+Berechnung und Eingriffen; Mouse-over auf Schritten und Pfeilen mit großer, an die
+Breite angepasster Karte und knappen Texten. Das Panel ist bei jeder Planer-Änderung
+mitzupflegen. Ergebnis: Button neben dem Planer-Titel, Inhalt in
+`PlannerFlowGuide.swift`, Pflegeregel in `AGENTS.md`, Prüfung
+`Scripts/check_planner_guide.py` lokal und in der CI. `PRODUCT.md` nannte für die
+Auftragsaufteilung noch sofortiges Neurechnen und ist korrigiert. Rechenregeln
+bleiben unverändert. Geprüft: `swift test` (701 Tests), `EVEStaticDataKit` (13
+Tests) grün; `xcodebuild test` grün, nach einer letzten Korrektur an Klick und
+Schriftgröße erneut `xcodebuild build`. Sichtprüfung in der isolierten App ohne
+Nutzerdaten: 80 %-Größe, Hover auf Schritt und Pfeil, Karte am Rand, Fixieren, Esc,
+kleines Fenster mit Scrollen, Deutsch hell, Englisch dunkel. Offen: Tastaturfokus,
+VoiceOver und historischer Modus nicht in der App geprüft; Abnahme durch den Eigentümer.
+
 ## 30. Oktober 2026 – Handel: Item-Suche über alle Marktgruppen
 
 Auftrag (Eigentümer-Screenshot): gezielt nach einem Gegenstand suchen, ohne sich
@@ -9498,8 +9514,11 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Umfang:** Lagerverbrauch trotz fehlender Markttiefe bewerten (beide Hubs, dann günstigste Produktionskette); Kosten, Zielmarkt und Allianzverkauf je Produkt; Panel „Produkte im Plan“; Produktionsübersicht übernimmt Produktanteile und Zielmarkt.
 - **Anlass:** Im Ark-Plan fehlten alle Kosten und Gewinne, weil der Main Hub nur 486 von 614 Capital Linear Shield Emitter und 703 von 962 Capital Tesseract Capacitor Unit anbot, obwohl das Lager beide vollständig deckte.
 - **Ergebnis:** Umgesetzt, Entscheidungen in `Documentation/Consolidation/DECISIONS.md`.
+- **Prüfung:** `swift test` (705 und 92 Tests), `EVEStaticDataKit` (13 Tests) und natives `xcodebuild test` bestanden. Das neue Panel wurde einmalig mit Fixture-Daten außerhalb der App gerendert und angesehen. Der Ablauf in der laufenden App wurde nicht durchgeklickt, weil ein isolierter Datenordner weder SDE noch Marktdaten enthält.
 - **Korrektur am selben Tag:** Lagerverbrauch zählt zum günstigeren Wert aus Markt und Versorgungskette; der Ark-Plan lag zuvor mit 8,08 Mrd. ISK weit über dem Vergleichswert von Ravworks (rund 5,47 Mrd. ISK).
 - **Zweite Korrektur:** Lagerwert aus einem Referenzlauf ohne Lager, damit die Summe mit und ohne Lager gleich ist (Ark vorher 5.613 zu 5.416 Mio. ISK).
+- **Info-Panel:** „So rechnet der Planer“ für Finanzübersicht, Zielmarkt und Verkaufsentscheidung aktualisiert.
 - **Offen:** Live-Abnahme mit dem echten Ark-Plan und einem Mehrprodukt-Plan durch den Eigentümer; vorhandene Zeilen der Produktionsübersicht bleiben absichtlich unverändert.
 - **Restlücken Produktionsübersicht:** Allianzmarkt ohne Preis übernimmt nicht mehr den Main-Hub-Preis; mehrere Produkte ohne Zielmarkt bleiben ohne Vorschlagspreis und erwarteten Gewinn; der Haken „Vollständig verkauft“ setzt die abgenommene Menge; ausstehende Kosten stehen als „~“ am Gewinn, ausstehender Eingangstransport zählt in der Zeile wie im Panel als 0. Entscheidungen 6 und 7 in `Documentation/Consolidation/DECISIONS.md`.
-- **Prüfung:** Nur dieser Commit-Stand, isoliert exportiert: `swift test` (712 und 84 Tests), `EVEStaticDataKit` (13 Tests), natives `xcodebuild test` (712 Tests, `TEST SUCCEEDED`). Nicht geprüft: Ablauf in der laufenden App; Abnahme durch den Eigentümer. Das Info-Panel folgt im nächsten Commit.
+- **Prüfung Restlücken:** `swift test` (712 und 92 Tests), `EVEStaticDataKit` (13 Tests), natives `xcodebuild test` (712 Tests, `TEST SUCCEEDED`), `check_planner_guide.py --self-test` bestanden. Nicht geprüft: Liste und Haken in der laufenden App; Abnahme durch den Eigentümer.
+- **Commit-Stände:** Lagerbewertung und Info-Panel als zwei Commits, beide isoliert exportiert und geprüft. Nur Lagerbewertung: `swift test` (712 und 84 Tests), `EVEStaticDataKit` (13 Tests), natives `xcodebuild test` (712 Tests, `TEST SUCCEEDED`). Mit Info-Panel: `swift test` (712 und 92 Tests), `EVEStaticDataKit` (13 Tests), natives `xcodebuild test` (712 Tests, `TEST SUCCEEDED`). Die Info-Panel-Prüfung besteht erst über beide Commits zusammen, weil der Lagerbewertungs-Commit Planer-Quellen ohne das noch nicht vorhandene Panel ändert.

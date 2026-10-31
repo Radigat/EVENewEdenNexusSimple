@@ -50,4 +50,6 @@ Nach Prüfung und Abschlussbericht des jeweiligen Auftrags stoppen; keine ungefr
 Migrationen V2→V3 und wiederholte Initialisierung mit synthetischen Stores prüfen.
 SQLite-Sicherungen müssen WAL-Daten enthalten; manipulierte und fremde Sicherungen müssen scheitern.
 Niemals die produktive Installation oder Nutzerdaten für diese Tests verwenden.
+Bei Planer-Änderungen das Info-Panel mitpflegen und vor dem Commit `python3 Scripts/check_planner_guide.py <Basis> HEAD` ausführen (Regel in `AGENTS.md`).
+
 Neue Kernquellen/-tests müssen sowohl in SwiftPM als auch im bestehenden Xcode-Projekt enthalten sein.
