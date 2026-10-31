@@ -696,6 +696,260 @@ struct IndustryPlannerTests {
     #expect(costs.reduce(0, +) == plan.materialCost)
   }
 
+  private func twoProductPlan(
+    input: String = "Small Product 1 0 0\nLarge Product 1 0 0"
+  ) async throws -> IndustryPlanSnapshot {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    func definition(_ product: Int64, rawQuantity: Int64) -> BlueprintDefinition {
+      BlueprintDefinition(
+        blueprintTypeID: product + 800,
+        productTypeID: product,
+        maxProductionLimit: nil,
+        activity: BlueprintActivityDefinition(
+          kind: .manufacturing,
+          durationSeconds: 10,
+          materials: [BlueprintMaterial(typeID: 73, quantity: rawQuantity)],
+          products: [BlueprintProduct(typeID: product, quantity: 1, probability: nil)]
+        ),
+        source: source
+      )
+    }
+    return try await IndustryPlanner().plan(
+      input: input,
+      context: IndustryPlanningContext(
+        manufacturingProfile: ManufacturingProfile(),
+        catalog: FixtureCatalog(
+          names: [71: "Small Product", 72: "Large Product", 73: "Shared Raw"],
+          definitions: [
+            71: definition(71, rawQuantity: 10),
+            72: definition(72, rawQuantity: 30),
+          ],
+          packagedVolumes: [71: 1, 72: 3, 73: 1]
+        ),
+        market: MarketOrderSnapshot(
+          id: UUID(),
+          regionID: EVEConstants.theForgeRegionID,
+          locationID: EVEConstants.jitaIV4StationID,
+          capturedAt: .now,
+          state: .fresh,
+          ordersByType: [
+            71: [
+              makeOrder(typeID: 71, side: .buy, price: 200),
+              makeOrder(typeID: 71, side: .sell, price: 220),
+            ],
+            72: [
+              makeOrder(typeID: 72, side: .buy, price: 900),
+              makeOrder(typeID: 72, side: .sell, price: 950),
+            ],
+            73: [makeOrder(typeID: 73, side: .sell, price: 5)],
+          ],
+          source: source
+        ),
+        adjustedPrices: [
+          73: AdjustedPrice(typeID: 73, adjustedPrice: 5, averagePrice: 5)
+        ],
+        systemIndices: [
+          IndustrySystemIndex(
+            solarSystemID: EVEConstants.jitaSystemID,
+            activity: .manufacturing,
+            costIndex: 0.1
+          )
+        ],
+        sdeBuild: 1,
+        salesTaxRate: 0.05,
+        brokerFeeRate: 0.01
+      )
+    )
+  }
+
+  @Test
+  func productCostsAddUpToThePlanAndFollowTheirCause() async throws {
+    let plan = try await twoProductPlan()
+    let costs = try #require(plan.productEconomics)
+    #expect(costs.count == 2)
+    let small = try #require(costs.first { $0.productName == "Small Product" })
+    let large = try #require(costs.first { $0.productName == "Large Product" })
+    let material = try #require(plan.materialCost)
+    let installation = try #require(plan.installationCost)
+    #expect(abs((small.materialCost ?? 0) + (large.materialCost ?? 0) - material) < 1e-6)
+    #expect(
+      abs((small.installationCost ?? 0) + (large.installationCost ?? 0) - installation) < 1e-6
+    )
+    #expect(abs((large.materialCost ?? 0) - 3 * (small.materialCost ?? 0)) < 1e-6)
+    #expect(abs(small.outboundShare - 0.25) < 1e-9)
+    #expect(abs(large.outboundShare - 0.75) < 1e-9)
+    let total = try #require(plan.costBreakdown?.totalProductionCost)
+    #expect(abs((small.totalCost ?? 0) + (large.totalCost ?? 0) - total) < 1e-6)
+    // Product profits add up to the plan's scenario profit.
+    let planProfit = try #require(plan.listedSale.profit)
+    let profits = plan.requests.compactMap { request in
+      PlannerProductEconomics.outcomes(plan: plan, requestID: request.id)
+        .first { $0.market == .mainHub && $0.scenario == .listedSale }?.profit
+    }
+    #expect(profits.count == 2)
+    #expect(abs(profits.reduce(0, +) - planProfit) < 1e-6)
+  }
+
+  @Test
+  func productDecisionsDriveTheProductionOverview() async throws {
+    var plan = try await twoProductPlan()
+    let small = try #require(plan.requests.first { $0.productName == "Small Product" })
+    let large = try #require(plan.requests.first { $0.productName == "Large Product" })
+    let alliance = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 1000, feeRate: 0.02),
+      requestID: large.id
+    )
+    let largeCost = try #require(plan.productCosts(for: large.id)?.totalCost)
+    #expect(alliance.soldQuantity == 1)
+    #expect(abs((alliance.profit ?? 0) - (1000 - 20 - largeCost)) < 1e-6)
+    plan.productDecisions = [
+      small.id: PlannerProductDecision(targetMarket: .mainHub),
+      large.id: PlannerProductDecision(targetMarket: .allianceMarket, allianceSale: alliance),
+    ]
+    #expect(plan.targetMarket(for: small.id) == .mainHub)
+    #expect(plan.targetMarket(for: large.id) == .allianceMarket)
+
+    let row = try #require(ProductionOverviewProjector.projection(for: large.id, in: plan))
+    #expect(row.salesTaxRate == 0.02)
+    #expect(!row.brokerFeeIsApplicable)
+    #expect(row.suggestedSalePricePerUnit == 1000)
+    let calculation = ProductionOverviewCalculation(
+      units: 1,
+      materialCost: row.materialCost,
+      installationCost: row.installationCost,
+      blueprintCost: row.blueprintCost,
+      logisticsCost: row.logisticsCost,
+      salesTaxRate: row.salesTaxRate,
+      brokerFeeRate: row.brokerFeeRate,
+      brokerFeeIsApplicable: row.brokerFeeIsApplicable,
+      salePricePerUnit: row.suggestedSalePricePerUnit,
+      soldUnits: 0,
+      saleUnits: row.saleUnits
+    )
+    let projected = try #require(calculation.projectedProfit)
+    #expect(abs(projected - (alliance.profit ?? 0)) < 1e-6)
+
+    // A row recorded before product economics keeps its stored market values.
+    plan.productEconomics = nil
+    let legacy = try #require(ProductionOverviewProjector.projection(for: large.id, in: plan))
+    #expect(legacy.salesTaxRate == 0.05)
+    #expect(legacy.brokerFeeIsApplicable)
+  }
+
+  @Test
+  func partialAllianceSaleOnlyEarnsTheAcceptedUnits() {
+    let calculation = ProductionOverviewCalculation(
+      units: 10,
+      materialCost: 100,
+      installationCost: 0,
+      blueprintCost: 0,
+      logisticsCost: 0,
+      salesTaxRate: 0.02,
+      brokerFeeRate: nil,
+      brokerFeeIsApplicable: false,
+      salePricePerUnit: 50,
+      soldUnits: 0,
+      saleUnits: 4
+    )
+    #expect(calculation.saleTotal == 200)
+    #expect(calculation.projectedProfit == 96)
+  }
+
+  private func overviewCalculation(
+    _ row: ProductionOverviewRequestProjection,
+    units: Int64
+  ) -> ProductionOverviewCalculation {
+    ProductionOverviewCalculation(
+      units: units,
+      materialCost: row.materialCost,
+      installationCost: row.installationCost,
+      blueprintCost: row.blueprintCost,
+      logisticsCost: row.logisticsCost,
+      salesTaxRate: row.salesTaxRate,
+      brokerFeeRate: row.brokerFeeRate,
+      brokerFeeIsApplicable: row.brokerFeeIsApplicable,
+      salePricePerUnit: row.suggestedSalePricePerUnit,
+      soldUnits: 0,
+      saleUnits: row.saleUnits
+    )
+  }
+
+  @Test
+  func productionRowsAddUpToTheChosenSaleOfEachProduct() async throws {
+    var plan = try await twoProductPlan()
+    let small = try #require(plan.requests.first { $0.productName == "Small Product" })
+    let large = try #require(plan.requests.first { $0.productName == "Large Product" })
+    let alliance = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 1000, feeRate: 0.02),
+      requestID: large.id
+    )
+    plan.productDecisions = [
+      small.id: PlannerProductDecision(targetMarket: .mainHub),
+      large.id: PlannerProductDecision(targetMarket: .allianceMarket, allianceSale: alliance),
+    ]
+
+    let hubRow = try #require(ProductionOverviewProjector.projection(for: small.id, in: plan))
+    let hubProfit = try #require(overviewCalculation(hubRow, units: 1).projectedProfit)
+    let hubOutcome = try #require(
+      PlannerProductEconomics.chosenOutcome(plan: plan, requestID: small.id)?.profit
+    )
+    #expect(abs(hubProfit - hubOutcome) < 1e-6)
+
+    let allianceRow = try #require(ProductionOverviewProjector.projection(for: large.id, in: plan))
+    let allianceProfit = try #require(overviewCalculation(allianceRow, units: 1).projectedProfit)
+    #expect(abs(hubProfit + allianceProfit - (hubOutcome + (alliance.profit ?? 0))) < 1e-6)
+  }
+
+  @Test
+  func productionRowWithoutASaleKeepsItsCostsButHasNoPrice() async throws {
+    var plan = try await twoProductPlan()
+    let small = try #require(plan.requests.first { $0.productName == "Small Product" })
+    let large = try #require(plan.requests.first { $0.productName == "Large Product" })
+    plan.productDecisions = [large.id: PlannerProductDecision(targetMarket: .allianceMarket)]
+
+    for requestID in [small.id, large.id] {
+      let row = try #require(ProductionOverviewProjector.projection(for: requestID, in: plan))
+      #expect(row.suggestedSalePricePerUnit == nil)
+      #expect(row.materialCost != nil)
+      #expect(overviewCalculation(row, units: 1).projectedProfit == nil)
+    }
+    let allianceRow = try #require(ProductionOverviewProjector.projection(for: large.id, in: plan))
+    #expect(!allianceRow.brokerFeeIsApplicable)
+  }
+
+  @Test
+  func singleProductWithoutTargetMarketKeepsTheMainHubSuggestion() async throws {
+    var plan = try await twoProductPlan(input: "Small Product 1 0 0")
+    let request = try #require(plan.requests.first)
+    let row = try #require(ProductionOverviewProjector.projection(for: request.id, in: plan))
+    #expect(row.suggestedSalePricePerUnit != nil)
+
+    // Choosing the alliance market without a price must not borrow that price.
+    plan.targetMarket = .allianceMarket
+    let alliance = try #require(ProductionOverviewProjector.projection(for: request.id, in: plan))
+    #expect(alliance.suggestedSalePricePerUnit == nil)
+  }
+
+  @Test
+  func fullySoldUnitsFollowThePartialAllianceSale() {
+    func projection(saleUnits: Int64?) -> ProductionOverviewRequestProjection {
+      ProductionOverviewRequestProjection(
+        materialCost: nil,
+        installationCost: nil,
+        logisticsCost: nil,
+        salesTaxRate: nil,
+        brokerFeeRate: nil,
+        suggestedSalePricePerUnit: nil,
+        saleUnits: saleUnits
+      )
+    }
+    #expect(projection(saleUnits: 4).fullySoldUnits(of: 10) == 4)
+    #expect(projection(saleUnits: nil).fullySoldUnits(of: 10) == 10)
+    #expect(projection(saleUnits: 20).fullySoldUnits(of: 10) == 10)
+  }
+
   @Test
   func stockFirstStillRequiresMarketDepthForTheFullIntermediateDemand()
     async throws

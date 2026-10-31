@@ -26,6 +26,7 @@ struct ProductionOverviewDraftRow: Identifiable {
   let brokerFeeRate: Double?
   let brokerFeeIsApplicable: Bool
   let salePricePerUnit: Double?
+  var saleUnits: Int64? = nil
 
   var calculation: ProductionOverviewCalculation {
     ProductionOverviewCalculation(
@@ -38,7 +39,8 @@ struct ProductionOverviewDraftRow: Identifiable {
       brokerFeeRate: brokerFeeRate,
       brokerFeeIsApplicable: brokerFeeIsApplicable,
       salePricePerUnit: salePricePerUnit,
-      soldUnits: 0
+      soldUnits: 0,
+      saleUnits: saleUnits
     )
   }
 }
@@ -279,7 +281,8 @@ enum PlannerPersistenceController {
         salesTaxRate: projection?.salesTaxRate,
         brokerFeeRate: projection?.brokerFeeRate,
         brokerFeeIsApplicable: projection?.brokerFeeIsApplicable ?? true,
-        salePricePerUnit: projection?.suggestedSalePricePerUnit
+        salePricePerUnit: projection?.suggestedSalePricePerUnit,
+        saleUnits: projection?.saleUnits
       )
     }
   }

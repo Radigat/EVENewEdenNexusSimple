@@ -356,3 +356,14 @@ Schritt P1.
   ESI-Durchschnittspreis (31.10.2026: bei 19 Formeln 10 bzw. 15 Mio. ISK wie die NPC-Orders);
   ohne beide bleibt der Transport mit Warnung außerhalb der Kosten. Formeln an anderen Orten zählen nicht
   automatisch. Ohne NPC-Order wird das Produkt gekauft.
+
+## 31.10.2026: Verkauf je Produkt
+
+Entscheidungen des Eigentümers:
+
+1. Verkaufsort und Allianzpreis gelten je Produkt, dazu kommt eine Gesamtsumme.
+2. Gemeinsame Kosten werden nach Verursachung verteilt.
+3. In einem Plan mit mehreren Produkten zeigt ein Produkt ohne Zielmarkt in der Produktionsübersicht keinen Vorschlagspreis und keinen erwarteten Gewinn.
+4. Der Haken „Vollständig verkauft“ setzt bei einer Teilabnahme der Allianz die abgenommene Menge; das Feld „Verkauft“ bleibt bis zur produzierten Menge frei.
+
+Im freigegebenen Plan festgelegt: Bereits erfasste Zeilen der Produktionsübersicht bleiben unverändert.

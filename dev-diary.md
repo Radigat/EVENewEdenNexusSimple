@@ -9492,3 +9492,11 @@ Prüfung: `swift test` 701 + 84 Tests; `EVEStaticDataKit` 13 Tests; `xcodebuild 
 Eigentümerrückmeldung: Der Ark-Plan zeigt nach „Berechnen“ wieder Gewinne.
 
 Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale Abnahme.
+
+## 31.10.2026: Mehrprodukt-Weg im Planer
+
+- **Umfang:** Kosten, Zielmarkt und Allianzverkauf je Produkt; Panel „Produkte im Plan“; Produktionsübersicht übernimmt Produktanteile, Zielmarkt, Allianzpreis, Gebühr und Lieferung.
+- **Restlücken Produktionsübersicht:** Allianzmarkt ohne Preis übernimmt nicht mehr den Main-Hub-Preis; mehrere Produkte ohne Zielmarkt bleiben ohne Vorschlagspreis und erwarteten Gewinn; der Haken „Vollständig verkauft“ setzt die abgenommene Menge; ausstehende Kosten stehen als „~“ am Gewinn.
+- **Ergebnis:** Umgesetzt, Entscheidungen in `Documentation/Consolidation/DECISIONS.md`. Lagerbewertung und Info-Panel „So rechnet der Planer“ gehören nicht zu diesem Commit und bleiben uncommittet im Arbeitsbaum, auch die zugehörige Info-Panel-Aktualisierung.
+- **Prüfung:** Nur dieser Commit-Stand, isoliert exportiert: `swift test` (709 und 84 Tests), `EVEStaticDataKit` (13 Tests), natives `xcodebuild test` (709 Tests, `TEST SUCCEEDED`). Nicht geprüft: Liste, Haken und Panel in der laufenden App mit diesem Stand; Abnahme durch den Eigentümer.
+- **Offen:** Live-Abnahme mit einem Mehrprodukt-Plan durch den Eigentümer; vorhandene Zeilen der Produktionsübersicht bleiben absichtlich unverändert.

@@ -20,6 +20,9 @@ enum AppSettingKey {
   /// Planner draft input of the manual alliance sale (P11), JSON-encoded
   /// `PlannerAllianceSaleInput`.
   static let plannerAllianceSaleDraft = "planner.alliance-sale.draft.v1"
+  /// JSON of per-product target markets and alliance inputs for plans with
+  /// several end products, keyed by input line and product name.
+  static let plannerProductDecisionsDraft = "planner.product-decisions.draft.v1"
   /// Planner draft job-splitting switches, JSON-encoded
   /// `IndustryJobSplitting`; a missing row means both split.
   static let plannerJobSplittingDraft = "planner.job-splitting.draft.v1"

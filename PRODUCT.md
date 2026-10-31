@@ -2325,8 +2325,9 @@ etwa nach Absprache in Slack.
     Eingangslogistik) und Lieferung aufgeschlüsselt.
   - Nicht abgenommene Einheiten bleiben unverkauft; ihre Produktionskosten
     sind trotzdem enthalten.
-- **Wann die Karte unverfügbar bleibt:** ohne Preis, mit mehreren Endprodukten,
-  ohne Transport zum Lieferhub oder ohne Produktionskosten. Sie wird dann nie 0.
+- **Wann die Karte unverfügbar bleibt:** ohne Preis, ohne Transport zum
+  Lieferhub oder ohne Produktionskosten. Sie wird dann nie 0. Pläne mit mehreren
+  Endprodukten führen den Allianzverkauf je Produkt.
 - **Vorläufig:** Ein Lieferweg mit ausstehendem manuellem Transport macht das
   Ergebnis vorläufig.
 - **Zielmarkt:** **Allianzmarkt** ist als weiterer Zielmarkt wählbar und wird
@@ -2340,6 +2341,18 @@ etwa nach Absprache in Slack.
   gemeinsame Kopierrückmeldung kopierbar. Eine Slack-Anbindung gibt es nicht.
 
 Die neun Marktszenarien und ihre Rechnung sind unverändert.
+
+### Mehrere Produkte im Plan
+
+Stand 31.10.2026. Der Stand ist automatisch geprüft, aber weder live noch vom Eigentümer abgenommen.
+
+**Plan mit mehreren Produkten:** Das Panel **Produkte im Plan** ersetzt Zielmarkt- und Szenariopanel. Einzelne Produkte behalten beide Panels.
+
+- Die sortierbare Tabelle zeigt je Produkt Einheiten, Material, Installation, BPC/BPO, Logistik, Gesamtkosten, Kosten pro Item, Zielmarkt, Erlös, Gewinn und ROI. Eine Summe erscheint nur, wenn alle Werte bekannt sind.
+- Kosten werden nach Verursachung verteilt: Material und Installation nach dem Bedarf des Produkts im Produktionsbaum, Blaupausen beim nutzenden Produkt und Transport nach Volumen. Die Anteile ergeben exakt die Plansumme.
+- Für das gewählte Produkt stehen dort Zielmarkt, Vorschlag, die Szenarien und der Allianzverkauf. Der Entwurf liegt in `planner.product-decisions.draft.v1`, das Ergebnis im Plan-Snapshot (`productEconomics`, `productDecisions`).
+
+**Produktionsübersicht:** Neue Zeilen übernehmen Kostenanteile und Zielmarkt des Produkts. Bei einem Hub gelten dessen Steuer, Broker, Preis und Ausgangstransport. Beim Allianzmarkt gelten der Allianzpreis, die Allianzgebühr (Steuerspalte, Broker nicht anwendbar) und die Lieferung als Logistik, und der erwartete Erlös gilt nur für die abgenommene Menge. Der Haken „Vollständig verkauft“ setzt die abgenommene Menge, das Feld „Verkauft“ bleibt bis zur produzierten Menge frei editierbar. Allianzmarkt ohne Preis und, bei mehreren Produkten, ein Produkt ohne Zielmarkt zeigen die Kosten, aber keinen Vorschlagspreis und keinen erwarteten Gewinn; ein von Hand eingetragener Preis gilt weiter. Einzelne Produkte ohne Zielmarkt behalten den Main-Hub-Vorschlag. Steht ein manueller Transport oder eine Vertragsgebühr aus, steht vor dem Gewinn „~“ mit einem Hinweis auf das vorläufige Ergebnis. Zeilen aus älteren Snapshots behalten ihre Werte.
 
 Die Verkaufsstrategien bestehen an Main Hub, Home Hub und Koalitions-Hub jeweils
 aus Sofortverkauf in vorhandene Buy Orders, eingestelltem Verkauf über Sell

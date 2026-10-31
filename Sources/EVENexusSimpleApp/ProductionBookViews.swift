@@ -640,7 +640,10 @@ final class ProductionOverviewProjectionCache {
   /// before P10 or without a choice.
   func targetMarket(for row: StoredProductionOverviewRow) -> PlannerTargetMarket? {
     _ = storedProjection(for: row)
-    return entries[row.planID]?.plan?.targetMarket
+    guard let plan = entries[row.planID]?.plan else { return nil }
+    // Older snapshots only know the plan-wide label.
+    return plan.productEconomics == nil
+      ? plan.targetMarket : plan.targetMarket(for: row.requestID)
   }
 }
 
@@ -849,7 +852,8 @@ private struct ProductionOverviewGrid: View {
             metrics.projectedProfit,
             column: 19,
             row: offset,
-            emphasis: .profit
+            emphasis: .profit,
+            isProvisional: projection?.hasPendingCost == true
           )
           percentageCell(metrics.margin, column: 20, row: offset)
           editableSoldCell(row, column: 21, rowIndex: offset)
@@ -857,7 +861,8 @@ private struct ProductionOverviewGrid: View {
             metrics.realProfit,
             column: 22,
             row: offset,
-            emphasis: .profit
+            emphasis: .profit,
+            isProvisional: projection?.hasPendingCost == true
           )
           textCell(
             ProductionOverviewTargetMarketPresentation.text(context.targetMarket),
@@ -1079,15 +1084,21 @@ private struct ProductionOverviewGrid: View {
     column: Int,
     row: Int,
     emphasis: CellEmphasis = .none,
-    isCurrentSetting: Bool = false
+    isCurrentSetting: Bool = false,
+    isProvisional: Bool = false
   ) -> some View {
-    Text(compactISK(value))
+    Text((isProvisional && value != nil ? "~ " : "") + compactISK(value))
       .font(.caption.monospacedDigit())
       .italic(isCurrentSetting && value != nil)
       .lineLimit(1)
       .minimumScaleFactor(0.55)
       .foregroundStyle(valueColor(value, emphasis: emphasis))
-      .help(moneyHelp(value, isCurrentSetting: isCurrentSetting))
+      .help(moneyHelp(value, isCurrentSetting: isCurrentSetting, isProvisional: isProvisional))
+      .accessibilityHint(
+        isProvisional && value != nil
+          ? AppLocalization.text("Provisional: a manual transport or contract fee is still pending.")
+          : ""
+      )
       .frame(
         width: widths[column],
         alignment: .trailing
@@ -1098,8 +1109,18 @@ private struct ProductionOverviewGrid: View {
       .overlay(cellBorder)
   }
 
-  private func moneyHelp(_ value: Double?, isCurrentSetting: Bool) -> String {
+  private func moneyHelp(
+    _ value: Double?,
+    isCurrentSetting: Bool,
+    isProvisional: Bool = false
+  ) -> String {
     guard let value else { return "Wert nicht verfügbar" }
+    if isProvisional {
+      return AppLocalization.format(
+        "%@ · Provisional: a manual transport or contract fee is still pending.",
+        exactISK(value)
+      )
+    }
     guard isCurrentSetting else { return exactISK(value) }
     return AppLocalization.format(
       "%@ · Rate from the current Main Hub settings; this production did not record it.",
@@ -1246,7 +1267,10 @@ private struct ProductionOverviewGrid: View {
     if isEditable && !consolidation.workspace.costs.contains(where: { $0.id == row.id && $0.evidenceMode }) {
       HStack(spacing: 2) {
         Button {
-          row.soldUnits = row.soldUnits > 0 ? 0 : row.units
+          row.soldUnits =
+            row.soldUnits > 0
+            ? 0
+            : projectionCache.projection(for: row)?.fullySoldUnits(of: row.units) ?? row.units
           onSave()
         } label: {
           Image(
@@ -1390,7 +1414,8 @@ private func calculation(
     brokerFeeRate: projection?.brokerFeeRate,
     brokerFeeIsApplicable: projection?.brokerFeeIsApplicable ?? true,
     salePricePerUnit: row.salePricePerUnit,
-    soldUnits: row.soldUnits
+    soldUnits: row.soldUnits,
+    saleUnits: projection?.saleUnits
   )
 }
 

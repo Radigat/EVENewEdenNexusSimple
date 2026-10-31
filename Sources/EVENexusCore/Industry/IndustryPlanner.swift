@@ -2762,6 +2762,11 @@ public struct IndustryPlanner: Sendable {
     )
     snapshot.jobSplitting = context.jobSplitting
     snapshot.formulaShipments = formulaShipments.isEmpty ? nil : formulaShipments
+    let economicsTypeIDs = Set(state.nodes.map(\.typeID))
+    snapshot.productEconomics = PlannerProductEconomics.costs(
+      plan: snapshot,
+      volumes: try await context.catalog.packagedVolumes(typeIDs: economicsTypeIDs)
+    )
     return snapshot
   }
 

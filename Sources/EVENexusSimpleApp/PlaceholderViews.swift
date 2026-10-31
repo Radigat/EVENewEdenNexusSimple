@@ -1038,8 +1038,17 @@ struct PlannerView: View {
       )
     }
     financeOverviewPanel(plan)
-    targetMarketPanel(plan, isHistorical: isHistorical)
-    plannerSaleScenarioPanel(plan, isHistorical: isHistorical)
+    if plan.requests.count > 1, plan.productEconomics != nil {
+      PlannerProductEconomicsPanel(
+        plan: plan,
+        isHistorical: isHistorical,
+        contractFeeRate: allianceContractFeeRate(for:),
+        onDecisionChange: updateProductDecision
+      )
+    } else {
+      targetMarketPanel(plan, isHistorical: isHistorical)
+      plannerSaleScenarioPanel(plan, isHistorical: isHistorical)
+    }
     shoppingListPanel(plan)
     productionJobListPanel(plan)
     Panel(title: "Jobs") {
@@ -6498,6 +6507,14 @@ struct PlannerView: View {
     }
     // A newly calculated plan re-applies the saved alliance input to its own
     // costs; the nine market scenarios stay untouched.
+    if labeledPlan.requests.count > 1, labeledPlan.productDecisions == nil,
+      let decisions = restoredProductDecisions(for: labeledPlan)
+    {
+      labeledPlan.productDecisions = decisions
+      if runtime.plan?.id == labeledPlan.id {
+        runtime.plan?.productDecisions = decisions
+      }
+    }
     if labeledPlan.allianceSale == nil, allianceInput != PlannerAllianceSaleInput() {
       let result = PlannerAllianceSaleCalculator.calculate(
         plan: labeledPlan,
@@ -6649,6 +6666,71 @@ struct PlannerView: View {
     plan.targetMarket = market
     runtime.plan = plan
     Task { _ = await saveActivePlan(plan) }
+  }
+
+  /// Stores one product's decision in the plan and in the per-product draft.
+  private func updateProductDecision(
+    _ requestID: UUID,
+    _ decision: PlannerProductDecision
+  ) {
+    guard var plan = runtime.plan else { return }
+    var decisions = plan.productDecisions ?? [:]
+    decisions[requestID] = decision
+    plan.productDecisions = decisions
+    runtime.plan = plan
+    var drafts: [String: PlannerProductDecisionDraft] = [:]
+    for request in plan.requests {
+      guard let stored = decisions[request.id] else { continue }
+      drafts[PlannerProductDecisionDraft.key(for: request)] =
+        PlannerProductDecisionDraft(
+          targetMarket: stored.targetMarket,
+          allianceInput: stored.allianceSale?.input
+        )
+    }
+    do {
+      let data = try JSONEncoder().encode(drafts)
+      try modelContext.upsertAppSetting(
+        key: AppSettingKey.plannerProductDecisionsDraft,
+        value: String(decoding: data, as: UTF8.self)
+      )
+      try modelContext.save()
+    } catch {
+      modelContext.rollback()
+      persistenceError = error.localizedDescription
+    }
+    Task { _ = await saveActivePlan(plan) }
+  }
+
+  /// Re-applies saved product decisions to a newly calculated plan.
+  private func restoredProductDecisions(
+    for plan: IndustryPlanSnapshot
+  ) -> [UUID: PlannerProductDecision]? {
+    guard
+      let stored = try? modelContext.appSettingValue(
+        for: AppSettingKey.plannerProductDecisionsDraft
+      ),
+      let drafts = try? JSONDecoder().decode(
+        [String: PlannerProductDecisionDraft].self,
+        from: Data(stored.utf8)
+      )
+    else { return nil }
+    var decisions: [UUID: PlannerProductDecision] = [:]
+    for request in plan.requests {
+      guard let draft = drafts[PlannerProductDecisionDraft.key(for: request)]
+      else { continue }
+      decisions[request.id] = PlannerProductDecision(
+        targetMarket: draft.targetMarket,
+        allianceSale: draft.allianceInput.map { input in
+          PlannerAllianceSaleCalculator.calculate(
+            plan: plan,
+            input: input,
+            publicContractFeeRate: allianceContractFeeRate(for: input.deliveryHub),
+            requestID: request.id
+          )
+        }
+      )
+    }
+    return decisions.isEmpty ? nil : decisions
   }
 
   private func fillAllianceFields(from input: PlannerAllianceSaleInput) {

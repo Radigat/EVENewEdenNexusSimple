@@ -708,3 +708,10 @@ are no longer current product requirements.
 | Area | Automated evidence | Live evidence | Owner acceptance |
 | --- | --- | --- | --- |
 | Formula cost and fallback | pass: fixtures cover the full formula price and an unresolved manufacturing BPO | partial: public ESI orders of the four formulas on 2026-10-31 show 365-day orders at the base price and player orders at 90 days; the app calculation was not run | pending: recalculate the Ark plan and compare the formula prices |
+
+## Mehrere Produkte (31.10.2026)
+
+Automatisch geprüft, Live- und Eigentümerabnahme offen:
+
+- [ ] Plan mit mehreren Produkten: Kosten je Produkt ergeben die Plansumme, Zielmarkt je Produkt wählbar.
+- [ ] Übernahme in die Produktionsliste: Preis, Gebühr, Logistik und Gewinn stimmen mit dem Planer überein.

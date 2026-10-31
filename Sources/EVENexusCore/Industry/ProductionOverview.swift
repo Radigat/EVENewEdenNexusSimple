@@ -11,6 +11,9 @@ public struct ProductionOverviewCalculation: Equatable, Sendable {
   public let brokerFeeIsApplicable: Bool
   public let salePricePerUnit: Double?
   public let soldUnits: Int64
+  /// Units the sale price applies to when fewer than `units` have a buyer, as
+  /// with a partial alliance sale; `nil` means all units.
+  public let saleUnits: Int64?
 
   public init(
     units: Int64,
@@ -22,8 +25,10 @@ public struct ProductionOverviewCalculation: Equatable, Sendable {
     brokerFeeRate: Double?,
     brokerFeeIsApplicable: Bool = true,
     salePricePerUnit: Double?,
-    soldUnits: Int64
+    soldUnits: Int64,
+    saleUnits: Int64? = nil
   ) {
+    self.saleUnits = saleUnits
     self.units = units
     self.materialCost = materialCost
     self.installationCost = installationCost
@@ -52,7 +57,7 @@ public struct ProductionOverviewCalculation: Equatable, Sendable {
     guard units > 0, let price = validMoney(salePricePerUnit) else {
       return nil
     }
-    let total = price * Double(units)
+    let total = price * Double(saleUnits ?? units)
     return total.isFinite ? total : nil
   }
 
@@ -167,6 +172,11 @@ public struct ProductionOverviewRequestProjection: Equatable, Sendable {
   /// The broker-fee rate was missing from the stored plan and comes from the
   /// current Main Hub settings instead.
   public let brokerFeeRateIsCurrentSetting: Bool
+  /// Accepted units of an alliance sale; `nil` sells all units.
+  public let saleUnits: Int64?
+  /// A manual transport or contract fee of the chosen sale is still pending,
+  /// so the expected profit is provisional.
+  public let hasPendingCost: Bool
 
   public init(
     materialCost: Double?,
@@ -178,8 +188,12 @@ public struct ProductionOverviewRequestProjection: Equatable, Sendable {
     brokerFeeIsApplicable: Bool = true,
     suggestedSalePricePerUnit: Double?,
     salesTaxRateIsCurrentSetting: Bool = false,
-    brokerFeeRateIsCurrentSetting: Bool = false
+    brokerFeeRateIsCurrentSetting: Bool = false,
+    saleUnits: Int64? = nil,
+    hasPendingCost: Bool = false
   ) {
+    self.saleUnits = saleUnits
+    self.hasPendingCost = hasPendingCost
     self.materialCost = materialCost
     self.installationCost = installationCost
     self.blueprintCost = blueprintCost
@@ -221,8 +235,16 @@ public struct ProductionOverviewRequestProjection: Equatable, Sendable {
       salesTaxRateIsCurrentSetting:
         salesTaxRateIsCurrentSetting || fallbackSalesTaxRate != nil,
       brokerFeeRateIsCurrentSetting:
-        brokerFeeRateIsCurrentSetting || fallbackBrokerFeeRate != nil
+        brokerFeeRateIsCurrentSetting || fallbackBrokerFeeRate != nil,
+      saleUnits: saleUnits,
+      hasPendingCost: hasPendingCost
     )
+  }
+
+  /// Units behind the "fully sold" toggle: the accepted units of a partial
+  /// alliance sale, otherwise all units.
+  public func fullySoldUnits(of units: Int64) -> Int64 {
+    min(saleUnits ?? units, units)
   }
 
   private static func validRate(_ rate: Double?) -> Double? {
@@ -339,7 +361,7 @@ public enum ProductionOverviewProjector {
       brokerFeeRate: brokerFeeRate,
       brokerFeeIsApplicable: brokerFeeIsApplicable
     )
-    return ProductionOverviewRequestProjection(
+    let projection = ProductionOverviewRequestProjection(
       materialCost: projectedMaterialCost,
       installationCost: installationCost,
       blueprintCost: blueprintCost,
@@ -349,6 +371,111 @@ public enum ProductionOverviewProjector {
       brokerFeeIsApplicable: brokerFeeIsApplicable,
       suggestedSalePricePerUnit: suggestedSalePricePerUnit
     )
+    // Older snapshots have no product economics and keep the values above, so
+    // rows recorded before the per-product decisions do not change.
+    guard let costs = plan.productCosts(for: requestID) else { return projection }
+    return productProjection(
+      base: projection,
+      costs: costs,
+      requestID: requestID,
+      plan: plan
+    )
+  }
+
+  /// Applies the product's cost shares and chosen sale to its row. An alliance
+  /// fee takes the sales-tax column and the broker fee is not applicable.
+  private static func productProjection(
+    base: ProductionOverviewRequestProjection,
+    costs: PlannerProductCosts,
+    requestID: UUID,
+    plan: IndustryPlanSnapshot
+  ) -> ProductionOverviewRequestProjection {
+    let market = plan.targetMarket(for: requestID)
+    if market == .allianceMarket, let alliance = plan.allianceSale(for: requestID),
+      let unitPrice = alliance.input.unitPrice
+    {
+      return ProductionOverviewRequestProjection(
+        materialCost: costs.materialCost,
+        installationCost: costs.installationCost,
+        blueprintCost: costs.blueprintCost,
+        logisticsCost: sum(costs.inboundLogisticsCost, alliance.deliveryCost),
+        salesTaxRate: alliance.appliedFeeRate,
+        brokerFeeRate: nil,
+        brokerFeeIsApplicable: false,
+        suggestedSalePricePerUnit: unitPrice,
+        saleUnits: alliance.soldQuantity,
+        hasPendingCost: alliance.isProvisional
+      )
+    }
+    // Without an alliance price the row must not borrow the Main Hub price.
+    if market == .allianceMarket {
+      return ProductionOverviewRequestProjection(
+        materialCost: costs.materialCost,
+        installationCost: costs.installationCost,
+        blueprintCost: costs.blueprintCost,
+        logisticsCost: costs.inboundLogisticsCost,
+        salesTaxRate: plan.allianceSale(for: requestID)?.appliedFeeRate ?? base.salesTaxRate,
+        brokerFeeRate: nil,
+        brokerFeeIsApplicable: false,
+        suggestedSalePricePerUnit: nil
+      )
+    }
+    let listed: SaleScenarioResult? =
+      switch market {
+      case .mainHub: plan.listedSale
+      case .homeHub: plan.homeListedSale
+      case .coalitionHub: plan.coalitionListedSale
+      case .allianceMarket, nil: nil
+      }
+    guard let listed else {
+      return ProductionOverviewRequestProjection(
+        materialCost: costs.materialCost,
+        installationCost: costs.installationCost,
+        blueprintCost: costs.blueprintCost,
+        logisticsCost: costs.inboundLogisticsCost,
+        salesTaxRate: base.salesTaxRate,
+        brokerFeeRate: base.brokerFeeRate,
+        brokerFeeIsApplicable: base.brokerFeeIsApplicable,
+        // Several products sell apart, so no market means no sale yet. A single
+        // product keeps its Main Hub suggestion.
+        suggestedSalePricePerUnit: plan.requests.count > 1
+          ? nil : base.suggestedSalePricePerUnit
+      )
+    }
+    let outcome = PlannerProductEconomics.outcomes(plan: plan, requestID: requestID)
+      .first { $0.market == market && $0.scenario == .listedSale }
+    // Same rule as the scenario outcome: a pending inbound quote counts as 0
+    // and marks the result provisional.
+    let inboundPending = listed.inboundLogisticsAssessment?.status == .manualTransferRequired
+    let inbound = costs.inboundLogisticsCost ?? (inboundPending ? 0 : nil)
+    let taxRate = validScenarioRate(listed.salesTaxRate) ?? base.salesTaxRate
+    let brokerApplicable = listed.brokerFeeIsApplicable ?? true
+    let brokerRate = brokerApplicable ? validScenarioRate(listed.brokerFeeRate) : nil
+    let quote = listed.quotes.first {
+      $0.typeID == costs.typeID && $0.quantity == costs.units
+    }
+    return ProductionOverviewRequestProjection(
+      materialCost: costs.materialCost,
+      installationCost: costs.installationCost,
+      blueprintCost: costs.blueprintCost,
+      logisticsCost: sum(inbound, outcome?.outboundLogisticsCost),
+      salesTaxRate: taxRate,
+      brokerFeeRate: brokerRate,
+      brokerFeeIsApplicable: brokerApplicable,
+      suggestedSalePricePerUnit: grossUnitPrice(
+        quote: quote,
+        salesTaxRate: taxRate,
+        brokerFeeRate: brokerRate,
+        brokerFeeIsApplicable: brokerApplicable
+      ),
+      hasPendingCost: outcome?.hasPendingCost ?? false
+    )
+  }
+
+  private static func sum(_ lhs: Double?, _ rhs: Double?) -> Double? {
+    guard let lhs, let rhs else { return nil }
+    let total = lhs + rhs
+    return total.isFinite ? total : nil
   }
 
   /// The production tree records demand per request branch, while the plan
@@ -375,7 +502,7 @@ public enum ProductionOverviewProjector {
     return scaled
   }
 
-  private static func materialCost(
+  static func materialCost(
     for requestID: UUID,
     in plan: IndustryPlanSnapshot
   ) -> Double? {

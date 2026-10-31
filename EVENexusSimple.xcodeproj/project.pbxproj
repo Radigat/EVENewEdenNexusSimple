@@ -91,6 +91,7 @@
 		52E07FEADEEE4A083D76F969 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF480041A24E3F7755C5897D /* AuthModels.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* PlannerPurchaseBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */; };
 		B1B2C3D4E5F60718293A4B5C /* PlannerAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F60718293A4B5D /* PlannerAutomation.swift */; };
+		A71E0C2D5B8F4A1096D3E7F0 /* PlannerProductEconomics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0C2D5B8F4A1096D3E7F1 /* PlannerProductEconomics.swift */; };
 		57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */; };
 		5D6F2CE98F6969D5DF667A41 /* ESIDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */; };
 		61D17934EACACE799E4EC123 /* EVENexusCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E58C6EA5E4842768987863A4 /* EVENexusCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -121,6 +122,7 @@
 		B26DFBC6B437551764D94E8A /* ProductionInputParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED06FCDEA88E08CFA55E851 /* ProductionInputParser.swift */; };
 		B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */; };
 		C41FF0265C375712A7BD97B2 /* PlannerAutomationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */; };
+		A71E0C2D5B8F4A1096D3E7F2 /* PlannerProductEconomicsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */; };
 		B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */; };
 		B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AC75DF5C57565C1C95D785 /* ContentView.swift */; };
 		B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */; };
@@ -370,6 +372,7 @@
 		E8EE2273BE23D5140708B334 /* ProductionProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionProfiles.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPurchaseBook.swift; sourceTree = "<group>"; };
 		B1B2C3D4E5F60718293A4B5D /* PlannerAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerAutomation.swift; sourceTree = "<group>"; };
+		A71E0C2D5B8F4A1096D3E7F1 /* PlannerProductEconomics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProductEconomics.swift; sourceTree = "<group>"; };
 		EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEMultibuyExport.swift; sourceTree = "<group>"; };
 		EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionOverviewTests.swift; sourceTree = "<group>"; };
 		01A0C0020000000000000003 /* StockSaleComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockSaleComparisonTests.swift; sourceTree = "<group>"; };
@@ -378,6 +381,7 @@
 		F4E6D99D0A74D9DCEC012888 /* KeychainRefreshTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainRefreshTokenStore.swift; sourceTree = "<group>"; };
 		F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPersistenceController.swift; sourceTree = "<group>"; };
 		C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerAutomationViews.swift; sourceTree = "<group>"; };
+		A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProductEconomicsPanel.swift; sourceTree = "<group>"; };
 		FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		FEE2812212934D7FCB3FA513 /* EVEStaticDataKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = EVEStaticDataKit; path = Packages/EVEStaticDataKit; sourceTree = SOURCE_ROOT; };
 		0F9FE09B2DC20F96EAAB86DD /* ConsolidationBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationBackup.swift; sourceTree = "<group>"; };
@@ -561,6 +565,7 @@
 				EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */,
 				A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */,
 				B1B2C3D4E5F60718293A4B5D /* PlannerAutomation.swift */,
+				A71E0C2D5B8F4A1096D3E7F1 /* PlannerProductEconomics.swift */,
 				41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */,
 				CA2F5055B38824F803FA5FBA /* IndustryModels.swift */,
 				788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */,
@@ -665,6 +670,7 @@
 				5D3F3549F2FF11C65BF413C7 /* PlaceholderViews.swift */,
 				F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */,
 				C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */,
+				A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */,
 				653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */,
 				E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */,
 				F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */,
@@ -986,6 +992,7 @@
 				A27B935677077D0F66C4EA10 /* PlaceholderViews.swift in Sources */,
 				B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */,
 				C41FF0265C375712A7BD97B2 /* PlannerAutomationViews.swift in Sources */,
+				A71E0C2D5B8F4A1096D3E7F2 /* PlannerProductEconomicsPanel.swift in Sources */,
 				FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */,
 				29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */,
 				9492F8F84CA2B812F38B0730 /* ProfilesView.swift in Sources */,
@@ -1028,6 +1035,7 @@
 				57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5C /* PlannerPurchaseBook.swift in Sources */,
 				B1B2C3D4E5F60718293A4B5C /* PlannerAutomation.swift in Sources */,
+				A71E0C2D5B8F4A1096D3E7F0 /* PlannerProductEconomics.swift in Sources */,
 				99D95412344E68545253E28B /* EVEOnlineServiceStatus.swift in Sources */,
 				180F00EAEA55A5FECB622EDF /* EVESSOService.swift in Sources */,
 				B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */,

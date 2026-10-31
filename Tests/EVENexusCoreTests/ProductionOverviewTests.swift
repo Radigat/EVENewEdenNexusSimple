@@ -752,6 +752,7 @@ struct ProductionOverviewTests {
     producedQuantity: Int64 = 10,
     totalProductionCost: Double? = 1_000,
     mainOutboundLogistics: Double? = 50,
+    mainOutboundAssessment: LogisticsRouteAssessment? = nil,
     extraRequest: Bool = false
   ) -> IndustryPlanSnapshot {
     let requestID = UUID()
@@ -813,6 +814,7 @@ struct ProductionOverviewTests {
       immediateSale: Self.emptySale(.immediateSale),
       listedSale: SaleScenarioResult(
         scenario: .listedSale,
+        outboundLogisticsAssessment: mainOutboundAssessment,
         outboundLogisticsCost: mainOutboundLogistics,
         grossOrNetRevenue: nil,
         profit: 1,
@@ -839,6 +841,32 @@ struct ProductionOverviewTests {
         ruleVersion: "fixture"
       )
     )
+  }
+
+  @Test
+  func productionRowFlagsAPendingTransportAsProvisional() throws {
+    var plan = Self.alliancePlan(
+      mainOutboundAssessment: LogisticsRouteAssessment(
+        status: .manualTransferRequired,
+        origin: "Production",
+        destination: "Main Hub"
+      )
+    )
+    plan.productEconomics = PlannerProductEconomics.costs(plan: plan, volumes: [:])
+    let requestID = try #require(plan.requests.first?.id)
+
+    plan.targetMarket = .mainHub
+    let hubRow = try #require(ProductionOverviewProjector.projection(for: requestID, in: plan))
+    #expect(hubRow.hasPendingCost)
+
+    plan.targetMarket = .allianceMarket
+    plan.allianceSale = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 150, deliveryHub: .mainHub)
+    )
+    let allianceRow = try #require(ProductionOverviewProjector.projection(for: requestID, in: plan))
+    #expect(allianceRow.hasPendingCost)
+    #expect(allianceRow.fillingMissingFeeRates(from: nil).hasPendingCost)
   }
 
   @Test

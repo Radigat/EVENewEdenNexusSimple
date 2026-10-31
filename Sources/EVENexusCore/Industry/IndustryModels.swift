@@ -1296,7 +1296,8 @@ public enum PlannerAllianceSaleCalculator {
   public static func calculate(
     plan: IndustryPlanSnapshot,
     input: PlannerAllianceSaleInput,
-    publicContractFeeRate: Double? = nil
+    publicContractFeeRate: Double? = nil,
+    requestID: UUID? = nil
   ) -> PlannerAllianceSaleResult {
     let contractRate = publicContractFeeRate.flatMap { rate in
       rate.isFinite && rate >= 0 && rate < 1 ? rate : nil
@@ -1328,7 +1329,10 @@ public enum PlannerAllianceSaleCalculator {
         unavailableReason: reason
       )
     }
-    guard plan.requests.count == 1, let request = plan.requests.first,
+    let selectedRequest =
+      requestID.flatMap { id in plan.requests.first { $0.id == id } }
+      ?? (plan.requests.count == 1 ? plan.requests.first : nil)
+    guard let request = selectedRequest,
       let node = plan.topLevelProductNode(for: request.id),
       node.requiredQuantity > 0
     else {
@@ -1378,7 +1382,10 @@ public enum PlannerAllianceSaleCalculator {
         plan.coalitionListedSale?.hasPendingManualTransportCost ?? false
       )
     }
-    guard let deliveryCost = delivery.cost, deliveryCost.isFinite,
+    let productCosts = plan.requests.count > 1 ? plan.productCosts(for: request.id) : nil
+    guard
+      let deliveryCost = delivery.cost.map({ $0 * (productCosts?.outboundShare ?? 1) }),
+      deliveryCost.isFinite,
       deliveryCost >= 0
     else {
       return unavailable(
@@ -1390,9 +1397,10 @@ public enum PlannerAllianceSaleCalculator {
     let sold = min(produced, input.acceptedQuantity ?? produced)
     let gross = price * Double(sold)
     let fee = gross * feeRate
-    let totalCost = plan.costBreakdown?.totalProductionCost.map {
-      $0 + deliveryCost
-    }
+    let productionCost =
+      plan.requests.count > 1
+      ? productCosts?.totalCost : plan.costBreakdown?.totalProductionCost
+    let totalCost = productionCost.map { $0 + deliveryCost }
     let profit = totalCost.flatMap { cost -> Double? in
       let value = gross - fee - cost
       return value.isFinite ? value : nil
@@ -1784,6 +1792,10 @@ public struct IndustryPlanSnapshot: Identifiable, Codable, Sendable {
   public var targetMarket: PlannerTargetMarket? = nil
   /// Manual alliance-market scenario (P11); `nil` when never entered.
   public var allianceSale: PlannerAllianceSaleResult? = nil
+  /// Causal cost shares per end product; `nil` in older snapshots.
+  public var productEconomics: [PlannerProductCosts]? = nil
+  /// Sale decisions per end product (request ID).
+  public var productDecisions: [UUID: PlannerProductDecision]? = nil
   /// Slot basis of `makespanSeconds`; `nil` for snapshots saved before the
   /// dependency-aware slot schedule existed.
   public var slotSchedule: IndustrySlotScheduleSummary? = nil
