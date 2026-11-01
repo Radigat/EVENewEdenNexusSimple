@@ -92,11 +92,13 @@
 		A1B2C3D4E5F60718293A4B5C /* PlannerPurchaseBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */; };
 		B1B2C3D4E5F60718293A4B5C /* PlannerAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F60718293A4B5D /* PlannerAutomation.swift */; };
 		A71E0C2D5B8F4A1096D3E7F0 /* PlannerProductEconomics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0C2D5B8F4A1096D3E7F1 /* PlannerProductEconomics.swift */; };
+		C5D1A0E24F7B4C1E9A3B6D01 /* PlannerProfitability.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D1A0E24F7B4C1E9A3B6D02 /* PlannerProfitability.swift */; };
 		57A7B7022DFA7E02476A859A /* EVEMultibuyExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */; };
 		5D6F2CE98F6969D5DF667A41 /* ESIDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE1DE0836026C742F9E93DF /* ESIDTOs.swift */; };
 		61D17934EACACE799E4EC123 /* EVENexusCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E58C6EA5E4842768987863A4 /* EVENexusCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		6B9BE172F270727A6C945825 /* IndustrySystemIndices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2752B0216E3CA21C973CDD83 /* IndustrySystemIndices.swift */; };
 		70F0B9F4FAE35585BD4438A2 /* ProductionOverviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */; };
+		C5D1A0E24F7B4C1E9A3B6D07 /* PlannerProfitabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D1A0E24F7B4C1E9A3B6D08 /* PlannerProfitabilityTests.swift */; };
 		01A0C0020000000000000013 /* StockSaleComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0020000000000000003 /* StockSaleComparisonTests.swift */; };
 		72A0AE3856DC15D00E66A898 /* EVEMultibuyExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2BC6C4AAF1431FE92F2A7D4 /* EVEMultibuyExportTests.swift */; };
 		73ABADB15A2BD4FA5FEE2E30 /* IndustryPlannerPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D63C6D9737BFB95A38ED859 /* IndustryPlannerPerformanceTests.swift */; };
@@ -123,6 +125,8 @@
 		B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */; };
 		C41FF0265C375712A7BD97B2 /* PlannerAutomationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */; };
 		A71E0C2D5B8F4A1096D3E7F2 /* PlannerProductEconomicsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */; };
+		C5D1A0E24F7B4C1E9A3B6D05 /* PlannerProfitabilityPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D1A0E24F7B4C1E9A3B6D06 /* PlannerProfitabilityPanel.swift */; };
+		C5D1A0E24F7B4C1E9A3B6D03 /* PlannerSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D1A0E24F7B4C1E9A3B6D04 /* PlannerSteps.swift */; };
 		F6BA628AFE464B40BCF7EA6A /* PlannerFlowGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */; };
 		7139788BC82D4237983AB835 /* PlannerFlowGuideLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */; };
 		FC46923AD7C44E2395783399 /* PlannerFlowGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */; };
@@ -376,8 +380,10 @@
 		A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPurchaseBook.swift; sourceTree = "<group>"; };
 		B1B2C3D4E5F60718293A4B5D /* PlannerAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerAutomation.swift; sourceTree = "<group>"; };
 		A71E0C2D5B8F4A1096D3E7F1 /* PlannerProductEconomics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProductEconomics.swift; sourceTree = "<group>"; };
+		C5D1A0E24F7B4C1E9A3B6D02 /* PlannerProfitability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProfitability.swift; sourceTree = "<group>"; };
 		EADD73FC83AB22ACD509D236 /* EVEMultibuyExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EVEMultibuyExport.swift; sourceTree = "<group>"; };
 		EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionOverviewTests.swift; sourceTree = "<group>"; };
+		C5D1A0E24F7B4C1E9A3B6D08 /* PlannerProfitabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProfitabilityTests.swift; sourceTree = "<group>"; };
 		01A0C0020000000000000003 /* StockSaleComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockSaleComparisonTests.swift; sourceTree = "<group>"; };
 		EE347DEDC4E3894E787D864C /* AssetWarehouseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetWarehouseTests.swift; sourceTree = "<group>"; };
 		F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesView.swift; sourceTree = "<group>"; };
@@ -385,6 +391,8 @@
 		F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPersistenceController.swift; sourceTree = "<group>"; };
 		C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerAutomationViews.swift; sourceTree = "<group>"; };
 		A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProductEconomicsPanel.swift; sourceTree = "<group>"; };
+		C5D1A0E24F7B4C1E9A3B6D06 /* PlannerProfitabilityPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProfitabilityPanel.swift; sourceTree = "<group>"; };
+		C5D1A0E24F7B4C1E9A3B6D04 /* PlannerSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerSteps.swift; sourceTree = "<group>"; };
 		F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuideView.swift; sourceTree = "<group>"; };
 		311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuideLayout.swift; sourceTree = "<group>"; };
 		46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuide.swift; sourceTree = "<group>"; };
@@ -572,6 +580,7 @@
 				A1B2C3D4E5F60718293A4B5D /* PlannerPurchaseBook.swift */,
 				B1B2C3D4E5F60718293A4B5D /* PlannerAutomation.swift */,
 				A71E0C2D5B8F4A1096D3E7F1 /* PlannerProductEconomics.swift */,
+				C5D1A0E24F7B4C1E9A3B6D02 /* PlannerProfitability.swift */,
 				41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */,
 				CA2F5055B38824F803FA5FBA /* IndustryModels.swift */,
 				788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */,
@@ -677,6 +686,8 @@
 				F984033C96DE24A2814C92F4 /* PlannerPersistenceController.swift */,
 				C984033C96DE24A2814C92F4 /* PlannerAutomationViews.swift */,
 				A71E0C2D5B8F4A1096D3E7F3 /* PlannerProductEconomicsPanel.swift */,
+				C5D1A0E24F7B4C1E9A3B6D06 /* PlannerProfitabilityPanel.swift */,
+				C5D1A0E24F7B4C1E9A3B6D04 /* PlannerSteps.swift */,
 				F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */,
 				311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */,
 				46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */,
@@ -727,6 +738,7 @@
 				01A0D7370000000000000001 /* LoyaltyStoreCatalogTests.swift */,
 				58053BB787C584ABA9902B32 /* ProductionInputParserTests.swift */,
 				EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */,
+				C5D1A0E24F7B4C1E9A3B6D08 /* PlannerProfitabilityTests.swift */,
 				01A0C0020000000000000003 /* StockSaleComparisonTests.swift */,
 				019FC10B0000000000000005 /* PublicContractTests.swift */,
 				C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */,
@@ -956,6 +968,7 @@
 				01A0D7370000000000000011 /* LoyaltyStoreCatalogTests.swift in Sources */,
 				E0F526CDDC40158A77B76CF6 /* ProductionInputParserTests.swift in Sources */,
 				70F0B9F4FAE35585BD4438A2 /* ProductionOverviewTests.swift in Sources */,
+				C5D1A0E24F7B4C1E9A3B6D07 /* PlannerProfitabilityTests.swift in Sources */,
 				01A0C0020000000000000013 /* StockSaleComparisonTests.swift in Sources */,
 				019FC10B0000000000000015 /* PublicContractTests.swift in Sources */,
 				83ACBCF3A448CEFBA0AA0E3F /* ReactionContractTests.swift in Sources */,
@@ -1002,6 +1015,8 @@
 				B41FF0265C375712A7BD97B2 /* PlannerPersistenceController.swift in Sources */,
 				C41FF0265C375712A7BD97B2 /* PlannerAutomationViews.swift in Sources */,
 				A71E0C2D5B8F4A1096D3E7F2 /* PlannerProductEconomicsPanel.swift in Sources */,
+				C5D1A0E24F7B4C1E9A3B6D05 /* PlannerProfitabilityPanel.swift in Sources */,
+				C5D1A0E24F7B4C1E9A3B6D03 /* PlannerSteps.swift in Sources */,
 				F6BA628AFE464B40BCF7EA6A /* PlannerFlowGuideView.swift in Sources */,
 				7139788BC82D4237983AB835 /* PlannerFlowGuideLayout.swift in Sources */,
 				FC46923AD7C44E2395783399 /* PlannerFlowGuide.swift in Sources */,
@@ -1048,6 +1063,7 @@
 				A1B2C3D4E5F60718293A4B5C /* PlannerPurchaseBook.swift in Sources */,
 				B1B2C3D4E5F60718293A4B5C /* PlannerAutomation.swift in Sources */,
 				A71E0C2D5B8F4A1096D3E7F0 /* PlannerProductEconomics.swift in Sources */,
+				C5D1A0E24F7B4C1E9A3B6D01 /* PlannerProfitability.swift in Sources */,
 				99D95412344E68545253E28B /* EVEOnlineServiceStatus.swift in Sources */,
 				180F00EAEA55A5FECB622EDF /* EVESSOService.swift in Sources */,
 				B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */,

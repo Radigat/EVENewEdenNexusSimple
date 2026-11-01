@@ -704,7 +704,10 @@ struct IndustryPlannerTests {
   }
 
   private func twoProductPlan(
-    input: String = "Small Product 1 0 0\nLarge Product 1 0 0"
+    input: String = "Small Product 1 0 0\nLarge Product 1 0 0",
+    blueprintCosts: [Int64: IndustryBlueprintCostAllocation] = [:],
+    jobCharacters: IndustryJobCharacterAssignment? = nil,
+    productionBasis: ProductionBasis? = nil
   ) async throws -> IndustryPlanSnapshot {
     let source = SourceIdentity(provider: "fixture", version: "1")
     func definition(_ product: Int64, rawQuantity: Int64) -> BlueprintDefinition {
@@ -725,6 +728,7 @@ struct IndustryPlannerTests {
       input: input,
       context: IndustryPlanningContext(
         manufacturingProfile: ManufacturingProfile(),
+        productionBasis: productionBasis,
         catalog: FixtureCatalog(
           names: [71: "Small Product", 72: "Large Product", 73: "Shared Raw"],
           definitions: [
@@ -764,7 +768,288 @@ struct IndustryPlannerTests {
         ],
         sdeBuild: 1,
         salesTaxRate: 0.05,
-        brokerFeeRate: 0.01
+        brokerFeeRate: 0.01,
+        blueprintCostAllocations: blueprintCosts,
+        jobCharacters: jobCharacters
+      )
+    )
+  }
+
+  /// Changes a saved plan the way only a real route calculation could.
+  private func editedPlan(
+    _ plan: IndustryPlanSnapshot,
+    _ edit: (inout [String: Any]) throws -> Void
+  ) throws -> IndustryPlanSnapshot {
+    var object = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(plan)) as? [String: Any]
+    )
+    try edit(&object)
+    return try JSONDecoder().decode(
+      IndustryPlanSnapshot.self,
+      from: JSONSerialization.data(withJSONObject: object)
+    )
+  }
+
+  private func courierWarning(_ name: String) -> DomainWarning {
+    DomainWarning(
+      code: "logistics.single-item-volume-exceeded",
+      format: IndustryWarningText.courierItemTooLarge,
+      arguments: [name, "1", "1"],
+      severity: .warning
+    )
+  }
+
+  @Test
+  func productCharacterShortensItsJobsWithoutChangingCosts() async throws {
+    let base = try await twoProductPlan()
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    let skilled = CharacterCapabilitySnapshot(
+      character: CharacterIdentity(id: 7, name: "Pilot"),
+      cloneState: .omega,
+      skills: Sourced(
+        state: .fresh,
+        value: [TrainedSkill(skillID: 3380, trainedLevel: 5, activeLevel: 5, skillpoints: 0)],
+        source: source
+      ),
+      standings: Sourced(state: .fresh, value: [:], source: source)
+    )
+    let plan = try await twoProductPlan(
+      jobCharacters: IndustryJobCharacterAssignment(
+        productCharacterIDs: [71: 7, 72: 8],
+        characters: [
+          CharacterIdentity(id: 7, name: "Pilot"),
+          CharacterIdentity(id: 8, name: "Unsynced"),
+        ],
+        capabilities: [skilled],
+        structures: []
+      )
+    )
+    let small = try #require(plan.jobs.first { $0.typeID == 71 })
+    let large = try #require(plan.jobs.first { $0.typeID == 72 })
+    #expect(small.characterName == "Pilot")
+    #expect(small.durationSeconds == 8)
+    #expect(large.characterName == "Unsynced")
+    #expect(large.durationSeconds == 10)
+    #expect(base.jobs.allSatisfy { $0.characterName == nil })
+    #expect(base.jobs.first?.durationSeconds == 10)
+    #expect(plan.costBreakdown?.totalProductionCost == base.costBreakdown?.totalProductionCost)
+    let warnings = plan.warnings.filter { $0.code == "industry.job-time.skills-unavailable" }
+    #expect(warnings.map(\.text?.arguments) == [["Unsynced"]])
+  }
+
+  @Test
+  func scheduleUsesOnlyTheSlotsOfTheCrewAtTheJobsLocation() async throws {
+    var scheduling = ProductionSchedulingConfiguration()
+    scheduling.setAssignment(
+      CharacterIndustryAssignment(
+        characterID: 1,
+        characterName: "Many",
+        isEnabled: true,
+        allowedActivities: [.manufacturing],
+        manufacturingSlotLimit: 5
+      )
+    )
+    scheduling.setAssignment(
+      CharacterIndustryAssignment(
+        characterID: 2,
+        characterName: "One",
+        isEnabled: true,
+        allowedActivities: [.manufacturing],
+        manufacturingSlotLimit: 1
+      )
+    )
+    func plan(crew: [Int64]) async throws -> IndustryPlanSnapshot {
+      var basis = ProductionBasis(scheduling: scheduling)
+      for characterID in crew {
+        basis.structures[0].setCrewMember(true, characterID: characterID, pool: .manufacturing)
+      }
+      return try await twoProductPlan(productionBasis: basis)
+    }
+    func finish(_ plan: IndustryPlanSnapshot) -> Int64? {
+      plan.slotSchedule?.entries?.map(\.finishSeconds).max()
+    }
+    let everyone = try await plan(crew: [])
+    #expect(finish(everyone) == 10)
+    let oneSlot = try await plan(crew: [2])
+    #expect(finish(oneSlot) == 20)
+    #expect(!oneSlot.warnings.contains { $0.code == "industry.slots.location-without-slot" })
+    // Ticked but not enabled: the time is unavailable and the warning names the location.
+    let withoutSlots = try await plan(crew: [3])
+    #expect(withoutSlots.slotSchedule?.entries == nil)
+    #expect(withoutSlots.warnings.contains { $0.code == "industry.slots.location-without-slot" })
+    #expect(withoutSlots.warnings.contains { $0.code == "industry.slots.activity-without-slot" })
+    #expect(withoutSlots.costBreakdown?.totalProductionCost == everyone.costBreakdown?.totalProductionCost)
+  }
+
+  @Test
+  func automaticBlueprintCostsFollowTheProductBuildingThem() async throws {
+    func allocation(_ type: Int64, _ name: String, _ amount: Double)
+      -> IndustryBlueprintCostAllocation
+    {
+      IndustryBlueprintCostAllocation(
+        blueprintTypeID: type,
+        productName: name,
+        kind: .bpc,
+        amount: amount,
+        source: "fixture"
+      )
+    }
+    let plan = try await twoProductPlan(
+      blueprintCosts: [
+        871: allocation(871, "Small Product", 100),
+        872: allocation(872, "Large Product", 20),
+      ]
+    )
+    let costs = try #require(plan.productEconomics)
+    let small = try #require(costs.first { $0.productName == "Small Product" })
+    let large = try #require(costs.first { $0.productName == "Large Product" })
+    #expect(abs((small.blueprintCost ?? 0) - 100) < 1e-6)
+    #expect(abs((large.blueprintCost ?? 0) - 20) < 1e-6)
+
+    // Two lines building the same item share its cost by built quantity.
+    let shared = try await twoProductPlan(
+      input: "Small Product 1 0 0\nSmall Product 3 0 0",
+      blueprintCosts: [871: allocation(871, "Small Product", 100)]
+    )
+    let parts = try #require(shared.productEconomics).compactMap(\.blueprintCost)
+    #expect(parts.count == 2)
+    #expect(abs(parts.reduce(0, +) - 100) < 1e-6)
+    #expect(abs(parts[1] - 3 * parts[0]) < 1e-6)
+  }
+
+  @Test
+  func deliveryIsSplitByTheFreightAndNotByItemsBoughtAtTheHome() async throws {
+    let base = try await twoProductPlan()
+    let requestID = try #require(
+      base.requests.first { $0.productName == "Small Product" }
+    ).id
+    let plan = try editedPlan(base) { object in
+      var costs = try #require(object["costBreakdown"] as? [String: Any])
+      let breakdown = LogisticsCostBreakdown(
+        ruleVersion: "fixture",
+        iskPerCubicMeter: 1,
+        collateralRate: 0,
+        maximumContractVolumeM3: 1000,
+        roundingIncrement: 1,
+        legs: [
+          LogisticsCostLeg(
+            kind: .inboundMaterials,
+            origin: "Main",
+            destination: "Home",
+            cargoVolumeM3: 40,
+            collateral: 0,
+            volumeCharge: 40,
+            collateralCharge: 0,
+            chargedBy: .volume,
+            unroundedCharge: 40,
+            roundedCharge: 40,
+            cargo: [
+              LogisticsCargoLine(
+                typeID: 73,
+                name: "Shared Raw",
+                quantity: 40,
+                volumeM3: 40,
+                collateral: 0
+              )
+            ]
+          )
+        ],
+        total: 40
+      )
+      costs["logistics"] = try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(breakdown)
+      )
+      costs["logisticsCost"] = 40
+      object["costBreakdown"] = costs
+      // A large purchase at the Home Hub travels in no contract.
+      var nodes = try #require(object["nodes"] as? [[String: Any]])
+      var homePurchase = try #require(nodes.first { $0["action"] as? String == "buy" })
+      homePurchase["id"] = UUID().uuidString
+      homePurchase["typeID"] = 99
+      homePurchase["requiredQuantity"] = 1000
+      homePurchase["topLevelRequestID"] = requestID.uuidString
+      nodes.append(homePurchase)
+      object["nodes"] = nodes
+    }
+    let costs = PlannerProductEconomics.costs(plan: plan, volumes: [73: 1, 99: 1000])
+    let small = try #require(costs.first { $0.productName == "Small Product" })
+    let large = try #require(costs.first { $0.productName == "Large Product" })
+    #expect(abs((small.inboundLogisticsCost ?? 0) - 10) < 1e-6)
+    #expect(abs((large.inboundLogisticsCost ?? 0) - 30) < 1e-6)
+  }
+
+  @Test
+  func contractWarningConcernsOnlyASelectedContractSale() async throws {
+    let base = try await twoProductPlan()
+    let plan = try editedPlan(base) { object in
+      var contract = try #require(object["listedSale"] as? [String: Any])
+      contract["scenario"] = "contractSale"
+      object["mainContractSale"] = contract
+    }
+    let warning = DomainWarning(
+      code: "planner.contract-reference-partial",
+      message: "partial",
+      severity: .warning
+    )
+    var chosen = plan
+    let small = try #require(plan.requests.first { $0.productName == "Small Product" })
+    chosen.productDecisions = [
+      small.id: PlannerProductDecision(targetMarket: .mainHub, saleScenario: .listedSale)
+    ]
+    #expect(PlannerWarningRelevance.relevant([warning], plan: chosen).isEmpty)
+    chosen.productDecisions = [
+      small.id: PlannerProductDecision(targetMarket: .mainHub, saleScenario: .contractSale)
+    ]
+    #expect(PlannerWarningRelevance.relevant([warning], plan: chosen).count == 1)
+  }
+
+  @Test
+  func courierWarningConcernsOnlyASaleNeedingThatTransport() async throws {
+    let base = try await twoProductPlan()
+    let plan = try editedPlan(base) { object in
+      var listed = try #require(object["listedSale"] as? [String: Any])
+      listed["outboundLogisticsAssessment"] = [
+        "status": "manualTransferRequired",
+        "origin": "Home",
+        "destination": "Main",
+      ]
+      object["listedSale"] = listed
+    }
+    let large = try #require(plan.requests.first { $0.productName == "Large Product" })
+    var chosen = plan
+    func visible(_ warning: DomainWarning) -> Bool {
+      !PlannerWarningRelevance.relevant([warning], plan: chosen).isEmpty
+    }
+    func alliance(_ hub: PlannerTargetMarket?) -> PlannerProductDecision {
+      PlannerProductDecision(
+        targetMarket: .allianceMarket,
+        allianceSale: PlannerAllianceSaleCalculator.calculate(
+          plan: plan,
+          input: PlannerAllianceSaleInput(unitPrice: 1000, deliveryHub: hub, feeRate: 0.02),
+          requestID: large.id
+        )
+      )
+    }
+    chosen.productDecisions = [
+      large.id: PlannerProductDecision(targetMarket: .mainHub, saleScenario: .listedSale)
+    ]
+    #expect(visible(courierWarning("Large Product")))
+
+    chosen.productDecisions = [large.id: alliance(nil)]
+    #expect(!visible(courierWarning("Large Product")))
+    chosen.productDecisions = [large.id: alliance(.mainHub)]
+    #expect(visible(courierWarning("Large Product")))
+
+    // A material on its way to production and older warnings always stay visible.
+    chosen.productDecisions = [large.id: alliance(nil)]
+    #expect(visible(courierWarning("Shared Raw")))
+    #expect(
+      visible(
+        DomainWarning(
+          code: "logistics.single-item-volume-exceeded",
+          message: "Large Product is too large",
+          severity: .warning
+        )
       )
     )
   }
@@ -880,6 +1165,155 @@ struct IndustryPlannerTests {
       soldUnits: 0,
       saleUnits: row.saleUnits
     )
+  }
+
+  @Test
+  func profitabilityReadsEveryProductOfTheCalculatedPlan() async throws {
+    var plan = try await twoProductPlan()
+    let large = try #require(plan.requests.first { $0.productName == "Large Product" })
+    let before = PlannerProfitability(plan: plan)
+    #expect(before.verdict == .profitable)
+    #expect(!before.needsDecision)
+    for product in before.products {
+      let outcomes = PlannerProductEconomics.outcomes(plan: plan, requestID: product.id)
+      #expect(product.scenarios.count == outcomes.count)
+      #expect(
+        product.best?.profit
+          == PlannerProductEconomics.suggestion(plan: plan, requestID: product.id)?.profit
+      )
+    }
+
+    let alliance = PlannerAllianceSaleCalculator.calculate(
+      plan: plan,
+      input: PlannerAllianceSaleInput(unitPrice: 50_000, feeRate: 0.02),
+      requestID: large.id
+    )
+    plan.productDecisions = [large.id: PlannerProductDecision(allianceSale: alliance)]
+    let after = PlannerProfitability(plan: plan)
+    let product = try #require(after.products.first { $0.id == large.id })
+    #expect(product.best?.market == .allianceMarket)
+    #expect(product.best?.profit == alliance.profit)
+  }
+
+  @Test
+  func singleProductCheckUsesThePlanWideScenarios() async throws {
+    let plan = try await twoProductPlan(input: "Small Product 1 0 0")
+    let product = try #require(PlannerProfitability(plan: plan).products.first)
+    #expect(product.scenarios.count == PlannerTargetMarketSuggestion.scenarios(of: plan).compactMap(\.result).count)
+    #expect(product.best?.profit == PlannerTargetMarketSuggestion.suggest(plan)?.profit)
+    #expect(product.verdict == .profitable)
+  }
+
+  @Test
+  func recordingNeedsACurrentPlanAndASelectedSaleForEveryProduct() async throws {
+    var plan = try await twoProductPlan()
+    #expect(
+      PlannerRecordBlocker.resolve(plan: plan, status: .outdated) == .planNotCurrent
+    )
+    #expect(PlannerRecordBlocker.resolve(plan: plan, status: .failed) == .planNotCurrent)
+    #expect(PlannerRecordBlocker.resolve(plan: plan, status: .calculating) == .planNotCurrent)
+    // The suggested sale counts as selected.
+    #expect(PlannerRecordBlocker.resolve(plan: plan, status: .current) == nil)
+    #expect(PlannerRecordBlocker.resolve(plan: plan, status: .saved) == nil)
+    // Without any sale there is nothing to select.
+    plan.productEconomics = nil
+    #expect(
+      PlannerRecordBlocker.resolve(plan: plan, status: .current)
+        == .missingTargetMarket(productNames: ["Small Product", "Large Product"])
+    )
+  }
+
+  @Test
+  func recordingFixesTheSuggestionAndKeepsTheOwnersChoice() async throws {
+    var plan = try await twoProductPlan()
+    let small = try #require(plan.requests.first { $0.productName == "Small Product" })
+    let large = try #require(plan.requests.first { $0.productName == "Large Product" })
+    plan.productDecisions = [
+      small.id: PlannerProductDecision(targetMarket: .mainHub, saleScenario: .immediateSale)
+    ]
+    let recorded = plan.applyingSuggestedSales()
+    #expect(recorded.productDecisions?[small.id]?.saleScenario == .immediateSale)
+    let suggestion = try #require(
+      PlannerProfitability(plan: plan).products.first { $0.id == large.id }?.best
+    )
+    #expect(recorded.productDecisions?[large.id]?.targetMarket == suggestion.market)
+    #expect(recorded.productDecisions?[large.id]?.saleScenario == suggestion.scenario)
+    #expect(PlannerProfitability(plan: recorded).products.allSatisfy { !$0.isSuggestion })
+  }
+
+  @Test
+  func aConfirmationCountsOnlyForTheSalesItWasGivenFor() async throws {
+    let base = try await twoProductPlan()
+    let small = try #require(base.requests.first { $0.productName == "Small Product" })
+    func selling(atUnitPrice price: Double) -> IndustryPlanSnapshot {
+      var plan = base
+      plan.productDecisions = [
+        small.id: PlannerProductDecision(
+          targetMarket: .allianceMarket,
+          allianceSale: PlannerAllianceSaleCalculator.calculate(
+            plan: base,
+            input: PlannerAllianceSaleInput(unitPrice: price),
+            requestID: small.id
+          )
+        )
+      ]
+      return plan
+    }
+    let loss = selling(atUnitPrice: 1)
+    let profitability = PlannerProfitability(plan: loss)
+    #expect(profitability.verdict == .unprofitable)
+    let key = profitability.confirmationKey(planID: loss.id)
+    func isCleared(_ plan: IndustryPlanSnapshot) -> Bool {
+      PlannerStepAccess(
+        isInputReady: true,
+        plan: plan,
+        profitability: PlannerProfitability(plan: plan),
+        confirmedKey: key
+      ).isProfitabilityCleared
+    }
+    #expect(isCleared(loss))
+    // Another loss asks again, a profitable sale needs no decision at all.
+    let otherLoss = selling(atUnitPrice: 2)
+    #expect(PlannerProfitability(plan: otherLoss).needsDecision)
+    #expect(!isCleared(otherLoss))
+    #expect(isCleared(base))
+  }
+
+  @Test
+  func productionRowTakesThePriceOfTheChosenScenario() async throws {
+    var plan = try await twoProductPlan()
+    let small = try #require(plan.requests.first { $0.productName == "Small Product" })
+    let listed = try #require(ProductionOverviewProjector.projection(for: small.id, in: {
+      var labeled = plan
+      labeled.productDecisions = [small.id: PlannerProductDecision(targetMarket: .mainHub)]
+      return labeled
+    }()))
+    #expect(listed.brokerFeeIsApplicable)
+
+    plan.productDecisions = [
+      small.id: PlannerProductDecision(targetMarket: .mainHub, saleScenario: .immediateSale)
+    ]
+    let row = try #require(ProductionOverviewProjector.projection(for: small.id, in: plan))
+    let quote = try #require(
+      plan.immediateSale.quotes.first { $0.typeID == plan.productCosts(for: small.id)?.typeID }
+    )
+    #expect(row.suggestedSalePricePerUnit == quote.weightedUnitPrice)
+    #expect(!row.brokerFeeIsApplicable)
+    #expect(row.brokerFeeRate == nil)
+    let profit = try #require(overviewCalculation(row, units: 1).projectedProfit)
+    let outcome = try #require(
+      PlannerProductEconomics.chosenOutcome(plan: plan, requestID: small.id)?.profit
+    )
+    #expect(abs(profit - outcome) < 1e-6)
+  }
+
+  @Test
+  func productShareOfTheSubtotalAddsUpToThePlan() async throws {
+    let plan = try await twoProductPlan()
+    let shares = try #require(plan.productEconomics).compactMap(\.productionSubtotal)
+    #expect(shares.count == 2)
+    let total = try #require(plan.costBreakdown?.productionCostBeforeLogistics)
+    #expect(abs(shares.reduce(0, +) - total) < 1e-6)
   }
 
   @Test
@@ -1770,7 +2204,7 @@ struct IndustryPlannerTests {
           book: PreparedMarketOrderBook(
             snapshot: purchaseSnapshot($0.location, orders: $0.orders)
           ),
-          leg: nil,
+          route: nil,
           transport: $0.transport
         )
       },
@@ -1866,7 +2300,8 @@ struct IndustryPlannerTests {
   }
 
   private func purchasePlan(
-    markets: [PlannerPurchaseMarket]?
+    markets: [PlannerPurchaseMarket]?,
+    productionBasis: ProductionBasis? = nil
   ) async throws -> IndustryPlanSnapshot {
     let source = SourceIdentity(provider: "fixture", version: "1")
     let product = BlueprintDefinition(
@@ -1887,6 +2322,7 @@ struct IndustryPlannerTests {
       input: "Purchase Product 1 0 0",
       context: IndustryPlanningContext(
         manufacturingProfile: ManufacturingProfile(),
+        productionBasis: productionBasis,
         catalog: FixtureCatalog(
           names: [61: "Purchase Product", 62: "Purchase Material"],
           definitions: [61: product],
@@ -1955,6 +2391,123 @@ struct IndustryPlannerTests {
   }
 
   @Test
+  func comparisonMarketsCountWithTheirOwnTransportRoute() async throws {
+    let marketID = UUID()
+    func plan(_ route: MarketTransportSetting?) async throws -> IndustryPlanSnapshot {
+      var basis = ProductionBasis()
+      basis.logistics.isEnabled = true
+      basis.logistics.iskPerCubicMeter = 1
+      if let route { basis.logistics.setMarketRoute(route) }
+      return try await purchasePlan(
+        markets: [
+          PlannerPurchaseMarket(
+            location: .jita,
+            snapshot: purchaseSnapshot(.jita, orders: [(10, 1_000)]),
+            route: .hub(.mainToHome)
+          ),
+          PlannerPurchaseMarket(
+            location: .amarr,
+            snapshot: purchaseSnapshot(.amarr, orders: [(5, 1_000)]),
+            route: .market(id: marketID)
+          ),
+        ],
+        productionBasis: basis
+      )
+    }
+    func locations(_ plan: IndustryPlanSnapshot) -> [String]? {
+      plan.materials.first { $0.typeID == 62 }?.purchaseAllocations?.map(\.location.name)
+    }
+    // Without a route the market drops out visibly instead of counting as free.
+    let missing = try await plan(nil)
+    #expect(locations(missing) == [ProcurementLocation.jita.name])
+    let excluded = try #require(
+      missing.warnings.first { $0.code == "planner.purchase-location-excluded" }
+    )
+    // The reason stays a whole sentence the app can translate.
+    #expect(
+      excluded.text?.arguments.last
+        == "No transport route to the Home Hub is set for this market in the logistics settings."
+    )
+
+    // The route's volume price decides: cheap enough, then too expensive.
+    func service(_ rate: Double) -> MarketTransportSetting {
+      MarketTransportSetting(
+        marketID: marketID,
+        method: .jumpFreighterService,
+        service: JumpFreighterServiceRate(iskPerCubicMeter: rate, collateralRate: 0)
+      )
+    }
+    let cheap = try await plan(service(1))
+    #expect(locations(cheap) == [ProcurementLocation.amarr.name])
+    #expect(!cheap.warnings.contains { $0.code == "planner.purchase-location-excluded" })
+    let legs = cheap.costBreakdown?.logistics?.legs ?? []
+    #expect(legs.contains { $0.origin == ProcurementLocation.amarr.name && $0.kind == .inboundMaterials })
+    #expect(try await locations(plan(service(100))) == [ProcurementLocation.jita.name])
+  }
+
+  @Test
+  func purchaseLocationsAreTheHubsThenTheComparisonMarkets() throws {
+    let main = TradingLocationConfiguration(location: .jita)
+    let compared = TradingLocationConfiguration(location: .amarr)
+    let samePlace = TradingLocationConfiguration(location: .jita)
+    let unticked = TradingLocationConfiguration(location: .dodixie)
+    var basis = ProductionBasis()
+    basis.tradingLocations = [main, compared, samePlace, unticked]
+    basis.mainTradingLocationID = main.id
+    basis.homeTradingLocationID = nil
+    basis.coalitionTradingLocationID = nil
+    basis.comparisonTradingLocationIDs = [compared.id, samePlace.id]
+    #expect(basis.plannerPurchaseLocations.map(\.id) == [main.id, compared.id])
+    #expect(basis.comparisonPurchaseLocations.map(\.id) == [compared.id])
+  }
+
+  @Test
+  func marketRoutesPriceExplicitlyAndOlderLogisticsStillLoad() throws {
+    let id = UUID()
+    var logistics = LogisticsConfiguration(isEnabled: true, iskPerCubicMeter: 900)
+    func pricing() -> LogisticsLegPricing {
+      logistics.marketRoutePricing(marketID: id)
+    }
+    guard case .unavailable(let warning) = pricing() else {
+      Issue.record("A market without a route must stay unavailable")
+      return
+    }
+    #expect(warning.code == "logistics.market-route-missing")
+    logistics.setMarketRoute(MarketTransportSetting(marketID: id, method: .profileCourier))
+    guard case .contract(let courier) = pricing() else {
+      Issue.record("Profile courier must price")
+      return
+    }
+    #expect(courier.iskPerCubicMeter == 900)
+    logistics.setMarketRoute(MarketTransportSetting(marketID: id, method: .jumpFreighterService))
+    guard case .unavailable = pricing() else {
+      Issue.record("Incomplete service prices must stay unavailable")
+      return
+    }
+    logistics.setMarketRoute(MarketTransportSetting(marketID: id, method: .selfJump))
+    guard case .unavailable = pricing() else {
+      Issue.record("An own Jump Freighter has no courier contract")
+      return
+    }
+    #expect(logistics.marketRoutes?.count == 1)
+
+    let decoded = try JSONDecoder().decode(
+      LogisticsConfiguration.self,
+      from: JSONEncoder().encode(logistics)
+    )
+    #expect(decoded == logistics)
+    var object = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(logistics)) as? [String: Any]
+    )
+    object.removeValue(forKey: "marketRoutes")
+    let older = try JSONDecoder().decode(
+      LogisticsConfiguration.self,
+      from: JSONSerialization.data(withJSONObject: object)
+    )
+    #expect(older.marketRoutes == nil)
+  }
+
+  @Test
   func savedMaterialsWithoutAllocationsKeepTheirLocation() throws {
     let material = MaterialRequirement(
       typeID: 62,
@@ -1982,6 +2535,83 @@ struct IndustryPlannerTests {
     )
     #expect(groups.map(\.location) == [.amarr])
     #expect(groups.first?.export.text == "Purchase Material 5")
+  }
+
+  // MARK: Blueprint runs of the finished plan (owner report 31.10.2026)
+
+  private func requiredRuns(in plan: IndustryPlanSnapshot) -> Int {
+    plan.nodes.filter { $0.blueprintTypeID == 802 && $0.action == .produce }
+      .reduce(0) { $0 + ($1.runs ?? 0) }
+  }
+
+  private func supply(
+    _ result: (assessment: ProductionTreeBlueprintAssessment, plan: IndustryPlanSnapshot),
+    minimumRuns: [Int64: Int]
+  ) throws -> BlueprintSupplyPlan {
+    try #require(
+      BlueprintSupplyPlanner.plans(
+        referencePlan: result.plan,
+        assessments: [result.assessment],
+        actions: [:],
+        manualCosts: [:],
+        preferredEfficiencies: [:],
+        planID: UUID(),
+        existingReservations: [],
+        minimumRuns: minimumRuns
+      )[802]
+    )
+  }
+
+  @Test
+  func extraRunsUseTheFreeRunsOfTheSameBPC() async throws {
+    let result = try await sourceRuleAssessment(owned: [(2, 1_000, true)])
+    let required = requiredRuns(in: result.plan)
+    let raised = try supply(result, minimumRuns: [802: required + 1])
+    #expect(raised.requiredRuns == required + 1)
+    #expect(raised.manufacturingJobs.map(\.runs) == [required + 1])
+    #expect(raised.warnings.isEmpty)
+  }
+
+  @Test
+  func extraRunsMoveOnToTheNextBPC() async throws {
+    let required = requiredRuns(in: try await sourceRuleAssessment(owned: [(2, 1, true)]).plan)
+    let result = try await sourceRuleAssessment(owned: [(2, required, true), (3, 5, true)])
+    let raised = try supply(result, minimumRuns: [802: required + 1])
+    #expect(raised.manufacturingJobs.reduce(0) { $0 + $1.runs } == required + 1)
+    #expect(raised.manufacturingJobs.count == 2)
+    #expect(raised.warnings.isEmpty)
+  }
+
+  @Test
+  func aMinimumBelowTheDemandChangesNothing() async throws {
+    let result = try await sourceRuleAssessment(owned: [(2, 1_000, true)])
+    let required = requiredRuns(in: result.plan)
+    #expect(try supply(result, minimumRuns: [802: 1]).requiredRuns == required)
+    #expect(try supply(result, minimumRuns: [:]).requiredRuns == required)
+  }
+
+  @Test
+  func theFinishedPlanReportsRunsBeyondItsReservation() async throws {
+    let result = try await sourceRuleAssessment(owned: [(2, 1_000, true)])
+    let reserved = try supply(result, minimumRuns: [:])
+
+    var covered = result.plan
+    covered.blueprintSupplyPlans = [reserved]
+    #expect(BlueprintSupplyPlanner.uncoveredRuns(in: covered).isEmpty)
+
+    var larger = try await IndustryPlanner().plan(
+      input: "Choice Product 80 0 0",
+      context: intermediateChoiceContext(
+        preference: MaterialProcurementPreference(
+          supplyMode: .produce,
+          purchaseLocation: .jita
+        )
+      )
+    )
+    larger.blueprintSupplyPlans = [reserved]
+    let demand = requiredRuns(in: larger)
+    #expect(demand > reserved.requiredRuns)
+    #expect(BlueprintSupplyPlanner.uncoveredRuns(in: larger) == [802: demand])
   }
 
   // MARK: Blueprint source order (owner decision 30.10.2026)

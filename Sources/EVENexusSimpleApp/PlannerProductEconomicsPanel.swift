@@ -6,13 +6,11 @@ enum PlannerProductSortColumn: Hashable {
   case totalCost, costPerUnit, target, revenue, profit, roi
 }
 
-/// Per-product path of a plan with several end products: cost shares, sale
-/// decision and profit. Single-product plans keep the plan-wide panels.
+/// Per-product path of a plan with several end products: cost shares, selected
+/// sale and profit. Single-product plans keep the plan-wide panels.
 struct PlannerProductEconomicsPanel: View {
   let plan: IndustryPlanSnapshot
   let isHistorical: Bool
-  let contractFeeRate: (PlannerTargetMarket?) -> Double?
-  let onDecisionChange: (UUID, PlannerProductDecision) -> Void
 
   @State private var sort = AppTableSortDescriptor(
     column: PlannerProductSortColumn.product,
@@ -35,18 +33,16 @@ struct PlannerProductEconomicsPanel: View {
       plan.requests.map { ($0.id, $0.lineNumber) },
       uniquingKeysWith: { current, _ in current }
     )
+    let products = PlannerProfitability(plan: plan).products
     return (plan.productEconomics ?? []).map { costs in
-      let chosen = PlannerProductEconomics.chosenOutcome(
-        plan: plan,
-        requestID: costs.requestID
-      )
+      let selected = products.first { $0.id == costs.requestID }?.selected
       return Row(
         costs: costs,
         lineNumber: lines[costs.requestID] ?? 0,
-        target: plan.targetMarket(for: costs.requestID),
-        revenue: chosen?.netRevenue,
-        profit: chosen?.profit,
-        roi: chosen?.roi
+        target: selected?.market,
+        revenue: selected?.netRevenue,
+        profit: selected?.profit,
+        roi: selected?.roi
       )
     }
   }
@@ -182,9 +178,7 @@ struct PlannerProductEconomicsPanel: View {
         PlannerProductSaleDetail(
           plan: plan,
           costs: costs,
-          isHistorical: isHistorical,
-          contractFeeRate: contractFeeRate,
-          onDecisionChange: onDecisionChange
+          isHistorical: isHistorical
         )
         .id(costs.requestID)
       }
@@ -229,6 +223,15 @@ enum PlannerProductFormat {
     return value.formatted(.currency(code: "ISK").precision(.fractionLength(0)))
   }
 
+  /// Cheap items keep cents so they are not rounded to a misleading price.
+  static func unitISK(_ value: Double?) -> String {
+    guard let value, value.isFinite else {
+      return AppLocalization.text("Unavailable")
+    }
+    guard abs(value) < 1_000 else { return isk(value) }
+    return value.formatted(.currency(code: "ISK").precision(.fractionLength(0...2)))
+  }
+
   static func percent(_ value: Double?) -> String {
     guard let value, value.isFinite else {
       return AppLocalization.text("Unavailable")
@@ -250,25 +253,15 @@ enum PlannerProductFormat {
   }
 }
 
-/// Target market, scenarios and alliance input of one product.
+/// Target market, scenarios and alliance result of one product.
 private struct PlannerProductSaleDetail: View {
   let plan: IndustryPlanSnapshot
   let costs: PlannerProductCosts
   let isHistorical: Bool
-  let contractFeeRate: (PlannerTargetMarket?) -> Double?
-  let onDecisionChange: (UUID, PlannerProductDecision) -> Void
-
-  @State private var unitPriceText = ""
-  @State private var acceptedText = ""
-  @State private var feeText = ""
-  @State private var deliveryHub: PlannerTargetMarket?
-  @State private var inputError: String?
 
   private var decision: PlannerProductDecision {
     plan.productDecisions?[costs.requestID] ?? PlannerProductDecision()
   }
-
-  private var locale: Locale { AppLocalization.currentLanguage.locale }
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
@@ -287,7 +280,6 @@ private struct PlannerProductSaleDetail: View {
       }
       allianceSection
     }
-    .onAppear(perform: fillFields)
   }
 
   @ViewBuilder
@@ -297,26 +289,6 @@ private struct PlannerProductSaleDetail: View {
         "Target market",
         value: ProductionOverviewTargetMarketPresentation.text(decision.targetMarket)
       )
-    } else {
-      Picker(
-        "Target market",
-        selection: Binding(
-          get: { decision.targetMarket },
-          set: { market in
-            var updated = decision
-            updated.targetMarket = market
-            onDecisionChange(costs.requestID, updated)
-          }
-        )
-      ) {
-        Text("Not chosen").tag(PlannerTargetMarket?.none)
-        ForEach(PlannerTargetMarket.allCases, id: \.self) { market in
-          Text(PlannerProductFormat.market(market))
-            .tag(PlannerTargetMarket?.some(market))
-        }
-      }
-      .pickerStyle(.segmented)
-      .accessibilityIdentifier("planner.products.target-market")
     }
     if let suggestion = PlannerProductEconomics.suggestion(
       plan: plan,
@@ -338,6 +310,10 @@ private struct PlannerProductSaleDetail: View {
       .font(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
+  }
+
+  private var selectedSale: PlannerProfitabilityScenario? {
+    PlannerProfitability(plan: plan).products.first { $0.id == costs.requestID }?.selected
   }
 
   private func scenarioCard(_ outcome: PlannerProductSaleOutcome) -> some View {
@@ -364,7 +340,7 @@ private struct PlannerProductSaleDetail: View {
     .background(DesignTokens.elevated)
     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
     .overlay {
-      if decision.targetMarket == outcome.market {
+      if selectedSale?.market == outcome.market, selectedSale?.scenario == outcome.scenario {
         RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
           .stroke(DesignTokens.accent, lineWidth: 2)
       }
@@ -392,100 +368,17 @@ private struct PlannerProductSaleDetail: View {
             .foregroundStyle(DesignTokens.caution)
         }
       }
-      if !isHistorical {
-        Grid(alignment: .leading, verticalSpacing: DesignTokens.spacingXS) {
-          GridRow {
-            Text("Unit price (ISK)").font(.caption)
-            TextField("Required", text: $unitPriceText)
-              .textFieldStyle(.roundedBorder)
-              .groupedNumberInput($unitPriceText)
-              .accessibilityIdentifier("planner.products.alliance.unit-price")
-          }
-          GridRow {
-            Text("Accepted units").font(.caption)
-            TextField("All produced units", text: $acceptedText)
-              .textFieldStyle(.roundedBorder)
-              .groupedNumberInput($acceptedText, allowsFraction: false)
-          }
-          GridRow {
-            Text("Fee (%)").font(.caption)
-            TextField("Optional", text: $feeText)
-              .textFieldStyle(.roundedBorder)
-          }
-          GridRow {
-            Text("Delivery").font(.caption)
-            Picker("Delivery", selection: $deliveryHub) {
-              Text("Production location").tag(PlannerTargetMarket?.none)
-              ForEach(
-                PlannerTargetMarket.allCases.filter { $0 != .allianceMarket },
-                id: \.self
-              ) { market in
-                Text(PlannerProductFormat.market(market))
-                  .tag(PlannerTargetMarket?.some(market))
-              }
-            }
-            .labelsHidden()
-          }
-        }
-        .frame(maxWidth: 420)
-        if let inputError {
-          Text(inputError).font(.caption2).foregroundStyle(DesignTokens.negative)
-        }
-        Button("Apply alliance sale", action: apply)
-          .buttonStyle(.bordered)
-          .accessibilityIdentifier("planner.products.alliance.apply")
-      }
     }
     .padding(DesignTokens.spacingSM)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(DesignTokens.elevated)
     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
     .overlay {
-      if decision.targetMarket == .allianceMarket {
+      if selectedSale?.market == .allianceMarket {
         RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
           .stroke(DesignTokens.accent, lineWidth: 2)
       }
     }
-  }
-
-  private func fillFields() {
-    guard let input = decision.allianceSale?.input else { return }
-    unitPriceText =
-      input.unitPrice.map { $0.formatted(.number.locale(locale).grouping(.automatic)) } ?? ""
-    acceptedText =
-      input.acceptedQuantity.map {
-        $0.formatted(.number.locale(locale).grouping(.automatic))
-      } ?? ""
-    feeText =
-      input.feeRate.map { ($0 * 100).formatted(.number.locale(locale).grouping(.never)) } ?? ""
-    deliveryHub = input.deliveryHub
-  }
-
-  private func apply() {
-    guard
-      let input = PlannerAllianceInputParser.input(
-        unitPrice: unitPriceText,
-        acceptedQuantity: acceptedText,
-        feePercent: feeText,
-        deliveryHub: deliveryHub,
-        producedQuantity: costs.units,
-        locale: locale
-      )
-    else {
-      inputError = AppLocalization.text(
-        "Check the alliance fields: price and fee must be numbers, the accepted quantity a whole number of at least 1 and the fee below 100 %."
-      )
-      return
-    }
-    inputError = nil
-    var updated = decision
-    updated.allianceSale = PlannerAllianceSaleCalculator.calculate(
-      plan: plan,
-      input: input,
-      publicContractFeeRate: contractFeeRate(input.deliveryHub),
-      requestID: costs.requestID
-    )
-    onDecisionChange(costs.requestID, updated)
   }
 }
 
@@ -494,6 +387,7 @@ private struct PlannerProductSaleDetail: View {
 struct PlannerProductDecisionDraft: Codable, Equatable {
   var targetMarket: PlannerTargetMarket?
   var allianceInput: PlannerAllianceSaleInput?
+  var saleScenario: PriceScenario?
 
   static func key(for request: ProductionRequestLine) -> String {
     "\(request.lineNumber):\(request.productName)"

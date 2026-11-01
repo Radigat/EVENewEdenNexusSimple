@@ -1434,8 +1434,9 @@ public enum JumpFreighterLogisticsCalculator {
         warnings.append(
           DomainWarning(
             code: "jump-freighter.single-item-volume-exceeded",
-            message:
-              "At least one complete packaged product cannot fit into the configured \(capacity.formatted()) m³ usable Jump Freighter capacity.",
+            format:
+              "At least one complete packaged product cannot fit into the configured %@ m³ usable Jump Freighter capacity.",
+            arguments: [capacity.formatted()],
             severity: .warning
           )
         )

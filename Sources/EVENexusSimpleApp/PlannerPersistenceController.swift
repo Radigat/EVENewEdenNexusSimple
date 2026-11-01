@@ -143,6 +143,33 @@ enum PlannerPersistenceController {
     try modelContext.save()
   }
 
+  /// Empties the Planner's work: no active plan, no draft input, no manual choices
+  /// or sale decisions. Settings stay, and saved plans and recorded productions
+  /// are only no longer active, never deleted.
+  static func resetPlanner(
+    activePlans: [StoredPlan],
+    existingDraft: StoredPlannerDraft?,
+    in modelContext: ModelContext
+  ) throws {
+    for activePlan in activePlans {
+      activePlan.isActive = false
+    }
+    for key in [
+      AppSettingKey.plannerTargetMarketDraft,
+      AppSettingKey.plannerManualDecisionsDraft,
+      AppSettingKey.plannerAllianceSaleDraft,
+      AppSettingKey.plannerProductDecisionsDraft,
+    ] {
+      try modelContext.deleteAppSetting(key: key)
+    }
+    try saveDraft(
+      input: "",
+      manualStockInput: "",
+      existingDraft: existingDraft,
+      in: modelContext
+    )
+  }
+
   static func saveActivePlan(
     _ plan: IndustryPlanSnapshot,
     encodedSnapshot data: Data,

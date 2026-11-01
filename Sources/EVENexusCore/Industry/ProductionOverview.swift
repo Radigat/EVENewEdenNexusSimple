@@ -420,14 +420,12 @@ public enum ProductionOverviewProjector {
         suggestedSalePricePerUnit: nil
       )
     }
-    let listed: SaleScenarioResult? =
-      switch market {
-      case .mainHub: plan.listedSale
-      case .homeHub: plan.homeListedSale
-      case .coalitionHub: plan.coalitionListedSale
-      case .allianceMarket, nil: nil
-      }
-    guard let listed else {
+    // A decision without a scenario keeps the listed sale, as rows always did.
+    let scenario = plan.productDecisions?[requestID]?.saleScenario ?? .listedSale
+    let chosen = PlannerTargetMarketSuggestion.scenarios(of: plan).first {
+      $0.market == market && $0.result?.scenario == scenario
+    }?.result
+    guard let chosen else {
       return ProductionOverviewRequestProjection(
         materialCost: costs.materialCost,
         installationCost: costs.installationCost,
@@ -443,17 +441,32 @@ public enum ProductionOverviewProjector {
       )
     }
     let outcome = PlannerProductEconomics.outcomes(plan: plan, requestID: requestID)
-      .first { $0.market == market && $0.scenario == .listedSale }
+      .first { $0.market == market && $0.scenario == scenario }
     // Same rule as the scenario outcome: a pending inbound quote counts as 0
     // and marks the result provisional.
-    let inboundPending = listed.inboundLogisticsAssessment?.status == .manualTransferRequired
+    let inboundPending = chosen.inboundLogisticsAssessment?.status == .manualTransferRequired
     let inbound = costs.inboundLogisticsCost ?? (inboundPending ? 0 : nil)
-    let taxRate = validScenarioRate(listed.salesTaxRate) ?? base.salesTaxRate
-    let brokerApplicable = listed.brokerFeeIsApplicable ?? true
-    let brokerRate = brokerApplicable ? validScenarioRate(listed.brokerFeeRate) : nil
-    let quote = listed.quotes.first {
+    let quote = chosen.quotes.first {
       $0.typeID == costs.typeID && $0.quantity == costs.units
     }
+    // An immediate or contract quote is already the gross price and has no
+    // broker fee; a contract fee takes the sales-tax column, as an alliance fee does.
+    guard scenario == .listedSale else {
+      return ProductionOverviewRequestProjection(
+        materialCost: costs.materialCost,
+        installationCost: costs.installationCost,
+        blueprintCost: costs.blueprintCost,
+        logisticsCost: sum(inbound, outcome?.outboundLogisticsCost),
+        salesTaxRate: PlannerProductEconomics.feeRate(of: chosen),
+        brokerFeeRate: nil,
+        brokerFeeIsApplicable: false,
+        suggestedSalePricePerUnit: quote?.weightedUnitPrice,
+        hasPendingCost: outcome?.hasPendingCost ?? false
+      )
+    }
+    let taxRate = validScenarioRate(chosen.salesTaxRate) ?? base.salesTaxRate
+    let brokerApplicable = chosen.brokerFeeIsApplicable ?? true
+    let brokerRate = brokerApplicable ? validScenarioRate(chosen.brokerFeeRate) : nil
     return ProductionOverviewRequestProjection(
       materialCost: costs.materialCost,
       installationCost: costs.installationCost,

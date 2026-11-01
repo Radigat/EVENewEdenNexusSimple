@@ -109,12 +109,26 @@ public enum DomainWarningSeverity: String, Codable, Sendable {
   case blocking
 }
 
+/// The parts of a warning with values, so the app can translate the sentence.
+public struct DomainWarningText: Codable, Equatable, Sendable {
+  public let format: String
+  public let arguments: [String]
+
+  public init(format: String, arguments: [String]) {
+    self.format = format
+    self.arguments = arguments
+  }
+}
+
 public struct DomainWarning: Identifiable, Codable, Equatable, Sendable {
   public let id: UUID
   public let code: String
+  /// The English sentence; a warning without `text` is translated by it.
   public let message: String
   public let severity: DomainWarningSeverity
   public let source: SourceIdentity?
+  /// `nil` for warnings without values and for plans saved before this field.
+  public let text: DomainWarningText?
 
   public init(
     id: UUID = UUID(),
@@ -128,6 +142,23 @@ public struct DomainWarning: Identifiable, Codable, Equatable, Sendable {
     self.message = message
     self.severity = severity
     self.source = source
+    self.text = nil
+  }
+
+  public init(
+    id: UUID = UUID(),
+    code: String,
+    format: String,
+    arguments: [String],
+    severity: DomainWarningSeverity,
+    source: SourceIdentity? = nil
+  ) {
+    self.id = id
+    self.code = code
+    self.message = String(format: format, arguments: arguments)
+    self.severity = severity
+    self.source = source
+    self.text = DomainWarningText(format: format, arguments: arguments)
   }
 }
 

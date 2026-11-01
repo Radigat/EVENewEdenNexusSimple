@@ -88,6 +88,21 @@ enum PlannerAllianceInputParser {
     GroupedNumberText.editingText(text, locale: locale, allowsFraction: allowsFraction)
   }
 
+  /// The units text limited to 1...produced while typing. An empty field stays
+  /// empty, because it means all produced units.
+  static func limitedUnitsText(
+    _ text: String,
+    produced: Int64?,
+    locale: Locale
+  ) -> String {
+    guard let produced, produced >= 1,
+      case .value(let value) = number(text, locale: locale)
+    else { return text }
+    guard value < 1 || value > Double(produced) else { return text }
+    let limit = value < 1 ? 1 : produced
+    return limit.formatted(.number.locale(locale).grouping(.automatic))
+  }
+
   /// Builds the input; `nil` when a field is invalid. The fee text is a
   /// percentage (5 means 5 %).
   static func input(
@@ -109,6 +124,7 @@ enum PlannerAllianceInputParser {
     case .value(let value):
       guard value >= 1, value == value.rounded(), value < Double(Int64.max)
       else { return nil }
+      if let producedQuantity, value > Double(producedQuantity) { return nil }
       // The complete output stays `nil`, so a recalculated plan with another
       // quantity is still sold in full.
       input.acceptedQuantity =
@@ -171,8 +187,15 @@ struct PlannerView: View {
   @State private var calculatedAutomaticKey: PlannerAutomaticCalculationKey?
   @State private var completedAutomaticKey: PlannerAutomaticCalculationKey?
   @State private var calculationStartedThisSession = false
-  @AppStorage("planner.disclosure.details", store: AppDefaults.store)
-  private var arePlannerDetailsExpanded = false
+  @State private var plannerStep = PlannerStep.settings
+  @State private var hasChosenStartStep = false
+  /// The calculation whose failed profitability check the owner accepted.
+  @State private var confirmedProfitabilityKey: String?
+  @State private var unknownProductNames: Set<String> = []
+  @AppStorage("planner.production-mode", store: AppDefaults.store)
+  private var productionMode = PlannerProductionMode.single
+  @AppStorage("planner.use-stock", store: AppDefaults.store)
+  private var usesStock = true
   @State private var calculationPhase: PlannerCalculationPhase?
   @State private var supersededActivePlanIDs: Set<UUID> = []
   @State private var blueprintTree: ManufacturingProductionTreeSnapshot?
@@ -284,11 +307,14 @@ struct PlannerView: View {
   /// Manual alliance-sale draft (P11).
   @State private var allianceInput = PlannerAllianceSaleInput()
   @State private var allianceUnitPriceText = ""
+  @State private var areSaleDetailsExpanded = false
+  /// The owner's last character per product, kept across calculations and resets.
+  @AppStorage("planner.product-characters.v1", store: AppDefaults.store)
+  private var savedProductCharactersData = Data()
+  @State private var productLocations: [String: PlannerProductLocation] = [:]
   @State private var allianceAcceptedText = ""
   @State private var allianceFeeText = ""
   @State private var allianceDeliveryHub: PlannerTargetMarket?
-  @State private var allianceInputError: String?
-  @State private var allianceAutoApplyTask: Task<Void, Never>?
   @State private var historicalLoadError: String?
   @State private var plannerMaterialSort = AppTableSortDescriptor(
     column: PlannerMaterialSortColumn.item,
@@ -330,6 +356,7 @@ struct PlannerView: View {
   }
 
   @State private var isFlowGuidePresented = false
+  @State private var isConfirmingPlannerReset = false
 
   var body: some View {
     ScrollView {
@@ -338,145 +365,53 @@ struct PlannerView: View {
           Text("Production Planner")
             .font(.largeTitle.bold())
           PlannerFlowGuideButton(isPresented: $isFlowGuidePresented)
+          if historicalPlannerRequest == nil, historicalPlan == nil {
+            Button("Reset Planner", systemImage: "arrow.counterclockwise") {
+              isConfirmingPlannerReset = true
+            }
+            .disabled(isPlannerCalculationActive)
+            .accessibilityIdentifier("planner.reset")
+            .confirmationDialog(
+              "Reset Planner?",
+              isPresented: $isConfirmingPlannerReset,
+              titleVisibility: .visible
+            ) {
+              Button("Reset Planner", role: .destructive, action: resetPlanner)
+              Button("Cancel", role: .cancel) {}
+            } message: {
+              Text(
+                "Clears the products, manual stock, manual choices, handed-over Blueprints, sale decisions and the active plan. Settings, character choices, recorded productions and saved plans stay."
+              )
+            }
+          }
         }
-        Text(
-          AppLocalization.text(
-            historicalPlannerRequest == nil
-              ? "One job per line: Product Want ME TE [BPC|BPO BlueprintCostISK]"
-              : "Historical values from the saved production snapshot"
-          )
-        )
-        .foregroundStyle(DesignTokens.textSecondary)
+        if historicalPlannerRequest != nil {
+          Text("Historical values from the saved production snapshot")
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
         ConsolidationChangeStatusView()
         if let historicalPlan {
           historicalPlanPanel(historicalPlan)
         } else if historicalPlannerRequest == nil {
-          if runtime.isPlannerConfigurationReady, !plannerSetupIssues.isEmpty {
-            PlannerSetupIssuesPanel(
-              issues: plannerSetupIssues,
-              onOpen: onOpenDataSettings
-            )
-          }
-          purchaseLocationsPanel
-          Panel(title: "Produce") {
-            PlannerManufacturingProductAdder(runtime: runtime) { line in
-              appendPlannerInputLine(line)
-            }
-            Divider()
-            TextEditor(text: $input)
-              .font(.body.monospaced())
-              .scrollContentBackground(.hidden)
-              .frame(minHeight: DesignTokens.plannerInputMinimumHeight)
-              .padding(DesignTokens.spacingSM)
-              .background(DesignTokens.elevated)
-              .clipShape(
-                RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
-              )
-              .accessibilityLabel("Production jobs")
-              .accessibilityIdentifier("planner.input")
-            HStack {
-              PlannerCalculationStatusLabel(
-                status: plannerCalculationStatus,
-                planDate: runtime.plan?.createdAt
-              )
-              Button("Calculate") {
-                calculatePlan()
-              }
-              .keyboardShortcut(.return, modifiers: [.command])
-              .buttonStyle(.borderedProminent)
-              .disabled(
-                !parseResult.isValid || isPlannerCalculationActive
-                  || runtime.isWorking
-                  || isPreparingAssetWarehouse
-                  || !runtime.isPlannerConfigurationReady
-                  || effectivePurchaseLocationIDs.isEmpty
-              )
-              Spacer()
-              if let calculationPhase {
-                ProgressView().controlSize(.small)
-                Text(calculationPhase.title)
-                  .font(.caption)
-                  .foregroundStyle(DesignTokens.textSecondary)
-                  .accessibilityIdentifier("planner.calculation.phase")
-                Button(
-                  calculationPhase == .cancelling ? "Cancelling…" : "Cancel"
-                ) {
-                  self.calculationPhase = .cancelling
-                  calculationScheduler.cancelAll()
-                }
-                .buttonStyle(.bordered)
-                .disabled(calculationPhase == .cancelling)
-                .accessibilityIdentifier("planner.cancel")
-              } else if runtime.isWorking {
-                ProgressView().controlSize(.small)
-              }
-              Label(
-                "\(parseResult.requests.count) valid products",
-                systemImage:
-                  parseResult.errors.isEmpty
-                  ? "checkmark.circle" : "exclamationmark.triangle"
-              )
-              .font(.callout.monospacedDigit())
-              .help("The input is checked automatically while typing.")
-            }
-            if !parseResult.errors.isEmpty {
-              Panel(title: "Input errors") {
-                ForEach(parseResult.errors) { error in
-                  Label(
-                    "Line \(error.lineNumber): \(error.message)",
-                    systemImage: "exclamationmark.triangle.fill"
-                  )
-                  .foregroundStyle(DesignTokens.negative)
-                }
-              }
-              .accessibilityIdentifier("planner.input-errors")
-            }
-            Toggle(
-              "Use combined warehouse from all synchronized characters",
-              isOn: Binding(
-                get: { runtime.warehouseStockEnabled },
-                set: { runtime.warehouseStockEnabled = $0 }
-              )
-            )
-            .help(
-              "Makes protected, unreserved warehouse quantities available. The Planner uses them first."
-            )
-            if isPreparingAssetWarehouse {
-              Label(
-                "Preparing the combined warehouse once…",
-                systemImage: "shippingbox.and.arrow.backward"
-              )
-              .font(.caption)
-              .foregroundStyle(DesignTokens.textSecondary)
-            }
-            FullWidthDisclosure(isExpanded: $isManualStockExpanded) {
-              Text("Manual stock")
-            } content: {
-              TextEditor(text: $manualStockInput)
-                .font(.body.monospaced())
-                .frame(minHeight: DesignTokens.stockInputMinimumHeight)
-                .padding(DesignTokens.spacingSM)
-                .background(DesignTokens.elevated)
-                .clipShape(
-                  RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
-                )
-              Text(
-                "One line per source-marked quantity: Item name | Quantity. Manual stock takes precedence over the combined warehouse."
-              )
-              .font(.caption)
-              .foregroundStyle(DesignTokens.textSecondary)
-              .padding(.top, DesignTokens.spacingSM)
-            }
-          }
-          if runtime.plan == nil, blueprintResolutionError != nil {
-            plannerBlueprintPanel
-          }
+          PlannerStepBar(
+            current: currentPlannerStep,
+            access: plannerStepAccess,
+            onSelect: { plannerStep = $0 }
+          )
         }
-        if historicalPlannerRequest == nil, let error = runtime.errorMessage {
+        if historicalPlannerRequest == nil,
+          let error = runtime.errorMessage ?? blueprintResolutionError
+        {
           Panel(title: "Calculation stopped") {
             Label(error, systemImage: "xmark.octagon.fill")
               .foregroundStyle(DesignTokens.negative)
+            if runtime.plan != nil {
+              Text("The figures shown are from the last successful calculation.")
+                .font(.caption)
+                .foregroundStyle(DesignTokens.textSecondary)
+            }
           }
+          .accessibilityIdentifier("planner.calculation-stopped")
         }
         if let persistenceError {
           Panel(title: "Local storage stopped") {
@@ -503,27 +438,22 @@ struct PlannerView: View {
             .foregroundStyle(DesignTokens.positive)
         }
         if let historicalPlan {
-          resultView(historicalPlan.plan, isHistorical: true)
-        } else if historicalPlannerRequest == nil, let plan = runtime.plan {
-          resultView(plan, isHistorical: false)
+          historicalResultView(historicalPlan.plan)
         } else if historicalPlannerRequest == nil {
-          Panel(title: "Plan readiness") {
-            Label(
-              runtime.isPlannerConfigurationReady
-                ? "Install an SDE catalog. Character assets are optional and are never included without an explicit character and location selection."
-                : "Loading the saved production configuration and installation-cost inputs…",
-              systemImage:
-                runtime.isPlannerConfigurationReady
-                ? "info.circle" : "arrow.triangle.2.circlepath"
-            )
-            .foregroundStyle(DesignTokens.textSecondary)
-          }
+          plannerStepContent
+          PlannerStepNavigation(
+            current: currentPlannerStep,
+            access: plannerStepAccess,
+            onSelect: { plannerStep = $0 }
+          )
         }
-        RecentProductionsView(
-          rows: Array(productionOverviewRows.prefix(5)),
-          isExpanded: $isRecentProductionsExpanded,
-          onOpenHistoricalPlan: requestHistoricalPlan
-        )
+        if historicalPlannerRequest != nil || currentPlannerStep == .settings {
+          RecentProductionsView(
+            rows: Array(productionOverviewRows.prefix(5)),
+            isExpanded: $isRecentProductionsExpanded,
+            onOpenHistoricalPlan: requestHistoricalPlan
+          )
+        }
       }
       .padding(DesignTokens.spacingLG)
     }
@@ -538,7 +468,14 @@ struct PlannerView: View {
     }
 
     .onAppear {
+      if !usesStock {
+        runtime.warehouseStockEnabled = false
+      }
       restoreStateIfNeeded()
+      if !hasChosenStartStep {
+        hasChosenStartStep = true
+        plannerStep = .start(hasPlan: runtime.plan != nil)
+      }
       if calculatedAutomaticKey == nil {
         calculatedAutomaticKey = automaticCalculationKey
       }
@@ -564,6 +501,7 @@ struct PlannerView: View {
       persistenceMessage = nil
       shoppingListCopyStatus = nil
       blueprintSelectionNeedsRecalculation = blueprintTree != nil
+      blueprintResolutionError = nil
     }
     .onChange(of: historicalPlannerRequest?.id) {
       openRequestedHistoricalPlanIfNeeded()
@@ -573,6 +511,22 @@ struct PlannerView: View {
     }
     .task(id: assetProjectionIdentity) {
       await prepareAssetWarehouse()
+    }
+    .task(id: productStructureLookupKey) {
+      let names = Set(parseResult.requests.map(\.productName))
+      let locations = await runtime.plannerProductLocations(names)
+      guard !Task.isCancelled else { return }
+      productLocations = locations
+      // Locations load after the saved plan opens; that is no owner change.
+      if calculatedAutomaticKey?.input == input {
+        calculatedAutomaticKey?.productCharacters = chosenProductCharacters
+      }
+    }
+    .task(id: parseResult.requests.map(\.productName)) {
+      let names = Set(parseResult.requests.map(\.productName))
+      let unknown = await runtime.unknownPlannerProductNames(names)
+      guard !Task.isCancelled else { return }
+      unknownProductNames = unknown
     }
   }
 
@@ -602,14 +556,6 @@ struct PlannerView: View {
           )
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
-
-          if let blueprintResolutionError {
-            Label(
-              blueprintResolutionError,
-              systemImage: "exclamationmark.triangle.fill"
-            )
-            .foregroundStyle(DesignTokens.negative)
-          }
 
           if let blueprintTree {
             let groups = plannerBlueprintGroups(in: blueprintTree)
@@ -1036,33 +982,540 @@ struct PlannerView: View {
   }
 
   @ViewBuilder
-  private func resultView(
-    _ plan: IndustryPlanSnapshot,
-    isHistorical: Bool
-  ) -> some View {
-    if !isHistorical {
+  private func historicalResultView(_ plan: IndustryPlanSnapshot) -> some View {
+    financeOverviewPanel(plan)
+    salePanels(plan, isHistorical: true)
+    shoppingListPanel(plan)
+    productionJobListPanel(plan)
+    jobsPanel(plan, isHistorical: true)
+    warningsPanel(plan)
+    plannerResultDetails(plan, isHistorical: true)
+  }
+
+  private var currentPlannerStep: PlannerStep {
+    plannerStepAccess.clamped(plannerStep)
+  }
+
+  private var isPlannerInputReady: Bool {
+    parseResult.isValid && productionMode.allows(parseResult.requests)
+      && unknownProductRequests.isEmpty
+  }
+
+  private var unknownProductRequests: [ProductionRequestLine] {
+    parseResult.requests.filter { unknownProductNames.contains($0.productName) }
+  }
+
+  private var plannerStepAccess: PlannerStepAccess {
+    PlannerStepAccess(
+      isInputReady: isPlannerInputReady,
+      plan: runtime.plan,
+      profitability: runtime.plan.map(PlannerProfitability.init(plan:)),
+      confirmedKey: confirmedProfitabilityKey
+    )
+  }
+
+  private var canCalculatePlan: Bool {
+    isPlannerInputReady && !isPlannerCalculationActive
+      && !runtime.isWorking
+      && !isPreparingAssetWarehouse
+      && runtime.isPlannerConfigurationReady
+      && !effectivePurchaseLocationIDs.isEmpty
+  }
+
+  @ViewBuilder
+  private var plannerStepContent: some View {
+    switch currentPlannerStep {
+    case .settings: plannerSettingsStep
+    case .products: plannerProductsStep
+    case .stock: plannerStockStep
+    case .costs, .adjust, .shopping, .jobs, .sale:
+      if let plan = runtime.plan {
+        plannerRecalculationBanner
+        warningsPanel(plan)
+        plannerResultStep(plan)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var plannerSettingsStep: some View {
+    if runtime.isPlannerConfigurationReady, !plannerSetupIssues.isEmpty {
+      PlannerSetupIssuesPanel(
+        issues: plannerSetupIssues,
+        onOpen: onOpenDataSettings
+      )
+    }
+    purchaseLocationsPanel
+    Panel(title: "Production basis") {
+      Text("Structures, rigs, taxes and transport routes. They are maintained outside the Planner.")
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Button("Open industry settings") {
+        onOpenDataSettings(.industrySettings)
+      }
+      .accessibilityIdentifier("planner.open-industry-settings")
+    }
+    if runtime.plan == nil {
+      Panel(title: "Plan readiness") {
+        Label(
+          runtime.isPlannerConfigurationReady
+            ? "Install an SDE catalog. Character assets are optional and are never included without an explicit character and location selection."
+            : "Loading the saved production configuration and installation-cost inputs…",
+          systemImage:
+            runtime.isPlannerConfigurationReady
+            ? "info.circle" : "arrow.triangle.2.circlepath"
+        )
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var plannerProductsStep: some View {
+    Panel(title: "Produce") {
+      Picker("Production", selection: $productionMode) {
+        ForEach(PlannerProductionMode.allCases, id: \.self) { mode in
+          Text(mode.title).tag(mode)
+        }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .accessibilityLabel("Production")
+      .accessibilityIdentifier("planner.production-mode")
+      if !productionMode.allows(parseResult.requests) {
+        HStack(spacing: DesignTokens.spacingSM) {
+          Label(
+            "Single production allows one product. The input has several.",
+            systemImage: "exclamationmark.triangle.fill"
+          )
+          .foregroundStyle(DesignTokens.caution)
+          Button("Switch to collective production") {
+            productionMode = .collective
+          }
+          .accessibilityIdentifier("planner.switch-to-collective")
+        }
+      }
+      PlannerManufacturingProductAdder(runtime: runtime) { line in
+        appendPlannerInputLine(line)
+      }
+      Divider()
+      Text("One job per line: Product Want ME TE [BPC|BPO BlueprintCostISK]")
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      TextEditor(text: $input)
+        .font(.body.monospaced())
+        .scrollContentBackground(.hidden)
+        .frame(minHeight: DesignTokens.plannerInputMinimumHeight)
+        .padding(DesignTokens.spacingSM)
+        .background(DesignTokens.elevated)
+        .clipShape(
+          RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+        )
+        .accessibilityLabel("Production jobs")
+        .accessibilityIdentifier("planner.input")
+      Label(
+        "\(parseResult.requests.count) valid products",
+        systemImage:
+          parseResult.errors.isEmpty
+          ? "checkmark.circle" : "exclamationmark.triangle"
+      )
+      .font(.callout.monospacedDigit())
+      .help("The input is checked automatically while typing.")
+      if !parseResult.errors.isEmpty || !unknownProductRequests.isEmpty {
+        Panel(title: "Input errors") {
+          ForEach(parseResult.errors) { error in
+            Label(
+              "Line \(error.lineNumber): \(error.message)",
+              systemImage: "exclamationmark.triangle.fill"
+            )
+            .foregroundStyle(DesignTokens.negative)
+          }
+          ForEach(unknownProductRequests) { request in
+            Label(
+              IndustryPlannerError.unknownProduct(
+                line: request.lineNumber,
+                name: request.productName
+              ).localizedUI,
+              systemImage: "exclamationmark.triangle.fill"
+            )
+            .foregroundStyle(DesignTokens.negative)
+          }
+        }
+        .accessibilityIdentifier("planner.input-errors")
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var plannerStockStep: some View {
+    Panel(title: "Use warehouse?") {
+      Picker(
+        "Use warehouse?",
+        selection: Binding(
+          get: { usesStock },
+          set: {
+            usesStock = $0
+            runtime.warehouseStockEnabled = $0
+          }
+        )
+      ) {
+        Text("Yes").tag(true)
+        Text("No").tag(false)
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .accessibilityLabel("Use warehouse?")
+      .accessibilityIdentifier("planner.use-stock")
+      if usesStock {
+        Toggle(
+          "Use combined warehouse from all synchronized characters",
+          isOn: Binding(
+            get: { runtime.warehouseStockEnabled },
+            set: { runtime.warehouseStockEnabled = $0 }
+          )
+        )
+        .help(
+          "Makes protected, unreserved warehouse quantities available. The Planner uses them first."
+        )
+        .disabled(PlannerStockUse.hasManualStock(manualStockInput))
+        if PlannerStockUse.hasManualStock(manualStockInput) {
+          Label(
+            "Manual stock is in use. It replaces the combined warehouse in this calculation.",
+            systemImage: "list.clipboard"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          .accessibilityIdentifier("planner.manual-stock.active")
+        }
+        if isPreparingAssetWarehouse {
+          Label(
+            "Preparing the combined warehouse once…",
+            systemImage: "shippingbox.and.arrow.backward"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        }
+        FullWidthDisclosure(isExpanded: $isManualStockExpanded) {
+          Text("Manual stock")
+        } content: {
+          TextEditor(text: $manualStockInput)
+            .font(.body.monospaced())
+            .frame(minHeight: DesignTokens.stockInputMinimumHeight)
+            .padding(DesignTokens.spacingSM)
+            .background(DesignTokens.elevated)
+            .clipShape(
+              RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+            )
+            .accessibilityIdentifier("planner.manual-stock.input")
+          Text(
+            "One line per source-marked quantity: Item name | Quantity. Manual stock takes precedence over the combined warehouse."
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          .padding(.top, DesignTokens.spacingSM)
+        }
+      } else {
+        Text("The plan is calculated without any stock. A manual list stays saved but is not used.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    productionCharacterPanel
+    Panel(title: "Calculate") {
+      plannerCalculationControls(title: "Calculate")
+    }
+  }
+
+  private var sortedStoredCharacters: [CharacterIdentity] {
+    storedCharacters
+      .map { CharacterIdentity(id: $0.characterID, name: $0.characterName) }
+      .sorted {
+        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+      }
+  }
+
+  private var savedProductCharacters: [String: Int64] {
+    (try? JSONDecoder().decode([String: Int64].self, from: savedProductCharactersData)) ?? [:]
+  }
+
+  private func saveProductCharacter(_ characterID: Int64, for productName: String) {
+    var saved = savedProductCharacters
+    saved[productName] = characterID
+    if let data = try? JSONEncoder().encode(saved) {
+      savedProductCharactersData = data
+    }
+  }
+
+  /// One row per product of the input; the crew of its location limits the choice.
+  private var productCharacterRows: [PlannerProductCharacterRow] {
+    let saved = savedProductCharacters
+    let characters = sortedStoredCharacters
+    var rows: [PlannerProductCharacterRow] = []
+    for request in parseResult.requests {
+      if let index = rows.firstIndex(where: { $0.productName == request.productName }) {
+        rows[index].units += Int64(request.wantedQuantity)
+        continue
+      }
+      let location = productLocations[request.productName]
+      let structure = runtime.productionBasis.structure(id: location?.structureID)
+      let crew = location.flatMap { structure?.crew(for: $0.pool) } ?? IndustryLocationCrew()
+      let options = characters.filter { crew.includes(characterID: $0.id) }
+      rows.append(
+        PlannerProductCharacterRow(
+          productName: request.productName,
+          lineNumber: request.lineNumber,
+          units: Int64(request.wantedQuantity),
+          structureName: structure?.displayName,
+          options: options,
+          selectedID: IndustryJobTimeProfile.effectiveCharacterID(
+            saved: saved[request.productName],
+            characterIDs: options.map(\.id),
+            scheduling: runtime.productionBasis.scheduling
+          )
+        )
+      )
+    }
+    return rows
+  }
+
+  private var chosenProductCharacters: [String: Int64] {
+    Dictionary(
+      productCharacterRows.compactMap { row in
+        row.selectedID.map { (row.productName, $0) }
+      },
+      uniquingKeysWith: { current, _ in current }
+    )
+  }
+
+  /// Chosen before calculating: the character's skills and implants set the job
+  /// durations. Costs do not depend on it.
+  @ViewBuilder
+  private var productionCharacterPanel: some View {
+    Panel(title: "Products and characters") {
+      let rows = productCharacterRows
+      if rows.isEmpty {
+        Text("Enter products in step 2 first.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        PlannerProductCharacterTable(rows: rows, onChoose: saveProductCharacter)
+      }
+      Text(
+        "The skills of the character and the implants planned for that location set the job durations. Intermediates follow their end product if that character works at their location, otherwise the first character set there. Set characters and implants per location in the industry settings."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      Button("Open industry settings") {
+        onOpenDataSettings(.industrySettings)
+      }
+      .accessibilityIdentifier("planner.characters.open-industry-settings")
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("planner.product-characters")
+  }
+
+  private var productStructureLookupKey: String {
+    let names = parseResult.requests.map(\.productName).joined(separator: "|")
+    return "\(names)#\(runtime.marketAnalysisContextIdentity.hashValue)"
+  }
+
+  private func plannerCalculationControls(title: LocalizedStringKey) -> some View {
+    HStack {
+      PlannerCalculationStatusLabel(
+        status: plannerCalculationStatus,
+        planDate: runtime.plan?.createdAt
+      )
+      Button(title) {
+        calculatePlan()
+      }
+      .keyboardShortcut(.return, modifiers: [.command])
+      .buttonStyle(.borderedProminent)
+      .disabled(!canCalculatePlan)
+      Spacer()
+      if let calculationPhase {
+        ProgressView().controlSize(.small)
+        Text(calculationPhase.title)
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          .accessibilityIdentifier("planner.calculation.phase")
+        Button(
+          calculationPhase == .cancelling ? "Cancelling…" : "Cancel"
+        ) {
+          self.calculationPhase = .cancelling
+          calculationScheduler.cancelAll()
+        }
+        .buttonStyle(.bordered)
+        .disabled(calculationPhase == .cancelling)
+        .accessibilityIdentifier("planner.cancel")
+      } else if runtime.isWorking {
+        ProgressView().controlSize(.small)
+      }
+    }
+  }
+
+  /// Shown after the costs while the plan no longer matches the inputs.
+  @ViewBuilder
+  private var plannerRecalculationBanner: some View {
+    if plannerCalculationStatus == .outdated || plannerCalculationStatus == .failed
+      || isPlannerCalculationActive
+    {
+      Panel(title: "Plan outdated") {
+        plannerCalculationControls(title: "Recalculate")
+        ForEach(unknownProductRequests) { request in
+          Label(
+            IndustryPlannerError.unknownProduct(
+              line: request.lineNumber,
+              name: request.productName
+            ).localizedUI,
+            systemImage: "exclamationmark.triangle.fill"
+          )
+          .font(.caption)
+          .foregroundStyle(DesignTokens.negative)
+        }
+      }
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("planner.outdated")
+    }
+  }
+
+  @ViewBuilder
+  private func plannerResultStep(_ plan: IndustryPlanSnapshot) -> some View {
+    switch currentPlannerStep {
+    case .settings, .products, .stock:
+      EmptyView()
+    case .costs:
+      if usesStock {
+        PlannerMaterialCheckPanel(materials: plan.materials)
+      }
+      financeOverviewPanel(plan)
+      PlannerProfitabilityPanel(
+        plan: plan,
+        confirmedKey: confirmedProfitabilityKey,
+        removableRequestIDs: Set(
+          plan.requests.filter {
+            ProductionInputFormatter.removing($0, from: input) != nil
+          }
+          .map(\.id)
+        ),
+        onConfirm: { confirmedProfitabilityKey = $0 },
+        onRemove: removeProductFromInput,
+        onChoose: chooseSale,
+        onAllianceInput: applyAllianceInput
+      )
+      saleDetailsSection(plan)
+    case .adjust:
       PlannerRouteSummaryPanel(
         summary: PlannerRouteSummary(plan: plan),
         manualChoiceCount: manualChoiceCount,
         onResetManualChoices: resetManualDecisions
       )
-    }
-    financeOverviewPanel(plan)
-    if plan.requests.count > 1, plan.productEconomics != nil {
-      PlannerProductEconomicsPanel(
+      plannerBlueprintPanel
+      plannerResultDetails(plan, isHistorical: false)
+    case .shopping:
+      shoppingListPanel(plan)
+      restockListPanel(plan)
+      warehouseReplenishmentPanel(plan)
+    case .jobs:
+      productionJobListPanel(plan)
+      jobsPanel(plan, isHistorical: false)
+    case .sale:
+      PlannerSaleSummaryPanel(
         plan: plan,
-        isHistorical: isHistorical,
-        contractFeeRate: allianceContractFeeRate(for:),
-        onDecisionChange: updateProductDecision
+        onChangeSale: { plannerStep = .costs }
       )
+      recordProductionPanel(plan)
+    }
+  }
+
+  /// The cost breakdown and every sale path stay available, but closed: the
+  /// choice itself is made in the table above.
+  @ViewBuilder
+  private func saleDetailsSection(_ plan: IndustryPlanSnapshot) -> some View {
+    Panel(title: "All sale paths in detail") {
+      FullWidthDisclosure(isExpanded: $areSaleDetailsExpanded) {
+        Text("Cost breakdown per product and all sale paths")
+      } content: {
+        EmptyView()
+      }
+      .accessibilityIdentifier("planner.sale-details.disclosure")
+    }
+    if areSaleDetailsExpanded {
+      salePanels(plan, isHistorical: false)
+    }
+  }
+
+  private func removeProductFromInput(_ request: ProductionRequestLine) {
+    guard let remaining = ProductionInputFormatter.removing(request, from: input) else {
+      return
+    }
+    input = remaining
+    persistDraft()
+  }
+
+  @ViewBuilder
+  private func salePanels(
+    _ plan: IndustryPlanSnapshot,
+    isHistorical: Bool
+  ) -> some View {
+    if plan.requests.count > 1, plan.productEconomics != nil {
+      PlannerProductEconomicsPanel(plan: plan, isHistorical: isHistorical)
     } else {
-      targetMarketPanel(plan, isHistorical: isHistorical)
+      if isHistorical {
+        targetMarketPanel(plan)
+      }
       plannerSaleScenarioPanel(plan, isHistorical: isHistorical)
     }
-    shoppingListPanel(plan)
-    productionJobListPanel(plan)
+  }
+
+  private func recordProductionPanel(_ plan: IndustryPlanSnapshot) -> some View {
+    let blocker = PlannerRecordBlocker.resolve(
+      plan: plan,
+      status: plannerCalculationStatus
+    )
+    return Panel(title: "Production Overview") {
+      switch blocker {
+      case .planNotCurrent:
+        Label("Recalculate the plan before recording it.", systemImage: "clock.badge.exclamationmark")
+          .foregroundStyle(DesignTokens.caution)
+      case .missingTargetMarket(let names):
+        Label(
+          AppLocalization.format(
+            "Choose a target market first: %@",
+            names.joined(separator: ", ")
+          ),
+          systemImage: "scope"
+        )
+        .foregroundStyle(DesignTokens.caution)
+      case nil:
+        EmptyView()
+      }
+      Text(
+        "Every successful calculation is saved automatically as the last active plan."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      Button {
+        recordProduction(plan.applyingSuggestedSales())
+      } label: {
+        Label("Record production", systemImage: "book.closed.fill")
+      }
+      .buttonStyle(.borderedProminent)
+      .disabled(blocker != nil)
+      .accessibilityIdentifier("planner.record-production")
+    }
+  }
+
+  private func jobsPanel(
+    _ plan: IndustryPlanSnapshot,
+    isHistorical: Bool
+  ) -> some View {
     Panel(title: "Jobs") {
       LabeledContent("Jobs", value: "\(plan.jobs.count)")
+      if plan.jobs.allSatisfy({ $0.characterName == nil }) {
+        Text("Durations use no character skills or implants.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
       ExplainedPlannerMetricRow(
         label: "Estimated job time",
         value: plan.estimatedMakespanSeconds.map(formatJobDuration)
@@ -1095,35 +1548,38 @@ struct PlannerView: View {
         label: "Total job workload",
         value: formatJobDuration(plan.totalJobSeconds),
         explanation: AppLocalization.text(
-          "Total workload adds the effective duration of every selected job. Each duration uses SDE base time, runs, the selected facility time multiplier and manufacturing TE; reactions do not use TE."
+          "Total workload adds the effective duration of every selected job. Each duration uses SDE base time, runs, the selected facility time multiplier, manufacturing TE and the skills and implants of the production character; reactions do not use TE."
         ),
         highlightsValue: false
       )
-      Text(
-        "Every successful calculation is saved automatically as the last active plan."
-      )
-      .font(.caption)
-      .foregroundStyle(DesignTokens.textSecondary)
-      if !isHistorical {
-        Button {
-          recordProduction(plan)
-        } label: {
-          Label("Record production", systemImage: "book.closed.fill")
-        }
-        .buttonStyle(.borderedProminent)
+      if isHistorical {
+        Text(
+          "Every successful calculation is saved automatically as the last active plan."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
       }
     }
-    let visibleWarnings = Self.decisiveWarnings(plan.warnings)
+  }
+
+  @ViewBuilder
+  private func warningsPanel(_ plan: IndustryPlanSnapshot) -> some View {
+    let visibleWarnings = Self.decisiveWarnings(
+      PlannerWarningRelevance.relevant(plan.warnings, plan: plan)
+    )
     if !visibleWarnings.isEmpty {
       Panel(title: "Warnings") {
         FullWidthDisclosure(isExpanded: $areWarningsExpanded) {
           Text(
-            "\(visibleWarnings.count) \(visibleWarnings.count == 1 ? "warning" : "warnings")"
+            AppLocalization.format(
+              visibleWarnings.count == 1 ? "%lld warning" : "%lld warnings",
+              Int64(visibleWarnings.count)
+            )
           )
         } content: {
           VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
             ForEach(visibleWarnings) { warning in
-              Label(warning.message, systemImage: "exclamationmark.triangle")
+              Label(warning.localizedUI, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(
                   warning.severity == .blocking
                     ? DesignTokens.negative
@@ -1134,22 +1590,6 @@ struct PlannerView: View {
           .padding(.top, DesignTokens.spacingSM)
         }
         .accessibilityIdentifier("planner.warnings.disclosure")
-      }
-    }
-    if isHistorical {
-      plannerResultDetails(plan, isHistorical: true)
-    } else {
-      Panel(title: "Details") {
-        FullWidthDisclosure(isExpanded: $arePlannerDetailsExpanded) {
-          Text("Blueprints, materials and warehouse list")
-        } content: {
-          VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-            plannerBlueprintPanel
-            plannerResultDetails(plan, isHistorical: false)
-          }
-          .padding(.top, DesignTokens.spacingMD)
-        }
-        .accessibilityIdentifier("planner.details.disclosure")
       }
     }
   }
@@ -1316,7 +1756,9 @@ struct PlannerView: View {
       ),
       allowsProcurement: true
     )
-    warehouseReplenishmentPanel(plan)
+    if isHistorical {
+      warehouseReplenishmentPanel(plan)
+    }
   }
 
   /// Only warnings that change the result or require action: informational notes are hidden,
@@ -1486,112 +1928,115 @@ struct PlannerView: View {
             accessibilityPrefix: "planner.shared.inbound"
           )
         }
-        financeOverviewCard(
-          section: .productionSubtotal,
-          title: "Production subtotal",
-          value: formatISK(breakdown?.productionCostBeforeLogistics),
-          annotation: "Before Main Hub to Home Hub delivery"
-        ) {
-          costMetric(
-            "Material procurement",
-            plan.materialCost,
-            explanation:
-              "The complete selected material procurement value, including separately identified warehouse and Reprocessing amounts."
-          )
-          costMetric(
-            "BPC/BPO",
-            breakdown?.blueprintCosts?.acceptedTotal,
-            explanation:
-              "Consumed BPC acquisition cost plus the entered allocation for reusable BPOs."
-          )
-          costMetric(
-            "Installation",
-            plan.installationCost,
-            explanation:
-              "System-index, facility-tax, SCC and clone-surcharge components for the selected jobs."
-          )
-          Text(totalCostEquation(plan))
-            .font(.caption.monospacedDigit())
+        // Several products show these per product in the table of step 4.
+        if plan.requests.count == 1 || plan.productEconomics == nil || historicalPlan != nil {
+          financeOverviewCard(
+            section: .productionSubtotal,
+            title: "Production subtotal",
+            value: formatISK(breakdown?.productionCostBeforeLogistics),
+            annotation: "Before Main Hub to Home Hub delivery"
+          ) {
+            costMetric(
+              "Material procurement",
+              plan.materialCost,
+              explanation:
+                "The complete selected material procurement value, including separately identified warehouse and Reprocessing amounts."
+            )
+            costMetric(
+              "BPC/BPO",
+              breakdown?.blueprintCosts?.acceptedTotal,
+              explanation:
+                "Consumed BPC acquisition cost plus the entered allocation for reusable BPOs."
+            )
+            costMetric(
+              "Installation",
+              plan.installationCost,
+              explanation:
+                "System-index, facility-tax, SCC and clone-surcharge components for the selected jobs."
+            )
+            Text(totalCostEquation(plan))
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          financeOverviewCard(
+            section: .landedProductionCost,
+            title: "Production cost including delivery",
+            value: formatISK(breakdown?.totalProductionCost)
+          ) {
+            costMetric(
+              "Production subtotal",
+              breakdown?.productionCostBeforeLogistics,
+              explanation:
+                "Material procurement plus BPC/BPO allocation and installation before logistics."
+            )
+            costMetric(
+              "Main Hub to Home Hub delivery",
+              inboundAssessment.cost,
+              explanation:
+                "The selected inbound route cost after compressed-ore substitution and contract splitting."
+            )
+            costMetric(
+              "Production cost per unit",
+              plan.productionCostPerOutputUnit,
+              explanation:
+                "The landed production cost divided by the actual top-level output units. For mixed products this is an aggregate average."
+            )
+            Text(
+              "This landed total is the shared cost basis already included in every sale-scenario result below."
+            )
+            .font(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+          }
+          financeOverviewCard(
+            section: .costPerItem,
+            title: "Cost per item",
+            value: formatUnitISK(
+              plan.minimumListingPricePerOutputUnit
+                ?? plan.productionCostPerOutputUnit
+            ),
+            annotation: costPerItemAnnotation(plan)
+          ) {
+            costMetric(
+              "Production cost including delivery",
+              breakdown?.totalProductionCost,
+              explanation:
+                "The landed production cost, including the selected Main Hub to Home Hub delivery."
+            )
+            ExplainedPlannerMetricRow(
+              label: "Produced units",
+              value: plan.plannedOutputUnits.map { $0.formatted() }
+                ?? AppLocalization.text("Unavailable"),
+              explanation: AppLocalization.text(
+                "The top-level output units of this plan used as the divisor."
+              ),
+              highlightsValue: true
+            )
+            ExplainedPlannerMetricRow(
+              label: "Sales tax · broker fee",
+              value: plan.listingFeeRates.map {
+                "\(formatFeeRate($0.salesTax)) · \(formatFeeRate($0.brokerFee))"
+              } ?? AppLocalization.text("Unavailable"),
+              explanation: AppLocalization.text(
+                "The configured sales tax and broker fee rates used by the listed-sale scenarios."
+              ),
+              highlightsValue: true
+            )
+            ExplainedPlannerMetricRow(
+              label: "Minimum listing price incl. fees",
+              value: formatUnitISK(plan.minimumListingPricePerOutputUnit),
+              explanation: AppLocalization.text(
+                "Cost per item divided by (1 − sales tax − broker fee). A sell order at this price exactly covers production, delivery, sales tax and broker fee. Relisting fees and outbound transport are not included."
+              ),
+              highlightsValue: true
+            )
+            Text(
+              "Cost per item is the break-even before market fees; the minimum listing price includes sales tax and broker fee. For several products both are aggregate averages, not prices per product."
+            )
+            .font(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
-        }
-        financeOverviewCard(
-          section: .landedProductionCost,
-          title: "Production cost including delivery",
-          value: formatISK(breakdown?.totalProductionCost)
-        ) {
-          costMetric(
-            "Production subtotal",
-            breakdown?.productionCostBeforeLogistics,
-            explanation:
-              "Material procurement plus BPC/BPO allocation and installation before logistics."
-          )
-          costMetric(
-            "Main Hub to Home Hub delivery",
-            inboundAssessment.cost,
-            explanation:
-              "The selected inbound route cost after compressed-ore substitution and contract splitting."
-          )
-          costMetric(
-            "Production cost per unit",
-            plan.productionCostPerOutputUnit,
-            explanation:
-              "The landed production cost divided by the actual top-level output units. For mixed products this is an aggregate average."
-          )
-          Text(
-            "This landed total is the shared cost basis already included in every sale-scenario result below."
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-        }
-        financeOverviewCard(
-          section: .costPerItem,
-          title: "Cost per item",
-          value: formatUnitISK(
-            plan.minimumListingPricePerOutputUnit
-              ?? plan.productionCostPerOutputUnit
-          ),
-          annotation: costPerItemAnnotation(plan)
-        ) {
-          costMetric(
-            "Production cost including delivery",
-            breakdown?.totalProductionCost,
-            explanation:
-              "The landed production cost, including the selected Main Hub to Home Hub delivery."
-          )
-          ExplainedPlannerMetricRow(
-            label: "Produced units",
-            value: plan.plannedOutputUnits.map { $0.formatted() }
-              ?? AppLocalization.text("Unavailable"),
-            explanation: AppLocalization.text(
-              "The top-level output units of this plan used as the divisor."
-            ),
-            highlightsValue: true
-          )
-          ExplainedPlannerMetricRow(
-            label: "Sales tax · broker fee",
-            value: plan.listingFeeRates.map {
-              "\(formatFeeRate($0.salesTax)) · \(formatFeeRate($0.brokerFee))"
-            } ?? AppLocalization.text("Unavailable"),
-            explanation: AppLocalization.text(
-              "The configured sales tax and broker fee rates used by the listed-sale scenarios."
-            ),
-            highlightsValue: true
-          )
-          ExplainedPlannerMetricRow(
-            label: "Minimum listing price incl. fees",
-            value: formatUnitISK(plan.minimumListingPricePerOutputUnit),
-            explanation: AppLocalization.text(
-              "Cost per item divided by (1 − sales tax − broker fee). A sell order at this price exactly covers production, delivery, sales tax and broker fee. Relisting fees and outbound transport are not included."
-            ),
-            highlightsValue: true
-          )
-          Text(
-            "Cost per item is the break-even before market fees; the minimum listing price includes sales tax and broker fee. For several products both are aggregate averages, not prices per product."
-          )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-          .fixedSize(horizontal: false, vertical: true)
+          }
         }
       }
     }
@@ -2000,12 +2445,15 @@ struct PlannerView: View {
     )
   }
 
-  /// The chosen market of the shown plan: the stored label of a historical
-  /// plan, otherwise the current selection.
-  private func displayedTargetMarket(
-    for plan: IndustryPlanSnapshot
-  ) -> PlannerTargetMarket? {
-    historicalPlan == nil ? targetMarketSelection : plan.targetMarket
+  /// The sale shown as selected in a single-product plan. A historical plan
+  /// marks only what was decided, never a suggestion.
+  private func selectedSale(
+    of plan: IndustryPlanSnapshot
+  ) -> PlannerProfitabilityScenario? {
+    guard let product = PlannerProfitability(plan: plan).products.first,
+      historicalPlan == nil || !product.isSuggestion
+    else { return nil }
+    return product.selected
   }
 
   private static func targetMarketTitle(
@@ -2020,52 +2468,24 @@ struct PlannerView: View {
   }
 
   @ViewBuilder
-  private func targetMarketPanel(
-    _ plan: IndustryPlanSnapshot,
-    isHistorical: Bool
-  ) -> some View {
+  private func targetMarketPanel(_ plan: IndustryPlanSnapshot) -> some View {
     let suggestion = PlannerTargetMarketSuggestion.suggest(plan)
     Panel(title: "Target market") {
-      if isHistorical {
-        LabeledContent(
-          "Target market",
-          value: plan.targetMarket.map(Self.targetMarketTitle)
-            ?? AppLocalization.text("Not chosen")
-        )
-      } else {
-        Picker(
-          "Target market",
-          selection: Binding(
-            get: { targetMarketSelection },
-            set: { chooseTargetMarket($0) }
-          )
-        ) {
-          Text("Not chosen").tag(PlannerTargetMarket?.none)
-          ForEach(PlannerTargetMarket.allCases, id: \.self) { market in
-            Text(Self.targetMarketTitle(market))
-              .tag(PlannerTargetMarket?.some(market))
-          }
-        }
-        .pickerStyle(.segmented)
-        .accessibilityIdentifier("planner.target-market")
-      }
+      LabeledContent(
+        "Target market",
+        value: plan.targetMarket.map(Self.targetMarketTitle)
+          ?? AppLocalization.text("Not chosen")
+      )
       if let suggestion {
-        HStack(spacing: DesignTokens.spacingSM) {
-          Text(
-            AppLocalization.format(
-              "Suggestion: %@ (highest available profit %@)",
-              Self.targetMarketTitle(suggestion.market),
-              formatISK(suggestion.profit)
-            )
+        Text(
+          AppLocalization.format(
+            "Suggestion: %@ (highest available profit %@)",
+            Self.targetMarketTitle(suggestion.market),
+            formatISK(suggestion.profit)
           )
-          .font(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-          if !isHistorical, targetMarketSelection != suggestion.market {
-            Button("Use suggestion") { chooseTargetMarket(suggestion.market) }
-              .buttonStyle(.borderless)
-              .font(.caption)
-          }
-        }
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
       } else {
         Text(
           "No sale scenario has an available, final profit, so no target market is suggested."
@@ -2154,7 +2574,9 @@ struct PlannerView: View {
     .background(DesignTokens.elevated)
     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
     .overlay {
-      if displayedTargetMarket(for: plan)?.rawValue == hub.rawValue {
+      if selectedSale(of: plan).map({
+        $0.market.rawValue == hub.rawValue && $0.scenario == result.scenario
+      }) == true {
         RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
           .stroke(DesignTokens.accent, lineWidth: 2)
       }
@@ -2164,7 +2586,9 @@ struct PlannerView: View {
       "planner.sale.\(hub.rawValue).\(result.scenario.rawValue).preview"
     )
     .accessibilityValue(
-      displayedTargetMarket(for: plan)?.rawValue == hub.rawValue
+      selectedSale(of: plan).map {
+        $0.market.rawValue == hub.rawValue && $0.scenario == result.scenario
+      } == true
         ? AppLocalization.text("Selected target market") : ""
     )
   }
@@ -4108,7 +4532,7 @@ struct PlannerView: View {
 
       ForEach(analysis.warnings.filter { $0.severity != .information }) {
         warning in
-        Label(warning.message, systemImage: "exclamationmark.triangle.fill")
+        Label(warning.localizedUI, systemImage: "exclamationmark.triangle.fill")
           .font(.caption)
           .foregroundStyle(DesignTokens.caution)
       }
@@ -4570,6 +4994,9 @@ struct PlannerView: View {
                 }
 
                 HStack(spacing: DesignTokens.spacingLG) {
+                  if let characterName = job.characterName {
+                    EVEEntityText(value: characterName, font: .body)
+                  }
                   Label {
                     Text(LocalizedStringKey(job.activity.rawValue.capitalized))
                   } icon: {
@@ -4635,6 +5062,79 @@ struct PlannerView: View {
       }
       .accessibilityIdentifier("planner.production-job-list.disclosure")
     }
+  }
+
+  /// Missing items plus used stock, one Multibuy per hub.
+  private func restockListPanel(
+    _ plan: IndustryPlanSnapshot
+  ) -> some View {
+    let mainHub =
+      plan.materials.compactMap(\.procurement?.purchaseLocation).first
+      ?? runtime.productionBasis.mainTradingLocation?.location
+      ?? .jita
+    let groups = EVEShoppingList.restockGroups(
+      from: plan.materials,
+      refiningPlan: plan.compressedOreRefining,
+      refiningLocation: mainHub,
+      fallback: .jita
+    )
+    return Panel(title: "Buy the complete list") {
+      if groups.isEmpty {
+        Label(
+          "This plan has no materials to buy or replenish.",
+          systemImage: "checkmark.circle"
+        )
+        .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        Text(
+          "Missing items plus used warehouse stock, each at its cheapest selected hub. Together the lists are the full quantity."
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        ForEach(groups) { group in
+          HStack(spacing: DesignTokens.spacingMD) {
+            VStack(alignment: .leading, spacing: 2) {
+              EVEEntityLabel(value: group.location.name)
+              Text(
+                AppLocalization.format(
+                  "%lld items · %lld units to buy",
+                  Int64(group.shoppingList.items.count),
+                  group.shoppingList.totalQuantity
+                )
+              )
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(DesignTokens.textSecondary)
+            }
+            Spacer()
+            Button {
+              copyShoppingList(group.export)
+            } label: {
+              Label("Copy Multibuy", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(
+              Text(AppLocalization.format("Copy Multibuy · %@", group.location.name))
+            )
+            .accessibilityIdentifier("planner.restock-list.copy.\(group.location.id)")
+          }
+        }
+        if let shoppingListCopyStatus {
+          Label(
+            shoppingListCopyStatus.message,
+            systemImage:
+              shoppingListCopyStatus.isFailure
+              ? "xmark.octagon.fill" : "checkmark.circle.fill"
+          )
+          .font(.callout)
+          .foregroundStyle(
+            shoppingListCopyStatus.isFailure
+              ? DesignTokens.negative : DesignTokens.positive
+          )
+        }
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("planner.restock-list")
   }
 
   private func warehouseReplenishmentPanel(
@@ -5286,7 +5786,37 @@ struct PlannerView: View {
         )
       }
     launchRequest = nil
+    plannerStep = .products
     persistDraft()
+  }
+
+  private func resetPlanner() {
+    resetCurrentPlannerCalculationForReplacement()
+    input = ""
+    manualStockInput = ""
+    parseResult = ProductionInputParser.parse("")
+    unknownProductNames = []
+    confirmedProfitabilityKey = nil
+    targetMarketSelection = nil
+    allianceInput = PlannerAllianceSaleInput()
+    fillAllianceFields(from: allianceInput)
+    areSaleDetailsExpanded = false
+    calculationStartedThisSession = false
+    completedAutomaticKey = nil
+    calculatedAutomaticKey = automaticCalculationKey
+    plannerStep = .start(hasPlan: false)
+    do {
+      try PlannerPersistenceController.resetPlanner(
+        activePlans: activePlans,
+        existingDraft: plannerDrafts.first,
+        in: modelContext
+      )
+      persistenceError = nil
+      persistenceMessage = nil
+    } catch {
+      modelContext.rollback()
+      persistenceError = error.localizedDescription
+    }
   }
 
   private func resetCurrentPlannerCalculationForReplacement() {
@@ -6143,7 +6673,7 @@ struct PlannerView: View {
     let key = automaticCalculationKey
     return PlannerCalculationStatus.resolve(
       isCalculating: isPlannerCalculationActive,
-      hasError: runtime.errorMessage != nil,
+      hasError: runtime.errorMessage != nil || blueprintResolutionError != nil,
       hasPlan: runtime.plan != nil,
       startedThisSession: calculationStartedThisSession,
       matchesCompletedCalculation: key == completedAutomaticKey,
@@ -6171,13 +6701,16 @@ struct PlannerView: View {
       input: input,
       purchaseLocationIDs: effectivePurchaseLocationIDs,
       stockIdentity: assetProjectionIdentity,
+      stockSelection:
+        "\(usesStock)|\(runtime.warehouseStockEnabled)|\(PlannerStockUse.manualStockInput(manualStockInput, usesStock: usesStock))",
       basisIdentity: runtime.marketAnalysisContextIdentity,
       manualDecisions: currentManualDecisions,
       blueprintCosts: blueprintCostTexts,
       blueprintEfficiencies: blueprintEfficiencies,
       ownedEfficiencyOptions: blueprintOwnedEfficiencyOptionIDs,
       handedOffBlueprintTypeIDs: Set(handedOffBlueprintSupplyPlans.keys),
-      jobSplitting: jobSplitting
+      jobSplitting: jobSplitting,
+      productCharacters: chosenProductCharacters
     )
   }
 
@@ -6198,6 +6731,8 @@ struct PlannerView: View {
     warehouse: AssetWarehouse,
     warehouseHasSnapshot: Bool,
     stockTargets: [Int64: Int64],
+    availableStockOverride: [Int64: Int64]?,
+    minimumBlueprintRuns: [Int64: Int],
     existingBlueprintReservations: [BlueprintRunReservation],
     capabilities: [CharacterCapabilitySnapshot]
   ) async -> PlannerBlueprintBasis? {
@@ -6230,8 +6765,10 @@ struct PlannerView: View {
         loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprintTypeIDs,
         plannerInputOverride: plannerInput,
         requiresCompleteBlueprintCostsInSelectedPlan: false,
+        availableStockOverride: availableStockOverride,
         usesExactPlannerPreferences: true,
-        automaticSupply: automaticSupply
+        automaticSupply: automaticSupply,
+        minimumBlueprintRuns: minimumBlueprintRuns
       )
     }
     var resolvedTree: ManufacturingProductionTreeSnapshot
@@ -6244,10 +6781,12 @@ struct PlannerView: View {
       return nil
     } catch {
       blueprintTree = nil
-      blueprintResolutionError = AppLocalization.format(
-        "BPO/BPC sources could not be resolved: %@",
-        error.localizedDescription
-      )
+      blueprintResolutionError =
+        (error as? IndustryPlannerError)?.localizedUI
+        ?? AppLocalization.format(
+          "BPO/BPC sources could not be resolved: %@",
+          error.localizedDescription
+        )
       return nil
     }
     guard !Task.isCancelled else { return nil }
@@ -6272,10 +6811,12 @@ struct PlannerView: View {
         return nil
       } catch {
         blueprintTree = nil
-        blueprintResolutionError = AppLocalization.format(
-          "BPO/BPC efficiencies could not be applied: %@",
-          error.localizedDescription
-        )
+        blueprintResolutionError =
+          (error as? IndustryPlannerError)?.localizedUI
+          ?? AppLocalization.format(
+            "BPO/BPC efficiencies could not be applied: %@",
+            error.localizedDescription
+          )
         return nil
       }
     }
@@ -6328,9 +6869,12 @@ struct PlannerView: View {
     calculatedAutomaticKey = requestedKey
     calculationStartedThisSession = true
     calculationPhase = .preparing
+    blueprintResolutionError = nil
     defer { calculationPhase = nil }
     await Task.yield()
     guard runtime.isPlannerConfigurationReady else { return }
+    runtime.plannerProductCharacters = chosenProductCharacters
+    runtime.plannerCharacters = sortedStoredCharacters
     let interactivePreparationID =
       runtime.beginInteractivePlannerPreparation()
     defer {
@@ -6345,7 +6889,10 @@ struct PlannerView: View {
     let capabilityPayloads = storedCharacters.compactMap(\.capabilitySnapshot)
     consolidation.updateESIStock(assetWarehouse.availability(targetQuantities: targetQuantities).allocatableQuantities, known: !assetWarehouse.snapshotIDs.isEmpty && assetWarehouse.stockRelevantSourceStates.allSatisfy { $0 == .fresh })
     let plannerInput = input
-    let plannerManualStockInput = manualStockInput
+    let plannerManualStockInput = PlannerStockUse.manualStockInput(
+      manualStockInput,
+      usesStock: usesStock
+    )
     let plannerWarehouse = assetWarehouse
     let warehouseHasSnapshot = plannerWarehouseHasSnapshot
     let targets = targetQuantities
@@ -6379,8 +6926,11 @@ struct PlannerView: View {
     let totalTargetQuantity = parsed.requests.reduce(into: Int64(0)) {
       $0 = AssetWarehouse.saturatedAdd($0, Int64($1.wantedQuantity))
     }
+    guard let manualStock = await runtime.plannerManualStock(input: plannerManualStockInput)
+    else { return }
     var calculatesWithoutStock = false
     var stockReferenceCost: Double?
+    var minimumBlueprintRuns: [Int64: Int] = [:]
     func basis(
       preferences: [Int64: MaterialProcurementPreference],
       automaticSupply: Bool
@@ -6396,6 +6946,11 @@ struct PlannerView: View {
         stockTargets:
           calculatesWithoutStock
           ? plannerWarehouse.factualQuantities : blueprintAssessmentTargets,
+        availableStockOverride: PlannerStockUse.blueprintStockOverride(
+          manualStock: manualStock,
+          calculatesWithoutStock: calculatesWithoutStock
+        ),
+        minimumBlueprintRuns: minimumBlueprintRuns,
         existingBlueprintReservations: scienceReservations,
         capabilities: preparedInputs.1
       )
@@ -6434,6 +6989,7 @@ struct PlannerView: View {
     /// One complete calculation; `false` after a cancellation or a failed
     /// Blueprint resolution.
     func runCalculation() async -> Bool {
+    minimumBlueprintRuns = [:]
     guard
       let firstBasis = await basis(
         preferences: manualPreferences,
@@ -6460,13 +7016,15 @@ struct PlannerView: View {
           return node.typeID
         }
       )
+      let uncoveredRuns = BlueprintSupplyPlanner.uncoveredRuns(in: decided)
       guard
-        !unusableReactions.isEmpty
+        !unusableReactions.isEmpty || !uncoveredRuns.isEmpty
           || Self.producedTypeIDs(decided)
             != Self.producedTypeIDs(firstBasis.tree.selectedPlan)
       else {
         return true
       }
+      minimumBlueprintRuns = uncoveredRuns
       var decisions = manualPreferences.merging(
         decided.materials.compactMap { material in
           material.procurement.map { (material.typeID, $0) }
@@ -6480,15 +7038,31 @@ struct PlannerView: View {
       else { return false }
       await calculate(finalBasis, preferences: decisions, automaticSupply: false)
       guard !Task.isCancelled else { return false }
+      // More runs can round the jobs differently; a true lack of Blueprints stays
+      // a warning because the reservation then matches the plan.
+      for _ in 0..<2 {
+        guard runtime.errorMessage == nil, let plan = runtime.plan else { break }
+        let remaining = BlueprintSupplyPlanner.uncoveredRuns(in: plan)
+        guard !remaining.isEmpty else { break }
+        minimumBlueprintRuns.merge(remaining, uniquingKeysWith: max)
+        guard let basis = await basis(preferences: decisions, automaticSupply: false)
+        else { return false }
+        await calculate(basis, preferences: decisions, automaticSupply: false)
+        guard !Task.isCancelled else { return false }
+      }
     }
     return true
+    }
+    // The comparison pass replaces the visible plan; a stopped calculation
+    // brings back the last successful one.
+    var didComplete = false
+    defer {
+      if !didComplete { runtime.plan = previousPlan }
     }
     // Owner decision 2026-10-31: stock must not change what the order costs, so
     // the same order is calculated without stock first. Only the second result
     // is kept and saved.
-    if runtime.warehouseStockEnabled
-      || !plannerManualStockInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    {
+    if runtime.warehouseStockEnabled || PlannerStockUse.hasManualStock(plannerManualStockInput) {
       calculatesWithoutStock = true
       if await runCalculation(), runtime.errorMessage == nil {
         stockReferenceCost = runtime.plan?.costBreakdown?.totalProductionCost
@@ -6496,7 +7070,8 @@ struct PlannerView: View {
       guard !Task.isCancelled else { return }
       calculatesWithoutStock = false
     }
-    guard await runCalculation() else { return }
+    guard await runCalculation(), runtime.errorMessage == nil else { return }
+    didComplete = true
     await finishPlanCalculation(
       requestedKey: requestedKey,
       workspaceRevision: workspaceRevision,
@@ -6520,6 +7095,7 @@ struct PlannerView: View {
     if await saveActivePlan(plan) {
       completedAutomaticKey = requestedKey
     }
+    plannerStep = plannerStepAccess.step(afterCalculationFrom: plannerStep)
   }
 
   private static func producedTypeIDs(_ plan: IndustryPlanSnapshot) -> Set<Int64> {
@@ -6556,7 +7132,7 @@ struct PlannerView: View {
     }
     // A newly calculated plan re-applies the saved alliance input to its own
     // costs; the nine market scenarios stay untouched.
-    if labeledPlan.requests.count > 1, labeledPlan.productDecisions == nil,
+    if labeledPlan.productDecisions == nil,
       let decisions = restoredProductDecisions(for: labeledPlan)
     {
       labeledPlan.productDecisions = decisions
@@ -6599,19 +7175,16 @@ struct PlannerView: View {
   }
 
   private var plannerPurchaseLocationOptions: [TradingLocationConfiguration] {
+    runtime.productionBasis.plannerPurchaseLocations
+  }
+
+  /// A comparison market whose transport to the Home Hub would count but is unset.
+  private func lacksTransportRoute(_ option: TradingLocationConfiguration) -> Bool {
     let basis = runtime.productionBasis
-    var options: [TradingLocationConfiguration] = []
-    for hub in [
-      basis.mainTradingLocation,
-      basis.homeTradingLocation,
-      basis.coalitionTradingLocation,
-    ].compactMap({ $0 })
-    where !options.contains(where: {
-      $0.location.representsSameLocation(as: hub.location)
-    }) {
-      options.append(hub)
-    }
-    return options
+    guard basis.comparisonPurchaseLocations.contains(where: { $0.id == option.id }),
+      basis.logistics.isEnabled, basis.logistics.includeInboundMaterials
+    else { return false }
+    return basis.logistics.marketRoute(for: option.id).method == nil
   }
 
   /// The saved choice among the current options; the Main Hub without a choice.
@@ -6640,6 +7213,15 @@ struct PlannerView: View {
             .labelsHidden()
             .disabled(runtime.isWorking && !isPlannerCalculationActive)
             EVEEntityText(value: option.location.name, font: .body)
+            if lacksTransportRoute(option) {
+              Button("No transport route set") {
+                onOpenDataSettings(.logistics)
+              }
+              .buttonStyle(.link)
+              .font(.caption)
+              .foregroundStyle(DesignTokens.caution)
+              .accessibilityIdentifier("planner.purchase-location.route.\(option.id)")
+            }
             Spacer()
           }
         }
@@ -6707,14 +7289,52 @@ struct PlannerView: View {
     }
   }
 
-  /// Manual choice: updates the draft and labels the active plan. The frozen
-  /// calculation itself stays unchanged.
-  private func chooseTargetMarket(_ market: PlannerTargetMarket?) {
-    persistTargetMarketDraft(market)
-    guard var plan = runtime.plan else { return }
-    plan.targetMarket = market
-    runtime.plan = plan
-    Task { _ = await saveActivePlan(plan) }
+  /// The owner's sale of one product. A single-product plan keeps its plan-wide
+  /// label and draft in step. The frozen calculation itself stays unchanged.
+  private func chooseSale(
+    _ request: ProductionRequestLine,
+    _ sale: PlannerProfitabilityScenario
+  ) {
+    guard let plan = runtime.plan else { return }
+    if plan.requests.count == 1 {
+      persistTargetMarketDraft(sale.market)
+      runtime.plan?.targetMarket = sale.market
+    }
+    var decision = plan.productDecisions?[request.id] ?? PlannerProductDecision()
+    decision.targetMarket = sale.market
+    decision.saleScenario = sale.scenario
+    updateProductDecision(request.id, decision)
+  }
+
+  /// Applying an alliance price selects the alliance market for that product;
+  /// without a price the selected sale stays. A single-product plan keeps its
+  /// alliance sale plan-wide.
+  private func applyAllianceInput(
+    _ request: ProductionRequestLine,
+    _ input: PlannerAllianceSaleInput
+  ) {
+    guard let plan = runtime.plan else { return }
+    var decision = plan.productDecisions?[request.id] ?? PlannerProductDecision()
+    if input.unitPrice != nil {
+      decision.targetMarket = .allianceMarket
+      decision.saleScenario = nil
+    }
+    if plan.requests.count == 1 {
+      fillAllianceFields(from: input)
+      applyAllianceInput()
+      if input.unitPrice != nil {
+        persistTargetMarketDraft(.allianceMarket)
+        runtime.plan?.targetMarket = .allianceMarket
+      }
+    } else {
+      decision.allianceSale = PlannerAllianceSaleCalculator.calculate(
+        plan: plan,
+        input: input,
+        publicContractFeeRate: allianceContractFeeRate(for: input.deliveryHub),
+        requestID: request.id
+      )
+    }
+    updateProductDecision(request.id, decision)
   }
 
   /// Stores one product's decision in the plan and in the per-product draft.
@@ -6733,7 +7353,8 @@ struct PlannerView: View {
       drafts[PlannerProductDecisionDraft.key(for: request)] =
         PlannerProductDecisionDraft(
           targetMarket: stored.targetMarket,
-          allianceInput: stored.allianceSale?.input
+          allianceInput: stored.allianceSale?.input,
+          saleScenario: stored.saleScenario
         )
     }
     do {
@@ -6776,7 +7397,8 @@ struct PlannerView: View {
             publicContractFeeRate: allianceContractFeeRate(for: input.deliveryHub),
             requestID: request.id
           )
-        }
+        },
+        saleScenario: draft.saleScenario
       )
     }
     return decisions.isEmpty ? nil : decisions
@@ -6819,31 +7441,6 @@ struct PlannerView: View {
     return node.requiredQuantity
   }
 
-  /// Shows the complete output while no smaller accepted quantity is saved.
-  private func prefillAllianceAcceptedUnits(_ produced: Int64?) {
-    guard let produced, allianceInput.acceptedQuantity == nil else { return }
-    allianceAcceptedText = produced.formatted(
-      .number.locale(AppLocalization.currentLanguage.locale).grouping(.automatic)
-    )
-  }
-
-  private func allianceAcceptedUnits(produced: Int64) -> Int64 {
-    if case .value(let value) = PlannerAllianceInputParser.number(
-      allianceAcceptedText,
-      locale: AppLocalization.currentLanguage.locale
-    ), value >= 1, value < Double(Int64.max) {
-      return min(Int64(value.rounded()), produced)
-    }
-    return produced
-  }
-
-  private func stepAllianceAcceptedUnits(by delta: Int64, produced: Int64) {
-    let next = min(max(allianceAcceptedUnits(produced: produced) + delta, 1), produced)
-    allianceAcceptedText = next.formatted(
-      .number.locale(AppLocalization.currentLanguage.locale).grouping(.automatic)
-    )
-  }
-
   /// Current field values as input; `nil` while a field is invalid.
   private var allianceFieldInput: PlannerAllianceSaleInput? {
     PlannerAllianceInputParser.input(
@@ -6856,29 +7453,9 @@ struct PlannerView: View {
     )
   }
 
-  /// Saves valid field edits shortly after typing stops, so the card, the
-  /// target-market suggestion and the stored plan follow without a button.
-  private func scheduleAllianceAutoApply() {
-    allianceAutoApplyTask?.cancel()
-    allianceAutoApplyTask = Task { @MainActor in
-      try? await Task.sleep(for: .milliseconds(600))
-      guard !Task.isCancelled, let input = allianceFieldInput else { return }
-      if input != allianceInput || runtime.plan?.allianceSale?.input != input {
-        applyAllianceInput(reportsErrors: false)
-      }
-    }
-  }
-
   /// Applies the alliance fields to the draft and the active plan.
-  private func applyAllianceInput(reportsErrors: Bool = true) {
-    guard let input = allianceFieldInput else {
-      guard reportsErrors else { return }
-      allianceInputError = AppLocalization.text(
-        "Check the alliance fields: price and fee must be numbers, the accepted quantity a whole number of at least 1 and the fee below 100 %."
-      )
-      return
-    }
-    allianceInputError = nil
+  private func applyAllianceInput() {
+    guard let input = allianceFieldInput else { return }
     allianceInput = input
     do {
       let data = try JSONEncoder().encode(input)
@@ -6917,8 +7494,6 @@ struct PlannerView: View {
           publicContractFeeRate: allianceContractFeeRate(for: input.deliveryHub)
         )
       } ?? plan.allianceSale
-    let producedQuantity = allianceProducedQuantity(plan)
-    let deliveryContractFeeRate = allianceContractFeeRate(for: allianceDeliveryHub)
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Alliance market (manual)")
         .font(.subheadline.weight(.semibold))
@@ -7020,125 +7595,13 @@ struct PlannerView: View {
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
-      if !isHistorical {
-        Divider()
-        Grid(alignment: .leading, horizontalSpacing: DesignTokens.spacingSM) {
-          GridRow {
-            Text("Price per unit (ISK)").font(.caption)
-            TextField("Required", text: $allianceUnitPriceText)
-              .textFieldStyle(.roundedBorder)
-              .onSubmit { applyAllianceInput() }
-              .groupedNumberInput($allianceUnitPriceText)
-              .accessibilityIdentifier("planner.alliance.unit-price")
-          }
-          GridRow {
-            Text("Accepted units").font(.caption)
-            HStack(spacing: DesignTokens.spacingXS) {
-              TextField("All produced units", text: $allianceAcceptedText)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { applyAllianceInput() }
-                .groupedNumberInput($allianceAcceptedText, allowsFraction: false)
-                .onKeyPress(.upArrow) {
-                  guard let producedQuantity else { return .ignored }
-                  stepAllianceAcceptedUnits(by: 1, produced: producedQuantity)
-                  return .handled
-                }
-                .onKeyPress(.downArrow) {
-                  guard let producedQuantity else { return .ignored }
-                  stepAllianceAcceptedUnits(by: -1, produced: producedQuantity)
-                  return .handled
-                }
-                .accessibilityIdentifier("planner.alliance.accepted-units")
-              if let producedQuantity {
-                Stepper(
-                  "Accepted units",
-                  value: Binding(
-                    get: { allianceAcceptedUnits(produced: producedQuantity) },
-                    set: { newValue in
-                      allianceAcceptedText = newValue.formatted(
-                        .number.locale(AppLocalization.currentLanguage.locale)
-                          .grouping(.automatic)
-                      )
-                    }
-                  ),
-                  in: 1...producedQuantity
-                )
-                .labelsHidden()
-                .accessibilityIdentifier("planner.alliance.accepted-units.stepper")
-                Text(
-                  AppLocalization.format(
-                    "of %@",
-                    producedQuantity.formatted()
-                  )
-                )
-                .font(.caption)
-                .foregroundStyle(DesignTokens.textSecondary)
-              }
-            }
-          }
-          GridRow {
-            Text("Fee (%)").font(.caption)
-            TextField(
-              deliveryContractFeeRate.map {
-                AppLocalization.format(
-                  "Public-contract fee %@ if empty",
-                  formatPercent($0)
-                )
-              } ?? AppLocalization.text("0 % if empty"),
-              text: $allianceFeeText
-            )
-            .textFieldStyle(.roundedBorder)
-            .onSubmit { applyAllianceInput() }
-            .accessibilityIdentifier("planner.alliance.fee")
-          }
-          if deliveryContractFeeRate == nil {
-            GridRow {
-              Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-              Text(
-                "No confirmed public-contract fee is stored for this delivery location. Enter the fee manually or confirm it for the trading location under Data & Settings → Market Settings."
-              )
-              .font(.caption2)
-              .foregroundStyle(DesignTokens.textSecondary)
-              .fixedSize(horizontal: false, vertical: true)
-            }
-          }
-          GridRow {
-            Text("Delivery").font(.caption)
-            Picker("Delivery", selection: $allianceDeliveryHub) {
-              Text("At the production location").tag(PlannerTargetMarket?.none)
-              Text("Main Hub").tag(PlannerTargetMarket?.some(.mainHub))
-              Text("Home Hub").tag(PlannerTargetMarket?.some(.homeHub))
-              Text("Coalition Hub").tag(PlannerTargetMarket?.some(.coalitionHub))
-            }
-            .labelsHidden()
-          }
-        }
-        HStack {
-          if let allianceInputError {
-            Text(allianceInputError)
-              .font(.caption2)
-              .foregroundStyle(DesignTokens.negative)
-          }
-          Spacer()
-          Button("Apply alliance sale") { applyAllianceInput() }
-            .buttonStyle(.bordered)
-        }
-        .onAppear { prefillAllianceAcceptedUnits(producedQuantity) }
-        .onChange(of: allianceUnitPriceText) { scheduleAllianceAutoApply() }
-        .onChange(of: allianceAcceptedText) { scheduleAllianceAutoApply() }
-        .onChange(of: allianceFeeText) { scheduleAllianceAutoApply() }
-        .onChange(of: allianceDeliveryHub) { scheduleAllianceAutoApply() }
-        .onChange(of: producedQuantity) { _, newValue in
-          prefillAllianceAcceptedUnits(newValue)
-        }
-      }
     }
     .padding(DesignTokens.spacingMD)
     .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
     .background(DesignTokens.elevated)
     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
     .overlay {
-      if displayedTargetMarket(for: plan) == .allianceMarket {
+      if selectedSale(of: plan)?.market == .allianceMarket {
         RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
           .stroke(DesignTokens.accent, lineWidth: 2)
       }
@@ -7157,7 +7620,12 @@ struct PlannerView: View {
       )
       persistenceError = nil
       persistenceMessage =
-        "\(rows.count) production \(rows.count == 1 ? "row" : "rows") recorded in the Production Overview."
+        AppLocalization.format(
+          rows.count == 1
+            ? "%lld production row recorded in the Production Overview."
+            : "%lld production rows recorded in the Production Overview.",
+          Int64(rows.count)
+        )
     } catch {
       persistenceMessage = nil
       persistenceError = error.localizedDescription
@@ -10581,6 +11049,7 @@ private struct PlannerAutomaticCalculationKey: Equatable {
   var input: String
   var purchaseLocationIDs: Set<UUID>
   var stockIdentity: String
+  var stockSelection: String
   var basisIdentity: String
   var manualDecisions: PlannerManualDecisions
   var blueprintCosts: [Int64: String]
@@ -10588,4 +11057,5 @@ private struct PlannerAutomaticCalculationKey: Equatable {
   var ownedEfficiencyOptions: [Int64: String]
   var handedOffBlueprintTypeIDs: Set<Int64>
   var jobSplitting: IndustryJobSplitting
+  var productCharacters: [String: Int64]
 }

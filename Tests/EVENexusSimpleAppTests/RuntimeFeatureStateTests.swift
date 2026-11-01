@@ -889,6 +889,23 @@ struct RuntimeFeatureStateTests {
         deliveryHub: nil, producedQuantity: 1_000, locale: german
       )?.acceptedQuantity == 999
     )
+    // The units field never holds more than was produced.
+    func limited(_ text: String, _ produced: Int64?) -> String {
+      PlannerAllianceInputParser.limitedUnitsText(text, produced: produced, locale: german)
+    }
+    #expect(limited("2", 1) == "1")
+    #expect(limited("1.001", 1_000) == "1.000")
+    #expect(limited("0", 5) == "1")
+    #expect(limited("3", 5) == "3")
+    #expect(limited("", 5) == "")
+    #expect(limited("7", nil) == "7")
+    // The alliance cannot take more than was produced.
+    #expect(
+      PlannerAllianceInputParser.input(
+        unitPrice: "10", acceptedQuantity: "1.001", feePercent: "",
+        deliveryHub: nil, producedQuantity: 1_000, locale: german
+      ) == nil
+    )
   }
 
   @Test

@@ -298,6 +298,27 @@ public enum ProductionInputFormatter {
     requests.map(format).joined(separator: "\n")
   }
 
+  /// Removes the first line that describes the same job. `nil` when no line
+  /// does, for example because the input changed since the calculation.
+  public static func removing(
+    _ request: ProductionRequestLine,
+    from input: String
+  ) -> String? {
+    let match = ProductionInputParser.parse(input).requests.first {
+      $0.productName.caseInsensitiveCompare(request.productName) == .orderedSame
+        && $0.wantedQuantity == request.wantedQuantity
+        && $0.materialEfficiency == request.materialEfficiency
+        && $0.timeEfficiency == request.timeEfficiency
+        && $0.blueprintKind == request.blueprintKind
+        && $0.blueprintCostISK == request.blueprintCostISK
+    }
+    guard let match else { return nil }
+    var lines = input.components(separatedBy: .newlines)
+    guard lines.indices.contains(match.lineNumber - 1) else { return nil }
+    lines.remove(at: match.lineNumber - 1)
+    return lines.joined(separator: "\n")
+  }
+
   public static func appending(_ line: String, to input: String) -> String {
     guard !line.isEmpty else { return input }
     if input.isEmpty || input.hasSuffix("\n") {

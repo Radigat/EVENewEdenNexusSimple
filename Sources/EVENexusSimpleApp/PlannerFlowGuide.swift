@@ -53,6 +53,7 @@ enum PlannerFlowNodeID: String, CaseIterable {
 
   case productionRoute
   case finance
+  case profitability
   case targetMarket
   case shoppingList
   case jobs
@@ -63,6 +64,7 @@ enum PlannerFlowNodeID: String, CaseIterable {
   case jobSplit
   case supplyChoice
   case saleChoice
+  case profitabilityDecision
 }
 
 enum PlannerFlowEdgeID: String, CaseIterable {
@@ -129,26 +131,26 @@ struct PlannerFlowEdge: Equatable, Identifiable {
 enum PlannerFlowGuide {
   static let panelTitle = "How the Planner calculates"
   static let summary =
-    "The Planner calculates only on click. Hover over a step or an arrow for its explanation."
+    "The Planner leads through eight steps and calculates only on click. Hover over a step or an arrow for its explanation."
 
   static let nodes: [PlannerFlowNode] = [
     PlannerFlowNode(
       id: .productList, role: .input, column: .inputs,
       title: "Product list",
       explanation:
-        "One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost."
+        "Single or collective production. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost."
     ),
     PlannerFlowNode(
       id: .purchaseLocations, role: .input, column: .inputs,
       title: "Purchase locations",
       explanation:
-        "Choose any of Main, Home and Coalition Hub. Without a choice the Main Hub applies."
+        "Choose from the hubs and comparison markets. Without a choice the Main Hub applies. Comparison markets need a transport route in the logistics settings."
     ),
     PlannerFlowNode(
       id: .stock, role: .input, column: .inputs,
       title: "Warehouse",
       explanation:
-        "Use the combined warehouse or enter stock by hand. Manual stock replaces the warehouse completely."
+        "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock."
     ),
     PlannerFlowNode(
       id: .productionBasis, role: .input, column: .inputs,
@@ -160,7 +162,7 @@ enum PlannerFlowGuide {
       id: .calculate, role: .input, column: .inputs,
       title: "Calculate",
       explanation:
-        "Only this button or ⌘↩ starts a calculation. After a change the status shows the plan as outdated until then."
+        "In step 3 this button or ⌘↩ starts the calculation. After a change later steps show the plan as outdated and offer Recalculate."
     ),
 
     PlannerFlowNode(
@@ -186,7 +188,7 @@ enum PlannerFlowGuide {
     PlannerFlowNode(
       id: .stockData, role: .automatic, column: .data,
       title: "Stock",
-      explanation: "Reads the warehouse or your manual stock. Stock is used first automatically."
+      explanation: "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up."
     ),
 
     PlannerFlowNode(
@@ -223,7 +225,7 @@ enum PlannerFlowGuide {
       id: .controlPass, role: .automatic, column: .calculation,
       title: "Control pass",
       explanation:
-        "If the built materials changed, the Blueprints are resolved again and one last pass runs without automation. A reaction without a formula is bought instead."
+        "If the built materials or the needed Blueprint runs changed, the Blueprints are resolved again without automation. A reaction without a formula is bought instead."
     ),
     PlannerFlowNode(
       id: .savePlan, role: .automatic, column: .calculation,
@@ -243,31 +245,36 @@ enum PlannerFlowGuide {
       explanation: "Adds up all cost items. Stock does not change the total: it counts as its share of the cost without stock. An unknown cost never counts as zero."
     ),
     PlannerFlowNode(
+      id: .profitability, role: .result, column: .results,
+      title: "Profitable?",
+      explanation: "Step 4 shows one row per product with costs and selected sale. The best final sale is preselected and changeable. A selected sale without a final profit triggers a warning."
+    ),
+    PlannerFlowNode(
       id: .targetMarket, role: .result, column: .results,
       title: "Target market and sale",
-      explanation: "Compares nine market scenarios and the alliance market, per product in plans with several products. The target market remains your decision. Production rows follow this choice."
+      explanation: "Step 8 only summarizes the choice from step 4 and records it. Production rows take the chosen market and scenario."
     ),
     PlannerFlowNode(
       id: .shoppingList, role: .result, column: .results,
       title: "Shopping list",
-      explanation: "One list per location, ready for Multibuy."
+      explanation: "One Multibuy per location for missing items. A second list adds used stock, each at its cheapest hub."
     ),
     PlannerFlowNode(
       id: .jobs, role: .result, column: .results,
       title: "Jobs and schedule",
-      explanation: "Shows the build jobs, their duration, total load and schedule."
+      explanation: "Shows the build jobs and schedule. Durations use the character from step 3 and the location's implants. Only that location's characters supply slots."
     ),
     PlannerFlowNode(
       id: .warnings, role: .result, column: .results,
       title: "Warnings",
-      explanation: "Missing or stale data stays visible here, with blocking messages first."
+      explanation: "Missing or stale data stays visible here, with blocking messages first. Contract index and courier warnings appear only if a selected sale depends on them."
     ),
 
     PlannerFlowNode(
       id: .resetChoices, role: .intervention, column: .interventions,
       title: "Back to automatic",
       explanation:
-        "Releases one choice or, with “Reset manual interventions”, all of them. Handed-over Blueprints stay fixed."
+        "Releases one choice or, with “Reset manual interventions”, all of them. Handed-over Blueprints stay fixed. “Reset Planner” empties the whole plan after a safety question."
     ),
     PlannerFlowNode(
       id: .blueprintChoice, role: .intervention, column: .interventions,
@@ -288,7 +295,12 @@ enum PlannerFlowGuide {
     PlannerFlowNode(
       id: .saleChoice, role: .intervention, column: .interventions,
       title: "Target market and alliance sale",
-      explanation: "Records your sale decision, per product in plans with several products. It does not change the production plan."
+      explanation: "In step 4 a menu and the alliance table record your sale per product. They do not change the plan. Recording needs a current plan and a target market."
+    ),
+    PlannerFlowNode(
+      id: .profitabilityDecision, role: .intervention, column: .interventions,
+      title: "Produce anyway",
+      explanation: "Opens the later steps despite the warning, for this calculation and these sales only. In a collective production you can remove a product instead."
     ),
   ]
 

@@ -1,4 +1,5 @@
 import CoreGraphics
+import EVENexusCore
 import Foundation
 import Testing
 
@@ -35,6 +36,68 @@ struct PlannerFlowGuideTests {
         let missing = "\u{0}missing"
         #expect(
           bundle.localizedString(forKey: key, value: missing, table: nil) != missing,
+          "\(language.rawValue): \(key)"
+        )
+      }
+    }
+  }
+
+  /// New warnings fail here until they use a translatable format in both languages.
+  @Test
+  func everyPlannerWarningIsTranslatedInBothLanguages() throws {
+    let root = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let files = [
+      "Sources/EVENexusCore/Industry/IndustryPlanner.swift",
+      "Sources/EVENexusCore/Industry/ProductionTree.swift",
+      "Sources/EVENexusCore/Industry/LogisticsCostCalculator.swift",
+      "Sources/EVENexusCore/Industry/JumpFreighterLogistics.swift",
+      "Sources/EVENexusCore/Industry/ProductionBasis.swift",
+      "Sources/EVENexusSimpleApp/RuntimeState.swift",
+      "Sources/EVENexusCore/Reactions/ReactionModels.swift",
+      "Sources/EVENexusCore/Blueprints/BlueprintResearch.swift",
+    ]
+    let warning = try NSRegularExpression(
+      pattern:
+        #"DomainWarning\(\s*code:\s*"(?:[^"\\]|\\.)*",\s*(?:message|format):\s*(.*?),\s*(?:severity|arguments)"#,
+      options: .dotMatchesLineSeparators
+    )
+    let literal = try NSRegularExpression(pattern: #""((?:[^"\\]|\\.)*)""#)
+    let specifier = try NSRegularExpression(pattern: #"%(?:\d+\$)?(?:@|lld)"#)
+    var keys = [
+      IndustryWarningText.courierItemTooLarge,
+      IndustryWarningText.blueprintRunsShortFormat(missingRuns: 1),
+      IndustryWarningText.blueprintRunsShortFormat(missingRuns: 2),
+    ]
+    func matches(_ regex: NSRegularExpression, _ text: String) -> [NSTextCheckingResult] {
+      regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+    }
+    for file in files {
+      let source = try String(
+        contentsOf: root.appendingPathComponent(file),
+        encoding: .utf8
+      )
+      for match in matches(warning, source) {
+        let expression = String(source[try #require(Range(match.range(at: 1), in: source))])
+        for found in matches(literal, expression) {
+          let key = String(expression[try #require(Range(found.range(at: 1), in: expression))])
+          #expect(!key.contains("\\("), "Interpolated warning in \(file): \(key)")
+          keys.append(key)
+        }
+      }
+    }
+    #expect(keys.count > 80)
+    for language in AppLanguage.allCases {
+      let path = try #require(
+        AppLocalization.resourceBundle.path(forResource: language.rawValue, ofType: "lproj")
+      )
+      let bundle = try #require(Bundle(path: path))
+      for key in keys {
+        let missing = "\u{0}missing"
+        let text = bundle.localizedString(forKey: key, value: missing, table: nil)
+        #expect(text != missing, "\(language.rawValue): \(key)")
+        #expect(
+          matches(specifier, text).count == matches(specifier, key).count,
           "\(language.rawValue): \(key)"
         )
       }

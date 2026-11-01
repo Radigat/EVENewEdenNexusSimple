@@ -655,6 +655,28 @@ public struct ProductionTreeBlueprintAssessment: Sendable {
 }
 
 public enum BlueprintSupplyPlanner {
+  /// Runs a finished plan uses per Blueprint where they exceed its reservation.
+  /// The supply is sized before the build jobs are split per Blueprint, and each
+  /// job rounds its inputs up, so the plan can need more runs than were reserved.
+  public static func uncoveredRuns(in plan: IndustryPlanSnapshot) -> [Int64: Int] {
+    let reserved = Dictionary(
+      (plan.blueprintSupplyPlans ?? []).map { ($0.blueprintTypeID, $0.requiredRuns) },
+      uniquingKeysWith: max
+    )
+    var planned: [Int64: Int] = [:]
+    for node in plan.nodes where node.action == .produce && node.activity == .manufacturing {
+      guard let blueprintTypeID = node.blueprintTypeID, reserved[blueprintTypeID] != nil
+      else { continue }
+      planned[blueprintTypeID] = saturatedAdd(
+        planned[blueprintTypeID, default: 0],
+        max(0, node.runs ?? 0)
+      )
+    }
+    return planned.filter { blueprintTypeID, runs in
+      runs > reserved[blueprintTypeID, default: 0]
+    }
+  }
+
   public static func plans(
     referencePlan: IndustryPlanSnapshot,
     assessments: [ProductionTreeBlueprintAssessment],
@@ -663,7 +685,8 @@ public enum BlueprintSupplyPlanner {
     preferredEfficiencies: [Int64: IndustryProductionEfficiency],
     planID: UUID,
     existingReservations: [BlueprintRunReservation],
-    preferredSources: [Int64: [BlueprintSourceReference]] = [:]
+    preferredSources: [Int64: [BlueprintSourceReference]] = [:],
+    minimumRuns: [Int64: Int] = [:]
   ) -> [Int64: BlueprintSupplyPlan] {
     // The production-tree projection attaches the same aggregated Blueprint
     // assessment to every recursive node that uses that Blueprint type. A
@@ -691,9 +714,10 @@ public enum BlueprintSupplyPlanner {
       guard let assessment = assessmentsByTypeID[blueprintTypeID]?.first,
         let firstNode = nodes.first
       else { continue }
-      let requiredRuns = nodes.reduce(0) {
+      let plannedRuns = nodes.reduce(0) {
         saturatedAdd($0, max(0, $1.runs ?? 0))
       }
+      let requiredRuns = max(plannedRuns, minimumRuns[blueprintTypeID, default: 0])
       let action = actions[blueprintTypeID] ?? assessment.recommendation
       let preferred = preferredEfficiencies[firstNode.typeID]
       let preferredSourceOrder = Dictionary(
@@ -706,7 +730,7 @@ public enum BlueprintSupplyPlanner {
       }
       let outputPerRun = max(
         Int64(1),
-        requiredRuns > 0 ? totalProducedQuantity / Int64(requiredRuns) : 1
+        plannedRuns > 0 ? totalProducedQuantity / Int64(plannedRuns) : 1
       )
       let demandID = BlueprintDemandID(
         requestID: firstNode.topLevelRequestID ?? referencePlan.id,
@@ -1158,10 +1182,8 @@ public enum BlueprintSupplyPlanner {
     warnings.append(
       DomainWarning(
         code: "industry.blueprint-supply-insufficient-runs",
-        message: IndustryWarningText.blueprintRunsShort(
-          blueprintName: blueprintName,
-          missingRuns: remainingRuns
-        ),
+        format: IndustryWarningText.blueprintRunsShortFormat(missingRuns: remainingRuns),
+            arguments: [blueprintName, "\(remainingRuns)"],
         severity: .blocking
       )
     )

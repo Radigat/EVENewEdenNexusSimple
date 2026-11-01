@@ -520,6 +520,25 @@ public struct HubTransportConfiguration: Codable, Equatable, Sendable {
   }
 }
 
+/// Transport from a comparison market to the Home Hub (owner decision
+/// 01.11.2026). `method == nil` keeps the market without a route; a missing
+/// route never becomes 0 ISK. Own Jump Freighters carry no courier contracts.
+public struct MarketTransportSetting: Codable, Equatable, Sendable {
+  public let marketID: UUID
+  public var method: HubTransportMethod?
+  public var service: JumpFreighterServiceRate
+
+  public init(
+    marketID: UUID,
+    method: HubTransportMethod? = nil,
+    service: JumpFreighterServiceRate = .init()
+  ) {
+    self.marketID = marketID
+    self.method = method
+    self.service = service
+  }
+}
+
 /// Contract prices of a leg carried by the Profile courier or a Jump
 /// Freighter service.
 public struct LogisticsContractPricing: Equatable, Sendable {
@@ -570,54 +589,9 @@ extension LogisticsConfiguration {
     let setting = transportSetting(for: leg)
     switch setting.method {
     case .profileCourier:
-      guard let rate = effectiveISKPerCubicMeter else {
-        return .unavailable(
-          DomainWarning(
-            code: "logistics.missing-volume-rate",
-            message:
-              "Logistics is enabled, but the ISK per m³ rate is missing or invalid.",
-            severity: .blocking
-          )
-        )
-      }
-      guard let maximumVolume = effectiveMaximumContractVolumeM3 else {
-        return .unavailable(
-          DomainWarning(
-            code: "logistics.invalid-volume-limit",
-            message:
-              "Logistics is enabled, but the contract volume limit is invalid.",
-            severity: .blocking
-          )
-        )
-      }
-      return .contract(
-        LogisticsContractPricing(
-          iskPerCubicMeter: rate,
-          maximumContractVolumeM3: maximumVolume
-        )
-      )
+      return profileCourierPricing
     case .jumpFreighterService:
-      guard let rate = setting.service.effectiveISKPerCubicMeter,
-        let collateralRate = setting.service.effectiveCollateralRate,
-        let maximumVolume = setting.service.effectiveMaximumContractVolumeM3
-      else {
-        return .unavailable(
-          DomainWarning(
-            code: "logistics.jf-service-rate-missing",
-            message:
-              "The Jump Freighter service prices of this leg are incomplete in the logistics settings.",
-            severity: .blocking
-          )
-        )
-      }
-      return .contract(
-        LogisticsContractPricing(
-          iskPerCubicMeter: rate,
-          maximumContractVolumeM3: maximumVolume,
-          collateralRate: collateralRate,
-          provider: .jumpFreighterService
-        )
-      )
+      return servicePricing(setting.service)
     case .selfJump:
       guard !leg.touchesMain else {
         return .unavailable(
@@ -630,6 +604,89 @@ extension LogisticsConfiguration {
         )
       }
       return .selfJump
+    }
+  }
+
+  private var profileCourierPricing: LogisticsLegPricing {
+    guard let rate = effectiveISKPerCubicMeter else {
+      return .unavailable(
+        DomainWarning(
+          code: "logistics.missing-volume-rate",
+          message:
+            "Logistics is enabled, but the ISK per m³ rate is missing or invalid.",
+          severity: .blocking
+        )
+      )
+    }
+    guard let maximumVolume = effectiveMaximumContractVolumeM3 else {
+      return .unavailable(
+        DomainWarning(
+          code: "logistics.invalid-volume-limit",
+          message:
+            "Logistics is enabled, but the contract volume limit is invalid.",
+          severity: .blocking
+        )
+      )
+    }
+    return .contract(
+      LogisticsContractPricing(
+        iskPerCubicMeter: rate,
+        maximumContractVolumeM3: maximumVolume
+      )
+    )
+  }
+
+  private func servicePricing(_ service: JumpFreighterServiceRate) -> LogisticsLegPricing {
+    guard let rate = service.effectiveISKPerCubicMeter,
+      let collateralRate = service.effectiveCollateralRate,
+      let maximumVolume = service.effectiveMaximumContractVolumeM3
+    else {
+      return .unavailable(
+        DomainWarning(
+          code: "logistics.jf-service-rate-missing",
+          message:
+            "The Jump Freighter service prices of this leg are incomplete in the logistics settings.",
+          severity: .blocking
+        )
+      )
+    }
+    return .contract(
+      LogisticsContractPricing(
+        iskPerCubicMeter: rate,
+        maximumContractVolumeM3: maximumVolume,
+        collateralRate: collateralRate,
+        provider: .jumpFreighterService
+      )
+    )
+  }
+
+  public func marketRoute(for marketID: UUID) -> MarketTransportSetting {
+    marketRoutes?.last { $0.marketID == marketID } ?? MarketTransportSetting(marketID: marketID)
+  }
+
+  public mutating func setMarketRoute(_ route: MarketTransportSetting) {
+    var routes = (marketRoutes ?? []).filter { $0.marketID != route.marketID }
+    routes.append(route)
+    marketRoutes = routes
+  }
+
+  /// Pricing from a comparison market to the Home Hub.
+  public func marketRoutePricing(marketID: UUID) -> LogisticsLegPricing {
+    let route = marketRoute(for: marketID)
+    switch route.method {
+    case .profileCourier:
+      return profileCourierPricing
+    case .jumpFreighterService:
+      return servicePricing(route.service)
+    case .selfJump, nil:
+      return .unavailable(
+        DomainWarning(
+          code: "logistics.market-route-missing",
+          message:
+            "No transport route to the Home Hub is set for this market in the logistics settings.",
+          severity: .blocking
+        )
+      )
     }
   }
 }

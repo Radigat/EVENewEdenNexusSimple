@@ -722,3 +722,30 @@ Automatisch geprüft, Live- und Eigentümerabnahme offen:
 - [ ] Ark mit kombiniertem Lager: Lagerverbrauch, Produktionskosten und Allianzgewinn sind verfügbar.
 - [ ] Plan mit mehreren Produkten: Kosten je Produkt ergeben die Plansumme, Zielmarkt je Produkt wählbar.
 - [ ] Übernahme in die Produktionsliste: Preis, Gebühr, Logistik und Gewinn stimmen mit dem Planer überein.
+
+## Planer in Schritten (31.10.2026)
+
+Automatisch geprüft, Live- und Eigentümerabnahme offen:
+
+- [ ] Einzelproduktion mit Lager: Schritte 1 bis 8, Materialprüfung, Kosten, Rentabilität, Vermerken.
+- [ ] Einzelproduktion ohne Lager: ohne Materialprüfung, gleiche Rechnung ohne Bestand.
+- [ ] Einzelproduktion mit manuellem Bestand: Ablauf wie mit Lager, das echte Lager zählt nicht, auch nicht bei den Blueprint-Runs.
+- [ ] Nicht rentabler oder nicht prüfbarer Plan: Warnung, Schritte 5 bis 8 gesperrt, „Trotzdem produzieren“ öffnet sie für diese Berechnung.
+- [ ] Sammelproduktion: Tabelle je Produkt mit Kosten pro Item, Wahl je Produkt, Entfernen, neue Berechnung, Vermerken.
+- [ ] Vermerkte Zeile: Preis und Gewinn stimmen für Sofortverkauf, eingestellten Verkauf, Vertragshandel und Allianzmarkt mit Schritt 4 überein.
+- [ ] Unbekannter Name wie `Rheag`: Fehler in Schritt 2, Berechnen gesperrt; ein Abbruch zeigt in jedem Schritt „Berechnung gestoppt“ samt Grund.
+- [ ] `Nomad × 3` mit Kapitalkomponenten-BPCs: keine falsche Warnung zu fehlenden Blueprint-Runs.
+- [ ] `Ark`, `Nomad`, `Rhea` neu berechnet: BPC/BPO je Produkt rund 75,3 / 141,7 / 101,4 Mio. ISK, Lieferung 0 / rund 772.000 / rund 1.228.000 ISK, Summe unverändert.
+- [x] Jobkosten der Endprodukte im EVE-Jobfenster gegen den Planer, Screenshots des Eigentümers vom 01.11.2026, B9E-H6: Ark 443.316.908 / 443.165.068, Nomad 783.722.584 / 783.454.151, Rhea 614.683.149 / 614.472.613 ISK (EVE / Planer). Alle drei liegen gleichmäßig 0,0343 % auseinander, was zur Rundung des ESI-Systemindex auf vier Stellen passt.
+- [x] Fehlende Materialmengen derselben Screenshots stimmen mit den Bauzeilen des Plans überein: Nomad 703, 1.189, 566, 825, 700, 531; Rhea 705, 581; Ark keine.
+- [ ] Jobdauer nach neuer Berechnung mit dem Charakter aus den Screenshots je Produkt: Ark, Nomad und Rhea zeigen in Schritt 7 wie EVE 9 T 23:11:45 (vorher 16 T 05:45:36).
+- [ ] Planer zurücksetzen: Abfrage erscheint, Abbrechen ändert nichts, Bestätigen leert den Plan und führt zu Schritt 1; Einstellungen und erfasste Produktionen bleiben.
+- [ ] Charaktere je Standort: Tatara zeigt nur Reaktions-Charaktere, Sotiyo nur Produzenten, ein Raitaru mit Forschung beide passenden Listen. Die Auswahl begrenzt die Liste in Schritt 3; die Charakterwahl je Produkt ist nach Neustart und nach dem Zurücksetzen noch vorbelegt; Schritt 7 nennt den Charakter je Auftrag.
+- [ ] Implantat im echten Spiel: Mit eingesetztem BX-Implantat und passender Einstellung am Standort stimmt die Dauer mit dem Jobfenster überein. Früher je Charakter eingestellte Implantate stehen nach dem Start an den passenden Standorten.
+- [ ] Vergleichsmarkt als Einkaufsort: Er steht in Schritt 1 zur Wahl. Ohne Transportweg erscheint der Hinweis und der Markt entfällt mit Warnung. Mit Weg gehen Einkauf, Lieferkosten, Einkaufsliste und Multibuy korrekt über ihn; ein nicht gewählter Markt wird nicht geladen.
+- [ ] Zeitplan: Mit festgelegten Charakteren entspricht die voraussichtliche Dauer ihren Slots; ein festgelegter, nicht aktivierter Charakter wird in den Einstellungen markiert und fehlen alle Slots, nennt die Warnung den Standort.
+- [ ] Schritt 4: Menü zeigt geschlossen nur den Verkauf, die Tabelle passt ohne seitliches Scrollen, Nettoerlös minus Kosten ergibt den Gewinn auch beim Coalition Hub.
+- [ ] Allianztabelle: Einheiten und 2 % vorausgefüllt, Zähler mit Pfeilen, zu große Menge sofort begrenzt, **Übernehmen** wählt den Allianzmarkt und aktualisiert die Rentabilität.
+- [ ] Warnungen auf Deutsch; Vertragsindex- und Kurierwarnung verschwinden bei Allianzverkauf am Home Hub und erscheinen bei Vertragsverkauf oder Main Hub.
+- [ ] Schritt 6: Multibuy je Hub aus fehlenden Items und Lagerverbrauch; in EVE einfügbar, Listen ergeben zusammen die Gesamtmenge.
+- [ ] Schritt 8: nur Zusammenfassung, **Verkauf ändern** führt zu Schritt 4, **Produktion erfassen** vermerkt die Wahl.

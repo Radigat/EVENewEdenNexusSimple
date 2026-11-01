@@ -1080,15 +1080,56 @@ Informationshinweis.
 
 ### Blueprints, Industrie und Reaktionen
 
-**Planner: Aufbau** (Eigentümerentscheidung 30.10.2026): Von oben nach unten stehen
-fehlender SDE-Katalog oder Main Hub mit direktem Weg in den Datenbereich, Einkaufsorte, Items mit
-Statuszeile, gewählter Produktionsweg, Finanzen, Zielmarkt, Verkaufsszenarien,
-Einkaufsliste je Ort, Aufträge, Warnungen und aufklappbare Details (Blueprints,
-Materialien, Lagerliste), zuletzt die letzten Produktionen. Die Statuszeile
-nennt rechnet, aktuell, veraltet, gespeichert oder gestoppt samt Preisdatum. Jede Blueprint-Zeile
-nennt die automatische Stufe mit Grund. Eine Wahl von Hand zeigt „Zurück zur
-Automatik“; Übergaben sind als fest markiert. Historische Pläne zeigen dieselben
-Abschnitte ohne Einklappen und schreibgeschützt.
+**Planner: Aufbau** (Eigentümerentscheidung 31.10.2026): Der Planer führt über eine Schrittleiste durch acht Abteilungen; sichtbar ist immer nur der aktuelle Schritt. Weiter und Zurück stehen darunter, erreichte Schritte sind anklickbar. Der Stand ist automatisch geprüft, aber nicht vom Eigentümer abgenommen.
+
+| Schritt | Inhalt |
+| --- | --- |
+| 1 Einstellungen | Fehlender SDE-Katalog oder Main Hub mit direktem Weg in den Datenbereich, Einkaufsorte, Weg zu den Industrieeinstellungen, letzte Produktionen |
+| 2 Produkte | **Einzelproduktion** oder **Sammelproduktion**, Produkt hinzufügen, Eingabezeilen, Eingabefehler samt unbekannter Produktnamen |
+| 3 Lager | **Lager verwenden?** Bei Ja kombiniertes Lager oder manueller Bestand, Tabelle der Produkte mit Produktionsort und Charakter für die Jobdauer, dazu Berechnen mit Statuszeile (rechnet, aktuell, veraltet, gespeichert oder gestoppt samt Preisdatum) |
+| 4 Kosten | Immer, also auch bei Lager = Nein und vollständigem Kauf: Finanzen, **Rentabel?** mit der Tabelle je Produkt, der Verkaufswahl und der Allianztabelle, dazu zugeklappt die Kostenaufschlüsselung und alle Verkaufswege. Nur bei Lager = Ja zusätzlich die Materialprüfung (aus Lager, Nachkauf vom Markt) |
+| 5 Anpassen | Blueprints (BPO/BPC), gewählter Produktionsweg, Materialien mit Bauen, Kaufen oder Lager |
+| 6 Einkauf | Einkaufsliste je Ort, **Gesamtliste nachkaufen** mit einem Multibuy je Hub, Wiederauffüllliste des Lagers |
+| 7 Bauaufträge | Auftragsliste, Dauer und Zeitplan |
+| 8 Verkauf | Schreibgeschützte Zusammenfassung der Wahl aus Schritt 4 mit **Verkauf ändern** (zurück zu Schritt 4) und **Produktion erfassen** |
+
+**Planer zurücksetzen:** Der Button neben dem Titel leert nach einer Sicherheitsabfrage Produkte, manuellen Bestand, manuelle Eingriffe, übergebene Blueprints, Verkaufsentscheidungen und den aktiven Plan und führt zu Schritt 1. Einstellungen wie Einkaufsorte, Lagerwahl, Produktionsart, Auftragsaufteilung und die gemerkte Charakterwahl bleiben, ebenso erfasste Produktionen. Gespeicherte Pläne werden nur inaktiv, nicht gelöscht. Während einer Berechnung ist der Button gesperrt, in der historischen Ansicht fehlt er.
+
+**Erreichbarkeit:** Schritt 3 braucht eine gültige, zur gewählten Produktionsart passende Eingabe, Schritt 4 einen Plan, die Schritte 5 bis 8 zusätzlich eine bestandene oder bestätigte Rentabilität. Der Planer öffnet ohne Plan bei Schritt 1, mit gespeichertem Plan bei Schritt 4; ein Absprung aus einem anderen Bereich öffnet Schritt 2. Warnungen stehen in den Schritten 4 bis 8 unter der Leiste. Jede Blueprint-Zeile nennt die automatische Stufe mit Grund. Eine Wahl von Hand zeigt „Zurück zur Automatik“; Übergaben sind als fest markiert.
+
+**Berechnen:** Gerechnet wird nur auf Klick. Nach einer Änderung zeigen die Schritte 4 bis 8 den Plan als veraltet und bieten **Neu berechnen** an. Nach der Rechnung geht es zu Schritt 4, außer sie wurde später gestartet und verlangt keine neue Entscheidung. Auch Lagerwahl und manueller Bestand zählen nun als Änderung.
+
+**Lager = Nein** rechnet ohne jeden Bestand. Eine manuelle Liste bleibt gespeichert, wird aber nicht verwendet.
+
+**Manueller Bestand** ersetzt bei Lager = Ja das kombinierte Lager in jedem Rechengang, auch bei der Auflösung der Blueprints und ihrer Runs. Der Ablauf bleibt derselbe: Referenzkosten ohne Bestand, Verbrauch vor Kauf und Bewertung wie beim Lager. Mengenziele und Lagerwarnungen gelten dann nicht. Der Schalter für das kombinierte Lager ist gesperrt und ein Hinweis nennt den Grund. Eigene BPO/BPC bleiben nutzbar, denn die Liste enthält nur Mengen. Eine ungültige Zeile stoppt die Berechnung vor dem ersten Rechengang; der bisherige Plan bleibt.
+
+**Einzel- und Sammelproduktion:** Einzelproduktion erlaubt ein Produkt, auch auf mehreren Zeilen. Stehen mehrere Produkte in der Eingabe, bleibt Weiter gesperrt und ein Hinweis bietet den Wechsel an; Eingaben werden nie automatisch gelöscht. Die Sammelproduktion rechnet alle Produkte gemeinsam mit geteiltem Lager und zeigt in Schritt 4 eine Tabelle je Produkt mit Summe, sofern alle Werte bekannt sind.
+
+**Rentabel?** zeigt je Produkt eine Zeile: Einheiten, Zwischensumme (Material, Installation, BPC/BPO), Kosten inklusive Lieferung, Kosten pro Item, Mindestpreis, Verkauf, Nettoerlös, Gewinn, ROI und Status. Kosten, Kosten pro Item und Mindestpreis gelten für den gewählten Verkauf einschließlich seines Transports, sodass Nettoerlös minus Kosten den Gewinn derselben Zeile ergibt. Der Mindestpreis deckt mit den verkauften Einheiten alle Kosten und Gebühren. Die Tabelle ist sortierbar, vorläufige Werte tragen „~“, fehlende bleiben unverfügbar, die Summe erscheint nur bei vollständigen Werten. Beträge ab 1.000 ISK stehen ohne Nachkommastellen. Lagerbestand geht zuerst an die obere Produktzeile: Die Summe bleibt gleich, die Aufteilung auf die Produkte hängt aber von der Reihenfolge ab, worauf ein Hinweis unter der Tabelle aufmerksam macht.
+
+Bei mehreren Produkten entfallen die zusammengefassten Karten Produktionszwischensumme, Produktionskosten inklusive Lieferung und Kosten pro Item; Materialbeschaffung, Lagerverbrauch, BPC/BPO, Installation und Lieferung bleiben als Gesamtwerte.
+
+**Verkaufswahl:** Je Produkt wählt man in Schritt 4 Markt und Szenario in einem Menü. Geschlossen nennt es nur den Verkauf, geöffnet jede Möglichkeit mit ihrem Gewinn. Vorgewählt ist als „Vorschlag“ der höchste endgültige Gewinn, einschließlich eines erfassten Allianzverkaufs; vorläufige Werte sind wählbar, aber nie Vorschlag. Die eigene Wahl bleibt nach einer neuen Berechnung erhalten, solange es das Szenario noch gibt. Schritt 8 zeigt sie nur noch an.
+
+**Allianztabelle:** Unter der Rentabilität steht je Produkt eine Zeile mit Einheiten, Preis je Einheit, Gebühr, Lieferung und **Übernehmen**. Die Einheiten sind mit der produzierten Menge vorausgefüllt und lassen sich mit den Pfeilen des Zählers, den Pfeiltasten oder per Eingabe zwischen 1 und der produzierten Menge ändern; eine größere Zahl wird sofort auf die produzierte Menge begrenzt. Die Gebühr ist mit 2 % als überschreibbare Annahme vorausgefüllt. **Übernehmen** oder die Eingabetaste rechnet die Zeile und wählt für dieses Produkt den Allianzmarkt; ohne Preis bleibt die bisherige Wahl und die Zeile nennt den Grund. Fehler und der Grund einer fehlenden Berechnung stehen an der Zeile.
+
+**Gesamtliste nachkaufen** (Schritt 6): Je Hub ein Multibuy aus fehlenden Items und Lagerverbrauch, jeweils am günstigsten gewählten Hub. Was die Märkte nicht decken, bleibt beim Einkaufsort des Materials, sodass die Listen zusammen genau die Gesamtmenge ergeben. Pläne ohne die neuen Aufteilungsdaten führen den Lagerverbrauch bis zur nächsten Berechnung am Einkaufsort des Materials.
+
+| Ergebnis | Bedingung für den gewählten Verkauf | Folge |
+| --- | --- | --- |
+| Rentabel | Endgültiger Gewinn über 0 | Weiter ist frei |
+| Nicht rentabel | Endgültiger Gewinn von höchstens 0 | Warnung, Entscheidung nötig |
+| Nicht prüfbar | Kein endgültiger Wert: Preis fehlt oder Kosten sind nur vorläufig | Warnung, Entscheidung nötig |
+
+**Trotzdem produzieren** gilt nur für diese Berechnung und die gesehenen Verkäufe und wird nicht gespeichert. In einer Sammelproduktion steht jedes betroffene Produkt mit **Entfernen** in der Warnung, die Entscheidung gilt für alle verbleibenden Produkte zusammen. Entfernen nimmt die Eingabezeile heraus, danach muss neu berechnet werden.
+
+**Vermerken** ist gesperrt, solange der Plan nicht aktuell ist oder ein Produkt weder Wahl noch Vorschlag hat. Beim Vermerken wird ein Vorschlag als Wahl festgehalten. Bereits erfasste Zeilen der Produktionsübersicht bleiben unverändert.
+
+**Gestoppte Berechnung:** Bricht die Berechnung ab, auch schon bei der Blueprint-Auflösung, zeigt der Status „Berechnung gestoppt“ und jeder Schritt nennt den Grund verständlich. Der letzte erfolgreiche Plan bleibt mit dem Hinweis sichtbar, dass seine Zahlen vom alten Stand sind. Unbekannte Produktnamen stehen schon in Schritt 2 als Eingabefehler und sperren Weiter und Berechnen; ohne aktives SDE fallen sie erst bei der Berechnung auf. Eingaben werden nie automatisch korrigiert.
+
+**Blueprint-Runs:** Die Reservierung entsteht vor der Aufteilung auf einzelne Blueprints, und jeder Job rundet seine Eingaben auf. Braucht der fertige Plan dadurch mehr Runs, löst der Planer die Blueprints mit dem echten Bedarf neu auf, höchstens drei Mal. Die Warnung „Not enough Blueprint runs“ bleibt nur, wenn die Runs wirklich fehlen.
+
+**Historische Pläne** zeigen weiter alle Abschnitte ohne Schritte und schreibgeschützt.
 
 Der Button „So rechnet der Planer“ neben dem Titel öffnet ein Info-Panel als
 Overlay mit 80 % der Breite und Höhe des Arbeitsbereichs. Das Schaubild zeigt
@@ -1101,22 +1142,28 @@ Planer-Änderung mitgepflegt (Regel in `AGENTS.md`).
 
 **Planner: Einkaufsorte** (Eigentümerentscheidung 30.10.2026):
 
-- **Auswahl:** Über der Eingabe stehen Main, Home und Coalition Hub zur Wahl,
-  weil nur für sie Transportstrecken konfiguriert sind. Die Wahl bleibt
-  gespeichert; ohne Wahl gilt der Main Hub, und er ist abwählbar. Ohne jeden Ort
-  lässt sich nicht rechnen.
+- **Auswahl:** In Schritt 1 stehen Main, Home und Coalition Hub sowie die in den
+  Markteinstellungen gewählten Vergleichsmärkte zur Wahl. Andere eingetragene
+  Märkte erscheinen nicht. Vergleichsmärkte sind zunächst nicht angehakt und werden
+  nur geladen, wenn sie angehakt sind. Die Wahl bleibt gespeichert; ohne Wahl gilt
+  der Main Hub, und er ist abwählbar. Ohne jeden Ort lässt sich nicht rechnen.
 - **Einkauf:** Je Material füllt der Planner die Menge aus den Sell Orders aller
   gewählten Orte, zuerst die im Stückpreis einschließlich Transportanteil
   günstigste Order. Reicht die Tiefe eines Orts nicht, wird aufgeteilt. Der
   Transportanteil entscheidet nur den Ort; die Einkaufskosten bleiben Marktpreise,
   der Transport läuft je Herkunft über die gesummte Fracht mit Rundung.
-- **Strecken:** Main über Main → Home, Coalition über Coalition → Home. Am Home
-  Hub fällt kein Transport an; liegt eine Anlage woanders, nennt das ein Hinweis.
+- **Strecken:** Main über Main → Home, Coalition über Coalition → Home,
+  Vergleichsmärkte über ihren eigenen Transportweg zum Home Hub (Logistik →
+  **Transport aus Vergleichsmärkten**: Profile Courier oder Jump Freighter Service,
+  ein eigener Jump Freighter ist für Einkäufe nicht berechenbar). Ohne festgelegten
+  Weg nennt Schritt 1 das am Markt. Am Home Hub fällt kein Transport an; liegt eine Anlage woanders, nennt das ein Hinweis.
   Ein Ort ohne Preis der Strecke (auch bei eigenem Jump Freighter) oder mit zu
   großem Item entfällt für dieses Material mit sichtbarer Warnung. Ist nur ein
   Ort gewählt, entfällt er nicht; dann zeigt die Logistik die fehlende Strecke.
 - **Ergebnis:** Einkaufsliste und Multibuy sind je Ort getrennt, die
   Materialzeile nennt die Orte. Gespeicherte ältere Pläne behalten ihren Ort.
+- **Nur Einkauf:** Vergleichsmärkte sind keine Verkaufswege und bewerten keinen
+  Lagerbestand.
 - **Unverändert am Main Hub:** BPC- und BPO-Verträge, Markt-BPOs, Verkaufsszenarien
   und Hub-Chancen. Komprimiertes Erz wird nur am Main Hub gekauft und daher nur
   geprüft, wenn er gewählt ist. Der Materialwert im BPC-Vertragsvergleich und die
@@ -1745,6 +1792,25 @@ immer sichtbar. Die sortierbaren Kennzahlen erklären weiterhin ihre Quelle und
 Formel, insbesondere Gesamtkosten, Bruttoerlös, Verkaufssteuer, Brokergebühr,
 Gewinn, tägliches Gewinnpotenzial, ROI, ISK/h und ISK/m³.
 
+**Charakter je Produkt, Charaktere und Implantate je Standort.** Schritt 3 zeigt vor dem Berechnen eine Tabelle mit einer Zeile je Produkt: Einheiten, Produktionsort und Charakter. Dessen Skills und seine Implantate an diesem Standort bestimmen die Jobdauer; die Charakterwahl ändert die Kosten nicht, ein Wechsel macht den Plan veraltet. Die Wahl wird je Produktname gemerkt und überlebt auch **Planer zurücksetzen**.
+
+Je Standort legt man unter Daten & Einstellungen → Industrieeinstellungen die Charaktere je Tätigkeit fest, und zwar nur für Tätigkeiten, die der Standort kann: **Produzenten** für Fertigung, **Reaktions-Charaktere** und **Charaktere für Kopieren und Forschung**. Ein Tatara nur mit Reaktionen zeigt also nur die Reaktions-Charaktere. Nur die Festgelegten stehen für dort gebaute Produkte zur Wahl, ohne Auswahl stehen alle zur Wahl. Vorausgewählt sind die gemerkte Wahl, sonst der erste für Industrie aktivierte Charakter der Liste, sonst der erste der Liste.
+
+Zwischenprodukte folgen dem Charakter ihres Endprodukts, bei gemeinsamen Bauteilen dem der obersten Zeile. Ist dieser für den Standort und die Tätigkeit des Auftrags nicht festgelegt, gilt der alphabetisch erste dort festgelegte Charakter. Das gilt ebenso für vorgeschaltete Wissenschaftsjobs an ihrem Standort. Schritt 7 nennt den Charakter je Auftrag.
+
+Implantate stellt man in derselben Liste je Charakter, Standort und Tätigkeit ein, je Slot eines: BX bei Produzenten, SC, RR und MY bei Kopieren und Forschung. Die Auswahl erscheint bei festgelegten Charakteren und, solange niemand festgelegt ist, bei allen. Sie sind eine Planungsannahme und werden nicht aus dem aktuellen Klon oder ESI gelesen. Die SDE enthält kein Implantat, das Reaktionen verkürzt, deshalb steht dort nur ein Hinweis. Früher je Charakter gespeicherte Implantate und Produzenten werden beim Laden an die passenden Standorte übernommen. Alle Boni werden multipliziert und zählen die aktiven Skillstufen:
+
+| Tätigkeit | Faktoren je Stufe |
+| --- | --- |
+| Fertigung | Industry 4 %, Advanced Industry 3 %, jeder vom Blueprint verlangte Science-Skill 1 % (Mutagenic Stabilization 2 %), BX-Implantat |
+| Reaktion | Reactions 4 % |
+| Kopieren | Science 5 %, Advanced Industry 3 %, SC-Implantat |
+| TE-Forschung | Research 5 %, Advanced Industry 3 %, RR-Implantat |
+| ME-Forschung | Metallurgy 5 %, Advanced Industry 3 %, MY-Implantat |
+| Invention | Advanced Industry 3 % |
+
+Sind an einem Standort Charaktere festgelegt, laufen seine Aufträge im Zeitplan nur in deren Slots, und auch die Aufteilung in Teilaufträge zählt nur diese Slots. Dadurch kann sich die Aufteilung und mit ihr die Rundung von Material und Kosten ändern. Ohne Festlegung gelten die Slots aller aktivierten Charaktere. Hat keiner der Festgelegten einen passenden Slot, nennt eine Warnung den Standort und die voraussichtliche Dauer bleibt nicht verfügbar. Sind die Skills eines Charakters nicht verfügbar, zählen nur die Implantate und eine Warnung nennt das. Ältere Pläne rechnen bis zur nächsten Berechnung ohne Skills.
+
 **Auftragsdauer und Industrie-Charaktere.** Der Planner weist zwei Zeiten aus:
 Der **Gesamte Auftragszeitaufwand** addiert die Dauer aller Aufträge. Die
 **Voraussichtliche Auftragsdauer** teilt die Aufträge zunächst auf und verteilt
@@ -1845,6 +1911,13 @@ Zeitplan.
 
 Die Warnungsliste des Planners zeigt nur entscheidende Meldungen: blockierende
 Warnungen zuerst, danach Warnungen mit Einfluss auf Ergebnis oder Handlung.
+Warnungen stehen in der App-Sprache; EVE- und Fachbegriffe bleiben englisch. Pläne
+von vor der Umstellung zeigen Warnungen mit Werten bis zur nächsten Berechnung
+englisch. Die Warnung zum unvollständigen Public-Contracts-Index erscheint nur, wenn
+ein gewählter Verkauf ein Vertragsverkauf ist. Die Warnung zu einem Produkt, das nicht
+in einen Kurierauftrag passt, erscheint nur, wenn sein gewählter Verkauf diesen
+manuellen Transport braucht; bei Materialien erscheint sie immer. Der Verkauf ohne
+Warnung ändert sich dadurch nicht, betroffene Werte tragen weiter „~“.
 Reine Informationshinweise (zum Beispiel nicht baubare Fuel Blocks aus der
 Produktionssperrliste, die Makespan-Schätzung aus Slotzahlen oder eigene Blueprints
 mit 0 ISK) werden dort nicht angezeigt; gleichlautende Meldungen mehrerer
@@ -2279,17 +2352,17 @@ Produktionsgraph, Materialbedarf, Dauer, Installation und Ergebnisrechnung.
 Ein eindeutig zurechenbarer BPC-Vertrag übernimmt seine gemeinsamen ME/TE
 ebenfalls automatisch. Reaktionen bleiben ohne ME/TE.
 
-Über den Verkaufsszenarien wählt man im Planner den **Zielmarkt**: Main Hub,
-Home Hub, Coalition Hub oder „Nicht gewählt“.
+Im Planner wählt man den **Zielmarkt** samt Szenario in der Verkaufswahl von
+Schritt 4: Main Hub, Home Hub, Coalition Hub oder Allianzmarkt.
 
 - **Vorschlag:** der Markt des Szenarios mit dem höchsten verfügbaren,
   endgültigen Gewinn unter den neun Karten. Unverfügbare und vorläufige
   Szenarien (ausstehende Transport- oder Vertragsgebühr) werden nie
   vorgeschlagen; bei Gleichstand gilt die Reihenfolge Main, Home, Coalition.
-  **Vorschlag übernehmen** setzt ihn, jede manuelle Wahl hat Vorrang.
+  Er ist vorgewählt, jede manuelle Wahl hat Vorrang.
 - **Vorauswahl durch Übergabe:** **Zum Planner hinzufügen** aus den Hub-Chancen oder der
   Dashboard-Karte setzt den Zielmarkt vor.
-- **Hervorhebung:** Die drei Karten des gewählten Hubs sind umrandet.
+- **Hervorhebung:** Die Karte des gewählten Verkaufs ist umrandet.
 - **Speicherung:**
   - im Entwurf über den Einstellungsschlüssel
     `planner.target-market.draft.v1`;
@@ -2306,27 +2379,25 @@ Home Hub, Coalition Hub oder „Nicht gewählt“.
   nach dem festen Rang Main, Home, Coalition, Allianzmarkt; „Nicht gewählt“
   steht aufsteigend am Ende. Historische Pläne zeigen den gespeicherten Zielmarkt nur lesend.
 
-Als zehnte Karte steht **Allianzmarkt (manuell)** für Verkäufe an die Allianz,
-etwa nach Absprache in Slack.
+Als zehnte Möglichkeit steht **Allianzmarkt (manuell)** für Verkäufe an die Allianz,
+etwa nach Absprache in Slack. Eingegeben wird in der Allianztabelle von Schritt 4;
+die Detailkarte zeigt das Ergebnis und den Angebotstext zum Kopieren.
 
 - **Eingaben:** Stückpreis (Pflicht), abgenommene Menge, Gebühr in Prozent und
   Lieferort (Produktionsort, Main, Home oder Coalition Hub).
-  Die Karte rechnet sofort mit den aktuellen Feldwerten; gültige Eingaben
-  werden kurz nach dem Tippen automatisch übernommen und gespeichert.
-  **Allianzverkauf übernehmen** oder die Eingabetaste übernimmt sofort und
-  meldet ungültige Felder.
+  **Übernehmen** oder die Eingabetaste übernimmt und meldet ungültige Felder.
   - Preis und Menge erhalten beim Tippen Tausenderpunkte der App-Sprache; der
     Preis erlaubt Nachkommastellen mit Dezimalkomma.
-  - Die Menge ist mit der produzierten Stückzahl des Endprodukts vorbelegt
-    („von N“) und lässt sich mit Stepper oder Pfeil hoch/runter im Feld
-    zwischen 1 und der produzierten Menge ändern. Die volle Menge wird als
-    „alles“ gespeichert und folgt damit einer neu berechneten Plan-Menge.
+  - Die Menge ist mit der produzierten Stückzahl vorbelegt („von N“) und lässt sich
+    mit Zähler oder Pfeil hoch/runter im Feld zwischen 1 und der produzierten Menge
+    ändern. Eine größere Eingabe wird sofort begrenzt. Die volle Menge wird als „alles“ gespeichert und
+    folgt damit einer neu berechneten Plan-Menge.
 - **Rechnung:**
   - Erlös = Preis × verkaufte Menge, höchstens die produzierte Menge.
   - Davon geht die Gebühr ab: ein eingetragener Satz hat Vorrang; sonst gilt
     die bestätigte öffentliche Vertragsgebühr des Handelsorts des Lieferhubs
-    (Daten & Einstellungen → Markteinstellungen), die das Feld als Platzhalter
-    zeigt. Am Produktionsort oder ohne bestätigten Satz gilt 0 %, ausdrücklich
+    (Daten & Einstellungen → Markteinstellungen). Das Feld ist mit 2 % vorbelegt,
+    diese Regel greift also nur bei geleertem Feld. Am Produktionsort oder ohne bestätigten Satz gilt 0 %, ausdrücklich
     als manuelle Annahme mit Hinweis.
   - Kosten = Produktionskosten inklusive Lieferung Main Hub → Home Hub, plus
     der vorhandene Ausgangstransport des Lieferhubs aus dem Plan.
@@ -2367,13 +2438,13 @@ Die Karten zeigen den tatsächlichen Plan, die Installation zum Beispiel nur die
 
 Kaufmengen, die kein ausgewählter Markt deckt, bleiben unverfügbar. Der tatsächliche Einkauf folgt weiter den gewählten Einkaufsorten.
 
-**Plan mit mehreren Produkten:** Das Panel **Produkte im Plan** ersetzt Zielmarkt- und Szenariopanel. Einzelne Produkte behalten beide Panels.
+**Plan mit mehreren Produkten:** Das Panel **Produkte im Plan** ersetzt das Szenariopanel und steht zugeklappt in Schritt 4 unter „Alle Verkaufswege im Detail“. Einzelne Produkte behalten dort das Szenariopanel.
 
 - Die sortierbare Tabelle zeigt je Produkt Einheiten, Material, Installation, BPC/BPO, Logistik, Gesamtkosten, Kosten pro Item, Zielmarkt, Erlös, Gewinn und ROI. Eine Summe erscheint nur, wenn alle Werte bekannt sind.
-- Kosten werden nach Verursachung verteilt: Material und Installation nach dem Bedarf des Produkts im Produktionsbaum, Blaupausen beim nutzenden Produkt und Transport nach Volumen. Die Anteile ergeben exakt die Plansumme.
-- Für das gewählte Produkt stehen dort Zielmarkt, Vorschlag, die Szenarien und der Allianzverkauf. Der Entwurf liegt in `planner.product-decisions.draft.v1`, das Ergebnis im Plan-Snapshot (`productEconomics`, `productDecisions`).
+- Kosten werden nach Verursachung verteilt: Material und Installation nach dem Bedarf des Produkts im Produktionsbaum, eingetragene Blueprint-Kosten bei ihrer Zeile, automatisch ermittelte nach der gebauten Menge der Produkte, die dieses Item bauen, und die Lieferung nach der Fracht der Kurierverträge und den Kaufmengen der Produkte. Am Home Hub Gekauftes bekommt also keinen Lieferanteil. Die Anteile ergeben exakt die Plansumme. Gespeicherte Pläne behalten ihre Anteile bis zur nächsten Berechnung.
+- Für das markierte Produkt stehen dort Vorschlag, die Szenarien und der Allianzverkauf. Der Entwurf liegt in `planner.product-decisions.draft.v1`, das Ergebnis im Plan-Snapshot (`productEconomics`, `productDecisions`).
 
-**Produktionsübersicht:** Neue Zeilen übernehmen Kostenanteile und Zielmarkt des Produkts. Bei einem Hub gelten dessen Steuer, Broker, Preis und Ausgangstransport. Beim Allianzmarkt gelten der Allianzpreis, die Allianzgebühr (Steuerspalte, Broker nicht anwendbar) und die Lieferung als Logistik, und der erwartete Erlös gilt nur für die abgenommene Menge. Der Haken „Vollständig verkauft“ setzt die abgenommene Menge, das Feld „Verkauft“ bleibt bis zur produzierten Menge frei editierbar. Allianzmarkt ohne Preis und, bei mehreren Produkten, ein Produkt ohne Zielmarkt zeigen die Kosten, aber keinen Vorschlagspreis und keinen erwarteten Gewinn; ein von Hand eingetragener Preis gilt weiter. Einzelne Produkte ohne Zielmarkt behalten den Main-Hub-Vorschlag. Steht ein manueller Transport oder eine Vertragsgebühr aus, steht vor dem Gewinn „~“ mit einem Hinweis auf das vorläufige Ergebnis. Zeilen aus älteren Snapshots behalten ihre Werte.
+**Produktionsübersicht:** Neue Zeilen übernehmen Kostenanteile, Zielmarkt und Szenario des Produkts. Beim eingestellten Verkauf gelten Steuer, Broker, Preis und Ausgangstransport des Hubs, beim Sofortverkauf Preis und Steuer ohne Broker, beim Vertragshandel Preis und Vertragsgebühr in der Steuerspalte. Eine Wahl ohne Szenario bleibt beim eingestellten Verkauf. Beim Allianzmarkt gelten der Allianzpreis, die Allianzgebühr (Steuerspalte, Broker nicht anwendbar) und die Lieferung als Logistik, und der erwartete Erlös gilt nur für die abgenommene Menge. Der Haken „Vollständig verkauft“ setzt die abgenommene Menge, das Feld „Verkauft“ bleibt bis zur produzierten Menge frei editierbar. Allianzmarkt ohne Preis und, bei mehreren Produkten, ein Produkt ohne Zielmarkt zeigen die Kosten, aber keinen Vorschlagspreis und keinen erwarteten Gewinn; ein von Hand eingetragener Preis gilt weiter. Einzelne Produkte ohne Zielmarkt behalten den Main-Hub-Vorschlag. Steht ein manueller Transport oder eine Vertragsgebühr aus, steht vor dem Gewinn „~“ mit einem Hinweis auf das vorläufige Ergebnis. Zeilen aus älteren Snapshots behalten ihre Werte.
 
 Die Verkaufsstrategien bestehen an Main Hub, Home Hub und Koalitions-Hub jeweils
 aus Sofortverkauf in vorhandene Buy Orders, eingestelltem Verkauf über Sell

@@ -74,6 +74,9 @@ public struct IndustryPlanningContext: Sendable {
   public let blueprintSupplyPlans: [Int64: BlueprintSupplyPlan]
   public let planID: UUID?
   public let characterCapabilities: [CharacterCapabilitySnapshot]
+  /// The characters chosen for production; `nil` calculates durations without
+  /// skills and implants.
+  public let jobCharacters: IndustryJobCharacterAssignment?
   public let jumpFreighterRoute: Sourced<JumpRouteSnapshot>?
   public let jumpFreighterRouteWarnings: [DomainWarning]
   public let capitalJumpRoutes: [Int64: Sourced<CapitalJumpRouteSnapshot>]
@@ -137,7 +140,8 @@ public struct IndustryPlanningContext: Sendable {
     automaticSupply: Bool = false,
     manualSupplyTypeIDs: Set<Int64>? = nil,
     formulaShipments: [PlannerFormulaShipment] = [],
-    stockReferenceProductionCost: Double? = nil
+    stockReferenceProductionCost: Double? = nil,
+    jobCharacters: IndustryJobCharacterAssignment? = nil
   ) {
     self.stockReferenceProductionCost = stockReferenceProductionCost
     self.formulaShipments = formulaShipments
@@ -178,6 +182,7 @@ public struct IndustryPlanningContext: Sendable {
     self.blueprintSupplyPlans = blueprintSupplyPlans
     self.planID = planID
     self.characterCapabilities = characterCapabilities
+    self.jobCharacters = jobCharacters
     self.jumpFreighterRoute = jumpFreighterRoute
     self.jumpFreighterRouteWarnings = jumpFreighterRouteWarnings
     self.capitalJumpRoutes = capitalJumpRoutes
@@ -195,6 +200,37 @@ public enum IndustryPlannerError: Error, Equatable, Sendable {
   case unsupportedInvention(typeID: Int64)
   case complexityLimit
   case invalidProductionEfficiency(typeID: Int64)
+}
+
+extension IndustryPlannerError: LocalizedError {
+  /// Format key shared with the app's translations, with its arguments.
+  public var message: (format: String, arguments: [CVarArg]) {
+    switch self {
+    case .invalidInput(let errors):
+      (
+        "The product input is invalid: %@",
+        [errors.map { "\($0.lineNumber): \($0.message)" }.joined(separator: "; ")]
+      )
+    case .unknownProduct(let line, let name):
+      ("Line %lld: The product “%@” is unknown. Check the spelling.", [Int64(line), name])
+    case .missingBlueprint(let line, let name):
+      ("Line %lld: No Blueprint or reaction is known for “%@”.", [Int64(line), name])
+    case .invalidStock(let line, let value):
+      ("Manual stock, line %lld: “%@” is not valid. Use Item name | Quantity.", [Int64(line), value])
+    case .cycle:
+      ("The production chain of this plan contains a cycle.", [])
+    case .unsupportedInvention(let typeID):
+      ("Type %lld can only be made through invention and cannot be planned directly.", [typeID])
+    case .complexityLimit:
+      ("The production chain of this plan is too large to calculate.", [])
+    case .invalidProductionEfficiency(let typeID):
+      ("The Blueprint efficiency values of type %lld are invalid.", [typeID])
+    }
+  }
+
+  public var errorDescription: String? {
+    String(format: message.format, arguments: message.arguments)
+  }
 }
 
 private struct OreRefiningOptimizationResult {
@@ -690,8 +726,10 @@ public struct IndustryPlanner: Sendable {
     let slotGroups = scheduling.resolvedSlotGroups(
       capabilities: context.characterCapabilities
     ).groups
-    func compatibleSlots(_ activity: IndustrySlotActivity) -> Int {
-      slotGroups.filter { $0.activities.contains(activity) }
+    let owners = Self.ownerProductTypeIDs(of: state.nodes)
+    func compatibleSlots(_ job: JobDefinition) -> Int {
+      let allowed = Self.slotCharacterIDs(job, context: context)
+      return slotGroups.filter { $0.serves(job.slotActivity, allowedCharacterIDs: allowed) }
         .reduce(0) { $0 + $1.count }
     }
     func splits(_ job: JobDefinition) -> Bool {
@@ -704,9 +742,9 @@ public struct IndustryPlanner: Sendable {
         job.blueprintSupplyJobID == nil && splits(job)
         ? scheduling.splitRuns(
           runs: job.runs,
-          durationSeconds: Self.jobDurationSeconds(job, context: context),
+          durationSeconds: Self.jobDurationSeconds(job, context: context, owners: owners),
           activity: job.slotActivity,
-          compatibleSlots: compatibleSlots(job.slotActivity)
+          compatibleSlots: compatibleSlots(job)
         )
         : [job.runs]
       return runs.enumerated().map { index, pieceRuns in
@@ -1002,9 +1040,67 @@ public struct IndustryPlanner: Sendable {
 
   /// Effective job duration: SDE base time × runs × facility time multiplier
   /// × manufacturing TE (reactions have no TE).
-  private static func jobDurationSeconds(
+  /// The end product each built item belongs to; the topmost input line wins for
+  /// items several products share.
+  private static func ownerProductTypeIDs(of nodes: [PlanNode]) -> [Int64: Int64] {
+    var requestIDs: [UUID] = []
+    var nodesByRequest: [UUID: [PlanNode]] = [:]
+    for node in nodes {
+      guard let requestID = node.topLevelRequestID else { continue }
+      if nodesByRequest[requestID] == nil { requestIDs.append(requestID) }
+      nodesByRequest[requestID, default: []].append(node)
+    }
+    var owners: [Int64: Int64] = [:]
+    for requestID in requestIDs {
+      let requestNodes = nodesByRequest[requestID] ?? []
+      let children = Set(requestNodes.flatMap(\.children))
+      guard
+        let root = requestNodes.last(where: {
+          $0.action == .produce && !children.contains($0.id)
+        })
+      else { continue }
+      for node in requestNodes where node.action == .produce && owners[node.typeID] == nil {
+        owners[node.typeID] = root.typeID
+      }
+    }
+    return owners
+  }
+
+  private static func jobStructureID(
     _ job: JobDefinition,
     context: IndustryPlanningContext
+  ) -> UUID? {
+    job.definition.activity.kind == .reaction
+      ? context.productionBasis?.reactionSelection?.structureID
+      : job.facilitySelection?.structureID
+  }
+
+  private static func slotCharacterIDs(
+    _ job: JobDefinition,
+    context: IndustryPlanningContext
+  ) -> Set<Int64>? {
+    context.productionBasis?.slotCharacterIDs(
+      for: job.slotActivity.pool,
+      structureID: jobStructureID(job, context: context)
+    )
+  }
+
+  private static func jobCharacter(
+    _ job: JobDefinition,
+    context: IndustryPlanningContext,
+    owners: [Int64: Int64]
+  ) -> IndustryJobTimeProfile? {
+    context.jobCharacters?.profile(
+      ownerProductTypeID: owners[job.definition.productTypeID],
+      pool: job.slotActivity.pool,
+      structureID: jobStructureID(job, context: context)
+    )
+  }
+
+  private static func jobDurationSeconds(
+    _ job: JobDefinition,
+    context: IndustryPlanningContext,
+    owners: [Int64: Int64]
   ) -> Int64 {
     let timeMultiplier =
       job.definition.activity.kind == .reaction
@@ -1016,7 +1112,12 @@ public struct IndustryPlanner: Sendable {
     let teMultiplier =
       job.definition.activity.kind == .reaction
       ? 1.0 : (1.0 - Double(job.te) / 100.0)
-    let effectiveDuration = runDuration * timeMultiplier * teMultiplier
+    let characterMultiplier =
+      jobCharacter(job, context: context, owners: owners)?.multiplier(
+        for: job.definition.activity.kind,
+        requiredSkillTypeIDs: job.definition.activity.requiredSkillTypeIDs ?? []
+      ) ?? 1
+    let effectiveDuration = runDuration * timeMultiplier * teMultiplier * characterMultiplier
     if effectiveDuration <= 0 { return 0 }
     if !effectiveDuration.isFinite || effectiveDuration >= Double(Int64.max) {
       return Int64.max
@@ -1100,8 +1201,8 @@ public struct IndustryPlanner: Sendable {
       state.warnings.append(
         DomainWarning(
           code: "industry.facility-needs-review",
-          message:
-            "The selected facility for \(manufacturingCategory?.displayName ?? "manufacturing") contains unresolved modifiers.",
+          format: "The selected facility for %@ contains unresolved modifiers.",
+          arguments: [manufacturingCategory?.displayName ?? "manufacturing"],
           severity: .blocking
         )
       )
@@ -1172,8 +1273,8 @@ public struct IndustryPlanner: Sendable {
           state.warnings.append(
             DomainWarning(
               code: "industry.production-unavailable",
-              message:
-                "\(childName) cannot be produced in this plan and remains a purchase.",
+              format: "%@ cannot be produced in this plan and remains a purchase.",
+              arguments: ["\(childName)"],
               severity: .information
             )
           )
@@ -1217,8 +1318,9 @@ public struct IndustryPlanner: Sendable {
         state.warnings.append(
           DomainWarning(
             code: "industry.warehouse-shortfall",
-            message:
-              "Only \(fromStock) of \(required) \(childName) can be supplied by the warehouse; the remainder stays on the shopping list.",
+            format:
+              "Only %@ of %@ %@ can be supplied by the warehouse; the remainder stays on the shopping list.",
+            arguments: ["\(fromStock)", "\(required)", "\(childName)"],
             severity: .information
           )
         )
@@ -1268,8 +1370,9 @@ public struct IndustryPlanner: Sendable {
           state.warnings.append(
             DomainWarning(
               code: "industry.production-blacklist",
-              message:
-                "\(childName) cannot be produced and uses the selected purchase or warehouse source.",
+              format:
+                "%@ cannot be produced and uses the selected purchase or warehouse source.",
+              arguments: ["\(childName)"],
               severity: .information
             )
           )
@@ -1387,8 +1490,8 @@ public struct IndustryPlanner: Sendable {
           warnings.append(
             DomainWarning(
               code: "planner.purchase-location-excluded",
-              message:
-                "\(source.location.name) was not used for \(name ?? "an unresolved item"): \(reason)",
+              format: "%@ was not used for %@: %@",
+              arguments: [source.location.name, name ?? "an unresolved item", reason],
               severity: .warning
             )
           )
@@ -1547,8 +1650,14 @@ public struct IndustryPlanner: Sendable {
       )
       installationCostComplete = false
     }
+    let jobOwners = Self.ownerProductTypeIDs(of: state.nodes)
+    var charactersWithoutSkills: Set<String> = []
     for job in consolidatedJobs {
-      let durationSeconds = Self.jobDurationSeconds(job, context: context)
+      let durationSeconds = Self.jobDurationSeconds(job, context: context, owners: jobOwners)
+      let jobCharacter = Self.jobCharacter(job, context: context, owners: jobOwners)
+      if let jobCharacter, !jobCharacter.hasSkills {
+        charactersWithoutSkills.insert(jobCharacter.characterName)
+      }
       totalSeconds = Self.saturatedAdd(totalSeconds, durationSeconds)
       productionScheduleEntries.append(
         ProductionScheduleEntry(
@@ -1563,7 +1672,8 @@ public struct IndustryPlanner: Sendable {
           blueprintSupplyJobID: job.blueprintSupplyJobID,
           activity: job.definition.activity.kind == .reaction
             ? .reaction : .manufacturing,
-          durationSeconds: durationSeconds
+          durationSeconds: durationSeconds,
+          allowedCharacterIDs: Self.slotCharacterIDs(job, context: context)
         )
       )
       var missingAdjustedPrice = false
@@ -1633,8 +1743,8 @@ public struct IndustryPlanner: Sendable {
         warnings.append(
           DomainWarning(
             code: "industry.missing-system-index",
-            message:
-              "The system cost index for \(activity.rawValue) is unavailable.",
+            format: "The system cost index for %@ is unavailable.",
+            arguments: [activity.rawValue],
             severity: .blocking
           )
         )
@@ -1722,12 +1832,31 @@ public struct IndustryPlanner: Sendable {
           pieceCount: job.pieceCount
         )
       )
+      jobs[jobs.count - 1].characterName = jobCharacter?.characterName
     }
     var scienceSeconds: Int64 = 0
     let concreteScienceJobs = Set(context.blueprintSupplyPlans.values.flatMap(\.scienceJobs))
+    var scienceStructureIDs: [IndustryActivitySystem: UUID] = [:]
+    for activity in IndustryActivitySystem.allCases where activity.isScienceActivity {
+      scienceStructureIDs[activity] =
+        context.productionBasis?.scienceSelection(for: activity)?.structureID
+    }
+    var scienceProfiles: [BlueprintScienceJob: IndustryJobTimeProfile] = [:]
+    for plan in context.blueprintSupplyPlans.values {
+      for job in plan.scienceJobs where scienceProfiles[job] == nil {
+        scienceProfiles[job] = context.jobCharacters?.profile(
+          ownerProductTypeID: jobOwners[plan.productTypeID],
+          pool: .science,
+          structureID: scienceStructureIDs[job.facilityActivity]
+        )
+      }
+    }
+    func scienceProfile(_ job: BlueprintScienceJob) -> IndustryJobTimeProfile? {
+      scienceProfiles[job]
+    }
     for job in concreteScienceJobs {
-      if let duration = job.durationSeconds { scienceSeconds = Self.saturatedAdd(scienceSeconds, duration) }
-      else { warnings.append(DomainWarning(code: "science.duration-unavailable", message: "Die Dauer eines vorgeschalteten Wissenschaftsauftrags ist nicht verfügbar.", severity: .blocking)) }
+      if let duration = job.durationSeconds(profile: scienceProfile(job)) { scienceSeconds = Self.saturatedAdd(scienceSeconds, duration) }
+      else { warnings.append(DomainWarning(code: "science.duration-unavailable", message: "The duration of a preceding science job is unavailable.", severity: .blocking)) }
     }
     if !concreteScienceJobs.isEmpty {
       totalSeconds = Self.saturatedAdd(totalSeconds, scienceSeconds)
@@ -1738,6 +1867,17 @@ public struct IndustryPlanner: Sendable {
       capabilities: context.characterCapabilities
     )
     warnings.append(contentsOf: slotResolution.warnings)
+    for name in charactersWithoutSkills.sorted() {
+      warnings.append(
+        DomainWarning(
+          code: "industry.job-time.skills-unavailable",
+          format:
+            "Skills of %@ are unavailable; job durations are calculated without skill bonuses.",
+          arguments: [name],
+          severity: .warning
+        )
+      )
+    }
     var supplyBlueprintNames: [Int64: String?] = [:]
     for plan in context.blueprintSupplyPlans.values
     where supplyBlueprintNames[plan.blueprintTypeID] == nil {
@@ -1747,7 +1887,14 @@ public struct IndustryPlanner: Sendable {
     let scheduleGraph = Self.scheduleGraph(
       production: productionScheduleEntries,
       supplyPlans: Array(context.blueprintSupplyPlans.values),
-      blueprintNames: supplyBlueprintNames
+      blueprintNames: supplyBlueprintNames,
+      scienceProfile: scienceProfile,
+      scienceCharacterIDs: { job in
+        context.productionBasis?.slotCharacterIDs(
+          for: .science,
+          structureID: scienceStructureIDs[job.facilityActivity]
+        )
+      }
     )
     let scheduledJobs = scheduleGraph.jobs
     let slotSchedule = IndustrySlotScheduler.schedule(
@@ -1755,6 +1902,37 @@ public struct IndustryPlanner: Sendable {
       groups: slotResolution.groups
     )
     let makespan = slotSchedule.makespanSeconds ?? 0
+    var locationsWithoutSlots: Set<String> = []
+    func noteMissingSlots(
+      _ activity: IndustrySlotActivity,
+      structureID: UUID?
+    ) {
+      guard let basis = context.productionBasis,
+        let allowed = basis.slotCharacterIDs(for: activity.pool, structureID: structureID),
+        !slotResolution.groups.contains(where: {
+          $0.serves(activity, allowedCharacterIDs: allowed)
+        }),
+        let name = basis.structure(id: structureID)?.displayName
+      else { return }
+      locationsWithoutSlots.insert(name)
+    }
+    for job in consolidatedJobs {
+      noteMissingSlots(job.slotActivity, structureID: Self.jobStructureID(job, context: context))
+    }
+    for job in concreteScienceJobs {
+      noteMissingSlots(job.slotActivity, structureID: scienceStructureIDs[job.facilityActivity])
+    }
+    for name in locationsWithoutSlots.sorted() {
+      warnings.append(
+        DomainWarning(
+          code: "industry.slots.location-without-slot",
+          format:
+            "None of the characters set for %@ has a usable slot for these jobs; enable one for industry under the slot assignment.",
+          arguments: [name],
+          severity: .warning
+        )
+      )
+    }
     var slotScheduleSummary = IndustrySlotScheduleSummary(
       source: slotResolution.source,
       enabledCharacterCount: slotResolution.enabledCharacterCount,
@@ -1789,8 +1967,9 @@ public struct IndustryPlanner: Sendable {
       warnings.append(
         DomainWarning(
           code: "industry.slots.activity-without-slot",
-          message:
-            "No enabled character may run \(slotSchedule.unschedulableActivities.map(\.rawValue).joined(separator: ", ")) jobs; the estimated job time is unavailable.",
+          format:
+            "No enabled character may run %@ jobs; the estimated job time is unavailable.",
+          arguments: [slotSchedule.unschedulableActivities.map(\.rawValue).joined(separator: ", ")],
           severity: .warning
         )
       )
@@ -1887,6 +2066,12 @@ public struct IndustryPlanner: Sendable {
             )
         )
       material.stockUnitValue = stockUnitValues[typeID]
+      if context.purchaseMarkets != nil, material.fromStock > 0 {
+        material.restockAllocations = purchaseBook.allocations(
+          typeID: typeID,
+          quantity: material.fromStock + material.toBuy
+        )
+      }
       materials.append(material)
     }
     materials.sort {
@@ -2087,8 +2272,11 @@ public struct IndustryPlanner: Sendable {
       warnings.append(
         DomainWarning(
           code: "industry.blueprint-owned-counted-zero",
-          message:
-            "\(ownedWithoutEnteredCostCount) owned Blueprint source\(ownedWithoutEnteredCostCount == 1 ? "" : "s") without an entered cost \(ownedWithoutEnteredCostCount == 1 ? "is" : "are") counted as 0 ISK.",
+          format:
+            ownedWithoutEnteredCostCount == 1
+              ? "%@ owned Blueprint source without an entered cost is counted as 0 ISK."
+              : "%@ owned Blueprint sources without an entered cost are counted as 0 ISK.",
+          arguments: ["\(ownedWithoutEnteredCostCount)"],
           severity: .information
         )
       )
@@ -2097,8 +2285,11 @@ public struct IndustryPlanner: Sendable {
       warnings.append(
         DomainWarning(
           code: "industry.blueprint-cost-not-included",
-          message:
-            "\(requestsWithoutBlueprintCost.count) top-level production \(requestsWithoutBlueprintCost.count == 1 ? "line has" : "lines have") no entered BPC/BPO cost; the total excludes those blueprint costs.",
+          format:
+            requestsWithoutBlueprintCost.count == 1
+              ? "%@ top-level production line has no entered BPC/BPO cost; the total excludes those blueprint costs."
+              : "%@ top-level production lines have no entered BPC/BPO cost; the total excludes those blueprint costs.",
+          arguments: ["\(requestsWithoutBlueprintCost.count)"],
           severity: .information
         )
       )
@@ -2109,8 +2300,11 @@ public struct IndustryPlanner: Sendable {
       warnings.append(
         DomainWarning(
           code: "industry.blueprint-cost-unresolved",
-          message:
-            "\(unresolvedBlueprintTypeIDs.count) produced Blueprint source \(unresolvedBlueprintTypeIDs.count == 1 ? "has" : "have") no attributable acquisition or allocation cost. Total production cost and profit remain unavailable.",
+          format:
+            unresolvedBlueprintTypeIDs.count == 1
+              ? "%@ produced Blueprint source has no attributable acquisition or allocation cost. Total production cost and profit remain unavailable."
+              : "%@ produced Blueprint sources have no attributable acquisition or allocation cost. Total production cost and profit remain unavailable.",
+          arguments: ["\(unresolvedBlueprintTypeIDs.count)"],
           severity: .warning
         )
       )
@@ -2145,8 +2339,9 @@ public struct IndustryPlanner: Sendable {
       warnings.append(
         DomainWarning(
           code: "planner.formula-shipment-value-unavailable",
-          message:
-            "\(shipment.formulaName) has no known ESI price, so its transport is not included in the logistics cost.",
+          format:
+            "%@ has no known ESI price, so its transport is not included in the logistics cost.",
+          arguments: [shipment.formulaName],
           severity: .warning
         )
       )
@@ -2249,8 +2444,9 @@ public struct IndustryPlanner: Sendable {
         [
           DomainWarning(
             code: "logistics.capital-highsec-prohibited",
-            message:
-              "The Main Hub sale is unavailable because the following capital production cannot enter or change ownership in high-security space: \(restrictedCapitalNames.joined(separator: ", ")). Home and Coalition Hub strategies remain independent.",
+            format:
+              "The Main Hub sale is unavailable because the following capital production cannot enter or change ownership in high-security space: %@. Home and Coalition Hub strategies remain independent.",
+            arguments: [restrictedCapitalNames.joined(separator: ", ")],
             severity: .warning
           )
         ]
@@ -2422,7 +2618,7 @@ public struct IndustryPlanner: Sendable {
     }
     let logisticsCost =
       inboundRequiresManualTransfer ? nil : inboundLogistics.cost
-    if purchaseBook.sources.contains(where: { $0.leg == nil }),
+    if purchaseBook.sources.contains(where: { $0.route == nil }),
       materials.contains(where: {
         $0.purchaseAllocations?.contains {
           $0.location.representsSameLocation(as: configuredHomeHub)
@@ -2726,8 +2922,9 @@ public struct IndustryPlanner: Sendable {
         warnings.append(
           DomainWarning(
             code: "refining.compressed-ore-selected",
-            message:
-              "Compressed ore was selected for part of the mineral demand because complete purchase, Reprocessing fee and inbound logistics are cheaper by \(savings.formatted(.currency(code: "ISK"))).",
+            format:
+              "Compressed ore was selected for part of the mineral demand because complete purchase, Reprocessing fee and inbound logistics are cheaper by %@.",
+            arguments: [savings.formatted(.currency(code: "ISK"))],
             severity: .information
           )
         )
@@ -3073,8 +3270,9 @@ public struct IndustryPlanner: Sendable {
       : [
         DomainWarning(
           code: "contracts.reference-quantity-normalized",
-          message:
-            "The lowest comparable public contract offers \(reference.contractQuantity.formatted()) units; its per-unit price is applied to the planned \(quantity.formatted()) units as a benchmark.",
+          format:
+            "The lowest comparable public contract offers %@ units; its per-unit price is applied to the planned %@ units as a benchmark.",
+          arguments: [reference.contractQuantity.formatted(), quantity.formatted()],
           severity: .information
         )
       ]
@@ -3520,7 +3718,7 @@ public struct IndustryPlanner: Sendable {
     }
     if includeInboundMaterials, let purchaseBook,
       !(purchaseBook.sources.count == 1
-        && purchaseBook.sources[0].leg == .mainToHome)
+        && purchaseBook.sources[0].route == .hub(.mainToHome))
     {
       return try await multiOriginInboundBreakdown(
         configuration: configuration,
@@ -3758,19 +3956,19 @@ public struct IndustryPlanner: Sendable {
       )
     }
     // A formula also leaves the Main Hub when no material is bought there.
-    var routes: [(location: ProcurementLocation, leg: HubTransportLeg?)] =
-      purchaseBook.sources.map { ($0.location, $0.leg) }
+    var routes: [(location: ProcurementLocation, route: PlannerPurchaseRoute?)] =
+      purchaseBook.sources.map { ($0.location, $0.route) }
     if !formulaCargo.isEmpty, !routes.contains(where: { $0.location.id == mainHub.id }) {
-      routes.append((mainHub, .mainToHome))
+      routes.append((mainHub, .hub(.mainToHome)))
     }
     var legs: [LogisticsCostLeg] = []
     var displayPricing: LogisticsContractPricing?
     for source in routes {
       guard let cargo = cargoByOrigin[source.location.id], !cargo.isEmpty,
-        let leg = source.leg,
+        let route = source.route,
         !source.location.representsSameLocation(as: homeHub)
       else { continue }
-      switch configuration.legPricing(for: leg) {
+      switch configuration.pricing(for: route) {
       case .contract(let pricing):
         displayPricing = displayPricing ?? pricing
         let result = try await logisticsLegs(
@@ -3956,8 +4154,9 @@ public struct IndustryPlanner: Sendable {
       warnings.append(
         DomainWarning(
           code: "make-or-buy.purchase-not-transportable",
-          message:
-            "Buying at the Main Hub is not possible because the packaged item exceeds the transport limit to \(facility.name); it must be built at the production facility.",
+          format:
+            "Buying at the Main Hub is not possible because the packaged item exceeds the transport limit to %@; it must be built at the production facility.",
+          arguments: [facility.name],
           severity: .warning
         )
       )
@@ -4460,8 +4659,8 @@ public struct IndustryPlanner: Sendable {
       {
         continue
       }
-      guard let leg = share.source.leg,
-        case .contract(let pricing) = configuration.legPricing(for: leg)
+      guard let route = share.source.route,
+        case .contract(let pricing) = configuration.pricing(for: route)
       else { continue }
       charge += try await logisticsLegs(
         kind: .inboundMaterials,
@@ -4721,11 +4920,11 @@ public struct IndustryPlanner: Sendable {
     var total = 0.0
     var warnings: [DomainWarning] = []
     for entry in cargoBySource where !entry.cargo.isEmpty {
-      guard let leg = entry.source.leg else { continue }
+      guard let route = entry.source.route else { continue }
       let result = try await makeOrBuyLogisticsCost(
         configuration: configuration,
         origin: entry.source.location,
-        leg: leg,
+        route: route,
         destinationName: destinationName,
         destinationLocationID: destinationLocationID,
         cargo: entry.cargo,
@@ -4741,7 +4940,7 @@ public struct IndustryPlanner: Sendable {
   private func makeOrBuyLogisticsCost(
     configuration: LogisticsConfiguration?,
     origin: ProcurementLocation,
-    leg: HubTransportLeg = .mainToHome,
+    route: PlannerPurchaseRoute = .hub(.mainToHome),
     destinationName: String,
     destinationLocationID: Int64?,
     cargo: [(typeID: Int64, quantity: Int64, collateral: Double?)],
@@ -4755,7 +4954,7 @@ public struct IndustryPlanner: Sendable {
     guard let configuration,
       configuration.isEnabled,
       configuration.includeInboundMaterials,
-      case .contract(let pricing) = configuration.legPricing(for: leg)
+      case .contract(let pricing) = configuration.pricing(for: route)
     else {
       return (
         nil,
@@ -5254,8 +5453,9 @@ public struct IndustryPlanner: Sendable {
       warnings.append(
         DomainWarning(
           code: "refining.ore-depth-limited",
-          message:
-            "The Main Hub order book could not fill the full ore quantity for \(depthLimitedOreNames.sorted().joined(separator: ", ")). The available ore was used and the remaining minerals are covered by other ore or the direct mineral route.",
+          format:
+            "The Main Hub order book could not fill the full ore quantity for %@. The available ore was used and the remaining minerals are covered by other ore or the direct mineral route.",
+          arguments: [depthLimitedOreNames.sorted().joined(separator: ", ")],
           severity: .information
         )
       )
@@ -5494,7 +5694,9 @@ public struct IndustryPlanner: Sendable {
   static func scheduleGraph(
     production: [ProductionScheduleEntry],
     supplyPlans: [BlueprintSupplyPlan],
-    blueprintNames: [Int64: String?]
+    blueprintNames: [Int64: String?],
+    scienceProfile: (BlueprintScienceJob) -> IndustryJobTimeProfile? = { _ in nil },
+    scienceCharacterIDs: (BlueprintScienceJob) -> Set<Int64>? = { _ in nil }
   ) -> ScheduleGraph {
     var scienceIndices: [BlueprintScienceJob: Int] = [:]
     var scienceJobs: [(job: BlueprintScienceJob, blueprintTypeID: Int64)] = []
@@ -5529,8 +5731,9 @@ public struct IndustryPlanner: Sendable {
       jobs.append(
         IndustryScheduledJob(
           activity: science.job.slotActivity,
-          durationSeconds: science.job.durationSeconds ?? 0,
-          dependencies: Array(scienceDependencies[index] ?? []).sorted()
+          durationSeconds: science.job.durationSeconds(profile: scienceProfile(science.job)) ?? 0,
+          dependencies: Array(scienceDependencies[index] ?? []).sorted(),
+          allowedCharacterIDs: scienceCharacterIDs(science.job)
         )
       )
       pieces.append(
@@ -5592,7 +5795,8 @@ public struct IndustryPlanner: Sendable {
         IndustryScheduledJob(
           activity: entry.activity,
           durationSeconds: entry.durationSeconds,
-          dependencies: dependencies.sorted()
+          dependencies: dependencies.sorted(),
+          allowedCharacterIDs: entry.allowedCharacterIDs
         )
       )
       pieces.append(
@@ -5695,9 +5899,33 @@ struct ProductionScheduleEntry: Sendable {
   let blueprintSupplyJobID: UUID?
   let activity: IndustrySlotActivity
   let durationSeconds: Int64
+  var allowedCharacterIDs: Set<Int64>? = nil
 }
 
 extension BlueprintScienceJob {
+  var facilityActivity: IndustryActivitySystem {
+    switch self {
+    case .copying: .copying
+    case .research(let value):
+      value.activity == .materialEfficiency ? .materialResearch : .timeResearch
+    case .invention: .invention
+    }
+  }
+
+  /// The duration with the skills and implants of the chosen character.
+  func durationSeconds(profile: IndustryJobTimeProfile?) -> Int64? {
+    guard let durationSeconds, let profile else { return durationSeconds }
+    let kind: BlueprintActivityDefinition.Kind =
+      switch self {
+      case .copying: .copying
+      case .research(let value): value.activity == .materialEfficiency ? .materialResearch : .timeResearch
+      case .invention: .invention
+      }
+    let scaled = Double(durationSeconds) * profile.multiplier(for: kind)
+    guard scaled.isFinite, scaled < Double(Int64.max) else { return Int64.max }
+    return max(0, Int64(scaled.rounded(.up)))
+  }
+
   var durationSeconds: Int64? {
     switch self {
     case .copying(let value): value.durationSeconds
@@ -5936,11 +6164,9 @@ private struct BuildState: Sendable {
       warnings.append(
         DomainWarning(
           code: "industry.blueprint-supply-insufficient-runs",
-          message: IndustryWarningText.blueprintRunsShort(
-            blueprintName: blueprintName
-              ?? "an unresolved Blueprint (type ID \(blueprintTypeID))",
-            missingRuns: remaining
-          ),
+          format: IndustryWarningText.blueprintRunsShortFormat(missingRuns: remaining),
+            arguments: [blueprintName
+              ?? "an unresolved Blueprint (type ID \(blueprintTypeID))", "\(remaining)"],
           severity: .blocking
         )
       )

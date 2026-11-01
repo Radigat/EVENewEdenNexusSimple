@@ -1,21 +1,44 @@
 import Foundation
 
-/// One market the Planner may buy from, with the transport leg to the Home Hub.
-/// `leg == nil` means the market is at the Home Hub (owner decision 30.10.2026:
+/// How goods bought at a market reach the Home Hub.
+public enum PlannerPurchaseRoute: Equatable, Sendable {
+  case hub(HubTransportLeg)
+  case market(id: UUID)
+}
+
+extension LogisticsConfiguration {
+  func pricing(for route: PlannerPurchaseRoute) -> LogisticsLegPricing {
+    switch route {
+    case .hub(let leg): legPricing(for: leg)
+    case .market(let id): marketRoutePricing(marketID: id)
+    }
+  }
+}
+
+/// One market the Planner may buy from, with the transport route to the Home Hub.
+/// `route == nil` means the market is at the Home Hub (owner decision 30.10.2026:
 /// no transport, with a visible hint when the facility is elsewhere).
 public struct PlannerPurchaseMarket: Sendable {
   public let location: ProcurementLocation
   public let snapshot: MarketOrderSnapshot
-  public let leg: HubTransportLeg?
+  public let route: PlannerPurchaseRoute?
+
+  public init(
+    location: ProcurementLocation,
+    snapshot: MarketOrderSnapshot,
+    route: PlannerPurchaseRoute?
+  ) {
+    self.location = location
+    self.snapshot = snapshot
+    self.route = route
+  }
 
   public init(
     location: ProcurementLocation,
     snapshot: MarketOrderSnapshot,
     leg: HubTransportLeg?
   ) {
-    self.location = location
-    self.snapshot = snapshot
-    self.leg = leg
+    self.init(location: location, snapshot: snapshot, route: leg.map { .hub($0) })
   }
 }
 
@@ -45,7 +68,7 @@ struct PlannerPurchaseBook: Sendable {
   struct Source: Sendable {
     let location: ProcurementLocation
     let book: PreparedMarketOrderBook
-    let leg: HubTransportLeg?
+    let route: PlannerPurchaseRoute?
     let transport: Transport
   }
 
@@ -73,7 +96,7 @@ struct PlannerPurchaseBook: Sendable {
           Source(
             location: context.defaultPurchaseLocation,
             book: PreparedMarketOrderBook(snapshot: context.market),
-            leg: .mainToHome,
+            route: .hub(.mainToHome),
             transport: .free
           )
         ],
@@ -86,8 +109,8 @@ struct PlannerPurchaseBook: Sendable {
       logistics?.isEnabled == true && logistics?.includeInboundMaterials == true
     let sources = markets.map { market -> Source in
       let transport: Transport
-      if let leg = market.leg, chargesInbound, let logistics {
-        switch logistics.legPricing(for: leg) {
+      if let route = market.route, chargesInbound, let logistics {
+        switch logistics.pricing(for: route) {
         case .contract(let pricing):
           transport = .contract(pricing)
         case .unavailable(let warning):
@@ -108,7 +131,7 @@ struct PlannerPurchaseBook: Sendable {
       return Source(
         location: market.location,
         book: PreparedMarketOrderBook(snapshot: market.snapshot),
-        leg: market.leg,
+        route: market.route,
         transport: transport
       )
     }
@@ -131,7 +154,7 @@ struct PlannerPurchaseBook: Sendable {
       Source(
         location: context.defaultPurchaseLocation,
         book: PreparedMarketOrderBook(snapshot: context.market),
-        leg: .mainToHome,
+        route: .hub(.mainToHome),
         transport: .free
       )
     ]
@@ -143,7 +166,7 @@ struct PlannerPurchaseBook: Sendable {
         Source(
           location: location,
           book: PreparedMarketOrderBook(snapshot: home),
-          leg: nil,
+          route: nil,
           transport: .free
         )
       )
@@ -331,6 +354,78 @@ public struct EVEShoppingListLocationGroup: Identifiable, Sendable {
 }
 
 extension EVEShoppingList {
+  /// Everything to buy to end with the stock the plan started with: the missing
+  /// items plus the used warehouse stock, each at its cheapest location. What the
+  /// markets cannot cover stays at the material's purchase location, so the lists
+  /// always add up to the full quantity.
+  public static func restockGroups(
+    from materials: [MaterialRequirement],
+    refiningPlan: CompressedOreRefiningPlan?,
+    refiningLocation: ProcurementLocation,
+    fallback: ProcurementLocation
+  ) -> [EVEShoppingListLocationGroup] {
+    var grouped: [ProcurementLocation: [Int64: EVEShoppingListItem]] = [:]
+    func add(
+      _ typeID: Int64,
+      _ name: String,
+      _ quantity: Int64,
+      at location: ProcurementLocation
+    ) {
+      guard quantity > 0 else { return }
+      let known = grouped[location]?[typeID]?.quantity ?? 0
+      let (sum, overflow) = known.addingReportingOverflow(quantity)
+      grouped[location, default: [:]][typeID] = EVEShoppingListItem(
+        typeID: typeID,
+        name: name,
+        quantity: overflow ? Int64.max : sum,
+        marketQuote: nil
+      )
+    }
+    let stockTypeIDs = Set(materials.filter { $0.fromStock > 0 }.map(\.typeID))
+    for group in locationGroups(
+      from: materials,
+      refiningPlan: refiningPlan,
+      refiningLocation: refiningLocation,
+      fallback: fallback
+    ) {
+      for item in group.shoppingList.items where !stockTypeIDs.contains(item.typeID) {
+        add(item.typeID, item.name, item.quantity, at: group.location)
+      }
+    }
+    let directQuantities = Dictionary(
+      make(from: materials, refiningPlan: refiningPlan).items.map { ($0.typeID, $0.quantity) },
+      uniquingKeysWith: { current, _ in current }
+    )
+    for material in materials where material.fromStock > 0 {
+      var remaining = material.fromStock + directQuantities[material.typeID, default: 0]
+      let cheapestFirst = (material.restockAllocations ?? []).sorted {
+        $0.total / Double(max(1, $0.quantity))
+          < $1.total / Double(max(1, $1.quantity))
+      }
+      for allocation in cheapestFirst where remaining > 0 {
+        let quantity = min(remaining, allocation.quantity)
+        remaining -= quantity
+        add(material.typeID, material.name, quantity, at: allocation.location)
+      }
+      add(
+        material.typeID,
+        material.name,
+        remaining,
+        at: material.procurement?.purchaseLocation ?? fallback
+      )
+    }
+    return grouped.map { location, itemsByType in
+      let items = itemsByType.values.sorted {
+        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+      }
+      return EVEShoppingListLocationGroup(
+        location: location,
+        shoppingList: EVEShoppingList(items: items),
+        export: EVEMultibuyExport.make(items: items)
+      )
+    }.sorted { $0.location.name < $1.location.name }
+  }
+
   /// Splits the list by where each line is bought. Plans without allocations
   /// keep their saved material location. Ore bought for refining comes from
   /// `refiningLocation`; a mineral partly replaced by ore keeps its cheapest

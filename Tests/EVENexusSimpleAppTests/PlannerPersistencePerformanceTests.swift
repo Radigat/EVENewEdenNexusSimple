@@ -38,6 +38,54 @@ struct PlannerPersistencePerformanceTests {
   }
 
   @Test
+  func resetEmptiesThePlannerAndKeepsSettingsAndHistory() throws {
+    let container = try makeContainer()
+    let context = ModelContext(container)
+    let plan = makePlan()
+    try PlannerPersistenceController.saveActivePlan(
+      plan,
+      encodedSnapshot: PlannerPersistenceController.encodePlanSnapshot(plan),
+      input: "Ark 1 3 2",
+      activePlans: [],
+      in: context
+    )
+    try PlannerPersistenceController.saveDraft(
+      input: "Ark 1 3 2",
+      manualStockInput: "Tritanium | 5",
+      existingDraft: nil,
+      in: context
+    )
+    for key in [
+      AppSettingKey.plannerTargetMarketDraft,
+      AppSettingKey.plannerManualDecisionsDraft,
+      AppSettingKey.plannerAllianceSaleDraft,
+      AppSettingKey.plannerProductDecisionsDraft,
+      AppSettingKey.plannerPurchaseLocationsDraft,
+    ] {
+      try context.upsertAppSetting(key: key, value: "x")
+    }
+    let row = makeOverviewRow(sequenceNumber: 1)
+    context.insert(row)
+    try context.save()
+
+    try PlannerPersistenceController.resetPlanner(
+      activePlans: try context.fetch(FetchDescriptor<StoredPlan>()),
+      existingDraft: try context.fetch(FetchDescriptor<StoredPlannerDraft>()).first,
+      in: context
+    )
+
+    let plans = try context.fetch(FetchDescriptor<StoredPlan>())
+    #expect(plans.count == 1)
+    #expect(plans.allSatisfy { !$0.isActive })
+    let draft = try #require(try context.fetch(FetchDescriptor<StoredPlannerDraft>()).first)
+    #expect(draft.input.isEmpty)
+    #expect(draft.manualStockInput.isEmpty)
+    let settings = try context.fetch(FetchDescriptor<AppSetting>()).map(\.key)
+    #expect(settings == [AppSettingKey.plannerPurchaseLocationsDraft])
+    #expect(try context.fetch(FetchDescriptor<StoredProductionOverviewRow>()).count == 1)
+  }
+
+  @Test
   func latestLegacyFallbackAndRequestedHistoryAreFetchedDirectly() throws {
     let container = try makeContainer()
     let context = ModelContext(container)

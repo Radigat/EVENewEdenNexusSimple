@@ -152,6 +152,55 @@ struct EVEMultibuyExportTests {
     )
   }
 
+  @Test
+  func restockGroupsAddUsedStockToTheMissingItemsAtTheCheapestHub() {
+    let jita = ProcurementLocation.jita
+    let amarr = ProcurementLocation.amarr
+    var both = material(typeID: 1, name: "Both", toBuy: 5, fromStock: 10)
+    both.restockAllocations = [
+      PurchaseLocationAllocation(location: jita, quantity: 9, total: 900),
+      PurchaseLocationAllocation(location: amarr, quantity: 6, total: 300),
+    ]
+    let stockOnly = material(typeID: 2, name: "Stock only", toBuy: 0, fromStock: 4)
+    let buyOnly = material(typeID: 3, name: "Buy only", toBuy: 7)
+    let built = material(typeID: 4, name: "Built", toBuy: 0, toProduce: 8)
+
+    let groups = EVEShoppingList.restockGroups(
+      from: [both, stockOnly, buyOnly, built],
+      refiningPlan: nil,
+      refiningLocation: jita,
+      fallback: jita
+    )
+    func quantity(_ location: ProcurementLocation, _ typeID: Int64) -> Int64? {
+      groups.first { $0.location == location }?
+        .shoppingList.items.first { $0.typeID == typeID }?.quantity
+    }
+    #expect(quantity(amarr, 1) == 6)
+    #expect(quantity(jita, 1) == 9)
+    #expect(quantity(jita, 2) == 4)
+    #expect(quantity(jita, 3) == 7)
+    #expect(quantity(jita, 4) == nil)
+    let total = groups.reduce(Int64(0)) { $0 + $1.shoppingList.totalQuantity }
+    #expect(total == 15 + 4 + 7)
+    #expect(groups.first { $0.location == amarr }?.export.text == "Both 6")
+  }
+
+  @Test
+  func restockGroupsKeepWhatTheMarketsCannotCover() {
+    var short = material(typeID: 1, name: "Short", toBuy: 0, fromStock: 10)
+    short.restockAllocations = [
+      PurchaseLocationAllocation(location: .amarr, quantity: 3, total: 30)
+    ]
+    let groups = EVEShoppingList.restockGroups(
+      from: [short],
+      refiningPlan: nil,
+      refiningLocation: .jita,
+      fallback: .jita
+    )
+    #expect(groups.reduce(Int64(0)) { $0 + $1.shoppingList.totalQuantity } == 10)
+    #expect(groups.first { $0.location == .jita }?.shoppingList.totalQuantity == 7)
+  }
+
   private func quote(
     typeID: Int64,
     quantity: Int64,

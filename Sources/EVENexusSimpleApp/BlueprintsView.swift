@@ -466,7 +466,7 @@ struct BlueprintsView: View {
   private func warningList(_ warnings: [DomainWarning]) -> some View {
     ForEach(warnings) { warning in
       Label(
-        warning.message,
+        warning.localizedUI,
         systemImage:
           warning.severity == .blocking
           ? "exclamationmark.octagon.fill"

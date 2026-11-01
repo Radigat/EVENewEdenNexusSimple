@@ -780,6 +780,10 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
   /// Optional per-character choices keep older production profiles decodable.
   /// A missing entry means that no Reprocessing implant is assumed.
   public var reprocessingImplantsByCharacterID: [Int64: OreRefiningImplant]?
+  /// Who runs each kind of job here. A missing crew allows everyone.
+  public var jobCrews: [IndustrySlotPool: IndustryLocationCrew]?
+  /// Read once: a single producer list saved before the crews; see `crew(for:)`.
+  var productionCharacterIDs: [Int64]?
   public var rigs: [IndustryRigConfiguration]
   public var serviceModules: [IndustryServiceModuleConfiguration]?
   /// Optional storage keeps profiles written before activity assignment modes
@@ -808,7 +812,7 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     case storedFacilityTaxRate = "facilityTaxRate"
     case facilityTaxRateIsEntered
     case reprocessingTaxRate, reprocessingCharacterID
-    case reprocessingImplantsByCharacterID, rigs, serviceModules
+    case reprocessingImplantsByCharacterID, jobCrews, productionCharacterIDs, rigs, serviceModules
     case activityAssignmentMode, manuallyEnabledActivities
     case structureMaterialBonusPercent, structureTimeBonusPercent
     case reprocessingEfficiencyBonusPercent, jobCostMultiplier, source
@@ -885,6 +889,58 @@ public struct ConfiguredIndustryStructure: Identifiable, Codable, Equatable,
     self.rigSize = nil
     self.maximumRigSlots = kind == .npcStation ? 0 : 3
     self.securityStatus = securityStatus
+  }
+
+  /// The kinds of jobs this location can run.
+  public var jobPools: [IndustrySlotPool] {
+    IndustrySlotPool.allCases.filter { pool in
+      switch pool {
+      case .manufacturing: supportsActivity(.manufacturing)
+      case .reaction: isReactionCapable
+      case .science:
+        IndustryActivitySystem.allCases.contains {
+          $0.isScienceActivity && isScienceCapable(for: $0)
+        }
+      }
+    }
+  }
+
+  public func crew(for pool: IndustrySlotPool) -> IndustryLocationCrew {
+    jobCrews?[pool] ?? IndustryLocationCrew()
+  }
+
+  public mutating func setCrewMember(
+    _ isMember: Bool,
+    characterID: Int64,
+    pool: IndustrySlotPool
+  ) {
+    var crew = crew(for: pool)
+    crew.characterIDs.removeAll { $0 == characterID }
+    if isMember { crew.characterIDs.append(characterID) }
+    jobCrews = (jobCrews ?? [:]).merging([pool: crew]) { _, new in new }
+  }
+
+  public mutating func setTimeImplant(
+    _ implant: IndustryTimeImplant?,
+    inSlot slot: Int,
+    characterID: Int64,
+    pool: IndustrySlotPool
+  ) {
+    var crew = crew(for: pool)
+    crew.setTimeImplant(implant, inSlot: slot, for: characterID)
+    jobCrews = (jobCrews ?? [:]).merging([pool: crew]) { _, new in new }
+  }
+
+  /// Moves a producer list saved before the crews to the kind of job it meant.
+  mutating func moveProducersToCrew() {
+    guard let producers = productionCharacterIDs else { return }
+    productionCharacterIDs = nil
+    let pool: IndustrySlotPool =
+      !supportsActivity(.manufacturing) && isReactionCapable ? .reaction : .manufacturing
+    guard jobCrews?[pool] == nil else { return }
+    for characterID in producers {
+      setCrewMember(true, characterID: characterID, pool: pool)
+    }
   }
 
   public func reprocessingImplant(
@@ -1945,8 +2001,9 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
           warnings.append(
             DomainWarning(
               code: "industry.slots.skills-unavailable-manual-limit",
-              message:
-                "Skills of \(assignment.characterName) are unavailable; the configured \(pool.rawValue) slot limit \(limit) is used without skill verification.",
+              format:
+                "Skills of %@ are unavailable; the configured %@ slot limit %@ is used without skill verification.",
+              arguments: [assignment.characterName, pool.rawValue, "\(limit)"],
               severity: .warning
             )
           )
@@ -1955,8 +2012,9 @@ public struct ProductionSchedulingConfiguration: Codable, Equatable, Sendable {
           warnings.append(
             DomainWarning(
               code: "industry.slots.skills-unavailable",
-              message:
-                "Skills of \(assignment.characterName) are unavailable; this character contributes no \(pool.rawValue) slots until skills are synchronized or a slot limit is entered.",
+              format:
+                "Skills of %@ are unavailable; this character contributes no %@ slots until skills are synchronized or a slot limit is entered.",
+              arguments: [assignment.characterName, pool.rawValue],
               severity: .warning
             )
           )
@@ -2026,6 +2084,8 @@ public struct CharacterIndustryAssignment: Codable, Equatable, Identifiable,
   public var manufacturingSlotLimit: Int?
   public var reactionSlotLimit: Int?
   public var scienceSlotLimit: Int?
+  /// Read once: implants saved per character move to the locations on load.
+  var timeImplants: [IndustryTimeImplant]? = nil
 
   public init(
     characterID: Int64,
@@ -2062,6 +2122,275 @@ public struct CharacterIndustryAssignment: Codable, Equatable, Identifiable,
     case .reaction: reactionSlotLimit = value
     case .science: scienceSlotLimit = value
     }
+  }
+}
+
+/// Who runs one kind of job at a location, and the implants planned for them
+/// there. They are an assumption per location, not read from the current clone.
+public struct IndustryLocationCrew: Codable, Equatable, Sendable {
+  /// Empty allows every character.
+  public var characterIDs: [Int64] = []
+  public var timeImplantsByCharacterID: [Int64: [IndustryTimeImplant]] = [:]
+
+  public init() {}
+
+  public func includes(characterID: Int64) -> Bool {
+    characterIDs.isEmpty || characterIDs.contains(characterID)
+  }
+
+  public func timeImplants(for characterID: Int64) -> [IndustryTimeImplant] {
+    timeImplantsByCharacterID[characterID] ?? []
+  }
+
+  public func timeImplant(inSlot slot: Int, for characterID: Int64) -> IndustryTimeImplant? {
+    timeImplants(for: characterID).first { $0.slot == slot }
+  }
+
+  /// A slot holds one implant.
+  public mutating func setTimeImplant(
+    _ implant: IndustryTimeImplant?,
+    inSlot slot: Int,
+    for characterID: Int64
+  ) {
+    var implants = timeImplants(for: characterID).filter { $0.slot != slot }
+    if let implant { implants.append(implant) }
+    timeImplantsByCharacterID[characterID] = implants.isEmpty ? nil : implants
+  }
+}
+
+/// "Beancounter" implants that shorten industry jobs. Each implant slot holds
+/// one implant; bonuses are the SDE values. The SDE has none for reactions.
+public enum IndustryTimeImplant: Int64, Codable, CaseIterable, Identifiable, Sendable {
+  case industryBX801 = 27_170
+  case industryBX802 = 27_167
+  case industryBX804 = 27_171
+  case scienceSC801 = 27_185
+  case scienceSC803 = 27_178
+  case scienceSC805 = 27_184
+  case researchRR601 = 27_180
+  case researchRR603 = 27_177
+  case researchRR605 = 27_179
+  case metallurgyMY701 = 27_182
+  case metallurgyMY703 = 27_176
+  case metallurgyMY705 = 27_181
+
+  public var id: Int64 { rawValue }
+  public var typeID: Int64 { rawValue }
+
+  public var name: String {
+    switch self {
+    case .industryBX801: "Zainou 'Beancounter' Industry BX-801"
+    case .industryBX802: "Zainou 'Beancounter' Industry BX-802"
+    case .industryBX804: "Zainou 'Beancounter' Industry BX-804"
+    case .scienceSC801: "Zainou 'Beancounter' Science SC-801"
+    case .scienceSC803: "Zainou 'Beancounter' Science SC-803"
+    case .scienceSC805: "Zainou 'Beancounter' Science SC-805"
+    case .researchRR601: "Zainou 'Beancounter' Research RR-601"
+    case .researchRR603: "Zainou 'Beancounter' Research RR-603"
+    case .researchRR605: "Zainou 'Beancounter' Research RR-605"
+    case .metallurgyMY701: "Zainou 'Beancounter' Metallurgy MY-701"
+    case .metallurgyMY703: "Zainou 'Beancounter' Metallurgy MY-703"
+    case .metallurgyMY705: "Zainou 'Beancounter' Metallurgy MY-705"
+    }
+  }
+
+  public var slot: Int {
+    switch self {
+    case .researchRR601, .researchRR603, .researchRR605: 6
+    case .metallurgyMY701, .metallurgyMY703, .metallurgyMY705: 7
+    default: 8
+    }
+  }
+
+  public var shortName: String {
+    String(name.split(separator: " ").last ?? "")
+  }
+
+  public var pool: IndustrySlotPool {
+    switch self {
+    case .industryBX801, .industryBX802, .industryBX804: .manufacturing
+    default: .science
+    }
+  }
+
+  /// The implant slots that matter for a kind of job, in slot order.
+  public static func slots(for pool: IndustrySlotPool) -> [Int] {
+    Set(allCases.filter { $0.pool == pool }.map(\.slot)).sorted()
+  }
+
+  public var timeBonusPercent: Double {
+    switch self {
+    case .industryBX801, .scienceSC801, .researchRR601, .metallurgyMY701: 1
+    case .industryBX802: 2
+    case .scienceSC803, .researchRR603, .metallurgyMY703: 3
+    case .industryBX804: 4
+    case .scienceSC805, .researchRR605, .metallurgyMY705: 5
+    }
+  }
+
+  func applies(to kind: BlueprintActivityDefinition.Kind) -> Bool {
+    switch self {
+    case .industryBX801, .industryBX802, .industryBX804: kind == .manufacturing
+    case .scienceSC801, .scienceSC803, .scienceSC805: kind == .copying
+    case .researchRR601, .researchRR603, .researchRR605: kind == .timeResearch
+    case .metallurgyMY701, .metallurgyMY703, .metallurgyMY705: kind == .materialResearch
+    }
+  }
+}
+
+/// The time factors of the character chosen for production. All bonuses multiply,
+/// as the SDE effects do; `active` skill levels count.
+public struct IndustryJobTimeProfile: Equatable, Sendable {
+  static let industry: Int64 = 3_380
+  static let advancedIndustry: Int64 = 3_388
+  static let scienceSkill: Int64 = 3_402
+  static let research: Int64 = 3_403
+  static let metallurgy: Int64 = 3_409
+  /// Science skills a blueprint requires shorten its manufacturing per level
+  /// (`manufactureTimePerLevel` in the SDE).
+  static let manufacturingScienceBonusPercent: [Int64: Double] = [
+    3_395: 1, 3_396: 1, 3_397: 1, 3_398: 1, 3_400: 1, 11_433: 1, 11_441: 1, 11_442: 1,
+    11_443: 1, 11_444: 1, 11_445: 1, 11_446: 1, 11_447: 1, 11_448: 1, 11_449: 1,
+    11_450: 1, 11_451: 1, 11_452: 1, 11_453: 1, 11_454: 1, 11_455: 1, 11_529: 1,
+    52_307: 1, 77_725: 1, 81_050: 1, 81_896: 2,
+  ]
+
+  public let characterID: Int64
+  public let characterName: String
+  /// `false` when the character's skills are unavailable; only implants count then.
+  public let hasSkills: Bool
+  public internal(set) var implants: [IndustryTimeImplant]
+  private let skillLevels: [Int64: Int]
+
+  public init(
+    characterID: Int64,
+    characterName: String,
+    snapshot: CharacterCapabilitySnapshot?,
+    implants: [IndustryTimeImplant]
+  ) {
+    self.characterID = characterID
+    self.characterName = characterName
+    self.implants = implants
+    let skills =
+      snapshot.flatMap { snapshot -> [TrainedSkill]? in
+        guard snapshot.skills.state != .forbidden, snapshot.skills.state != .unavailable
+        else { return nil }
+        return snapshot.skills.value
+      }
+    hasSkills = skills != nil
+    skillLevels = Dictionary(
+      (skills ?? []).map { ($0.skillID, min(5, max(0, $0.activeLevel))) },
+      uniquingKeysWith: { current, _ in current }
+    )
+  }
+
+  private func bonus(_ skill: Int64, percentPerLevel: Double) -> Double {
+    max(0, 1 - percentPerLevel * Double(skillLevels[skill] ?? 0) / 100)
+  }
+
+  /// The factor for a job of this kind. `requiredSkillTypeIDs` are the skills of
+  /// the blueprint activity.
+  public func multiplier(
+    for kind: BlueprintActivityDefinition.Kind,
+    requiredSkillTypeIDs: [Int64] = []
+  ) -> Double {
+    let skills: Double
+    let advancedIndustry = bonus(Self.advancedIndustry, percentPerLevel: 3)
+    switch kind {
+    case .manufacturing:
+      skills = Set(requiredSkillTypeIDs).reduce(
+        bonus(Self.industry, percentPerLevel: 4) * advancedIndustry
+      ) { factor, skill in
+        Self.manufacturingScienceBonusPercent[skill].map {
+          factor * bonus(skill, percentPerLevel: $0)
+        } ?? factor
+      }
+    case .reaction:
+      skills = bonus(IndustrySkillSlotLimits.reactions, percentPerLevel: 4)
+    case .copying:
+      skills = bonus(Self.scienceSkill, percentPerLevel: 5) * advancedIndustry
+    case .timeResearch:
+      skills = bonus(Self.research, percentPerLevel: 5) * advancedIndustry
+    case .materialResearch:
+      skills = bonus(Self.metallurgy, percentPerLevel: 5) * advancedIndustry
+    case .invention:
+      skills = advancedIndustry
+    }
+    return implants.filter { $0.applies(to: kind) }.reduce(skills) {
+      $0 * max(0, 1 - $1.timeBonusPercent / 100)
+    }
+  }
+}
+
+/// Which character runs which job: the end product's character, if the crew of
+/// the job's location includes that character, otherwise the crew's first by
+/// name. The implants are those planned for that character at that location.
+public struct IndustryJobCharacterAssignment: Sendable {
+  public let productCharacterIDs: [Int64: Int64]
+  private let profiles: [Int64: IndustryJobTimeProfile]
+  private let crews: [UUID: [IndustrySlotPool: IndustryLocationCrew]]
+  private let characterIDsByName: [Int64]
+
+  public init(
+    productCharacterIDs: [Int64: Int64],
+    characters: [CharacterIdentity],
+    capabilities: [CharacterCapabilitySnapshot],
+    structures: [ConfiguredIndustryStructure]
+  ) {
+    self.productCharacterIDs = productCharacterIDs
+    profiles = Dictionary(
+      characters.map { character in
+        (
+          character.id,
+          IndustryJobTimeProfile(
+            characterID: character.id,
+            characterName: character.name,
+            snapshot: capabilities.first { $0.character.id == character.id },
+            implants: []
+          )
+        )
+      },
+      uniquingKeysWith: { current, _ in current }
+    )
+    crews = Dictionary(
+      structures.compactMap { structure in structure.jobCrews.map { (structure.id, $0) } },
+      uniquingKeysWith: { current, _ in current }
+    )
+    characterIDsByName = characters.sorted {
+      $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+    }.map(\.id)
+  }
+
+  public func profile(
+    ownerProductTypeID: Int64?,
+    pool: IndustrySlotPool,
+    structureID: UUID?
+  ) -> IndustryJobTimeProfile? {
+    let crew = structureID.flatMap { crews[$0]?[pool] } ?? IndustryLocationCrew()
+    let chosen = ownerProductTypeID.flatMap { productCharacterIDs[$0] }
+    let characterID: Int64?
+    if crew.characterIDs.isEmpty || chosen.map(crew.characterIDs.contains) == true {
+      characterID = chosen
+    } else {
+      characterID = characterIDsByName.first(where: crew.characterIDs.contains)
+    }
+    guard let characterID, var profile = profiles[characterID] else { return nil }
+    profile.implants = crew.timeImplants(for: characterID)
+    return profile
+  }
+}
+
+extension IndustryJobTimeProfile {
+  /// The character shown as chosen: the saved choice while it exists, otherwise
+  /// the first character enabled for industry, otherwise the first character.
+  public static func effectiveCharacterID(
+    saved: Int64?,
+    characterIDs: [Int64],
+    scheduling: ProductionSchedulingConfiguration
+  ) -> Int64? {
+    if let saved, characterIDs.contains(saved) { return saved }
+    return characterIDs.first { scheduling.assignment(for: $0)?.isEnabled == true }
+      ?? characterIDs.first
   }
 }
 
@@ -2135,6 +2464,13 @@ public struct IndustrySlotGroup: Equatable, Sendable {
     self.count = max(0, count)
     self.activities = activities
   }
+
+  /// `allowedCharacterIDs` is the crew of a job's location; `nil` allows everyone.
+  public func serves(_ activity: IndustrySlotActivity, allowedCharacterIDs: Set<Int64>?) -> Bool {
+    guard count > 0, activities.contains(activity) else { return false }
+    guard let allowedCharacterIDs, let characterID else { return true }
+    return allowedCharacterIDs.contains(characterID)
+  }
 }
 
 public struct IndustrySlotResolution: Equatable, Sendable {
@@ -2167,6 +2503,8 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
   public var jumpFreighter: JumpFreighterLogisticsConfiguration
   /// Transport method per directed hub leg; used by the Trade view.
   public var hubTransport: HubTransportConfiguration
+  /// Routes from comparison markets to the Home Hub; used by the Planner.
+  public var marketRoutes: [MarketTransportSetting]? = nil
   public var ruleVersion: String
 
   public init(
@@ -2219,7 +2557,7 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
     case isEnabled, includeInboundMaterials, includeOutboundProducts
     case productionLocationName, marketLocationName, homeTradeHub
     case iskPerCubicMeter, maximumContractVolumeM3, jumpFreighter, hubTransport
-    case ruleVersion
+    case marketRoutes, ruleVersion
   }
 
   public init(from decoder: Decoder) throws {
@@ -2251,6 +2589,10 @@ public struct LogisticsConfiguration: Codable, Equatable, Sendable {
         HubTransportConfiguration.self,
         forKey: .hubTransport
       ) ?? .init()
+    marketRoutes = try container.decodeIfPresent(
+      [MarketTransportSetting].self,
+      forKey: .marketRoutes
+    )
     ruleVersion =
       try container.decodeIfPresent(String.self, forKey: .ruleVersion) ?? Self.ruleVersion
   }
@@ -2951,6 +3293,29 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   public var coalitionTradingLocation: TradingLocationConfiguration? {
     guard let coalitionTradingLocationID else { return nil }
     return tradingLocations.first { $0.id == coalitionTradingLocationID }
+  }
+
+  /// Comparison markets that are not at the place of a hub, by name.
+  public var comparisonPurchaseLocations: [TradingLocationConfiguration] {
+    let hubs = [mainTradingLocation, homeTradingLocation, coalitionTradingLocation]
+      .compactMap { $0?.location }
+    return tradingLocations.filter { market in
+      comparisonTradingLocationIDs.contains(market.id)
+        && !hubs.contains { $0.representsSameLocation(as: market.location) }
+    }.sorted {
+      $0.location.name.localizedCaseInsensitiveCompare($1.location.name) == .orderedAscending
+    }
+  }
+
+  /// What the Planner may buy from: the hubs, then the comparison markets.
+  public var plannerPurchaseLocations: [TradingLocationConfiguration] {
+    var options: [TradingLocationConfiguration] = []
+    for market in [mainTradingLocation, homeTradingLocation, coalitionTradingLocation]
+      .compactMap({ $0 }) + comparisonPurchaseLocations
+    where !options.contains(where: { $0.location.representsSameLocation(as: market.location) }) {
+      options.append(market)
+    }
+    return options
   }
 
   public var marketHubSnapshots: [MarketHubConfigurationSnapshot] {
@@ -3960,6 +4325,7 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
       )
     }
     synchronizeStructuresWithManufacturingSystems()
+    moveCharacterChoicesToLocations()
     refreshAutomaticFacilityAssignments()
   }
 
@@ -4086,6 +4452,42 @@ public struct ProductionBasis: Identifiable, Codable, Equatable, Sendable {
   public func structure(id: UUID?) -> ConfiguredIndustryStructure? {
     guard let id else { return nil }
     return structures.first { $0.id == id }
+  }
+
+  /// The characters whose slots may run these jobs here; `nil` allows everyone.
+  public func slotCharacterIDs(
+    for pool: IndustrySlotPool,
+    structureID: UUID?
+  ) -> Set<Int64>? {
+    guard let crew = structure(id: structureID)?.crew(for: pool),
+      !crew.characterIDs.isEmpty
+    else { return nil }
+    return Set(crew.characterIDs)
+  }
+
+  /// Producer lists and per-character implants saved earlier belong to locations
+  /// now. Implants go to each location where the character may run such jobs.
+  private mutating func moveCharacterChoicesToLocations() {
+    for index in structures.indices { structures[index].moveProducersToCrew() }
+    for assignmentIndex in scheduling.characterAssignments.indices {
+      let characterID = scheduling.characterAssignments[assignmentIndex].characterID
+      guard let implants = scheduling.characterAssignments[assignmentIndex].timeImplants
+      else { continue }
+      scheduling.characterAssignments[assignmentIndex].timeImplants = nil
+      for index in structures.indices {
+        for pool in structures[index].jobPools {
+          let crew = structures[index].crew(for: pool)
+          guard crew.includes(characterID: characterID),
+            crew.timeImplantsByCharacterID[characterID] == nil
+          else { continue }
+          for implant in implants where implant.pool == pool {
+            structures[index].setTimeImplant(
+              implant, inSlot: implant.slot, characterID: characterID, pool: pool
+            )
+          }
+        }
+      }
+    }
   }
 
   public mutating func refreshAutomaticReactionAssignment() {

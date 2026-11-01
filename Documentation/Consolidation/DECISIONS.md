@@ -370,3 +370,87 @@ Entscheidungen des Eigentümers:
 7. Der Haken „Vollständig verkauft“ setzt bei einer Teilabnahme der Allianz die abgenommene Menge; das Feld „Verkauft“ bleibt bis zur produzierten Menge frei.
 
 Im freigegebenen Plan festgelegt: Der Einkauf folgt weiter den gewählten Einkaufsorten, und bereits erfasste Zeilen der Produktionsübersicht bleiben unverändert.
+
+## 31.10.2026: Planer in Schritten, Rentabilität und Sammelproduktion
+
+Entscheidungen des Eigentümers (Skizze und Rückfragen):
+
+1. Der Planer ist in Schritte mit Schrittleiste geteilt, sichtbar ist nur der aktuelle Schritt: Einstellungen, Produkte, Lager, Kosten, Anpassen, Einkauf, Bauaufträge, Verkauf.
+2. Die Rentabilität wird schon im Kostenschritt gegen die Verkaufsszenarien geprüft. Ist ein Plan nicht rentabel, warnt der Planer und der Benutzer entscheidet.
+3. Mehrere verschiedene Produkte laufen als **Sammelproduktion** mit gemeinsamer Rechnung und einer Tabelle je Produkt; unrentable Produkte lassen sich entfernen.
+4. Verkauf auswählen und dann in der Produktionsübersicht vermerken.
+
+Im freigegebenen Plan festgelegt: Rentabel heißt endgültiger Gewinn über 0; ohne endgültigen Wert ist das Ergebnis „nicht prüfbar“ und verlangt ebenfalls eine Entscheidung. Die Entscheidung gilt nur für die jeweilige Berechnung. Lager = Nein rechnet ohne jeden Bestand. Vermerken ist gesperrt, solange der Plan veraltet ist oder ein Zielmarkt fehlt. Historische Pläne behalten die Gesamtansicht. Rechenregeln bleiben unverändert.
+
+Entscheidung des Eigentümers zum manuellen Bestand: Eine manuelle Liste ersetzt das normale Lager, der Produktionsablauf bleibt derselbe wie beim Planen mit Lager. Bisher rechnete die Blueprint-Auflösung trotz Liste mit dem echten Lager; sie nutzt jetzt ebenfalls die Liste. Eigene BPO/BPC bleiben nutzbar, weil die Liste nur Mengen enthält (bestätigt vom Eigentümer). Im Auftrag festgelegt: Mengenziele des Lagers gelten für die Liste nicht.
+
+## 31.10.2026: Verkaufswahl je Produkt im Kostenschritt
+
+Entscheidungen des Eigentümers nach seinem ersten Test des Schrittplaners:
+
+1. Die Tabelle in Schritt 4 zeigt je Produkt eine Zeile mit Kosten und bestem Verkauf; schlechtere Szenarien stehen nur im Auswahlmenü.
+2. Produktionszwischensumme, Produktionskosten inklusive Lieferung und Kosten pro Item gelten bei mehreren Produkten je Produkt. Materialbeschaffung, Lagerverbrauch, BPC/BPO, Installation und Lieferung bleiben Gesamtwerte.
+3. Der beste Verkauf ist als Vorschlag vorgewählt und änderbar.
+4. Die Rentabilitätswarnung hängt am gewählten Verkauf. Das ändert die Regel vom selben Tag, die auf den besten möglichen Verkauf abstellte.
+5. Schritt 8 bleibt Übersicht mit Szenario-Details und derselben, dort ebenfalls änderbaren Wahl.
+6. Eigene Blueprints mit freien Runs müssen genutzt werden; die Warnung zu fehlenden Runs darf nur bei wirklich fehlenden Runs erscheinen.
+
+Da der Eigentümer bei der Frage keine Präferenz angab, festgelegt: Gewählt wird Markt und Szenario, weil sonst der angezeigte Verkauf von dem abweichen könnte, was die Produktionsübersicht vermerkt. Eine Wahl ohne Szenario, also alle bestehenden Pläne und Zeilen, bleibt beim eingestellten Verkauf. „Trotzdem produzieren“ gilt für die Berechnung und die gesehenen Verkäufe samt Gewinn. Eingaben werden nie automatisch korrigiert; ein unbekannter Name wird nur gemeldet.
+
+## 01.11.2026: Schritt 4 entscheidet, Schritt 8 schließt ab
+
+Entscheidungen des Eigentümers nach dem Lauf mit Ark, Nomad und Rhea:
+
+1. Schritt 8 ist nur noch der Abschluss: Zusammenfassung und Erfassen. Das ersetzt Punkt 5 der Entscheidung vom 31.10.2026. Die Details aller Verkaufswege stehen zugeklappt in Schritt 4.
+2. Die Allianzeingabe wird eine Tabelle mit einer Zeile je Produkt, immer für alle Produkte. **Übernehmen** wählt den Allianzmarkt.
+3. Einheiten sind mit der produzierten Menge vorausgefüllt, haben einen Zähler mit Pfeilen und können nicht größer als geplant eingegeben werden. Die Gebühr ist mit 2 % als überschreibbare Annahme vorausgefüllt.
+4. Das Verkaufsmenü nennt geschlossen nur den Verkauf; der Gewinn steht in der Tabelle und im geöffneten Menü.
+5. Warnungen stehen auf Deutsch, Fach- und EVE-Begriffe bleiben englisch. Die Warnungen zum Public-Contracts-Index und zu großen Produkten für Kurieraufträge erscheinen nur, wenn ein gewählter Verkauf betroffen ist.
+6. Schritt 6 bekommt eine Gesamtliste aus fehlenden Items und Lagerverbrauch, ein Multibuy je Hub mit den dort günstigen Items. Die Wiederauffüllliste zieht von Schritt 5 nach Schritt 6.
+
+Vom Eigentümer beauftragte Werteprüfung am gespeicherten Plan, nur lesend: Gesamtsummen stimmen; der EIV entspricht auf den ISK genau der Formel aus SDE und CCP-Adjusted-Prices. Das belegt die Rechnung, nicht die Gleichheit mit dem Marktwert: Die Adjusted Prices der Capital-Komponenten weichen stark vom Markt ab (etwa Faktor 0,03 bis 3,4), daher unterscheiden sich die Jobkosten der drei Schiffe viel stärker als ihr Materialwert. Der Abgleich mit dem EVE-Jobfenster durch den Eigentümer bestätigt die Jobkosten bis auf 0,0343 % (siehe `Documentation/ACCEPTANCE.md`). Korrigiert, ohne Änderung der Plansummen:
+
+- Automatisch ermittelte Blueprint-Kosten trugen eine zufällige `requestID` und fielen deshalb auf den Materialanteil zurück. Sie folgen nun der gebauten Menge. Die dokumentierte Regel „beim nutzenden Produkt“ gilt damit erstmals tatsächlich.
+- Die Lieferung wurde auch auf am Home Hub gekaufte Items verteilt. Sie folgt nun der Fracht der Kurierverträge.
+- Kosten und Mindestpreis der Tabelle enthalten nun den Transport des gewählten Verkaufs.
+
+Von Claude festgelegt, weil eine neutrale Verteilung die Rechenregel ändern würde: Lagerbestand geht weiter zuerst an die obere Produktzeile. Die Summe bleibt gleich, die Aufteilung hängt von der Reihenfolge ab, und Schritt 4 weist darauf hin. Das Allianzfeld des Einzelplans verliert das automatische Übernehmen beim Tippen zugunsten der einen Tabelle.
+
+## 01.11.2026: Jobdauer mit Produktionscharakter und Implantaten
+
+Entscheidungen des Eigentümers: Die Jobdauer berücksichtigt Charakter-Skills und Implantate. Der Charakter wird vor dem Berechnen in Schritt 3 gewählt, die Implantate werden manuell je Charakter eingestellt und nicht aus ESI gelesen.
+
+Die Faktoren stammen aus den SDE-Effekten der Skills und Implantate. Für Ark, Nomad und Rhea ergeben Basiszeit, TE, Anlage, Industry V, Advanced Industry V und die zwei Science-Skills auf V genau die 861.105 Sekunden des EVE-Jobfensters.
+
+Von Claude festgelegt: Ein Charakter gilt für alle Tätigkeiten des Plans, also auch dann, wenn der Zeitplan Slots mehrerer Charaktere nutzt. Eine Zuordnung je Slot wäre genauer, wurde aber nicht gewählt, weil der Eigentümer einen Charakter für die Produktion auswählen will. Vorbelegt ist der erste für Industrie aktivierte Charakter.
+
+## 01.11.2026: Charakter je Produkt und Produzenten je Standort
+
+Entscheidungen des Eigentümers, sie ersetzen den einen Produktionscharakter vom selben Tag:
+
+1. Schritt 3 zeigt eine Tabelle der Produkte mit dem Charakter je Produkt, die Wahl wird gemerkt.
+2. In den Industrieeinstellungen legt man je Struktur die Produzenten fest, ähnlich wie beim Refiner. Nur sie stehen im Plan zur Wahl.
+3. Zwischenprodukte folgen dem Endprodukt, wenn dessen Charakter am jeweiligen Standort produziert, sonst gilt der erste Produzent des Standorts. Bei gemeinsamen Bauteilen zählt die oberste Zeile.
+
+Von Claude festgelegt: Mehrere Zeilen desselben Produkts haben eine Tabellenzeile, weil der Planer sie zu einem Auftrag zusammenfasst. Erster Produzent heißt alphabetisch erster. Ohne Produzenten-Auswahl stehen alle Charaktere zur Wahl. Die gemerkte Wahl bleibt beim Zurücksetzen erhalten. Die Slot-Verteilung im Zeitplan bleibt unverändert.
+
+## 01.11.2026: Charaktere und Implantate je Standort und Tätigkeit
+
+Entscheidungen des Eigentümers, sie ersetzen die Produzentenliste je Struktur, die Implantate je Charakter und die unveränderte Slot-Verteilung vom selben Tag:
+
+1. Implantate gelten je Standort, wie beim Refiner. Die Auswahl bei den Industrie-Charakteren entfällt.
+2. Jeder Standort hat eine eigene Liste je Tätigkeit: Fertigung, Reaktionen sowie Kopieren und Forschung, jeweils nur wenn er das kann.
+3. Bei Reaktionen steht ein Hinweis statt einer Auswahl, weil die SDE kein Implantat enthält, das sie verkürzt (geprüft in SDE-Build 3632936).
+4. Der Zeitplan nutzt nur die Slots der am Standort festgelegten Charaktere. Ohne Festlegung gilt die bisherige Regel.
+
+Von Claude festgelegt: Ein Haken allein schaltet keine Slots frei, die bleiben bei „Für Industrie verwenden“; ein festgelegter, nicht aktivierter Charakter wird in den Einstellungen markiert, und fehlen dem Standort dadurch alle Slots, warnt der Plan. Vorhandene Implantate werden beim Laden an jeden Standort kopiert, an dem der Charakter die passende Tätigkeit ausführen darf, ohne dortige Werte zu überschreiben. Eine alte Produzentenliste gilt für Fertigung, bei einem reinen Reaktionsstandort für Reaktionen. Auch die Aufteilung in Teilaufträge zählt nur die Slots der Festgelegten.
+
+## 01.11.2026: Vergleichsmärkte als Einkaufsorte mit eigenem Transportweg
+
+Entscheidungen des Eigentümers, sie erweitern die Einkaufsorte vom 30.10.2026:
+
+1. Zur Wahl stehen die Hubs und die Vergleichsmärkte, nicht alle eingetragenen Märkte.
+2. Der Transportweg jedes Vergleichsmarkts zum Home Hub wird in den Einstellungen festgelegt und berechnet.
+3. Die Märkte gelten nur für den Einkauf, nicht als Verkaufsweg.
+
+Von Claude festgelegt: Der Weg steht in den Logistik-Einstellungen und bietet Profile Courier oder Jump Freighter Service. Ein eigener Jump Freighter fehlt, weil Einkäufe bisher auch auf Hub-Strecken nicht mit ihm rechnen. Standard ist „Nicht festgelegt“, kein stiller Courier-Preis: Der Markt entfällt dann wie jeder Ort ohne Preis mit sichtbarer Warnung. Schritt 1 zeigt den fehlenden Weg mit Sprung in die Logistik. Ein Vergleichsmarkt am Ort eines Hubs erscheint nicht doppelt.

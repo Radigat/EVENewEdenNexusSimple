@@ -27,19 +27,30 @@ public struct PlannerProductCosts: Identifiable, Codable, Equatable, Sendable {
     guard units > 0 else { return nil }
     return totalCost.map { $0 / Double(units) }
   }
+
+  /// Costs before the delivery from the Main Hub to the Home Hub.
+  public var productionSubtotal: Double? {
+    guard let materialCost, let installationCost, let blueprintCost else { return nil }
+    let total = materialCost + installationCost + blueprintCost
+    return total.isFinite ? total : nil
+  }
 }
 
 /// Sale decision of one end product; `nil` fields were never chosen.
 public struct PlannerProductDecision: Codable, Equatable, Sendable {
   public var targetMarket: PlannerTargetMarket?
   public var allianceSale: PlannerAllianceSaleResult?
+  /// The scenario within a hub; `nil` keeps the listed sale of older decisions.
+  public var saleScenario: PriceScenario?
 
   public init(
     targetMarket: PlannerTargetMarket? = nil,
-    allianceSale: PlannerAllianceSaleResult? = nil
+    allianceSale: PlannerAllianceSaleResult? = nil,
+    saleScenario: PriceScenario? = nil
   ) {
     self.targetMarket = targetMarket
     self.allianceSale = allianceSale
+    self.saleScenario = saleScenario
   }
 }
 
@@ -54,6 +65,7 @@ public struct PlannerProductSaleOutcome: Identifiable, Equatable, Sendable {
   public let profit: Double?
   public let roi: Double?
   public let hasPendingCost: Bool
+  public let feeRate: Double?
 }
 
 public enum PlannerProductEconomics {
@@ -96,31 +108,23 @@ public enum PlannerProductEconomics {
       weights: installationKnown ? installationWeights : materialWeights
     )
 
-    let entries = plan.costBreakdown?.blueprintCosts?.entries ?? []
     let blueprintCosts = shares(
       total: plan.costBreakdown?.blueprintCosts?.acceptedTotal,
-      weights: requests.map { request in
-        entries.filter { $0.requestID == request.id }
-          .reduce(0.0) { $0 + $1.amount }
-      },
+      weights: blueprintWeights(
+        plan: plan,
+        producedNodes: producedNodes,
+        materialWeights: materialWeights
+      ),
       fallbackWeights: materialWeights
     )
 
-    var inboundWeights = Array(repeating: 0.0, count: requests.count)
-    var inboundVolumesKnown = true
-    for (index, request) in requests.enumerated() {
-      for node in plan.nodes
-      where node.topLevelRequestID == request.id && node.action == .buy {
-        guard let volume = volumes[node.typeID], volume >= 0 else {
-          inboundVolumesKnown = false
-          continue
-        }
-        inboundWeights[index] += volume * Double(node.requiredQuantity)
-      }
-    }
     let inboundCosts = shares(
       total: plan.costBreakdown?.effectiveLogisticsCost,
-      weights: inboundVolumesKnown ? inboundWeights : materialWeights,
+      weights: inboundWeights(
+        plan: plan,
+        volumes: volumes,
+        materialWeights: materialWeights
+      ),
       fallbackWeights: materialWeights
     )
 
@@ -150,6 +154,71 @@ public enum PlannerProductEconomics {
         outboundShare: outboundShares[index]
       )
     }
+  }
+
+  /// An entered cost belongs to its production line. An automatic entry has no
+  /// such line and belongs to the products building that item, by built quantity.
+  private static func blueprintWeights(
+    plan: IndustryPlanSnapshot,
+    producedNodes: [PlanNode],
+    materialWeights: [Double]
+  ) -> [Double] {
+    let requests = plan.requests
+    var weights = Array(repeating: 0.0, count: requests.count)
+    for entry in plan.costBreakdown?.blueprintCosts?.entries ?? [] {
+      if let index = requests.firstIndex(where: { $0.id == entry.requestID }) {
+        weights[index] += entry.amount
+        continue
+      }
+      let built = requests.map { request in
+        producedNodes
+          .filter { $0.topLevelRequestID == request.id && $0.name == entry.productName }
+          .reduce(0.0) { $0 + Double($1.requiredQuantity) }
+      }
+      let portions = normalized(built.reduce(0, +) > 0 ? built : materialWeights)
+      for index in requests.indices {
+        weights[index] += entry.amount * portions[index]
+      }
+    }
+    return weights
+  }
+
+  /// The freight of the delivery, split by what each product buys. A plan without
+  /// saved freight falls back to the volume of everything bought.
+  private static func inboundWeights(
+    plan: IndustryPlanSnapshot,
+    volumes: [Int64: Double],
+    materialWeights: [Double]
+  ) -> [Double] {
+    let requests = plan.requests
+    let buyNodes = plan.nodes.filter { $0.action == .buy }
+    let cargo = (plan.costBreakdown?.logistics?.legs ?? [])
+      .filter { $0.kind == .inboundMaterials }
+      .flatMap(\.cargoItems)
+    var weights = Array(repeating: 0.0, count: requests.count)
+    guard cargo.isEmpty else {
+      for line in cargo {
+        let bought = requests.map { request in
+          buyNodes
+            .filter { $0.topLevelRequestID == request.id && $0.typeID == line.typeID }
+            .reduce(0.0) { $0 + Double($1.requiredQuantity) }
+        }
+        let portions = normalized(bought.reduce(0, +) > 0 ? bought : materialWeights)
+        for index in requests.indices {
+          weights[index] += line.volumeM3 * portions[index]
+        }
+      }
+      return weights
+    }
+    for (index, request) in requests.enumerated() {
+      for node in buyNodes where node.topLevelRequestID == request.id {
+        guard let volume = volumes[node.typeID], volume >= 0 else {
+          return materialWeights
+        }
+        weights[index] += volume * Double(node.requiredQuantity)
+      }
+    }
+    return weights
   }
 
   /// All market scenarios of one product. A product keeps its result even when
@@ -190,8 +259,27 @@ public enum PlannerProductEconomics {
         totalCost: cost,
         profit: profit,
         roi: roi,
-        hasPendingCost: result.hasPendingScenarioCost
+        hasPendingCost: result.hasPendingScenarioCost,
+        feeRate: feeRate(of: result)
       )
+    }
+  }
+
+  /// Share of the gross revenue that the sale's market fees take.
+  public static func feeRate(of result: SaleScenarioResult) -> Double? {
+    switch result.scenario {
+    case .immediateSale:
+      return result.salesTaxRate
+    case .listedSale:
+      guard let tax = result.salesTaxRate else { return nil }
+      guard result.brokerFeeIsApplicable ?? true else { return tax }
+      return result.brokerFeeRate.map { tax + $0 }
+    case .contractSale:
+      guard let fee = result.contractFee, let gross = result.grossRevenue, gross > 0
+      else { return nil }
+      return fee / gross
+    case .materialBuy:
+      return nil
     }
   }
 
@@ -231,8 +319,9 @@ public enum PlannerProductEconomics {
       }
       return (net, alliance.profit, alliance.roi)
     }
+    let scenario = plan.productDecisions?[requestID]?.saleScenario ?? .listedSale
     let outcome = outcomes(plan: plan, requestID: requestID).first {
-      $0.market == market && $0.scenario == .listedSale
+      $0.market == market && $0.scenario == scenario
     }
     return outcome.map { ($0.netRevenue, $0.profit, $0.roi) }
   }
@@ -324,5 +413,22 @@ extension IndustryPlanSnapshot {
   public func allianceSale(for requestID: UUID) -> PlannerAllianceSaleResult? {
     productDecisions?[requestID]?.allianceSale
       ?? (requests.count == 1 ? allianceSale : nil)
+  }
+
+  /// Fixes the suggested sale of every product the owner did not decide, so the
+  /// Production Overview records what the Planner shows as selected.
+  public func applyingSuggestedSales() -> IndustryPlanSnapshot {
+    var plan = self
+    for product in PlannerProfitability(plan: self).products where product.isSuggestion {
+      guard let selected = product.selected else { continue }
+      var decision = plan.productDecisions?[product.id] ?? PlannerProductDecision()
+      decision.targetMarket = selected.market
+      decision.saleScenario = selected.scenario
+      var decisions = plan.productDecisions ?? [:]
+      decisions[product.id] = decision
+      plan.productDecisions = decisions
+      if requests.count == 1 { plan.targetMarket = selected.market }
+    }
+    return plan
   }
 }

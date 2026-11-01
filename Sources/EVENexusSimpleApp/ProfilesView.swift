@@ -324,7 +324,7 @@ struct ProfilesView: View {
         .font(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         ForEach(resolution.warnings) { warning in
-          Label(warning.message, systemImage: "exclamationmark.triangle")
+          Label(warning.localizedUI, systemImage: "exclamationmark.triangle")
             .font(.caption)
             .foregroundStyle(DesignTokens.caution)
         }
@@ -1227,6 +1227,10 @@ struct LogisticsSettingsView: View {
           configuration: $logistics.hubTransport,
           jumpFreighter: logistics.jumpFreighter
         )
+        MarketTransportEditor(
+          logistics: $logistics,
+          markets: runtime.productionBasis.comparisonPurchaseLocations
+        )
       }
       .frame(maxWidth: 1_040, alignment: .leading)
       .frame(maxWidth: .infinity, alignment: .top)
@@ -1678,7 +1682,7 @@ private struct HubTransportLegEditor: View {
       case .selfJump:
         selfJumpContent(leg, setting: setting)
       case .jumpFreighterService:
-        serviceContent(setting: setting.service)
+        JumpFreighterServiceRateFields(setting: setting.service)
       }
     }
     .padding(DesignTokens.spacingMD)
@@ -1729,61 +1733,6 @@ private struct HubTransportLegEditor: View {
     .foregroundStyle(DesignTokens.textSecondary)
   }
 
-  @ViewBuilder
-  private func serviceContent(
-    setting: Binding<JumpFreighterServiceRate>
-  ) -> some View {
-    LabeledContent("Volume price") {
-      HStack(spacing: DesignTokens.spacingSM) {
-        TextField(
-          "ISK per m³",
-          value: setting.iskPerCubicMeter,
-          format: .number.locale(AppLocalization.currentLanguage.locale)
-        )
-        .multilineTextAlignment(.trailing)
-        .frame(width: DesignTokens.compactNumberWidth)
-        Text("ISK / m³")
-          .foregroundStyle(DesignTokens.textSecondary)
-      }
-    }
-    LabeledContent("Collateral charge") {
-      HStack(spacing: DesignTokens.spacingSM) {
-        TextField(
-          "Percent",
-          value: percentBinding(setting.collateralRate),
-          format: .number.locale(AppLocalization.currentLanguage.locale)
-        )
-        .multilineTextAlignment(.trailing)
-        .frame(width: DesignTokens.compactNumberWidth)
-        Text(verbatim: "%")
-          .foregroundStyle(DesignTokens.textSecondary)
-      }
-    }
-    LabeledContent("Contract volume limit") {
-      HStack(spacing: DesignTokens.spacingSM) {
-        TextField(
-          "Maximum m³",
-          value: setting.maximumContractVolumeM3,
-          format: .number.locale(AppLocalization.currentLanguage.locale)
-        )
-        .multilineTextAlignment(.trailing)
-        .frame(width: DesignTokens.compactNumberWidth)
-        Text("m³")
-          .foregroundStyle(DesignTokens.textSecondary)
-      }
-    }
-    Text(
-      setting.wrappedValue.isComplete
-        ? "Each contract costs volume × rate plus collateral × percentage, without rounding."
-        : "Enter volume price and collateral percentage of the service; until then this leg stays unavailable."
-    )
-    .font(.caption)
-    .foregroundStyle(
-      setting.wrappedValue.isComplete
-        ? DesignTokens.textSecondary : DesignTokens.caution
-    )
-  }
-
   private func isUsed(_ leg: HubTransportLeg) -> Bool {
     TradeMode.allCases.contains {
       configuration.legs(for: $0.route).contains(leg)
@@ -1804,13 +1753,6 @@ private struct HubTransportLegEditor: View {
     )
   }
 
-  private func percentBinding(_ fraction: Binding<Double?>) -> Binding<Double?> {
-    Binding(
-      get: { fraction.wrappedValue.map { $0 * 100 } },
-      set: { fraction.wrappedValue = $0.map { $0 / 100 } }
-    )
-  }
-
   static func title(_ leg: HubTransportLeg) -> LocalizedStringKey {
     switch leg {
     case .mainToHome: "Main → Home"
@@ -1819,6 +1761,143 @@ private struct HubTransportLegEditor: View {
     case .coalitionToHome: "Coalition → Home"
     case .mainToCoalition: "Main → Coalition (direct)"
     case .coalitionToMain: "Coalition → Main (direct)"
+    }
+  }
+}
+
+private struct JumpFreighterServiceRateFields: View {
+  @Binding var setting: JumpFreighterServiceRate
+
+  var body: some View {
+    LabeledContent("Volume price") {
+      HStack(spacing: DesignTokens.spacingSM) {
+        TextField(
+          "ISK per m³",
+          value: $setting.iskPerCubicMeter,
+          format: .number.locale(AppLocalization.currentLanguage.locale)
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+        Text("ISK / m³")
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    LabeledContent("Collateral charge") {
+      HStack(spacing: DesignTokens.spacingSM) {
+        TextField(
+          "Percent",
+          value: percentBinding($setting.collateralRate),
+          format: .number.locale(AppLocalization.currentLanguage.locale)
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+        Text(verbatim: "%")
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    LabeledContent("Contract volume limit") {
+      HStack(spacing: DesignTokens.spacingSM) {
+        TextField(
+          "Maximum m³",
+          value: $setting.maximumContractVolumeM3,
+          format: .number.locale(AppLocalization.currentLanguage.locale)
+        )
+        .multilineTextAlignment(.trailing)
+        .frame(width: DesignTokens.compactNumberWidth)
+        Text("m³")
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    Text(
+      setting.isComplete
+        ? "Each contract costs volume × rate plus collateral × percentage, without rounding."
+        : "Enter volume price and collateral percentage of the service; until then this leg stays unavailable."
+    )
+    .font(.caption)
+    .foregroundStyle(
+      setting.isComplete
+        ? DesignTokens.textSecondary : DesignTokens.caution
+    )
+  }
+
+  private func percentBinding(_ fraction: Binding<Double?>) -> Binding<Double?> {
+    Binding(
+      get: { fraction.wrappedValue.map { $0 * 100 } },
+      set: { fraction.wrappedValue = $0.map { $0 / 100 } }
+    )
+  }
+}
+
+/// How goods bought at a comparison market reach the Home Hub.
+private struct MarketTransportEditor: View {
+  @Binding var logistics: LogisticsConfiguration
+  let markets: [TradingLocationConfiguration]
+
+  private func routeBinding(_ marketID: UUID) -> Binding<MarketTransportSetting> {
+    Binding(
+      get: { logistics.marketRoute(for: marketID) },
+      set: { logistics.setMarketRoute($0) }
+    )
+  }
+
+  var body: some View {
+    Panel(title: "Transport from comparison markets") {
+      Text(
+        "Set how goods bought at a comparison market reach the Home Hub. The Planner uses this route for its purchases. Without a route the market is left out for each material as long as another location can supply it, and a warning says so."
+      )
+      .font(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      .fixedSize(horizontal: false, vertical: true)
+      if markets.isEmpty {
+        Text("No comparison markets are selected in the market settings.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+      ForEach(markets) { market in
+        routeEditor(market)
+      }
+    }
+  }
+
+  private func routeEditor(_ market: TradingLocationConfiguration) -> some View {
+    let route = routeBinding(market.id)
+    return VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        EVEEntityText(value: market.location.name, font: .headline)
+        Text(verbatim: "→ Home")
+          .font(.headline)
+        Spacer()
+        Picker(
+          AppLocalization.format("Transport route from %@", market.location.name),
+          selection: route.method
+        ) {
+          Text("Not set").tag(HubTransportMethod?.none)
+          Text("Profile courier").tag(HubTransportMethod?.some(.profileCourier))
+          Text("Jump Freighter service").tag(HubTransportMethod?.some(.jumpFreighterService))
+        }
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityIdentifier("settings.market-route.\(market.id)")
+      }
+      switch route.wrappedValue.method {
+      case .profileCourier:
+        Text("Uses the Profile courier rate above in this direction.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      case .jumpFreighterService:
+        JumpFreighterServiceRateFields(setting: route.service)
+      case .selfJump, nil:
+        Text("No route set; this market cannot be priced for purchases.")
+          .font(.caption)
+          .foregroundStyle(DesignTokens.caution)
+      }
+    }
+    .padding(DesignTokens.spacingMD)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+        .stroke(DesignTokens.border)
     }
   }
 }
@@ -2589,6 +2668,16 @@ private struct StructureEditor: View {
           .font(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
+      }
+
+      ForEach(structure.jobPools) { pool in
+        Divider()
+        StructureCrewSection(
+          pool: pool,
+          structure: $structure,
+          capabilities: capabilities,
+          scheduling: runtime.productionBasis.scheduling
+        )
       }
 
       if structure.hasReprocessingService {
@@ -4689,6 +4778,135 @@ private struct SystemFacilityPicker: View {
       notes.append("No selectable station or structure was found in this system.")
     }
     message = notes.isEmpty ? nil : notes.joined(separator: " ")
+  }
+}
+
+/// Who runs one kind of job at a location, with the implants planned for them there.
+private struct StructureCrewSection: View {
+  let pool: IndustrySlotPool
+  @Binding var structure: ConfiguredIndustryStructure
+  let capabilities: [CharacterCapabilitySnapshot]
+  let scheduling: ProductionSchedulingConfiguration
+
+  private var crew: IndustryLocationCrew { structure.crew(for: pool) }
+
+  private var title: LocalizedStringKey {
+    switch pool {
+    case .manufacturing: "Producers"
+    case .reaction: "Reaction characters"
+    case .science: "Copying and research characters"
+    }
+  }
+
+  private var explanation: LocalizedStringKey {
+    switch pool {
+    case .manufacturing:
+      "Only these characters can be chosen in the Planner for products built here, and the schedule uses only their slots. Without a selection everyone can. Implants are a planning assumption for this location and are not read from the current clone."
+    case .reaction:
+      "Only these characters run reactions here, and the schedule uses only their slots. Without a selection everyone can. EVE has no implant that shortens reactions; their duration depends on the Reactions skill and the location."
+    case .science:
+      "Only these characters copy, research and invent here, and the schedule uses only their slots. Without a selection everyone can. Implants are a planning assumption for this location and are not read from the current clone."
+    }
+  }
+
+  private var sortedCapabilities: [CharacterCapabilitySnapshot] {
+    capabilities.sorted {
+      $0.character.name.localizedCaseInsensitiveCompare($1.character.name) == .orderedAscending
+    }
+  }
+
+  private func implantBinding(slot: Int, characterID: Int64) -> Binding<IndustryTimeImplant?> {
+    Binding(
+      get: { crew.timeImplant(inSlot: slot, for: characterID) },
+      set: {
+        structure.setTimeImplant($0, inSlot: slot, characterID: characterID, pool: pool)
+      }
+    )
+  }
+
+  private func implantLabel(_ implant: IndustryTimeImplant) -> String {
+    "\(implant.shortName) · \(implant.timeBonusPercent.formatted(.number.precision(.fractionLength(0)))) %"
+  }
+
+  /// A ticked character without slots would leave the location's jobs unscheduled.
+  private func hasNoSlots(_ characterID: Int64) -> Bool {
+    crew.characterIDs.contains(characterID)
+      && scheduling.characterAssignments.contains(where: \.isEnabled)
+      && scheduling.assignment(for: characterID)?.isEnabled != true
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      Text(title).font(.headline)
+      Text(explanation)
+        .font(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      ForEach(sortedCapabilities) { capability in
+        row(capability.character)
+      }
+      if capabilities.isEmpty {
+        Label(
+          "No connected character skill snapshots are available.",
+          systemImage: "person.crop.circle.badge.questionmark"
+        )
+        .font(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("settings.crew.\(pool.rawValue).\(structure.id)")
+  }
+
+  private func row(_ character: CharacterIdentity) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
+      Toggle(
+        AppLocalization.format("Use %@ for these jobs", character.name),
+        isOn: Binding(
+          get: { crew.characterIDs.contains(character.id) },
+          set: { structure.setCrewMember($0, characterID: character.id, pool: pool) }
+        )
+      )
+      .toggleStyle(.checkbox)
+      .labelsHidden()
+      .accessibilityIdentifier("settings.crew.\(pool.rawValue).\(structure.id).\(character.id)")
+      EVEEntityText(value: character.name)
+        .frame(width: 170, alignment: .leading)
+      if crew.includes(characterID: character.id) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          ForEach(IndustryTimeImplant.slots(for: pool), id: \.self) { slot in
+            implantRow(slot: slot, characterID: character.id)
+          }
+          if hasNoSlots(character.id) {
+            Text("Not enabled for industry, so without slots in the schedule.")
+              .font(.caption)
+              .foregroundStyle(DesignTokens.caution)
+          }
+        }
+      }
+    }
+  }
+
+  private func implantRow(slot: Int, characterID: Int64) -> some View {
+    HStack(spacing: DesignTokens.spacingSM) {
+      Picker(
+        AppLocalization.format("Implant slot %lld", Int64(slot)),
+        selection: implantBinding(slot: slot, characterID: characterID)
+      ) {
+        Text("No implant").tag(IndustryTimeImplant?.none)
+        ForEach(
+          IndustryTimeImplant.allCases.filter { $0.pool == pool && $0.slot == slot }
+        ) { implant in
+          Text(implantLabel(implant)).tag(IndustryTimeImplant?.some(implant))
+        }
+      }
+      .fixedSize()
+      .accessibilityIdentifier("settings.crew-implant.\(pool.rawValue).\(characterID).\(slot)")
+      if let implant = crew.timeImplant(inSlot: slot, for: characterID) {
+        EVEItemText(value: implant.name, typeID: implant.typeID)
+          .font(.caption)
+      }
+    }
   }
 }
 

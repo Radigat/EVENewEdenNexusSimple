@@ -543,6 +543,9 @@ final class RuntimeState {
   var warehouseStockEnabled = true {
     didSet { plannerFeatureState.invalidate() }
   }
+  /// The character chosen per end product name, and every connected character.
+  var plannerProductCharacters: [String: Int64] = [:]
+  var plannerCharacters: [CharacterIdentity] = []
   var industrySystemIndices:
     Sourced<
       [IndustrySystemCostIndexSnapshot]
@@ -1745,8 +1748,9 @@ final class RuntimeState {
             inputWarnings.append(
               DomainWarning(
                 code: "industry.warehouse-source-not-fresh",
-                message:
-                  "Some character assets in the production warehouse are not up to date (\(incompleteStates.map(\.rawValue).sorted().joined(separator: ", "))); stock used from the warehouse may be incomplete.",
+                format:
+                  "Some character assets in the production warehouse are not up to date (%@); stock used from the warehouse may be incomplete.",
+                arguments: [incompleteStates.map(\.rawValue).sorted().joined(separator: ", ")],
                 severity: .warning
               )
             )
@@ -1755,8 +1759,11 @@ final class RuntimeState {
             inputWarnings.append(
               DomainWarning(
                 code: "industry.warehouse-unresolved-locations",
-                message:
-                  "\(warehouse.unresolvedLocationIDs.count) asset location \(warehouse.unresolvedLocationIDs.count == 1 ? "reference" : "references") could not be placed; the items there are not used as warehouse stock.",
+                format:
+                  warehouse.unresolvedLocationIDs.count == 1
+                    ? "%@ asset location reference could not be placed; the items there are not used as warehouse stock."
+                    : "%@ asset location references could not be placed; the items there are not used as warehouse stock.",
+                arguments: ["\(warehouse.unresolvedLocationIDs.count)"],
                 severity: .warning
               )
             )
@@ -1766,8 +1773,9 @@ final class RuntimeState {
             inputWarnings.append(
               DomainWarning(
                 code: "industry.warehouse-structure-names-unavailable",
-                message:
-                  "Structure names unavailable without access (\(nameGaps.map { "\($0.ownerName): \($0.count)" }.joined(separator: ", "))); stock quantities are complete.",
+                format:
+                  "Structure names unavailable without access (%@); stock quantities are complete.",
+                arguments: [nameGaps.map { "\($0.ownerName): \($0.count)" }.joined(separator: ", ")],
                 severity: .information
               )
             )
@@ -1779,8 +1787,11 @@ final class RuntimeState {
             inputWarnings.append(
               DomainWarning(
                 code: "industry.warehouse-target-shortfall",
-                message:
-                  "\(targetsBelowMinimum.count) warehouse target \(targetsBelowMinimum.count == 1 ? "is" : "are") already below the configured minimum and therefore unavailable for allocation.",
+                format:
+                  targetsBelowMinimum.count == 1
+                    ? "%@ warehouse target is already below the configured minimum and therefore unavailable for allocation."
+                    : "%@ warehouse targets are already below the configured minimum and therefore unavailable for allocation.",
+                arguments: ["\(targetsBelowMinimum.count)"],
                 severity: .information
               )
             )
@@ -1832,7 +1843,7 @@ final class RuntimeState {
           func addMarket(
             _ hub: TradingLocationConfiguration?,
             snapshot: MarketOrderSnapshot?,
-            leg: HubTransportLeg
+            route: PlannerPurchaseRoute
           ) {
             guard let hub, purchaseLocationIDs.contains(hub.id),
               !selected.contains(where: {
@@ -1843,8 +1854,8 @@ final class RuntimeState {
               purchaseWarnings.append(
                 DomainWarning(
                   code: "planner.purchase-market-unavailable",
-                  message:
-                    "\(hub.location.name) could not be loaded and is not used for purchases.",
+                  format: "%@ could not be loaded and is not used for purchases.",
+                  arguments: [hub.location.name],
                   severity: .warning
                 )
               )
@@ -1856,18 +1867,63 @@ final class RuntimeState {
               PlannerPurchaseMarket(
                 location: hub.location,
                 snapshot: snapshot,
-                leg: isHome ? nil : leg
+                route: isHome ? nil : route
               )
             )
           }
-          addMarket(configuredMainHub, snapshot: values.0, leg: .mainToHome)
-          addMarket(configuredHomeHub, snapshot: homeMarket, leg: .mainToHome)
+          addMarket(configuredMainHub, snapshot: values.0, route: .hub(.mainToHome))
+          addMarket(configuredHomeHub, snapshot: homeMarket, route: .hub(.mainToHome))
           addMarket(
             configuredCoalitionHub,
             snapshot: coalitionMarket,
-            leg: .coalitionToHome
+            route: .hub(.coalitionToHome)
           )
+          // Comparison markets load only when chosen; they serve purchases alone.
+          let comparisonMarkets = productionBasis.comparisonPurchaseLocations.filter {
+            purchaseLocationIDs.contains($0.id)
+          }
+          let comparisonLoads = await withTaskGroup(
+            of: (UUID, PlannerSecondaryMarketLoad).self
+          ) { group in
+            for market in comparisonMarkets {
+              group.addTask {
+                (
+                  market.id,
+                  await self.plannerSecondaryMarketLoad(
+                    typeIDs: typeIDs,
+                    mainHub: configuredMainHub,
+                    targetHub: market,
+                    authorizations: authorizations,
+                    clientID: clientID
+                  )
+                )
+              }
+            }
+            var loads: [UUID: PlannerSecondaryMarketLoad] = [:]
+            for await (id, load) in group { loads[id] = load }
+            return loads
+          }
+          for market in comparisonMarkets {
+            var snapshot: MarketOrderSnapshot?
+            switch comparisonLoads[market.id] {
+            case .loaded(let loaded): snapshot = loaded
+            case .reuseMain: snapshot = values.0
+            case .cancelled: throw CancellationError()
+            case .notConfigured, .unavailable, nil: break
+            }
+            addMarket(
+              market,
+              snapshot: snapshot,
+              route: .market(id: market.id)
+            )
+          }
           purchaseMarkets = selected
+        }
+        var productCharacterIDs: [Int64: Int64] = [:]
+        for (name, characterID) in plannerProductCharacters {
+          if let typeID = try? await catalog.typeID(named: name) {
+            productCharacterIDs[typeID] = characterID
+          }
         }
         let context = IndustryPlanningContext(
           manufacturingProfile: manufacturingProfile,
@@ -1919,7 +1975,15 @@ final class RuntimeState {
           automaticSupply: automaticSupply,
           manualSupplyTypeIDs: manualSupplyTypeIDs,
           formulaShipments: formulaShipments,
-          stockReferenceProductionCost: stockReferenceProductionCost
+          stockReferenceProductionCost: stockReferenceProductionCost,
+          jobCharacters: plannerCharacters.isEmpty
+            ? nil
+            : IndustryJobCharacterAssignment(
+              productCharacterIDs: productCharacterIDs,
+              characters: plannerCharacters,
+              capabilities: capabilities,
+              structures: productionBasis.structures
+            )
         )
         let calculatedPlan = try await planner.plan(
           preparation: preparation,
@@ -2392,7 +2456,8 @@ final class RuntimeState {
     requiresCompleteBlueprintCostsInSelectedPlan: Bool = true,
     availableStockOverride: [Int64: Int64]? = nil,
     usesExactPlannerPreferences: Bool = false,
-    automaticSupply: Bool = false
+    automaticSupply: Bool = false,
+    minimumBlueprintRuns: [Int64: Int] = [:]
   ) async throws -> ManufacturingProductionTreeSnapshot {
     guard targetQuantity > 0,
       (0...10).contains(materialEfficiency),
@@ -2755,7 +2820,8 @@ final class RuntimeState {
       preferredEfficiencies: productionEfficiencies,
       planID: selectedPlanID,
       existingReservations: existingBlueprintReservations,
-      preferredSources: preferredBlueprintSources
+      preferredSources: preferredBlueprintSources,
+      minimumRuns: minimumBlueprintRuns
     )
     var blueprintCosts: [Int64: IndustryBlueprintCostAllocation] = [:]
     for (blueprintTypeID, action) in blueprintActions {
@@ -4020,6 +4086,50 @@ final class RuntimeState {
         )
       ]
     }
+  }
+
+  /// Product names the active SDE does not know; empty while no catalog can answer,
+  /// so a missing catalog never blocks the input.
+  func unknownPlannerProductNames(_ names: Set<String>) async -> Set<String> {
+    guard (try? await catalog.activeSDEVersion()) != nil else { return [] }
+    var unknown = Set<String>()
+    for name in names {
+      do {
+        if try await catalog.typeID(named: name) == nil { unknown.insert(name) }
+      } catch {
+        return []
+      }
+    }
+    return unknown
+  }
+
+  /// The location that builds each product, as the calculation will choose it.
+  func plannerProductLocations(_ names: Set<String>) async -> [String: PlannerProductLocation] {
+    var locations: [String: PlannerProductLocation] = [:]
+    for name in names {
+      guard let typeID = try? await catalog.typeID(named: name) else { continue }
+      let definition = try? await catalog.productionDefinition(productTypeID: typeID)
+      if definition?.activity.kind == .reaction {
+        locations[name] = productionBasis.reactionSelection.map {
+          PlannerProductLocation(structureID: $0.structureID, pool: .reaction)
+        }
+        continue
+      }
+      let classification = try? await catalog.industryClassification(productTypeID: typeID)
+      locations[name] =
+        productionBasis.selection(for: classification?.manufacturingCategory ?? .module)
+        .map { PlannerProductLocation(structureID: $0.structureID, pool: .manufacturing) }
+    }
+    return locations
+  }
+
+  /// The Planner's manual list as quantities; `nil` after reporting an invalid line.
+  func plannerManualStock(input: String) async -> [Int64: Int64]? {
+    var quantities: [Int64: Int64]?
+    await perform("Calculating production plan") {
+      quantities = try await parseManualStock(input)
+    }
+    return quantities
   }
 
   private func parseManualStock(_ input: String) async throws
@@ -6137,6 +6247,7 @@ final class RuntimeState {
         "The active SDE catalog reference is invalid or incompatible. Existing catalog files were preserved. Restart the app and try the safe SDE reimport again."
       )
     }
+    if let error = error as? IndustryPlannerError { return error.localizedUI }
     return String(describing: error)
   }
 }

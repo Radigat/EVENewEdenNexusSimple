@@ -98,8 +98,8 @@ public enum LogisticsCostCalculator {
         warnings.append(
           DomainWarning(
             code: "logistics.missing-packaged-volume",
-            message:
-              "A packaged SDE volume required for \(kind.displayName.lowercased()) is unavailable.",
+            format: "A packaged SDE volume required for %@ is unavailable.",
+            arguments: [kind.displayName.lowercased()],
             severity: .blocking
           )
         )
@@ -124,8 +124,8 @@ public enum LogisticsCostCalculator {
         warnings.append(
           DomainWarning(
             code: "logistics.missing-collateral",
-            message:
-              "Accurate market collateral for \(kind.displayName.lowercased()) is unavailable.",
+            format: "Accurate market collateral for %@ is unavailable.",
+            arguments: [kind.displayName.lowercased()],
             severity: .blocking
           )
         )
@@ -135,8 +135,8 @@ public enum LogisticsCostCalculator {
         warnings.append(
           DomainWarning(
             code: "logistics.single-item-volume-exceeded",
-            message:
-              "\(item.name ?? "An unresolved item (type ID \(item.typeID))") is too large for a courier contract: \(unitVolume.formatted()) m³ packaged exceeds the configured \(maximumContractVolumeM3.formatted()) m³ contract limit. Transfer it manually.",
+            format: IndustryWarningText.courierItemTooLarge,
+            arguments: [item.name ?? "An unresolved item (type ID \(item.typeID))", unitVolume.formatted(), maximumContractVolumeM3.formatted()],
             severity: .warning
           )
         )
@@ -176,8 +176,9 @@ public enum LogisticsCostCalculator {
         [
           DomainWarning(
             code: "logistics.contract-count-limit",
-            message:
-              "\(kind.displayName) would require more than 100,000 contracts and exceeds the planning safety limit.",
+            format:
+              "%@ would require more than 100,000 contracts and exceeds the planning safety limit.",
+            arguments: [kind.displayName],
             severity: .blocking
           )
         ]
@@ -237,8 +238,9 @@ public enum LogisticsCostCalculator {
               warnings + [
                 DomainWarning(
                   code: "logistics.contract-count-limit",
-                  message:
-                    "\(kind.displayName) requires more than 100,000 contracts and exceeds the planning safety limit.",
+                  format:
+                    "%@ requires more than 100,000 contracts and exceeds the planning safety limit.",
+                  arguments: [kind.displayName],
                   severity: .blocking
                 )
               ]
@@ -287,8 +289,9 @@ public enum LogisticsCostCalculator {
       warnings.append(
         DomainWarning(
           code: "logistics.contracts-split",
-          message:
-            "\(kind.displayName) is automatically split into \(contractCount) contracts to stay within \(maximumContractVolumeM3.formatted()) m³ per contract.",
+          format:
+            "%@ is automatically split into %@ contracts to stay within %@ m³ per contract.",
+          arguments: [kind.displayName, "\(contractCount)", maximumContractVolumeM3.formatted()],
           severity: .information
         )
       )

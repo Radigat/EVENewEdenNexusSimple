@@ -2010,6 +2010,25 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         probability: values[2].flatMap(Double.init)
       )
     }
+    let hasSkillsTable = try !database.rows(
+      """
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'blueprint_skills'
+      LIMIT 1
+      """
+    ).isEmpty
+    let skills: [Int64]? =
+      hasSkillsTable
+      ? try database.rows(
+        """
+        SELECT item_type_id
+        FROM blueprint_skills
+        WHERE blueprint_type_id = \(blueprintID)
+          AND activity = \(sql(activityRaw)) AND resolved = 1
+        ORDER BY sort_order
+        """
+      ).compactMap { values in values.first.flatMap { $0 }.flatMap(Int64.init) }
+      : nil
     let active = try await activeSDEVersion()
     return BlueprintDefinition(
       blueprintTypeID: blueprintID,
@@ -2019,7 +2038,8 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
         kind: kind,
         durationSeconds: duration,
         materials: materials,
-        products: products
+        products: products,
+        requiredSkillTypeIDs: skills
       ),
       source: SourceIdentity(
         provider: "CCP SDE",
@@ -2127,6 +2147,31 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       )
     }
 
+    let hasSkillsTable = try !database.rows(
+      """
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'blueprint_skills'
+      LIMIT 1
+      """
+    ).isEmpty
+    var skillsByBlueprint: [Int64: [Int64]] = [:]
+    if hasSkillsTable {
+      for values in try database.rows(
+        """
+        SELECT blueprint_type_id, item_type_id
+        FROM blueprint_skills
+        WHERE activity = \(activitySQL)
+          AND resolved = 1
+        ORDER BY blueprint_type_id, sort_order
+        """
+      ) {
+        guard values.count == 2,
+          let blueprintTypeID = Int64(values[0] ?? ""),
+          let typeID = Int64(values[1] ?? "")
+        else { continue }
+        skillsByBlueprint[blueprintTypeID, default: []].append(typeID)
+      }
+    }
     var materialsByBlueprint: [Int64: [BlueprintMaterial]] = [:]
     for values in try database.rows(
       """
@@ -2193,7 +2238,9 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
             kind: activity,
             durationSeconds: header.durationSeconds,
             materials: materialsByBlueprint[header.blueprintTypeID] ?? [],
-            products: productsByBlueprint[header.blueprintTypeID] ?? []
+            products: productsByBlueprint[header.blueprintTypeID] ?? [],
+            requiredSkillTypeIDs:
+              hasSkillsTable ? skillsByBlueprint[header.blueprintTypeID] ?? [] : nil
           ),
           source: SourceIdentity(provider: "CCP SDE", version: version)
         )

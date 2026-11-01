@@ -748,6 +748,9 @@ public struct MaterialRequirement: Identifiable, Codable, Sendable {
   /// Where `toBuy` comes from. `nil` for snapshots from before the selectable
   /// purchase locations (30.10.2026) and for single-market plans without a price.
   public let purchaseAllocations: [PurchaseLocationAllocation]?
+  /// Cheapest locations for the whole quantity incl. used stock. `nil` for plans
+  /// without several purchase markets and for plans saved before this field.
+  public var restockAllocations: [PurchaseLocationAllocation]? = nil
   /// Whether the owner fixed this supply by hand. `nil` for plans without
   /// automatic supply decisions.
   public internal(set) var isManualSupply: Bool? = nil
@@ -835,6 +838,9 @@ public struct IndustryJobCost: Identifiable, Codable, Sendable {
   public let blueprintSupplyJobID: UUID?
   public let blueprintSource: BlueprintSourceReference?
   public var durationSeconds: Int64? = nil
+  /// Character whose skills and implants the duration uses; `nil` without one
+  /// and in older snapshots.
+  public var characterName: String? = nil
   /// 1-based piece of a split job and the piece count; `nil` before job
   /// splitting existed or for unsplit jobs of old plans.
   public var piece: Int? = nil
@@ -1605,15 +1611,23 @@ public struct IndustryScheduledJob: Equatable, Sendable {
   public let durationSeconds: Int64
   /// Indices of jobs whose outputs must be finished before this job starts.
   public let dependencies: [Int]
+  /// The crew of the job's location; `nil` allows the slots of everyone.
+  public let allowedCharacterIDs: Set<Int64>?
 
   public init(
     activity: IndustrySlotActivity,
     durationSeconds: Int64,
-    dependencies: [Int] = []
+    dependencies: [Int] = [],
+    allowedCharacterIDs: Set<Int64>? = nil
   ) {
     self.activity = activity
     self.durationSeconds = max(0, durationSeconds)
     self.dependencies = dependencies
+    self.allowedCharacterIDs = allowedCharacterIDs
+  }
+
+  func canRun(in group: IndustrySlotGroup) -> Bool {
+    group.serves(activity, allowedCharacterIDs: allowedCharacterIDs)
   }
 }
 
@@ -1657,20 +1671,16 @@ public enum IndustrySlotScheduler {
         hasDependencyCycle: false
       )
     }
-    let needed = Set(jobs.map(\.activity))
-    let unschedulable = IndustrySlotActivity.allCases.filter { activity in
-      needed.contains(activity)
-        && !groups.contains { $0.count > 0 && $0.activities.contains(activity) }
-    }
+    let unplaceable = Set(
+      jobs.filter { job in !groups.contains(where: job.canRun) }.map(\.activity)
+    )
+    let unschedulable = IndustrySlotActivity.allCases.filter(unplaceable.contains)
     // More slots of one group than compatible jobs cannot shorten the plan.
-    var slotActivities: [Set<IndustrySlotActivity>] = []
+    var slotGroups: [IndustrySlotGroup] = []
     for group in groups where group.count > 0 {
-      let compatibleJobs = jobs.filter { group.activities.contains($0.activity) }
-        .count
+      let compatibleJobs = jobs.filter { $0.canRun(in: group) }.count
       let count = min(group.count, compatibleJobs)
-      slotActivities.append(
-        contentsOf: Array(repeating: group.activities, count: count)
-      )
+      slotGroups.append(contentsOf: Array(repeating: group, count: count))
     }
     var successors = Array(repeating: [Int](), count: jobs.count)
     var remainingDependencies = Array(repeating: 0, count: jobs.count)
@@ -1712,15 +1722,10 @@ public enum IndustrySlotScheduler {
       let tail = successors[index].map { priority[$0] }.max() ?? 0
       priority[index] = saturatedAdd(jobs[index].durationSeconds, tail)
     }
-    var slotFree = Array(repeating: Int64(0), count: slotActivities.count)
-    let slotsByActivity = Dictionary(
-      uniqueKeysWithValues: IndustrySlotActivity.allCases.map { activity in
-        (
-          activity,
-          slotActivities.indices.filter { slotActivities[$0].contains(activity) }
-        )
-      }
-    )
+    var slotFree = Array(repeating: Int64(0), count: slotGroups.count)
+    let slotsByJob = jobs.map { job in
+      slotGroups.indices.filter { job.canRun(in: slotGroups[$0]) }
+    }
     var readyAt = Array(repeating: Int64(0), count: jobs.count)
     var startSeconds = Array(repeating: Int64(0), count: jobs.count)
     var finishSeconds = Array(repeating: Int64(0), count: jobs.count)
@@ -1731,7 +1736,7 @@ public enum IndustrySlotScheduler {
       // the input order; slots are compared by index for determinism.
       var choice: (job: Int, slot: Int, start: Int64)?
       for candidate in ready.sorted() {
-        for slot in slotsByActivity[jobs[candidate].activity] ?? [] {
+        for slot in slotsByJob[candidate] {
           let start = max(readyAt[candidate], slotFree[slot])
           guard let current = choice else {
             choice = (candidate, slot, start)
@@ -2038,6 +2043,19 @@ public enum IndustryWarningText {
     blueprintName: String,
     missingRuns: Int
   ) -> String {
-    "Not enough Blueprint runs for \(blueprintName): \(missingRuns) required \(missingRuns == 1 ? "run is" : "runs are") not covered by your Blueprints."
+    String(
+      format: blueprintRunsShortFormat(missingRuns: missingRuns),
+      blueprintName,
+      "\(missingRuns)"
+    )
   }
+
+  public static func blueprintRunsShortFormat(missingRuns: Int) -> String {
+    missingRuns == 1
+      ? "Not enough Blueprint runs for %@: %@ required run is not covered by your Blueprints."
+      : "Not enough Blueprint runs for %@: %@ required runs are not covered by your Blueprints."
+  }
+
+  public static let courierItemTooLarge =
+    "%@ is too large for a courier contract: %@ m³ packaged exceeds the configured %@ m³ contract limit. Transfer it manually."
 }

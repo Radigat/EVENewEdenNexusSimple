@@ -36,6 +36,8 @@ public struct BlueprintActivityDefinition: Codable, Hashable, Sendable {
   public let durationSeconds: Int64
   public let materials: [BlueprintMaterial]
   public let products: [BlueprintProduct]
+  /// Skills the activity requires; `nil` when the source does not provide them.
+  public var requiredSkillTypeIDs: [Int64]? = nil
 }
 
 public struct BlueprintDefinition: Identifiable, Codable, Hashable, Sendable {
