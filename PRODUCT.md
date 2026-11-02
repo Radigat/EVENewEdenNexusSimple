@@ -2421,7 +2421,11 @@ die Detailkarte zeigt das Ergebnis und den Angebotstext zum Kopieren.
 - **Slack-Text:** Ein Angebotstext („WTS Menge× Item @ Preis …“) ist über die
   gemeinsame Kopierrückmeldung kopierbar. Eine Slack-Anbindung gibt es nicht.
 
-Die neun Marktszenarien und ihre Rechnung sind unverändert.
+Die neun Marktszenarien und ihre Rechnung sind unverändert. Der eingestellte
+Verkauf (eigene Sell-Order) rechnet zum niedrigsten aktiven Sell-Preis ohne
+Preisschritt; Handel, Logbuch-Vorbefüllung und Lagerverkauf liegen dagegen einen
+Preisschritt darunter. Der Unterschied ist gewollt
+([Entscheidung vom 02.11.2026](Documentation/Consolidation/DECISIONS.md)).
 
 ### Lagerbewertung und mehrere Produkte
 
@@ -3432,3 +3436,5 @@ dokumentiert.
   belegter Stand der Invention-Skill-Zuordnung
 - [Security Audit](Documentation/SECURITY_AUDIT_2026-07-30.md) – datierte
   Sicherheits- und Robustheitsprüfung
+- [App-Analyse 02.11.2026](Documentation/ANALYSE_2026-11-02.md) – Stärken,
+  Schwächen und Geschwindigkeit (statische Durchsicht) mit Prompt-Reihe

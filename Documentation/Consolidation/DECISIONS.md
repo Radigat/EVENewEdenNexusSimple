@@ -454,3 +454,11 @@ Entscheidungen des Eigentümers, sie erweitern die Einkaufsorte vom 30.10.2026:
 3. Die Märkte gelten nur für den Einkauf, nicht als Verkaufsweg.
 
 Von Claude festgelegt: Der Weg steht in den Logistik-Einstellungen und bietet Profile Courier oder Jump Freighter Service. Ein eigener Jump Freighter fehlt, weil Einkäufe bisher auch auf Hub-Strecken nicht mit ihm rechnen. Standard ist „Nicht festgelegt“, kein stiller Courier-Preis: Der Markt entfällt dann wie jeder Ort ohne Preis mit sichtbarer Warnung. Schritt 1 zeigt den fehlenden Weg mit Sprung in die Logistik. Ein Vergleichsmarkt am Ort eines Hubs erscheint nicht doppelt.
+
+## 02.11.2026: Eigene Sell-Order – Planer zum besten Sell, Handel einen Preisschritt darunter
+
+Entscheidung des Eigentümers aus der [App-Analyse](../ANALYSE_2026-11-02.md) (P-L4): Der Unterschied bleibt bewusst bestehen.
+
+1. Planer und Hub-Chancen setzen den eingestellten Verkauf (eigene Sell-Order) zum niedrigsten aktiven Sell-Preis ohne Preisschritt an (Planer: `MarketPriceEngine`, Szenario `listedSale`; Hub-Chancen: bester Sell der Chancenrechnung).
+2. Handel, die Vorbefüllung des Handelslogbuchs und der Lagerverkauf-Abgleich setzen die eigene Sell-Order einen gültigen Preisschritt unter den besten Sell (`MarketPriceTick.nextBelow`).
+3. Dasselbe Item am selben Hub kann deshalb im Planer einen etwas höheren Verkaufserlös zeigen als im Handel. Rechenregeln ändern sich durch diese Entscheidung nicht.
