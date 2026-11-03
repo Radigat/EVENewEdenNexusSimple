@@ -432,7 +432,12 @@ final class RuntimeState {
   private(set) var hubScanAvailableAt: Date?
   /// Hub overviews of the stock history for the Trade area (P5), loaded only
   /// while it is shown and released afterwards.
-  private(set) var marketStockOverviews: [OpportunityHubRole: MarketStockHubOverview] = [:]
+  private(set) var marketStockOverviews: [OpportunityHubRole: MarketStockHubOverview] = [:] {
+    didSet { marketStockOverviewsRevision &+= 1 }
+  }
+  /// Changes with every change of `marketStockOverviews`; the Trade rows key
+  /// on it instead of comparing the overviews.
+  private(set) var marketStockOverviewsRevision = 0
   private(set) var dashboardWealthSnapshot: DashboardWealthSnapshot?
   private(set) var dashboardWealthError: String?
   private(set) var dashboardIndustryJobValues: [DashboardIndustryJobValue] = []
@@ -488,15 +493,35 @@ final class RuntimeState {
   private(set) var resolvedLocationRegions: [Int64: Int64] = [:]
   /// Regional ESI market histories of the Trade area by region ID; memory
   /// only, loaded once per region, type and UTC day.
-  private(set) var tradeVolumeHistories: [Int64: MarketVolumeHistorySnapshot] = [:]
-  /// Progress of running history loads by region ID.
-  private(set) var tradeVolumeHistoryProgress: [Int64: TradeVolumeHistoryProgress] = [:]
+  private(set) var tradeVolumeHistories: [Int64: MarketVolumeHistorySnapshot] = [:] {
+    didSet { tradeVolumeHistoriesRevision &+= 1 }
+  }
+  /// Changes with every change of `tradeVolumeHistories`.
+  private(set) var tradeVolumeHistoriesRevision = 0
+  /// Progress of running history loads by region ID. It changes with every
+  /// loaded type; only the small progress view reads it.
+  private(set) var tradeVolumeHistoryProgress: [Int64: TradeVolumeHistoryProgress] = [:] {
+    didSet {
+      let loading = Set(tradeVolumeHistoryProgress.keys)
+      if loading != tradeVolumeHistoryLoadingRegions {
+        tradeVolumeHistoryLoadingRegions = loading
+      }
+    }
+  }
+  /// Regions with a history load in progress: exactly the keys of
+  /// `tradeVolumeHistoryProgress`, but changed only when a load starts or
+  /// ends, so the Trade table does not redraw with every loaded type.
+  private(set) var tradeVolumeHistoryLoadingRegions: Set<Int64> = []
   /// Types waiting for the region's running history load, by region ID.
   private var tradeVolumeHistoryPending: [Int64: Set<Int64>] = [:]
   /// At most one history load per region at a time.
   private var tradeVolumeHistoryTasks: [Int64: Task<Void, Never>] = [:]
   /// Purchase logbook of the Trade area (HANDEL_PLAN P5); opened on first use.
-  private(set) var tradeLogbookEntries: [TradeLogbookEntry] = []
+  private(set) var tradeLogbookEntries: [TradeLogbookEntry] = [] {
+    didSet { tradeLogbookEntriesRevision &+= 1 }
+  }
+  /// Changes with every change of `tradeLogbookEntries`.
+  private(set) var tradeLogbookEntriesRevision = 0
   private(set) var tradeLogbookState: TradeLogbookLoadState =
     .notLoaded
   private(set) var tradeLogbookError: String?

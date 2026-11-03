@@ -577,6 +577,12 @@ Referenzbild des Eigentümers. Die verbindlichen Formeln stehen im
     Positiv grün, negativ rot, unvollständig in Warnfarbe. Der Tooltip
     schlüsselt jeden Zeitraum auf.
   - Die Bestandswerte werden nur geladen, solange der Handel angezeigt wird.
+  - Die Zeilen einer Kachel werden nur neu berechnet, wenn sich einer ihrer
+    Eingänge ändert: Route, Quell- oder Zielseite, Marktstand, Gebühren,
+    Transport, Bestandshistorie, Regionshistorie, Logbuch, Zeitraum oder der
+    UTC-Tag. Die Top-20-Kachel und die Item-Suche verwenden dieselben Zeilen.
+    Während die Regionshistorie lädt, aktualisiert sich nur die
+    Fortschrittszeile; die Tabellen bleiben stehen, bis neue Daten da sind.
   - **Einziger Markt der Region:** Ein Schalter je Handelsort in den
     Markteinstellungen („Einziger Markt der Region“, Standard aus) erklärt,
     dass die Region keinen weiteren Markt hat. Ist er beim Zielhub an, zeigt
@@ -3269,8 +3275,9 @@ mit kurzen, wiederverwendbaren Prompts steht in
     (`planner.tree`) die Dauer jeder Phase, die Zahl der Planberechnungen
     und die ESI-Last;
   - im Handel (`trade.rows`) höchstens alle fünf Sekunden eine Zeile mit
-    Aufrufen, berechneten Zeilen, Gesamt- und Höchstdauer der
-    Zeilenberechnung im Fenster.
+    Aufrufen, neu berechneten Zeilen (`units`), Gesamt- und Höchstdauer der
+    Zeilenberechnung im Fenster, dazu `trade.render` mit der Zahl der
+    Neuaufbauten der Handelsansicht.
 
   Die Messung zählt nur und ändert kein Ergebnis; ein Golden-Master-Test
   belegt das (siehe [App-Analyse](Documentation/ANALYSE_2026-11-02.md)).

@@ -9671,3 +9671,18 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - `swift test`: 779 und 99 Tests grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 779 Tests; `check_planner_guide.py --self-test` bestanden; `git diff --check` fehlerfrei. Logs unter `/private/tmp/eve-a3/logs/`.
 - **Live gemessen (Eigentümer, Xcode-Debug, derselbe Plan, zwei Klicks nach Neustart):** 12,8 s und 5,3 s (A2: 30,8 s und 9,7 s). 5 statt 18 Marktabzüge je Klick, nach dem ersten Laden keine ESI-Anfrage mehr.
 - **Offen:** Eigentümerentscheid zu höherer ESI-Parallelität (A5). Eigentümerabnahme.
+
+## 03.11.2026: A4 – Zeilen-Cache im Handel
+
+- **Auftrag:** Prompt A4 aus [ANALYSE_2026-11-02.md](Documentation/ANALYSE_2026-11-02.md). Geklärt: Tooltip-Werte aller Zeiträume weiter berechnen, aber nur einmal je Datenänderung; Ladefortschritt der Regionshistorie von der Handelsansicht entkoppeln.
+- **Ergebnis:**
+  - Ursache des ständigen Neuzeichnens belegt: Der Historienfortschritt wurde je Typ gesetzt und im Rumpf der ganzen Handelsansicht gelesen.
+  - `TradeVolumeHistoryStatus` als eigene Ansicht; `tradeVolumeHistoryLoadingRegions` ändert sich nur bei Start und Ende des Ladens.
+  - `TradeRowCache` in `TradeView.swift`: eine Zeile je Item und Seitenpaar, neu berechnet nur bei geänderten Eingängen; dafür Revisionszähler für Bestandshistorie, Regionshistorie und Logbuch im `RuntimeState`. Top-20 und Item-Suche nutzen dieselben Zeilen.
+  - Messpunkt `trade.render` neu; `trade.rows` zählt nur neu berechnete Zeilen. Rechenregeln und Anzeige unverändert. Planer-Quellen nicht betroffen.
+  - PRODUCT.md ergänzt; neue Testdatei `TradeRowCacheTests.swift` (nur SwiftPM, wie alle App-Tests).
+- **Prüfung:**
+  - 5 neue Tests; Golden-Master unverändert.
+  - `swift test`: 779 und 104 Tests grün (nach der letzten Änderung erneut gelaufen); `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 779 Tests; `git diff --check` fehlerfrei. Logs unter `/private/tmp/eve-a4/logs/`.
+- **Live gemessen (Eigentümer, Xcode-Debug, Marktgruppe mit 3.232 Items):** Während die Historie lud (145 s), 7 Neuaufbauten und 4 Neuberechnungen; Hauptthread-Anteil der Zeilenberechnung 0,09 % statt 21 % in A1. Ohne Eingabe 144 s ganz ohne Neuaufbau. Ein Wechsel von Zeitraum oder Seite kostet eine Neuberechnung von 37–74 ms.
+- **Offen:** Eigentümerabnahme der unveränderten Anzeige (Fortschrittszeile, Tooltips, Tabellen). Eigentümerentscheid zu höherer ESI-Parallelität (A5).

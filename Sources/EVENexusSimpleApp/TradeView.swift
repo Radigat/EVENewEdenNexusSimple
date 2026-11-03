@@ -153,6 +153,8 @@ struct TradeView: View {
   /// The Top-20 tile's own sort; `nil` follows the metric, descending
   /// (owner decision 5, HANDEL_PLAN.md section J).
   @State private var topSort: AppTableSortDescriptor<TradeSortColumn>?
+  /// Not observed: filling it while drawing changes nothing on screen.
+  @State private var rowCache = TradeRowCache()
 
   private var option: TradeModeOption {
     TradeModeOption(rawValue: modeRawValue) ?? .importHome
@@ -196,6 +198,7 @@ struct TradeView: View {
   }
 
   var body: some View {
+    let _ = Self.renderMetrics.record(units: 0, since: .now)
     ScrollView(.vertical) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingLG) {
         header
@@ -289,7 +292,7 @@ struct TradeView: View {
             .accessibilityIdentifier("trade.open-market-settings")
         }
         transportStatus
-        volumeHistoryStatus
+        TradeVolumeHistoryStatus(targetRole: mode.targetRole)
         Text(
           "Own orders are placed one valid price step (four significant digits) better than the best order. Order modification and relist fees are not included."
         )
@@ -499,50 +502,6 @@ struct TradeView: View {
       )
     case .unavailable(let code):
       TradeHubText.transportText(code)
-    }
-  }
-
-  /// Load state of the regional ESI market history of the target hub.
-  @ViewBuilder
-  private var volumeHistoryStatus: some View {
-    if let regionID = runtime.tradeRegionID(for: mode.targetRole) {
-      if let progress = runtime.tradeVolumeHistoryProgress[regionID] {
-        HStack(spacing: DesignTokens.spacingSM) {
-          ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
-            .frame(maxWidth: 160)
-          Text(
-            AppLocalization.format(
-              "Loading market history: %lld of %lld items",
-              Int64(progress.completed),
-              Int64(progress.total)
-            )
-          )
-        }
-        .font(.callout)
-        .foregroundStyle(DesignTokens.textSecondary)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("trade.volume-history.progress")
-      } else if let snapshot = runtime.tradeVolumeHistories[regionID],
-        !snapshot.unavailableTypeIDs.isEmpty
-      {
-        Label(
-          AppLocalization.format(
-            "Market history unavailable for %lld items; their traded volume stays unknown.",
-            Int64(snapshot.unavailableTypeIDs.count)
-          ),
-          systemImage: "chart.bar.xaxis"
-        )
-        .foregroundStyle(DesignTokens.caution)
-      }
-    } else if runtime.tradeDataRole(for: mode.targetRole) != nil {
-      Label(
-        AppLocalization.format(
-          "The region of the %@ is unknown, so its traded volume is unavailable. Select the hub again in Market Settings.",
-          TradeHubText.roleName(mode.targetRole)
-        ),
-        systemImage: "chart.bar.xaxis"
-      )
-      .foregroundStyle(DesignTokens.caution)
     }
   }
 
@@ -1196,17 +1155,60 @@ struct TradeView: View {
     )
   }
 
-  /// Rows of all `calculatedRows` calls per log window (performance log only).
+  /// `calculatedRows` calls (and newly computed rows as units) per log
+  /// window, and redraws of the view (performance log only).
   private static let rowMetrics = PerformanceAccumulator("trade.rows")
+  private static let renderMetrics = PerformanceAccumulator("trade.render")
 
-  /// Rows of `items` for the current route, unsorted.
+  /// Everything a row depends on besides its item and quote sides.
+  private var rowInputs: TradeRowCache.Inputs {
+    let source = runtime.tradeMarketState(for: mode.sourceRole)?.value
+    let target = runtime.tradeMarketState(for: mode.targetRole)?.value
+    return TradeRowCache.Inputs(
+      mode: mode,
+      sourceMarket: source?.source,
+      sourceCapturedAt: source?.capturedAt,
+      targetMarket: target?.source,
+      targetCapturedAt: target?.capturedAt,
+      sourceFees: runtime.tradeHubFees(for: mode.sourceRole),
+      targetFees: runtime.tradeHubFees(for: mode.targetRole),
+      transport: runtime.tradeTransportBases[mode.route] ?? .none,
+      stockRevision: runtime.marketStockOverviewsRevision,
+      historyRevision: runtime.tradeVolumeHistoriesRevision,
+      logbookRevision: runtime.tradeLogbookEntriesRevision,
+      hubUsesRegion: hubVolumeUsesRegion,
+      selectedWindow: volumeWindow,
+      utcDay: MarketTypeVolumeHistory.utcDay(.now)
+    )
+  }
+
+  /// Rows of `items` for the current route, unsorted. Rows are computed once
+  /// per change of their inputs and reused by every tile (A4/G7).
   private func calculatedRows(
     items: [TradeCatalogItem],
     sourceSide: TradeQuoteSide,
     targetSide: TradeQuoteSide
   ) -> [TradeDisplayRow] {
     let started = ContinuousClock.now
-    defer { Self.rowMetrics.record(units: items.count, since: started) }
+    var computed = 0
+    defer { Self.rowMetrics.record(units: computed, since: started) }
+    return rowCache.rows(
+      for: items,
+      sourceSide: sourceSide,
+      targetSide: targetSide,
+      inputs: rowInputs
+    ) { missing in
+      computed += missing.count
+      return computeRows(items: missing, sourceSide: sourceSide, targetSide: targetSide)
+    }
+  }
+
+  /// Rows of `items` from the current runtime data.
+  private func computeRows(
+    items: [TradeCatalogItem],
+    sourceSide: TradeQuoteSide,
+    targetSide: TradeQuoteSide
+  ) -> [TradeDisplayRow] {
     let source = runtime.tradeMarketState(for: mode.sourceRole)?.value
     let target = runtime.tradeMarketState(for: mode.targetRole)?.value
     let targetStock = runtime.marketStockOverview(for: mode.targetRole)
@@ -1792,7 +1794,7 @@ struct TradeView: View {
     guard let regionID = runtime.tradeRegionID(for: mode.targetRole) else {
       return AppLocalization.text("The region of the target hub is unknown.")
     }
-    if runtime.tradeVolumeHistoryProgress[regionID] != nil {
+    if runtime.tradeVolumeHistoryLoadingRegions.contains(regionID) {
       return AppLocalization.text("The market history is loading.")
     }
     if runtime.tradeVolumeHistories[regionID]?.unavailableTypeIDs.contains(typeID) == true {
@@ -2029,5 +2031,129 @@ struct TradeView: View {
         "The items of the selected market group could not be read."
       )
     }
+  }
+}
+
+/// Load state of the regional ESI market history of the target hub. A view
+/// of its own: the progress changes with every loaded type and redraws only
+/// this line, not the Trade tables (A4).
+private struct TradeVolumeHistoryStatus: View {
+  let targetRole: OpportunityHubRole
+  @Environment(RuntimeState.self) private var runtime
+
+  var body: some View {
+    if let regionID = runtime.tradeRegionID(for: targetRole) {
+      if let progress = runtime.tradeVolumeHistoryProgress[regionID] {
+        HStack(spacing: DesignTokens.spacingSM) {
+          ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
+            .frame(maxWidth: 160)
+          Text(
+            AppLocalization.format(
+              "Loading market history: %lld of %lld items",
+              Int64(progress.completed),
+              Int64(progress.total)
+            )
+          )
+        }
+        .font(.callout)
+        .foregroundStyle(DesignTokens.textSecondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("trade.volume-history.progress")
+      } else if let snapshot = runtime.tradeVolumeHistories[regionID],
+        !snapshot.unavailableTypeIDs.isEmpty
+      {
+        Label(
+          AppLocalization.format(
+            "Market history unavailable for %lld items; their traded volume stays unknown.",
+            Int64(snapshot.unavailableTypeIDs.count)
+          ),
+          systemImage: "chart.bar.xaxis"
+        )
+        .foregroundStyle(DesignTokens.caution)
+      }
+    } else if runtime.tradeDataRole(for: targetRole) != nil {
+      Label(
+        AppLocalization.format(
+          "The region of the %@ is unknown, so its traded volume is unavailable. Select the hub again in Market Settings.",
+          TradeHubText.roleName(targetRole)
+        ),
+        systemImage: "chart.bar.xaxis"
+      )
+      .foregroundStyle(DesignTokens.caution)
+    }
+  }
+}
+
+/// Trade rows per item and quote sides for one set of inputs (A4/G7). A
+/// change of any input drops all rows; otherwise a row is computed once and
+/// reused by the group tiles, the Top-20 tile and the item search.
+@MainActor
+final class TradeRowCache {
+  struct Inputs: Equatable {
+    let mode: TradeMode
+    let sourceMarket: SourceIdentity?
+    let sourceCapturedAt: Date?
+    let targetMarket: SourceIdentity?
+    let targetCapturedAt: Date?
+    let sourceFees: TradeHubFees
+    let targetFees: TradeHubFees
+    let transport: TradeTransportBasis
+    let stockRevision: Int
+    let historyRevision: Int
+    let logbookRevision: Int
+    let hubUsesRegion: Bool
+    let selectedWindow: MarketHistoryWindow
+    /// Regional history windows end today (UTC).
+    let utcDay: Date
+  }
+
+  private struct Key: Hashable {
+    let typeID: Int64
+    let name: String
+    let packagedVolume: Double?
+    let sourceSide: TradeQuoteSide
+    let targetSide: TradeQuoteSide
+  }
+
+  private var inputs: Inputs?
+  private var rows: [Key: TradeDisplayRow] = [:]
+  /// Rows computed since the cache was created (tests).
+  private(set) var computedRowCount = 0
+
+  /// The rows of `items` in their order; `compute` gets only the items
+  /// without a row for these inputs and must return one row per item.
+  func rows(
+    for items: [TradeCatalogItem],
+    sourceSide: TradeQuoteSide,
+    targetSide: TradeQuoteSide,
+    inputs: Inputs,
+    compute: ([TradeCatalogItem]) -> [TradeDisplayRow]
+  ) -> [TradeDisplayRow] {
+    if inputs != self.inputs {
+      self.inputs = inputs
+      rows = [:]
+    }
+    func key(_ item: TradeCatalogItem) -> Key {
+      Key(
+        typeID: item.id,
+        name: item.name,
+        packagedVolume: item.packagedVolume,
+        sourceSide: sourceSide,
+        targetSide: targetSide
+      )
+    }
+    var seen = Set<Key>()
+    let missing = items.filter { item in
+      let key = key(item)
+      return rows[key] == nil && seen.insert(key).inserted
+    }
+    if !missing.isEmpty {
+      let computed = compute(missing)
+      for (item, row) in zip(missing, computed) {
+        rows[key(item)] = row
+      }
+      computedRowCount += computed.count
+    }
+    return items.compactMap { rows[key($0)] }
   }
 }
