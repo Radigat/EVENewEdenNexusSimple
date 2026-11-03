@@ -636,6 +636,7 @@ public struct IndustryPlanner: Sendable {
     context: IndustryPlanningContext,
     reusableMakeOrBuyAnalyses: [Int64: MaterialMakeOrBuyAnalysis]
   ) async throws -> IndustryPlanSnapshot {
+    PlannerCalculationMetrics.count(.planPasses)
     if let invalid = context.productionEfficiencies.first(where: {
       !$0.value.isValid
     }) {

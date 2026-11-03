@@ -9614,3 +9614,60 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Ergebnis:** [Documentation/ANALYSE_2026-11-02.md](Documentation/ANALYSE_2026-11-02.md) mit Stärken, Schwächen (P-L1 bis P-L8, H-L1 bis H-L4, Struktur), 14 Geschwindigkeitsmaßnahmen G0 bis G13 und der Prompt-Reihe A1 bis A8. Hauptbefunde: Die Planer-Ablaufsteuerung liegt in der Ansicht; ein Klick rechnet mindestens 4 bzw. mit Lager 8 volle Pläne und lädt dabei die Marktdaten jedes Mal neu; DOTLAN-Routen werden nicht zwischengespeichert; der Handel berechnet alle Zeilen bei jedem Neuzeichnen. Neuer Eintrag in `DECISIONS.md` und ein Satz in `PRODUCT.md` zum Sell-Preis ohne Preisschritt im Planer. Kein Code geändert, keine Rechenregel geändert.
 - **Prüfung:** Nur statische Durchsicht von Quellcode, Steuerdateien und dev-diary. Keine Messung, kein Build, kein Test, keine Live-Prüfung; alle Durchlaufzahlen sind aus dem Code abgeleitet, Effekte geschätzt. `git diff --check` fehlerfrei.
 - **Offen:** Umsetzung nur auf Auftrag, Start mit Prompt A1 (Messung und Golden-Master). Eigentümerentscheide zu P-L5, H-L1 und G10.
+
+## 02.11.2026: A1 – Messpunkte und Golden-Master für den Planer
+
+- **Auftrag:** Prompt A1 aus [ANALYSE_2026-11-02.md](Documentation/ANALYSE_2026-11-02.md): Messpunkte im Planer-Ablauf und im Handel, Golden-Master-Test, Messung eines typischen Klicks. Geklärt: Referenz als JSON-Datei, Test auf Runtime-Ebene, Messung mit einem signierten Release-Build durch den Eigentümer.
+- **Ergebnis:**
+  - Neu in `PerformanceLog.swift`: `PlannerCalculationMetrics` (Zähler je Klick über ein Task-Local) und `PerformanceAccumulator` (eine Logzeile je Fenster).
+  - Gezählt bzw. gemessen werden Planberechnungen (`IndustryPlanner.singlePlan`), Marktabrufe (`TradeHubMarketService`), DOTLAN-Abrufe, Phasen von `RuntimeState.calculate` und `manufacturingProductionTree`, der ganze Klick (`planner.click`) und die Handelszeilen (`trade.rows`).
+  - `RuntimeState.init` hat einen Test-Zugang `esiTransport`.
+  - Neuer Test `PlannerGoldenMasterTests` mit Referenzen in `Tests/GoldenMaster/`: synthetischer SDE-Katalog und synthetisches ESI für Jita und Amarr; Fall 1 mit Reaktion, Zwischenprodukt, Lager und zwei Einkaufsorten, Fall 2 als Sammelproduktion. Neu aufzeichnen mit `EVE_NEXUS_RECORD_GOLDEN=1`.
+  - Neuer Befund P-L9: Die Reihenfolge von `stockAllocations` folgt der Hash-Reihenfolge des Prozesses (Mengen gleich). Der Test vergleicht diese Liste als Menge; die App bleibt unverändert.
+  - Keine Rechenregel und kein Ergebnis geändert.
+- **Prüfung:**
+  - Golden-Master in 13 Läufen grün, davon 5 mit Byte-Prüfung byte-identisch.
+  - Der Stand `f1d6c6c` ohne Messpunkte, nur mit Test-Zugang, besteht gegen dieselben Referenzen in 3 von 3 Läufen byte-identisch. Damit ist belegt, dass die Messpunkte die Ergebnisse nicht verändern.
+  - `swift test`: 767 und 97 Tests grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 767 Tests.
+  - Logs unter `/private/tmp/eve-a1/logs/`.
+- **Messung (live, Eigentümer-Klick mit echten Daten):**
+  - Gemessen hat ein Debug-Build aus Xcodes DerivedData, nicht der bereitgelegte signierte Release-Build `~/Developer/EVE New Eden Nexus Builds/2026-11-02-release-f1d6c6c-a1/`.
+  - Ein Klick dauerte 34,0 s: 14 Planberechnungen, 3 Blueprint-Bäume, 2 Rechenläufe, 561 ESI-Anfragen. Rund 30 s davon sind Datenladen, das nacheinander läuft (Hauptmarkt 8,9 s, Blueprint-/Formelmarkt 5,4 s, Strukturmärkte 12,3 s); Rechnen 3,6 s.
+  - Während des Klicks lieferte ESI für 13 Typen neue Orderbücher (P-L3 bestätigt).
+  - Handel: `calculatedRows` lief bei sichtbarem Handel im Median 6,8-mal pro Sekunde mit rund 1.100 Zeilen, im Median 21 % der Hauptthread-Zeit.
+  - Einzelheiten in Abschnitt 9 des Berichts.
+- **Offen:** Der Golden-Master deckt die Ablaufsteuerung der Planer-Ansicht noch nicht ab; sie folgt in A3. Eigentümerentscheid, ob A3 und A4 vor A2 kommen. Eine Messung mit dem Release-Build ist optional.
+
+## 03.11.2026: A2 – Schnellgewinne (DOTLAN-Cache, Cache-Kürzung, Vergleichsmärkte, Logbuch-Abgleich)
+
+- **Auftrag:** Prompt A2 aus [ANALYSE_2026-11-02.md](Documentation/ANALYSE_2026-11-02.md). Geklärt: DOTLAN-Seiten gelten während der App-Laufzeit, höchstens 24 Stunden; gemessen wird wie in A1 per Xcode-Debug.
+- **Ergebnis:**
+  - G2: `DOTLANJumpRouteService` hält ausgewertete Seiten je Abfrage-URL höchstens 24 Stunden (höchstens 64 Seiten); Fehler und nicht auswertbare Seiten werden nie gehalten. Der Nachweis nennt den Zeitpunkt des tatsächlichen Abrufs. Neuer Zähler `dotlan-cache-hits`.
+  - G4: `RuntimeState.finishPlannerClick` kürzt den ESI-Speichercache nach dem ganzen Klick statt nach jedem `calculate`.
+  - G6: Vergleichsmärkte laden parallel zu den Hubs (`plannerComparisonMarketLoads`); Blueprint-Namen, Invention-Definitionen und Produktcharaktere kommen aus dem memoisierten Planungskatalog.
+  - G8: `reconcileTradeLogbook` rechnet die Zuordnung in einem `Task.detached`.
+  - Keine Rechenregel und kein Ergebnis geändert; Planer-Info-Panel nicht betroffen.
+- **Prüfung:**
+  - Neue Tests: vier zum DOTLAN-Cache (`DOTLANRouteCacheTests`), ein Golden-Master des Logbuch-Abgleichs (`TradeReconciliationRuntimeTests`, Referenz `Tests/GoldenMaster/trade-reconciliation.json`). Der unveränderte Stand erfüllt diese Referenz byte-identisch.
+  - Planer-Golden-Master aus A1 unverändert und byte-identisch.
+  - `swift test`: 771 und 98 Tests grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 771 Tests; `git diff --check` fehlerfrei. Logs unter `/private/tmp/eve-a2/logs/`.
+- **Live gemessen (Eigentümer, Xcode-Debug, derselbe Plan wie in A1):**
+  - Die erste Messung lief versehentlich noch im Prozess von A1 und dient als warme Basis: 14,3 s und 8,4 s, je 4 DOTLAN-Abrufe.
+  - Mit A2 nach Neustart: 30,8 s und 9,7 s, 0 DOTLAN-Abrufe (4 aus dem Speicher).
+  - Der Unterschied der warmen Klicks kommt vom ESI-Zeitpunkt (59 statt 42 nachgefragte Typen), nicht von A2. Der große Hebel bleibt das gleichzeitige Laden in A3.
+- **Offen:** G6, G4 und G8 sind live nicht wirksam geworden bzw. nicht beobachtet (keine Vergleichsmärkte im Plan, Cache unter der Grenze, Handel nicht geöffnet). Eigentümerentscheid zu höherer ESI-Parallelität (für A3/A5).
+
+## 03.11.2026: A3 – Planer-Pipeline im Core und Datensitzung je Klick
+
+- **Auftrag:** Prompt A3 aus [ANALYSE_2026-11-02.md](Documentation/ANALYSE_2026-11-02.md). Geklärt: Ablauf und Entscheidungen in den Core, Blueprint-Auflösung bleibt als Schritt in der Ansicht; Blueprint- und Formelmärkte werden vorab geladen.
+- **Ergebnis:**
+  - `PlannerCalculationPipeline`, `PlannerPassDecisions` und `PlannerClickDataCache` im Core (`PlannerAutomation.swift`).
+  - `RuntimeState.prefetchPlannerClickData` lädt alle Daten eines Klicks gemeinsam; `manufacturingProductionTree` und `calculate` lesen sie aus der Sitzung, ohne Sitzung laden sie selbst wie bisher.
+  - `calculate` gibt den Plan zurück; die Planer-Ansicht setzt nur den Endplan.
+  - Rechenregeln unverändert; offengelegt: Alle Durchläufe nutzen den Marktstand vom Klickbeginn. Planer-Info-Panel geprüft, keine Änderung nötig.
+  - PRODUCT.md und ARCHITECTURE.md ergänzt; neue Testdatei `PlannerCalculationPipelineTests.swift` auch im Xcode-Projekt.
+- **Prüfung:**
+  - 7 Pipeline-Tests und 1 Cache-Test; Golden-Master ohne Sitzung unverändert, mit Sitzung byte-identisch, in mehreren Läufen stabil.
+  - `swift test`: 779 und 99 Tests grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 779 Tests; `check_planner_guide.py --self-test` bestanden; `git diff --check` fehlerfrei. Logs unter `/private/tmp/eve-a3/logs/`.
+- **Live gemessen (Eigentümer, Xcode-Debug, derselbe Plan, zwei Klicks nach Neustart):** 12,8 s und 5,3 s (A2: 30,8 s und 9,7 s). 5 statt 18 Marktabzüge je Klick, nach dem ersten Laden keine ESI-Anfrage mehr.
+- **Offen:** Eigentümerentscheid zu höherer ESI-Parallelität (A5). Eigentümerabnahme.

@@ -6734,7 +6734,8 @@ struct PlannerView: View {
     availableStockOverride: [Int64: Int64]?,
     minimumBlueprintRuns: [Int64: Int],
     existingBlueprintReservations: [BlueprintRunReservation],
-    capabilities: [CharacterCapabilitySnapshot]
+    capabilities: [CharacterCapabilitySnapshot],
+    session: PlannerClickDataCache? = nil
   ) async -> PlannerBlueprintBasis? {
     calculationPhase = .resolvingBlueprints
     let inventories = plannerBlueprintInventories
@@ -6768,7 +6769,8 @@ struct PlannerView: View {
         availableStockOverride: availableStockOverride,
         usesExactPlannerPreferences: true,
         automaticSupply: automaticSupply,
-        minimumBlueprintRuns: minimumBlueprintRuns
+        minimumBlueprintRuns: minimumBlueprintRuns,
+        session: session
       )
     }
     var resolvedTree: ManufacturingProductionTreeSnapshot
@@ -6864,7 +6866,23 @@ struct PlannerView: View {
     )
   }
 
+  /// Measures one click: phase times, plan passes, market loads and ESI
+  /// requests go to the performance log; the calculation itself is unchanged.
   private func performPlanCalculation() async {
+    let metrics = PlannerCalculationMetrics()
+    let stopwatch = PerformanceStopwatch("planner.click")
+    let esiBefore = runtime.esiRequestSnapshot()
+    await PlannerCalculationMetrics.$current.withValue(metrics) {
+      await measuredPlanCalculation()
+    }
+    await runtime.finishPlannerClick()
+    stopwatch.finish(
+      metrics.summary() + " esi: "
+        + runtime.esiRequestSnapshot().subtracting(esiBefore).summary()
+    )
+  }
+
+  private func measuredPlanCalculation() async {
     let requestedKey = automaticCalculationKey
     calculatedAutomaticKey = requestedKey
     calculationStartedThisSession = true
@@ -6928,150 +6946,94 @@ struct PlannerView: View {
     }
     guard let manualStock = await runtime.plannerManualStock(input: plannerManualStockInput)
     else { return }
-    var calculatesWithoutStock = false
-    var stockReferenceCost: Double?
-    var minimumBlueprintRuns: [Int64: Int] = [:]
-    func basis(
-      preferences: [Int64: MaterialProcurementPreference],
-      automaticSupply: Bool
-    ) async -> PlannerBlueprintBasis? {
-      await resolvePlannerBlueprintBasis(
-        preferences: preferences,
-        automaticSupply: automaticSupply,
+    // All data of the click loads once and at once; every tree and
+    // calculation of the click uses the same market state (A3/G1).
+    let session = PlannerClickDataCache()
+    defer { Task { await session.cancelAll() } }
+    await runtime.prefetchPlannerClickData(
+      session,
+      input: plannerInput,
+      purchaseLocationIDs: effectivePurchaseLocationIDs,
+      authorizations: preparedInputs.0,
+      clientID: EVEConstants.ssoClientID
+    )
+    func basis(_ request: PlannerBasisRequest) async -> PlannerBlueprintBasis? {
+      let started = ContinuousClock.now
+      defer { PlannerCalculationMetrics.current?.record("basis", since: started) }
+      return await resolvePlannerBlueprintBasis(
+        preferences: request.preferences,
+        automaticSupply: request.automaticSupply,
         firstRequest: firstRequest,
         totalTargetQuantity: totalTargetQuantity,
         plannerInput: plannerInput,
         warehouse: plannerWarehouse,
         warehouseHasSnapshot: warehouseHasSnapshot,
         stockTargets:
-          calculatesWithoutStock
+          request.calculatesWithoutStock
           ? plannerWarehouse.factualQuantities : blueprintAssessmentTargets,
         availableStockOverride: PlannerStockUse.blueprintStockOverride(
           manualStock: manualStock,
-          calculatesWithoutStock: calculatesWithoutStock
+          calculatesWithoutStock: request.calculatesWithoutStock
         ),
-        minimumBlueprintRuns: minimumBlueprintRuns,
+        minimumBlueprintRuns: request.minimumBlueprintRuns,
         existingBlueprintReservations: scienceReservations,
-        capabilities: preparedInputs.1
+        capabilities: preparedInputs.1,
+        session: session
       )
     }
     func calculate(
-      _ basis: PlannerBlueprintBasis,
-      preferences: [Int64: MaterialProcurementPreference],
-      automaticSupply: Bool
-    ) async {
+      _ request: PlannerCalculationRequest<PlannerBlueprintBasis>
+    ) async -> PlannerCalculationStepResult {
       calculationPhase = .calculating
-      await runtime.calculate(
+      let started = ContinuousClock.now
+      defer {
+        PlannerCalculationMetrics.current?.record(
+          request.calculatesWithoutStock ? "calculate-without-stock" : "calculate",
+          since: started
+        )
+      }
+      let plan = await runtime.calculate(
         input: plannerInput,
-        manualStockInput: calculatesWithoutStock ? "" : plannerManualStockInput,
-        availableStockOverride: calculatesWithoutStock ? [:] : nil,
+        manualStockInput: request.calculatesWithoutStock ? "" : plannerManualStockInput,
+        availableStockOverride: request.calculatesWithoutStock ? [:] : nil,
         existingReservations: [],
         assetWarehouse: plannerWarehouse,
         stockTargets: targets,
-        procurementPreferences: preferences,
+        procurementPreferences: request.preferences,
         purchaseLocationIDs: effectivePurchaseLocationIDs,
-        blueprintCostAllocations: basis.allocations,
+        blueprintCostAllocations: request.basis.allocations,
         requiresCompleteBlueprintCosts: true,
-        productionEfficiencies: plannerProductionEfficiencies(in: basis.tree),
-        blueprintSupplyPlans: basis.supplyPlans,
+        productionEfficiencies: plannerProductionEfficiencies(in: request.basis.tree),
+        blueprintSupplyPlans: request.basis.supplyPlans,
         blueprintSourceSnapshotIDs: handedOffBlueprintSnapshotIDs,
         authorizations: preparedInputs.0,
         capabilities: preparedInputs.1,
         clientID: EVEConstants.ssoClientID,
         jobSplitting: requestedJobSplitting,
-        automaticSupply: automaticSupply,
+        automaticSupply: request.automaticSupply,
         manualSupplyTypeIDs: manualTypeIDs,
-        formulaShipments: basis.formulaShipments,
-        stockReferenceProductionCost:
-          calculatesWithoutStock ? nil : stockReferenceCost
+        formulaShipments: request.basis.formulaShipments,
+        stockReferenceProductionCost: request.stockReferenceProductionCost,
+        session: session
+      )
+      return PlannerCalculationStepResult(
+        plan: plan,
+        failed: runtime.errorMessage != nil
       )
     }
-    /// One complete calculation; `false` after a cancellation or a failed
-    /// Blueprint resolution.
-    func runCalculation() async -> Bool {
-    minimumBlueprintRuns = [:]
-    guard
-      let firstBasis = await basis(
-        preferences: manualPreferences,
-        automaticSupply: true
-      )
-    else { return false }
-    await calculate(firstBasis, preferences: manualPreferences, automaticSupply: true)
-    guard !Task.isCancelled else { return false }
-    // The tree decides at Main Hub prices, the calculation at the selected
-    // purchase locations and with Blueprint costs. When they differ, the
-    // Blueprints are resolved again for the calculated build steps and those
-    // steps are kept, so costs and supply always describe the same graph.
-    if runtime.errorMessage == nil, let decided = runtime.plan {
-      // A reaction without any formula source cannot run; it is bought instead
-      // of leaving the plan's total open. A manual choice stays.
-      let unusableReactions = Set(
-        decided.nodes.compactMap { node -> Int64? in
-          guard node.action == .produce, node.activity == .reaction,
-            let blueprintTypeID = node.blueprintTypeID,
-            firstBasis.allocations[blueprintTypeID] == nil,
-            !manualTypeIDs.contains(node.typeID),
-            !parsed.requests.contains(where: { $0.productName == node.name })
-          else { return nil }
-          return node.typeID
-        }
-      )
-      let uncoveredRuns = BlueprintSupplyPlanner.uncoveredRuns(in: decided)
-      guard
-        !unusableReactions.isEmpty || !uncoveredRuns.isEmpty
-          || Self.producedTypeIDs(decided)
-            != Self.producedTypeIDs(firstBasis.tree.selectedPlan)
-      else {
-        return true
-      }
-      minimumBlueprintRuns = uncoveredRuns
-      var decisions = manualPreferences.merging(
-        decided.materials.compactMap { material in
-          material.procurement.map { (material.typeID, $0) }
-        },
-        uniquingKeysWith: { manual, _ in manual }
-      )
-      for typeID in unusableReactions {
-        decisions[typeID]?.supplyMode = .buy
-      }
-      guard let finalBasis = await basis(preferences: decisions, automaticSupply: false)
-      else { return false }
-      await calculate(finalBasis, preferences: decisions, automaticSupply: false)
-      guard !Task.isCancelled else { return false }
-      // More runs can round the jobs differently; a true lack of Blueprints stays
-      // a warning because the reservation then matches the plan.
-      for _ in 0..<2 {
-        guard runtime.errorMessage == nil, let plan = runtime.plan else { break }
-        let remaining = BlueprintSupplyPlanner.uncoveredRuns(in: plan)
-        guard !remaining.isEmpty else { break }
-        minimumBlueprintRuns.merge(remaining, uniquingKeysWith: max)
-        guard let basis = await basis(preferences: decisions, automaticSupply: false)
-        else { return false }
-        await calculate(basis, preferences: decisions, automaticSupply: false)
-        guard !Task.isCancelled else { return false }
-      }
-    }
-    return true
-    }
-    // The comparison pass replaces the visible plan; a stopped calculation
-    // brings back the last successful one.
-    var didComplete = false
-    defer {
-      if !didComplete { runtime.plan = previousPlan }
-    }
-    // Owner decision 2026-10-31: stock must not change what the order costs, so
-    // the same order is calculated without stock first. Only the second result
-    // is kept and saved.
-    if runtime.warehouseStockEnabled || PlannerStockUse.hasManualStock(plannerManualStockInput) {
-      calculatesWithoutStock = true
-      if await runCalculation(), runtime.errorMessage == nil {
-        stockReferenceCost = runtime.plan?.costBreakdown?.totalProductionCost
-      }
-      guard !Task.isCancelled else { return }
-      calculatesWithoutStock = false
-    }
-    guard await runCalculation(), runtime.errorMessage == nil else { return }
-    didComplete = true
+    let pipeline = PlannerCalculationPipeline(
+      manualPreferences: manualPreferences,
+      requestedProductNames: Set(parsed.requests.map(\.productName)),
+      usesStock: runtime.warehouseStockEnabled
+        || PlannerStockUse.hasManualStock(plannerManualStockInput),
+      resolveBasis: basis,
+      calculate: calculate
+    )
+    // Only the finished plan is shown (G3); a stopped click keeps the
+    // previous one.
+    guard case .completed(let plan) = await pipeline.run(startingFrom: previousPlan)
+    else { return }
+    runtime.plan = plan
     await finishPlanCalculation(
       requestedKey: requestedKey,
       workspaceRevision: workspaceRevision,
@@ -7092,14 +7054,14 @@ struct PlannerView: View {
     guard runtime.errorMessage == nil, let plan = runtime.plan else { return }
     blueprintSelectionNeedsRecalculation = false
     calculationPhase = .saving
+    let savingStarted = ContinuousClock.now
+    defer {
+      PlannerCalculationMetrics.current?.record("save", since: savingStarted)
+    }
     if await saveActivePlan(plan) {
       completedAutomaticKey = requestedKey
     }
     plannerStep = plannerStepAccess.step(afterCalculationFrom: plannerStep)
-  }
-
-  private static func producedTypeIDs(_ plan: IndustryPlanSnapshot) -> Set<Int64> {
-    Set(plan.materials.filter { $0.toProduce > 0 }.map(\.typeID))
   }
 
   private func persistDraft(reportErrors: Bool = true) {
@@ -11043,6 +11005,11 @@ private struct PlannerBlueprintBasis {
   let supplyPlans: [Int64: BlueprintSupplyPlan]
   let allocations: [Int64: IndustryBlueprintCostAllocation]
   let formulaShipments: [PlannerFormulaShipment]
+}
+
+extension PlannerBlueprintBasis: PlannerCalculationBasis {
+  var allocatedBlueprintTypeIDs: Set<Int64> { Set(allocations.keys) }
+  var selectedPlan: IndustryPlanSnapshot { tree.selectedPlan }
 }
 
 private struct PlannerAutomaticCalculationKey: Equatable {

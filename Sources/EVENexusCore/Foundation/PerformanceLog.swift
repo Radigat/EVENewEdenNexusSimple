@@ -110,3 +110,117 @@ public struct PerformanceStopwatch: Sendable {
     )
   }
 }
+
+/// Counts and phase durations of one interactive Planner calculation (one
+/// click). The click binds an instance with `$current.withValue`; the planner,
+/// market and route services count into it through the task. It only counts
+/// and never changes a result.
+public final class PlannerCalculationMetrics: @unchecked Sendable {
+  @TaskLocal public static var current: PlannerCalculationMetrics?
+
+  public enum Counter: String, CaseIterable, Sendable {
+    case planPasses = "plan-passes"
+    case productionTrees = "trees"
+    case calculations = "calculations"
+    case marketSnapshots = "market-snapshots"
+    case marketTypeRequests = "market-type-requests"
+    case jumpRoutes = "dotlan-routes"
+    case jumpRouteCacheHits = "dotlan-cache-hits"
+  }
+
+  private struct Phase {
+    var count = 0
+    var duration: Duration = .zero
+  }
+
+  private let lock = NSLock()
+  private var counts: [Counter: Int] = [:]
+  private var phases: [String: Phase] = [:]
+  private var phaseOrder: [String] = []
+
+  public init() {}
+
+  /// Adds `amount` to `counter` of the click bound to the current task.
+  public static func count(_ counter: Counter, by amount: Int = 1) {
+    current?.add(counter, by: amount)
+  }
+
+  public func add(_ counter: Counter, by amount: Int = 1) {
+    lock.withLock { counts[counter, default: 0] += amount }
+  }
+
+  public func count(of counter: Counter) -> Int {
+    lock.withLock { counts[counter, default: 0] }
+  }
+
+  /// Adds the time since `start` to `phase`, keeping the first-seen order.
+  public func record(_ phase: String, since start: ContinuousClock.Instant) {
+    let elapsed = ContinuousClock.now - start
+    lock.withLock {
+      if phases[phase] == nil { phaseOrder.append(phase) }
+      phases[phase, default: Phase()].count += 1
+      phases[phase, default: Phase()].duration += elapsed
+    }
+  }
+
+  /// Counters in declaration order, then phases as `name=count×total`.
+  public func summary() -> String {
+    lock.withLock {
+      let counters = Counter.allCases.map {
+        "\($0.rawValue)=\(counts[$0, default: 0])"
+      }
+      let phaseTexts = phaseOrder.compactMap { name in
+        phases[name].map {
+          "\(name)=\($0.count)×\(PerformanceLog.milliseconds($0.duration))"
+        }
+      }
+      return (counters + phaseTexts).joined(separator: " ")
+    }
+  }
+}
+
+/// Aggregates a frequently repeated operation, e.g. a computation in a view
+/// body, and logs one line per window instead of one line per call.
+public final class PerformanceAccumulator: @unchecked Sendable {
+  private let name: String
+  private let window: Duration
+  private let lock = NSLock()
+  private var windowStart: ContinuousClock.Instant?
+  private var calls = 0
+  private var units = 0
+  private var total: Duration = .zero
+  private var longest: Duration = .zero
+
+  public init(_ name: String, window: Duration = .seconds(5)) {
+    self.name = name
+    self.window = window
+  }
+
+  /// Records one call that handled `units` items since `start`; writes the
+  /// window's line once the window has passed.
+  public func record(units: Int, since start: ContinuousClock.Instant) {
+    let now = ContinuousClock.now
+    let elapsed = now - start
+    let line: String? = lock.withLock {
+      let started = windowStart ?? start
+      windowStart = started
+      calls += 1
+      self.units += units
+      total += elapsed
+      longest = max(longest, elapsed)
+      guard now - started >= window else { return nil }
+      let text =
+        "\(name) calls=\(calls) units=\(self.units)"
+        + " total \(PerformanceLog.milliseconds(total))"
+        + " max \(PerformanceLog.milliseconds(longest))"
+        + " window \(PerformanceLog.milliseconds(now - started))"
+      windowStart = nil
+      calls = 0
+      self.units = 0
+      total = .zero
+      longest = .zero
+      return text
+    }
+    if let line { PerformanceLog.write(line) }
+  }
+}

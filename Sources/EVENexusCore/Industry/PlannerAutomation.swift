@@ -214,3 +214,369 @@ public enum PlannerSetupIssue: Equatable, Sendable {
     return issues
   }
 }
+
+// MARK: - Data of one click (ANALYSE_2026-11-02, A3/G1)
+
+/// One load of a Planner click: a key that names exactly what is loaded,
+/// and the load itself.
+public struct PlannerClickLoad<Value: Sendable>: Sendable {
+  public let key: String
+  public let load: @Sendable () async throws -> Value
+
+  public init(key: String, load: @escaping @Sendable () async throws -> Value) {
+    self.key = key
+    self.load = load
+  }
+}
+
+public enum PlannerClickDataError: Error, Equatable, Sendable {
+  case unexpectedValue(key: String)
+}
+
+/// Loads each piece of data of one Planner click once, so that all passes
+/// of the click see the same market state. A load can start early and is
+/// awaited later. A failed or cancelled load is not kept: a later pass of the
+/// same click asks again, as every pass did before.
+public actor PlannerClickDataCache {
+  private var tasks: [String: Task<any Sendable, any Error>] = [:]
+
+  public init() {}
+
+  /// Starts `load` unless the click already started it.
+  public func prefetch<Value: Sendable>(_ load: PlannerClickLoad<Value>) {
+    guard tasks[load.key] == nil else { return }
+    let run = load.load
+    tasks[load.key] = Task { try await run() as any Sendable }
+  }
+
+  /// The value of `load`, loading it unless the click already did.
+  public func value<Value: Sendable>(_ load: PlannerClickLoad<Value>) async throws -> Value {
+    prefetch(load)
+    guard let task = tasks[load.key] else { throw CancellationError() }
+    do {
+      let value = try await withTaskCancellationHandler {
+        try await task.value
+      } onCancel: {
+        task.cancel()
+      }
+      guard let typed = value as? Value else {
+        throw PlannerClickDataError.unexpectedValue(key: load.key)
+      }
+      return typed
+    } catch {
+      if tasks[load.key] == task { tasks[load.key] = nil }
+      throw error
+    }
+  }
+
+  /// Drops a kept value so that the next pass asks again, e.g. for a hub
+  /// that was unavailable.
+  public func forget(_ key: String) {
+    tasks[key] = nil
+  }
+
+  /// Stops loads nobody waits for any more; called when the click ends.
+  public func cancelAll() {
+    for task in tasks.values { task.cancel() }
+    tasks = [:]
+  }
+}
+
+// MARK: - Control flow of one click (ANALYSE_2026-11-02, A3)
+
+/// What the control flow needs from a resolved Blueprint basis.
+public protocol PlannerCalculationBasis {
+  /// Blueprints with a resolved cost allocation; a reaction outside this set
+  /// has no formula source.
+  var allocatedBlueprintTypeIDs: Set<Int64> { get }
+  /// The plan of the Blueprint tree the basis was resolved for.
+  var selectedPlan: IndustryPlanSnapshot { get }
+}
+
+/// One Blueprint basis that the click asks for.
+public struct PlannerBasisRequest: Equatable, Sendable {
+  public let preferences: [Int64: MaterialProcurementPreference]
+  public let automaticSupply: Bool
+  public let minimumBlueprintRuns: [Int64: Int]
+  public let calculatesWithoutStock: Bool
+
+  public init(
+    preferences: [Int64: MaterialProcurementPreference],
+    automaticSupply: Bool,
+    minimumBlueprintRuns: [Int64: Int],
+    calculatesWithoutStock: Bool
+  ) {
+    self.preferences = preferences
+    self.automaticSupply = automaticSupply
+    self.minimumBlueprintRuns = minimumBlueprintRuns
+    self.calculatesWithoutStock = calculatesWithoutStock
+  }
+}
+
+/// One calculation that the click asks for.
+public struct PlannerCalculationRequest<Basis> {
+  public let basis: Basis
+  public let preferences: [Int64: MaterialProcurementPreference]
+  public let automaticSupply: Bool
+  public let calculatesWithoutStock: Bool
+  /// The total of the calculation without stock; `nil` in that calculation.
+  public let stockReferenceProductionCost: Double?
+
+  public init(
+    basis: Basis,
+    preferences: [Int64: MaterialProcurementPreference],
+    automaticSupply: Bool,
+    calculatesWithoutStock: Bool,
+    stockReferenceProductionCost: Double?
+  ) {
+    self.basis = basis
+    self.preferences = preferences
+    self.automaticSupply = automaticSupply
+    self.calculatesWithoutStock = calculatesWithoutStock
+    self.stockReferenceProductionCost = stockReferenceProductionCost
+  }
+}
+
+/// Result of one calculation step.
+public struct PlannerCalculationStepResult: Sendable {
+  /// The calculated plan; `nil` when none was applied (stopped or superseded).
+  public let plan: IndustryPlanSnapshot?
+  /// The step reported an error.
+  public let failed: Bool
+
+  public init(plan: IndustryPlanSnapshot?, failed: Bool) {
+    self.plan = plan
+    self.failed = failed
+  }
+}
+
+/// The decisions between the passes of one click.
+public enum PlannerPassDecisions {
+  /// Materials the plan builds.
+  public static func producedTypeIDs(_ plan: IndustryPlanSnapshot) -> Set<Int64> {
+    Set(plan.materials.filter { $0.toProduce > 0 }.map(\.typeID))
+  }
+
+  /// Reactions the plan builds without any formula source. They cannot run
+  /// and are bought instead, unless the owner chose them or they are an
+  /// ordered product.
+  public static func unusableReactionTypeIDs(
+    in plan: IndustryPlanSnapshot,
+    allocatedBlueprintTypeIDs: Set<Int64>,
+    manualTypeIDs: Set<Int64>,
+    requestedProductNames: Set<String>
+  ) -> Set<Int64> {
+    Set(
+      plan.nodes.compactMap { node -> Int64? in
+        guard node.action == .produce, node.activity == .reaction,
+          let blueprintTypeID = node.blueprintTypeID,
+          !allocatedBlueprintTypeIDs.contains(blueprintTypeID),
+          !manualTypeIDs.contains(node.typeID),
+          !requestedProductNames.contains(node.name)
+        else { return nil }
+        return node.typeID
+      }
+    )
+  }
+
+  /// The plan's own build or buy choices, with the manual ones winning and
+  /// unusable reactions bought.
+  public static func decisions(
+    manual: [Int64: MaterialProcurementPreference],
+    decided plan: IndustryPlanSnapshot,
+    buying unusableReactions: Set<Int64>
+  ) -> [Int64: MaterialProcurementPreference] {
+    var decisions = manual.merging(
+      plan.materials.compactMap { material in
+        material.procurement.map { (material.typeID, $0) }
+      },
+      uniquingKeysWith: { manual, _ in manual }
+    )
+    for typeID in unusableReactions {
+      decisions[typeID]?.supplyMode = .buy
+    }
+    return decisions
+  }
+}
+
+/// The control flow of one Planner click (owner decisions 30. and
+/// 31.10.2026): first without stock when stock is used, then with it; each
+/// time a Blueprint basis and a calculation, a control pass when the
+/// calculated build steps differ from the tree, and up to two follow-up
+/// passes for missing Blueprint runs. The Blueprint basis and the
+/// calculation itself are steps of the caller.
+@MainActor
+public struct PlannerCalculationPipeline<Basis: PlannerCalculationBasis> {
+  public enum Outcome: Sendable {
+    /// The click finished; the plan to show and save.
+    case completed(IndustryPlanSnapshot?)
+    /// Stopped by a cancellation, a failed Blueprint basis or a failed
+    /// calculation; the previous plan stays.
+    case stopped
+  }
+
+  public let manualPreferences: [Int64: MaterialProcurementPreference]
+  public let requestedProductNames: Set<String>
+  public let usesStock: Bool
+  public let resolveBasis: @MainActor (PlannerBasisRequest) async -> Basis?
+  public let calculate:
+    @MainActor (PlannerCalculationRequest<Basis>) async -> PlannerCalculationStepResult
+
+  public init(
+    manualPreferences: [Int64: MaterialProcurementPreference],
+    requestedProductNames: Set<String>,
+    usesStock: Bool,
+    resolveBasis: @escaping @MainActor (PlannerBasisRequest) async -> Basis?,
+    calculate:
+      @escaping @MainActor (PlannerCalculationRequest<Basis>) async
+      -> PlannerCalculationStepResult
+  ) {
+    self.manualPreferences = manualPreferences
+    self.requestedProductNames = requestedProductNames
+    self.usesStock = usesStock
+    self.resolveBasis = resolveBasis
+    self.calculate = calculate
+  }
+
+  /// Runs the click. `previousPlan` is the plan shown before; like the shown
+  /// plan before, it stays the current one until a calculation applies a new
+  /// plan.
+  public func run(startingFrom previousPlan: IndustryPlanSnapshot?) async -> Outcome {
+    var state = State(current: previousPlan)
+    // Owner decision 2026-10-31: stock must not change what the order costs,
+    // so the same order is calculated without stock first. Only the second
+    // result is kept and saved.
+    if usesStock {
+      if await runCalculation(withoutStock: true, stockReference: nil, state: &state),
+        !state.lastFailed
+      {
+        state.stockReference = state.current?.costBreakdown?.totalProductionCost
+      }
+      guard !Task.isCancelled else { return .stopped }
+    }
+    guard
+      await runCalculation(
+        withoutStock: false,
+        stockReference: state.stockReference,
+        state: &state
+      ),
+      !state.lastFailed
+    else { return .stopped }
+    return .completed(state.current)
+  }
+
+  private struct State {
+    var current: IndustryPlanSnapshot?
+    var lastFailed = false
+    var stockReference: Double?
+  }
+
+  private func step(
+    _ basis: Basis,
+    preferences: [Int64: MaterialProcurementPreference],
+    automaticSupply: Bool,
+    withoutStock: Bool,
+    stockReference: Double?,
+    state: inout State
+  ) async {
+    let result = await calculate(
+      PlannerCalculationRequest(
+        basis: basis,
+        preferences: preferences,
+        automaticSupply: automaticSupply,
+        calculatesWithoutStock: withoutStock,
+        stockReferenceProductionCost: withoutStock ? nil : stockReference
+      )
+    )
+    state.lastFailed = result.failed
+    if let plan = result.plan { state.current = plan }
+  }
+
+  /// One complete calculation; `false` after a cancellation or a failed
+  /// Blueprint basis.
+  private func runCalculation(
+    withoutStock: Bool,
+    stockReference: Double?,
+    state: inout State
+  ) async -> Bool {
+    var minimumRuns: [Int64: Int] = [:]
+    func basis(
+      _ preferences: [Int64: MaterialProcurementPreference],
+      automaticSupply: Bool
+    ) async -> Basis? {
+      await resolveBasis(
+        PlannerBasisRequest(
+          preferences: preferences,
+          automaticSupply: automaticSupply,
+          minimumBlueprintRuns: minimumRuns,
+          calculatesWithoutStock: withoutStock
+        )
+      )
+    }
+    guard let firstBasis = await basis(manualPreferences, automaticSupply: true)
+    else { return false }
+    await step(
+      firstBasis,
+      preferences: manualPreferences,
+      automaticSupply: true,
+      withoutStock: withoutStock,
+      stockReference: stockReference,
+      state: &state
+    )
+    guard !Task.isCancelled else { return false }
+    // The tree decides at Main Hub prices, the calculation at the selected
+    // purchase locations and with Blueprint costs. When they differ, the
+    // Blueprints are resolved again for the calculated build steps and those
+    // steps are kept, so costs and supply always describe the same graph.
+    guard !state.lastFailed, let decided = state.current else { return true }
+    let unusableReactions = PlannerPassDecisions.unusableReactionTypeIDs(
+      in: decided,
+      allocatedBlueprintTypeIDs: firstBasis.allocatedBlueprintTypeIDs,
+      manualTypeIDs: Set(manualPreferences.keys),
+      requestedProductNames: requestedProductNames
+    )
+    let uncoveredRuns = BlueprintSupplyPlanner.uncoveredRuns(in: decided)
+    guard
+      !unusableReactions.isEmpty || !uncoveredRuns.isEmpty
+        || PlannerPassDecisions.producedTypeIDs(decided)
+          != PlannerPassDecisions.producedTypeIDs(firstBasis.selectedPlan)
+    else { return true }
+    minimumRuns = uncoveredRuns
+    let decisions = PlannerPassDecisions.decisions(
+      manual: manualPreferences,
+      decided: decided,
+      buying: unusableReactions
+    )
+    guard let finalBasis = await basis(decisions, automaticSupply: false)
+    else { return false }
+    await step(
+      finalBasis,
+      preferences: decisions,
+      automaticSupply: false,
+      withoutStock: withoutStock,
+      stockReference: stockReference,
+      state: &state
+    )
+    guard !Task.isCancelled else { return false }
+    // More runs can round the jobs differently; a true lack of Blueprints
+    // stays a warning because the reservation then matches the plan.
+    for _ in 0..<2 {
+      guard !state.lastFailed, let plan = state.current else { break }
+      let remaining = BlueprintSupplyPlanner.uncoveredRuns(in: plan)
+      guard !remaining.isEmpty else { break }
+      minimumRuns.merge(remaining, uniquingKeysWith: max)
+      guard let nextBasis = await basis(decisions, automaticSupply: false)
+      else { return false }
+      await step(
+        nextBasis,
+        preferences: decisions,
+        automaticSupply: false,
+        withoutStock: withoutStock,
+        stockReference: stockReference,
+        state: &state
+      )
+      guard !Task.isCancelled else { return false }
+    }
+    return true
+  }
+}

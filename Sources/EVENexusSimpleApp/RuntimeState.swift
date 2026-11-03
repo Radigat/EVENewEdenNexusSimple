@@ -646,10 +646,14 @@ final class RuntimeState {
     5 * 60
   private static let plannerESICacheRetainedBytes = 32 * 1_024 * 1_024
   private static let warningESICacheRetainedBytes = 16 * 1_024 * 1_024
+  /// - Parameter esiTransport: replaces the network transport below the
+  ///   measuring layer; tests pass a fixture transport, the app uses the
+  ///   default URL session.
   init(
     dataRoot providedDataRoot: URL? = nil,
     ccpUserAgentOwnerContact: String? = nil,
-    startBackgroundServices: Bool = true
+    startBackgroundServices: Bool = true,
+    esiTransport: (any ESIHTTPTransporting)? = nil
   ) {
     self.startsBackgroundServices = startBackgroundServices
     self.startupDataLoad = StartupDataLoad(
@@ -664,7 +668,9 @@ final class RuntimeState {
     )
     let resolvedDataRoot = providedDataRoot ?? Self.fallbackDataRoot()
     dataRoot = resolvedDataRoot
-    let measuringESITransport = MeasuringESITransport()
+    let measuringESITransport =
+      esiTransport.map { MeasuringESITransport(base: $0) }
+      ?? MeasuringESITransport()
     self.measuringESITransport = measuringESITransport
     // Keeps ESI responses across restarts so nothing is requested again
     // before its `Expires` (CCP ESI best practices, owner decision
@@ -1511,6 +1517,9 @@ final class RuntimeState {
     prepareMainHubMarketAutomation()
   }
 
+  /// Calculates one plan and returns it; the caller decides which plan is
+  /// shown (ANALYSE_2026-11-02, G3). Errors go to `errorMessage` as before.
+  @discardableResult
   func calculate(
     input: String,
     manualStockInput: String = "",
@@ -1533,10 +1542,13 @@ final class RuntimeState {
     automaticSupply: Bool = false,
     manualSupplyTypeIDs: Set<Int64>? = nil,
     formulaShipments: [PlannerFormulaShipment] = [],
-    stockReferenceProductionCost: Double? = nil
-  ) async {
+    stockReferenceProductionCost: Double? = nil,
+    session providedSession: PlannerClickDataCache? = nil
+  ) async -> IndustryPlanSnapshot? {
     plannerCalculationGeneration &+= 1
     let calculationGeneration = plannerCalculationGeneration
+    let session = providedSession ?? PlannerClickDataCache()
+    var calculated: IndustryPlanSnapshot?
     beginInteractivePlannerCalculation(id: calculationGeneration)
     defer {
       finishInteractivePlannerCalculation(id: calculationGeneration)
@@ -1544,6 +1556,11 @@ final class RuntimeState {
     await ESIRequestContext.withPriority(.interactive) {
       await perform("Calculating production plan") {
         try Task.checkCancellation()
+        PlannerCalculationMetrics.count(.calculations)
+        var stopwatch = PerformanceStopwatch("planner.calculate")
+        let esiBefore = measuringESITransport.snapshot()
+        let passesBefore =
+          PlannerCalculationMetrics.current?.count(of: .planPasses) ?? 0
         guard let active = try await catalog.activeSDEVersion() else {
           throw StaticCatalogError.noActiveCatalog
         }
@@ -1564,6 +1581,7 @@ final class RuntimeState {
         let typeIDs = preparation.marketTypeIDs
         let requestedProductTypeIDs = preparation.requestedProductTypeIDs
         let requestedSelfJumpCapitals = preparation.requestedSelfJumpCapitals
+        stopwatch.lap("prepare-input", "types=\(typeIDs.count)")
         try Task.checkCancellation()
         guard let configuredMainHub = productionBasis.mainTradingLocation,
           configuredMainHub.location.kind == .npcTradeHub,
@@ -1583,35 +1601,55 @@ final class RuntimeState {
           capabilities: capabilities,
           capitalProducts: requestedSelfJumpCapitals
         )
-        let marketService = JitaMarketService(esi: esi)
-        async let homeMarketLoad = plannerSecondaryMarketLoad(
-          typeIDs: typeIDs,
-          mainHub: configuredMainHub,
-          targetHub: configuredHomeHub,
-          authorizations: authorizations,
-          clientID: clientID
-        )
-        async let coalitionMarketLoad = plannerSecondaryMarketLoad(
-          typeIDs: typeIDs,
-          mainHub: configuredMainHub,
-          targetHub: configuredCoalitionHub,
-          authorizations: authorizations,
-          clientID: clientID
-        )
-        async let contractReferenceLoad = plannerContractReferenceLoad(
-          typeIDs: requestedProductTypeIDs,
-          targetHub: configuredMainHub
-        )
-        async let packagedVolumeLoad = universeTypeVolumeService.volumes(
-          for: typeIDs
-        )
-        async let market = marketService.orderSnapshot(
-          typeIDs: typeIDs,
+        let clickLoads = try await plannerClickLoads(
+          preparedInput,
           regionID: mainRegionID,
           locationID: mainLocationID
         )
-        async let adjusted = marketService.adjustedPrices()
-        async let systems = marketService.industrySystems()
+        async let homeMarketLoad = plannerSecondaryValue(
+          session,
+          plannerSecondaryLoad(
+            typeIDs: typeIDs,
+            mainHub: configuredMainHub,
+            targetHub: configuredHomeHub,
+            authorizations: authorizations,
+            clientID: clientID
+          )
+        )
+        async let coalitionMarketLoad = plannerSecondaryValue(
+          session,
+          plannerSecondaryLoad(
+            typeIDs: typeIDs,
+            mainHub: configuredMainHub,
+            targetHub: configuredCoalitionHub,
+            authorizations: authorizations,
+            clientID: clientID
+          )
+        )
+        async let contractReferenceLoad = plannerContractReferenceValue(
+          session,
+          plannerContractReferenceClickLoad(
+            typeIDs: requestedProductTypeIDs,
+            targetHub: configuredMainHub
+          )
+        )
+        async let packagedVolumeLoad = plannerVolumesValue(
+          session,
+          clickLoads.packagedVolumes
+        )
+        async let market = session.value(clickLoads.market)
+        async let adjusted = session.value(clickLoads.adjustedPrices)
+        async let systems = session.value(clickLoads.systemIndices)
+        // Comparison markets serve purchases alone and load with the hubs.
+        let comparisonMarkets = plannerComparisonMarkets(purchaseLocationIDs)
+        async let comparisonMarketLoads = plannerComparisonMarketLoads(
+          session,
+          comparisonMarkets,
+          typeIDs: typeIDs,
+          mainHub: configuredMainHub,
+          authorizations: authorizations,
+          clientID: clientID
+        )
         let values = try await (
           market,
           adjusted,
@@ -1622,6 +1660,8 @@ final class RuntimeState {
           packagedVolumeLoad
         )
         let loadedJumpFreighterRoute = await jumpFreighterRouteLoad
+        let comparisonLoads = await comparisonMarketLoads
+        stopwatch.lap("load-markets-prices-routes")
         try Task.checkCancellation()
         var homeMarket: MarketOrderSnapshot?
         var homeMarketWarnings: [DomainWarning] = []
@@ -1878,31 +1918,6 @@ final class RuntimeState {
             snapshot: coalitionMarket,
             route: .hub(.coalitionToHome)
           )
-          // Comparison markets load only when chosen; they serve purchases alone.
-          let comparisonMarkets = productionBasis.comparisonPurchaseLocations.filter {
-            purchaseLocationIDs.contains($0.id)
-          }
-          let comparisonLoads = await withTaskGroup(
-            of: (UUID, PlannerSecondaryMarketLoad).self
-          ) { group in
-            for market in comparisonMarkets {
-              group.addTask {
-                (
-                  market.id,
-                  await self.plannerSecondaryMarketLoad(
-                    typeIDs: typeIDs,
-                    mainHub: configuredMainHub,
-                    targetHub: market,
-                    authorizations: authorizations,
-                    clientID: clientID
-                  )
-                )
-              }
-            }
-            var loads: [UUID: PlannerSecondaryMarketLoad] = [:]
-            for await (id, load) in group { loads[id] = load }
-            return loads
-          }
           for market in comparisonMarkets {
             var snapshot: MarketOrderSnapshot?
             switch comparisonLoads[market.id] {
@@ -1919,9 +1934,13 @@ final class RuntimeState {
           }
           purchaseMarkets = selected
         }
+        stopwatch.lap(
+          "stock-and-purchase-markets",
+          "purchase-markets=\(purchaseMarkets?.count ?? 0)"
+        )
         var productCharacterIDs: [Int64: Int64] = [:]
         for (name, characterID) in plannerProductCharacters {
-          if let typeID = try? await catalog.typeID(named: name) {
+          if let typeID = try? await planningCatalog.typeID(named: name) {
             productCharacterIDs[typeID] = characterID
           }
         }
@@ -1989,16 +2008,338 @@ final class RuntimeState {
           preparation: preparation,
           context: context
         )
+        let passes =
+          (PlannerCalculationMetrics.current?.count(of: .planPasses) ?? 0)
+          - passesBefore
+        stopwatch.lap("plan", "passes=\(passes)")
+        stopwatch.finish(
+          "esi: "
+            + measuringESITransport.snapshot().subtracting(esiBefore).summary()
+        )
         try Task.checkCancellation()
         guard calculationGeneration == plannerCalculationGeneration else {
           return
         }
-        plan = calculatedPlan
+        calculated = calculatedPlan
       }
     }
+    if providedSession == nil { await session.cancelAll() }
+    return calculated
+  }
+
+  /// Releases cached ESI bodies once a whole Planner click has finished. The
+  /// click's later trees and calculations still find the order books of its
+  /// first passes in memory.
+  func finishPlannerClick() async {
     await esi.trimCachedResponses(
       toMaximumBytes: Self.plannerESICacheRetainedBytes
     )
+  }
+
+  // MARK: Data of one Planner click (ANALYSE_2026-11-02, A3)
+
+  /// Starts every load of a Planner click at once: markets and prices of the
+  /// trees and calculations, the Home, Coalition and comparison markets, the
+  /// contract reference and the Blueprint and formula markets of every
+  /// buildable type. The trees and calculations of the click take their data
+  /// from `session`; whatever is missing they load themselves.
+  func prefetchPlannerClickData(
+    _ session: PlannerClickDataCache,
+    input: String,
+    purchaseLocationIDs: Set<UUID>?,
+    authorizations: [AuthorizationSnapshot],
+    clientID: String
+  ) async {
+    guard let active = try? await catalog.activeSDEVersion(),
+      let mainHub = productionBasis.mainTradingLocation,
+      mainHub.location.kind == .npcTradeHub,
+      let regionID = mainHub.location.regionID,
+      let locationID = mainHub.location.locationID,
+      let preparedInput = try? await plannerInputPreparation(
+        input: input,
+        sdeBuild: active.buildNumber,
+        sdeContentSHA256: active.contentSHA256,
+        includeCompressedOreOptions:
+          productionBasis.compressedOreRefining.isEnabled,
+        includeJumpFuelIsotopes:
+          productionBasis.logistics.jumpFreighter.isEnabled
+          && productionBasis.coalitionTradingLocation != nil,
+        calculationGeneration: plannerCalculationGeneration
+      ),
+      let loads = try? await plannerClickLoads(
+        preparedInput,
+        regionID: regionID,
+        locationID: locationID
+      )
+    else { return }
+    let typeIDs = preparedInput.preparation.marketTypeIDs
+    await session.prefetch(loads.market)
+    await session.prefetch(loads.adjustedPrices)
+    await session.prefetch(loads.systemIndices)
+    await session.prefetch(loads.packagedVolumes)
+    await session.prefetch(loads.blueprintMarket)
+    if !loads.formulaCandidates.isEmpty {
+      await session.prefetch(loads.formulaMarket)
+    }
+    if let contractOffers = loads.contractOffers {
+      await session.prefetch(contractOffers)
+    }
+    let hubs =
+      [productionBasis.homeTradingLocation, productionBasis.coalitionTradingLocation]
+      + plannerComparisonMarkets(purchaseLocationIDs)
+    for hub in hubs {
+      await session.prefetch(
+        plannerSecondaryLoad(
+          typeIDs: typeIDs,
+          mainHub: mainHub,
+          targetHub: hub,
+          authorizations: authorizations,
+          clientID: clientID
+        )
+      )
+    }
+    await session.prefetch(
+      plannerContractReferenceClickLoad(
+        typeIDs: preparedInput.preparation.requestedProductTypeIDs,
+        targetHub: mainHub
+      )
+    )
+  }
+
+  /// Comparison markets load only when chosen; they serve purchases alone.
+  private func plannerComparisonMarkets(
+    _ purchaseLocationIDs: Set<UUID>?
+  ) -> [TradingLocationConfiguration] {
+    purchaseLocationIDs.map { ids in
+      productionBasis.comparisonPurchaseLocations.filter { ids.contains($0.id) }
+    } ?? []
+  }
+
+  /// The loads that the trees and calculations of a click share. Each key
+  /// names exactly what is loaded.
+  private struct PlannerClickLoads {
+    let market: PlannerClickLoad<MarketOrderSnapshot>
+    let adjustedPrices: PlannerClickLoad<[Int64: AdjustedPrice]>
+    let systemIndices: PlannerClickLoad<[IndustrySystemIndex]>
+    let packagedVolumes: PlannerClickLoad<Sourced<[Int64: Double]>>
+    /// Blueprints and formulas of every buildable type of the graph; a tree
+    /// takes exactly its own types from them.
+    let blueprintCandidates: Set<Int64>
+    let formulaCandidates: Set<Int64>
+    let blueprintMarket: PlannerClickLoad<MarketOrderSnapshot>
+    let formulaMarket: PlannerClickLoad<MarketOrderSnapshot>
+    let contractOffers: PlannerClickLoad<PlannerContractOffers>?
+  }
+
+  private func plannerClickLoads(
+    _ preparedInput: PlannerInputPreparationCacheEntry,
+    regionID: Int64,
+    locationID: Int64
+  ) async throws -> PlannerClickLoads {
+    var blueprints = Set<Int64>()
+    var formulas = Set<Int64>()
+    for typeID in preparedInput.preparation.marketTypeIDs {
+      guard
+        let definition = try await preparedInput.catalog.productionDefinition(
+          productTypeID: typeID
+        ),
+        definition.activity.kind != .invention
+      else { continue }
+      blueprints.insert(definition.blueprintTypeID)
+      if definition.activity.kind == .reaction {
+        formulas.insert(definition.blueprintTypeID)
+      }
+    }
+    let typeIDs = preparedInput.preparation.marketTypeIDs
+    let blueprintCandidates = blueprints
+    let formulaCandidates = formulas
+    let esi = esi
+    let volumes = universeTypeVolumeService
+    let indexer = publicContractIndexer
+    let typeKey = Self.plannerClickKey(typeIDs)
+    return PlannerClickLoads(
+      market: plannerMarketClickLoad(
+        typeIDs: typeIDs,
+        regionID: regionID,
+        locationID: locationID
+      ),
+      adjustedPrices: PlannerClickLoad(key: "adjusted-prices") {
+        try await TradeHubMarketService(esi: esi).adjustedPrices()
+      },
+      systemIndices: PlannerClickLoad(key: "system-indices") {
+        try await TradeHubMarketService(esi: esi).industrySystems()
+      },
+      packagedVolumes: PlannerClickLoad(key: "volumes|\(typeKey)") {
+        try await volumes.volumes(for: typeIDs)
+      },
+      blueprintCandidates: blueprintCandidates,
+      formulaCandidates: formulaCandidates,
+      blueprintMarket: plannerMarketClickLoad(
+        typeIDs: blueprintCandidates,
+        regionID: regionID,
+        locationID: locationID
+      ),
+      formulaMarket: PlannerClickLoad(
+        key: "formula-market|\(regionID)|\(locationID)|\(Self.plannerClickKey(formulaCandidates))"
+      ) {
+        try await TradeHubMarketService(esi: esi).regionWideSellOrderSnapshot(
+          typeIDs: formulaCandidates,
+          regionID: regionID,
+          referenceLocationID: locationID
+        )
+      },
+      contractOffers: indexer.map { indexer in
+        PlannerClickLoad(
+          key: "contract-offers|\(locationID)|\(Self.plannerClickKey(blueprintCandidates))"
+        ) {
+          let snapshot = try await indexer.includedOfferSnapshot(
+            typeIDs: blueprintCandidates,
+            startLocationID: locationID,
+            limitPerType: 500
+          )
+          return PlannerContractOffers(
+            offers: snapshot.offers,
+            progress: snapshot.progress
+          )
+        }
+      }
+    )
+  }
+
+  private func plannerMarketClickLoad(
+    typeIDs: Set<Int64>,
+    regionID: Int64,
+    locationID: Int64
+  ) -> PlannerClickLoad<MarketOrderSnapshot> {
+    let esi = esi
+    return PlannerClickLoad(
+      key: "market|\(regionID)|\(locationID)|\(Self.plannerClickKey(typeIDs))"
+    ) {
+      try await TradeHubMarketService(esi: esi).orderSnapshot(
+        typeIDs: typeIDs,
+        regionID: regionID,
+        locationID: locationID
+      )
+    }
+  }
+
+  private func plannerSecondaryLoad(
+    typeIDs: Set<Int64>,
+    mainHub: TradingLocationConfiguration,
+    targetHub: TradingLocationConfiguration?,
+    authorizations: [AuthorizationSnapshot],
+    clientID: String
+  ) -> PlannerClickLoad<PlannerSecondaryMarketLoad> {
+    let target = targetHub.map { "\($0.id)|\($0.location.id)" } ?? "none"
+    return PlannerClickLoad(
+      key: "hub|\(mainHub.location.id)|\(target)|\(Self.plannerClickKey(typeIDs))"
+    ) { [weak self] in
+      guard let self else { return .cancelled }
+      return await self.plannerSecondaryMarketLoad(
+        typeIDs: typeIDs,
+        mainHub: mainHub,
+        targetHub: targetHub,
+        authorizations: authorizations,
+        clientID: clientID
+      )
+    }
+  }
+
+  /// A Home, Coalition or comparison market of the click. An unavailable or
+  /// cancelled load is not kept, so the next pass asks again as before.
+  private func plannerSecondaryValue(
+    _ session: PlannerClickDataCache,
+    _ load: PlannerClickLoad<PlannerSecondaryMarketLoad>
+  ) async -> PlannerSecondaryMarketLoad {
+    let value: PlannerSecondaryMarketLoad
+    do {
+      value = try await session.value(load)
+    } catch {
+      return .cancelled
+    }
+    switch value {
+    case .unavailable, .cancelled: await session.forget(load.key)
+    case .notConfigured, .reuseMain, .loaded: break
+    }
+    return value
+  }
+
+  private func plannerContractReferenceClickLoad(
+    typeIDs: Set<Int64>,
+    targetHub: TradingLocationConfiguration?
+  ) -> PlannerClickLoad<PlannerContractReferenceLoad> {
+    PlannerClickLoad(
+      key: "contract-reference|\(targetHub != nil)|\(Self.plannerClickKey(typeIDs))"
+    ) { [weak self] in
+      guard let self else { return .cancelled }
+      return await self.plannerContractReferenceLoad(
+        typeIDs: typeIDs,
+        targetHub: targetHub
+      )
+    }
+  }
+
+  private func plannerContractReferenceValue(
+    _ session: PlannerClickDataCache,
+    _ load: PlannerClickLoad<PlannerContractReferenceLoad>
+  ) async -> PlannerContractReferenceLoad {
+    let value: PlannerContractReferenceLoad
+    do {
+      value = try await session.value(load)
+    } catch {
+      return .cancelled
+    }
+    switch value {
+    case .unavailable, .cancelled: await session.forget(load.key)
+    case .notConfigured, .loaded: break
+    }
+    return value
+  }
+
+  /// Packaged volumes of the click; an incomplete result is asked for again
+  /// by the next pass.
+  private func plannerVolumesValue(
+    _ session: PlannerClickDataCache,
+    _ load: PlannerClickLoad<Sourced<[Int64: Double]>>
+  ) async throws -> Sourced<[Int64: Double]> {
+    let value = try await session.value(load)
+    if value.state != .fresh { await session.forget(load.key) }
+    return value
+  }
+
+  /// Order books of the chosen comparison markets, loaded in parallel.
+  private func plannerComparisonMarketLoads(
+    _ session: PlannerClickDataCache,
+    _ markets: [TradingLocationConfiguration],
+    typeIDs: Set<Int64>,
+    mainHub: TradingLocationConfiguration,
+    authorizations: [AuthorizationSnapshot],
+    clientID: String
+  ) async -> [UUID: PlannerSecondaryMarketLoad] {
+    let loads = markets.map { market in
+      (
+        market.id,
+        plannerSecondaryLoad(
+          typeIDs: typeIDs,
+          mainHub: mainHub,
+          targetHub: market,
+          authorizations: authorizations,
+          clientID: clientID
+        )
+      )
+    }
+    return await withTaskGroup(of: (UUID, PlannerSecondaryMarketLoad).self) { group in
+      for (id, load) in loads {
+        group.addTask { (id, await self.plannerSecondaryValue(session, load)) }
+      }
+      var results: [UUID: PlannerSecondaryMarketLoad] = [:]
+      for await (id, load) in group { results[id] = load }
+      return results
+    }
+  }
+
+  private static func plannerClickKey(_ typeIDs: Set<Int64>) -> String {
+    typeIDs.sorted().map(String.init).joined(separator: ",")
   }
 
   private func plannerInputPreparation(
@@ -2457,12 +2798,24 @@ final class RuntimeState {
     availableStockOverride: [Int64: Int64]? = nil,
     usesExactPlannerPreferences: Bool = false,
     automaticSupply: Bool = false,
-    minimumBlueprintRuns: [Int64: Int] = [:]
+    minimumBlueprintRuns: [Int64: Int] = [:],
+    session providedSession: PlannerClickDataCache? = nil
   ) async throws -> ManufacturingProductionTreeSnapshot {
+    let session = providedSession ?? PlannerClickDataCache()
+    defer {
+      if providedSession == nil {
+        Task { await session.cancelAll() }
+      }
+    }
     guard targetQuantity > 0,
       (0...10).contains(materialEfficiency),
       (0...20).contains(timeEfficiency)
     else { throw ManufacturingOpportunityError.invalidSettings }
+    PlannerCalculationMetrics.count(.productionTrees)
+    var stopwatch = PerformanceStopwatch("planner.tree")
+    let esiBefore = measuringESITransport.snapshot()
+    let passesBefore =
+      PlannerCalculationMetrics.current?.count(of: .planPasses) ?? 0
     guard let active = try await catalog.activeSDEVersion() else {
       throw StaticCatalogError.noActiveCatalog
     }
@@ -2507,16 +2860,18 @@ final class RuntimeState {
     let planningCatalog = preparedInput.catalog
     let preparation = preparedInput.preparation
     let typeIDs = preparation.marketTypeIDs
-    let marketService = TradeHubMarketService(esi: esi)
-    async let marketValue = marketService.orderSnapshot(
-      typeIDs: typeIDs,
+    stopwatch.lap("prepare-input", "types=\(typeIDs.count)")
+    let clickLoads = try await plannerClickLoads(
+      preparedInput,
       regionID: mainRegionID,
       locationID: mainLocationID
     )
-    async let adjustedValue = marketService.adjustedPrices()
-    async let systemsValue = marketService.industrySystems()
-    async let packagedVolumeValue = universeTypeVolumeService.volumes(
-      for: typeIDs
+    async let marketValue = session.value(clickLoads.market)
+    async let adjustedValue = session.value(clickLoads.adjustedPrices)
+    async let systemsValue = session.value(clickLoads.systemIndices)
+    async let packagedVolumeValue = plannerVolumesValue(
+      session,
+      clickLoads.packagedVolumes
     )
     let (market, adjusted, systems, packagedVolumeSnapshot) =
       try await (
@@ -2525,6 +2880,7 @@ final class RuntimeState {
         systemsValue,
         packagedVolumeValue
       )
+    stopwatch.lap("load-markets-prices")
 
     var allocatableStock: [Int64: Int64] = [:]
     var snapshotIDs: [UUID] = [
@@ -2637,6 +2993,7 @@ final class RuntimeState {
         warnings: inputWarnings
       )
     )
+    stopwatch.lap("reference-plan")
     let recommendations = MakeOrBuyRecommendationApplication(
       materials: referencePlan.materials,
       existingPreferences: [:],
@@ -2672,12 +3029,20 @@ final class RuntimeState {
     let blueprintTypeIDs = Set(
       referencePlan.nodes.compactMap(\.blueprintTypeID)
     )
-    let blueprintNames = try await catalog.typeNames(ids: blueprintTypeIDs)
-    let blueprintMarket = try await marketService.orderSnapshot(
-      typeIDs: blueprintTypeIDs,
-      regionID: mainRegionID,
-      locationID: mainLocationID
-    )
+    let blueprintNames = try await planningCatalog.typeNames(ids: blueprintTypeIDs)
+    // The click loads the Blueprints of every buildable type at once; this
+    // tree takes exactly its own types. A type outside them loads directly.
+    let blueprintMarket =
+      blueprintTypeIDs.isSubset(of: clickLoads.blueprintCandidates)
+      ? try await session.value(clickLoads.blueprintMarket)
+        .restricted(to: blueprintTypeIDs)
+      : try await session.value(
+        plannerMarketClickLoad(
+          typeIDs: blueprintTypeIDs,
+          regionID: mainRegionID,
+          locationID: mainLocationID
+        )
+      )
     snapshotIDs.append(blueprintMarket.source.snapshotID)
     var blueprintMarketOrders = blueprintMarket.ordersByType
     let formulaTypeIDs = Set(
@@ -2686,11 +3051,15 @@ final class RuntimeState {
     )
     if !formulaTypeIDs.isEmpty {
       do {
-        let formulaMarket = try await marketService.regionWideSellOrderSnapshot(
-          typeIDs: formulaTypeIDs,
-          regionID: mainRegionID,
-          referenceLocationID: mainLocationID
-        )
+        let formulaMarket =
+          formulaTypeIDs.isSubset(of: clickLoads.formulaCandidates)
+          ? try await session.value(clickLoads.formulaMarket)
+            .restricted(to: formulaTypeIDs)
+          : try await TradeHubMarketService(esi: esi).regionWideSellOrderSnapshot(
+            typeIDs: formulaTypeIDs,
+            regionID: mainRegionID,
+            referenceLocationID: mainLocationID
+          )
         blueprintMarketOrders.merge(formulaMarket.ordersByType) { _, regionWide in
           regionWide
         }
@@ -2709,7 +3078,7 @@ final class RuntimeState {
     }
     var inventionDefinitions: [Int64: BlueprintDefinition] = [:]
     for blueprintTypeID in blueprintTypeIDs {
-      if let definition = try await catalog.productionDefinition(
+      if let definition = try await planningCatalog.productionDefinition(
         productTypeID: blueprintTypeID
       ), definition.activity.kind == .invention {
         inventionDefinitions[blueprintTypeID] = definition
@@ -2719,21 +3088,37 @@ final class RuntimeState {
     var publicContractCoverageComplete = false
     if let publicContractIndexer {
       do {
-        let snapshot = try await publicContractIndexer.includedOfferSnapshot(
-          typeIDs: blueprintTypeIDs,
-          startLocationID: mainLocationID,
-          limitPerType: 500
-        )
-        contractOffers = snapshot.offers
+        // Offers are limited per type, so the click's wider query gives each
+        // type exactly its own offers.
+        let snapshot =
+          if blueprintTypeIDs.isSubset(of: clickLoads.blueprintCandidates),
+            let load = clickLoads.contractOffers
+          {
+            try await session.value(load)
+          } else {
+            try await PlannerContractOffers(
+              publicContractIndexer.includedOfferSnapshot(
+                typeIDs: blueprintTypeIDs,
+                startLocationID: mainLocationID,
+                limitPerType: 500
+              )
+            )
+          }
+        let offers = snapshot.offers.filter { blueprintTypeIDs.contains($0.key) }
+        contractOffers = offers
         publicContractCoverageComplete =
           snapshot.progress.hasCompleteSearchCoverage
-          && !snapshot.offers.values.contains { $0.count >= 500 }
+          && !offers.values.contains { $0.count >= 500 }
       } catch {
         if error is CancellationError {
           throw error
         }
       }
     }
+    stopwatch.lap(
+      "blueprint-market-contracts",
+      "blueprints=\(blueprintTypeIDs.count) formulas=\(formulaTypeIDs.count)"
+    )
     var requiredRunsByBlueprintTypeID: [Int64: Int] = [:]
     var productNameByBlueprintTypeID: [Int64: String] = [:]
     for node in referencePlan.nodes where node.action == .produce {
@@ -2770,6 +3155,7 @@ final class RuntimeState {
         context: preflightContext,
         reusingMakeOrBuyAnalysesFrom: referencePlan
       )
+    stopwatch.lap("preflight-plan")
     if usesExactPlannerPreferences {
       // Types without an explicit preference follow the planner's own
       // decision, not the make-or-buy recommendation of the reference plan.
@@ -2788,6 +3174,7 @@ final class RuntimeState {
         warnings: inputWarnings
       )
     )
+    stopwatch.lap("material-valuations")
     let preflightTree = ManufacturingProductionTreeProjector.project(
       targetQuantity: targetQuantity,
       mainHub: configuredMainHub.location,
@@ -2924,7 +3311,8 @@ final class RuntimeState {
       ),
       reusingMakeOrBuyAnalysesFrom: referencePlan
     )
-    return ManufacturingProductionTreeProjector.project(
+    stopwatch.lap("selected-plan")
+    let tree = ManufacturingProductionTreeProjector.project(
       targetQuantity: targetQuantity,
       mainHub: configuredMainHub.location,
       referencePlan: referencePlan,
@@ -2947,6 +3335,20 @@ final class RuntimeState {
       blueprintMaterialValuations: blueprintMaterialValuations,
       blueprintRunReservations: existingBlueprintReservations
     )
+    stopwatch.lap("projection")
+    let passes =
+      (PlannerCalculationMetrics.current?.count(of: .planPasses) ?? 0)
+      - passesBefore
+    stopwatch.finish(
+      "passes=\(passes) esi: "
+        + measuringESITransport.snapshot().subtracting(esiBefore).summary()
+    )
+    return tree
+  }
+
+  /// ESI counters of this run, for the summary of one Planner click.
+  func esiRequestSnapshot() -> MeasuringESITransport.Snapshot {
+    measuringESITransport.snapshot()
   }
 
   var marketAnalysisContextIdentity: String {
@@ -6265,6 +6667,29 @@ private enum PlannerSecondaryMarketLoad: Sendable {
   case cancelled
 }
 
+/// Included public-contract offers of Blueprint types and the index progress.
+private struct PlannerContractOffers: Sendable {
+  let offers: [Int64: [PublicContractSearchResult]]
+  let progress: PublicContractSyncProgress
+
+  init(
+    offers: [Int64: [PublicContractSearchResult]],
+    progress: PublicContractSyncProgress
+  ) {
+    self.offers = offers
+    self.progress = progress
+  }
+
+  init(
+    _ snapshot: (
+      offers: [Int64: [PublicContractSearchResult]],
+      progress: PublicContractSyncProgress
+    )
+  ) {
+    self.init(offers: snapshot.offers, progress: snapshot.progress)
+  }
+}
+
 private enum PlannerContractReferenceLoad: Sendable {
   case notConfigured
   case loaded(PublicContractReferenceSnapshot)
@@ -6858,25 +7283,30 @@ extension RuntimeState {
       // as unresolved instead of getting invented names.
       let names = (try? await catalog.typeNames(ids: purchaseTypes)) ?? [:]
       let volumes = (try? await catalog.packagedVolumes(typeIDs: purchaseTypes)) ?? [:]
-      let result = TradeWalletReconciler.reconcile(
-        entries: entries,
-        transactions: transactions,
-        journal: journal,
-        orders: orders,
-        context: TradeReconciliationContext(
-          startDate: start,
-          hubLocations: hubLocations,
-          hubNames: hubNames,
-          fees: fees,
-          manufacturingTypeIDs: manufacturingTypeIDs,
-          transportBases: tradeTransportBases,
-          packagedVolumes: volumes,
-          typeNames: names,
-          charactersWithOrders: Set(
-            statuses.filter { $0.ordersSyncedAt != nil }.map(\.characterID)
-          )
+      let context = TradeReconciliationContext(
+        startDate: start,
+        hubLocations: hubLocations,
+        hubNames: hubNames,
+        fees: fees,
+        manufacturingTypeIDs: manufacturingTypeIDs,
+        transportBases: tradeTransportBases,
+        packagedVolumes: volumes,
+        typeNames: names,
+        charactersWithOrders: Set(
+          statuses.filter { $0.ordersSyncedAt != nil }.map(\.characterID)
         )
       )
+      // The matching is pure and walks the whole wallet history, so it runs
+      // off the main thread; the result is applied here as before.
+      let result = await Task.detached(priority: .userInitiated) {
+        TradeWalletReconciler.reconcile(
+          entries: entries,
+          transactions: transactions,
+          journal: journal,
+          orders: orders,
+          context: context
+        )
+      }.value
       if !result.changedEntries.isEmpty {
         try await store.save(result.changedEntries)
       }

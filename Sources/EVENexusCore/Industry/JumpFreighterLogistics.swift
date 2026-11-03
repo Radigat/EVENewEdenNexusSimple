@@ -577,60 +577,103 @@ public enum DOTLANJumpRouteError: Error, Equatable {
 }
 
 public actor DOTLANJumpRouteService {
-  private let session: URLSession
+  /// One DOTLAN page that parsed into a route. Jump ranges and systems do not
+  /// change in practice, so a page is reused for the app run, at most for
+  /// `pageLifetime` (owner decision 03.11.2026). Failed loads and pages that
+  /// do not parse are never kept.
+  private struct Page: Sendable {
+    let html: String
+    let capturedAt: Date
+  }
 
-  public init(session: URLSession = .shared) {
+  public static let defaultPageLifetime: TimeInterval = 24 * 60 * 60
+  private static let maximumPages = 64
+
+  private let session: URLSession
+  private let pageLifetime: TimeInterval
+  private let now: @Sendable () -> Date
+  private var pages: [URL: Page] = [:]
+
+  public init(
+    session: URLSession = .shared,
+    pageLifetime: TimeInterval = DOTLANJumpRouteService.defaultPageLifetime,
+    now: @escaping @Sendable () -> Date = { Date() }
+  ) {
     self.session = session
+    self.pageLifetime = pageLifetime
+    self.now = now
   }
 
   public func route(for request: JumpRouteRequest) async throws
     -> JumpRouteSnapshot
   {
     let url = try Self.url(for: request)
-    var urlRequest = URLRequest(url: url)
-    urlRequest.timeoutInterval = 30
-    urlRequest.setValue(
-      CCPUserAgentConfiguration.genericValue,
-      forHTTPHeaderField: "User-Agent"
-    )
-    let (data, response) = try await session.data(for: urlRequest)
-    guard let http = response as? HTTPURLResponse,
-      (200..<300).contains(http.statusCode)
-    else { throw DOTLANJumpRouteError.invalidResponse }
-    guard let html = String(data: data, encoding: .utf8) else {
-      throw DOTLANJumpRouteError.invalidResponse
-    }
-    return try Self.parse(
-      html: html,
+    let page = try await page(for: url)
+    let route = try Self.parse(
+      html: page.html,
       request: request,
       sourceURL: url,
-      capturedAt: .now
+      capturedAt: page.capturedAt
     )
+    remember(page, for: url)
+    return route
   }
 
   public func route(for request: CapitalJumpRouteRequest) async throws
     -> CapitalJumpRouteSnapshot
   {
     let url = try Self.url(for: request)
+    let page = try await page(for: url)
+    let route = try Self.parse(
+      html: page.html,
+      request: request,
+      sourceURL: url,
+      capturedAt: page.capturedAt
+    )
+    remember(page, for: url)
+    return route
+  }
+
+  /// The kept page of `url` while it is younger than `pageLifetime`,
+  /// otherwise a new load.
+  private func page(for url: URL) async throws -> Page {
+    let current = now()
+    if let kept = pages[url] {
+      let age = current.timeIntervalSince(kept.capturedAt)
+      if age >= 0, age < pageLifetime {
+        PlannerCalculationMetrics.count(.jumpRouteCacheHits)
+        return kept
+      }
+      pages[url] = nil
+    }
     var urlRequest = URLRequest(url: url)
     urlRequest.timeoutInterval = 30
     urlRequest.setValue(
       CCPUserAgentConfiguration.genericValue,
       forHTTPHeaderField: "User-Agent"
     )
+    let started = ContinuousClock.now
+    PlannerCalculationMetrics.count(.jumpRoutes)
     let (data, response) = try await session.data(for: urlRequest)
+    PlannerCalculationMetrics.current?.record("dotlan", since: started)
     guard let http = response as? HTTPURLResponse,
       (200..<300).contains(http.statusCode)
     else { throw DOTLANJumpRouteError.invalidResponse }
     guard let html = String(data: data, encoding: .utf8) else {
       throw DOTLANJumpRouteError.invalidResponse
     }
-    return try Self.parse(
-      html: html,
-      request: request,
-      sourceURL: url,
-      capturedAt: .now
-    )
+    return Page(html: html, capturedAt: now())
+  }
+
+  /// Keeps a page that parsed into a route; the oldest page leaves first.
+  private func remember(_ page: Page, for url: URL) {
+    guard pages[url] == nil else { return }
+    if pages.count >= Self.maximumPages,
+      let oldest = pages.min(by: { $0.value.capturedAt < $1.value.capturedAt })
+    {
+      pages[oldest.key] = nil
+    }
+    pages[url] = page
   }
 
   public func route(

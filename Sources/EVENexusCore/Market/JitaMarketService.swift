@@ -153,6 +153,7 @@ public struct TradeHubMarketService: Sendable {
     lease: AccessTokenLease
   ) async throws -> MarketOrderSnapshot {
     try Task.checkCancellation()
+    PlannerCalculationMetrics.count(.marketSnapshots)
     let response = try await esi.getAllPages(
       [ESIStructureMarketOrderDTO].self,
       endpoint: ESIEndpoint(
@@ -250,6 +251,8 @@ public struct TradeHubMarketService: Sendable {
     orderType: String,
     keepsEveryLocation: Bool = false
   ) async throws -> MarketOrderSnapshot {
+    PlannerCalculationMetrics.count(.marketSnapshots)
+    PlannerCalculationMetrics.count(.marketTypeRequests, by: typeIDs.count)
     var ordersByType: [Int64: [MarketOrder]] = [:]
     var source = SourceIdentity(
       provider: "ESI",

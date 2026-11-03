@@ -1,0 +1,5923 @@
+{
+  "createdAt": "<date>",
+  "id": "uuid-1",
+  "mainHub": {
+    "id": "npc:60003760",
+    "kind": "npcTradeHub",
+    "locationID": 60003760,
+    "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+    "ownerCorporationID": 1000035,
+    "ownerFactionID": 500001,
+    "regionID": 10000002,
+    "solarSystemID": 30000142
+  },
+  "nodes": [
+    {
+      "action": "buy",
+      "activity": null,
+      "blueprint": null,
+      "canBuild": false,
+      "children": [],
+      "facilityName": null,
+      "factualWarehouseQuantity": null,
+      "id": "uuid-2",
+      "materialEfficiency": null,
+      "name": "Tritanium",
+      "producedQuantity": 2430,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 2430,
+      "reservedWarehouseQuantity": null,
+      "runs": null,
+      "selectedSupplyMode": "buy",
+      "sourceCategory": null,
+      "sourceGroup": null,
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 24160,
+      "typeID": 34,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "buy",
+      "activity": null,
+      "blueprint": null,
+      "canBuild": false,
+      "children": [],
+      "facilityName": null,
+      "factualWarehouseQuantity": null,
+      "id": "uuid-3",
+      "materialEfficiency": null,
+      "name": "Pyerite",
+      "producedQuantity": 972,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 972,
+      "reservedWarehouseQuantity": null,
+      "runs": null,
+      "selectedSupplyMode": "buy",
+      "sourceCategory": null,
+      "sourceGroup": null,
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 2304,
+      "typeID": 35,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "produce",
+      "activity": "manufacturing",
+      "blueprint": {
+        "attributableBPCContractCount": 0,
+        "attributableBPCContractME": null,
+        "attributableBPCContractPrice": null,
+        "attributableBPCContractRuns": null,
+        "attributableBPCContractSelectionCount": 0,
+        "attributableBPCContractTE": null,
+        "attributableBPOContractCount": 0,
+        "attributableBPOContractPrice": null,
+        "attributableContractOptions": [],
+        "availableActions": [
+          "manualExternalBPC"
+        ],
+        "blueprintName": "Golden Component Blueprint",
+        "blueprintTypeID": 1102,
+        "bpcContractMaterialCostUnresolved": false,
+        "copyingLocationBPOCount": 0,
+        "exactLocationBPCCount": 0,
+        "exactLocationBPCOwnerNames": [],
+        "exactLocationBPCRequiredCount": null,
+        "exactLocationBPCRuns": 0,
+        "exactLocationBPCSourceStates": [],
+        "exactLocationBPOCount": 0,
+        "exactLocationBPOOwnerNames": [],
+        "exactLocationBPOSourceStates": [],
+        "exactLocationEfficiencyOptions": [],
+        "exactLocationInstanceOptions": [],
+        "exactLocationUnknownCount": 0,
+        "indexedContractOfferCount": 0,
+        "inventionSourceCount": 0,
+        "inventoryIsComplete": false,
+        "lowestWholeContractPrice": null,
+        "marketBPOOptions": [],
+        "otherLocationBPCCount": 0,
+        "otherLocationBPOCount": 0,
+        "otherLocationCount": 0,
+        "otherLocationInstanceOptions": [],
+        "productionLocationIDs": [],
+        "productionLocationNames": [],
+        "recommendation": "manualExternalBPC",
+        "remainderBPCContractPrice": null,
+        "remainderBPCContractRecordIDs": [],
+        "requiredRuns": 64,
+        "researchLocationBPCCount": 0,
+        "researchLocationBPOCount": 0,
+        "selectedBPCContractRecordIDs": []
+      },
+      "canBuild": true,
+      "children": [
+        "uuid-2",
+        "uuid-3"
+      ],
+      "facilityName": "Unnamed structure / station",
+      "factualWarehouseQuantity": null,
+      "id": "uuid-4",
+      "materialEfficiency": 10,
+      "name": "Golden Component",
+      "producedQuantity": 27,
+      "protectedWarehouseQuantity": null,
+      "recommendation": "unavailable",
+      "recommendationSavings": null,
+      "requestedQuantity": 27,
+      "reservedWarehouseQuantity": null,
+      "runs": 27,
+      "selectedSupplyMode": "produce",
+      "sourceCategory": "Fixture",
+      "sourceGroup": "Fixture Group",
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": 20,
+      "totalRequiredQuantity": 64,
+      "typeID": 1002,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "buy",
+      "activity": null,
+      "blueprint": null,
+      "canBuild": false,
+      "children": [],
+      "facilityName": null,
+      "factualWarehouseQuantity": null,
+      "id": "uuid-5",
+      "materialEfficiency": null,
+      "name": "Atmospheric Gases",
+      "producedQuantity": 100,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 100,
+      "reservedWarehouseQuantity": null,
+      "runs": null,
+      "selectedSupplyMode": "buy",
+      "sourceCategory": null,
+      "sourceGroup": null,
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 100,
+      "typeID": 16634,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "buy",
+      "activity": null,
+      "blueprint": null,
+      "canBuild": false,
+      "children": [],
+      "facilityName": null,
+      "factualWarehouseQuantity": null,
+      "id": "uuid-6",
+      "materialEfficiency": null,
+      "name": "Cadmium",
+      "producedQuantity": 100,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 100,
+      "reservedWarehouseQuantity": null,
+      "runs": null,
+      "selectedSupplyMode": "buy",
+      "sourceCategory": null,
+      "sourceGroup": null,
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 100,
+      "typeID": 16643,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "produce",
+      "activity": "reaction",
+      "blueprint": {
+        "attributableBPCContractCount": 0,
+        "attributableBPCContractME": null,
+        "attributableBPCContractPrice": null,
+        "attributableBPCContractRuns": null,
+        "attributableBPCContractSelectionCount": 0,
+        "attributableBPCContractTE": null,
+        "attributableBPOContractCount": 0,
+        "attributableBPOContractPrice": null,
+        "attributableContractOptions": [],
+        "availableActions": [
+          "unresolved"
+        ],
+        "blueprintName": "Golden Reaction Formula",
+        "blueprintTypeID": 1101,
+        "bpcContractMaterialCostUnresolved": false,
+        "copyingLocationBPOCount": 0,
+        "exactLocationBPCCount": 0,
+        "exactLocationBPCOwnerNames": [],
+        "exactLocationBPCRequiredCount": null,
+        "exactLocationBPCRuns": 0,
+        "exactLocationBPCSourceStates": [],
+        "exactLocationBPOCount": 0,
+        "exactLocationBPOOwnerNames": [],
+        "exactLocationBPOSourceStates": [],
+        "exactLocationEfficiencyOptions": [],
+        "exactLocationInstanceOptions": [],
+        "exactLocationUnknownCount": 0,
+        "indexedContractOfferCount": 0,
+        "inventionSourceCount": 0,
+        "inventoryIsComplete": false,
+        "lowestWholeContractPrice": null,
+        "marketBPOOptions": [],
+        "otherLocationBPCCount": 0,
+        "otherLocationBPOCount": 0,
+        "otherLocationCount": 0,
+        "otherLocationInstanceOptions": [],
+        "productionLocationIDs": [],
+        "productionLocationNames": [],
+        "recommendation": "unresolved",
+        "remainderBPCContractPrice": null,
+        "remainderBPCContractRecordIDs": [],
+        "requiredRuns": 1,
+        "researchLocationBPCCount": 0,
+        "researchLocationBPOCount": 0,
+        "selectedBPCContractRecordIDs": []
+      },
+      "canBuild": true,
+      "children": [
+        "uuid-5",
+        "uuid-6"
+      ],
+      "facilityName": "Golden Reactor",
+      "factualWarehouseQuantity": null,
+      "id": "uuid-7",
+      "materialEfficiency": null,
+      "name": "Golden Reaction Product",
+      "producedQuantity": 200,
+      "protectedWarehouseQuantity": null,
+      "recommendation": "produce",
+      "recommendationSavings": 73894.75,
+      "requestedQuantity": 135,
+      "reservedWarehouseQuantity": null,
+      "runs": 1,
+      "selectedSupplyMode": "produce",
+      "sourceCategory": "Fixture",
+      "sourceGroup": "Fixture Group",
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 135,
+      "typeID": 1001,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "buy",
+      "activity": null,
+      "blueprint": null,
+      "canBuild": false,
+      "children": [],
+      "facilityName": null,
+      "factualWarehouseQuantity": null,
+      "id": "uuid-8",
+      "materialEfficiency": null,
+      "name": "Mexallon",
+      "producedQuantity": 1350,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 1350,
+      "reservedWarehouseQuantity": null,
+      "runs": null,
+      "selectedSupplyMode": "buy",
+      "sourceCategory": null,
+      "sourceGroup": null,
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 1350,
+      "typeID": 36,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "produce",
+      "activity": "manufacturing",
+      "blueprint": {
+        "attributableBPCContractCount": 0,
+        "attributableBPCContractME": null,
+        "attributableBPCContractPrice": null,
+        "attributableBPCContractRuns": null,
+        "attributableBPCContractSelectionCount": 0,
+        "attributableBPCContractTE": null,
+        "attributableBPOContractCount": 0,
+        "attributableBPOContractPrice": null,
+        "attributableContractOptions": [],
+        "availableActions": [
+          "manualExternalBPC"
+        ],
+        "blueprintName": "Golden Ship Blueprint",
+        "blueprintTypeID": 1103,
+        "bpcContractMaterialCostUnresolved": false,
+        "copyingLocationBPOCount": 0,
+        "exactLocationBPCCount": 0,
+        "exactLocationBPCOwnerNames": [],
+        "exactLocationBPCRequiredCount": null,
+        "exactLocationBPCRuns": 0,
+        "exactLocationBPCSourceStates": [],
+        "exactLocationBPOCount": 0,
+        "exactLocationBPOOwnerNames": [],
+        "exactLocationBPOSourceStates": [],
+        "exactLocationEfficiencyOptions": [],
+        "exactLocationInstanceOptions": [],
+        "exactLocationUnknownCount": 0,
+        "indexedContractOfferCount": 0,
+        "inventionSourceCount": 0,
+        "inventoryIsComplete": false,
+        "lowestWholeContractPrice": null,
+        "marketBPOOptions": [],
+        "otherLocationBPCCount": 0,
+        "otherLocationBPOCount": 0,
+        "otherLocationCount": 0,
+        "otherLocationInstanceOptions": [],
+        "productionLocationIDs": [],
+        "productionLocationNames": [],
+        "recommendation": "manualExternalBPC",
+        "remainderBPCContractPrice": null,
+        "remainderBPCContractRecordIDs": [],
+        "requiredRuns": 3,
+        "researchLocationBPCCount": 0,
+        "researchLocationBPOCount": 0,
+        "selectedBPCContractRecordIDs": []
+      },
+      "canBuild": true,
+      "children": [
+        "uuid-4",
+        "uuid-7",
+        "uuid-8"
+      ],
+      "facilityName": "Unnamed structure / station",
+      "factualWarehouseQuantity": null,
+      "id": "uuid-9",
+      "materialEfficiency": 10,
+      "name": "Golden Ship",
+      "producedQuantity": 3,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 3,
+      "reservedWarehouseQuantity": null,
+      "runs": 3,
+      "selectedSupplyMode": "produce",
+      "sourceCategory": "Fixture",
+      "sourceGroup": "Fixture Group",
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": 20,
+      "totalRequiredQuantity": 3,
+      "typeID": 1003,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "buy",
+      "activity": null,
+      "blueprint": null,
+      "canBuild": false,
+      "children": [],
+      "facilityName": null,
+      "factualWarehouseQuantity": null,
+      "id": "uuid-10",
+      "materialEfficiency": null,
+      "name": "Tritanium",
+      "producedQuantity": 3330,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 3330,
+      "reservedWarehouseQuantity": null,
+      "runs": null,
+      "selectedSupplyMode": "buy",
+      "sourceCategory": null,
+      "sourceGroup": null,
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 24160,
+      "typeID": 34,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "buy",
+      "activity": null,
+      "blueprint": null,
+      "canBuild": false,
+      "children": [],
+      "facilityName": null,
+      "factualWarehouseQuantity": null,
+      "id": "uuid-11",
+      "materialEfficiency": null,
+      "name": "Pyerite",
+      "producedQuantity": 1332,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 1332,
+      "reservedWarehouseQuantity": null,
+      "runs": null,
+      "selectedSupplyMode": "buy",
+      "sourceCategory": null,
+      "sourceGroup": null,
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 2304,
+      "typeID": 35,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "produce",
+      "activity": "manufacturing",
+      "blueprint": {
+        "attributableBPCContractCount": 0,
+        "attributableBPCContractME": null,
+        "attributableBPCContractPrice": null,
+        "attributableBPCContractRuns": null,
+        "attributableBPCContractSelectionCount": 0,
+        "attributableBPCContractTE": null,
+        "attributableBPOContractCount": 0,
+        "attributableBPOContractPrice": null,
+        "attributableContractOptions": [],
+        "availableActions": [
+          "manualExternalBPC"
+        ],
+        "blueprintName": "Golden Component Blueprint",
+        "blueprintTypeID": 1102,
+        "bpcContractMaterialCostUnresolved": false,
+        "copyingLocationBPOCount": 0,
+        "exactLocationBPCCount": 0,
+        "exactLocationBPCOwnerNames": [],
+        "exactLocationBPCRequiredCount": null,
+        "exactLocationBPCRuns": 0,
+        "exactLocationBPCSourceStates": [],
+        "exactLocationBPOCount": 0,
+        "exactLocationBPOOwnerNames": [],
+        "exactLocationBPOSourceStates": [],
+        "exactLocationEfficiencyOptions": [],
+        "exactLocationInstanceOptions": [],
+        "exactLocationUnknownCount": 0,
+        "indexedContractOfferCount": 0,
+        "inventionSourceCount": 0,
+        "inventoryIsComplete": false,
+        "lowestWholeContractPrice": null,
+        "marketBPOOptions": [],
+        "otherLocationBPCCount": 0,
+        "otherLocationBPOCount": 0,
+        "otherLocationCount": 0,
+        "otherLocationInstanceOptions": [],
+        "productionLocationIDs": [],
+        "productionLocationNames": [],
+        "recommendation": "manualExternalBPC",
+        "remainderBPCContractPrice": null,
+        "remainderBPCContractRecordIDs": [],
+        "requiredRuns": 64,
+        "researchLocationBPCCount": 0,
+        "researchLocationBPOCount": 0,
+        "selectedBPCContractRecordIDs": []
+      },
+      "canBuild": true,
+      "children": [
+        "uuid-10",
+        "uuid-11"
+      ],
+      "facilityName": "Unnamed structure / station",
+      "factualWarehouseQuantity": null,
+      "id": "uuid-12",
+      "materialEfficiency": 10,
+      "name": "Golden Component",
+      "producedQuantity": 37,
+      "protectedWarehouseQuantity": null,
+      "recommendation": "unavailable",
+      "recommendationSavings": null,
+      "requestedQuantity": 37,
+      "reservedWarehouseQuantity": null,
+      "runs": 37,
+      "selectedSupplyMode": "produce",
+      "sourceCategory": "Fixture",
+      "sourceGroup": "Fixture Group",
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": 20,
+      "totalRequiredQuantity": 64,
+      "typeID": 1002,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "buy",
+      "activity": null,
+      "blueprint": null,
+      "canBuild": false,
+      "children": [],
+      "facilityName": null,
+      "factualWarehouseQuantity": null,
+      "id": "uuid-13",
+      "materialEfficiency": null,
+      "name": "Tritanium",
+      "producedQuantity": 18400,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 18400,
+      "reservedWarehouseQuantity": null,
+      "runs": null,
+      "selectedSupplyMode": "buy",
+      "sourceCategory": null,
+      "sourceGroup": null,
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": null,
+      "totalRequiredQuantity": 24160,
+      "typeID": 34,
+      "usableWarehouseQuantity": null
+    },
+    {
+      "action": "produce",
+      "activity": "manufacturing",
+      "blueprint": {
+        "attributableBPCContractCount": 0,
+        "attributableBPCContractME": null,
+        "attributableBPCContractPrice": null,
+        "attributableBPCContractRuns": null,
+        "attributableBPCContractSelectionCount": 0,
+        "attributableBPCContractTE": null,
+        "attributableBPOContractCount": 0,
+        "attributableBPOContractPrice": null,
+        "attributableContractOptions": [],
+        "availableActions": [
+          "manualExternalBPC"
+        ],
+        "blueprintName": "Golden Module Blueprint",
+        "blueprintTypeID": 1104,
+        "bpcContractMaterialCostUnresolved": false,
+        "copyingLocationBPOCount": 0,
+        "exactLocationBPCCount": 0,
+        "exactLocationBPCOwnerNames": [],
+        "exactLocationBPCRequiredCount": null,
+        "exactLocationBPCRuns": 0,
+        "exactLocationBPCSourceStates": [],
+        "exactLocationBPOCount": 0,
+        "exactLocationBPOOwnerNames": [],
+        "exactLocationBPOSourceStates": [],
+        "exactLocationEfficiencyOptions": [],
+        "exactLocationInstanceOptions": [],
+        "exactLocationUnknownCount": 0,
+        "indexedContractOfferCount": 0,
+        "inventionSourceCount": 0,
+        "inventoryIsComplete": false,
+        "lowestWholeContractPrice": null,
+        "marketBPOOptions": [],
+        "otherLocationBPCCount": 0,
+        "otherLocationBPOCount": 0,
+        "otherLocationCount": 0,
+        "otherLocationInstanceOptions": [],
+        "productionLocationIDs": [],
+        "productionLocationNames": [],
+        "recommendation": "manualExternalBPC",
+        "remainderBPCContractPrice": null,
+        "remainderBPCContractRecordIDs": [],
+        "requiredRuns": 20,
+        "researchLocationBPCCount": 0,
+        "researchLocationBPOCount": 0,
+        "selectedBPCContractRecordIDs": []
+      },
+      "canBuild": true,
+      "children": [
+        "uuid-12",
+        "uuid-13"
+      ],
+      "facilityName": "Unnamed structure / station",
+      "factualWarehouseQuantity": null,
+      "id": "uuid-14",
+      "materialEfficiency": 8,
+      "name": "Golden Module",
+      "producedQuantity": 20,
+      "protectedWarehouseQuantity": null,
+      "recommendation": null,
+      "recommendationSavings": null,
+      "requestedQuantity": 20,
+      "reservedWarehouseQuantity": null,
+      "runs": 20,
+      "selectedSupplyMode": "produce",
+      "sourceCategory": "Fixture",
+      "sourceGroup": "Fixture Group",
+      "sourceTechLevel": null,
+      "stockCoverage": "unavailable",
+      "timeEfficiency": 16,
+      "totalRequiredQuantity": 20,
+      "typeID": 1004,
+      "usableWarehouseQuantity": null
+    }
+  ],
+  "referencePlan": {
+    "allianceSale": null,
+    "blueprintSupplyPlans": [],
+    "coalitionContractSale": null,
+    "coalitionImmediateSale": null,
+    "coalitionListedSale": null,
+    "compressedOreRefining": null,
+    "costBreakdown": {
+      "alphaSurcharge": 0,
+      "blueprintCosts": {
+        "entries": [],
+        "requestsWithoutEnteredCost": [
+          "uuid-15",
+          "uuid-16"
+        ],
+        "total": 0,
+        "unresolvedBlueprintCount": 0
+      },
+      "facilityTax": 0,
+      "installationCost": 74965.818,
+      "logistics": {
+        "collateralRate": 0.005,
+        "iskPerCubicMeter": 800,
+        "legs": [
+          {
+            "cargo": [
+              {
+                "collateral": 5000,
+                "name": "Atmospheric Gases",
+                "quantity": 100,
+                "typeID": 16634,
+                "volumeM3": 5
+              },
+              {
+                "collateral": 40000,
+                "name": "Cadmium",
+                "quantity": 100,
+                "typeID": 16643,
+                "volumeM3": 5
+              },
+              {
+                "collateral": 81000,
+                "name": "Mexallon",
+                "quantity": 1350,
+                "typeID": 36,
+                "volumeM3": 13.5
+              },
+              {
+                "collateral": 23040,
+                "name": "Pyerite",
+                "quantity": 2304,
+                "typeID": 35,
+                "volumeM3": 23.04
+              },
+              {
+                "collateral": 96640,
+                "name": "Tritanium",
+                "quantity": 24160,
+                "typeID": 34,
+                "volumeM3": 241.6
+              }
+            ],
+            "cargoVolumeM3": 288.14,
+            "chargedBy": "volume",
+            "collateral": 245680,
+            "collateralCharge": 1228.4,
+            "contractCount": 1,
+            "contractNumber": 1,
+            "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+            "id": "uuid-17",
+            "kind": "inboundMaterials",
+            "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "roundedCharge": 1000000,
+            "unroundedCharge": 230512,
+            "volumeCharge": 230512
+          }
+        ],
+        "maximumContractVolumeM3": 350000,
+        "roundingIncrement": 1000000,
+        "ruleVersion": "planner-hub-routes-2026-08-04",
+        "total": 1000000
+      },
+      "logisticsCost": 1000000,
+      "materialCost": 245680,
+      "purchasedMaterialCost": 245680,
+      "refiningCost": null,
+      "sccSurcharge": 37345.6,
+      "stockMaterialCost": 0,
+      "systemIndexCost": 37620.218,
+      "totalProductionCost": 1320645.818
+    },
+    "createdAt": "<date>",
+    "explanations": [
+      {
+        "explanation": "This child supplies material required by 1002.",
+        "fromNodeID": "uuid-4",
+        "id": "uuid-18",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-19",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-2"
+      },
+      {
+        "explanation": "This child supplies material required by 1002.",
+        "fromNodeID": "uuid-4",
+        "id": "uuid-20",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-19",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-3"
+      },
+      {
+        "explanation": "This child supplies material required by 1001.",
+        "fromNodeID": "uuid-7",
+        "id": "uuid-21",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-22",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-5"
+      },
+      {
+        "explanation": "This child supplies material required by 1001.",
+        "fromNodeID": "uuid-7",
+        "id": "uuid-23",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-22",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-6"
+      },
+      {
+        "explanation": "This child supplies material required by 1003.",
+        "fromNodeID": "uuid-9",
+        "id": "uuid-24",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-25",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-4"
+      },
+      {
+        "explanation": "This child supplies material required by 1003.",
+        "fromNodeID": "uuid-9",
+        "id": "uuid-26",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-25",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-7"
+      },
+      {
+        "explanation": "This child supplies material required by 1003.",
+        "fromNodeID": "uuid-9",
+        "id": "uuid-27",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-25",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-8"
+      },
+      {
+        "explanation": "This child supplies material required by 1002.",
+        "fromNodeID": "uuid-12",
+        "id": "uuid-28",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-19",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-10"
+      },
+      {
+        "explanation": "This child supplies material required by 1002.",
+        "fromNodeID": "uuid-12",
+        "id": "uuid-29",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-19",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-11"
+      },
+      {
+        "explanation": "This child supplies material required by 1004.",
+        "fromNodeID": "uuid-14",
+        "id": "uuid-30",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-31",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-12"
+      },
+      {
+        "explanation": "This child supplies material required by 1004.",
+        "fromNodeID": "uuid-14",
+        "id": "uuid-32",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-31",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-13"
+      }
+    ],
+    "formulaShipments": null,
+    "homeContractSale": {
+      "brokerFee": null,
+      "brokerFeeIsApplicable": false,
+      "brokerFeeRate": 0,
+      "contractFee": null,
+      "grossOrNetRevenue": null,
+      "grossRevenue": null,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-17",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": null,
+      "marketLocation": {
+        "id": "npc:60008494",
+        "kind": "npcTradeHub",
+        "locationID": 60008494,
+        "name": "Amarr VIII (Oris) - Emperor Family Academy",
+        "ownerCorporationID": 1000086,
+        "ownerFactionID": 500003,
+        "regionID": 10000043,
+        "solarSystemID": 30002187
+      },
+      "outboundLogistics": null,
+      "outboundLogisticsAssessment": {
+        "breakdown": null,
+        "cost": 0,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": "The finished product is sold where production is based.",
+        "selfJumpingCapitals": null,
+        "status": "notRequired"
+      },
+      "outboundLogisticsCost": 0,
+      "profit": null,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-33",
+          "quantity": 3,
+          "scenario": "contractSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Public Contracts",
+            "snapshotID": "uuid-34",
+            "version": "public-item-exchange-reference-2026-08-13"
+          },
+          "total": null,
+          "typeID": 1003,
+          "warnings": [
+            {
+              "code": "contracts.reference-unavailable",
+              "id": "uuid-35",
+              "message": "A complete Public Contracts reference snapshot for the configured comparison regions is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-36",
+          "quantity": 20,
+          "scenario": "contractSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Public Contracts",
+            "snapshotID": "uuid-37",
+            "version": "public-item-exchange-reference-2026-08-13"
+          },
+          "total": null,
+          "typeID": 1004,
+          "warnings": [
+            {
+              "code": "contracts.reference-unavailable",
+              "id": "uuid-38",
+              "message": "A complete Public Contracts reference snapshot for the configured comparison regions is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        }
+      ],
+      "roi": null,
+      "salesTax": null,
+      "salesTaxRate": 0,
+      "scenario": "contractSale",
+      "totalCost": 1320645.818
+    },
+    "homeImmediateSale": {
+      "brokerFee": null,
+      "brokerFeeIsApplicable": false,
+      "brokerFeeRate": 0,
+      "contractFee": null,
+      "grossOrNetRevenue": null,
+      "grossRevenue": null,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-17",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": null,
+      "marketLocation": {
+        "id": "npc:60008494",
+        "kind": "npcTradeHub",
+        "locationID": 60008494,
+        "name": "Amarr VIII (Oris) - Emperor Family Academy",
+        "ownerCorporationID": 1000086,
+        "ownerFactionID": 500003,
+        "regionID": 10000043,
+        "solarSystemID": 30002187
+      },
+      "outboundLogistics": null,
+      "outboundLogisticsAssessment": {
+        "breakdown": null,
+        "cost": 0,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": "The finished product is sold where production is based.",
+        "selfJumpingCapitals": null,
+        "status": "notRequired"
+      },
+      "outboundLogisticsCost": 0,
+      "profit": null,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-39",
+          "quantity": 3,
+          "scenario": "immediateSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Market",
+            "snapshotID": "uuid-40",
+            "version": "2025-12-16"
+          },
+          "total": null,
+          "typeID": 1003,
+          "warnings": [
+            {
+              "code": "market.snapshot-unavailable",
+              "id": "uuid-41",
+              "message": "The exact-hub market snapshot is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-42",
+          "quantity": 20,
+          "scenario": "immediateSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Market",
+            "snapshotID": "uuid-43",
+            "version": "2025-12-16"
+          },
+          "total": null,
+          "typeID": 1004,
+          "warnings": [
+            {
+              "code": "market.snapshot-unavailable",
+              "id": "uuid-44",
+              "message": "The exact-hub market snapshot is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        }
+      ],
+      "roi": null,
+      "salesTax": null,
+      "salesTaxRate": null,
+      "scenario": "immediateSale",
+      "totalCost": 1320645.818
+    },
+    "homeListedSale": {
+      "brokerFee": null,
+      "brokerFeeIsApplicable": true,
+      "brokerFeeRate": null,
+      "contractFee": null,
+      "grossOrNetRevenue": null,
+      "grossRevenue": null,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-17",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": null,
+      "marketLocation": {
+        "id": "npc:60008494",
+        "kind": "npcTradeHub",
+        "locationID": 60008494,
+        "name": "Amarr VIII (Oris) - Emperor Family Academy",
+        "ownerCorporationID": 1000086,
+        "ownerFactionID": 500003,
+        "regionID": 10000043,
+        "solarSystemID": 30002187
+      },
+      "outboundLogistics": null,
+      "outboundLogisticsAssessment": {
+        "breakdown": null,
+        "cost": 0,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": "The finished product is sold where production is based.",
+        "selfJumpingCapitals": null,
+        "status": "notRequired"
+      },
+      "outboundLogisticsCost": 0,
+      "profit": null,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-45",
+          "quantity": 3,
+          "scenario": "listedSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Market",
+            "snapshotID": "uuid-46",
+            "version": "2025-12-16"
+          },
+          "total": null,
+          "typeID": 1003,
+          "warnings": [
+            {
+              "code": "market.snapshot-unavailable",
+              "id": "uuid-47",
+              "message": "The exact-hub market snapshot is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-48",
+          "quantity": 20,
+          "scenario": "listedSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Market",
+            "snapshotID": "uuid-49",
+            "version": "2025-12-16"
+          },
+          "total": null,
+          "typeID": 1004,
+          "warnings": [
+            {
+              "code": "market.snapshot-unavailable",
+              "id": "uuid-50",
+              "message": "The exact-hub market snapshot is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        }
+      ],
+      "roi": null,
+      "salesTax": null,
+      "salesTaxRate": null,
+      "scenario": "listedSale",
+      "totalCost": 1320645.818
+    },
+    "id": "uuid-51",
+    "immediateSale": {
+      "brokerFee": 0,
+      "brokerFeeIsApplicable": false,
+      "brokerFeeRate": 0,
+      "contractFee": 0,
+      "grossOrNetRevenue": 8290400,
+      "grossRevenue": 8600000,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-17",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": -0.003648294171571935,
+      "marketLocation": {
+        "id": "npc:60003760",
+        "kind": "npcTradeHub",
+        "locationID": 60003760,
+        "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "ownerCorporationID": 1000035,
+        "ownerFactionID": 500001,
+        "regionID": 10000002,
+        "solarSystemID": 30000142
+      },
+      "outboundLogistics": {
+        "collateralRate": 0.005,
+        "iskPerCubicMeter": 800,
+        "legs": [
+          {
+            "cargo": [
+              {
+                "collateral": 1400000,
+                "name": "Golden Module",
+                "quantity": 20,
+                "typeID": 1004,
+                "volumeM3": 100
+              },
+              {
+                "collateral": 9000000,
+                "name": "Golden Ship",
+                "quantity": 3,
+                "typeID": 1003,
+                "volumeM3": 7500
+              }
+            ],
+            "cargoVolumeM3": 7600,
+            "chargedBy": "volume",
+            "collateral": 10400000,
+            "collateralCharge": 52000,
+            "contractCount": 1,
+            "contractNumber": 1,
+            "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "id": "uuid-52",
+            "kind": "outboundProducts",
+            "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+            "roundedCharge": 7000000,
+            "unroundedCharge": 6080000,
+            "volumeCharge": 6080000
+          }
+        ],
+        "maximumContractVolumeM3": 350000,
+        "roundingIncrement": 1000000,
+        "ruleVersion": "planner-hub-routes-2026-08-04",
+        "total": 7000000
+      },
+      "outboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 1400000,
+                  "name": "Golden Module",
+                  "quantity": 20,
+                  "typeID": 1004,
+                  "volumeM3": 100
+                },
+                {
+                  "collateral": 9000000,
+                  "name": "Golden Ship",
+                  "quantity": 3,
+                  "typeID": 1003,
+                  "volumeM3": 7500
+                }
+              ],
+              "cargoVolumeM3": 7600,
+              "chargedBy": "volume",
+              "collateral": 10400000,
+              "collateralCharge": 52000,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "id": "uuid-52",
+              "kind": "outboundProducts",
+              "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+              "roundedCharge": 7000000,
+              "unroundedCharge": 6080000,
+              "volumeCharge": 6080000
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 7000000
+        },
+        "cost": 7000000,
+        "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "outboundLogisticsCost": 7000000,
+      "profit": -30245.81799999997,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 3,
+          "id": "uuid-53",
+          "quantity": 3,
+          "scenario": "immediateSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 7500000,
+          "typeID": 1003,
+          "warnings": [],
+          "weightedUnitPrice": 2500000
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 20,
+          "id": "uuid-55",
+          "quantity": 20,
+          "scenario": "immediateSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 1100000,
+          "typeID": 1004,
+          "warnings": [],
+          "weightedUnitPrice": 55000
+        }
+      ],
+      "roi": -0.003635032503675302,
+      "salesTax": 309600,
+      "salesTaxRate": 0.036,
+      "scenario": "immediateSale",
+      "totalCost": 8320645.818
+    },
+    "installationCost": 74965.818,
+    "jobSplitting": {
+      "splitsFinalProducts": true,
+      "splitsIntermediates": true
+    },
+    "jobs": [
+      {
+        "activity": "manufacturing",
+        "alphaSurcharge": 0,
+        "blueprintSource": null,
+        "blueprintSupplyJobID": null,
+        "bonusMultiplier": 1,
+        "characterName": null,
+        "durationSeconds": 8640,
+        "estimatedItemValue": 442500,
+        "facilityName": "Unnamed structure / station",
+        "facilityTax": 0,
+        "id": "uuid-56",
+        "isTopLevel": true,
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "outputQuantity": 3,
+        "piece": 1,
+        "pieceCount": 1,
+        "productName": "Golden Ship",
+        "runs": 3,
+        "sccSurcharge": 0.04,
+        "systemCostIndex": 0.0412,
+        "timeEfficiency": 20,
+        "total": 35931,
+        "typeID": 1003
+      },
+      {
+        "activity": "manufacturing",
+        "alphaSurcharge": 0,
+        "blueprintSource": null,
+        "blueprintSupplyJobID": null,
+        "bonusMultiplier": 1,
+        "characterName": null,
+        "durationSeconds": 20160,
+        "estimatedItemValue": 400000,
+        "facilityName": "Unnamed structure / station",
+        "facilityTax": 0,
+        "id": "uuid-57",
+        "isTopLevel": true,
+        "manufacturingCategory": "module",
+        "materialEfficiency": 8,
+        "outputQuantity": 20,
+        "piece": 1,
+        "pieceCount": 1,
+        "productName": "Golden Module",
+        "runs": 20,
+        "sccSurcharge": 0.04,
+        "systemCostIndex": 0.0412,
+        "timeEfficiency": 16,
+        "total": 32479.999999999996,
+        "typeID": 1004
+      },
+      {
+        "activity": "reaction",
+        "alphaSurcharge": 0,
+        "blueprintSource": null,
+        "blueprintSupplyJobID": null,
+        "bonusMultiplier": 1,
+        "characterName": null,
+        "durationSeconds": 10800,
+        "estimatedItemValue": 42500,
+        "facilityName": "Golden Reactor",
+        "facilityTax": 0,
+        "id": "uuid-58",
+        "isTopLevel": false,
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "outputQuantity": 200,
+        "piece": 1,
+        "pieceCount": 1,
+        "productName": "Golden Reaction Product",
+        "runs": 1,
+        "sccSurcharge": 0.04,
+        "systemCostIndex": 0.0213,
+        "timeEfficiency": null,
+        "total": 2605.25,
+        "typeID": 1001
+      },
+      {
+        "activity": "manufacturing",
+        "alphaSurcharge": 0,
+        "blueprintSource": null,
+        "blueprintSupplyJobID": null,
+        "bonusMultiplier": 1,
+        "characterName": null,
+        "durationSeconds": 30720,
+        "estimatedItemValue": 48640,
+        "facilityName": "Unnamed structure / station",
+        "facilityTax": 0,
+        "id": "uuid-59",
+        "isTopLevel": false,
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "outputQuantity": 64,
+        "piece": 1,
+        "pieceCount": 1,
+        "productName": "Golden Component",
+        "runs": 64,
+        "sccSurcharge": 0.04,
+        "systemCostIndex": 0.0412,
+        "timeEfficiency": 20,
+        "total": 3949.5679999999998,
+        "typeID": 1002
+      }
+    ],
+    "listedSale": {
+      "brokerFee": 156000,
+      "brokerFeeIsApplicable": true,
+      "brokerFeeRate": 0.015,
+      "contractFee": 0,
+      "grossOrNetRevenue": 9869600,
+      "grossRevenue": 10400000,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-17",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": 0.1569419411121018,
+      "marketLocation": {
+        "id": "npc:60003760",
+        "kind": "npcTradeHub",
+        "locationID": 60003760,
+        "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "ownerCorporationID": 1000035,
+        "ownerFactionID": 500001,
+        "regionID": 10000002,
+        "solarSystemID": 30000142
+      },
+      "outboundLogistics": {
+        "collateralRate": 0.005,
+        "iskPerCubicMeter": 800,
+        "legs": [
+          {
+            "cargo": [
+              {
+                "collateral": 1400000,
+                "name": "Golden Module",
+                "quantity": 20,
+                "typeID": 1004,
+                "volumeM3": 100
+              },
+              {
+                "collateral": 9000000,
+                "name": "Golden Ship",
+                "quantity": 3,
+                "typeID": 1003,
+                "volumeM3": 7500
+              }
+            ],
+            "cargoVolumeM3": 7600,
+            "chargedBy": "volume",
+            "collateral": 10400000,
+            "collateralCharge": 52000,
+            "contractCount": 1,
+            "contractNumber": 1,
+            "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "id": "uuid-52",
+            "kind": "outboundProducts",
+            "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+            "roundedCharge": 7000000,
+            "unroundedCharge": 6080000,
+            "volumeCharge": 6080000
+          }
+        ],
+        "maximumContractVolumeM3": 350000,
+        "roundingIncrement": 1000000,
+        "ruleVersion": "planner-hub-routes-2026-08-04",
+        "total": 7000000
+      },
+      "outboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 1400000,
+                  "name": "Golden Module",
+                  "quantity": 20,
+                  "typeID": 1004,
+                  "volumeM3": 100
+                },
+                {
+                  "collateral": 9000000,
+                  "name": "Golden Ship",
+                  "quantity": 3,
+                  "typeID": 1003,
+                  "volumeM3": 7500
+                }
+              ],
+              "cargoVolumeM3": 7600,
+              "chargedBy": "volume",
+              "collateral": 10400000,
+              "collateralCharge": 52000,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "id": "uuid-52",
+              "kind": "outboundProducts",
+              "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+              "roundedCharge": 7000000,
+              "unroundedCharge": 6080000,
+              "volumeCharge": 6080000
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 7000000
+        },
+        "cost": 7000000,
+        "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "outboundLogisticsCost": 7000000,
+      "profit": 1548954.182,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 3,
+          "id": "uuid-60",
+          "quantity": 3,
+          "scenario": "listedSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 8541000,
+          "typeID": 1003,
+          "warnings": [],
+          "weightedUnitPrice": 2847000
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 20,
+          "id": "uuid-61",
+          "quantity": 20,
+          "scenario": "listedSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 1328600,
+          "typeID": 1004,
+          "warnings": [],
+          "weightedUnitPrice": 66430
+        }
+      ],
+      "roi": 0.18615792762734323,
+      "salesTax": 374400,
+      "salesTaxRate": 0.036,
+      "scenario": "listedSale",
+      "totalCost": 8320645.818
+    },
+    "mainContractSale": {
+      "brokerFee": null,
+      "brokerFeeIsApplicable": false,
+      "brokerFeeRate": 0,
+      "contractFee": null,
+      "grossOrNetRevenue": null,
+      "grossRevenue": null,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-17",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": null,
+      "marketLocation": {
+        "id": "npc:60003760",
+        "kind": "npcTradeHub",
+        "locationID": 60003760,
+        "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "ownerCorporationID": 1000035,
+        "ownerFactionID": 500001,
+        "regionID": 10000002,
+        "solarSystemID": 30000142
+      },
+      "outboundLogistics": {
+        "collateralRate": 0.005,
+        "iskPerCubicMeter": 800,
+        "legs": [
+          {
+            "cargo": [
+              {
+                "collateral": 1400000,
+                "name": "Golden Module",
+                "quantity": 20,
+                "typeID": 1004,
+                "volumeM3": 100
+              },
+              {
+                "collateral": 9000000,
+                "name": "Golden Ship",
+                "quantity": 3,
+                "typeID": 1003,
+                "volumeM3": 7500
+              }
+            ],
+            "cargoVolumeM3": 7600,
+            "chargedBy": "volume",
+            "collateral": 10400000,
+            "collateralCharge": 52000,
+            "contractCount": 1,
+            "contractNumber": 1,
+            "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "id": "uuid-52",
+            "kind": "outboundProducts",
+            "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+            "roundedCharge": 7000000,
+            "unroundedCharge": 6080000,
+            "volumeCharge": 6080000
+          }
+        ],
+        "maximumContractVolumeM3": 350000,
+        "roundingIncrement": 1000000,
+        "ruleVersion": "planner-hub-routes-2026-08-04",
+        "total": 7000000
+      },
+      "outboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 1400000,
+                  "name": "Golden Module",
+                  "quantity": 20,
+                  "typeID": 1004,
+                  "volumeM3": 100
+                },
+                {
+                  "collateral": 9000000,
+                  "name": "Golden Ship",
+                  "quantity": 3,
+                  "typeID": 1003,
+                  "volumeM3": 7500
+                }
+              ],
+              "cargoVolumeM3": 7600,
+              "chargedBy": "volume",
+              "collateral": 10400000,
+              "collateralCharge": 52000,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "id": "uuid-52",
+              "kind": "outboundProducts",
+              "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+              "roundedCharge": 7000000,
+              "unroundedCharge": 6080000,
+              "volumeCharge": 6080000
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 7000000
+        },
+        "cost": 7000000,
+        "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "outboundLogisticsCost": 7000000,
+      "profit": null,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-62",
+          "quantity": 3,
+          "scenario": "contractSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Public Contracts",
+            "snapshotID": "uuid-63",
+            "version": "public-item-exchange-reference-2026-08-13"
+          },
+          "total": null,
+          "typeID": 1003,
+          "warnings": [
+            {
+              "code": "contracts.reference-unavailable",
+              "id": "uuid-64",
+              "message": "A complete Public Contracts reference snapshot for the configured comparison regions is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-65",
+          "quantity": 20,
+          "scenario": "contractSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Public Contracts",
+            "snapshotID": "uuid-66",
+            "version": "public-item-exchange-reference-2026-08-13"
+          },
+          "total": null,
+          "typeID": 1004,
+          "warnings": [
+            {
+              "code": "contracts.reference-unavailable",
+              "id": "uuid-67",
+              "message": "A complete Public Contracts reference snapshot for the configured comparison regions is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        }
+      ],
+      "roi": null,
+      "salesTax": null,
+      "salesTaxRate": 0,
+      "scenario": "contractSale",
+      "totalCost": 8320645.818
+    },
+    "makespanSeconds": 59520,
+    "materialCost": 245680,
+    "materialValuationSources": null,
+    "materials": [
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Atmospheric Gases",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": false
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 100,
+          "id": "uuid-68",
+          "quantity": 100,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 5000,
+          "typeID": 16634,
+          "warnings": [],
+          "weightedUnitPrice": 50
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 100,
+          "id": "uuid-69",
+          "quantity": 100,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 5000,
+          "typeID": 16634,
+          "warnings": [],
+          "weightedUnitPrice": 50
+        },
+        "required": 100,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Moon Materials",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 100,
+        "toProduce": 0,
+        "typeID": 16634
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Cadmium",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": false
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 100,
+          "id": "uuid-70",
+          "quantity": 100,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 40000,
+          "typeID": 16643,
+          "warnings": [],
+          "weightedUnitPrice": 400
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 100,
+          "id": "uuid-71",
+          "quantity": 100,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 40000,
+          "typeID": 16643,
+          "warnings": [],
+          "weightedUnitPrice": 400
+        },
+        "required": 100,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Moon Materials",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 100,
+        "toProduce": 0,
+        "typeID": 16643
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": {
+          "buildBlueprintCost": null,
+          "buildInstallationCost": null,
+          "buildLogisticsCost": 1000000,
+          "buildMaterialCost": 46080,
+          "buildTotalCost": null,
+          "chainBoughtTypeIDs": [
+            34,
+            35
+          ],
+          "chainBuiltTypeIDs": [],
+          "mainHub": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "producedQuantity": 64,
+          "productionRuns": 64,
+          "purchaseLogisticsCost": 1000000,
+          "purchaseQuote": {
+            "capturedAt": "<date>",
+            "filledQuantity": 64,
+            "id": "uuid-72",
+            "quantity": 64,
+            "scenario": "materialBuy",
+            "source": {
+              "capturedAt": "<date>",
+              "provider": "ESI",
+              "snapshotID": "uuid-54",
+              "version": "2025-12-16"
+            },
+            "total": 576000,
+            "typeID": 1002,
+            "warnings": [],
+            "weightedUnitPrice": 9000
+          },
+          "purchaseTotalCost": 1576000,
+          "recommendation": "unavailable",
+          "requiredQuantity": 64,
+          "savings": null,
+          "warnings": [
+            {
+              "code": "make-or-buy.facility-needs-review",
+              "id": "uuid-73",
+              "message": "The configured manufacturing facility contains unresolved modifiers.",
+              "severity": "blocking",
+              "source": null,
+              "text": null
+            }
+          ]
+        },
+        "name": "Golden Component",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "produce",
+          "usesAvailableStockFirst": false
+        },
+        "productionActivity": "manufacturing",
+        "productionAllowed": true,
+        "purchaseAllocations": null,
+        "quote": null,
+        "replacementQuote": null,
+        "required": 64,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 0,
+        "toProduce": 64,
+        "typeID": 1002
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": {
+          "buildBlueprintCost": null,
+          "buildInstallationCost": 2605.25,
+          "buildLogisticsCost": 1000000,
+          "buildMaterialCost": 45000,
+          "buildTotalCost": 1047605.25,
+          "chainBoughtTypeIDs": [
+            16634,
+            16643
+          ],
+          "chainBuiltTypeIDs": [],
+          "mainHub": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "producedQuantity": 200,
+          "productionRuns": 1,
+          "purchaseLogisticsCost": 1000000,
+          "purchaseQuote": {
+            "capturedAt": "<date>",
+            "filledQuantity": 135,
+            "id": "uuid-74",
+            "quantity": 135,
+            "scenario": "materialBuy",
+            "source": {
+              "capturedAt": "<date>",
+              "provider": "ESI",
+              "snapshotID": "uuid-54",
+              "version": "2025-12-16"
+            },
+            "total": 121500,
+            "typeID": 1001,
+            "warnings": [],
+            "weightedUnitPrice": 900
+          },
+          "purchaseTotalCost": 1121500,
+          "recommendation": "produce",
+          "requiredQuantity": 135,
+          "savings": 73894.75,
+          "warnings": []
+        },
+        "name": "Golden Reaction Product",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "produce",
+          "usesAvailableStockFirst": false
+        },
+        "productionActivity": "reaction",
+        "productionAllowed": true,
+        "purchaseAllocations": null,
+        "quote": null,
+        "replacementQuote": null,
+        "required": 135,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 0,
+        "toProduce": 200,
+        "typeID": 1001
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Mexallon",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": false
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 1350,
+          "id": "uuid-75",
+          "quantity": 1350,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 81000,
+          "typeID": 36,
+          "warnings": [],
+          "weightedUnitPrice": 60
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 1350,
+          "id": "uuid-76",
+          "quantity": 1350,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 81000,
+          "typeID": 36,
+          "warnings": [],
+          "weightedUnitPrice": 60
+        },
+        "required": 1350,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Mineral",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 1350,
+        "toProduce": 0,
+        "typeID": 36
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Pyerite",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": false
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 2304,
+          "id": "uuid-77",
+          "quantity": 2304,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 23040,
+          "typeID": 35,
+          "warnings": [],
+          "weightedUnitPrice": 10
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 2304,
+          "id": "uuid-78",
+          "quantity": 2304,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 23040,
+          "typeID": 35,
+          "warnings": [],
+          "weightedUnitPrice": 10
+        },
+        "required": 2304,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Mineral",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 2304,
+        "toProduce": 0,
+        "typeID": 35
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Tritanium",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": false
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 24160,
+          "id": "uuid-79",
+          "quantity": 24160,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 96640,
+          "typeID": 34,
+          "warnings": [],
+          "weightedUnitPrice": 4
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 24160,
+          "id": "uuid-80",
+          "quantity": 24160,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 96640,
+          "typeID": 34,
+          "warnings": [],
+          "weightedUnitPrice": 4
+        },
+        "required": 24160,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Mineral",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 24160,
+        "toProduce": 0,
+        "typeID": 34
+      }
+    ],
+    "nodes": [
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-2",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Tritanium",
+        "requestedQuantity": 2430,
+        "requiredQuantity": 2430,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 34
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-3",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Pyerite",
+        "requestedQuantity": 972,
+        "requiredQuantity": 972,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 35
+      },
+      {
+        "action": "produce",
+        "activity": "manufacturing",
+        "blueprintTypeID": 1102,
+        "children": [
+          "uuid-2",
+          "uuid-3"
+        ],
+        "facilityName": "Unnamed structure / station",
+        "id": "uuid-4",
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "name": "Golden Component",
+        "requestedQuantity": 27,
+        "requiredQuantity": 27,
+        "runs": 27,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": 20,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 1002
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-5",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Atmospheric Gases",
+        "requestedQuantity": 100,
+        "requiredQuantity": 100,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 16634
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-6",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Cadmium",
+        "requestedQuantity": 100,
+        "requiredQuantity": 100,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 16643
+      },
+      {
+        "action": "produce",
+        "activity": "reaction",
+        "blueprintTypeID": 1101,
+        "children": [
+          "uuid-5",
+          "uuid-6"
+        ],
+        "facilityName": "Golden Reactor",
+        "id": "uuid-7",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Golden Reaction Product",
+        "requestedQuantity": 135,
+        "requiredQuantity": 200,
+        "runs": 1,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 1001
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-8",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Mexallon",
+        "requestedQuantity": 1350,
+        "requiredQuantity": 1350,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 36
+      },
+      {
+        "action": "produce",
+        "activity": "manufacturing",
+        "blueprintTypeID": 1103,
+        "children": [
+          "uuid-4",
+          "uuid-7",
+          "uuid-8"
+        ],
+        "facilityName": "Unnamed structure / station",
+        "id": "uuid-9",
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "name": "Golden Ship",
+        "requestedQuantity": 3,
+        "requiredQuantity": 3,
+        "runs": 3,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": 20,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 1003
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-10",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Tritanium",
+        "requestedQuantity": 3330,
+        "requiredQuantity": 3330,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 34
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-11",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Pyerite",
+        "requestedQuantity": 1332,
+        "requiredQuantity": 1332,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 35
+      },
+      {
+        "action": "produce",
+        "activity": "manufacturing",
+        "blueprintTypeID": 1102,
+        "children": [
+          "uuid-10",
+          "uuid-11"
+        ],
+        "facilityName": "Unnamed structure / station",
+        "id": "uuid-12",
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "name": "Golden Component",
+        "requestedQuantity": 37,
+        "requiredQuantity": 37,
+        "runs": 37,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": 20,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 1002
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-13",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Tritanium",
+        "requestedQuantity": 18400,
+        "requiredQuantity": 18400,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 34
+      },
+      {
+        "action": "produce",
+        "activity": "manufacturing",
+        "blueprintTypeID": 1104,
+        "children": [
+          "uuid-12",
+          "uuid-13"
+        ],
+        "facilityName": "Unnamed structure / station",
+        "id": "uuid-14",
+        "manufacturingCategory": "module",
+        "materialEfficiency": 8,
+        "name": "Golden Module",
+        "requestedQuantity": 20,
+        "requiredQuantity": 20,
+        "runs": 20,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": 16,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 1004
+      }
+    ],
+    "productDecisions": null,
+    "productEconomics": [
+      {
+        "blueprintCost": 0,
+        "inboundLogisticsCost": 199625.18220309573,
+        "installationCost": 40202.474,
+        "materialCost": 145440,
+        "outboundShare": 0.9868421052631579,
+        "productName": "Golden Ship",
+        "requestID": "uuid-15",
+        "typeID": 1003,
+        "units": 3
+      },
+      {
+        "blueprintCost": 0,
+        "inboundLogisticsCost": 800374.8177969042,
+        "installationCost": 34763.344,
+        "materialCost": 100240,
+        "outboundShare": 0.013157894736842105,
+        "productName": "Golden Module",
+        "requestID": "uuid-16",
+        "typeID": 1004,
+        "units": 20
+      }
+    ],
+    "provenance": {
+      "esiCompatibilityDate": "2025-12-16",
+      "priceTimestamp": "<date>",
+      "ruleVersion": "2026.08-blueprint-supply-v2",
+      "sdeBuild": 4242,
+      "snapshotIDs": [
+        "uuid-81",
+        "uuid-82"
+      ]
+    },
+    "requests": [
+      {
+        "blueprintCostISK": null,
+        "blueprintKind": null,
+        "id": "uuid-15",
+        "lineNumber": 1,
+        "materialEfficiency": 10,
+        "productName": "Golden Ship",
+        "timeEfficiency": 20,
+        "wantedQuantity": 3
+      },
+      {
+        "blueprintCostISK": null,
+        "blueprintKind": null,
+        "id": "uuid-16",
+        "lineNumber": 2,
+        "materialEfficiency": 8,
+        "productName": "Golden Module",
+        "timeEfficiency": 16,
+        "wantedQuantity": 20
+      }
+    ],
+    "slotSchedule": {
+      "doNotSplitShorterThanDays": 1,
+      "enabledCharacterCount": 0,
+      "entries": [
+        {
+          "activity": "manufacturing",
+          "finishSeconds": 59520,
+          "id": 0,
+          "name": "Golden Ship",
+          "piece": 1,
+          "pieceCount": 1,
+          "runs": 3,
+          "startSeconds": 50880,
+          "typeID": 1003
+        },
+        {
+          "activity": "manufacturing",
+          "finishSeconds": 50880,
+          "id": 1,
+          "name": "Golden Module",
+          "piece": 1,
+          "pieceCount": 1,
+          "runs": 20,
+          "startSeconds": 30720,
+          "typeID": 1004
+        },
+        {
+          "activity": "reaction",
+          "finishSeconds": 10800,
+          "id": 2,
+          "name": "Golden Reaction Product",
+          "piece": 1,
+          "pieceCount": 1,
+          "runs": 1,
+          "startSeconds": 0,
+          "typeID": 1001
+        },
+        {
+          "activity": "manufacturing",
+          "finishSeconds": 30720,
+          "id": 3,
+          "name": "Golden Component",
+          "piece": 1,
+          "pieceCount": 1,
+          "runs": 64,
+          "startSeconds": 0,
+          "typeID": 1002
+        }
+      ],
+      "jobCount": 4,
+      "manufacturingSlots": 1,
+      "maximumJobDays": 3,
+      "reactionRunsPerJob": 100,
+      "reactionSlots": 1,
+      "scienceSlots": 1,
+      "source": "manual",
+      "unschedulableActivities": []
+    },
+    "stockAllocations": [],
+    "targetMarket": null,
+    "totalJobSeconds": 70320,
+    "warnings": [
+      {
+        "code": "production-tree.warehouse-unavailable",
+        "id": "uuid-83",
+        "message": "Production-warehouse coverage is unavailable and is not treated as zero stock.",
+        "severity": "warning",
+        "source": null,
+        "text": null
+      },
+      {
+        "code": "industry.facility-needs-review",
+        "id": "uuid-84",
+        "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+        "severity": "blocking",
+        "source": null,
+        "text": {
+          "arguments": [
+            "Modules & Components"
+          ],
+          "format": "The selected facility for %@ contains unresolved modifiers."
+        }
+      },
+      {
+        "code": "industry.facility-needs-review",
+        "id": "uuid-85",
+        "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+        "severity": "blocking",
+        "source": null,
+        "text": {
+          "arguments": [
+            "Modules & Components"
+          ],
+          "format": "The selected facility for %@ contains unresolved modifiers."
+        }
+      },
+      {
+        "code": "industry.facility-needs-review",
+        "id": "uuid-86",
+        "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+        "severity": "blocking",
+        "source": null,
+        "text": {
+          "arguments": [
+            "Modules & Components"
+          ],
+          "format": "The selected facility for %@ contains unresolved modifiers."
+        }
+      },
+      {
+        "code": "industry.facility-needs-review",
+        "id": "uuid-87",
+        "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+        "severity": "blocking",
+        "source": null,
+        "text": {
+          "arguments": [
+            "Modules & Components"
+          ],
+          "format": "The selected facility for %@ contains unresolved modifiers."
+        }
+      },
+      {
+        "code": "industry.slot-estimated-makespan",
+        "id": "uuid-88",
+        "message": "Estimated job time places every split job on the available manufacturing, reaction and science slots and starts a job once its share of produced inputs and its blueprint jobs are finished; actual availability can change it.",
+        "severity": "information",
+        "source": null,
+        "text": null
+      },
+      {
+        "code": "industry.blueprint-cost-not-included",
+        "id": "uuid-89",
+        "message": "2 top-level production lines have no entered BPC/BPO cost; the total excludes those blueprint costs.",
+        "severity": "information",
+        "source": null,
+        "text": {
+          "arguments": [
+            "2"
+          ],
+          "format": "%@ top-level production lines have no entered BPC/BPO cost; the total excludes those blueprint costs."
+        }
+      }
+    ]
+  },
+  "rootIDs": [
+    "uuid-9",
+    "uuid-14"
+  ],
+  "selectedPlan": {
+    "allianceSale": null,
+    "blueprintSupplyPlans": [
+      {
+        "batchAllocationCost": null,
+        "blueprintTypeID": 1102,
+        "capitalPurchaseCost": null,
+        "confidencePlanCost": null,
+        "expectedInventionCost": null,
+        "id": "uuid-90",
+        "manufacturingJobs": [
+          {
+            "allocation": {
+              "acquisitionCost": null,
+              "allocatedRuns": 64,
+              "availableRuns": 64,
+              "locationID": null,
+              "locationName": null,
+              "materialEfficiency": 10,
+              "ownerID": null,
+              "ownerName": null,
+              "provenance": "manualPlanningAssumption",
+              "remainingRuns": 0,
+              "source": {
+                "manualExternalBPC": [
+                  "uuid-15"
+                ]
+              },
+              "sourceSnapshotID": null,
+              "sourceState": "unavailable",
+              "timeEfficiency": 20
+            },
+            "blueprintTypeID": 1102,
+            "demandID": {
+              "blueprintTypeID": 1102,
+              "nodePath": [
+                1002,
+                1002
+              ],
+              "productTypeID": 1002,
+              "requestID": "uuid-15"
+            },
+            "durationSeconds": 30720,
+            "id": "uuid-91",
+            "installationCost": 3949.5679999999998,
+            "materials": [
+              {
+                "quantity": 5760,
+                "typeID": 34
+              },
+              {
+                "quantity": 2304,
+                "typeID": 35
+              }
+            ],
+            "outputQuantity": 64,
+            "productTypeID": 1002,
+            "runs": 64
+          }
+        ],
+        "planID": "uuid-92",
+        "productName": "Golden Component",
+        "productTypeID": 1002,
+        "requiredRuns": 64,
+        "reservations": [],
+        "ruleVersion": "2026.08-blueprint-supply-v2",
+        "scienceJobs": [],
+        "sourceSnapshotIDs": [],
+        "transfers": [],
+        "warnings": []
+      },
+      {
+        "batchAllocationCost": null,
+        "blueprintTypeID": 1103,
+        "capitalPurchaseCost": null,
+        "confidencePlanCost": null,
+        "expectedInventionCost": null,
+        "id": "uuid-93",
+        "manufacturingJobs": [
+          {
+            "allocation": {
+              "acquisitionCost": null,
+              "allocatedRuns": 3,
+              "availableRuns": 3,
+              "locationID": null,
+              "locationName": null,
+              "materialEfficiency": 10,
+              "ownerID": null,
+              "ownerName": null,
+              "provenance": "manualPlanningAssumption",
+              "remainingRuns": 0,
+              "source": {
+                "manualExternalBPC": [
+                  "uuid-15"
+                ]
+              },
+              "sourceSnapshotID": null,
+              "sourceState": "unavailable",
+              "timeEfficiency": 20
+            },
+            "blueprintTypeID": 1103,
+            "demandID": {
+              "blueprintTypeID": 1103,
+              "nodePath": [
+                1003
+              ],
+              "productTypeID": 1003,
+              "requestID": "uuid-15"
+            },
+            "durationSeconds": 8640,
+            "id": "uuid-94",
+            "installationCost": 35931,
+            "materials": [
+              {
+                "quantity": 27,
+                "typeID": 1002
+              },
+              {
+                "quantity": 135,
+                "typeID": 1001
+              },
+              {
+                "quantity": 1350,
+                "typeID": 36
+              }
+            ],
+            "outputQuantity": 3,
+            "productTypeID": 1003,
+            "runs": 3
+          }
+        ],
+        "planID": "uuid-92",
+        "productName": "Golden Ship",
+        "productTypeID": 1003,
+        "requiredRuns": 3,
+        "reservations": [],
+        "ruleVersion": "2026.08-blueprint-supply-v2",
+        "scienceJobs": [],
+        "sourceSnapshotIDs": [],
+        "transfers": [],
+        "warnings": []
+      },
+      {
+        "batchAllocationCost": null,
+        "blueprintTypeID": 1104,
+        "capitalPurchaseCost": null,
+        "confidencePlanCost": null,
+        "expectedInventionCost": null,
+        "id": "uuid-95",
+        "manufacturingJobs": [
+          {
+            "allocation": {
+              "acquisitionCost": null,
+              "allocatedRuns": 20,
+              "availableRuns": 20,
+              "locationID": null,
+              "locationName": null,
+              "materialEfficiency": 8,
+              "ownerID": null,
+              "ownerName": null,
+              "provenance": "manualPlanningAssumption",
+              "remainingRuns": 0,
+              "source": {
+                "manualExternalBPC": [
+                  "uuid-16"
+                ]
+              },
+              "sourceSnapshotID": null,
+              "sourceState": "unavailable",
+              "timeEfficiency": 16
+            },
+            "blueprintTypeID": 1104,
+            "demandID": {
+              "blueprintTypeID": 1104,
+              "nodePath": [
+                1004
+              ],
+              "productTypeID": 1004,
+              "requestID": "uuid-16"
+            },
+            "durationSeconds": 20160,
+            "id": "uuid-96",
+            "installationCost": 32479.999999999996,
+            "materials": [
+              {
+                "quantity": 37,
+                "typeID": 1002
+              },
+              {
+                "quantity": 18400,
+                "typeID": 34
+              }
+            ],
+            "outputQuantity": 20,
+            "productTypeID": 1004,
+            "runs": 20
+          }
+        ],
+        "planID": "uuid-92",
+        "productName": "Golden Module",
+        "productTypeID": 1004,
+        "requiredRuns": 20,
+        "reservations": [],
+        "ruleVersion": "2026.08-blueprint-supply-v2",
+        "scienceJobs": [],
+        "sourceSnapshotIDs": [],
+        "transfers": [],
+        "warnings": []
+      }
+    ],
+    "coalitionContractSale": null,
+    "coalitionImmediateSale": null,
+    "coalitionListedSale": null,
+    "compressedOreRefining": null,
+    "costBreakdown": {
+      "alphaSurcharge": 0,
+      "blueprintCosts": {
+        "entries": [],
+        "requestsWithoutEnteredCost": [
+          "uuid-15",
+          "uuid-16"
+        ],
+        "total": 0,
+        "unresolvedBlueprintCount": 0
+      },
+      "facilityTax": 0,
+      "installationCost": 74965.818,
+      "logistics": {
+        "collateralRate": 0.005,
+        "iskPerCubicMeter": 800,
+        "legs": [
+          {
+            "cargo": [
+              {
+                "collateral": 5000,
+                "name": "Atmospheric Gases",
+                "quantity": 100,
+                "typeID": 16634,
+                "volumeM3": 5
+              },
+              {
+                "collateral": 40000,
+                "name": "Cadmium",
+                "quantity": 100,
+                "typeID": 16643,
+                "volumeM3": 5
+              },
+              {
+                "collateral": 81000,
+                "name": "Mexallon",
+                "quantity": 1350,
+                "typeID": 36,
+                "volumeM3": 13.5
+              },
+              {
+                "collateral": 23040,
+                "name": "Pyerite",
+                "quantity": 2304,
+                "typeID": 35,
+                "volumeM3": 23.04
+              },
+              {
+                "collateral": 96640,
+                "name": "Tritanium",
+                "quantity": 24160,
+                "typeID": 34,
+                "volumeM3": 241.6
+              }
+            ],
+            "cargoVolumeM3": 288.14,
+            "chargedBy": "volume",
+            "collateral": 245680,
+            "collateralCharge": 1228.4,
+            "contractCount": 1,
+            "contractNumber": 1,
+            "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+            "id": "uuid-97",
+            "kind": "inboundMaterials",
+            "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "roundedCharge": 1000000,
+            "unroundedCharge": 230512,
+            "volumeCharge": 230512
+          }
+        ],
+        "maximumContractVolumeM3": 350000,
+        "roundingIncrement": 1000000,
+        "ruleVersion": "planner-hub-routes-2026-08-04",
+        "total": 1000000
+      },
+      "logisticsCost": 1000000,
+      "materialCost": 245680,
+      "purchasedMaterialCost": 245680,
+      "refiningCost": null,
+      "sccSurcharge": 37345.6,
+      "stockMaterialCost": 0,
+      "systemIndexCost": 37620.218,
+      "totalProductionCost": 1320645.818
+    },
+    "createdAt": "<date>",
+    "explanations": [
+      {
+        "explanation": "This child supplies material required by 1002.",
+        "fromNodeID": "uuid-98",
+        "id": "uuid-99",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-19",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-100"
+      },
+      {
+        "explanation": "This child supplies material required by 1002.",
+        "fromNodeID": "uuid-98",
+        "id": "uuid-101",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-19",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-102"
+      },
+      {
+        "explanation": "This child supplies material required by 1001.",
+        "fromNodeID": "uuid-103",
+        "id": "uuid-104",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-22",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-105"
+      },
+      {
+        "explanation": "This child supplies material required by 1001.",
+        "fromNodeID": "uuid-103",
+        "id": "uuid-106",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-22",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-107"
+      },
+      {
+        "explanation": "This child supplies material required by 1003.",
+        "fromNodeID": "uuid-108",
+        "id": "uuid-109",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-25",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-98"
+      },
+      {
+        "explanation": "This child supplies material required by 1003.",
+        "fromNodeID": "uuid-108",
+        "id": "uuid-110",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-25",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-103"
+      },
+      {
+        "explanation": "This child supplies material required by 1003.",
+        "fromNodeID": "uuid-108",
+        "id": "uuid-111",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-25",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-112"
+      },
+      {
+        "explanation": "This child supplies material required by 1002.",
+        "fromNodeID": "uuid-113",
+        "id": "uuid-114",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-19",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-115"
+      },
+      {
+        "explanation": "This child supplies material required by 1002.",
+        "fromNodeID": "uuid-113",
+        "id": "uuid-116",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-19",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-117"
+      },
+      {
+        "explanation": "This child supplies material required by 1004.",
+        "fromNodeID": "uuid-118",
+        "id": "uuid-119",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-31",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-113"
+      },
+      {
+        "explanation": "This child supplies material required by 1004.",
+        "fromNodeID": "uuid-118",
+        "id": "uuid-120",
+        "rule": "industry.material-requirement",
+        "source": {
+          "capturedAt": "<date>",
+          "provider": "CCP SDE",
+          "snapshotID": "uuid-31",
+          "version": "4242"
+        },
+        "toNodeID": "uuid-121"
+      }
+    ],
+    "formulaShipments": null,
+    "homeContractSale": {
+      "brokerFee": null,
+      "brokerFeeIsApplicable": false,
+      "brokerFeeRate": 0,
+      "contractFee": null,
+      "grossOrNetRevenue": null,
+      "grossRevenue": null,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-97",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": null,
+      "marketLocation": {
+        "id": "npc:60008494",
+        "kind": "npcTradeHub",
+        "locationID": 60008494,
+        "name": "Amarr VIII (Oris) - Emperor Family Academy",
+        "ownerCorporationID": 1000086,
+        "ownerFactionID": 500003,
+        "regionID": 10000043,
+        "solarSystemID": 30002187
+      },
+      "outboundLogistics": null,
+      "outboundLogisticsAssessment": {
+        "breakdown": null,
+        "cost": 0,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": "The finished product is sold where production is based.",
+        "selfJumpingCapitals": null,
+        "status": "notRequired"
+      },
+      "outboundLogisticsCost": 0,
+      "profit": null,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-122",
+          "quantity": 3,
+          "scenario": "contractSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Public Contracts",
+            "snapshotID": "uuid-123",
+            "version": "public-item-exchange-reference-2026-08-13"
+          },
+          "total": null,
+          "typeID": 1003,
+          "warnings": [
+            {
+              "code": "contracts.reference-unavailable",
+              "id": "uuid-124",
+              "message": "A complete Public Contracts reference snapshot for the configured comparison regions is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-125",
+          "quantity": 20,
+          "scenario": "contractSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Public Contracts",
+            "snapshotID": "uuid-126",
+            "version": "public-item-exchange-reference-2026-08-13"
+          },
+          "total": null,
+          "typeID": 1004,
+          "warnings": [
+            {
+              "code": "contracts.reference-unavailable",
+              "id": "uuid-127",
+              "message": "A complete Public Contracts reference snapshot for the configured comparison regions is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        }
+      ],
+      "roi": null,
+      "salesTax": null,
+      "salesTaxRate": 0,
+      "scenario": "contractSale",
+      "totalCost": 1320645.818
+    },
+    "homeImmediateSale": {
+      "brokerFee": null,
+      "brokerFeeIsApplicable": false,
+      "brokerFeeRate": 0,
+      "contractFee": null,
+      "grossOrNetRevenue": null,
+      "grossRevenue": null,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-97",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": null,
+      "marketLocation": {
+        "id": "npc:60008494",
+        "kind": "npcTradeHub",
+        "locationID": 60008494,
+        "name": "Amarr VIII (Oris) - Emperor Family Academy",
+        "ownerCorporationID": 1000086,
+        "ownerFactionID": 500003,
+        "regionID": 10000043,
+        "solarSystemID": 30002187
+      },
+      "outboundLogistics": null,
+      "outboundLogisticsAssessment": {
+        "breakdown": null,
+        "cost": 0,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": "The finished product is sold where production is based.",
+        "selfJumpingCapitals": null,
+        "status": "notRequired"
+      },
+      "outboundLogisticsCost": 0,
+      "profit": null,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-128",
+          "quantity": 3,
+          "scenario": "immediateSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Market",
+            "snapshotID": "uuid-129",
+            "version": "2025-12-16"
+          },
+          "total": null,
+          "typeID": 1003,
+          "warnings": [
+            {
+              "code": "market.snapshot-unavailable",
+              "id": "uuid-130",
+              "message": "The exact-hub market snapshot is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-131",
+          "quantity": 20,
+          "scenario": "immediateSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Market",
+            "snapshotID": "uuid-132",
+            "version": "2025-12-16"
+          },
+          "total": null,
+          "typeID": 1004,
+          "warnings": [
+            {
+              "code": "market.snapshot-unavailable",
+              "id": "uuid-133",
+              "message": "The exact-hub market snapshot is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        }
+      ],
+      "roi": null,
+      "salesTax": null,
+      "salesTaxRate": null,
+      "scenario": "immediateSale",
+      "totalCost": 1320645.818
+    },
+    "homeListedSale": {
+      "brokerFee": null,
+      "brokerFeeIsApplicable": true,
+      "brokerFeeRate": null,
+      "contractFee": null,
+      "grossOrNetRevenue": null,
+      "grossRevenue": null,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-97",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": null,
+      "marketLocation": {
+        "id": "npc:60008494",
+        "kind": "npcTradeHub",
+        "locationID": 60008494,
+        "name": "Amarr VIII (Oris) - Emperor Family Academy",
+        "ownerCorporationID": 1000086,
+        "ownerFactionID": 500003,
+        "regionID": 10000043,
+        "solarSystemID": 30002187
+      },
+      "outboundLogistics": null,
+      "outboundLogisticsAssessment": {
+        "breakdown": null,
+        "cost": 0,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": "The finished product is sold where production is based.",
+        "selfJumpingCapitals": null,
+        "status": "notRequired"
+      },
+      "outboundLogisticsCost": 0,
+      "profit": null,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-134",
+          "quantity": 3,
+          "scenario": "listedSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Market",
+            "snapshotID": "uuid-135",
+            "version": "2025-12-16"
+          },
+          "total": null,
+          "typeID": 1003,
+          "warnings": [
+            {
+              "code": "market.snapshot-unavailable",
+              "id": "uuid-136",
+              "message": "The exact-hub market snapshot is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-137",
+          "quantity": 20,
+          "scenario": "listedSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Market",
+            "snapshotID": "uuid-138",
+            "version": "2025-12-16"
+          },
+          "total": null,
+          "typeID": 1004,
+          "warnings": [
+            {
+              "code": "market.snapshot-unavailable",
+              "id": "uuid-139",
+              "message": "The exact-hub market snapshot is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        }
+      ],
+      "roi": null,
+      "salesTax": null,
+      "salesTaxRate": null,
+      "scenario": "listedSale",
+      "totalCost": 1320645.818
+    },
+    "id": "uuid-92",
+    "immediateSale": {
+      "brokerFee": 0,
+      "brokerFeeIsApplicable": false,
+      "brokerFeeRate": 0,
+      "contractFee": 0,
+      "grossOrNetRevenue": 8290400,
+      "grossRevenue": 8600000,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-97",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": -0.003648294171571935,
+      "marketLocation": {
+        "id": "npc:60003760",
+        "kind": "npcTradeHub",
+        "locationID": 60003760,
+        "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "ownerCorporationID": 1000035,
+        "ownerFactionID": 500001,
+        "regionID": 10000002,
+        "solarSystemID": 30000142
+      },
+      "outboundLogistics": {
+        "collateralRate": 0.005,
+        "iskPerCubicMeter": 800,
+        "legs": [
+          {
+            "cargo": [
+              {
+                "collateral": 1400000,
+                "name": "Golden Module",
+                "quantity": 20,
+                "typeID": 1004,
+                "volumeM3": 100
+              },
+              {
+                "collateral": 9000000,
+                "name": "Golden Ship",
+                "quantity": 3,
+                "typeID": 1003,
+                "volumeM3": 7500
+              }
+            ],
+            "cargoVolumeM3": 7600,
+            "chargedBy": "volume",
+            "collateral": 10400000,
+            "collateralCharge": 52000,
+            "contractCount": 1,
+            "contractNumber": 1,
+            "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "id": "uuid-140",
+            "kind": "outboundProducts",
+            "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+            "roundedCharge": 7000000,
+            "unroundedCharge": 6080000,
+            "volumeCharge": 6080000
+          }
+        ],
+        "maximumContractVolumeM3": 350000,
+        "roundingIncrement": 1000000,
+        "ruleVersion": "planner-hub-routes-2026-08-04",
+        "total": 7000000
+      },
+      "outboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 1400000,
+                  "name": "Golden Module",
+                  "quantity": 20,
+                  "typeID": 1004,
+                  "volumeM3": 100
+                },
+                {
+                  "collateral": 9000000,
+                  "name": "Golden Ship",
+                  "quantity": 3,
+                  "typeID": 1003,
+                  "volumeM3": 7500
+                }
+              ],
+              "cargoVolumeM3": 7600,
+              "chargedBy": "volume",
+              "collateral": 10400000,
+              "collateralCharge": 52000,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "id": "uuid-140",
+              "kind": "outboundProducts",
+              "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+              "roundedCharge": 7000000,
+              "unroundedCharge": 6080000,
+              "volumeCharge": 6080000
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 7000000
+        },
+        "cost": 7000000,
+        "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "outboundLogisticsCost": 7000000,
+      "profit": -30245.81799999997,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 3,
+          "id": "uuid-141",
+          "quantity": 3,
+          "scenario": "immediateSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 7500000,
+          "typeID": 1003,
+          "warnings": [],
+          "weightedUnitPrice": 2500000
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 20,
+          "id": "uuid-142",
+          "quantity": 20,
+          "scenario": "immediateSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 1100000,
+          "typeID": 1004,
+          "warnings": [],
+          "weightedUnitPrice": 55000
+        }
+      ],
+      "roi": -0.003635032503675302,
+      "salesTax": 309600,
+      "salesTaxRate": 0.036,
+      "scenario": "immediateSale",
+      "totalCost": 8320645.818
+    },
+    "installationCost": 74965.818,
+    "jobSplitting": {
+      "splitsFinalProducts": true,
+      "splitsIntermediates": true
+    },
+    "jobs": [
+      {
+        "activity": "manufacturing",
+        "alphaSurcharge": 0,
+        "blueprintSource": {
+          "manualExternalBPC": [
+            "uuid-15"
+          ]
+        },
+        "blueprintSupplyJobID": "uuid-94",
+        "bonusMultiplier": 1,
+        "characterName": null,
+        "durationSeconds": 8640,
+        "estimatedItemValue": 442500,
+        "facilityName": "Unnamed structure / station",
+        "facilityTax": 0,
+        "id": "uuid-143",
+        "isTopLevel": true,
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "outputQuantity": 3,
+        "piece": 1,
+        "pieceCount": 1,
+        "productName": "Golden Ship",
+        "runs": 3,
+        "sccSurcharge": 0.04,
+        "systemCostIndex": 0.0412,
+        "timeEfficiency": 20,
+        "total": 35931,
+        "typeID": 1003
+      },
+      {
+        "activity": "manufacturing",
+        "alphaSurcharge": 0,
+        "blueprintSource": {
+          "manualExternalBPC": [
+            "uuid-16"
+          ]
+        },
+        "blueprintSupplyJobID": "uuid-96",
+        "bonusMultiplier": 1,
+        "characterName": null,
+        "durationSeconds": 20160,
+        "estimatedItemValue": 400000,
+        "facilityName": "Unnamed structure / station",
+        "facilityTax": 0,
+        "id": "uuid-144",
+        "isTopLevel": true,
+        "manufacturingCategory": "module",
+        "materialEfficiency": 8,
+        "outputQuantity": 20,
+        "piece": 1,
+        "pieceCount": 1,
+        "productName": "Golden Module",
+        "runs": 20,
+        "sccSurcharge": 0.04,
+        "systemCostIndex": 0.0412,
+        "timeEfficiency": 16,
+        "total": 32479.999999999996,
+        "typeID": 1004
+      },
+      {
+        "activity": "reaction",
+        "alphaSurcharge": 0,
+        "blueprintSource": null,
+        "blueprintSupplyJobID": null,
+        "bonusMultiplier": 1,
+        "characterName": null,
+        "durationSeconds": 10800,
+        "estimatedItemValue": 42500,
+        "facilityName": "Golden Reactor",
+        "facilityTax": 0,
+        "id": "uuid-145",
+        "isTopLevel": false,
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "outputQuantity": 200,
+        "piece": 1,
+        "pieceCount": 1,
+        "productName": "Golden Reaction Product",
+        "runs": 1,
+        "sccSurcharge": 0.04,
+        "systemCostIndex": 0.0213,
+        "timeEfficiency": null,
+        "total": 2605.25,
+        "typeID": 1001
+      },
+      {
+        "activity": "manufacturing",
+        "alphaSurcharge": 0,
+        "blueprintSource": {
+          "manualExternalBPC": [
+            "uuid-15"
+          ]
+        },
+        "blueprintSupplyJobID": "uuid-91",
+        "bonusMultiplier": 1,
+        "characterName": null,
+        "durationSeconds": 30720,
+        "estimatedItemValue": 48640,
+        "facilityName": "Unnamed structure / station",
+        "facilityTax": 0,
+        "id": "uuid-146",
+        "isTopLevel": false,
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "outputQuantity": 64,
+        "piece": 1,
+        "pieceCount": 1,
+        "productName": "Golden Component",
+        "runs": 64,
+        "sccSurcharge": 0.04,
+        "systemCostIndex": 0.0412,
+        "timeEfficiency": 20,
+        "total": 3949.5679999999998,
+        "typeID": 1002
+      }
+    ],
+    "listedSale": {
+      "brokerFee": 156000,
+      "brokerFeeIsApplicable": true,
+      "brokerFeeRate": 0.015,
+      "contractFee": 0,
+      "grossOrNetRevenue": 9869600,
+      "grossRevenue": 10400000,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-97",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": 0.1569419411121018,
+      "marketLocation": {
+        "id": "npc:60003760",
+        "kind": "npcTradeHub",
+        "locationID": 60003760,
+        "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "ownerCorporationID": 1000035,
+        "ownerFactionID": 500001,
+        "regionID": 10000002,
+        "solarSystemID": 30000142
+      },
+      "outboundLogistics": {
+        "collateralRate": 0.005,
+        "iskPerCubicMeter": 800,
+        "legs": [
+          {
+            "cargo": [
+              {
+                "collateral": 1400000,
+                "name": "Golden Module",
+                "quantity": 20,
+                "typeID": 1004,
+                "volumeM3": 100
+              },
+              {
+                "collateral": 9000000,
+                "name": "Golden Ship",
+                "quantity": 3,
+                "typeID": 1003,
+                "volumeM3": 7500
+              }
+            ],
+            "cargoVolumeM3": 7600,
+            "chargedBy": "volume",
+            "collateral": 10400000,
+            "collateralCharge": 52000,
+            "contractCount": 1,
+            "contractNumber": 1,
+            "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "id": "uuid-140",
+            "kind": "outboundProducts",
+            "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+            "roundedCharge": 7000000,
+            "unroundedCharge": 6080000,
+            "volumeCharge": 6080000
+          }
+        ],
+        "maximumContractVolumeM3": 350000,
+        "roundingIncrement": 1000000,
+        "ruleVersion": "planner-hub-routes-2026-08-04",
+        "total": 7000000
+      },
+      "outboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 1400000,
+                  "name": "Golden Module",
+                  "quantity": 20,
+                  "typeID": 1004,
+                  "volumeM3": 100
+                },
+                {
+                  "collateral": 9000000,
+                  "name": "Golden Ship",
+                  "quantity": 3,
+                  "typeID": 1003,
+                  "volumeM3": 7500
+                }
+              ],
+              "cargoVolumeM3": 7600,
+              "chargedBy": "volume",
+              "collateral": 10400000,
+              "collateralCharge": 52000,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "id": "uuid-140",
+              "kind": "outboundProducts",
+              "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+              "roundedCharge": 7000000,
+              "unroundedCharge": 6080000,
+              "volumeCharge": 6080000
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 7000000
+        },
+        "cost": 7000000,
+        "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "outboundLogisticsCost": 7000000,
+      "profit": 1548954.182,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 3,
+          "id": "uuid-147",
+          "quantity": 3,
+          "scenario": "listedSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 8541000,
+          "typeID": 1003,
+          "warnings": [],
+          "weightedUnitPrice": 2847000
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 20,
+          "id": "uuid-148",
+          "quantity": 20,
+          "scenario": "listedSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 1328600,
+          "typeID": 1004,
+          "warnings": [],
+          "weightedUnitPrice": 66430
+        }
+      ],
+      "roi": 0.18615792762734323,
+      "salesTax": 374400,
+      "salesTaxRate": 0.036,
+      "scenario": "listedSale",
+      "totalCost": 8320645.818
+    },
+    "mainContractSale": {
+      "brokerFee": null,
+      "brokerFeeIsApplicable": false,
+      "brokerFeeRate": 0,
+      "contractFee": null,
+      "grossOrNetRevenue": null,
+      "grossRevenue": null,
+      "inboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 5000,
+                  "name": "Atmospheric Gases",
+                  "quantity": 100,
+                  "typeID": 16634,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 40000,
+                  "name": "Cadmium",
+                  "quantity": 100,
+                  "typeID": 16643,
+                  "volumeM3": 5
+                },
+                {
+                  "collateral": 81000,
+                  "name": "Mexallon",
+                  "quantity": 1350,
+                  "typeID": 36,
+                  "volumeM3": 13.5
+                },
+                {
+                  "collateral": 23040,
+                  "name": "Pyerite",
+                  "quantity": 2304,
+                  "typeID": 35,
+                  "volumeM3": 23.04
+                },
+                {
+                  "collateral": 96640,
+                  "name": "Tritanium",
+                  "quantity": 24160,
+                  "typeID": 34,
+                  "volumeM3": 241.6
+                }
+              ],
+              "cargoVolumeM3": 288.14,
+              "chargedBy": "volume",
+              "collateral": 245680,
+              "collateralCharge": 1228.4,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+              "id": "uuid-97",
+              "kind": "inboundMaterials",
+              "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "roundedCharge": 1000000,
+              "unroundedCharge": 230512,
+              "volumeCharge": 230512
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 1000000
+        },
+        "cost": 1000000,
+        "destination": "Amarr VIII (Oris) - Emperor Family Academy",
+        "jumpFreighter": null,
+        "origin": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "margin": null,
+      "marketLocation": {
+        "id": "npc:60003760",
+        "kind": "npcTradeHub",
+        "locationID": 60003760,
+        "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "ownerCorporationID": 1000035,
+        "ownerFactionID": 500001,
+        "regionID": 10000002,
+        "solarSystemID": 30000142
+      },
+      "outboundLogistics": {
+        "collateralRate": 0.005,
+        "iskPerCubicMeter": 800,
+        "legs": [
+          {
+            "cargo": [
+              {
+                "collateral": 1400000,
+                "name": "Golden Module",
+                "quantity": 20,
+                "typeID": 1004,
+                "volumeM3": 100
+              },
+              {
+                "collateral": 9000000,
+                "name": "Golden Ship",
+                "quantity": 3,
+                "typeID": 1003,
+                "volumeM3": 7500
+              }
+            ],
+            "cargoVolumeM3": 7600,
+            "chargedBy": "volume",
+            "collateral": 10400000,
+            "collateralCharge": 52000,
+            "contractCount": 1,
+            "contractNumber": 1,
+            "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "id": "uuid-140",
+            "kind": "outboundProducts",
+            "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+            "roundedCharge": 7000000,
+            "unroundedCharge": 6080000,
+            "volumeCharge": 6080000
+          }
+        ],
+        "maximumContractVolumeM3": 350000,
+        "roundingIncrement": 1000000,
+        "ruleVersion": "planner-hub-routes-2026-08-04",
+        "total": 7000000
+      },
+      "outboundLogisticsAssessment": {
+        "breakdown": {
+          "collateralRate": 0.005,
+          "iskPerCubicMeter": 800,
+          "legs": [
+            {
+              "cargo": [
+                {
+                  "collateral": 1400000,
+                  "name": "Golden Module",
+                  "quantity": 20,
+                  "typeID": 1004,
+                  "volumeM3": 100
+                },
+                {
+                  "collateral": 9000000,
+                  "name": "Golden Ship",
+                  "quantity": 3,
+                  "typeID": 1003,
+                  "volumeM3": 7500
+                }
+              ],
+              "cargoVolumeM3": 7600,
+              "chargedBy": "volume",
+              "collateral": 10400000,
+              "collateralCharge": 52000,
+              "contractCount": 1,
+              "contractNumber": 1,
+              "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+              "id": "uuid-140",
+              "kind": "outboundProducts",
+              "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+              "roundedCharge": 7000000,
+              "unroundedCharge": 6080000,
+              "volumeCharge": 6080000
+            }
+          ],
+          "maximumContractVolumeM3": 350000,
+          "roundingIncrement": 1000000,
+          "ruleVersion": "planner-hub-routes-2026-08-04",
+          "total": 7000000
+        },
+        "cost": 7000000,
+        "destination": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+        "jumpFreighter": null,
+        "origin": "Amarr VIII (Oris) - Emperor Family Academy",
+        "reason": null,
+        "selfJumpingCapitals": null,
+        "status": "calculated"
+      },
+      "outboundLogisticsCost": 7000000,
+      "profit": null,
+      "quotes": [
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-149",
+          "quantity": 3,
+          "scenario": "contractSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Public Contracts",
+            "snapshotID": "uuid-150",
+            "version": "public-item-exchange-reference-2026-08-13"
+          },
+          "total": null,
+          "typeID": 1003,
+          "warnings": [
+            {
+              "code": "contracts.reference-unavailable",
+              "id": "uuid-151",
+              "message": "A complete Public Contracts reference snapshot for the configured comparison regions is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        },
+        {
+          "capturedAt": "<date>",
+          "filledQuantity": 0,
+          "id": "uuid-152",
+          "quantity": 20,
+          "scenario": "contractSale",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI Public Contracts",
+            "snapshotID": "uuid-153",
+            "version": "public-item-exchange-reference-2026-08-13"
+          },
+          "total": null,
+          "typeID": 1004,
+          "warnings": [
+            {
+              "code": "contracts.reference-unavailable",
+              "id": "uuid-154",
+              "message": "A complete Public Contracts reference snapshot for the configured comparison regions is unavailable.",
+              "severity": "warning",
+              "source": null,
+              "text": null
+            }
+          ],
+          "weightedUnitPrice": null
+        }
+      ],
+      "roi": null,
+      "salesTax": null,
+      "salesTaxRate": 0,
+      "scenario": "contractSale",
+      "totalCost": 8320645.818
+    },
+    "makespanSeconds": 59520,
+    "materialCost": 245680,
+    "materialValuationSources": null,
+    "materials": [
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Atmospheric Gases",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": true
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 100,
+          "id": "uuid-155",
+          "quantity": 100,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 5000,
+          "typeID": 16634,
+          "warnings": [],
+          "weightedUnitPrice": 50
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 100,
+          "id": "uuid-156",
+          "quantity": 100,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 5000,
+          "typeID": 16634,
+          "warnings": [],
+          "weightedUnitPrice": 50
+        },
+        "required": 100,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Moon Materials",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 100,
+        "toProduce": 0,
+        "typeID": 16634
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Cadmium",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": true
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 100,
+          "id": "uuid-157",
+          "quantity": 100,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 40000,
+          "typeID": 16643,
+          "warnings": [],
+          "weightedUnitPrice": 400
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 100,
+          "id": "uuid-158",
+          "quantity": 100,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 40000,
+          "typeID": 16643,
+          "warnings": [],
+          "weightedUnitPrice": 400
+        },
+        "required": 100,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Moon Materials",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 100,
+        "toProduce": 0,
+        "typeID": 16643
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": {
+          "buildBlueprintCost": null,
+          "buildInstallationCost": null,
+          "buildLogisticsCost": 1000000,
+          "buildMaterialCost": 46080,
+          "buildTotalCost": null,
+          "chainBoughtTypeIDs": [
+            34,
+            35
+          ],
+          "chainBuiltTypeIDs": [],
+          "mainHub": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "producedQuantity": 64,
+          "productionRuns": 64,
+          "purchaseLogisticsCost": 1000000,
+          "purchaseQuote": {
+            "capturedAt": "<date>",
+            "filledQuantity": 64,
+            "id": "uuid-72",
+            "quantity": 64,
+            "scenario": "materialBuy",
+            "source": {
+              "capturedAt": "<date>",
+              "provider": "ESI",
+              "snapshotID": "uuid-54",
+              "version": "2025-12-16"
+            },
+            "total": 576000,
+            "typeID": 1002,
+            "warnings": [],
+            "weightedUnitPrice": 9000
+          },
+          "purchaseTotalCost": 1576000,
+          "recommendation": "unavailable",
+          "requiredQuantity": 64,
+          "savings": null,
+          "warnings": [
+            {
+              "code": "make-or-buy.facility-needs-review",
+              "id": "uuid-73",
+              "message": "The configured manufacturing facility contains unresolved modifiers.",
+              "severity": "blocking",
+              "source": null,
+              "text": null
+            }
+          ]
+        },
+        "name": "Golden Component",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "produce",
+          "usesAvailableStockFirst": true
+        },
+        "productionActivity": "manufacturing",
+        "productionAllowed": true,
+        "purchaseAllocations": null,
+        "quote": null,
+        "replacementQuote": null,
+        "required": 64,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 0,
+        "toProduce": 64,
+        "typeID": 1002
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": {
+          "buildBlueprintCost": null,
+          "buildInstallationCost": 2605.25,
+          "buildLogisticsCost": 1000000,
+          "buildMaterialCost": 45000,
+          "buildTotalCost": 1047605.25,
+          "chainBoughtTypeIDs": [
+            16634,
+            16643
+          ],
+          "chainBuiltTypeIDs": [],
+          "mainHub": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "producedQuantity": 200,
+          "productionRuns": 1,
+          "purchaseLogisticsCost": 1000000,
+          "purchaseQuote": {
+            "capturedAt": "<date>",
+            "filledQuantity": 135,
+            "id": "uuid-74",
+            "quantity": 135,
+            "scenario": "materialBuy",
+            "source": {
+              "capturedAt": "<date>",
+              "provider": "ESI",
+              "snapshotID": "uuid-54",
+              "version": "2025-12-16"
+            },
+            "total": 121500,
+            "typeID": 1001,
+            "warnings": [],
+            "weightedUnitPrice": 900
+          },
+          "purchaseTotalCost": 1121500,
+          "recommendation": "produce",
+          "requiredQuantity": 135,
+          "savings": 73894.75,
+          "warnings": []
+        },
+        "name": "Golden Reaction Product",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "produce",
+          "usesAvailableStockFirst": true
+        },
+        "productionActivity": "reaction",
+        "productionAllowed": true,
+        "purchaseAllocations": null,
+        "quote": null,
+        "replacementQuote": null,
+        "required": 135,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 0,
+        "toProduce": 200,
+        "typeID": 1001
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Mexallon",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": true
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 1350,
+          "id": "uuid-159",
+          "quantity": 1350,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 81000,
+          "typeID": 36,
+          "warnings": [],
+          "weightedUnitPrice": 60
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 1350,
+          "id": "uuid-160",
+          "quantity": 1350,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 81000,
+          "typeID": 36,
+          "warnings": [],
+          "weightedUnitPrice": 60
+        },
+        "required": 1350,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Mineral",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 1350,
+        "toProduce": 0,
+        "typeID": 36
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Pyerite",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": true
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 2304,
+          "id": "uuid-161",
+          "quantity": 2304,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 23040,
+          "typeID": 35,
+          "warnings": [],
+          "weightedUnitPrice": 10
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 2304,
+          "id": "uuid-162",
+          "quantity": 2304,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 23040,
+          "typeID": 35,
+          "warnings": [],
+          "weightedUnitPrice": 10
+        },
+        "required": 2304,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Mineral",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 2304,
+        "toProduce": 0,
+        "typeID": 35
+      },
+      {
+        "fromStock": 0,
+        "isManualSupply": null,
+        "makeOrBuyAnalysis": null,
+        "name": "Tritanium",
+        "procurement": {
+          "purchaseLocation": {
+            "id": "npc:60003760",
+            "kind": "npcTradeHub",
+            "locationID": 60003760,
+            "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+            "ownerCorporationID": 1000035,
+            "ownerFactionID": 500001,
+            "regionID": 10000002,
+            "solarSystemID": 30000142
+          },
+          "supplyMode": "buy",
+          "usesAvailableStockFirst": true
+        },
+        "productionActivity": null,
+        "productionAllowed": false,
+        "purchaseAllocations": null,
+        "quote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 24160,
+          "id": "uuid-163",
+          "quantity": 24160,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 96640,
+          "typeID": 34,
+          "warnings": [],
+          "weightedUnitPrice": 4
+        },
+        "replacementQuote": {
+          "capturedAt": "<date>",
+          "filledQuantity": 24160,
+          "id": "uuid-164",
+          "quantity": 24160,
+          "scenario": "materialBuy",
+          "source": {
+            "capturedAt": "<date>",
+            "provider": "ESI",
+            "snapshotID": "uuid-54",
+            "version": "2025-12-16"
+          },
+          "total": 96640,
+          "typeID": 34,
+          "warnings": [],
+          "weightedUnitPrice": 4
+        },
+        "required": 24160,
+        "restockAllocations": null,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Mineral",
+        "stockQuote": null,
+        "stockUnitValue": null,
+        "toBuy": 24160,
+        "toProduce": 0,
+        "typeID": 34
+      }
+    ],
+    "nodes": [
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-100",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Tritanium",
+        "requestedQuantity": 2430,
+        "requiredQuantity": 2430,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 34
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-102",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Pyerite",
+        "requestedQuantity": 972,
+        "requiredQuantity": 972,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 35
+      },
+      {
+        "action": "produce",
+        "activity": "manufacturing",
+        "blueprintTypeID": 1102,
+        "children": [
+          "uuid-100",
+          "uuid-102"
+        ],
+        "facilityName": "Unnamed structure / station",
+        "id": "uuid-98",
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "name": "Golden Component",
+        "requestedQuantity": 27,
+        "requiredQuantity": 27,
+        "runs": 27,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": 20,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 1002
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-105",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Atmospheric Gases",
+        "requestedQuantity": 100,
+        "requiredQuantity": 100,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 16634
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-107",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Cadmium",
+        "requestedQuantity": 100,
+        "requiredQuantity": 100,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 16643
+      },
+      {
+        "action": "produce",
+        "activity": "reaction",
+        "blueprintTypeID": 1101,
+        "children": [
+          "uuid-105",
+          "uuid-107"
+        ],
+        "facilityName": "Golden Reactor",
+        "id": "uuid-103",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Golden Reaction Product",
+        "requestedQuantity": 135,
+        "requiredQuantity": 200,
+        "runs": 1,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 1001
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-112",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Mexallon",
+        "requestedQuantity": 1350,
+        "requiredQuantity": 1350,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 36
+      },
+      {
+        "action": "produce",
+        "activity": "manufacturing",
+        "blueprintTypeID": 1103,
+        "children": [
+          "uuid-98",
+          "uuid-103",
+          "uuid-112"
+        ],
+        "facilityName": "Unnamed structure / station",
+        "id": "uuid-108",
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "name": "Golden Ship",
+        "requestedQuantity": 3,
+        "requiredQuantity": 3,
+        "runs": 3,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": 20,
+        "topLevelRequestID": "uuid-15",
+        "typeID": 1003
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-115",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Tritanium",
+        "requestedQuantity": 3330,
+        "requiredQuantity": 3330,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 34
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-117",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Pyerite",
+        "requestedQuantity": 1332,
+        "requiredQuantity": 1332,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 35
+      },
+      {
+        "action": "produce",
+        "activity": "manufacturing",
+        "blueprintTypeID": 1102,
+        "children": [
+          "uuid-115",
+          "uuid-117"
+        ],
+        "facilityName": "Unnamed structure / station",
+        "id": "uuid-113",
+        "manufacturingCategory": "module",
+        "materialEfficiency": 10,
+        "name": "Golden Component",
+        "requestedQuantity": 37,
+        "requiredQuantity": 37,
+        "runs": 37,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": 20,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 1002
+      },
+      {
+        "action": "buy",
+        "activity": null,
+        "blueprintTypeID": null,
+        "children": [],
+        "facilityName": null,
+        "id": "uuid-121",
+        "manufacturingCategory": null,
+        "materialEfficiency": null,
+        "name": "Tritanium",
+        "requestedQuantity": 18400,
+        "requiredQuantity": 18400,
+        "runs": null,
+        "sourceCategory": null,
+        "sourceGroup": null,
+        "sourceTechLevel": null,
+        "timeEfficiency": null,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 34
+      },
+      {
+        "action": "produce",
+        "activity": "manufacturing",
+        "blueprintTypeID": 1104,
+        "children": [
+          "uuid-113",
+          "uuid-121"
+        ],
+        "facilityName": "Unnamed structure / station",
+        "id": "uuid-118",
+        "manufacturingCategory": "module",
+        "materialEfficiency": 8,
+        "name": "Golden Module",
+        "requestedQuantity": 20,
+        "requiredQuantity": 20,
+        "runs": 20,
+        "sourceCategory": "Fixture",
+        "sourceGroup": "Fixture Group",
+        "sourceTechLevel": null,
+        "timeEfficiency": 16,
+        "topLevelRequestID": "uuid-16",
+        "typeID": 1004
+      }
+    ],
+    "productDecisions": null,
+    "productEconomics": [
+      {
+        "blueprintCost": 0,
+        "inboundLogisticsCost": 199625.18220309573,
+        "installationCost": 40202.474,
+        "materialCost": 145440,
+        "outboundShare": 0.9868421052631579,
+        "productName": "Golden Ship",
+        "requestID": "uuid-15",
+        "typeID": 1003,
+        "units": 3
+      },
+      {
+        "blueprintCost": 0,
+        "inboundLogisticsCost": 800374.8177969042,
+        "installationCost": 34763.344,
+        "materialCost": 100240,
+        "outboundShare": 0.013157894736842105,
+        "productName": "Golden Module",
+        "requestID": "uuid-16",
+        "typeID": 1004,
+        "units": 20
+      }
+    ],
+    "provenance": {
+      "esiCompatibilityDate": "2025-12-16",
+      "priceTimestamp": "<date>",
+      "ruleVersion": "2026.08-blueprint-supply-v2",
+      "sdeBuild": 4242,
+      "snapshotIDs": [
+        "uuid-81",
+        "uuid-165",
+        "uuid-82"
+      ]
+    },
+    "requests": [
+      {
+        "blueprintCostISK": null,
+        "blueprintKind": null,
+        "id": "uuid-15",
+        "lineNumber": 1,
+        "materialEfficiency": 10,
+        "productName": "Golden Ship",
+        "timeEfficiency": 20,
+        "wantedQuantity": 3
+      },
+      {
+        "blueprintCostISK": null,
+        "blueprintKind": null,
+        "id": "uuid-16",
+        "lineNumber": 2,
+        "materialEfficiency": 8,
+        "productName": "Golden Module",
+        "timeEfficiency": 16,
+        "wantedQuantity": 20
+      }
+    ],
+    "slotSchedule": {
+      "doNotSplitShorterThanDays": 1,
+      "enabledCharacterCount": 0,
+      "entries": [
+        {
+          "activity": "manufacturing",
+          "finishSeconds": 59520,
+          "id": 0,
+          "name": "Golden Ship",
+          "piece": 1,
+          "pieceCount": 1,
+          "runs": 3,
+          "startSeconds": 50880,
+          "typeID": 1003
+        },
+        {
+          "activity": "manufacturing",
+          "finishSeconds": 50880,
+          "id": 1,
+          "name": "Golden Module",
+          "piece": 1,
+          "pieceCount": 1,
+          "runs": 20,
+          "startSeconds": 30720,
+          "typeID": 1004
+        },
+        {
+          "activity": "reaction",
+          "finishSeconds": 10800,
+          "id": 2,
+          "name": "Golden Reaction Product",
+          "piece": 1,
+          "pieceCount": 1,
+          "runs": 1,
+          "startSeconds": 0,
+          "typeID": 1001
+        },
+        {
+          "activity": "manufacturing",
+          "finishSeconds": 30720,
+          "id": 3,
+          "name": "Golden Component",
+          "piece": 1,
+          "pieceCount": 1,
+          "runs": 64,
+          "startSeconds": 0,
+          "typeID": 1002
+        }
+      ],
+      "jobCount": 4,
+      "manufacturingSlots": 1,
+      "maximumJobDays": 3,
+      "reactionRunsPerJob": 100,
+      "reactionSlots": 1,
+      "scienceSlots": 1,
+      "source": "manual",
+      "unschedulableActivities": []
+    },
+    "stockAllocations": [],
+    "targetMarket": null,
+    "totalJobSeconds": 70320,
+    "warnings": [
+      {
+        "code": "production-tree.warehouse-unavailable",
+        "id": "uuid-83",
+        "message": "Production-warehouse coverage is unavailable and is not treated as zero stock.",
+        "severity": "warning",
+        "source": null,
+        "text": null
+      },
+      {
+        "code": "industry.facility-needs-review",
+        "id": "uuid-166",
+        "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+        "severity": "blocking",
+        "source": null,
+        "text": {
+          "arguments": [
+            "Modules & Components"
+          ],
+          "format": "The selected facility for %@ contains unresolved modifiers."
+        }
+      },
+      {
+        "code": "industry.facility-needs-review",
+        "id": "uuid-167",
+        "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+        "severity": "blocking",
+        "source": null,
+        "text": {
+          "arguments": [
+            "Modules & Components"
+          ],
+          "format": "The selected facility for %@ contains unresolved modifiers."
+        }
+      },
+      {
+        "code": "industry.facility-needs-review",
+        "id": "uuid-168",
+        "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+        "severity": "blocking",
+        "source": null,
+        "text": {
+          "arguments": [
+            "Modules & Components"
+          ],
+          "format": "The selected facility for %@ contains unresolved modifiers."
+        }
+      },
+      {
+        "code": "industry.facility-needs-review",
+        "id": "uuid-169",
+        "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+        "severity": "blocking",
+        "source": null,
+        "text": {
+          "arguments": [
+            "Modules & Components"
+          ],
+          "format": "The selected facility for %@ contains unresolved modifiers."
+        }
+      },
+      {
+        "code": "industry.slot-estimated-makespan",
+        "id": "uuid-170",
+        "message": "Estimated job time places every split job on the available manufacturing, reaction and science slots and starts a job once its share of produced inputs and its blueprint jobs are finished; actual availability can change it.",
+        "severity": "information",
+        "source": null,
+        "text": null
+      },
+      {
+        "code": "industry.blueprint-cost-not-included",
+        "id": "uuid-171",
+        "message": "2 top-level production lines have no entered BPC/BPO cost; the total excludes those blueprint costs.",
+        "severity": "information",
+        "source": null,
+        "text": {
+          "arguments": [
+            "2"
+          ],
+          "format": "%@ top-level production lines have no entered BPC/BPO cost; the total excludes those blueprint costs."
+        }
+      }
+    ]
+  },
+  "targetQuantity": 23,
+  "warnings": [
+    {
+      "code": "production-tree.warehouse-unavailable",
+      "id": "uuid-83",
+      "message": "Production-warehouse coverage is unavailable and is not treated as zero stock.",
+      "severity": "warning",
+      "source": null,
+      "text": null
+    },
+    {
+      "code": "industry.facility-needs-review",
+      "id": "uuid-84",
+      "message": "The selected facility for Modules & Components contains unresolved modifiers.",
+      "severity": "blocking",
+      "source": null,
+      "text": {
+        "arguments": [
+          "Modules & Components"
+        ],
+        "format": "The selected facility for %@ contains unresolved modifiers."
+      }
+    },
+    {
+      "code": "industry.slot-estimated-makespan",
+      "id": "uuid-88",
+      "message": "Estimated job time places every split job on the available manufacturing, reaction and science slots and starts a job once its share of produced inputs and its blueprint jobs are finished; actual availability can change it.",
+      "severity": "information",
+      "source": null,
+      "text": null
+    },
+    {
+      "code": "industry.blueprint-cost-not-included",
+      "id": "uuid-89",
+      "message": "2 top-level production lines have no entered BPC/BPO cost; the total excludes those blueprint costs.",
+      "severity": "information",
+      "source": null,
+      "text": {
+        "arguments": [
+          "2"
+        ],
+        "format": "%@ top-level production lines have no entered BPC/BPO cost; the total excludes those blueprint costs."
+      }
+    },
+    {
+      "code": "production-tree.public-contract-coverage-incomplete",
+      "id": "uuid-172",
+      "message": "The public Contract index is incomplete, stale, or unavailable. Missing blueprint offers therefore remain unresolved rather than being treated as absent.",
+      "severity": "warning",
+      "source": null,
+      "text": null
+    }
+  ]
+}

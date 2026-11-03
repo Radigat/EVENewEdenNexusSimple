@@ -804,3 +804,196 @@ struct JumpFreighterLogisticsTests {
     )
   }
 }
+
+/// G2 (ANALYSE_2026-11-02): parsed DOTLAN pages are reused for up to 24 hours;
+/// failed or unparsable loads are never kept. Each test uses its own systems,
+/// so the shared stub can count requests per URL.
+@Suite("DOTLAN route cache")
+struct DOTLANRouteCacheTests {
+  @Test
+  func reusesAParsedPageForTheSameRouteAndSkills() async throws {
+    let service = DOTLANJumpRouteService(session: DOTLANStub.session)
+    let request = Self.request("Cache-A1", "Cache-B1", jdc: 5)
+    let path = try DOTLANJumpRouteService.url(for: request).path
+
+    let first = try await service.route(for: request)
+    let second = try await service.route(for: request)
+
+    #expect(DOTLANStub.state.requests(for: path) == 1)
+    // Each parse gets its own snapshot ID, as every load did before.
+    #expect(second.legs == first.legs)
+    #expect(second.totalDistanceLightYears == first.totalDistanceLightYears)
+    #expect(second.isotopeQuantityPerFlight == first.isotopeQuantityPerFlight)
+    #expect(second.sourceURL == first.sourceURL)
+    #expect(second.source.capturedAt == first.source.capturedAt)
+    #expect(second.request == request)
+  }
+
+  @Test
+  func otherSkillLevelsAreAnotherRoute() async throws {
+    let service = DOTLANJumpRouteService(session: DOTLANStub.session)
+    let five = Self.request("Cache-A2", "Cache-B2", jdc: 5)
+    let four = Self.request("Cache-A2", "Cache-B2", jdc: 4)
+
+    _ = try await service.route(for: five)
+    _ = try await service.route(for: four)
+    _ = try await service.route(for: five)
+
+    #expect(DOTLANStub.state.requests(for: try DOTLANJumpRouteService.url(for: five).path) == 1)
+    #expect(DOTLANStub.state.requests(for: try DOTLANJumpRouteService.url(for: four).path) == 1)
+  }
+
+  @Test
+  func failedAndUnparsableLoadsAreNotKept() async throws {
+    let service = DOTLANJumpRouteService(session: DOTLANStub.session)
+    let failing = Self.request("Cache-A3", "Cache-B3", jdc: 5)
+    let failingPath = try DOTLANJumpRouteService.url(for: failing).path
+    DOTLANStub.state.queue(status: 500, for: failingPath)
+    await #expect(throws: DOTLANJumpRouteError.self) {
+      try await service.route(for: failing)
+    }
+    _ = try await service.route(for: failing)
+    #expect(DOTLANStub.state.requests(for: failingPath) == 2)
+
+    let garbled = Self.request("Cache-A4", "Cache-B4", jdc: 5)
+    let garbledPath = try DOTLANJumpRouteService.url(for: garbled).path
+    DOTLANStub.state.queue(body: "<html>maintenance</html>", for: garbledPath)
+    await #expect(throws: (any Error).self) {
+      try await service.route(for: garbled)
+    }
+    _ = try await service.route(for: garbled)
+    #expect(DOTLANStub.state.requests(for: garbledPath) == 2)
+  }
+
+  @Test
+  func aPageOlderThanItsLifetimeIsLoadedAgain() async throws {
+    let clock = DOTLANStubClock(Date(timeIntervalSince1970: 1_000_000))
+    let service = DOTLANJumpRouteService(
+      session: DOTLANStub.session,
+      now: { clock.now }
+    )
+    let request = Self.request("Cache-A5", "Cache-B5", jdc: 5)
+    let path = try DOTLANJumpRouteService.url(for: request).path
+
+    let first = try await service.route(for: request)
+    clock.advance(by: DOTLANJumpRouteService.defaultPageLifetime - 1)
+    _ = try await service.route(for: request)
+    #expect(DOTLANStub.state.requests(for: path) == 1)
+
+    clock.advance(by: 2)
+    let renewed = try await service.route(for: request)
+    #expect(DOTLANStub.state.requests(for: path) == 2)
+    #expect(renewed.source.capturedAt > first.source.capturedAt)
+  }
+
+  private static func request(
+    _ origin: String,
+    _ destination: String,
+    jdc: Int
+  ) -> JumpRouteRequest {
+    JumpRouteRequest(
+      originSystemName: origin,
+      destinationSystemName: destination,
+      hull: .ark,
+      pilot: JumpFreighterPilot(
+        characterID: 42,
+        characterName: "Xanira",
+        jumpDriveCalibrationLevel: jdc,
+        jumpFuelConservationLevel: 5,
+        jumpFreightersLevel: 5,
+        skillSource: SourceIdentity(provider: "ESI", version: "fixture")
+      )
+    )
+  }
+}
+
+private final class DOTLANStubClock: @unchecked Sendable {
+  private let lock = NSLock()
+  private var current: Date
+
+  init(_ start: Date) { current = start }
+
+  var now: Date { lock.withLock { current } }
+
+  func advance(by seconds: TimeInterval) {
+    lock.withLock { current = current.addingTimeInterval(seconds) }
+  }
+}
+
+private final class DOTLANStubState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var counts: [String: Int] = [:]
+  private var queued: [String: [(status: Int, body: String?)]] = [:]
+
+  func requests(for path: String) -> Int {
+    lock.withLock { counts[path, default: 0] }
+  }
+
+  func queue(status: Int = 200, body: String? = nil, for path: String) {
+    lock.withLock { queued[path, default: []].append((status, body)) }
+  }
+
+  /// Counts the request and answers a one-leg route page for the systems
+  /// in the path, or the next queued answer.
+  func respond(to url: URL) -> (Int, String) {
+    lock.withLock {
+      counts[url.path, default: 0] += 1
+      if var answers = queued[url.path], !answers.isEmpty {
+        let answer = answers.removeFirst()
+        queued[url.path] = answers
+        if answer.status != 200 || answer.body != nil {
+          return (answer.status, answer.body ?? "")
+        }
+      }
+      let systems = url.path.split(separator: "/").last?
+        .split(separator: ":").map(String.init) ?? []
+      let origin = systems.first ?? ""
+      let destination = systems.last ?? ""
+      let page = """
+        <h2>Jump Route:</h2><table>
+        <a class="igb link-5-30004807">\(origin)</a>
+        <a class="igb link-5-30004714">\(destination)</a>
+        Distance: <b>5.3 ly</b> Fuel needed: <b>11,660</b>
+        Total travel distance</td><td><b>5.3 lightyears</b>
+        Total fuel consumption:</td><td><b>11,660 Helium Isotopes</b> (350 m&sup3;)
+        </table>
+        """
+      return (200, page)
+    }
+  }
+}
+
+private enum DOTLANStub {
+  static let state = DOTLANStubState()
+  static let session: URLSession = {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [DOTLANStubProtocol.self]
+    return URLSession(configuration: configuration)
+  }()
+}
+
+private final class DOTLANStubProtocol: URLProtocol {
+  override class func canInit(with request: URLRequest) -> Bool {
+    request.url?.host == "evemaps.dotlan.net"
+  }
+
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    request
+  }
+
+  override func startLoading() {
+    guard let url = request.url else { return }
+    let (status, body) = DOTLANStub.state.respond(to: url)
+    let response = HTTPURLResponse(
+      url: url,
+      statusCode: status,
+      httpVersion: "HTTP/1.1",
+      headerFields: ["Content-Type": "text/html; charset=utf-8"]
+    )!
+    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: Data(body.utf8))
+    client?.urlProtocolDidFinishLoading(self)
+  }
+
+  override func stopLoading() {}
+}

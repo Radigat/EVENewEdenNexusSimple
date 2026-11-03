@@ -1196,12 +1196,17 @@ struct TradeView: View {
     )
   }
 
+  /// Rows of all `calculatedRows` calls per log window (performance log only).
+  private static let rowMetrics = PerformanceAccumulator("trade.rows")
+
   /// Rows of `items` for the current route, unsorted.
   private func calculatedRows(
     items: [TradeCatalogItem],
     sourceSide: TradeQuoteSide,
     targetSide: TradeQuoteSide
   ) -> [TradeDisplayRow] {
+    let started = ContinuousClock.now
+    defer { Self.rowMetrics.record(units: items.count, since: started) }
     let source = runtime.tradeMarketState(for: mode.sourceRole)?.value
     let target = runtime.tradeMarketState(for: mode.targetRole)?.value
     let targetStock = runtime.marketStockOverview(for: mode.targetRole)

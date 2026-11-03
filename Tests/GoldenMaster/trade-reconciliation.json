@@ -1,0 +1,78 @@
+{
+  "entries": [
+    {
+      "buyBrokerFeeRate": null,
+      "buySide": "minSell",
+      "buySideSource": "assumed",
+      "buyUnitPrice": 4,
+      "createdAt": "<date>",
+      "id": "uuid-1",
+      "notes": "",
+      "plannedSellUnitPrice": null,
+      "purchasedAt": "<date>",
+      "quantity": 10000,
+      "sales": [
+        {
+          "id": "uuid-2",
+          "kind": "listedSellOrder",
+          "kindSource": "assumed",
+          "quantity": 4000,
+          "salesTaxPaid": 990,
+          "soldAt": "<date>",
+          "unitPrice": 5.5,
+          "walletLink": {
+            "characterID": 91,
+            "transactionID": 502
+          }
+        }
+      ],
+      "salesTaxRate": 0.045,
+      "sellBrokerFeeRate": 0.02,
+      "sourceLocationName": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+      "sourceRole": "main",
+      "status": "bought",
+      "targetLocationName": "Amarr VIII (Oris) - Emperor Family Academy",
+      "targetRole": "home",
+      "transportCostTotal": 1000000,
+      "transportEstimated": true,
+      "typeID": 34,
+      "typeName": "Tritanium",
+      "updatedAt": "<date>",
+      "walletLink": {
+        "characterID": 91,
+        "transactionID": 501
+      }
+    },
+    {
+      "buyBrokerFeeRate": null,
+      "buySide": "minSell",
+      "buySideSource": "assumed",
+      "buyUnitPrice": 70000,
+      "createdAt": "<date>",
+      "id": "uuid-3",
+      "notes": "",
+      "plannedSellUnitPrice": null,
+      "purchasedAt": "<date>",
+      "quantity": 2,
+      "sales": [],
+      "salesTaxRate": 0.045,
+      "sellBrokerFeeRate": 0.02,
+      "sourceLocationName": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+      "sourceRole": "main",
+      "status": "manufacturingIgnored",
+      "targetLocationName": "Amarr VIII (Oris) - Emperor Family Academy",
+      "targetRole": "home",
+      "transportCostTotal": 1000000,
+      "transportEstimated": true,
+      "typeID": 1004,
+      "typeName": "Golden Module",
+      "updatedAt": "<date>",
+      "walletLink": {
+        "characterID": 91,
+        "transactionID": 503
+      }
+    }
+  ],
+  "unassignedSales": [],
+  "unresolvedTypePurchases": 0
+}

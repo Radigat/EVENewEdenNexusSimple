@@ -934,7 +934,8 @@ SwiftData-Datenbank bleibt unberührt.
     Orderart.
 - **Automatischer Abgleich** (Handel-Plan P7). Er läuft nach jeder
   Sammel-Synchronisierung der Charaktere (Start, Dashboard, „Wallets
-  abgleichen“) und beim Öffnen des Handelslogbuchs.
+  abgleichen“) und beim Öffnen des Handelslogbuchs. Die Zuordnung selbst
+  rechnet abseits des Hauptthreads; die Oberfläche bleibt dabei bedienbar.
   - **Käufe:**
     - Kauftransaktionen ab dem Datum **Käufe übernehmen ab** werden zu je
       einem eigenen Eintrag, wenn sie in einem der drei Hubs liegen. Das
@@ -2609,6 +2610,14 @@ Route, 0 ISK, Fracht oder Kurierkosten. Nur eine ausdrücklich auf
 ermittelte Gesamtstrecke. Der optionale Cyno-Ortsname ist Betriebsdokumentation
 und verändert weder Reichweite noch Treibstoff.
 
+Eine DOTLAN-Seite, die sich zu einer Route auswerten ließ, gilt während der
+App-Laufzeit höchstens 24 Stunden (Eigentümerentscheid 03.11.2026). Der
+Schlüssel ist die Abfrage-URL aus Start, Ziel, Schiff und den drei
+Skill-Stufen; feste Routen werden je Abschnitt gespeichert. Ein Fehler oder eine
+nicht auswertbare Seite wird nie gespeichert. Der Nachweis nennt den Zeitpunkt
+des tatsächlichen Abrufs. Planer, Handel und Logbuch-Abgleich teilen diesen
+Speicher.
+
 Der gespeicherte Nachweis enthält die gewählte automatische oder feste
 Routenquelle, den Profilnamen samt Zwischenpunkten, sämtliche geprüften
 Abschnitte und Quelllinks, Lichtjahre und die Isotopenmenge pro Flug oder pro
@@ -2766,8 +2775,18 @@ Orderbuchprojektion. Systemkostenindizes werden ebenfalls einmal nach System
 und Aktivität indiziert. Diese Vorbereitung verändert weder Markttiefe,
 Rundung, Gebühren noch die Entscheidungsergebnisse. Ein abgelöster
 Planner-Lauf wird abgebrochen und darf einen neueren Plan nicht überschreiben.
-Main-, abweichender Home- und Koalitions-Hub werden parallel geladen; identische
-Hubs teilen sich denselben Snapshot. Die universumsweite öffentliche
+Ein Klick auf **Berechnen** lädt seine Daten einmal und gleich zu Beginn
+gemeinsam: Main-, abweichenden Home- und Koalitions-Hub, die gewählten
+Vergleichsmärkte, Adjusted Prices, Systemindizes, verpackte Volumen, die
+Vertragsreferenz sowie Blueprint-, Formel- und Vertragsangebote aller baubaren
+Typen des Produktionsgraphen. Alle Durchläufe des Klicks rechnen deshalb mit
+demselben Marktstand, auch wenn ESI währenddessen neue Orderbücher
+veröffentlicht. Jeder Blueprint-Baum nimmt aus den vorab geladenen
+Blueprint-Daten genau seine eigenen Typen. Ein fehlgeschlagener oder
+unvollständiger Abruf wird im nächsten Durchlauf erneut versucht. Identische
+Hubs teilen sich denselben Snapshot. Angezeigt wird nur der fertige Plan eines
+Klicks; Zwischenstände der Durchläufe erscheinen nicht, und ein abgebrochener
+Klick lässt den bisherigen Plan stehen. Die universumsweite öffentliche
 Vertragsreferenz wird einmal geladen und für die drei Vertragskarten gemeinsam
 verwendet. JSON-Dekodierung bestehender Reservierungen und die
 Kodierung des fertigen Plans laufen außerhalb des Main-Actors.
@@ -3086,8 +3105,10 @@ mit kurzen, wiederverwendbaren Prompts steht in
   Anfragen auf die mittlere Rückgabegeschwindigkeit des Fensters verteilt,
   etwa alle 12 Sekunden bei 150 Tokens je 15 Minuten. Wartende Anfragen
   belegen keinen Transportplatz und lassen sich abbrechen.
-- Nach einem Planner-Lauf wird der LRU-Antwortcache nur bei Bedarf auf höchstens
-  32 MiB reduziert. Gespeicherte Contract-Regions- und Item-Seiten sowie die
+- Nach einem vollständigen Planer-Klick, nicht schon nach jedem seiner
+  Rechenläufe, wird der LRU-Antwortcache nur bei Bedarf auf höchstens 32 MiB
+  reduziert. So finden die späteren Durchläufe eines Klicks die Antworten der
+  früheren noch im Speicher. Gespeicherte Contract-Regions- und Item-Seiten sowie die
   große Main-Hub-Region werden nach ihrer fachlichen Übernahme gezielt
   freigegeben. Bei macOS-Speicherwarnung bleiben höchstens 16 MiB der zuletzt
   genutzten ESI-Antworten erhalten; bei kritischem Speicherdruck wird dieser
@@ -3237,7 +3258,22 @@ mit kurzen, wiederverwendbaren Prompts steht in
     (Cache-Treffer oder Neuladen);
   - beim Main-Hub-Scan die Dauer jeder Phase einschließlich Home- und
     Coalition-Hub, die Gesamtdauer, die Volumendiagnose und die ESI-Last des
-    Scans.
+    Scans;
+  - je Planer-Klick (`planner.click`): Gesamtdauer, Zahl der
+    Planberechnungen (`plan-passes`), Blueprint-Bäume, Rechenläufe,
+    Marktabrufe samt angefragter Typen, DOTLAN-Abrufe und wiederverwendete
+    DOTLAN-Seiten (`dotlan-cache-hits`), die Summenzeiten der
+    Phasen (Blueprint-Auflösung, Rechnung ohne und mit Lager, Speichern,
+    DOTLAN) und die ESI-Last des Klicks;
+  - je Rechenlauf (`planner.calculate`) und je Blueprint-Baum
+    (`planner.tree`) die Dauer jeder Phase, die Zahl der Planberechnungen
+    und die ESI-Last;
+  - im Handel (`trade.rows`) höchstens alle fünf Sekunden eine Zeile mit
+    Aufrufen, berechneten Zeilen, Gesamt- und Höchstdauer der
+    Zeilenberechnung im Fenster.
+
+  Die Messung zählt nur und ändert kein Ergebnis; ein Golden-Master-Test
+  belegt das (siehe [App-Analyse](Documentation/ANALYSE_2026-11-02.md)).
 - Die ESI-Last zählt ein rein beobachtender Transport unter dem ESI-Client.
   Er verändert keine Anfrage und keine Antwort und sendet selbst nichts; die
   Grenzen setzt weiter die gemeinsame Warteschlange durch.

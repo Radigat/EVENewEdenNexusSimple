@@ -44,7 +44,11 @@ let package = Package(
     ),
     .testTarget(
       name: "EVENexusSimpleAppTests",
-      dependencies: ["EVENexusCore", "EVENexusSimpleApp"]
+      dependencies: [
+        "EVENexusCore",
+        "EVENexusSimpleApp",
+        .product(name: "EVEStaticDataKit", package: "EVEStaticDataKit"),
+      ]
     ),
   ]
 )

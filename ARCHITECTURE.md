@@ -245,6 +245,21 @@ displayable job identity, runs, output quantity, ME/TE, top-level marker,
 facility and installation cost so the UI does not reconstruct a build list from
 market or SDE data.
 
+One Planner click is orchestrated by `PlannerCalculationPipeline` in the core
+(`PlannerAutomation.swift`): first without stock when stock is used, then with
+it; per run a Blueprint basis and a calculation, a control pass when the
+calculated build steps differ from the Blueprint tree, and at most two
+follow-up passes for missing Blueprint runs. `PlannerPassDecisions` holds the
+decisions between the passes. The Blueprint basis (owned sources, costs, BPC
+valuation, handed-over Blueprints) and the runtime calculation stay in the app
+and are injected as steps. `RuntimeState.calculate` returns its plan; only the
+finished plan of a click becomes the visible `RuntimeState.plan`. A
+`PlannerClickDataCache` per click loads every market, price, index, volume,
+contract and Blueprint/formula market once and starts them together; trees and
+calculations of the click read the same data, and a failed or incomplete load
+is asked for again by the next pass. Calls without a click session load their
+data themselves as before.
+
 `IndustryPlanner.prepare` also warms immutable names and classifications for
 the bounded graph through catalog batch contracts. Logistics resolves names
 and packaged volumes per cargo batch instead of once per line. A recursive
