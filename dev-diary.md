@@ -9686,3 +9686,15 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - `swift test`: 779 und 104 Tests grün (nach der letzten Änderung erneut gelaufen); `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 779 Tests; `git diff --check` fehlerfrei. Logs unter `/private/tmp/eve-a4/logs/`.
 - **Live gemessen (Eigentümer, Xcode-Debug, Marktgruppe mit 3.232 Items):** Während die Historie lud (145 s), 7 Neuaufbauten und 4 Neuberechnungen; Hauptthread-Anteil der Zeilenberechnung 0,09 % statt 21 % in A1. Ohne Eingabe 144 s ganz ohne Neuaufbau. Ein Wechsel von Zeitraum oder Seite kostet eine Neuberechnung von 37–74 ms.
 - **Offen:** Eigentümerabnahme der unveränderten Anzeige (Fortschrittszeile, Tooltips, Tabellen). Eigentümerentscheid zu höherer ESI-Parallelität (A5).
+
+## 03.11.2026: A5 – Dekodierung und SQLite geprüft, zurückgestellt
+
+- **Auftrag:** Prompt A5 aus [ANALYSE_2026-11-02.md](Documentation/ANALYSE_2026-11-02.md): G5 und G11 nur umsetzen, wenn die Messung sie als nennenswert zeigt; REAL-Genauigkeit vorher berichten.
+- **Ergebnis:**
+  - SDE-Abfragen laut A1/A3-Messung klein (8–18 ms je Eingabevorbereitung, 74 ms Definitionen einmal beim Start).
+  - REAL-Textweg verlustfrei: alle 109.572 Kommawerte des aktiven Katalogs bitgleich zum typisierten Lesen (SQLite 3.54.0), keiner braucht mehr als 15 Stellen.
+  - Dekodierung synthetisch rund 90 MB/s; geschätzt rund 1 s im Main-Hub-Scan und 0,3 s im ersten Planer-Klick, größtenteils überlappend mit dem Netz.
+  - Eigentümerentscheid: A5 zurückgestellt, keine Codeänderung. Neuer Prompt A5b für die ESI-Parallelität.
+  - PRODUCT.md unverändert, da sich kein Verhalten ändert.
+- **Prüfung:** Zwei Prüfprogramme außerhalb des Repositorys auf einer Kopie des aktiven SDE-Katalogs (öffentliche CCP-Daten) und mit synthetischen Orderseiten. Keine Tests nötig, da kein Code geändert wurde; `git diff --check` fehlerfrei.
+- **Offen:** A5b (ESI-Parallelität), Eigentümerabnahme von A4.
