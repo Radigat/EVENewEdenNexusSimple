@@ -308,6 +308,13 @@ public actor ESIRequestCoordinator {
   /// in the current error window; at zero it answers every route with 420.
   public static let errorLimitFloor = 20
 
+  /// Process-wide transport limits: twelve requests at once, of which
+  /// automatic work holds at most two. CCP publishes no concurrency cap; the
+  /// error- and rate-limit protection stays the same (owner decision
+  /// 2026-11-04, ANALYSE_2026-11-02 A5b).
+  public static let defaultMaximumConcurrent = 12
+  public static let defaultMaximumAutomaticConcurrent = 2
+
   private let maximumConcurrent: Int
   private let maximumAutomaticConcurrent: Int
   private let now: @Sendable () -> Date
@@ -321,8 +328,8 @@ public actor ESIRequestCoordinator {
   private var buckets: [String: RateLimitBucket] = [:]
 
   public init(
-    maximumConcurrent: Int = 6,
-    maximumAutomaticConcurrent: Int = 2,
+    maximumConcurrent: Int = defaultMaximumConcurrent,
+    maximumAutomaticConcurrent: Int = defaultMaximumAutomaticConcurrent,
     now: @escaping @Sendable () -> Date = { Date() },
     sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
       try await Task.sleep(for: .seconds($0))
@@ -687,8 +694,10 @@ public actor ESIClient {
     maximumPageCount: Int = 1_000,
     maximumCachedResponses: Int = 512,
     maximumCachedBytes: Int = 64 * 1_024 * 1_024,
-    maximumConcurrentRequests: Int = 6,
-    maximumAutomaticConcurrentRequests: Int = 2,
+    maximumConcurrentRequests: Int =
+      ESIRequestCoordinator.defaultMaximumConcurrent,
+    maximumAutomaticConcurrentRequests: Int =
+      ESIRequestCoordinator.defaultMaximumAutomaticConcurrent,
     userAgent: String = CCPUserAgentConfiguration.genericValue,
     responseStore: (any ESIResponseStoring)? = nil,
     now: @escaping @Sendable () -> Date = { Date() },

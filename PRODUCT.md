@@ -3096,9 +3096,11 @@ mit kurzen, wiederverwendbaren Prompts steht in
   Programmstart aktiv. Die bestehenden Seiten-, Worker-, Cache- und Abbruchbegrenzungen
   bleiben unverändert.
 - Sämtliche GET- und POST-Transporte desselben App-ESI-Clients passieren eine
-  gemeinsame, abbrechbare Warteschlange. Insgesamt laufen höchstens sechs
+  gemeinsame, abbrechbare Warteschlange. Insgesamt laufen höchstens zwölf
   HTTP-Anfragen gleichzeitig; automatische Arbeit darf davon höchstens zwei
-  gleichzeitig belegen. Interaktive Planner-Anfragen werden vor bereits
+  gleichzeitig belegen (Eigentümerentscheid 04.11.2026, siehe
+  [DECISIONS](Documentation/Consolidation/DECISIONS.md)). Einzelne Dienste
+  behalten ihre engeren Grenzen, etwa sechs Typabfragen je Marktabzug. Interaktive Planner-Anfragen werden vor bereits
   wartenden Contract- und anderen Automatikabrufen gestartet. Ein laufender
   Request wird nicht gewaltsam verdrängt, und Retry-Wartezeit belegt keinen
   Transportplatz.
@@ -3190,7 +3192,7 @@ mit kurzen, wiederverwendbaren Prompts steht in
   offenen Seiten und übernehmen sie streng in Seitenreihenfolge. Ebenso laden
   die Itemlisten privater Item-Exchange- und Auktionsverträge begrenzt
   parallel in Vertragsreihenfolge. Die gemeinsame Warteschlange bleibt die
-  obere Grenze (sechs Transporte, davon höchstens zwei automatische);
+  obere Grenze (zwölf Transporte, davon höchstens zwei automatische);
   Seitenzahlprüfung, Fortschritt, Abbruch und Teilzustände bleiben erhalten.
   Alle Seiten eines Abrufs müssen denselben `Last-Modified`-Stand haben.
   Aktualisiert ESI die Daten während des Lesens, wird einmal neu gelesen;

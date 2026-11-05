@@ -9698,3 +9698,16 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - PRODUCT.md unverändert, da sich kein Verhalten ändert.
 - **Prüfung:** Zwei Prüfprogramme außerhalb des Repositorys auf einer Kopie des aktiven SDE-Katalogs (öffentliche CCP-Daten) und mit synthetischen Orderseiten. Keine Tests nötig, da kein Code geändert wurde; `git diff --check` fehlerfrei.
 - **Offen:** A5b (ESI-Parallelität), Eigentümerabnahme von A4.
+
+## 05.11.2026: A5b – ESI-Parallelität auf zwölf
+
+- **Auftrag:** Prompt A5b aus [ANALYSE_2026-11-02.md](Documentation/ANALYSE_2026-11-02.md). CCP-Vorgaben geprüft: keine Höchstzahl gleichzeitiger Anfragen; Bucket-Limit, Fehlerlimit und Cache-Regeln gelten weiter. Eigentümerentscheide: zwölf gleichzeitige Anfragen, automatische weiter zwei, nur der Koordinator ändert sich.
+- **Ergebnis:**
+  - `ESIRequestCoordinator.defaultMaximumConcurrent = 12`, `defaultMaximumAutomaticConcurrent = 2`; `ESIClient` übernimmt beide als Vorgabe.
+  - Der Marktdienst lädt je Marktabzug weiter höchstens sechs Typen, mehrseitige Abrufe weiter höchstens vier Seiten.
+  - DECISIONS.md (04.11.2026), PRODUCT.md und ARCHITECTURE.md nennen zwölf.
+- **Prüfung:**
+  - 3 neue Tests in `ESIClientTests`, 8 Wiederholungen stabil; Golden-Master unverändert.
+  - `swift test`: 782 und 104 Tests grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 782 Tests; `git diff --check` fehlerfrei. Logs unter `/private/tmp/eve-a5b/logs/`.
+- **Live gemessen (Eigentümer, Xcode-Debug, derselbe Plan, zwei Klicks nach Neustart):** Erstes Laden im ersten Klick 5,0 s statt 14,3 s mit sechs am Vortag (8,4 s in A3); erster Klick 11,4 s statt 19,7 s. Keine 4xx, 420 oder 429 im Klick. Der warme Klick profitiert nicht. Der automatische Hub-Scan war als Kontrolle unbrauchbar, weil der Mac nach dem Build ausgelastet war.
+- **Offen:** 5xx und Transportfehler stehen nicht im Messprotokoll. Rund 50 Fehlerantworten beim automatischen LP-Store-Abruf je Start (Ursache nicht belegt). Eigentümerabnahme von A4.

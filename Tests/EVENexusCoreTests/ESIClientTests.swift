@@ -850,6 +850,87 @@ struct ESIClientTests {
     #expect(await transport.maximumActiveRequests == 2)
   }
 
+  /// A5b (ANALYSE_2026-11-02): the client as the app builds it runs at most
+  /// twelve requests at once.
+  @Test
+  func defaultClientRunsAtMostTwelveRequestsAtOnce() async throws {
+    let transport = ConcurrencyProbeTransport(delayMilliseconds: 20)
+    let client = ESIClient(transport: transport)
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for id in 0..<120 {
+        group.addTask {
+          _ = try await client.get(
+            CharacterPartitionValue.self,
+            endpoint: ESIEndpoint(path: "/interactive/\(id)")
+          )
+        }
+      }
+      try await group.waitForAll()
+    }
+
+    #expect(await transport.maximumActiveRequests == 12)
+    let usage = await client.requestCoordinatorUsage()
+    #expect(usage.maximumConcurrent == 12)
+    #expect(usage.maximumAutomaticConcurrent == 2)
+    #expect(usage.active == 0)
+    #expect(usage.queued == 0)
+  }
+
+  @Test
+  func defaultClientKeepsAutomaticRequestsAtTwo() async throws {
+    let transport = ConcurrencyProbeTransport(delayMilliseconds: 20)
+    let client = ESIClient(transport: transport)
+
+    try await ESIRequestContext.withPriority(.automatic) {
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        for id in 0..<24 {
+          group.addTask {
+            _ = try await client.get(
+              CharacterPartitionValue.self,
+              endpoint: ESIEndpoint(path: "/automatic/\(id)")
+            )
+          }
+        }
+        try await group.waitForAll()
+      }
+    }
+
+    #expect(await transport.maximumActiveRequests == 2)
+  }
+
+  /// Interactive and automatic work together stay within twelve, and the
+  /// automatic share never exceeds two.
+  @Test
+  func defaultClientBoundsMixedWorkTogether() async throws {
+    let transport = ConcurrencyProbeTransport(delayMilliseconds: 20)
+    let client = ESIClient(transport: transport)
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for id in 0..<40 {
+        group.addTask {
+          try await ESIRequestContext.withPriority(.automatic) {
+            _ = try await client.get(
+              CharacterPartitionValue.self,
+              endpoint: ESIEndpoint(path: "/automatic/\(id)")
+            )
+          }
+        }
+        group.addTask {
+          _ = try await client.get(
+            CharacterPartitionValue.self,
+            endpoint: ESIEndpoint(path: "/interactive/\(id)")
+          )
+        }
+      }
+      try await group.waitForAll()
+    }
+
+    #expect(await transport.maximumActiveRequests == 12)
+    #expect(await transport.maximumActiveAutomaticRequests <= 2)
+    #expect(await transport.maximumActiveAutomaticRequests > 0)
+  }
+
   @Test
   func interactiveRequestOvertakesQueuedAutomaticWork() async throws {
     let transport = PrioritySchedulingTransport()
@@ -2938,7 +3019,10 @@ private struct CharacterPartitionValue: Decodable, Sendable {
 private actor ConcurrencyProbeTransport: ESIHTTPTransporting {
   private let delayMilliseconds: Int
   private var activeRequests = 0
+  private var activeAutomaticRequests = 0
   private(set) var maximumActiveRequests = 0
+  /// Requests whose path starts with `/automatic/`.
+  private(set) var maximumActiveAutomaticRequests = 0
 
   init(delayMilliseconds: Int) {
     self.delayMilliseconds = delayMilliseconds
@@ -2947,9 +3031,22 @@ private actor ConcurrencyProbeTransport: ESIHTTPTransporting {
   func data(for request: URLRequest) async throws
     -> (Data, HTTPURLResponse)
   {
+    let isAutomatic = request.url?.path.hasPrefix("/automatic/") == true
     activeRequests += 1
     maximumActiveRequests = max(maximumActiveRequests, activeRequests)
-    defer { activeRequests = max(0, activeRequests - 1) }
+    if isAutomatic {
+      activeAutomaticRequests += 1
+      maximumActiveAutomaticRequests = max(
+        maximumActiveAutomaticRequests,
+        activeAutomaticRequests
+      )
+    }
+    defer {
+      activeRequests = max(0, activeRequests - 1)
+      if isAutomatic {
+        activeAutomaticRequests = max(0, activeAutomaticRequests - 1)
+      }
+    }
     try await Task.sleep(for: .milliseconds(delayMilliseconds))
     return (
       Data(#"{"value":1}"#.utf8),

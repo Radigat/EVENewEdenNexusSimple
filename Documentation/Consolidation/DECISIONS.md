@@ -462,3 +462,13 @@ Entscheidung des Eigentümers aus der [App-Analyse](../ANALYSE_2026-11-02.md) (P
 1. Planer und Hub-Chancen setzen den eingestellten Verkauf (eigene Sell-Order) zum niedrigsten aktiven Sell-Preis ohne Preisschritt an (Planer: `MarketPriceEngine`, Szenario `listedSale`; Hub-Chancen: bester Sell der Chancenrechnung).
 2. Handel, die Vorbefüllung des Handelslogbuchs und der Lagerverkauf-Abgleich setzen die eigene Sell-Order einen gültigen Preisschritt unter den besten Sell (`MarketPriceTick.nextBelow`).
 3. Dasselbe Item am selben Hub kann deshalb im Planer einen etwas höheren Verkaufserlös zeigen als im Handel. Rechenregeln ändern sich durch diese Entscheidung nicht.
+
+## 04.11.2026: ESI-Parallelität – zwölf gleichzeitige Anfragen, automatische bleiben bei zwei
+
+Entscheidung des Eigentümers aus der [App-Analyse](../ANALYSE_2026-11-02.md) (Prompt A5b).
+
+1. Der gemeinsame `ESIRequestCoordinator` lässt höchstens zwölf HTTP-Anfragen gleichzeitig zu (vorher sechs). Automatische Arbeit belegt davon weiter höchstens zwei.
+2. Die engeren Grenzen einzelner Dienste bleiben unverändert, etwa sechs Typabfragen je Marktabzug (`TradeHubMarketService`) und vier Seiten je mehrseitigem Abruf.
+3. Grundlage: CCP nennt keine Höchstzahl gleichzeitiger Anfragen. Die Zahl der Anfragen ändert sich nicht, nur ihr zeitlicher Abstand. Fehlerlimit, Bucket-Limits, 420/429-Pausen und Cache-Regeln gelten unverändert.
+4. Steigen in der Messung 420-, 429- oder 5xx-Antworten, wird auf sechs zurückgestellt. Messergebnis: [App-Analyse, Abschnitt 14](../ANALYSE_2026-11-02.md).
+5. Gemessen am 05.11.2026: Das erste Laden im ersten Planer-Klick dauerte 5,0 s statt 14,3 s mit sechs am Vortag (8,4 s in A3); keine 4xx, 420 oder 429 im Klick. Die Grenze bleibt bei zwölf.

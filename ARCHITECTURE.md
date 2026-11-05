@@ -695,8 +695,9 @@ SDE dogma and definition loads and every Main-Hub scan phase to the unified log
 (subsystem `com.local.EVENexusSimple`, category `performance`, level notice).
 Messages carry only step names, durations and counts.
 Every network miss and POST additionally passes one `ESIRequestCoordinator`
-owned by the app's shared `ESIClient`. The coordinator admits at most six
-transports process-wide and at most two requests marked as automatic work;
+owned by the app's shared `ESIClient`. The coordinator admits at most twelve
+transports process-wide (`ESIRequestCoordinator.defaultMaximumConcurrent`,
+owner decision 2026-11-04) and at most two requests marked as automatic work;
 interactive work is selected before queued standard or automatic work while
 FIFO order remains stable inside one priority. Queue cancellation removes the
 waiter without consuming a permit. Each individual retry attempt releases its
