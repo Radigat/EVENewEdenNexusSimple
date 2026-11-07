@@ -1060,6 +1060,29 @@ struct RuntimeFeatureStateTests {
   }
 
   @Test
+  func publicContractImportNoticeDoesNotInflateWindowHeight() {
+    let controller = NSHostingController(
+      rootView: PublicContractFirstImportNotice()
+        .environment(\.locale, Locale(identifier: "de"))
+    )
+    // The zero-width probe of the window's minimum size must stay short;
+    // with a vertically fixed text it reported more than 5,000 pt and pushed
+    // the whole split view outside the window.
+    let minimum = controller.sizeThatFits(in: .zero)
+    #expect(minimum.height < 240)
+    // With room available the notice keeps its full, wrapped height.
+    for width: CGFloat in [600, 1000, 1500] {
+      let roomy = controller.sizeThatFits(in: CGSize(width: width, height: 1200))
+      let roomier = controller.sizeThatFits(in: CGSize(width: width, height: 4000))
+      #expect(roomy.height == roomier.height)
+      #expect(roomy.height < 1200)
+    }
+    let narrow = controller.sizeThatFits(in: CGSize(width: 600, height: 1200))
+    let wide = controller.sizeThatFits(in: CGSize(width: 1500, height: 1200))
+    #expect(narrow.height > wide.height)
+  }
+
+  @Test
   func settingsNavigationKeepsItsIntrinsicHeight() {
     let controller = NSHostingController(
       rootView: DataSettingsNavigationBar(selection: .constant(.esi))

@@ -243,26 +243,9 @@ struct PublicContractsView: View {
   }
 
   private var firstImportNotice: some View {
-    HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
-      Image(systemName: "exclamationmark.octagon.fill")
-        .font(.title2.weight(.bold))
-        .accessibilityHidden(true)
-      Text(
-        "Important: The first import of all contracts that are still active at that time can take two to three days. It continues in the background while the app is running and resumes after the next app launch. You can leave this section at any time and control the import from the navigation sidebar. During this time, the app can be slower. Import performance will continue to be optimized."
-      )
-      .font(.headline.weight(.bold))
-      .fixedSize(horizontal: false, vertical: true)
-    }
-    .foregroundStyle(DesignTokens.negative)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(DesignTokens.spacingMD)
-    .background(DesignTokens.negative.opacity(0.12))
-    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
-    .overlay {
-      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
-        .stroke(DesignTokens.negative, lineWidth: 2)
-    }
-    .accessibilityElement(children: .combine)
+    PublicContractFirstImportNotice()
+      // Before the spacers and results, so the warning keeps its full height.
+      .layoutPriority(1)
   }
 
   private var filters: some View {
@@ -687,6 +670,39 @@ struct PublicContractsView: View {
       .currency(code: "ISK")
         .precision(.fractionLength(0...2))
     )
+  }
+}
+
+/// Red notice while the first import or pending contract details are still
+/// running.
+struct PublicContractFirstImportNotice: View {
+  var body: some View {
+    HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
+      Image(systemName: "exclamationmark.octagon.fill")
+        .font(.title2.weight(.bold))
+        .accessibilityHidden(true)
+      // No vertical `fixedSize`: SwiftUI also measures the page at zero
+      // width to derive the window's minimum size. A text fixed to its full
+      // height then wraps after every character and reported more than
+      // 5,000 pt, which pushed the whole split view, sidebar included,
+      // outside the window. With space available the text keeps its full
+      // height anyway.
+      Text(
+        "Important: The first import of all contracts that are still active at that time can take two to three days. It continues in the background while the app is running and resumes after the next app launch. You can leave this section at any time and control the import from the navigation sidebar. During this time, the app can be slower. Import performance will continue to be optimized."
+      )
+      .font(.headline.weight(.bold))
+    }
+    .foregroundStyle(DesignTokens.negative)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(DesignTokens.spacingMD)
+    .background(DesignTokens.negative.opacity(0.12))
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
+    .overlay {
+      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+        .stroke(DesignTokens.negative, lineWidth: 2)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("public-contracts.first-import-notice")
   }
 }
 

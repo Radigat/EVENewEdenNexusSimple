@@ -3073,7 +3073,9 @@ Der ausführliche Produktionsvertrag steht in
   Fortsetzung im Hintergrund und nach einem App-Neustart sowie eine mögliche
   Verlangsamung. Er stellt außerdem klar, dass der Bereich jederzeit verlassen
   und der Import in der Navigationsseitenleiste gesteuert werden kann. Die
-  Importleistung wird weiter optimiert.
+  Importleistung wird weiter optimiert. Der Hinweis bricht in der verfügbaren
+  Breite um und erhöht die Mindesthöhe des Fensters nicht; Kopf, Filter und
+  Seitenleiste bleiben auch bei sichtbarem Hinweis im Fenster.
 - Diagnoseausgaben und Dokumentation dürfen keine Tokens, Secrets oder private
   ESI-Nutzdaten enthalten.
 - Löschen, Ersetzen, Migration, Token-Widerruf und andere schwer rückgängig zu
