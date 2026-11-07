@@ -39,15 +39,6 @@ extension DomainWarning {
   }
 }
 
-extension PlannerProductionMode {
-  var title: LocalizedStringKey {
-    switch self {
-    case .single: "Single production"
-    case .collective: "Collective production"
-    }
-  }
-}
-
 /// The Planner's departments. Only steps the plan has reached can be opened.
 struct PlannerStepBar: View {
   let current: PlannerStep

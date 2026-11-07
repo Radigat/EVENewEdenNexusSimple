@@ -727,11 +727,11 @@ Automatisch geprüft, Live- und Eigentümerabnahme offen:
 
 Automatisch geprüft, Live- und Eigentümerabnahme offen:
 
-- [ ] Einzelproduktion mit Lager: Schritte 1 bis 8, Materialprüfung, Kosten, Rentabilität, Vermerken.
-- [ ] Einzelproduktion ohne Lager: ohne Materialprüfung, gleiche Rechnung ohne Bestand.
-- [ ] Einzelproduktion mit manuellem Bestand: Ablauf wie mit Lager, das echte Lager zählt nicht, auch nicht bei den Blueprint-Runs.
+- [ ] Ein Produkt mit Lager: Schritte 1 bis 8, Materialprüfung, Kosten, Rentabilität, Vermerken.
+- [ ] Ein Produkt ohne Lager: ohne Materialprüfung, gleiche Rechnung ohne Bestand.
+- [ ] Ein Produkt mit manuellem Bestand: Ablauf wie mit Lager, das echte Lager zählt nicht, auch nicht bei den Blueprint-Runs.
 - [ ] Nicht rentabler oder nicht prüfbarer Plan: Warnung, Schritte 5 bis 8 gesperrt, „Trotzdem produzieren“ öffnet sie für diese Berechnung.
-- [ ] Sammelproduktion: Tabelle je Produkt mit Kosten pro Item, Wahl je Produkt, Entfernen, neue Berechnung, Vermerken.
+- [ ] Mehrere Produkte (ohne Umschalter in Schritt 2, seit 07.11.2026): Weiter frei, Tabelle je Produkt mit Kosten pro Item, Wahl je Produkt, Entfernen, neue Berechnung, Vermerken.
 - [ ] Vermerkte Zeile: Preis und Gewinn stimmen für Sofortverkauf, eingestellten Verkauf, Vertragshandel und Allianzmarkt mit Schritt 4 überein.
 - [ ] Unbekannter Name wie `Rheag`: Fehler in Schritt 2, Berechnen gesperrt; ein Abbruch zeigt in jedem Schritt „Berechnung gestoppt“ samt Grund.
 - [ ] `Nomad × 3` mit Kapitalkomponenten-BPCs: keine falsche Warnung zu fehlenden Blueprint-Runs.

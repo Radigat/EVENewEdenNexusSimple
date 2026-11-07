@@ -138,7 +138,7 @@ enum PlannerFlowGuide {
       id: .productList, role: .input, column: .inputs,
       title: "Product list",
       explanation:
-        "Single or collective production. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost."
+        "One or more products. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost."
     ),
     PlannerFlowNode(
       id: .purchaseLocations, role: .input, column: .inputs,
@@ -300,7 +300,7 @@ enum PlannerFlowGuide {
     PlannerFlowNode(
       id: .profitabilityDecision, role: .intervention, column: .interventions,
       title: "Produce anyway",
-      explanation: "Opens the later steps despite the warning, for this calculation and these sales only. In a collective production you can remove a product instead."
+      explanation: "Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove a product instead."
     ),
   ]
 

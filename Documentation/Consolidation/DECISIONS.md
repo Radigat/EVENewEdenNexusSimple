@@ -472,3 +472,11 @@ Entscheidung des Eigentümers aus der [App-Analyse](../ANALYSE_2026-11-02.md) (P
 3. Grundlage: CCP nennt keine Höchstzahl gleichzeitiger Anfragen. Die Zahl der Anfragen ändert sich nicht, nur ihr zeitlicher Abstand. Fehlerlimit, Bucket-Limits, 420/429-Pausen und Cache-Regeln gelten unverändert.
 4. Steigen in der Messung 420-, 429- oder 5xx-Antworten, wird auf sechs zurückgestellt. Messergebnis: [App-Analyse, Abschnitt 14](../ANALYSE_2026-11-02.md).
 5. Gemessen am 05.11.2026: Das erste Laden im ersten Planer-Klick dauerte 5,0 s statt 14,3 s mit sechs am Vortag (8,4 s in A3); keine 4xx, 420 oder 429 im Klick. Die Grenze bleibt bei zwölf.
+
+## 07.11.2026: Planer ohne Umschalter Einzel-/Sammelproduktion
+
+Entscheidung des Eigentümers: Die Unterscheidung ist überflüssig, weil Ablauf und Rechnung für ein und für mehrere Produkte gleich sind. Das ersetzt den Umschalter aus Punkt 3 der Entscheidung „Planer in Schritten, Rentabilität und Sammelproduktion“ vom 31.10.2026. Gemeinsame Rechnung, Tabelle je Produkt und Entfernen bleiben.
+
+1. Befund: `PlannerProductionMode` sperrte nur in Schritt 2 „Weiter“, wenn bei Einzelproduktion mehrere Produkte eingegeben waren. Die Rechnung erhielt nur den Eingabetext; Schritt 4 bis 8 richten sich nach der Zahl der Produkte im Plan.
+2. Schritt 2 nimmt ein oder mehrere Produkte an. Umschalter, Hinweis „Zur Sammelproduktion wechseln“, das Enum und sein Test sind entfernt. Rechenregeln unverändert.
+3. Von Claude festgelegt: Der UserDefaults-Schlüssel `planner.production-mode` wird nicht mehr gelesen, aber weder gelöscht noch umbenannt. Ein gespeicherter Wert bleibt wirkungslos liegen.

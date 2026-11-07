@@ -2664,9 +2664,9 @@
 "The part of the cost without warehouse that the combined warehouse covers. It is shown separately for information and is not added again." = "The part of the cost without warehouse that the combined warehouse covers. It is shown separately for information and is not added again.";
 "Adds up all cost items. Stock does not change the total: it counts as its share of the cost without stock. An unknown cost never counts as zero." = "Adds up all cost items. Stock does not change the total: it counts as its share of the cost without stock. An unknown cost never counts as zero.";
 
-/* Planer: Schritte, Rentabilität und Sammelproduktion */
+/* Planer: Schritte, Rentabilität und mehrere Produkte */
 "The Planner leads through eight steps and calculates only on click. Hover over a step or an arrow for its explanation." = "The Planner leads through eight steps and calculates only on click. Hover over a step or an arrow for its explanation.";
-"Single or collective production. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost." = "Single or collective production. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost.";
+"One or more products. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost." = "One or more products. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost.";
 "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock." = "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock.";
 "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up." = "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up.";
 "Manual stock is in use. It replaces the combined warehouse in this calculation." = "Manual stock is in use. It replaces the combined warehouse in this calculation.";
@@ -2684,14 +2684,10 @@
 "Current step" = "Current step";
 "Done" = "Done";
 "Locked" = "Locked";
-"Single production" = "Single production";
-"Collective production" = "Collective production";
 "Correct the product input first." = "Correct the product input first.";
 "%lld valid products" = "%lld valid products";
 "Calculate the plan first." = "Calculate the plan first.";
 "Decide on the profitability warning first." = "Decide on the profitability warning first.";
-"Single production allows one product. The input has several." = "Single production allows one product. The input has several.";
-"Switch to collective production" = "Switch to collective production";
 "Open industry settings" = "Open industry settings";
 "Use warehouse?" = "Use warehouse?";
 "Yes" = "Yes";
@@ -2734,7 +2730,7 @@
 "Chosen sale" = "Chosen sale";
 "Step 4 shows one row per product with costs and selected sale. The best final sale is preselected and changeable. A selected sale without a final profit triggers a warning." = "Step 4 shows one row per product with costs and selected sale. The best final sale is preselected and changeable. A selected sale without a final profit triggers a warning.";
 "Step 8 only summarizes the choice from step 4 and records it. Production rows take the chosen market and scenario." = "Step 8 only summarizes the choice from step 4 and records it. Production rows take the chosen market and scenario.";
-"Opens the later steps despite the warning, for this calculation and these sales only. In a collective production you can remove a product instead." = "Opens the later steps despite the warning, for this calculation and these sales only. In a collective production you can remove a product instead.";
+"Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove a product instead." = "Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove a product instead.";
 "If the built materials or the needed Blueprint runs changed, the Blueprints are resolved again without automation. A reaction without a formula is bought instead." = "If the built materials or the needed Blueprint runs changed, the Blueprints are resolved again without automation. A reaction without a formula is bought instead.";
 
 /* Planner warnings */

@@ -579,14 +579,6 @@ struct PlannerProfitabilityTests {
   }
 
   @Test
-  func singleProductionAllowsOneProductOnSeveralLines() {
-    #expect(PlannerProductionMode.single.allows([]))
-    #expect(PlannerProductionMode.single.allows([request("Ark"), request("ark", line: 2)]))
-    #expect(!PlannerProductionMode.single.allows([request("Ark"), request("Rhea", line: 2)]))
-    #expect(PlannerProductionMode.collective.allows([request("Ark"), request("Rhea", line: 2)]))
-  }
-
-  @Test
   func stockNoIgnoresTheManualListWithoutDeletingIt() {
     #expect(PlannerStockUse.manualStockInput("Tritanium | 5", usesStock: true) == "Tritanium | 5")
     #expect(PlannerStockUse.manualStockInput("Tritanium | 5", usesStock: false) == "")

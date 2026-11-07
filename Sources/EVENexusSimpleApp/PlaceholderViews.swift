@@ -192,8 +192,6 @@ struct PlannerView: View {
   /// The calculation whose failed profitability check the owner accepted.
   @State private var confirmedProfitabilityKey: String?
   @State private var unknownProductNames: Set<String> = []
-  @AppStorage("planner.production-mode", store: AppDefaults.store)
-  private var productionMode = PlannerProductionMode.single
   @AppStorage("planner.use-stock", store: AppDefaults.store)
   private var usesStock = true
   @State private var calculationPhase: PlannerCalculationPhase?
@@ -997,8 +995,7 @@ struct PlannerView: View {
   }
 
   private var isPlannerInputReady: Bool {
-    parseResult.isValid && productionMode.allows(parseResult.requests)
-      && unknownProductRequests.isEmpty
+    parseResult.isValid && unknownProductRequests.isEmpty
   }
 
   private var unknownProductRequests: [ProductionRequestLine] {
@@ -1073,28 +1070,6 @@ struct PlannerView: View {
   @ViewBuilder
   private var plannerProductsStep: some View {
     Panel(title: "Produce") {
-      Picker("Production", selection: $productionMode) {
-        ForEach(PlannerProductionMode.allCases, id: \.self) { mode in
-          Text(mode.title).tag(mode)
-        }
-      }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .accessibilityLabel("Production")
-      .accessibilityIdentifier("planner.production-mode")
-      if !productionMode.allows(parseResult.requests) {
-        HStack(spacing: DesignTokens.spacingSM) {
-          Label(
-            "Single production allows one product. The input has several.",
-            systemImage: "exclamationmark.triangle.fill"
-          )
-          .foregroundStyle(DesignTokens.caution)
-          Button("Switch to collective production") {
-            productionMode = .collective
-          }
-          .accessibilityIdentifier("planner.switch-to-collective")
-        }
-      }
       PlannerManufacturingProductAdder(runtime: runtime) { line in
         appendPlannerInputLine(line)
       }

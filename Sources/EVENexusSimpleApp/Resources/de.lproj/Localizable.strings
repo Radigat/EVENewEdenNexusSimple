@@ -3286,9 +3286,9 @@
 "The part of the cost without warehouse that the combined warehouse covers. It is shown separately for information and is not added again." = "Der Teil der Kosten ohne Lager, den das kombinierte Lager abdeckt. Er wird nur zur Information getrennt gezeigt und nicht erneut addiert.";
 "Adds up all cost items. Stock does not change the total: it counts as its share of the cost without stock. An unknown cost never counts as zero." = "Addiert alle Kosten. Lagerbestand ändert die Summe nicht: Er zählt mit seinem Anteil an den Kosten ohne Lager. Unbekannte Kosten zählen nie als null.";
 
-/* Planer: Schritte, Rentabilität und Sammelproduktion */
+/* Planer: Schritte, Rentabilität und mehrere Produkte */
 "The Planner leads through eight steps and calculates only on click. Hover over a step or an arrow for its explanation." = "Der Planer führt durch acht Schritte und rechnet nur auf Klick. Fahre über einen Schritt oder Pfeil für die Erklärung.";
-"Single or collective production. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost." = "Einzel- oder Sammelproduktion. Eine Zeile je Auftrag: Produkt, Menge, ME und TE. Eine Zeile kann eine BPC oder BPO mit Kosten nennen.";
+"One or more products. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost." = "Ein oder mehrere Produkte. Eine Zeile je Auftrag: Produkt, Menge, ME und TE. Eine Zeile kann eine BPC oder BPO mit Kosten nennen.";
 "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock." = "Ja oder Nein. Bei Ja gilt das kombinierte Lager oder ein Bestand von Hand; der ersetzt das Lager. Bei Nein rechnet der Plan ohne Bestand.";
 "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up." = "Bei Ja wird zuerst der Bestand verbraucht. Eine manuelle Liste ersetzt das Lager in jedem Rechengang, auch für die Blueprint-Runs. Schritt 4 zeigt, was der Markt ergänzt.";
 "Manual stock is in use. It replaces the combined warehouse in this calculation." = "Manueller Bestand ist aktiv. Er ersetzt in dieser Berechnung das kombinierte Lager.";
@@ -3306,14 +3306,10 @@
 "Current step" = "Aktueller Schritt";
 "Done" = "Erledigt";
 "Locked" = "Gesperrt";
-"Single production" = "Einzelproduktion";
-"Collective production" = "Sammelproduktion";
 "Correct the product input first." = "Korrigiere zuerst die Produkteingabe.";
 "%lld valid products" = "%lld gültige Produkte";
 "Calculate the plan first." = "Berechne zuerst den Plan.";
 "Decide on the profitability warning first." = "Entscheide zuerst über die Rentabilitätswarnung.";
-"Single production allows one product. The input has several." = "Einzelproduktion erlaubt ein Produkt. Die Eingabe enthält mehrere.";
-"Switch to collective production" = "Zur Sammelproduktion wechseln";
 "Open industry settings" = "Industrieeinstellungen öffnen";
 "Use warehouse?" = "Lager verwenden?";
 "Yes" = "Ja";
@@ -3356,7 +3352,7 @@
 "Chosen sale" = "Gewählter Verkauf";
 "Step 4 shows one row per product with costs and selected sale. The best final sale is preselected and changeable. A selected sale without a final profit triggers a warning." = "Schritt 4 zeigt je Produkt eine Zeile mit Kosten und gewähltem Verkauf. Der beste endgültige Verkauf ist vorausgewählt und änderbar. Ein gewählter Verkauf ohne endgültigen Gewinn löst eine Warnung aus.";
 "Step 8 only summarizes the choice from step 4 and records it. Production rows take the chosen market and scenario." = "Schritt 8 fasst die Wahl aus Schritt 4 nur zusammen und erfasst sie. Produktionszeilen übernehmen den gewählten Markt und das Szenario.";
-"Opens the later steps despite the warning, for this calculation and these sales only. In a collective production you can remove a product instead." = "Öffnet die späteren Schritte trotz Warnung, nur für diese Berechnung und diese Verkäufe. In der Sammelproduktion kannst du stattdessen ein Produkt entfernen.";
+"Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove a product instead." = "Öffnet die späteren Schritte trotz Warnung, nur für diese Berechnung und diese Verkäufe. Bei mehreren Produkten kannst du stattdessen ein Produkt entfernen.";
 "If the built materials or the needed Blueprint runs changed, the Blueprints are resolved again without automation. A reaction without a formula is bought instead." = "Haben sich gebaute Materialien oder nötige Blueprint-Runs geändert, werden die Blueprints ohne Automatik neu aufgelöst. Eine Reaktion ohne Formel wird gekauft.";
 
 /* Planner warnings */

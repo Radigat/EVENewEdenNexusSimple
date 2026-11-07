@@ -374,21 +374,6 @@ public enum PlannerStep: Int, CaseIterable, Comparable, Identifiable, Sendable {
   }
 }
 
-public enum PlannerProductionMode: String, CaseIterable, Sendable {
-  case single
-  case collective
-
-  /// Several lines of one product stay a single production.
-  public func allows(_ requests: [ProductionRequestLine]) -> Bool {
-    switch self {
-    case .single:
-      Set(requests.map { $0.productName.lowercased() }).count <= 1
-    case .collective:
-      true
-    }
-  }
-}
-
 /// The owner's answer to "Use warehouse?". "No" calculates without any stock;
 /// a manual list stays saved but does not count.
 public enum PlannerStockUse {

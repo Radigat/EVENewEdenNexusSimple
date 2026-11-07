@@ -1092,7 +1092,7 @@ Informationshinweis.
 | Schritt | Inhalt |
 | --- | --- |
 | 1 Einstellungen | Fehlender SDE-Katalog oder Main Hub mit direktem Weg in den Datenbereich, Einkaufsorte, Weg zu den Industrieeinstellungen, letzte Produktionen |
-| 2 Produkte | **Einzelproduktion** oder **Sammelproduktion**, Produkt hinzufügen, Eingabezeilen, Eingabefehler samt unbekannter Produktnamen |
+| 2 Produkte | Produkt hinzufügen, Eingabezeilen für ein oder mehrere Produkte, Eingabefehler samt unbekannter Produktnamen |
 | 3 Lager | **Lager verwenden?** Bei Ja kombiniertes Lager oder manueller Bestand, Tabelle der Produkte mit Produktionsort und Charakter für die Jobdauer, dazu Berechnen mit Statuszeile (rechnet, aktuell, veraltet, gespeichert oder gestoppt samt Preisdatum) |
 | 4 Kosten | Immer, also auch bei Lager = Nein und vollständigem Kauf: Finanzen, **Rentabel?** mit der Tabelle je Produkt, der Verkaufswahl und der Allianztabelle, dazu zugeklappt die Kostenaufschlüsselung und alle Verkaufswege. Nur bei Lager = Ja zusätzlich die Materialprüfung (aus Lager, Nachkauf vom Markt) |
 | 5 Anpassen | Blueprints (BPO/BPC), gewählter Produktionsweg, Materialien mit Bauen, Kaufen oder Lager |
@@ -1100,9 +1100,9 @@ Informationshinweis.
 | 7 Bauaufträge | Auftragsliste, Dauer und Zeitplan |
 | 8 Verkauf | Schreibgeschützte Zusammenfassung der Wahl aus Schritt 4 mit **Verkauf ändern** (zurück zu Schritt 4) und **Produktion erfassen** |
 
-**Planer zurücksetzen:** Der Button neben dem Titel leert nach einer Sicherheitsabfrage Produkte, manuellen Bestand, manuelle Eingriffe, übergebene Blueprints, Verkaufsentscheidungen und den aktiven Plan und führt zu Schritt 1. Einstellungen wie Einkaufsorte, Lagerwahl, Produktionsart, Auftragsaufteilung und die gemerkte Charakterwahl bleiben, ebenso erfasste Produktionen. Gespeicherte Pläne werden nur inaktiv, nicht gelöscht. Während einer Berechnung ist der Button gesperrt, in der historischen Ansicht fehlt er.
+**Planer zurücksetzen:** Der Button neben dem Titel leert nach einer Sicherheitsabfrage Produkte, manuellen Bestand, manuelle Eingriffe, übergebene Blueprints, Verkaufsentscheidungen und den aktiven Plan und führt zu Schritt 1. Einstellungen wie Einkaufsorte, Lagerwahl, Auftragsaufteilung und die gemerkte Charakterwahl bleiben, ebenso erfasste Produktionen. Gespeicherte Pläne werden nur inaktiv, nicht gelöscht. Während einer Berechnung ist der Button gesperrt, in der historischen Ansicht fehlt er.
 
-**Erreichbarkeit:** Schritt 3 braucht eine gültige, zur gewählten Produktionsart passende Eingabe, Schritt 4 einen Plan, die Schritte 5 bis 8 zusätzlich eine bestandene oder bestätigte Rentabilität. Der Planer öffnet ohne Plan bei Schritt 1, mit gespeichertem Plan bei Schritt 4; ein Absprung aus einem anderen Bereich öffnet Schritt 2. Warnungen stehen in den Schritten 4 bis 8 unter der Leiste. Jede Blueprint-Zeile nennt die automatische Stufe mit Grund. Eine Wahl von Hand zeigt „Zurück zur Automatik“; Übergaben sind als fest markiert.
+**Erreichbarkeit:** Schritt 3 braucht eine gültige Eingabe ohne unbekannte Produkte, Schritt 4 einen Plan, die Schritte 5 bis 8 zusätzlich eine bestandene oder bestätigte Rentabilität. Der Planer öffnet ohne Plan bei Schritt 1, mit gespeichertem Plan bei Schritt 4; ein Absprung aus einem anderen Bereich öffnet Schritt 2. Warnungen stehen in den Schritten 4 bis 8 unter der Leiste. Jede Blueprint-Zeile nennt die automatische Stufe mit Grund. Eine Wahl von Hand zeigt „Zurück zur Automatik“; Übergaben sind als fest markiert.
 
 **Berechnen:** Gerechnet wird nur auf Klick. Nach einer Änderung zeigen die Schritte 4 bis 8 den Plan als veraltet und bieten **Neu berechnen** an. Nach der Rechnung geht es zu Schritt 4, außer sie wurde später gestartet und verlangt keine neue Entscheidung. Auch Lagerwahl und manueller Bestand zählen nun als Änderung.
 
@@ -1110,7 +1110,7 @@ Informationshinweis.
 
 **Manueller Bestand** ersetzt bei Lager = Ja das kombinierte Lager in jedem Rechengang, auch bei der Auflösung der Blueprints und ihrer Runs. Der Ablauf bleibt derselbe: Referenzkosten ohne Bestand, Verbrauch vor Kauf und Bewertung wie beim Lager. Mengenziele und Lagerwarnungen gelten dann nicht. Der Schalter für das kombinierte Lager ist gesperrt und ein Hinweis nennt den Grund. Eigene BPO/BPC bleiben nutzbar, denn die Liste enthält nur Mengen. Eine ungültige Zeile stoppt die Berechnung vor dem ersten Rechengang; der bisherige Plan bleibt.
 
-**Einzel- und Sammelproduktion:** Einzelproduktion erlaubt ein Produkt, auch auf mehreren Zeilen. Stehen mehrere Produkte in der Eingabe, bleibt Weiter gesperrt und ein Hinweis bietet den Wechsel an; Eingaben werden nie automatisch gelöscht. Die Sammelproduktion rechnet alle Produkte gemeinsam mit geteiltem Lager und zeigt in Schritt 4 eine Tabelle je Produkt mit Summe, sofern alle Werte bekannt sind.
+**Mehrere Produkte:** Die Eingabe nimmt ein oder mehrere Produkte an, ein Produkt auch auf mehreren Zeilen. Alle Zeilen werden gemeinsam mit geteiltem Lager gerechnet. Ab zwei Produkten zeigt Schritt 4 eine Tabelle je Produkt mit Summe, sofern alle Werte bekannt sind. Eine Wahl zwischen Einzel- und Sammelproduktion gibt es nicht mehr (Eigentümerentscheidung 07.11.2026, [DECISIONS](Documentation/Consolidation/DECISIONS.md)).
 
 **Rentabel?** zeigt je Produkt eine Zeile: Einheiten, Zwischensumme (Material, Installation, BPC/BPO), Kosten inklusive Lieferung, Kosten pro Item, Mindestpreis, Verkauf, Nettoerlös, Gewinn, ROI und Status. Kosten, Kosten pro Item und Mindestpreis gelten für den gewählten Verkauf einschließlich seines Transports, sodass Nettoerlös minus Kosten den Gewinn derselben Zeile ergibt. Der Mindestpreis deckt mit den verkauften Einheiten alle Kosten und Gebühren. Die Tabelle ist sortierbar, vorläufige Werte tragen „~“, fehlende bleiben unverfügbar, die Summe erscheint nur bei vollständigen Werten. Beträge ab 1.000 ISK stehen ohne Nachkommastellen. Lagerbestand geht zuerst an die obere Produktzeile: Die Summe bleibt gleich, die Aufteilung auf die Produkte hängt aber von der Reihenfolge ab, worauf ein Hinweis unter der Tabelle aufmerksam macht.
 
@@ -1128,7 +1128,7 @@ Bei mehreren Produkten entfallen die zusammengefassten Karten Produktionszwische
 | Nicht rentabel | Endgültiger Gewinn von höchstens 0 | Warnung, Entscheidung nötig |
 | Nicht prüfbar | Kein endgültiger Wert: Preis fehlt oder Kosten sind nur vorläufig | Warnung, Entscheidung nötig |
 
-**Trotzdem produzieren** gilt nur für diese Berechnung und die gesehenen Verkäufe und wird nicht gespeichert. In einer Sammelproduktion steht jedes betroffene Produkt mit **Entfernen** in der Warnung, die Entscheidung gilt für alle verbleibenden Produkte zusammen. Entfernen nimmt die Eingabezeile heraus, danach muss neu berechnet werden.
+**Trotzdem produzieren** gilt nur für diese Berechnung und die gesehenen Verkäufe und wird nicht gespeichert. Bei mehreren Produkten steht jedes betroffene Produkt mit **Entfernen** in der Warnung, die Entscheidung gilt für alle verbleibenden Produkte zusammen. Entfernen nimmt die Eingabezeile heraus, danach muss neu berechnet werden.
 
 **Vermerken** ist gesperrt, solange der Plan nicht aktuell ist oder ein Produkt weder Wahl noch Vorschlag hat. Beim Vermerken wird ein Vorschlag als Wahl festgehalten. Bereits erfasste Zeilen der Produktionsübersicht bleiben unverändert.
 
