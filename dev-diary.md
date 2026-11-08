@@ -10056,3 +10056,21 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - Nicht geprüft: Swift 6.1 selbst. Lokal ist keine 6.1-Toolchain installiert; der Nachweis kommt erst mit dem nächsten CI-Lauf nach einem Push. Die App-Tests seit `c36c27e` und der Code ab `f63dc83` hat die CI nie mit Swift 6.1 kompiliert; weitere 6.1-Fehler sind möglich.
 - **Commit und Push:** Am 08.11.2026 auf Auftrag committet und nach `origin/main` gepusht, zusammen mit dem vorigen Eintrag und den bis dahin ungepushten `f63dc83`, `69f285f` und `0b7fb5c`. Committet sind nur diese Korrektur, ROADMAP, PROJECT_STATE und diese beiden Einträge; die uncommitteten DB7/DB8-Änderungen der parallelen Sitzung sind nicht enthalten, die CI prüft also den Stand ohne sie.
 - **Offen:** Ergebnis des CI-Laufs zu diesem Push.
+
+## 08.11.2026: CI-Lauf nach dem Push von `abc1b10`
+
+- **Auftrag:** Nach Commit und Push (Eintrag oben) den CI-Lauf auswerten.
+- **Ergebnis:** Lauf `42528721333` (`macos-15`, Swift 6.1.2) ist rot, aber nicht mehr am Compiler. Swift 6.1 übersetzt den Stand; alle 933 Swift-Testing-Tests sind grün, darunter „Planner golden master“. Von 49 XCTest-Fällen scheitert einer: `AppTextSizeTests.testUnavailableViewMatchesTheSystemViewAtStandardSize` (eingeführt in `0b7fb5c`) mit drei Abweichungen beim PNG-Vergleich zwischen `ContentUnavailableView` und `AppUnavailableView`.
+- **Ursache:** `AppUnavailableView` setzt auch bei „Standard“ feste Schriften (Titel `title3` fett, Beschreibung `title3`). Das gleicht dem Systemleerzustand unter macOS 27.2, wo es gemessen wurde, nicht aber unter macOS 15 auf dem Runner. Die Abweichung betrifft damit auch Nutzer unter macOS 14 und 15: Dort sehen Leerzustände bei „Standard“ anders aus als vor `0b7fb5c`. Welche Schriften das System unter macOS 15 nutzt, ist nicht ermittelt (lokal keine macOS-15-Umgebung).
+- **Prüfung:** `gh run view 42528721333 --log-failed` ausgewertet. Der Fehler war bisher vom Übersetzungsfehler verdeckt.
+- **Offen:** Korrektur nur auf Auftrag; Vorgehen mit dem Eigentümer klären. Die CI bleibt bis dahin rot.
+
+## 08.11.2026: Leerzustände bei „Standard“ mit den Systemschriften
+
+- **Auftrag:** Den roten CI-Test aus dem vorigen Eintrag beheben; der Eigentümer wählte „Standard unverändert“ statt eines auf macOS 26+ begrenzten Tests.
+- **Ergebnis:** `AppLanguage.swift`: `AppUnavailableView` setzt Titel und Beschreibung mit `appFontKeepingSystemDefault` statt `appFont`. Bei „Standard“ bleiben damit die Schriften des Systemleerzustands unberührt, auf jeder macOS-Version; die übrigen Stufen skalieren wie bisher `title3` (Titel fett). Unter macOS 27.2 ändert sich nichts, unter macOS 14 und 15 zeigen Leerzustände bei „Standard“ wieder die Systemschriften wie vor `0b7fb5c`. Doc-Kommentar angepasst. PRODUCT.md unverändert: Die Aussage „Standard zeigt die Darstellung unverändert“ gilt damit auch unter macOS 14 und 15. Keine Planer-Quelle betroffen.
+- **Prüfung:**
+  - Isoliert wie im Eintrag zur CI-Korrektur, Swift 6.4.2 unter macOS 27.2: `AppTextSizeTests` 11 von 11 grün; `swift test` grün mit 148 und 785 Tests (Swift Testing) und 49 XCTest-Fällen; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); `xcodebuild build` `BUILD SUCCEEDED`, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; keine Warnung in `AppLanguage.swift`; `check_planner_guide.py` ok; `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit den uncommitteten DB7/DB8-Änderungen der parallelen Sitzung.
+  - Nicht geprüft: macOS 15. Ob dort der Pixelvergleich und `testUnavailableViewGrowsWithTheTextSize` halten (die Stufe „Standard“ nutzt dort andere Schriften als die skalierten Stufen), zeigt erst die CI.
+- **Commit und Push:** Am 08.11.2026 auf Auftrag committet und nach `origin/main` gepusht, zusammen mit dem vorigen Eintrag; ohne die uncommitteten DB7/DB8-Änderungen der parallelen Sitzung.
+- **Offen:** Ergebnis des CI-Laufs zu diesem Push.

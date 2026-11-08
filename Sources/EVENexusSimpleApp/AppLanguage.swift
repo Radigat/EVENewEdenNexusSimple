@@ -287,9 +287,11 @@ private struct AppFontKeepingSystemDefaultModifier: ViewModifier {
 }
 
 /// `ContentUnavailableView` whose title and description follow the
-/// text-size setting. The system view keeps fixed fonts on macOS (title
-/// `title3` bold, description `title3`); at standard size this view renders
-/// identically.
+/// text-size setting. The system view keeps fixed fonts on macOS, and they
+/// differ between macOS versions (macOS 27.2: title `title3` bold,
+/// description `title3`; macOS 15 renders differently). At standard size
+/// this view therefore leaves the system fonts untouched and renders
+/// identically on every version; every other size scales `title3`.
 struct AppUnavailableView<Title: View, Description: View, Actions: View>: View {
   private let title: Title
   private let description: Description
@@ -307,9 +309,9 @@ struct AppUnavailableView<Title: View, Description: View, Actions: View>: View {
 
   var body: some View {
     ContentUnavailableView {
-      title.appFont(.title3.bold())
+      title.appFontKeepingSystemDefault(.title3.bold())
     } description: {
-      description.appFont(.title3)
+      description.appFontKeepingSystemDefault(.title3)
     } actions: {
       actions
     }

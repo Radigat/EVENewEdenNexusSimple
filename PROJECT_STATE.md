@@ -44,16 +44,29 @@ Sammelstelle für alles, was nicht erledigt ist. Einzelheiten stehen in den
 verlinkten Plänen und im [dev-diary.md](dev-diary.md); offene Abnahmen je
 Vorhaben in [ROADMAP.md](ROADMAP.md), „Umgesetzt, Abnahme offen“.
 
-- **CI rot seit 03.11.2026, Korrektur gepusht, CI-Nachweis offen:** Jeder Push
-  ab `c36c27e` (A1–A3) scheitert im Job „Swift package tests“ (`macos-15`,
-  Swift 6.1.2). Der Compiler meldet in `PlaceholderViews.swift` beim Erzeugen
-  von `PlannerCalculationPipeline` (`resolveBasis`, `calculate`) „converting
-  non-sendable function value … may introduce data races“. Am 08.11.2026
-  korrigiert und nach `origin/main` gepusht: Die Pipeline erhält
-  Closure-Literale statt der lokalen Funktionen. Lokal mit Swift 6.4.2 grün;
-  ob Swift 6.1 den Stand annimmt, zeigt der CI-Lauf zu diesem Push. Die App-Tests seit
-  `c36c27e` und der gesamte Code ab `f63dc83` sind nie mit Swift 6.1
-  kompiliert worden; weitere 6.1-Fehler sind daher möglich.
+- **CI rot seit 03.11.2026; beide Ursachen korrigiert, CI-Nachweis offen:** Jeder
+  Push ab `c36c27e` (A1–A3) scheiterte im Job „Swift package tests“
+  (`macos-15`, Swift 6.1.2) am Compiler: In `PlaceholderViews.swift` meldete
+  er beim Erzeugen von `PlannerCalculationPipeline` (`resolveBasis`,
+  `calculate`) „converting non-sendable function value … may introduce data
+  races“. Die Korrektur `abc1b10` (08.11.2026, Closure-Literale statt der
+  lokalen Funktionen) wirkt: Im CI-Lauf `42528721333` übersetzt Swift 6.1 den
+  Stand, alle 933 Swift-Testing-Tests sind grün. Rot bleibt ein XCTest-Fall
+  von 49: `AppTextSizeTests.testUnavailableViewMatchesTheSystemViewAtStandardSize`
+  mit drei Abweichungen. Ursache: `AppUnavailableView` setzt auch bei
+  „Standard“ feste Schriften (Titel `title3` fett, Beschreibung `title3`).
+  Das gleicht dem Systemleerzustand nur unter macOS 27.2, wo es gemessen
+  wurde; unter macOS 15 (Runner) rendert der Systemleerzustand anders, die
+  Einzelheiten sind nicht ermittelt. Damit gilt „Standard zeigt die
+  Darstellung unverändert“ für Leerzustände unter macOS 14 und 15 nicht.
+  Am 08.11.2026 nach Wahl des Eigentümers korrigiert, committet und nach
+  `origin/main` gepusht:
+  `AppUnavailableView` lässt bei „Standard“ die Systemschriften unberührt
+  (`appFontKeepingSystemDefault`) und zeigt damit auf jeder macOS-Version den
+  Systemleerzustand; die übrigen Stufen skalieren `title3` wie bisher. Lokal
+  unter macOS 27.2 grün. Ob der Pixelvergleich und der Wachstumstest
+  `testUnavailableViewGrowsWithTheTextSize` unter macOS 15 halten, zeigt der
+  CI-Lauf zu diesem Push.
 - **Eigentümerentscheidungen:**
   - P-L5: Zykluserkennung in der Automatik mit Wahl des günstigsten Zustands
     ([Analyse](Documentation/ANALYSE_2026-11-02.md), Abschnitt 6);
@@ -574,8 +587,9 @@ Bericht, Messwerte und Prompt-Reihe: [ANALYSE_2026-11-02.md](Documentation/ANALY
 - **Offen:** Sichtprüfung von A4; Messung von A6 bei normaler ESI-Lage;
   A6b–A8; Eigentümerabnahme.
 - Commits `1195e18` bis `85749de` gepusht; A6 im Sammel-Commit `0b7fb5c`,
-  gepusht am 08.11.2026. Die CI scheitert seit `c36c27e`; Korrektur gepusht,
-  Nachweis offen (siehe „Offene Punkte“).
+  gepusht am 08.11.2026. Die CI scheiterte ab `c36c27e` an der Übersetzung;
+  seit `abc1b10` übersetzt sie wieder, ein Test in `AppTextSizeTests` ist rot;
+  Korrektur gepusht, Nachweis offen (siehe „Offene Punkte“).
 
 ## Oberflächenstil „New Eden HUD“ D1–D8 (07.11.2026)
 
@@ -610,7 +624,10 @@ Plan und Abnahme-Checkliste: [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD
   grün, zuletzt 785 + 148 Tests und 49 XCTest-Fälle.
 - **Offen:** Sichtprüfung mit echten Daten (Vertragshinweis, Mouse-over,
   Schriftgrößen in Ansichten mit Daten, Berechnung mit mehreren Produkten)
-  und Eigentümerabnahme.
+  und Eigentümerabnahme. CI-Befund vom 08.11.2026: Leerzustände
+  (`AppUnavailableView`) sahen bei „Standard“ unter macOS 14 und 15 anders
+  aus als der Systemleerzustand; korrigiert und gepusht, Nachweis unter
+  macOS 15 offen (siehe „Offene Punkte“).
 - Commits `f63dc83`, `69f285f` und `0b7fb5c`, gepusht am 08.11.2026.
 
 ## Dashboard nach Board DB1–DB8 (07./08.11.2026)
