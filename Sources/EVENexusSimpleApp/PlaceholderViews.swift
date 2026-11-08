@@ -7007,13 +7007,17 @@ struct PlannerView: View {
         failed: runtime.errorMessage != nil
       )
     }
-    let pipeline = PlannerCalculationPipeline(
+    // Closure literals instead of the local functions themselves: Swift 6.1
+    // rejects converting a local function to the pipeline's `@MainActor`
+    // (implicitly `@Sendable`) function types, a closure literal formed here
+    // is main-actor isolated and may capture them.
+    let pipeline = PlannerCalculationPipeline<PlannerBlueprintBasis>(
       manualPreferences: manualPreferences,
       requestedProductNames: Set(parsed.requests.map(\.productName)),
       usesStock: runtime.warehouseStockEnabled
         || PlannerStockUse.hasManualStock(plannerManualStockInput),
-      resolveBasis: basis,
-      calculate: calculate
+      resolveBasis: { request in await basis(request) },
+      calculate: { request in await calculate(request) }
     )
     // Only the finished plan is shown (G3); a stopped click keeps the
     // previous one.
