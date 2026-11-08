@@ -176,21 +176,39 @@ final class AppTextSizeTests: XCTestCase {
     )
   }
 
-  func testUnavailableViewGrowsWithTheTextSize() {
-    let heights = AppTextSize.allCases.map { size in
-      NSHostingView(
-        rootView: AppUnavailableView(
-          "No connected characters",
-          systemImage: "creditcard",
-          description: Text("Add a character under Characters before refreshing wallet balances.")
+  /// Every scaled size grows the view. Standard keeps the system fonts,
+  /// which differ between macOS versions (on macOS 15 it has the same
+  /// height as a neighbouring size), so it only has to lie between compact
+  /// and large.
+  func testUnavailableViewGrowsWithTheTextSize() throws {
+    let heights = Dictionary(
+      uniqueKeysWithValues: AppTextSize.allCases.map { size in
+        (
+          size,
+          NSHostingView(
+            rootView: AppUnavailableView(
+              "No connected characters",
+              systemImage: "creditcard",
+              description: Text(
+                "Add a character under Characters before refreshing wallet balances."
+              )
+            )
+            .frame(width: 400)
+            .fixedSize()
+            .environment(\.appTextSize, size)
+          ).fittingSize.height
         )
-        .frame(width: 400)
-        .fixedSize()
-        .environment(\.appTextSize, size)
-      ).fittingSize.height
-    }
-    XCTAssertEqual(heights, heights.sorted())
-    XCTAssertEqual(Set(heights).count, heights.count)
+      }
+    )
+    let scaled = AppTextSize.allCases.filter { $0 != .standard }.compactMap { heights[$0] }
+    XCTAssertEqual(scaled.count, AppTextSize.allCases.count - 1)
+    XCTAssertEqual(scaled, scaled.sorted())
+    XCTAssertEqual(Set(scaled).count, scaled.count)
+    let compact = try XCTUnwrap(heights[.compact])
+    let standard = try XCTUnwrap(heights[.standard])
+    let large = try XCTUnwrap(heights[.large])
+    XCTAssertLessThanOrEqual(compact, standard)
+    XCTAssertLessThanOrEqual(standard, large)
   }
 
   /// SwiftUI text styles, fixed `.system(size:)` fonts and the system

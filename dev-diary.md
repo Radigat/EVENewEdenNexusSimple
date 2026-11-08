@@ -10074,3 +10074,21 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - Nicht geprüft: macOS 15. Ob dort der Pixelvergleich und `testUnavailableViewGrowsWithTheTextSize` halten (die Stufe „Standard“ nutzt dort andere Schriften als die skalierten Stufen), zeigt erst die CI.
 - **Commit und Push:** Am 08.11.2026 auf Auftrag committet und nach `origin/main` gepusht, zusammen mit dem vorigen Eintrag; ohne die uncommitteten DB7/DB8-Änderungen der parallelen Sitzung.
 - **Offen:** Ergebnis des CI-Laufs zu diesem Push.
+
+## 08.11.2026: CI-Lauf nach dem Push von `178920d`
+
+- **Auftrag:** Nach Commit und Push (Eintrag oben) den CI-Lauf auswerten.
+- **Ergebnis:** Lauf `42529888263` (`macos-15`, Swift 6.1.2) ist rot. `testUnavailableViewMatchesTheSystemViewAtStandardSize` ist jetzt auch unter macOS 15 grün, ebenso alle 933 Swift-Testing-Tests. Von 49 XCTest-Fällen scheitert `testUnavailableViewGrowsWithTheTextSize` an der zweiten Prüfung (`AppTextSizeTests.swift:193`): Unter macOS 15 sind zwei der fünf Stufen gleich hoch (vier verschiedene Höhen statt fünf). Die erste Prüfung, aufsteigende Reihenfolge, besteht.
+- **Ursache:** Folge der gewählten Lösung. „Standard“ nutzt unter macOS 15 die Systemschriften des Leerzustands, die übrigen Stufen skalieren `title3`; dadurch fällt „Standard“ dort mit einer Nachbarstufe auf dieselbe Höhe. Welche Stufen gleich hoch sind, zeigt das Log nicht. Unter macOS 27.2 sind alle fünf Höhen verschieden.
+- **Prüfung:** `gh run view 42529888263 --log-failed` ausgewertet.
+- **Offen:** Vorgehen mit dem Eigentümer klären; die CI bleibt bis dahin rot.
+
+## 08.11.2026: Wachstumstest der Leerzustände für macOS 15 angepasst
+
+- **Auftrag:** Den roten CI-Test aus dem vorigen Eintrag beheben; der Eigentümer wählte „Test anpassen“ statt eigener Grundschriften je macOS-Version.
+- **Ergebnis:** `AppTextSizeTests.testUnavailableViewGrowsWithTheTextSize` prüft die vier skalierten Stufen (Kompakt, Groß, Sehr groß, Bedienungshilfen) weiter auf aufsteigende und verschiedene Höhen. „Standard“ muss nur zwischen „Kompakt“ und „Groß“ liegen und darf so hoch sein wie eine der beiden, weil diese Stufe bewusst die Systemschriften nutzt, die je macOS-Version verschieden sind. Kommentar am Test nennt den Grund. App-Code und Verhalten unverändert; PRODUCT.md unverändert. Keine Planer-Quelle betroffen.
+- **Prüfung:**
+  - Isoliert wie in den Einträgen oben, Swift 6.4.2 unter macOS 27.2: `AppTextSizeTests` 11 von 11 grün; `swift test` grün mit 148 und 785 Tests (Swift Testing) und 49 XCTest-Fällen; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); `xcodebuild build` `BUILD SUCCEEDED`, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; keine Warnung in `AppTextSizeTests.swift`; `check_planner_guide.py` ok; `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit den uncommitteten DB7/DB8-Änderungen der parallelen Sitzung.
+  - Nicht geprüft: macOS 15. Erwartet wird, dass die gleich hohen Stufen dort „Standard“ und eine Nachbarstufe sind; belegt ist das erst mit dem nächsten CI-Lauf.
+- **Commit und Push:** Am 08.11.2026 auf Auftrag committet und nach `origin/main` gepusht, zusammen mit dem vorigen Eintrag; ohne die uncommitteten DB7/DB8-Änderungen der parallelen Sitzung.
+- **Offen:** Ergebnis des CI-Laufs zu diesem Push.

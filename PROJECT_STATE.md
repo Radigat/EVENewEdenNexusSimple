@@ -44,29 +44,34 @@ Sammelstelle für alles, was nicht erledigt ist. Einzelheiten stehen in den
 verlinkten Plänen und im [dev-diary.md](dev-diary.md); offene Abnahmen je
 Vorhaben in [ROADMAP.md](ROADMAP.md), „Umgesetzt, Abnahme offen“.
 
-- **CI rot seit 03.11.2026; beide Ursachen korrigiert, CI-Nachweis offen:** Jeder
-  Push ab `c36c27e` (A1–A3) scheiterte im Job „Swift package tests“
-  (`macos-15`, Swift 6.1.2) am Compiler: In `PlaceholderViews.swift` meldete
-  er beim Erzeugen von `PlannerCalculationPipeline` (`resolveBasis`,
-  `calculate`) „converting non-sendable function value … may introduce data
-  races“. Die Korrektur `abc1b10` (08.11.2026, Closure-Literale statt der
-  lokalen Funktionen) wirkt: Im CI-Lauf `42528721333` übersetzt Swift 6.1 den
-  Stand, alle 933 Swift-Testing-Tests sind grün. Rot bleibt ein XCTest-Fall
-  von 49: `AppTextSizeTests.testUnavailableViewMatchesTheSystemViewAtStandardSize`
-  mit drei Abweichungen. Ursache: `AppUnavailableView` setzt auch bei
-  „Standard“ feste Schriften (Titel `title3` fett, Beschreibung `title3`).
-  Das gleicht dem Systemleerzustand nur unter macOS 27.2, wo es gemessen
-  wurde; unter macOS 15 (Runner) rendert der Systemleerzustand anders, die
-  Einzelheiten sind nicht ermittelt. Damit gilt „Standard zeigt die
-  Darstellung unverändert“ für Leerzustände unter macOS 14 und 15 nicht.
-  Am 08.11.2026 nach Wahl des Eigentümers korrigiert, committet und nach
-  `origin/main` gepusht:
-  `AppUnavailableView` lässt bei „Standard“ die Systemschriften unberührt
-  (`appFontKeepingSystemDefault`) und zeigt damit auf jeder macOS-Version den
-  Systemleerzustand; die übrigen Stufen skalieren `title3` wie bisher. Lokal
-  unter macOS 27.2 grün. Ob der Pixelvergleich und der Wachstumstest
-  `testUnavailableViewGrowsWithTheTextSize` unter macOS 15 halten, zeigt der
-  CI-Lauf zu diesem Push.
+- **CI rot seit 03.11.2026; dritte Korrektur gepusht, CI-Nachweis offen:** Job
+  „Swift package tests“ (`macos-15`, Swift 6.1.2).
+  - Übersetzung, behoben mit `abc1b10`: Ab `c36c27e` (A1–A3) meldete der
+    Compiler in `PlaceholderViews.swift` beim Erzeugen von
+    `PlannerCalculationPipeline` (`resolveBasis`, `calculate`) „converting
+    non-sendable function value … may introduce data races“. Die
+    Pipeline erhält jetzt Closure-Literale statt der lokalen Funktionen. Im
+    CI-Lauf `42528721333` übersetzt Swift 6.1 den Stand, alle 933
+    Swift-Testing-Tests sind grün.
+  - Leerzustände, behoben mit `178920d`: `AppUnavailableView` setzte auch bei
+    „Standard“ feste Schriften (Titel `title3` fett, Beschreibung `title3`),
+    die nur unter macOS 27.2 dem Systemleerzustand gleichen; unter macOS 15
+    scheiterte `testUnavailableViewMatchesTheSystemViewAtStandardSize`. Nach
+    Wahl des Eigentümers bleiben bei „Standard“ jetzt die Systemschriften
+    unberührt (`appFontKeepingSystemDefault`); die übrigen Stufen skalieren
+    `title3` wie bisher. Im CI-Lauf `42529888263` ist dieser Pixelvergleich
+    unter macOS 15 grün.
+  - Rot seit `178920d`: `testUnavailableViewGrowsWithTheTextSize`. Unter
+    macOS 15 sind zwei der fünf Stufen gleich hoch (vier verschiedene Höhen
+    statt fünf); die Reihenfolge stimmt. Welche zwei Stufen, zeigt das Log
+    nicht. Ursache ist die gewählte Lösung: „Standard“ nutzt unter macOS 15
+    andere Schriften als die skalierten Stufen. Unter macOS 27.2 grün.
+    Am 08.11.2026 nach Wahl des Eigentümers den Test angepasst, committet und
+    nach `origin/main` gepusht:
+    Die vier skalierten Stufen müssen weiter jeweils höher werden, „Standard“
+    muss nur zwischen „Kompakt“ und „Groß“ liegen und darf so hoch sein wie
+    eine der beiden. Lokal grün; ob der Test unter macOS 15 hält, zeigt der
+    CI-Lauf zu diesem Push.
 - **Eigentümerentscheidungen:**
   - P-L5: Zykluserkennung in der Automatik mit Wahl des günstigsten Zustands
     ([Analyse](Documentation/ANALYSE_2026-11-02.md), Abschnitt 6);
@@ -589,7 +594,8 @@ Bericht, Messwerte und Prompt-Reihe: [ANALYSE_2026-11-02.md](Documentation/ANALY
 - Commits `1195e18` bis `85749de` gepusht; A6 im Sammel-Commit `0b7fb5c`,
   gepusht am 08.11.2026. Die CI scheiterte ab `c36c27e` an der Übersetzung;
   seit `abc1b10` übersetzt sie wieder, ein Test in `AppTextSizeTests` ist rot;
-  Korrektur gepusht, Nachweis offen (siehe „Offene Punkte“).
+  seit `178920d` ist dieser grün und ein anderer rot, angepasst und
+  gepusht, Nachweis offen (siehe „Offene Punkte“).
 
 ## Oberflächenstil „New Eden HUD“ D1–D8 (07.11.2026)
 
@@ -626,8 +632,9 @@ Plan und Abnahme-Checkliste: [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD
   Schriftgrößen in Ansichten mit Daten, Berechnung mit mehreren Produkten)
   und Eigentümerabnahme. CI-Befund vom 08.11.2026: Leerzustände
   (`AppUnavailableView`) sahen bei „Standard“ unter macOS 14 und 15 anders
-  aus als der Systemleerzustand; korrigiert und gepusht, Nachweis unter
-  macOS 15 offen (siehe „Offene Punkte“).
+  aus als der Systemleerzustand; mit `178920d` korrigiert. Unter macOS 15
+  sind seitdem zwei Schriftstufen im Leerzustand gleich hoch; das ist nach
+  Wahl des Eigentümers zulässig (siehe „Offene Punkte“).
 - Commits `f63dc83`, `69f285f` und `0b7fb5c`, gepusht am 08.11.2026.
 
 ## Dashboard nach Board DB1–DB8 (07./08.11.2026)
