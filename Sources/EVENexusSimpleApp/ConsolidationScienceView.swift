@@ -114,7 +114,7 @@ struct ConsolidationScienceView: View {
         .groupedNumberInput($materials)
         Text(
           "Kosten ausdrücklich eintragen, auch wenn sie null sind. Die vorhandenen Fachrechner verwenden diese Beträge; fehlende Kosten werden nicht als null behandelt."
-        ).font(.caption)
+        ).appFont(.caption)
       }
       Button(loading ? "Auftrag wird geprüft…" : "Auftrag berechnen und prüfen") {
         Task { await prepare() }
@@ -125,10 +125,10 @@ struct ConsolidationScienceView: View {
         VStack(alignment: .leading) {
           EVEEntityText(value: job.name)
           EVEEntityText(value: job.facilityName, font: .caption)
-          Text(scienceDescription(job.job)).font(.caption).textSelection(.enabled)
+          Text(scienceDescription(job.job)).appFont(.caption).textSelection(.enabled)
           if job.supplyPlan != nil {
             Text("Als konkrete Blueprint-Versorgung gespeichert. Planner neu berechnen.")
-              .font(.caption)
+              .appFont(.caption)
           }
           Button("Planungsauftrag archivieren") {
             controller.propose([

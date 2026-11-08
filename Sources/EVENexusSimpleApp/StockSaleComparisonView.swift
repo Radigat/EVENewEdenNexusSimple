@@ -138,8 +138,9 @@ struct StockSaleComparisonView: View {
   private var header: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text("Stock sale comparison")
-        .font(.largeTitle.bold())
+        .appFont(.largeTitle.bold())
         .foregroundStyle(DesignTokens.textPrimary)
+        .nexusPageTitle()
       Text(
         "Paste items copied from the EVE client with their quantities and see per item the minimum price at the chosen hub that beats producing them anew, including all production costs and market fees."
       )
@@ -178,12 +179,12 @@ struct StockSaleComparisonView: View {
             .accessibilityIdentifier("stock-sale.open-market-settings")
         }
         Text(assumptionText)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         Text(
           "Minimum sell order = new production cost per unit ÷ (1 − sales tax − broker fee); minimum direct sale = cost ÷ (1 − sales tax). New production buys every material at the Main Hub and includes installation, Blueprint share and delivery to the chosen hub. Own orders are one valid price step below the best sell order. Order modification and relist fees are not included."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -195,7 +196,7 @@ struct StockSaleComparisonView: View {
       if let location = runtime.tradeLocation(for: hubRole) {
         EVEEntityText(value: location.name, font: .caption, lineLimit: 1)
       } else {
-        Text("Not configured").font(.caption)
+        Text("Not configured").appFont(.caption)
       }
     }
     .padding(.horizontal, DesignTokens.spacingSM)
@@ -213,7 +214,7 @@ struct StockSaleComparisonView: View {
         formatPercent(fees.brokerFeeRate)
       )
     )
-    .font(.caption)
+    .appFont(.caption)
     .padding(.horizontal, DesignTokens.spacingSM)
     .padding(.vertical, DesignTokens.spacingXS)
     .background(DesignTokens.textSecondary.opacity(0.12), in: Capsule())
@@ -351,13 +352,13 @@ struct StockSaleComparisonView: View {
             "Format per line: Item ⇥ Type ⇥ Quantity. The first column is the item name, the first purely numeric column is the quantity. Additional columns shown in the client (category, volume, estimated price, …) are ignored. Without a quantity the item counts once."
           )
           Text(verbatim: "Arazu ⇥ Force Recon Ship ⇥ 5")
-            .font(.caption.monospaced())
+            .appFont(.caption.monospaced())
         }
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         .accessibilityIdentifier("stock-sale.paste-help")
         TextEditor(text: $pasteText)
-          .font(.callout.monospaced())
+          .appFont(.callout.monospaced())
           .frame(minHeight: 90, maxHeight: 160)
           .overlay(
             RoundedRectangle(cornerRadius: 6)
@@ -410,11 +411,11 @@ struct StockSaleComparisonView: View {
             HStack(spacing: DesignTokens.spacingSM) {
               removeButton(entry)
               Text(verbatim: entry.pastedName)
-                .font(.callout.monospaced())
+                .appFont(.callout.monospaced())
                 .lineLimit(1)
                 .textSelection(.enabled)
               Text(verbatim: unresolvedText(entry.unresolvedReason))
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.caution)
             }
           }
@@ -533,7 +534,7 @@ struct StockSaleComparisonView: View {
       numberHeader("Profit total direct sale", .directProfitTotal)
       numberHeader("Recommendation", .recommendation, width: recommendationWidth)
     }
-    .font(.caption.weight(.semibold))
+    .appFont(.caption.weight(.semibold))
     .padding(.vertical, DesignTokens.spacingXS)
   }
 
@@ -651,7 +652,7 @@ struct StockSaleComparisonView: View {
       )
       .textFieldStyle(.roundedBorder)
       .multilineTextAlignment(.trailing)
-      .font(.callout.monospacedDigit())
+      .appFont(.callout.monospacedDigit())
       .frame(width: efficiencyWidth)
       .help(
         AppLocalization.text(
@@ -665,7 +666,7 @@ struct StockSaleComparisonView: View {
       )
     } else {
       Text(verbatim: "—")
-        .font(.callout)
+        .appFont(.callout)
         .foregroundStyle(DesignTokens.textSecondary)
         .frame(width: efficiencyWidth, alignment: .trailing)
     }
@@ -697,11 +698,11 @@ struct StockSaleComparisonView: View {
       }
     return VStack(alignment: .trailing, spacing: 0) {
       Text(verbatim: text)
-        .font(.callout.weight(.semibold))
+        .appFont(.callout.weight(.semibold))
         .foregroundStyle(tint)
       if row.recommendation != nil {
         Text(verbatim: formatWholeNumber(row.recommendedProfitTotal))
-          .font(.caption.monospacedDigit())
+          .appFont(.caption.monospacedDigit())
           .foregroundStyle(signTint(row.recommendedProfitTotal))
       }
     }
@@ -713,7 +714,7 @@ struct StockSaleComparisonView: View {
     tint: Color = DesignTokens.textPrimary
   ) -> some View {
     Text(verbatim: text)
-      .font(.callout.monospacedDigit())
+      .appFont(.callout.monospacedDigit())
       .foregroundStyle(tint)
       .lineLimit(1)
       .frame(minWidth: numberWidth, maxWidth: .infinity, alignment: .trailing)

@@ -52,7 +52,7 @@ struct PlannerStepBar: View {
           button(for: step)
           if step != PlannerStep.allCases.last {
             Image(systemName: "chevron.right")
-              .font(.caption2)
+              .appFont(.caption2)
               .foregroundStyle(DesignTokens.textSecondary)
               .accessibilityHidden(true)
           }
@@ -71,13 +71,13 @@ struct PlannerStepBar: View {
     } label: {
       HStack(spacing: DesignTokens.spacingXS) {
         if isDone {
-          Image(systemName: "checkmark").font(.caption2.weight(.bold))
+          Image(systemName: "checkmark").appFont(.caption2.weight(.bold))
         } else {
-          Text(step.rawValue.formatted()).font(.caption.monospacedDigit().weight(.semibold))
+          Text(step.rawValue.formatted()).appFont(.caption.monospacedDigit().weight(.semibold))
         }
         Text(step.title).lineLimit(1).fixedSize()
       }
-      .font(.callout.weight(isCurrent ? .semibold : .regular))
+      .appFont(.callout.weight(isCurrent ? .semibold : .regular))
       .foregroundStyle(
         isCurrent
           ? DesignTokens.accent
@@ -129,7 +129,7 @@ struct PlannerStepNavigation: View {
       Spacer()
       if let lockedReason {
         Text(lockedReason)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       if current != PlannerStep.allCases.last {
@@ -207,7 +207,7 @@ struct PlannerMaterialCheckPanel: View {
               header("From market", .toBuy)
               header("Build", .toProduce)
             }
-            .font(.caption.weight(.semibold))
+            .appFont(.caption.weight(.semibold))
             Divider()
             ForEach(rows) { material in
               GridRow {
@@ -218,7 +218,7 @@ struct PlannerMaterialCheckPanel: View {
                 Text(material.toBuy.formatted())
                 Text(material.toProduce.formatted())
               }
-              .font(.body.monospacedDigit())
+              .appFont(.body.monospacedDigit())
             }
           }
           .padding(.bottom, DesignTokens.spacingXS)

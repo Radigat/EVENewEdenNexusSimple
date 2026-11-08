@@ -151,24 +151,49 @@ public enum PublicContractItemDirection: String, CaseIterable, Codable,
   case both
 }
 
+/// Order of the contract search. The store sorts before applying the result
+/// limit, so a price order returns the cheapest (or most expensive) matches
+/// of the whole local index, not just a reordered first page.
+public enum PublicContractSearchSort: String, CaseIterable, Codable, Hashable,
+  Sendable
+{
+  /// Exact item-name matches first, then the soonest expiry.
+  case bestMatch
+  /// Listed contract price (`price`, else `buyout`, else `reward`),
+  /// cheapest first; contracts without any price follow all priced ones.
+  case priceAscending
+  /// Listed contract price, most expensive first; contracts without any
+  /// price come before all priced ones.
+  case priceDescending
+}
+
 public struct PublicContractSearchFilter: Equatable, Sendable {
   public var itemQuery: String
   public var groupID: Int64?
   public var categoryID: Int64?
+  /// Restricts the search to one region. It narrows an item, group or
+  /// category search but does not start a search on its own; the configured
+  /// import scope still applies.
+  public var regionID: Int64?
   public var direction: PublicContractItemDirection
+  public var sort: PublicContractSearchSort
   public var limit: Int
 
   public init(
     itemQuery: String = "",
     groupID: Int64? = nil,
     categoryID: Int64? = nil,
+    regionID: Int64? = nil,
     direction: PublicContractItemDirection = .included,
+    sort: PublicContractSearchSort = .bestMatch,
     limit: Int = 300
   ) {
     self.itemQuery = itemQuery
     self.groupID = groupID
     self.categoryID = categoryID
+    self.regionID = regionID
     self.direction = direction
+    self.sort = sort
     self.limit = min(1_000, max(1, limit))
   }
 }
@@ -290,6 +315,13 @@ public struct PublicContractSearchResult: Identifiable, Equatable, Sendable {
     self.runs = runs
     self.offeredLineCount = offeredLineCount
     self.requestedLineCount = requestedLineCount
+  }
+
+  /// The contract price shown in the search and used by the price sort:
+  /// `price`, else `buyout`, else `reward`. `nil` stays unavailable, never
+  /// zero.
+  public var listedPrice: Double? {
+    price ?? buyout ?? reward
   }
 
   public var effectiveContractPrice: Double? {

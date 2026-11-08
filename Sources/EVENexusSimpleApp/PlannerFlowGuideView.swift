@@ -62,6 +62,7 @@ private struct PlannerFlowGuidePanel: View {
         .stroke(DesignTokens.border)
     )
     .shadow(color: DesignTokens.panelShadow, radius: 18)
+    .hudCornerBrackets()
     .background {
       // Esc first releases a pinned explanation, then closes the panel.
       Button("") {
@@ -83,7 +84,7 @@ private struct PlannerFlowGuidePanel: View {
   private var header: some View {
     HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingMD) {
       Text(AppLocalization.text(PlannerFlowGuide.panelTitle))
-        .font(.title2.bold())
+        .appFont(.title2.bold())
       Text(AppLocalization.text(PlannerFlowGuide.summary))
         .foregroundStyle(DesignTokens.textSecondary)
         .lineLimit(2)
@@ -103,7 +104,7 @@ private struct PlannerFlowGuidePanel: View {
       ForEach(PlannerFlowRole.allCases, id: \.self) { role in
         Label(AppLocalization.text(role.title), systemImage: role.symbol)
           .foregroundStyle(role.color)
-          .font(.caption)
+          .appFont(.caption)
       }
     }
   }
@@ -175,7 +176,7 @@ private struct PlannerFlowGuidePanel: View {
           .frame(width: frame.width, height: frame.height)
           .offset(x: frame.minX, y: frame.minY)
         Text(AppLocalization.text(column.title))
-          .font(.headline)
+          .appFont(.headline)
           .lineLimit(1)
           .offset(x: frame.minX + 8, y: isBand ? frame.minY + 5 : frame.minY - 24)
       }
@@ -233,7 +234,7 @@ private struct PlannerFlowGuidePanel: View {
       Image(systemName: node.role.symbol)
         .foregroundStyle(node.role.color)
       Text(AppLocalization.text(node.title))
-        .font(.callout.weight(node.id == .calculate ? .bold : .medium))
+        .appFont(.callout.weight(node.id == .calculate ? .bold : .medium))
         .lineLimit(2)
         .minimumScaleFactor(0.85)
       Spacer(minLength: 0)
@@ -323,7 +324,7 @@ private struct PlannerFlowGuidePanel: View {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
         HStack {
           Text(AppLocalization.text(content.title))
-            .font(.title2.bold())
+            .appFont(.title2.bold())
           Spacer(minLength: DesignTokens.spacingSM)
           if isPinned {
             Button {
@@ -336,7 +337,7 @@ private struct PlannerFlowGuidePanel: View {
           }
         }
         Text(AppLocalization.text(content.explanation))
-          .font(.title3)
+          .appFont(.title3)
           .fixedSize(horizontal: false, vertical: true)
           .textSelection(.enabled)
       }

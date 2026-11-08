@@ -100,7 +100,7 @@ struct PlannerProductEconomicsPanel: View {
       Text(
         "Shared costs are split by cause: materials and installation by each product's demand, blueprints by the product using them and transport by volume. The shares add up to the plan total."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       ScrollView(.horizontal) {
         Grid(alignment: .trailing, horizontalSpacing: 14, verticalSpacing: 6) {
@@ -118,7 +118,7 @@ struct PlannerProductEconomicsPanel: View {
             header("Profit", .profit)
             header("ROI", .roi)
           }
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
           Divider()
           ForEach(sortedRows) { row in
             GridRow {
@@ -150,11 +150,11 @@ struct PlannerProductEconomicsPanel: View {
               Text(isk(row.profit))
               Text(percent(row.roi))
             }
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           }
           Divider()
           GridRow {
-            Text("Total").font(.body.weight(.semibold))
+            Text("Total").appFont(.body.weight(.semibold))
               .gridColumnAlignment(.leading)
             Text("")
             Text(isk(total(\.costs.materialCost)))
@@ -168,7 +168,7 @@ struct PlannerProductEconomicsPanel: View {
             Text(isk(total(\.profit)))
             Text("")
           }
-          .font(.body.monospacedDigit().weight(.semibold))
+          .appFont(.body.monospacedDigit().weight(.semibold))
         }
         .padding(.bottom, DesignTokens.spacingXS)
       }
@@ -301,13 +301,13 @@ private struct PlannerProductSaleDetail: View {
           PlannerProductFormat.isk(suggestion.profit)
         )
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     } else {
       Text(
         "No sale scenario has an available, final profit, so no target market is suggested."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -321,7 +321,7 @@ private struct PlannerProductSaleDetail: View {
       Text(
         "\(PlannerProductFormat.scenario(outcome.scenario)) · \(PlannerProductFormat.market(outcome.market))"
       )
-      .font(.subheadline.weight(.semibold))
+      .appFont(.subheadline.weight(.semibold))
       LabeledContent("Profit", value: PlannerProductFormat.isk(outcome.profit))
       LabeledContent("ROI", value: PlannerProductFormat.percent(outcome.roi))
       LabeledContent("Total cost", value: PlannerProductFormat.isk(outcome.totalCost))
@@ -330,11 +330,11 @@ private struct PlannerProductSaleDetail: View {
           "Pending costs are not treated as 0 ISK.",
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption2)
+        .appFont(.caption2)
         .foregroundStyle(DesignTokens.caution)
       }
     }
-    .font(.caption.monospacedDigit())
+    .appFont(.caption.monospacedDigit())
     .padding(DesignTokens.spacingSM)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(DesignTokens.elevated)
@@ -352,7 +352,7 @@ private struct PlannerProductSaleDetail: View {
     let result = decision.allianceSale
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Alliance market (manual)")
-        .font(.subheadline.weight(.semibold))
+        .appFont(.subheadline.weight(.semibold))
       if let result {
         HStack(spacing: DesignTokens.spacingMD) {
           LabeledContent(
@@ -361,10 +361,10 @@ private struct PlannerProductSaleDetail: View {
           )
           LabeledContent("ROI", value: PlannerProductFormat.percent(result.roi))
         }
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         if let reason = result.unavailableReason {
           Label(reason.localizedUI, systemImage: "exclamationmark.triangle")
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(DesignTokens.caution)
         }
       }

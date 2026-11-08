@@ -1009,42 +1009,13 @@ errors and refresh identities remain separate. A changed SDE build, Profile
 market resolution, selected trader, client ID or authorization identity
 invalidates the affected reuse immediately.
 
-The cross-region Market Browser implementation remains a separate read-only
-market snapshot, but it is no longer exposed as a navigation area. The active
-Planner, Main-Hub opportunity and material-analysis workflows keep using their
-own shared trade-hub market services; removing the menu entry does not remove
-those requests or calculations. For
-one published SDE item it requests public sell and buy orders from every ESI
-region with bounded concurrency; a failed or forbidden region is recorded as a
-failure and does not erase orders returned by other regions. Location and solar
-system labels come from the shared universe-name resolver. Security status is
-loaded from the public system-detail endpoint with at most eight concurrent
-requests and mapped to Highsec, Lowsec or Nullsec; unresolved values remain an
-explicit separate filter state. Each order's location row shows the EVE-client
-display value immediately before the station or structure name. It deliberately
-omits the separately resolved system name because EVE station and structure
-names already contain their system context. The value applies CCP's one-decimal
-rounding rule, including the `0.0 < x < 0.05` exception, and the eleven official
-security-status colors; the visible number remains the non-color accessibility
-signal. Player-structure IDs cannot be sent to the
-32-bit universe-name endpoint. The Browser therefore tries the existing
-connected character authorizations with `esi-universe.read_structures.v1`
-until a structure name is resolved or every eligible character reports it
-inaccessible. Orders remain visible when authorization, scope or ACL access is
-missing. The Market Browser does not calculate navigation routes or jump
-counts, and a player structure's docking ACL cannot be inferred from its
-visible public order.
-
-The Browser retains each regional response's ESI `Last-Modified` value as a
-dataset timestamp. It is not presented as a guaranteed per-order modification
-time. The `eve-tycoon-five-percent-2026-08-01` summary policy follows the
-[EVE Tycoon API contract](https://evetycoon.com/docs): buy orders below 10% of
-the best buy and sell orders above ten times the best sell are excluded, then
-the best buy-side and sell-side 5% of remaining volume are averaged with exact
-partial-order weighting. Average margin is the gross difference divided by
-the 5% average buy price. Sell and buy volumes are quantities in the remaining
-active orders, not historical completed-sale volume; historical market
-activity requires the separate region-history contract.
+The former cross-region Market Browser is removed from the code: its view,
+`MarketBrowserService`, the browser order, summary, region-failure and filter
+models and the `eve-tycoon-five-percent-2026-08-01` summary policy no longer
+exist. The active Planner, Main-Hub opportunity and material-analysis workflows
+keep using their own shared trade-hub market services. The shared
+`MarketSecurityBand.eveDisplayStatus` rule remains: it applies CCP's one-decimal
+security display rounding, including the `0.0 < x < 0.05` exception.
 
 Public Contracts is an independent, local search index for active public ESI
 contracts. It discovers the current region set through `/universe/regions/`,

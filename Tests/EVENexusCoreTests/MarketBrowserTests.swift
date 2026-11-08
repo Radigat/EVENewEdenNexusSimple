@@ -6,80 +6,6 @@ import Testing
 @Suite("Cross-region market browser")
 struct MarketBrowserTests {
   @Test
-  func preservesOrderFieldsAndReportsUnavailableRegionsAsPartial() async throws {
-    let transport = MarketBrowserFixtureTransport()
-    let service = MarketBrowserService(
-      esi: ESIClient(transport: transport),
-      maximumConcurrentRegionRequests: 2
-    )
-
-    let sourced = try await service.snapshot(
-      typeID: 34,
-      itemName: "Tritanium"
-    )
-    let snapshot = try #require(sourced.value)
-
-    #expect(sourced.state == .partial)
-    #expect(snapshot.regionCount == 2)
-    #expect(snapshot.loadedRegionCount == 1)
-    #expect(snapshot.regionFailures.map(\.regionID) == [10_000_002])
-    #expect(snapshot.orders.count == 3)
-
-    let sell = try #require(snapshot.orders.first { $0.side == .sell })
-    #expect(sell.regionName == "Alpha Region")
-    #expect(sell.locationName == "Alpha Trade Station")
-    #expect(sell.systemName == "Alpha System")
-    #expect(sell.securityBand == .highSecurity)
-    #expect(sell.volumeRemaining == 25)
-    #expect(sell.volumeTotal == 100)
-    #expect(sell.minimumVolume == 1)
-    #expect(sell.range == "station")
-    #expect(sell.esiLastModifiedAt != nil)
-    #expect(snapshot.summary.bestSellPrice == 5.5)
-    #expect(snapshot.summary.bestBuyPrice == 5.0)
-    #expect(snapshot.summary.activeSellVolume == 30)
-    #expect(snapshot.summary.activeBuyVolume == 40)
-    #expect(snapshot.summary.averageSellFivePercent == 5.5)
-    #expect(snapshot.summary.averageBuyFivePercent == 5.0)
-    #expect(snapshot.summary.averageMargin == 0.5)
-    #expect(snapshot.summary.averageMarginPercent == 10)
-
-    let structure = try #require(
-      snapshot.orders.first { $0.locationID == 1_000_000_000_001 }
-    )
-    #expect(structure.locationName == nil)
-    #expect(structure.systemName == "Alpha System")
-    let namedSnapshot = snapshot.resolvingStructureNames([
-      structure.locationID: "Alpha Public Market"
-    ])
-    #expect(
-      namedSnapshot.orders.first(where: { $0.id == structure.id })?
-        .locationName == "Alpha Public Market"
-    )
-  }
-
-  @Test
-  func filterCanExcludePlayerStructures() {
-    let structure = order(
-      id: 1,
-      locationID: 1_000_000_000_001
-    )
-    var filter = MarketBrowserFilter()
-    #expect(filter.accepts(structure))
-
-    filter.includesPlayerStructures = false
-    #expect(!filter.accepts(structure))
-
-    var securityFilter = MarketBrowserFilter()
-    securityFilter.includesHighSecurity = false
-    #expect(!securityFilter.accepts(order(id: 2, securityStatus: 0.9)))
-    #expect(securityFilter.accepts(order(id: 3, securityStatus: 0.2)))
-    securityFilter.includesLowSecurity = false
-    #expect(!securityFilter.accepts(order(id: 3, securityStatus: 0.2)))
-    #expect(securityFilter.accepts(order(id: 4, securityStatus: -0.1)))
-  }
-
-  @Test
   func systemSecurityUsesEVEClientDisplayRounding() {
     #expect(MarketSecurityBand.eveDisplayStatus(1) == 1)
     #expect(MarketSecurityBand.eveDisplayStatus(0.9459) == 0.9)
@@ -89,46 +15,6 @@ struct MarketBrowserTests {
     #expect(MarketSecurityBand.eveDisplayStatus(-0.37) == -0.4)
     #expect(MarketSecurityBand.eveDisplayStatus(nil) == nil)
     #expect(MarketSecurityBand.eveDisplayStatus(.infinity) == nil)
-  }
-
-  @Test
-  func summaryUsesVolumeWeightedActiveSellPrice() {
-    let summary = MarketBrowserSummary.calculate(
-      orders: [
-        order(id: 1, price: 10, volume: 1),
-        order(id: 2, price: 20, volume: 3),
-        order(id: 3, price: 8, volume: 20, side: .buy),
-        order(id: 4, price: 7, volume: 20, side: .buy),
-      ]
-    )
-
-    #expect(summary.bestSellPrice == 10)
-    #expect(summary.weightedAverageSellPrice == 17.5)
-    #expect(summary.activeSellVolume == 4)
-    #expect(summary.activeBuyVolume == 40)
-    #expect(summary.averageSellFivePercent == 10)
-    #expect(summary.averageBuyFivePercent == 8)
-    #expect(summary.averageMargin == 2)
-    #expect(summary.averageMarginPercent == 25)
-  }
-
-  @Test
-  func fivePercentAveragesUseBestVolumeAndExcludeExtremeOrders() {
-    let summary = MarketBrowserSummary.calculate(
-      orders: [
-        order(id: 1, price: 10, volume: 2),
-        order(id: 2, price: 20, volume: 98),
-        order(id: 3, price: 1_000, volume: 500),
-        order(id: 4, price: 8, volume: 2, side: .buy),
-        order(id: 5, price: 7, volume: 98, side: .buy),
-        order(id: 6, price: 0.1, volume: 500, side: .buy),
-      ]
-    )
-
-    #expect(summary.activeSellVolume == 100)
-    #expect(summary.activeBuyVolume == 100)
-    #expect(summary.averageSellFivePercent == 16)
-    #expect(abs((summary.averageBuyFivePercent ?? 0) - 7.4) < 0.000_001)
   }
 
   @Test
@@ -3233,37 +3119,6 @@ struct MarketBrowserTests {
     )
   }
 
-  private func order(
-    id: Int64,
-    locationID: Int64 = 60_000_001,
-    price: Double = 10,
-    volume: Int64 = 1,
-    side: MarketOrderSide = .sell,
-    securityStatus: Double? = 0.9
-  ) -> MarketBrowserOrder {
-    MarketBrowserOrder(
-      id: id,
-      typeID: 34,
-      regionID: 10_000_001,
-      regionName: "Alpha Region",
-      locationID: locationID,
-      locationName: nil,
-      systemID: 30_000_002,
-      systemName: nil,
-      securityStatus: securityStatus,
-      side: side,
-      price: price,
-      volumeRemaining: volume,
-      volumeTotal: volume,
-      minimumVolume: 1,
-      range: "station",
-      issuedAt: .now,
-      expiresAt: .now.addingTimeInterval(86_400),
-      esiLastModifiedAt: nil,
-      observedAt: .now
-    )
-  }
-
   private func marketOrder(
     id: Int64,
     typeID: Int64,
@@ -3438,33 +3293,10 @@ private actor MarketScanProgressRecorder {
 private actor MarketBrowserFixtureTransport: ESIHTTPTransporting {
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let url = request.url!
-    var body: String
-    var status: Int
+    let body: String
+    let status: Int
 
     switch (request.httpMethod ?? "GET", url.path) {
-    case ("GET", "/universe/regions"):
-      body = "[10000001,10000002]"
-      status = 200
-    case ("POST", "/universe/names"):
-      let ids = try JSONDecoder().decode([Int64].self, from: request.httpBody ?? Data())
-      if ids.contains(where: { $0 >= 1_000_000_000_000 }) {
-        body = "{\"error\":\"structure name unavailable\"}"
-        status = 404
-        break
-      }
-      let names: [String: String] = [
-        "10000001": "Alpha Region",
-        "10000002": "Unavailable Region",
-        "60000001": "Alpha Trade Station",
-        "30000002": "Alpha System",
-      ]
-      body = ids.compactMap { id -> String? in
-        guard let name = names[String(id)] else { return nil }
-        let category = id >= 60_000_000 ? "station" : "solar_system"
-        return "{\"category\":\"\(category)\",\"id\":\(id),\"name\":\"\(name)\"}"
-      }.joined(separator: ",")
-      body = "[\(body)]"
-      status = 200
     case ("GET", "/markets/10000001/orders"):
       body = """
         [
@@ -3511,21 +3343,6 @@ private actor MarketBrowserFixtureTransport: ESIHTTPTransporting {
             "volume_total": 10
           }
         ]
-        """
-      status = 200
-    case ("GET", "/markets/10000002/orders"):
-      body = "{\"error\":\"fixture unavailable\"}"
-      status = 500
-    case ("GET", "/universe/systems/30000002"):
-      body = """
-        {
-          "constellation_id": 20000001,
-          "name": "Alpha System",
-          "security_class": "A",
-          "security_status": 0.9,
-          "stations": [60000001],
-          "system_id": 30000002
-        }
         """
       status = 200
     default:
@@ -4096,5 +3913,87 @@ struct ManufacturingOpportunityComponentBuildTests {
     #expect(!json.contains("componentBuild"))
     let decoded = try JSONDecoder().decode(ManufacturingOpportunityMaterial.self, from: data)
     #expect(decoded.componentBuild == nil)
+  }
+}
+
+/// G10 (ANALYSE_2026-11-02): Home and Coalition run at once in the
+/// Main-Hub scan; a cancellation stops both.
+@Suite("Home and Coalition scans at once")
+struct SecondaryHubScanTests {
+  @Test
+  func homeAndCoalitionRunAtTheSameTime() async throws {
+    let probe = SecondaryHubScanProbe()
+
+    let durations = try await SecondaryHubScan.run { role in
+      await probe.begin(role)
+      // Each role waits until the other has started; run one after the
+      // other, the first role would wait in vain until the deadline.
+      try await probe.waitUntilBothStarted()
+      await probe.end(role)
+    }
+
+    #expect(Set(durations.keys) == [.home, .coalition])
+    #expect(await probe.maximumActive == 2)
+    #expect(await probe.finished == [.home, .coalition])
+  }
+
+  @Test
+  func aCancellationStopsBothRoles() async throws {
+    let probe = SecondaryHubScanProbe()
+    let scan = Task {
+      try await SecondaryHubScan.run { role in
+        await probe.begin(role)
+        do {
+          try await Task.sleep(for: .seconds(30))
+        } catch {
+          await probe.cancelled(role)
+          throw error
+        }
+        await probe.end(role)
+      }
+    }
+    try await probe.waitUntilBothStarted()
+    let started = ContinuousClock.now
+    scan.cancel()
+
+    await #expect(throws: CancellationError.self) { try await scan.value }
+    #expect(ContinuousClock.now - started < .seconds(5))
+    #expect(await probe.cancelledRoles == [.home, .coalition])
+    #expect(await probe.finished.isEmpty)
+  }
+}
+
+private actor SecondaryHubScanProbe {
+  private var active = 0
+  private var started: Set<OpportunityHubRole> = []
+  private(set) var maximumActive = 0
+  private(set) var finished: Set<OpportunityHubRole> = []
+  private(set) var cancelledRoles: Set<OpportunityHubRole> = []
+
+  func begin(_ role: OpportunityHubRole) {
+    started.insert(role)
+    active += 1
+    maximumActive = max(maximumActive, active)
+  }
+
+  func end(_ role: OpportunityHubRole) {
+    active -= 1
+    finished.insert(role)
+  }
+
+  func cancelled(_ role: OpportunityHubRole) {
+    active -= 1
+    cancelledRoles.insert(role)
+  }
+
+  func waitUntilBothStarted() async throws {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while started.count < 2 {
+      guard ContinuousClock.now < deadline else {
+        Issue.record("Home and Coalition did not run at the same time")
+        return
+      }
+      try await Task.sleep(for: .milliseconds(5))
+    }
   }
 }

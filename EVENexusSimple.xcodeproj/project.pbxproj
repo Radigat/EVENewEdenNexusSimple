@@ -18,7 +18,6 @@
 		01A0C0030000000000000016 /* MarketStockScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000006 /* MarketStockScheduleTests.swift */; };
 		01A0C0030000000000000014 /* MarketStockHistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000004 /* MarketStockHistoryStoreTests.swift */; };
 		01A0C0030000000000000013 /* MarketStockHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000003 /* MarketStockHistoryTests.swift */; };
-		019FBE470000000000000012 /* MarketBrowserService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000002 /* MarketBrowserService.swift */; };
 		019FBE470000000000000013 /* MarketBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000003 /* MarketBrowserView.swift */; };
 		019FBE470000000000000014 /* MarketBrowserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FBE470000000000000004 /* MarketBrowserTests.swift */; };
 		019FC10B0000000000000011 /* PublicContractModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FC10B0000000000000001 /* PublicContractModels.swift */; };
@@ -129,6 +128,7 @@
 		C5D1A0E24F7B4C1E9A3B6D05 /* PlannerProfitabilityPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D1A0E24F7B4C1E9A3B6D06 /* PlannerProfitabilityPanel.swift */; };
 		C5D1A0E24F7B4C1E9A3B6D03 /* PlannerSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D1A0E24F7B4C1E9A3B6D04 /* PlannerSteps.swift */; };
 		F6BA628AFE464B40BCF7EA6A /* PlannerFlowGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */; };
+		4CAB87215971ABF16D8550FC /* InterfaceStyleComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F30E89D926D560E087B099A /* InterfaceStyleComponents.swift */; };
 		7139788BC82D4237983AB835 /* PlannerFlowGuideLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */; };
 		FC46923AD7C44E2395783399 /* PlannerFlowGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */; };
 		B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */; };
@@ -260,7 +260,6 @@
 		01A0C0030000000000000006 /* MarketStockScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockScheduleTests.swift; sourceTree = "<group>"; };
 		01A0C0030000000000000004 /* MarketStockHistoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockHistoryStoreTests.swift; sourceTree = "<group>"; };
 		01A0C0030000000000000003 /* MarketStockHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockHistoryTests.swift; sourceTree = "<group>"; };
-		019FBE470000000000000002 /* MarketBrowserService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserService.swift; sourceTree = "<group>"; };
 		019FBE470000000000000003 /* MarketBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserView.swift; sourceTree = "<group>"; };
 		019FBE470000000000000004 /* MarketBrowserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketBrowserTests.swift; sourceTree = "<group>"; };
 		019FC10B0000000000000001 /* PublicContractModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicContractModels.swift; sourceTree = "<group>"; };
@@ -396,6 +395,7 @@
 		C5D1A0E24F7B4C1E9A3B6D06 /* PlannerProfitabilityPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerProfitabilityPanel.swift; sourceTree = "<group>"; };
 		C5D1A0E24F7B4C1E9A3B6D04 /* PlannerSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerSteps.swift; sourceTree = "<group>"; };
 		F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuideView.swift; sourceTree = "<group>"; };
+		8F30E89D926D560E087B099A /* InterfaceStyleComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterfaceStyleComponents.swift; sourceTree = "<group>"; };
 		311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuideLayout.swift; sourceTree = "<group>"; };
 		46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuide.swift; sourceTree = "<group>"; };
 		FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
@@ -542,7 +542,6 @@
 				01A0C0030000000000000001 /* MarketStockHistory.swift */,
 				01A0C0030000000000000002 /* MarketStockHistoryStore.swift */,
 				01A0C0030000000000000005 /* MarketStockSchedule.swift */,
-				019FBE470000000000000002 /* MarketBrowserService.swift */,
 				01A09B090000000000000002 /* LoyaltyStoreCatalog.swift */,
 				01A09B0C0000000000000002 /* LoyaltyStoreValuation.swift */,
 				34B7BB4788BEBA60D7A5800B /* MarketModels.swift */,
@@ -691,6 +690,7 @@
 				C5D1A0E24F7B4C1E9A3B6D06 /* PlannerProfitabilityPanel.swift */,
 				C5D1A0E24F7B4C1E9A3B6D04 /* PlannerSteps.swift */,
 				F88B1C62F6414A60BF2776DC /* PlannerFlowGuideView.swift */,
+				8F30E89D926D560E087B099A /* InterfaceStyleComponents.swift */,
 				311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */,
 				46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */,
 				653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */,
@@ -1022,6 +1022,7 @@
 				C5D1A0E24F7B4C1E9A3B6D05 /* PlannerProfitabilityPanel.swift in Sources */,
 				C5D1A0E24F7B4C1E9A3B6D03 /* PlannerSteps.swift in Sources */,
 				F6BA628AFE464B40BCF7EA6A /* PlannerFlowGuideView.swift in Sources */,
+				4CAB87215971ABF16D8550FC /* InterfaceStyleComponents.swift in Sources */,
 				7139788BC82D4237983AB835 /* PlannerFlowGuideLayout.swift in Sources */,
 				FC46923AD7C44E2395783399 /* PlannerFlowGuide.swift in Sources */,
 				FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */,
@@ -1096,7 +1097,6 @@
 				01A0C0030000000000000011 /* MarketStockHistory.swift in Sources */,
 				01A0C0030000000000000012 /* MarketStockHistoryStore.swift in Sources */,
 				01A0C0030000000000000015 /* MarketStockSchedule.swift in Sources */,
-				019FBE470000000000000012 /* MarketBrowserService.swift in Sources */,
 				01A09B090000000000000012 /* LoyaltyStoreCatalog.swift in Sources */,
 				01A09B0C0000000000000012 /* LoyaltyStoreValuation.swift in Sources */,
 				C1331DC10EACED041A875426 /* MarketModels.swift in Sources */,

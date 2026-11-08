@@ -104,7 +104,8 @@ struct ProfilesView: View {
   private var header: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Production Basis")
-        .font(.largeTitle.bold())
+        .appFont(.largeTitle.bold())
+        .nexusPageTitle()
       Text(
         "Systems, structures, service modules, rigs, taxes and automatic facility selection for every plan."
       )
@@ -123,12 +124,12 @@ struct ProfilesView: View {
             "Unsaved changes",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
           .foregroundStyle(DesignTokens.caution)
         }
         if let statusMessage {
           Text(statusMessage)
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -151,7 +152,7 @@ struct ProfilesView: View {
         Text(
           "Type at least three letters; ESI supplies the matching solar systems."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
@@ -194,7 +195,7 @@ struct ProfilesView: View {
         Text(
           "Every activity uses the same full system editor. Cost-index overrides are intended for unavailable locations such as wormhole space; otherwise the current ESI index is used."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -214,7 +215,7 @@ struct ProfilesView: View {
           Text(
             "Slots come from the characters enabled for industry below, limited by their skills. Without an enabled character, one slot per activity is used."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           LabeledContent("Don't split jobs shorter than") {
             HStack(spacing: DesignTokens.spacingSM) {
@@ -263,7 +264,7 @@ struct ProfilesView: View {
           Text(
             "Job splitting for the production job list and the estimated job time: manufacturing jobs up to the minimum stay whole; longer jobs are split so that no job exceeds the maximum and free slots are used, while every piece keeps at least the minimum length. A single run longer than the maximum stays one longer job. Reactions run in batches of at least the configured runs (default 100, about 5–6 days); a remainder makes batches longer instead of adding a short batch. 0 runs uses the day window for reactions too. Jobs bound to a selected BPO or BPC stay whole; materials are rounded per job."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           Toggle(
             "Always use default mode",
@@ -283,7 +284,7 @@ struct ProfilesView: View {
         Text(
           "Choose which characters may run industry jobs, which activities they may take and how many slots they may use. Empty limits use the skill maximum. Without an enabled character, one slot per activity is used."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         if characters.isEmpty {
           Text("Connect a character under Data & Settings to assign industry slots.")
@@ -321,11 +322,11 @@ struct ProfilesView: View {
             ? "Source: enabled characters."
             : "Source: manual slot counts (no character enabled)."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         ForEach(resolution.warnings) { warning in
           Label(warning.localizedUI, systemImage: "exclamationmark.triangle")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.caution)
         }
       }
@@ -369,7 +370,7 @@ struct ProfilesView: View {
         Text(
           "Top-level ME and TE still come from each Planner input row. Reactions never receive ME or TE."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
@@ -381,7 +382,7 @@ struct ProfilesView: View {
         Text(
           "For uncovered mineral demand, the Planner compares direct Main Hub mineral purchase and transport with compressed-ore purchase, transport to a configured Reprocessing facility, skill-dependent yield and the confirmed Reprocessing tax. It keeps the direct route unless the complete alternative is cheaper."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         let readyFacilities = runtime.productionBasis.structures.filter(
           \.isReprocessingCapable
@@ -393,7 +394,7 @@ struct ProfilesView: View {
         }
         LabeledContent("Ready facilities") {
           Text(readyFacilities.count.formatted())
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
         }
         if runtime.productionBasis.compressedOreRefining.isEnabled {
           ForEach(relevantFacilities) { facility in
@@ -415,7 +416,7 @@ struct ProfilesView: View {
                     ? "checkmark.circle.fill"
                     : "exclamationmark.triangle.fill"
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(
                   facility.isReprocessingCapable
                     ? DesignTokens.positive : DesignTokens.caution
@@ -427,7 +428,7 @@ struct ProfilesView: View {
                     reprocessingReadinessIssueText
                   ).joined(separator: " · ")
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.caution)
               }
             }
@@ -445,16 +446,16 @@ struct ProfilesView: View {
             "Configure a Reprocessing service, an ore-yield source and a confirmed Reprocessing tax in at least one structure below.",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
         Text(runtime.productionBasis.compressedOreRefining.ruleVersion)
-          .font(.caption2.monospaced())
+          .appFont(.caption2.monospaced())
           .foregroundStyle(DesignTokens.textSecondary)
         Text(
           "Refining setting changes are used by the next Planner calculation."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -513,7 +514,7 @@ struct ProfilesView: View {
       Text(
         "Manufacturing prioritizes material and then time. Blueprint activities prioritize effective job cost, then time and facility tax. Disable automatic mode to assign facilities manually."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       ScrollView(.horizontal) {
@@ -523,12 +524,12 @@ struct ProfilesView: View {
           verticalSpacing: DesignTokens.spacingSM
         ) {
           GridRow {
-            Text("Category").font(.caption.bold())
-            Text("Build in").font(.caption.bold())
-            Text("System").font(.caption.bold())
-            Text("ME bonus").font(.caption.bold())
-            Text("TE bonus").font(.caption.bold())
-            Text("State").font(.caption.bold())
+            Text("Category").appFont(.caption.bold())
+            Text("Build in").appFont(.caption.bold())
+            Text("System").appFont(.caption.bold())
+            Text("ME bonus").appFont(.caption.bold())
+            Text("TE bonus").appFont(.caption.bold())
+            Text("State").appFont(.caption.bold())
           }
           Divider().gridCellColumns(6)
           ForEach(ManufacturingCategory.allCases) { category in
@@ -571,23 +572,23 @@ struct ProfilesView: View {
         Text(
           reactionSelection.map { formatBonus($0.materialBonusPercent) } ?? "—"
         )
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
       }
       LabeledContent("Reaction time bonus") {
         Text(
           reactionSelection.map { formatBonus($0.timeBonusPercent) } ?? "—"
         )
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
       }
       Text(
         "Automatic selection considers reaction-capable refineries in the selected reaction system and prioritizes material, time, job-cost and facility-tax modifiers. Reactions have no ME/TE."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Divider()
       Text("Blueprint Activities")
-        .font(.headline)
+        .appFont(.headline)
       ScrollView(.horizontal) {
         Grid(
           alignment: .leading,
@@ -595,12 +596,12 @@ struct ProfilesView: View {
           verticalSpacing: DesignTokens.spacingSM
         ) {
           GridRow {
-            Text("Activity").font(.caption.bold())
-            Text("Facility").font(.caption.bold())
-            Text("System").font(.caption.bold())
-            Text("Job cost bonus").font(.caption.bold())
-            Text("Time bonus").font(.caption.bold())
-            Text("State").font(.caption.bold())
+            Text("Activity").appFont(.caption.bold())
+            Text("Facility").appFont(.caption.bold())
+            Text("System").appFont(.caption.bold())
+            Text("Job cost bonus").appFont(.caption.bold())
+            Text("Time bonus").appFont(.caption.bold())
+            Text("State").appFont(.caption.bold())
           }
           Divider().gridCellColumns(6)
           ForEach(
@@ -613,7 +614,7 @@ struct ProfilesView: View {
       Text(
         "Selections use current SDE rig modifiers and the configured activity system. They configure the production basis; concrete invention, copying and research job planning remains a separate blueprint-planner capability."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -656,16 +657,16 @@ struct ProfilesView: View {
       Text(
         selection.map { formatBonus($0.materialBonusPercent) } ?? "—"
       )
-      .font(.body.monospacedDigit())
+      .appFont(.body.monospacedDigit())
       Text(selection.map { formatBonus($0.timeBonusPercent) } ?? "—")
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
       Label(
         selection?.needsReview == true ? "Review" : "Ready",
         systemImage:
           selection?.needsReview == true
           ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(
         selection?.needsReview == true
           ? DesignTokens.caution : DesignTokens.positive
@@ -710,9 +711,9 @@ struct ProfilesView: View {
           .foregroundStyle(DesignTokens.caution)
       }
       Text(selection.map { formatBonus($0.jobCostBonusPercent) } ?? "—")
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
       Text(selection.map { formatBonus($0.timeBonusPercent) } ?? "—")
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
       Label(
         selection == nil
           ? "Missing" : (selection?.needsReview == true ? "Review" : "Ready"),
@@ -720,7 +721,7 @@ struct ProfilesView: View {
           selection == nil || selection?.needsReview == true
           ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(
         selection == nil || selection?.needsReview == true
           ? DesignTokens.caution : DesignTokens.positive
@@ -741,10 +742,10 @@ struct ProfilesView: View {
           )
         }
         Text("Additional item names — one per line")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         TextEditor(text: customBlacklistBinding)
-          .font(.body.monospaced())
+          .appFont(.body.monospaced())
           .frame(minHeight: DesignTokens.stockInputMinimumHeight)
           .scrollContentBackground(.hidden)
           .padding(DesignTokens.spacingSM)
@@ -768,7 +769,7 @@ struct ProfilesView: View {
           "The complete SDE Science skill list and character comparison are shown below. Exact invention planning remains outside version 1.",
           systemImage: "info.circle"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.information)
       }
     }
@@ -797,7 +798,7 @@ struct ProfilesView: View {
       }
       if let characterSkillMessage {
         Text(characterSkillMessage)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
 
@@ -807,7 +808,7 @@ struct ProfilesView: View {
       ) {
         let count = runtime.scienceSkillDefinitions?.value?.count ?? 0
         Text("Science skill matrix (\(count) skills)")
-          .font(.headline)
+          .appFont(.headline)
       }
       .accessibilityLabel("Science skill matrix")
       .accessibilityValue(showScienceSkillMatrix ? "Expanded" : "Collapsed")
@@ -846,7 +847,7 @@ struct ProfilesView: View {
           "Characters without a current skill snapshot remain visible as Unknown.",
           systemImage: "person.crop.circle.badge.questionmark"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
       ScrollView(.horizontal) {
@@ -856,11 +857,11 @@ struct ProfilesView: View {
           verticalSpacing: DesignTokens.spacingXS
         ) {
           GridRow {
-            Text("Science skill").font(.caption.bold())
+            Text("Science skill").appFont(.caption.bold())
               .frame(minWidth: 240, alignment: .leading)
             ForEach(matrix.characters) { character in
               Text(character.characterName)
-                .font(.caption.bold())
+                .appFont(.caption.bold())
                 .frame(minWidth: 110, alignment: .center)
             }
           }
@@ -886,7 +887,7 @@ struct ProfilesView: View {
                   $0.characterID == character.characterID
                 }?.level
                 Text(level.map { "Level \($0)" } ?? "Unknown")
-                  .font(.body.monospacedDigit())
+                  .appFont(.body.monospacedDigit())
                   .foregroundStyle(
                     level == nil
                       ? DesignTokens.caution
@@ -908,7 +909,7 @@ struct ProfilesView: View {
             Text(
               "\(character.skillState.rawValue.uppercased()) · \(character.trainedRelevantSkills)/\(character.knownRelevantSkills) trained · Ø \(average.formatted(.number.locale(AppLocalization.currentLanguage.locale).precision(.fractionLength(2)))) · \(character.levelFiveRelevantSkills) at V"
             )
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           } else {
             Text("Skill state unavailable")
               .foregroundStyle(DesignTokens.caution)
@@ -920,7 +921,7 @@ struct ProfilesView: View {
       Text(
         "The highlighted skills form the broad readiness comparison. Exact invention chance requires the selected blueprint, its base probability, the three required skills and any decryptor."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -1274,7 +1275,8 @@ struct LogisticsSettingsView: View {
   private var header: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Logistics")
-        .font(.largeTitle.bold())
+        .appFont(.largeTitle.bold())
+        .nexusPageTitle()
       Text(
         "Configure courier contracts, Jump Freighter transport and fixed capital routes here under Data & Settings."
       )
@@ -1293,12 +1295,12 @@ struct LogisticsSettingsView: View {
             "Unsaved changes",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
           .foregroundStyle(DesignTokens.caution)
         }
         if let statusMessage {
           Text(statusMessage)
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -1336,7 +1338,7 @@ struct LogisticsSettingsView: View {
         Text(
           "Purchased items and make-or-buy input materials are transported from the Main Hub to the Home Hub. Identical locations create no route and no cost."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         LabeledContent("Standard rate") {
           HStack(spacing: DesignTokens.spacingSM) {
@@ -1356,7 +1358,7 @@ struct LogisticsSettingsView: View {
             "Enter the provider's current m³ calculator rate. The screenshot does not state this value, so the app never guesses it.",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
         LabeledContent("Collateral charge") {
@@ -1365,7 +1367,7 @@ struct LogisticsSettingsView: View {
               .percent.precision(.fractionLength(1))
             )
           )
-          .font(.body.monospacedDigit())
+          .appFont(.body.monospacedDigit())
         }
         LabeledContent("Contract volume limit") {
           HStack(spacing: DesignTokens.spacingSM) {
@@ -1382,21 +1384,21 @@ struct LogisticsSettingsView: View {
         }
         LabeledContent("Rounding") {
           Text("Up to the next 1,000,000 ISK")
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
         }
         Text(
           "Each selected route is split automatically into contracts that fit the configured volume limit. Every contract is charged and rounded separately by whichever is greater: volume × rate or 0.5% of accurate collateral. The reference default is 350,000 m³; increase it only when one indivisible item has a provider-confirmed exception. Containers are not supported."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         Text(logistics.effectiveRuleVersion)
-          .font(.caption2.monospaced())
+          .appFont(.caption2.monospaced())
           .foregroundStyle(DesignTokens.textSecondary)
       } else {
         Text(
           "Enable logistics after entering the current provider rate. Disabled logistics contributes 0 ISK and is identified separately from an unavailable calculation."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -1411,7 +1413,7 @@ struct LogisticsSettingsView: View {
       Text(
         "Normal products travel as cargo in the selected Jump Freighter. Every produced jump-capable capital, including a produced Jump Freighter or Capital Industrial Ship, is removed from that cargo and receives its own DOTLAN self-jump route. Fuel is valued with the arithmetic mean of all four current racial-isotope sell prices at the Main Hub. Missing routes, skills or prices remain unavailable and never become 0 ISK."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       if logistics.jumpFreighter.isEnabled {
         locationContent(
@@ -1465,7 +1467,7 @@ struct LogisticsSettingsView: View {
           Text(
             "Automatic selection uses the best fresh synchronized navigation profile separately for Jump Freighter cargo and capital self-jumps. A produced Jump Freighter flying itself uses Jump Drive Calibration, Jump Fuel Conservation and Jump Freighters; other capitals use the two jump-drive skills. The Planner does not yet confirm that the selected character may command every produced capital hull; verify that in EVE."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
         LabeledContent("Usable cargo per flight") {
@@ -1484,14 +1486,14 @@ struct LogisticsSettingsView: View {
         Text(
           "The default 350,000 m³ is an explicit planning assumption for normal cargo only. Enter the usable capacity of the actual fit; the Planner splits those products into one-way flights. Produced jump-capable capitals never consume this cargo capacity and are charged one self-jump per completed hull. Return flights are not included."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         if isPreparingRouteSearch {
           ProgressView("Preparing solar-system search…")
             .controlSize(.small)
         } else if let routeSearchMessage {
           Label(routeSearchMessage, systemImage: "exclamationmark.triangle")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.caution)
         }
         JumpRouteProfileConfigurationEditor(
@@ -1502,7 +1504,7 @@ struct LogisticsSettingsView: View {
           destination: URL(string: "https://evemaps.dotlan.net/jump")!
         )
         Text(JumpFreighterLogisticsConfiguration.ruleVersion)
-          .font(.caption2.monospaced())
+          .appFont(.caption2.monospaced())
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -1640,7 +1642,7 @@ private struct HubTransportLegEditor: View {
       Text(
         "Choose per directed leg whether the Profile courier, your own Jump Freighter or a Jump Freighter service carries the goods. Trade, Planner, Hub opportunities and Reactions use this choice; outside Trade the switch above still turns all courier and service costs on or off. A self-jump to or from the Main Hub is calculated only in Trade. Missing prices, routes or pilots keep a leg unavailable and never become 0 ISK."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       Picker("Main → Coalition", selection: $configuration.mainToCoalitionRouting) {
         routingOptions
@@ -1668,16 +1670,16 @@ private struct HubTransportLegEditor: View {
         Text("Own Jump Freighter").tag(HubTransportMethod.selfJump)
         Text("Jump Freighter service").tag(HubTransportMethod.jumpFreighterService)
       }
-      .font(.headline)
+      .appFont(.headline)
       if !isUsed(leg) {
         Text("This leg is not used by the current Main ↔ Coalition routing.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       switch setting.wrappedValue.method {
       case .profileCourier:
         Text("Uses the Profile courier rate above in this direction.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       case .selfJump:
         selfJumpContent(leg, setting: setting)
@@ -1713,7 +1715,7 @@ private struct HubTransportLegEditor: View {
       Text(
         "A Jump Freighter cannot jump into the high-security Main Hub. The profile's system nearest the Main Hub (last waypoint towards Main, first waypoint from Main) is the jump endpoint; the rest is flown by gate without fuel cost."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(
         setting.wrappedValue.jumpRouteProfileID == nil
           ? DesignTokens.caution : DesignTokens.textSecondary
@@ -1723,13 +1725,13 @@ private struct HubTransportLegEditor: View {
       Text(
         "Jump logistics above is switched off, so hull, pilot, cargo and route profiles cannot be edited there. Its last saved values are still used for this leg."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.caution)
     }
     Text(
       "Hull, pilot and usable cargo come from the jump logistics above; fuel is the average Main-Hub sell price of the four racial isotopes."
     )
-    .font(.caption)
+    .appFont(.caption)
     .foregroundStyle(DesignTokens.textSecondary)
   }
 
@@ -1813,7 +1815,7 @@ private struct JumpFreighterServiceRateFields: View {
         ? "Each contract costs volume × rate plus collateral × percentage, without rounding."
         : "Enter volume price and collateral percentage of the service; until then this leg stays unavailable."
     )
-    .font(.caption)
+    .appFont(.caption)
     .foregroundStyle(
       setting.isComplete
         ? DesignTokens.textSecondary : DesignTokens.caution
@@ -1845,12 +1847,12 @@ private struct MarketTransportEditor: View {
       Text(
         "Set how goods bought at a comparison market reach the Home Hub. The Planner uses this route for its purchases. Without a route the market is left out for each material as long as another location can supply it, and a warning says so."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       .fixedSize(horizontal: false, vertical: true)
       if markets.isEmpty {
         Text("No comparison markets are selected in the market settings.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       ForEach(markets) { market in
@@ -1865,7 +1867,7 @@ private struct MarketTransportEditor: View {
       HStack(spacing: DesignTokens.spacingSM) {
         EVEEntityText(value: market.location.name, font: .headline)
         Text(verbatim: "→ Home")
-          .font(.headline)
+          .appFont(.headline)
         Spacer()
         Picker(
           AppLocalization.format("Transport route from %@", market.location.name),
@@ -1882,13 +1884,13 @@ private struct MarketTransportEditor: View {
       switch route.wrappedValue.method {
       case .profileCourier:
         Text("Uses the Profile courier rate above in this direction.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       case .jumpFreighterService:
         JumpFreighterServiceRateFields(setting: route.service)
       case .selfJump, nil:
         Text("No route set; this market cannot be priced for purchases.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
       }
     }
@@ -1910,11 +1912,11 @@ private struct JumpRouteProfileConfigurationEditor: View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
       Divider()
       Text("Fixed jump-route profiles")
-        .font(.headline)
+        .appFont(.headline)
       Text(
         "A profile fixes the ordered solar systems between the configured Home Hub and Coalition Hub. It may contain only intermediate systems or the complete route including both endpoints; matching endpoints are normalized. DOTLAN is then used only to verify every consecutive direct jump and its fuel, not to choose another path. You may assign the same profile to several ship classes deliberately."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       ForEach(JumpRouteClass.allCases) { routeClass in
@@ -1933,7 +1935,7 @@ private struct JumpRouteProfileConfigurationEditor: View {
         Text(
           "No fixed route profile is configured. Every class currently uses automatic DOTLAN routing."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
@@ -1998,7 +2000,7 @@ private struct JumpRouteProfileConfigurationEditor: View {
         Text(
           "This is a fixed direct route with no intermediate waypoint. It is valid only when DOTLAN verifies the Home-to-Coalition leg as one direct jump for the selected hull and pilot."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
@@ -2020,7 +2022,7 @@ private struct JumpRouteProfileConfigurationEditor: View {
           ? "Profile systems are resolved. Each leg is validated for the actual ship and pilot during calculation."
           : "The profile is incomplete. A class assigned to it remains unavailable until every waypoint is selected from ESI and the profile has a name."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(
         profile.wrappedValue.isResolved
           ? DesignTokens.positive : DesignTokens.caution
@@ -2108,7 +2110,7 @@ private struct EVESecurityStatusText: View {
       .foregroundStyle(eveColor)
       .fontWeight(.semibold)
     }
-    .font(.body.monospacedDigit())
+    .appFont(.body.monospacedDigit())
     .accessibilityElement(children: .combine)
     .accessibilityLabel(
       securityBand.displayName.localizedUI
@@ -2184,7 +2186,7 @@ private struct ActivitySystemRow: View {
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       HStack {
-        Text(title).font(.headline)
+        Text(title).appFont(.headline)
         Spacer()
         if let onDelete {
           Button(role: .destructive, action: onDelete) {
@@ -2227,7 +2229,7 @@ private struct ActivitySystemRow: View {
             "\(regionName) · "
               + String(configuration.regionID ?? 0)
           )
-          .font(.body.monospacedDigit())
+          .appFont(.body.monospacedDigit())
         }
       }
       if let securityStatus = configuration.securityStatus {
@@ -2314,7 +2316,7 @@ private struct SolarSystemPicker: View {
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
-      .font(.caption)
+      .appFont(.caption)
     }
     .onDisappear {
       searchTask?.cancel()
@@ -2478,14 +2480,14 @@ private struct StructureEditor: View {
       HStack(alignment: .bottom) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           Text("Internal structure / station name")
-            .font(.caption.bold())
+            .appFont(.caption.bold())
           TextField(
             "e.g. Corp Azbel – Capital",
             text: $structure.name
           )
-          .font(.headline)
+          .appFont(.headline)
           Text("Your own label; it does not have to match the EVE name.")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
         Spacer()
@@ -2526,14 +2528,14 @@ private struct StructureEditor: View {
           VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
             EVEEntityText(value: eveName)
             Text(String(structureID))
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
         Text(
           "The linked ESI location belongs to the selected physical solar system. Its EVE name and location ID remain stored with the profile."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
@@ -2542,7 +2544,7 @@ private struct StructureEditor: View {
           "This entry defines a structure type and solar system, but it is not yet linked to an exact EVE station or Player Structure. Link the matching ESI result above so Warehouse can match asset locations.",
           systemImage: "link.badge.plus"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
 
@@ -2588,11 +2590,11 @@ private struct StructureEditor: View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           LabeledContent("Structure ME bonus") {
             Text(formatPercent(structure.structureMaterialBonusPercent))
-              .font(.body.monospacedDigit())
+              .appFont(.body.monospacedDigit())
           }
           LabeledContent("Structure TE bonus") {
             Text(formatPercent(structure.structureTimeBonusPercent))
-              .font(.body.monospacedDigit())
+              .appFont(.body.monospacedDigit())
           }
           LabeledContent("Facility tax") {
             TextField(
@@ -2614,7 +2616,7 @@ private struct StructureEditor: View {
                 "Leave the facility tax empty to use the structure standard of 1% for Manufacturing, Reactions and Science."
               )
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           }
           if structure.hasReprocessingService {
@@ -2626,7 +2628,7 @@ private struct StructureEditor: View {
                     .defaultReprocessingEfficiencyBonusPercent
                 )
               )
-              .font(.body.monospacedDigit())
+              .appFont(.body.monospacedDigit())
             }
             LabeledContent("Reprocessing tax") {
               TextField(
@@ -2649,7 +2651,7 @@ private struct StructureEditor: View {
                   : "Enter the tax shown by EVE. Leave it empty to use the structure standard of 1%; enter 0% only for a confirmed fee-free facility."
               )
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           }
           LabeledContent("Job cost multiplier") {
@@ -2660,12 +2662,12 @@ private struct StructureEditor: View {
                   .precision(.fractionLength(2...4))
               )
             )
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           }
           Text(
             "Source: \(structure.source.displayName.localizedUI)"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -2683,12 +2685,12 @@ private struct StructureEditor: View {
       if structure.hasReprocessingService {
         Divider()
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-          Text("Planned refiner").font(.headline)
+          Text("Planned refiner").appFont(.headline)
           Label(
             "The selected implant is only a planning assumption for this facility. It is not read from the character's current clone and does not need to be installed while planning.",
             systemImage: "brain.head.profile"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           Button {
             structure.reprocessingCharacterID = nil
@@ -2705,7 +2707,7 @@ private struct StructureEditor: View {
             Text(
               "In automatic mode, every character is compared using the planned implant shown next to that character."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
             .padding(.leading, 28)
           }
@@ -2739,7 +2741,7 @@ private struct StructureEditor: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                   Text("Planned implant")
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(DesignTokens.textSecondary)
                   Picker(
                     "Planned implant",
@@ -2761,7 +2763,7 @@ private struct StructureEditor: View {
                   AppLocalization.text(capability.skills.state.rawValue)
                     .capitalized
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(
                   capability.skills.state == .fresh
                     ? DesignTokens.positive : DesignTokens.caution
@@ -2786,7 +2788,7 @@ private struct StructureEditor: View {
                       ) + "%"
                     )
                   )
-                  .font(.caption.monospacedDigit())
+                  .appFont(.caption.monospacedDigit())
                   .foregroundStyle(DesignTokens.positive)
                 }
                 .padding(.leading, 28)
@@ -2798,7 +2800,7 @@ private struct StructureEditor: View {
               "No connected character skill snapshots are available.",
               systemImage: "person.crop.circle.badge.questionmark"
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.caution)
           }
           let normalYieldBasis = structure.reprocessingYieldBasis(
@@ -2835,7 +2837,7 @@ private struct StructureEditor: View {
                 .percent.precision(.fractionLength(0...2))
               ) ?? "Unavailable".localizedUI
             )
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           }
           LabeledContent("Structure Reprocessing bonus") {
             Text(
@@ -2843,7 +2845,7 @@ private struct StructureEditor: View {
                 .percent.scale(1).precision(.fractionLength(0...2))
               ) ?? "Unavailable".localizedUI
             )
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           }
           LabeledContent("Facility base yield before character") {
             Text(
@@ -2851,7 +2853,7 @@ private struct StructureEditor: View {
                 .percent.precision(.fractionLength(0...2))
               ) ?? "Unavailable".localizedUI
             )
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           }
           if normalYieldBasis?.sourceKind == .serviceModule,
             structure.kind == .tatara
@@ -2879,20 +2881,20 @@ private struct StructureEditor: View {
             } icon: {
               Image(systemName: "exclamationmark.triangle.fill")
             }
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.caution)
           }
           Text(
             "Automatic mode uses the connected character with the highest complete result from Reprocessing, Reprocessing Efficiency, ore-specific Processing and the selected implant. A fixed character remains fixed even when another character would yield more."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
 
       Divider()
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-        Text("Use structure for").font(.headline)
+        Text("Use structure for").appFont(.headline)
         Picker(
           "Activity assignment",
           selection: activityAssignmentModeBinding
@@ -2931,13 +2933,13 @@ private struct StructureEditor: View {
           Text(
             "The installed service modules below determine the enabled activities automatically. Switch to Manual selection when the module evidence is unavailable or you need an explicit override."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         } else {
           Text(
             "Manual selection is stored explicitly and may enable several uses for the same physical structure. Service modules remain visible as supporting evidence."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
 
@@ -2946,7 +2948,7 @@ private struct StructureEditor: View {
             "Select at least one activity for this structure.",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         } else {
           LabeledContent("Enabled activities") {
@@ -2972,21 +2974,21 @@ private struct StructureEditor: View {
               .joined(separator: ", "),
             systemImage: "location.slash"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
       }
 
       Divider()
       HStack {
-        Text("Service Modules").font(.headline)
+        Text("Service Modules").appFont(.headline)
         Spacer()
         if structure.kind != .npcStation {
           Text(
             "\(structure.serviceModules?.count ?? 0) "
               + "installed".localizedUI
           )
-          .font(.caption.monospacedDigit())
+          .appFont(.caption.monospacedDigit())
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -2995,7 +2997,7 @@ private struct StructureEditor: View {
           "NPC-station services are not published by the structure endpoint. The station remains usable with a Review state.",
           systemImage: "building.columns"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       } else {
         if structure.serviceModules == nil {
@@ -3003,7 +3005,7 @@ private struct StructureEditor: View {
             "This is a migrated structure. Review and confirm its installed service modules before relying on automatic assignments.",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
           Button("Review Installed Modules") {
             structure.serviceModules = []
@@ -3038,10 +3040,10 @@ private struct StructureEditor: View {
 
       Divider()
       HStack {
-        Text("Rigs").font(.headline)
+        Text("Rigs").appFont(.headline)
         Spacer()
         Text("\(structure.rigs.count) / \(maximumRigSlots)")
-          .font(.caption.monospacedDigit())
+          .appFont(.caption.monospacedDigit())
           .foregroundStyle(DesignTokens.textSecondary)
       }
       ForEach($structure.rigs) { $rig in
@@ -3072,11 +3074,11 @@ private struct StructureEditor: View {
           "The active SDE rig reference is unavailable.",
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       } else if maximumRigSlots == 0 {
         Text("NPC stations do not accept structure rigs.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -3289,7 +3291,7 @@ private struct ServiceModuleEditor: View {
           "Select a current SDE service module.",
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       } else {
         Text(
@@ -3297,11 +3299,11 @@ private struct ServiceModuleEditor: View {
             + serviceModule.activities.map { $0.displayName.localizedUI }
             .joined(separator: ", ")
         )
-        .font(.caption.weight(.semibold))
+        .appFont(.caption.weight(.semibold))
         ForEach(serviceModule.activities) { activity in
           LabeledContent(activity.displayName.localizedUI) {
             Text(bonusSummary(for: activity))
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
           }
         }
       }
@@ -3444,7 +3446,7 @@ private struct RigEditor: View {
                 .percent.precision(.fractionLength(0...2))
               )
             )
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           }
         }
         if let moonYield = rig.reprocessingYieldMultiplier(
@@ -3457,7 +3459,7 @@ private struct RigEditor: View {
                 .percent.precision(.fractionLength(0...2))
               )
             )
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           }
         }
         if let iceYield = rig.reprocessingYieldMultiplier(
@@ -3470,7 +3472,7 @@ private struct RigEditor: View {
                 .percent.precision(.fractionLength(0...2))
               )
             )
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           }
         }
         if rig.normalOreYieldMultiplier == nil,
@@ -3480,29 +3482,29 @@ private struct RigEditor: View {
           if rig.scienceActivities?.isEmpty == false {
             LabeledContent("Job cost") {
               Text(formatPercent(rig.jobCostBonus(in: securityBand)))
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
             }
             LabeledContent("Time") {
               Text(formatPercent(rig.timeBonus(in: securityBand)))
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
             }
           } else if rig.isReactionRig {
             LabeledContent("Material") {
               Text(formatPercent(rig.materialBonus(in: securityBand)))
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
             }
             LabeledContent("Time") {
               Text(formatPercent(rig.timeBonus(in: securityBand)))
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
             }
           } else {
             LabeledContent("ME") {
               Text(formatPercent(rig.materialBonus(in: securityBand)))
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
             }
             LabeledContent("TE") {
               Text(formatPercent(rig.timeBonus(in: securityBand)))
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
             }
           }
         }
@@ -3511,13 +3513,13 @@ private struct RigEditor: View {
             "Select a current SDE rig",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         } else {
           Text(
             "SDE · \(rig.compatibleStructureSize?.displayName.localizedUI ?? "—")"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -3588,7 +3590,8 @@ struct MarketSettingsView: View {
   private var header: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Market Settings")
-        .font(.largeTitle.bold())
+        .appFont(.largeTitle.bold())
+        .nexusPageTitle()
       Text(
         "One shared market configuration for Planner, Moon and mineral purchase analysis, reactions and every other price comparison. The selected Main, Home and Coalition Hubs plus every selected comparison market are loaded."
       )
@@ -3599,12 +3602,12 @@ struct MarketSettingsView: View {
           .keyboardShortcut("s", modifiers: .command)
         if profileNavigationGuard.hasUnsavedChanges {
           Label("Unsaved changes", systemImage: "exclamationmark.triangle.fill")
-            .font(.caption.weight(.semibold))
+            .appFont(.caption.weight(.semibold))
             .foregroundStyle(DesignTokens.caution)
         }
         if let statusMessage {
           Text(statusMessage)
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -3621,7 +3624,7 @@ struct MarketSettingsView: View {
       Text(
         "The Main Hub is the default price and purchase market. Jita, Amarr, Rens and Hek are built in; every ESI-resolved NPC station you add also becomes selectable."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Picker("Home Hub", selection: homeBinding) {
@@ -3640,7 +3643,7 @@ struct MarketSettingsView: View {
       Text(
         "A Coalition Hub must be an authenticated ESI Player Structure. Search visibility confirms that ESI can resolve it; market access is still reported from the actual structure-market request."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       if runtime.productionBasis.mainAndHomeAreIdentical {
@@ -3653,11 +3656,11 @@ struct MarketSettingsView: View {
 
       Divider()
       Text("Additional comparison markets")
-        .font(.headline)
+        .appFont(.headline)
       Text(
         "Select every additional market that should be loaded alongside the assigned hub roles. Markets already assigned as Main, Home or Coalition Hub are included automatically."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       ForEach(comparisonMarketCandidates) { market in
         Toggle(isOn: comparisonBinding(market.id)) {
@@ -3669,7 +3672,7 @@ struct MarketSettingsView: View {
             Spacer()
             if hasAssignedHubRole(market.id) {
               Text("Included through hub role")
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
             }
           }
@@ -3685,7 +3688,7 @@ struct MarketSettingsView: View {
   private var addMarketConfiguration: some View {
     Panel(title: "Add Markets") {
       Text("Built-in Main Hub stations")
-        .font(.headline)
+        .appFont(.headline)
       HStack {
         ForEach(MarketTradeHub.defaultMainHubChoices) { hub in
           Button {
@@ -3731,7 +3734,7 @@ struct MarketSettingsView: View {
       Text(
         "Define optional profitability thresholds for sales. They are stored with this Production Basis so Planner comparisons and future market filters can use the same values."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       LabeledContent("Minimum sales margin") {
@@ -3760,13 +3763,13 @@ struct MarketSettingsView: View {
           "The target sales margin must be at least as high as the minimum sales margin.",
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
       Text(
         "Sales margin means profit divided by net sale revenue after Sales Tax and Broker Fee. Leave a value empty when no threshold should be applied; an empty value is not treated as 0%."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -3779,7 +3782,7 @@ struct MarketSettingsView: View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           EVEEntityText(value: configuration.location.name)
           Text(locationKindText(configuration.location.kind))
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
         Spacer()
@@ -3788,7 +3791,7 @@ struct MarketSettingsView: View {
           id: \.self
         ) { role in
           Text(role.rawValue.uppercased())
-            .font(.caption2.bold())
+            .appFont(.caption2.bold())
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(roleColor(role).opacity(0.18))
@@ -3814,7 +3817,7 @@ struct MarketSettingsView: View {
           "This migrated location must be resolved and replaced here.",
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
         TradingLocationESIPicker(
           authorizations: authorizationSnapshots,
@@ -3844,7 +3847,7 @@ struct MarketSettingsView: View {
       Text(
         "Turn this on only when no other station or structure in this region has a market. The Trade area then shows the regional ESI market history as this hub's traded volume, marked “(region)”. ESI offers no market history per station or structure."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Picker("Trader", selection: traderBinding(configuration.id)) {
@@ -3875,7 +3878,7 @@ struct MarketSettingsView: View {
       if let updatedAt = configuration.marketTaxes.manualBrokerFeeUpdatedAt {
         LabeledContent("Manual value updated") {
           Text(updatedAt.formatted())
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
         }
       }
       Divider()
@@ -3894,7 +3897,7 @@ struct MarketSettingsView: View {
       Text(
         "Enter the combined non-refundable fee rate shown by EVE for a public Item Exchange sale. CCP documents the contract workflow, but does not publish the personal creation-fee formula, and ESI provides no fee preview for a hypothetical contract. The Planner deducts this value only from Contract Sale; a refundable deposit is not counted as cost. Leave it empty when the current fee is not known."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       if let evidence = configuration.observedPublicContractFee,
         let rate = evidence.effectiveRate,
@@ -3907,7 +3910,7 @@ struct MarketSettingsView: View {
         Text(
           "Observed from one completed public Item Exchange at this exact location: \(iskText(evidence.contractPrice)) contract price, \(iskText(evidence.brokerFee)) broker fee plus \(iskText(evidence.salesTax)) contract sales tax, \(iskText(fee)) total. Observed \(evidence.observedAt.formatted()). This is historical evidence, not an ESI quote for a new contract."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         Button("Use observed rate for planning") {
           _ = runtime.productionBasis.confirmObservedPublicContractFee(
@@ -3933,7 +3936,7 @@ struct MarketSettingsView: View {
           || configuration.traderCharacterID == nil
       )
       if let message = feeMessages[configuration.id] {
-        Text(message).font(.caption).foregroundStyle(DesignTokens.textSecondary)
+        Text(message).appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
       }
       Divider()
     }
@@ -4154,20 +4157,20 @@ struct MarketSettingsView: View {
       Text(
         "The calculated NPC-station broker fee is active. A saved manual fallback is not used while this value is available."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     } else if taxes.isManualBrokerFeeFallbackActive {
       Label(
         "Manual fallback is active and is included in all calculations for this market.",
         systemImage: "pencil.circle.fill"
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.caution)
     } else {
       Text(
         "Enter the broker fee shown in EVE when ESI cannot provide or derive it. Unknown remains unavailable."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.caution)
     }
   }
@@ -4429,9 +4432,9 @@ private struct TradingLocationESIPicker: View {
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text(AppLocalization.text(title))
-        .font(.headline)
+        .appFont(.headline)
       Text(AppLocalization.text(explanation))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
 
       TextField(
@@ -4484,7 +4487,7 @@ private struct TradingLocationESIPicker: View {
           ),
           systemImage: "person.badge.key"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       } else if !canSearchStructures {
         Label(
@@ -4493,7 +4496,7 @@ private struct TradingLocationESIPicker: View {
           ),
           systemImage: "person.badge.key.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
 
@@ -4555,7 +4558,7 @@ private struct TradingLocationESIPicker: View {
       }
       if let message {
         Text(message)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -4658,7 +4661,7 @@ private struct SystemFacilityPicker: View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       HStack {
         Text("Stations & Structures in Selected System")
-          .font(.headline)
+          .appFont(.headline)
         Spacer()
         Button {
           Task { await load(force: true) }
@@ -4671,7 +4674,7 @@ private struct SystemFacilityPicker: View {
       Text(
         "NPC stations are loaded directly from the selected solar system. Player Structures are searched with the already connected authorizations and then strictly filtered to this system; ESI does not provide a complete system-wide list of every docking permission."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       if solarSystemID <= 0 {
@@ -4712,7 +4715,7 @@ private struct SystemFacilityPicker: View {
       }
       if let message {
         Text(message)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -4837,9 +4840,9 @@ private struct StructureCrewSection: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      Text(title).font(.headline)
+      Text(title).appFont(.headline)
       Text(explanation)
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
       ForEach(sortedCapabilities) { capability in
@@ -4850,7 +4853,7 @@ private struct StructureCrewSection: View {
           "No connected character skill snapshots are available.",
           systemImage: "person.crop.circle.badge.questionmark"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
     }
@@ -4879,7 +4882,7 @@ private struct StructureCrewSection: View {
           }
           if hasNoSlots(character.id) {
             Text("Not enabled for industry, so without slots in the schedule.")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.caution)
           }
         }
@@ -4904,7 +4907,7 @@ private struct StructureCrewSection: View {
       .accessibilityIdentifier("settings.crew-implant.\(pool.rawValue).\(characterID).\(slot)")
       if let implant = crew.timeImplant(inSlot: slot, for: characterID) {
         EVEItemText(value: implant.name, typeID: implant.typeID)
-          .font(.caption)
+          .appFont(.caption)
       }
     }
   }

@@ -48,6 +48,8 @@ struct MarketStockItemDetailView: View {
   @Environment(\.locale) private var locale
   @State private var histories: [MarketStockItemHubHistory]?
   @State private var metric: MarketStockChartMetric = .sellUnits
+  /// Sample the pointer snapped to; drives rule, highlights and tooltip.
+  @State private var hoverAnchor: MarketStockChartSample?
   @State private var tableRole: OpportunityHubRole?
   @State private var sort = AppTableSortDescriptor(
     column: MarketStockDayRow.Column.day,
@@ -90,7 +92,7 @@ struct MarketStockItemDetailView: View {
     HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingMD) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         Text("Market stock history")
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
           .foregroundStyle(DesignTokens.textSecondary)
         EVEItemText(
           value: request.name,
@@ -131,7 +133,13 @@ struct MarketStockItemDetailView: View {
     Text(
       "Last 7 days: every stored point. Before: one daily value per UTC day (its last point). A day without a point leaves a gap; it is never drawn as 0."
     )
-    .font(.caption)
+    .appFont(.caption)
+    .foregroundStyle(DesignTokens.textSecondary)
+
+    Text(
+      "The value axis covers only the plotted range and need not start at 0. Hover over a point: every hub shows its nearest point within 3 hours (daily values: same UTC day)."
+    )
+    .appFont(.caption)
     .foregroundStyle(DesignTokens.textSecondary)
 
     Divider()
@@ -205,12 +213,37 @@ struct MarketStockItemDetailView: View {
               .symbolSize(sample.isDailyValue ? 30 : 12)
             }
           }
+          if let hoverAnchor {
+            RuleMark(x: .value("Time", hoverAnchor.date))
+              .foregroundStyle(DesignTokens.textSecondary.opacity(0.7))
+              .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            ForEach(series) { hub in
+              if let sample = MarketStockChartHover.sample(
+                for: hoverAnchor.date, in: hub.samples)
+              {
+                PointMark(
+                  x: .value("Time", sample.date),
+                  y: .value(metricTitle, sample.value)
+                )
+                .foregroundStyle(by: .value("Hub", hub.name))
+                .symbolSize(90)
+              }
+            }
+          }
         }
         .chartForegroundStyleScale(
           domain: series.map(\.name),
           range: series.map { color(for: $0.id) }
         )
         .chartXScale(domain: start...now)
+        .chartYScale(
+          domain: MarketStockChartScale.valueDomain(
+            series.flatMap { $0.samples.map(\.value) }) ?? 0...1
+        )
+        .chartOverlay { proxy in
+          hoverOverlay(proxy: proxy, series: series)
+        }
+        .onChange(of: metric) { hoverAnchor = nil }
         .chartYAxisLabel(metricTitle)
         .chartYAxis {
           AxisMarks { value in
@@ -225,6 +258,138 @@ struct MarketStockItemDetailView: View {
         }
         .accessibilityLabel(Text(metricTitle))
       }
+    }
+  }
+
+  /// Pointer distance (pt) within which the nearest sample is shown.
+  private let hoverSnapDistance: CGFloat = 36
+
+  private func hoverOverlay(proxy: ChartProxy, series: [HubSeries]) -> some View {
+    GeometryReader { geometry in
+      Rectangle()
+        .fill(.clear)
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+          switch phase {
+          case .active(let location):
+            hoverAnchor = nearestSample(
+              to: location, proxy: proxy, geometry: geometry, series: series)
+          case .ended:
+            hoverAnchor = nil
+          }
+        }
+        .accessibilityHidden(true)
+      if let hoverAnchor, let plotFrame = proxy.plotFrame,
+        let anchorX = proxy.position(forX: hoverAnchor.date)
+      {
+        let origin = geometry[plotFrame].origin
+        let ruleX = origin.x + anchorX
+        let placeLeft = ruleX > geometry.size.width / 2
+        let gap: CGFloat = 10
+        hoverTooltip(anchor: hoverAnchor, series: series)
+          .fixedSize()
+          .frame(
+            width: max(placeLeft ? ruleX - gap : geometry.size.width - ruleX - gap, 0),
+            alignment: placeLeft ? .topTrailing : .topLeading
+          )
+          .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: placeLeft ? .topLeading : .topTrailing
+          )
+          .padding(.top, origin.y + 6)
+          .allowsHitTesting(false)
+      }
+    }
+  }
+
+  /// Snaps to the nearest sample of any hub when it is close to the pointer.
+  private func nearestSample(
+    to location: CGPoint,
+    proxy: ChartProxy,
+    geometry: GeometryProxy,
+    series: [HubSeries]
+  ) -> MarketStockChartSample? {
+    guard let plotFrame = proxy.plotFrame else { return nil }
+    let frame = geometry[plotFrame]
+    guard frame.contains(location) else { return nil }
+    let x = location.x - frame.origin.x
+    guard let date = proxy.value(atX: x, as: Date.self),
+      let anchor = MarketStockChartHover.anchor(near: date, in: series.map(\.samples)),
+      let anchorX = proxy.position(forX: anchor.date),
+      abs(anchorX - x) <= hoverSnapDistance
+    else { return nil }
+    return anchor
+  }
+
+  private func hoverTooltip(
+    anchor: MarketStockChartSample,
+    series: [HubSeries]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Text(hoverHeader(anchor))
+        .appFont(.caption.weight(.semibold))
+        .foregroundStyle(DesignTokens.textSecondary)
+      ForEach(series) { hub in
+        let sample = MarketStockChartHover.sample(for: anchor.date, in: hub.samples)
+        HStack(spacing: DesignTokens.spacingSM) {
+          Circle()
+            .fill(color(for: hub.id))
+            .frame(width: 8, height: 8)
+          Text(hub.name)
+          Spacer(minLength: DesignTokens.spacingMD)
+          if let sample {
+            Text(hoverValue(sample.value))
+              .appFont(.callout.monospacedDigit().weight(.semibold))
+            if abs(sample.date.timeIntervalSince(anchor.date)) >= 60 {
+              Text(hoverTime(sample.date, anchor: anchor.date))
+                .appFont(.caption.monospacedDigit())
+                .foregroundStyle(DesignTokens.textSecondary)
+            }
+          } else {
+            Text("no point")
+              .foregroundStyle(DesignTokens.textSecondary)
+          }
+        }
+        .appFont(.callout)
+      }
+    }
+    .padding(DesignTokens.spacingSM)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+    .overlay(
+      RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+        .stroke(DesignTokens.border.opacity(0.8), lineWidth: 1)
+    )
+    .accessibilityIdentifier("market-stock.detail.chart.tooltip")
+  }
+
+  private func hoverHeader(_ anchor: MarketStockChartSample) -> String {
+    let time = anchor.date.formatted(
+      Date.FormatStyle(date: .numeric, time: .shortened, timeZone: .gmt).locale(locale)
+    )
+    let header = "\(time) UTC"
+    return anchor.isDailyValue
+      ? "\(header) · \(AppLocalization.text("Daily value"))" : header
+  }
+
+  /// A hub's own measurement time when it differs from the snapped moment;
+  /// with the date when it falls on another UTC day.
+  private func hoverTime(_ date: Date, anchor: Date) -> String {
+    let sameDay =
+      MarketStockHistoryStore.utcDay(containing: date)
+      == MarketStockHistoryStore.utcDay(containing: anchor)
+    let style = Date.FormatStyle(
+      date: sameDay ? .omitted : .numeric, time: .shortened, timeZone: .gmt
+    ).locale(locale)
+    return date.formatted(style)
+  }
+
+  private func hoverValue(_ value: Double) -> String {
+    switch metric {
+    case .sellPrice:
+      "\(value.formatted(.number.locale(locale).precision(.fractionLength(0...2)))) ISK"
+    case .sellUnits, .buyUnits:
+      value.formatted(.number.locale(locale).precision(.fractionLength(0)))
     }
   }
 
@@ -282,7 +447,7 @@ struct MarketStockItemDetailView: View {
         numberHeader("Vanished", .vanished)
         numberHeader("Net", .net)
       }
-      .font(.caption.weight(.semibold))
+      .appFont(.caption.weight(.semibold))
       .padding(.bottom, DesignTokens.spacingXS)
       Divider()
       ScrollView {
@@ -333,7 +498,7 @@ struct MarketStockItemDetailView: View {
             ?? DesignTokens.textPrimary
       )
     }
-    .font(.callout.monospacedDigit())
+    .appFont(.callout.monospacedDigit())
     .padding(.vertical, 3)
     .help(rowHelp(row))
   }

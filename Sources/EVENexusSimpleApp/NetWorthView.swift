@@ -10,7 +10,9 @@ private struct NetWorthComponentDelta: Identifiable {
   var id: NetWorthComponent { component }
 }
 
-private enum NetWorthHistoryRange: Int, CaseIterable, Identifiable {
+/// History range of the net-worth charts, shared by the Net Worth view and
+/// the Dashboard (plan DB3).
+enum NetWorthHistoryRange: Int, CaseIterable, Identifiable {
   case seven = 7
   case thirty = 30
   case ninety = 90
@@ -20,11 +22,89 @@ private enum NetWorthHistoryRange: Int, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
-    case .seven: "7D"
-    case .thirty: "30D"
-    case .ninety: "90D"
+    case .seven: AppLocalization.text("7D")
+    case .thirty: AppLocalization.text("30D")
+    case .ninety: AppLocalization.text("90D")
     case .all: AppLocalization.text("All")
     }
+  }
+
+  /// Snapshots of the range, counted back from the latest snapshot: the last
+  /// `rawValue` days including the day of the latest snapshot. `history` is
+  /// sorted by capture time; `.all` keeps everything.
+  func filter(
+    _ history: [DashboardWealthSnapshot],
+    calendar: Calendar = .current
+  ) -> [DashboardWealthSnapshot] {
+    guard self != .all,
+      let end = history.last?.capturedAt,
+      let start = calendar.date(
+        byAdding: .day,
+        value: -(rawValue - 1),
+        to: end
+      )
+    else { return history }
+    return history.filter { $0.capturedAt >= start }
+  }
+}
+
+/// Change of the known total net worth inside a range (plan DB3): the last
+/// minus the first snapshot with a known total.
+struct NetWorthRangeChange: Equatable {
+  let absolute: Double
+  /// Relative to the first known total; `nil` unless that total is positive.
+  let relative: Double?
+  /// The first or the last compared snapshot is not completely valued, so
+  /// the change compares known components only.
+  let comparesKnownComponentsOnly: Bool
+  let from: Date
+  let to: Date
+
+  /// `nil` without two snapshots that both have a finite known total.
+  static func change(in snapshots: [DashboardWealthSnapshot]) -> Self? {
+    let known = snapshots.filter { $0.knownTotalValue?.isFinite == true }
+    guard known.count > 1,
+      let first = known.first, let last = known.last,
+      let firstValue = first.knownTotalValue,
+      let lastValue = last.knownTotalValue
+    else { return nil }
+    let absolute = lastValue - firstValue
+    return Self(
+      absolute: absolute,
+      relative: firstValue > 0 ? absolute / firstValue : nil,
+      comparesKnownComponentsOnly: !first.isComplete || !last.isComplete,
+      from: first.capturedAt,
+      to: last.capturedAt
+    )
+  }
+}
+
+/// ISK formats of the net-worth views, shared with the Dashboard.
+enum NetWorthValueFormat {
+  /// In the app language, like the market views (plan DB7, finding B5).
+  static func isk(
+    _ value: Double,
+    locale: Locale = AppLocalization.currentLanguage.locale
+  ) -> String {
+    value.formatted(
+      .currency(code: "ISK").precision(.fractionLength(0)).locale(locale)
+    )
+  }
+
+  static func signedISK(
+    _ value: Double,
+    locale: Locale = AppLocalization.currentLanguage.locale
+  ) -> String {
+    "\(value >= 0 ? "+" : "−")\(isk(abs(value), locale: locale))"
+  }
+
+  static func signedPercent(_ value: Double) -> String {
+    let formatted = abs(value).formatted(
+      .percent
+        .locale(AppLocalization.currentLanguage.locale)
+        .precision(.fractionLength(1))
+    )
+    return "\(value >= 0 ? "+" : "−")\(formatted)"
   }
 }
 
@@ -237,7 +317,8 @@ struct NetWorthView: View {
   private var heading: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text("Net Worth History")
-        .font(.largeTitle.bold())
+        .appFont(.largeTitle.bold())
+        .nexusPageTitle()
       Text(
         "Daily snapshots of personal and accessible corporation value, including contracts and courier collateral."
       )
@@ -272,7 +353,7 @@ struct NetWorthView: View {
   }
 
   private var emptyState: some View {
-    ContentUnavailableView {
+    AppUnavailableView {
       Label("No characters connected", systemImage: "person.crop.circle.badge.plus")
     } description: {
       Text("Connect and synchronize at least one character to start the net-worth history.")
@@ -285,16 +366,14 @@ struct NetWorthView: View {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
         HStack(alignment: .firstTextBaseline) {
           VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-            Text(isDisplayComplete(snapshot) ? "Total net worth" : "Known net worth")
-              .font(.caption.weight(.semibold))
-              .textCase(.uppercase)
-              .tracking(1.1)
-              .foregroundStyle(DesignTokens.textSecondary)
+            NexusPanelTitle(
+              isDisplayComplete(snapshot) ? "Total net worth" : "Known net worth"
+            )
             Text(
               snapshot.knownTotalValue.map(formatISK)
                 ?? AppLocalization.text("Unavailable")
             )
-            .font(.system(size: 34, weight: .bold, design: .rounded))
+            .appFont(.system(size: 34, weight: .bold, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(DesignTokens.highlight)
             if let change = latestChange {
@@ -302,7 +381,7 @@ struct NetWorthView: View {
                 signedISK(change),
                 systemImage: change >= 0 ? "arrow.up.right" : "arrow.down.right"
               )
-              .font(.callout.weight(.semibold).monospacedDigit())
+              .appFont(.callout.weight(.semibold).monospacedDigit())
               .foregroundStyle(
                 change >= 0 ? DesignTokens.positive : DesignTokens.negative
               )
@@ -330,26 +409,21 @@ struct NetWorthView: View {
             "The total is partial. Unavailable components are not treated as zero.",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
       }
       .padding(DesignTokens.spacingMD)
-      .background(DesignTokens.panel)
-      .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
-      .overlay {
-        RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
-          .stroke(DesignTokens.border)
-      }
+      .nexusPanelSurface(.flat)
     }
     if let captureMessage {
       Label(captureMessage, systemImage: "checkmark.circle.fill")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.positive)
     }
     if let localError {
       Label(localError, systemImage: "exclamationmark.triangle.fill")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.negative)
     }
   }
@@ -368,7 +442,7 @@ struct NetWorthView: View {
           Image(systemName: component.icon)
             .foregroundStyle(component.color)
         }
-        .font(.caption.weight(.semibold))
+        .appFont(.caption.weight(.semibold))
         Spacer()
         Circle()
           .fill(complete ? DesignTokens.positive : DesignTokens.caution)
@@ -376,12 +450,12 @@ struct NetWorthView: View {
           .accessibilityHidden(true)
       }
       Text(value.map(formatISK) ?? AppLocalization.text("Unavailable"))
-        .font(.callout.weight(.semibold).monospacedDigit())
+        .appFont(.callout.weight(.semibold).monospacedDigit())
         .foregroundStyle(
           value == nil ? DesignTokens.textSecondary : DesignTokens.textPrimary
         )
       Text(componentStatus(component, snapshot: snapshot))
-        .font(.caption2)
+        .appFont(.caption2)
         .foregroundStyle(
           complete ? DesignTokens.textSecondary : DesignTokens.caution
         )
@@ -397,7 +471,7 @@ struct NetWorthView: View {
               "%lld BPC stacks without contract price", Int64(excluded)
             )
           )
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -451,7 +525,7 @@ struct NetWorthView: View {
             "Component coverage changes inside this range. The total line shows the known value on each day; unavailable components remain gaps, not zero.",
             systemImage: "exclamationmark.triangle"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
 
@@ -478,7 +552,7 @@ struct NetWorthView: View {
     switch selectedMode {
     case .total:
       Label("Known net worth", systemImage: "chart.line.uptrend.xyaxis")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
     case .components:
       ScrollView(.horizontal) {
@@ -492,7 +566,7 @@ struct NetWorthView: View {
               } icon: {
                 Circle().fill(component.color).frame(width: 7, height: 7)
               }
-              .font(.caption2)
+              .appFont(.caption2)
               .padding(.horizontal, DesignTokens.spacingXS)
               .padding(.vertical, 4)
               .background(
@@ -515,7 +589,7 @@ struct NetWorthView: View {
       .scrollIndicators(.hidden)
     case .character:
       Text("One line per character")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -536,13 +610,13 @@ struct NetWorthView: View {
       Divider()
       HStack(alignment: .firstTextBaseline) {
         Text(snapshot.capturedAt.formatted(date: .long, time: .shortened))
-          .font(.headline)
+          .appFont(.headline)
         Spacer()
         Text(
           snapshot.knownTotalValue.map(formatISK)
             ?? AppLocalization.text("Unavailable")
         )
-        .font(.headline.monospacedDigit())
+        .appFont(.headline.monospacedDigit())
       }
       LazyVGrid(
         columns: [GridItem(.adaptive(minimum: 170))],
@@ -558,14 +632,14 @@ struct NetWorthView: View {
               Spacer()
               Text(formatISK(value)).monospacedDigit()
             }
-            .font(.caption)
+            .appFont(.caption)
           }
         }
       }
       let deltas = componentDeltas(for: snapshot)
       if !deltas.isEmpty {
         Text("Change by component")
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
           .textCase(.uppercase)
           .tracking(1)
           .foregroundStyle(DesignTokens.textSecondary)
@@ -579,7 +653,7 @@ struct NetWorthView: View {
                 delta.value >= 0 ? DesignTokens.positive : DesignTokens.negative
               )
           }
-          .font(.caption)
+          .appFont(.caption)
         }
       }
     }
@@ -632,7 +706,7 @@ struct NetWorthView: View {
       characterSortHeader("State", column: .state)
         .frame(width: 95, alignment: .trailing)
     }
-    .font(.caption.weight(.semibold))
+    .appFont(.caption.weight(.semibold))
     .textCase(.uppercase)
     .tracking(0.8)
     .foregroundStyle(DesignTokens.textSecondary)
@@ -720,7 +794,7 @@ struct NetWorthView: View {
         )
         if let blueprintSummary = blueprintSummary(character) {
           Text(blueprintSummary)
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(DesignTokens.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -728,7 +802,7 @@ struct NetWorthView: View {
         if !warnings.isEmpty {
           HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingXS) {
             Text(warnings.joined(separator: " · "))
-              .font(.caption2)
+              .appFont(.caption2)
               .foregroundStyle(DesignTokens.caution)
               .fixedSize(horizontal: false, vertical: true)
             if character.unvaluedAssetTypeCount > 0
@@ -807,7 +881,7 @@ struct NetWorthView: View {
     emphasized: Bool = false
   ) -> some View {
     Text(value.map(formatISK) ?? AppLocalization.text("Unavailable"))
-      .font(
+      .appFont(
         emphasized
           ? .callout.weight(.semibold).monospacedDigit()
           : .callout.monospacedDigit()
@@ -834,7 +908,7 @@ struct NetWorthView: View {
                   .frame(minWidth: 105, alignment: .leading)
                 if !isDisplayComplete(snapshot) {
                   Text("PARTIAL")
-                    .font(.caption2.bold())
+                    .appFont(.caption2.bold())
                     .foregroundStyle(DesignTokens.caution)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -850,11 +924,11 @@ struct NetWorthView: View {
               snapshot.knownTotalValue.map(formatISK)
                 ?? AppLocalization.text("Unavailable")
             )
-            .font(.callout.weight(.semibold).monospacedDigit())
+            .appFont(.callout.weight(.semibold).monospacedDigit())
             .frame(minWidth: 150, alignment: .trailing)
             if let delta = delta(for: snapshot) {
               Text(signedISK(delta))
-                .font(.caption.monospacedDigit())
+                .appFont(.caption.monospacedDigit())
                 .foregroundStyle(
                   delta >= 0 ? DesignTokens.positive : DesignTokens.negative
                 )
@@ -925,7 +999,7 @@ struct NetWorthView: View {
           systemImage: "clock.arrow.circlepath"
         )
       }
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -943,15 +1017,7 @@ struct NetWorthView: View {
   }
 
   private var filteredHistory: [DashboardWealthSnapshot] {
-    guard selectedRange != .all,
-      let end = wealthHistory.last?.capturedAt,
-      let start = Calendar.current.date(
-        byAdding: .day,
-        value: -(selectedRange.rawValue - 1),
-        to: end
-      )
-    else { return wealthHistory }
-    return wealthHistory.filter { $0.capturedAt >= start }
+    selectedRange.filter(wealthHistory)
   }
 
   private var selectedChartSnapshot: DashboardWealthSnapshot? {
@@ -1519,14 +1585,14 @@ struct NetWorthView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Unpriced EVE types")
-        .font(.headline)
+        .appFont(.headline)
       Text(character.characterName)
-        .font(.subheadline)
+        .appFont(.subheadline)
         .foregroundStyle(DesignTokens.textSecondary)
       Text(
         "These types were absent from the public ESI reference-price response when this snapshot was created. No additional SSO scope can provide them."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       if character.unvaluedAssetTypes.isEmpty
         && character.unvaluedContractItemTypes.isEmpty
@@ -1534,14 +1600,14 @@ struct NetWorthView: View {
         Text(
           "Type names are not stored in this older snapshot. Take a new snapshot to capture the detailed list."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       } else {
         ScrollView {
           VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
             if !character.unvaluedAssetTypes.isEmpty {
               Text("Assets")
-                .font(.caption.weight(.semibold))
+                .appFont(.caption.weight(.semibold))
               ForEach(character.unvaluedAssetTypes) { type in
                 EVEItemText(
                   value: type.name,
@@ -1553,7 +1619,7 @@ struct NetWorthView: View {
             }
             if !character.unvaluedContractItemTypes.isEmpty {
               Text("Contract items")
-                .font(.caption.weight(.semibold))
+                .appFont(.caption.weight(.semibold))
                 .padding(.top, DesignTokens.spacingXS)
               ForEach(character.unvaluedContractItemTypes) { type in
                 EVEItemText(
@@ -1629,7 +1695,7 @@ struct NetWorthView: View {
       case .forbidden, .unavailable: DesignTokens.negative
       }
     return Text(text)
-      .font(.caption2.bold())
+      .appFont(.caption2.bold())
       .padding(.horizontal, DesignTokens.spacingSM)
       .padding(.vertical, DesignTokens.spacingXS)
       .foregroundStyle(color)
@@ -1638,12 +1704,11 @@ struct NetWorthView: View {
   }
 
   private func formatISK(_ value: Double) -> String {
-    value.formatted(.currency(code: "ISK").precision(.fractionLength(0)))
+    NetWorthValueFormat.isk(value)
   }
 
   private func signedISK(_ value: Double) -> String {
-    let formatted = formatISK(abs(value))
-    return "\(value >= 0 ? "+" : "−")\(formatted)"
+    NetWorthValueFormat.signedISK(value)
   }
 
   private func isDisplayComplete(_ snapshot: DashboardWealthSnapshot) -> Bool {
@@ -1899,11 +1964,11 @@ private struct NetWorthHistoryChart: View {
   @ViewBuilder
   private func chartLabels(plot: CGRect) -> some View {
     Text(compactISK(valueDomain.upperBound))
-      .font(.caption2.monospacedDigit())
+      .appFont(.caption2.monospacedDigit())
       .foregroundStyle(DesignTokens.textSecondary)
       .position(x: 26, y: plot.minY + 6)
     Text(compactISK(valueDomain.lowerBound))
-      .font(.caption2.monospacedDigit())
+      .appFont(.caption2.monospacedDigit())
       .foregroundStyle(DesignTokens.textSecondary)
       .position(x: 42, y: plot.maxY - 4)
     ForEach(dateLabelIndices, id: \.self) { index in
@@ -1913,7 +1978,7 @@ private struct NetWorthHistoryChart: View {
           time: .omitted
         )
       )
-      .font(.caption2)
+      .appFont(.caption2)
       .foregroundStyle(DesignTokens.textSecondary)
       .position(
         x: xPosition(index: index, plot: plot),

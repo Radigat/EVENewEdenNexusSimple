@@ -271,13 +271,13 @@ struct BackgroundOperationPanel: View {
       Text(
         "The app then stays in the menu bar without a Dock icon and keeps the fixed market stock terms (06:00 and 13:00) and the automatic hub scans running. When switched off, closing the window quits the app."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Toggle("Start at login", isOn: loginItemBinding)
         .accessibilityIdentifier("general.background.start-at-login")
       Label(loginItem.text, systemImage: loginItemSymbol)
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(
           loginItem == .enabled || loginItem == .disabled
             ? DesignTokens.textSecondary : DesignTokens.caution
@@ -289,13 +289,13 @@ struct BackgroundOperationPanel: View {
       }
       if let loginItemError {
         Text(loginItemError)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.negative)
       }
       Text(
         "A Mac in sleep misses a term; the app catches up once after waking. No term wakes the Mac."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
     .onAppear { refreshLoginItem() }

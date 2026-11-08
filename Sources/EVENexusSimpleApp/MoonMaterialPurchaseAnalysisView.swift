@@ -106,7 +106,7 @@ struct MaterialPurchaseRecommendationRow: View {
         if let location = recommendation.location {
           EVEEntityText(value: location.name, font: .caption, lineLimit: 2)
         } else {
-          Text("No fresh sell offer available").font(.caption)
+          Text("No fresh sell offer available").appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -114,7 +114,7 @@ struct MaterialPurchaseRecommendationRow: View {
       Text(recommendation.unitPrice.map {
         $0.formatted(.currency(code: "ISK").precision(.fractionLength(2)))
       } ?? AppLocalization.text("Unavailable"))
-        .font(.callout.monospacedDigit())
+        .appFont(.callout.monospacedDigit())
         .fixedSize(horizontal: true, vertical: false)
     }
     .accessibilityElement(children: .contain)
@@ -128,10 +128,10 @@ struct MaterialPurchaseRecommendationContent: View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text(recommendations.allSatisfy(\.hasCompleteMarketCoverage)
         ? "Cheapest configured market".localizedUI : "Cheapest available market".localizedUI)
-        .font(.caption.weight(.semibold))
+        .appFont(.caption.weight(.semibold))
       if recommendations.contains(where: { !$0.hasCompleteMarketCoverage }) {
         Text("Some configured markets are unavailable or stale; the comparison is incomplete.")
-          .font(.caption).foregroundStyle(DesignTokens.caution)
+          .appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
       DashboardPreviewList(rows: recommendations) { row in
         MaterialPurchaseRecommendationRow(recommendation: row)
@@ -154,20 +154,20 @@ struct MaterialPurchaseRecommendationGrid: View {
       HStack(spacing: DesignTokens.spacingSM) {
         Text(recommendations.allSatisfy(\.hasCompleteMarketCoverage)
           ? "Cheapest configured market".localizedUI : "Cheapest available market".localizedUI)
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
         Text(AppLocalization.format("%lld items", Int64(recommendations.count)))
-          .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+          .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
       }
       if recommendations.contains(where: { !$0.hasCompleteMarketCoverage }) {
         Text("Some configured markets are unavailable or stale; the comparison is incomplete.")
-          .font(.caption).foregroundStyle(DesignTokens.caution)
+          .appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
       switch kind {
       case .moonMaterials:
         ForEach(MoonMaterialRecommendationGroup.group(recommendations)) { group in
           HStack(alignment: .top, spacing: DesignTokens.spacingSM) {
             Text(verbatim: group.rarity?.title ?? "–")
-              .font(.caption.weight(.bold).monospacedDigit())
+              .appFont(.caption.weight(.bold).monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
               .frame(width: classLabelWidth, alignment: .leading)
               .padding(.top, DesignTokens.spacingXS)
@@ -204,13 +204,13 @@ private struct MaterialPurchaseRecommendationCell: View {
       if let location = recommendation.location {
         EVEEntityText(value: location.name, font: .caption2, lineLimit: 1)
       } else {
-        Text("No fresh sell offer available").font(.caption2)
+        Text("No fresh sell offer available").appFont(.caption2)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       Text(recommendation.unitPrice.map {
         $0.formatted(.currency(code: "ISK").precision(.fractionLength(2)))
       } ?? AppLocalization.text("Unavailable"))
-        .font(.caption.monospacedDigit().weight(.medium))
+        .appFont(.caption.monospacedDigit().weight(.medium))
         .foregroundStyle(recommendation.unitPrice == nil
           ? DesignTokens.textSecondary : DesignTokens.textPrimary)
     }
@@ -276,7 +276,7 @@ private struct MaterialPurchaseAnalysisView: View {
       header
       if let imageExportMessage {
         Label(imageExportMessage, systemImage: "photo")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       explanation
@@ -303,7 +303,7 @@ private struct MaterialPurchaseAnalysisView: View {
         ProgressView(kind.loadingTitle)
           .frame(maxWidth: .infinity, minHeight: 240)
       } else {
-        ContentUnavailableView(
+        AppUnavailableView(
           kind.emptyTitle,
           systemImage: "chart.xyaxis.line",
           description: Text(kind.emptyDescription)
@@ -318,8 +318,9 @@ private struct MaterialPurchaseAnalysisView: View {
     HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         Text(kind.title)
-          .font(.largeTitle.bold())
+          .appFont(.largeTitle.bold())
           .foregroundStyle(DesignTokens.textPrimary)
+          .nexusPageTitle()
         Text(
           "Compare the lowest sell price and the complete available quantity up to 10% above it."
         )
@@ -377,7 +378,7 @@ private struct MaterialPurchaseAnalysisView: View {
         )
         .foregroundStyle(DesignTokens.textSecondary)
       }
-      .font(.callout)
+      .appFont(.callout)
     }
   }
 
@@ -451,7 +452,7 @@ private struct MaterialPurchaseAnalysisView: View {
       )
       .foregroundStyle(DesignTokens.textSecondary)
     }
-    .font(.caption)
+    .appFont(.caption)
   }
 
   private func analysisGrid(
@@ -498,7 +499,7 @@ private struct MaterialPurchaseAnalysisView: View {
         column: MaterialPurchaseSortColumn.material,
         sort: $materialSort
       )
-      .font(.caption.bold())
+      .appFont(.caption.bold())
       .textCase(.uppercase)
       .tracking(0.8)
       .frame(width: materialColumnWidth, alignment: .leading)
@@ -513,16 +514,16 @@ private struct MaterialPurchaseAnalysisView: View {
             column: MaterialPurchaseSortColumn.market(hub.id),
             sort: $materialSort
           )
-          .font(.caption2.bold())
+          .appFont(.caption2.bold())
           ForEach(roleLabels(hub.roles), id: \.self) { role in
             Text(role)
-              .font(.caption2.bold())
+              .appFont(.caption2.bold())
               .foregroundStyle(DesignTokens.highlight)
           }
           EVEEntityText(value: hub.location.name, lineLimit: 2)
           if hub.location.kind == .playerStructure {
             Text("Player structure")
-              .font(.caption2)
+              .appFont(.caption2)
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -603,34 +604,34 @@ private struct MaterialPurchaseAnalysisView: View {
             verbatim:
               "\(formatPrice(band.lowestSellPrice)) ISK (≤ \(formatPrice(band.maximumBandPrice)) ISK)"
           )
-          .font(.caption.monospacedDigit().weight(.semibold))
+          .appFont(.caption.monospacedDigit().weight(.semibold))
           .foregroundStyle(DesignTokens.textPrimary)
           Text(
             verbatim:
               "\(formatQuantity(band.availableQuantity)) \("units within +10%".localizedUI)"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           if let priceRank {
             rankBadge(priceRank)
           }
         } else {
           Text("No sell orders at this location")
-            .font(.caption.weight(.semibold))
+            .appFont(.caption.weight(.semibold))
             .foregroundStyle(DesignTokens.textSecondary)
         }
         sourceBadge(sourced.state)
         if sourced.state != .fresh {
           Text(marketFailureLabel(sourced))
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(sourceStateColor(sourced.state))
         }
       } else {
         Text(marketFailureLabel(sourced))
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
           .foregroundStyle(sourceStateColor(sourced?.state))
         Text("No market value was substituted")
-          .font(.caption2)
+          .appFont(.caption2)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -767,21 +768,13 @@ private struct MaterialPurchaseAnalysisView: View {
     defer { isExportingImage = false }
 
     let exportedAt = Date()
-    let content = MaterialPurchaseAnalysisExportView(
-      kind: kind,
-      analysis: analysis,
-      materials: sortedMaterials(analysis),
-      exportedAt: exportedAt
-    )
-    .environment(\.locale, AppLocalization.currentLanguage.locale)
-    .environment(\.colorScheme, .dark)
-
-    let renderer = ImageRenderer(content: content)
-    renderer.scale = 2
-    guard let image = renderer.nsImage,
-      let tiff = image.tiffRepresentation,
-      let bitmap = NSBitmapImageRep(data: tiff),
-      let png = bitmap.representation(using: .png, properties: [:])
+    guard
+      let png = MaterialPurchaseImageExportRenderer.pngData(
+        kind: kind,
+        analysis: analysis,
+        materials: sortedMaterials(analysis),
+        exportedAt: exportedAt
+      )
     else {
       imageExportMessage = "The table image could not be created.".localizedUI
       return
@@ -856,14 +849,14 @@ private struct MaterialPurchaseAnalysisView: View {
         .frame(width: 9, height: 9)
       Text(rankLabel(rank))
     }
-    .font(.caption.bold())
+    .appFont(.caption.bold())
   }
 
   private func rankBadge(
     _ rank: MaterialPurchaseMarketPriceRank
   ) -> some View {
     Text(rankLabel(rank))
-      .font(.caption2.bold())
+      .appFont(.caption2.bold())
       .foregroundStyle(rankColor(rank))
   }
 
@@ -887,7 +880,7 @@ private struct MaterialPurchaseAnalysisView: View {
   private func sourceBadge(_ state: DataFreshness) -> some View {
     if state != .fresh {
       Text(sourceStateLabel(state))
-        .font(.caption2.bold())
+        .appFont(.caption2.bold())
         .foregroundStyle(sourceStateColor(state))
     }
   }
@@ -949,6 +942,37 @@ enum MaterialPurchaseImageExportNaming {
   }
 }
 
+/// Renders the comparison table for the PNG export: always the dark Classic
+/// look at double resolution, independent of the interface style and of the
+/// app's color scheme (owner decision D7, 07.11.2026).
+@MainActor
+enum MaterialPurchaseImageExportRenderer {
+  static func pngData(
+    kind: MaterialPurchaseAnalysisKind,
+    analysis: MaterialPurchaseAnalysisSnapshot,
+    materials: [MaterialPurchaseItem],
+    exportedAt: Date
+  ) -> Data? {
+    let content = MaterialPurchaseAnalysisExportView(
+      kind: kind,
+      analysis: analysis,
+      materials: materials,
+      exportedAt: exportedAt
+    )
+    .environment(\.locale, AppLocalization.currentLanguage.locale)
+    .environment(\.colorScheme, .dark)
+    .environment(\.interfaceStyle, .classic)
+
+    let renderer = ImageRenderer(content: content)
+    renderer.scale = 2
+    guard let image = renderer.nsImage,
+      let tiff = image.tiffRepresentation,
+      let bitmap = NSBitmapImageRep(data: tiff)
+    else { return nil }
+    return bitmap.representation(using: .png, properties: [:])
+  }
+}
+
 private struct MaterialPurchaseAnalysisExportView: View {
   let kind: MaterialPurchaseAnalysisKind
   let analysis: MaterialPurchaseAnalysisSnapshot
@@ -972,15 +996,15 @@ private struct MaterialPurchaseAnalysisExportView: View {
     VStack(alignment: .leading, spacing: 18) {
       VStack(alignment: .leading, spacing: 5) {
         Text(kind.title)
-          .font(.system(size: 30, weight: .bold))
+          .appFont(.system(size: 30, weight: .bold))
           .foregroundStyle(DesignTokens.textPrimary)
         Text(exportTimestamp)
-          .font(.system(size: 18, weight: .semibold).monospacedDigit())
+          .appFont(.system(size: 18, weight: .semibold).monospacedDigit())
           .foregroundStyle(DesignTokens.highlight)
         Text(
           "Lowest sell price, price limit +10% and complete quantity available within that range."
         )
-        .font(.callout)
+        .appFont(.callout)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
@@ -1002,7 +1026,7 @@ private struct MaterialPurchaseAnalysisExportView: View {
           )
         )
       )
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .foregroundStyle(DesignTokens.textSecondary)
     }
     .padding(contentPadding)
@@ -1021,7 +1045,7 @@ private struct MaterialPurchaseAnalysisExportView: View {
   private var tableHeader: some View {
     HStack(spacing: 1) {
       Text(kind.itemHeader)
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .textCase(.uppercase)
         .tracking(0.8)
         .padding(.horizontal, 10)
@@ -1032,14 +1056,14 @@ private struct MaterialPurchaseAnalysisExportView: View {
       ForEach(analysis.configuredHubs) { hub in
         VStack(spacing: 4) {
           Text(roleText(hub.roles))
-            .font(.caption2.bold())
+            .appFont(.caption2.bold())
             .foregroundStyle(DesignTokens.highlight)
           EVEEntityText(value: hub.location.name)
             .multilineTextAlignment(.center)
             .lineLimit(2)
           if hub.location.kind == .playerStructure {
             Text("Player structure")
-              .font(.caption2)
+              .appFont(.caption2)
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -1089,38 +1113,38 @@ private struct MaterialPurchaseAnalysisExportView: View {
           verbatim:
             "\(formatPrice(band.lowestSellPrice)) ISK (≤ \(formatPrice(band.maximumBandPrice)) ISK)"
         )
-        .font(.caption.monospacedDigit().weight(.semibold))
+        .appFont(.caption.monospacedDigit().weight(.semibold))
         Text(
           verbatim:
             "\(formatQuantity(band.availableQuantity)) \("units within +10%".localizedUI)"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         if let rank {
           Text(rankLabel(rank))
-            .font(.caption2.bold())
+            .appFont(.caption2.bold())
             .foregroundStyle(rankColor(rank))
         }
         if sourced.state != .fresh {
           Text(sourceStateLabel(sourced.state))
-            .font(.caption2.bold())
+            .appFont(.caption2.bold())
             .foregroundStyle(sourceStateColor(sourced.state))
         }
       } else if let sourced, sourced.value != nil {
         Text("No sell orders at this location")
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
           .foregroundStyle(DesignTokens.textSecondary)
         if sourced.state != .fresh {
           Text(sourceStateLabel(sourced.state))
-            .font(.caption2.bold())
+            .appFont(.caption2.bold())
             .foregroundStyle(sourceStateColor(sourced.state))
         }
       } else {
         Text(sourceStateLabel(sourced?.state))
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
           .foregroundStyle(sourceStateColor(sourced?.state))
         Text("No market value was substituted")
-          .font(.caption2)
+          .appFont(.caption2)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }

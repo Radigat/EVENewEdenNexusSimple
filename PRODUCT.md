@@ -144,6 +144,85 @@ deutsch mit Punkt als Tausendertrenner und Komma für Dezimalstellen
   App-Sprache statt in der Systemsprache.
 - Prozent-, Runs-, ME/TE- und Tagesfelder bleiben ungruppiert.
 
+### Schriftgröße
+
+**Daten & Einstellungen → Allgemein → Fenster & Schrift** bietet Kompakt,
+Standard (Vorgabe), Groß, Extragroß und Barrierefreiheit (Schlüssel
+`app.appearance.text-size`); Befehl-Plus, Befehl-Minus und Befehl-0 schalten
+ebenso. Die Wahl gilt sofort in allen Ansichten und bleibt nach dem Neustart.
+
+- Die Stufen skalieren die macOS-Textstile mit 0,9 / 1 / 1,15 / 1,3 / 1,5
+  (Fließtext 13 pt wird zu 11,7 / 13 / 15 / 16,9 / 19,5 pt). Es wachsen Texte
+  und Symbole neben Text, Seitenleistenzeilen und Leerzustände. Native
+  Bedienelemente (umrandete Buttons, Segment- und Menüauswahl) folgen über ihre
+  Control-Größe: Kompakt klein, Groß und Extragroß groß, Barrierefreiheit
+  extragroß.
+- „Standard“ zeigt die Darstellung unverändert, einschließlich der
+  Seitenleistengröße aus den macOS-Einstellungen.
+- Gleich bleiben Fenstertitel, Symbolleiste, Menüs, Tooltips,
+  Spaltenköpfe nativer Tabellen und der Suchleerzustand der Bauplanliste.
+- In den großen Stufen braucht der Statusbereich unten in der Seitenleiste mehr
+  Höhe; die Navigationsliste darüber scrollt, „Automatische Daten“ lässt sich
+  einklappen.
+- macOS wendet `dynamicTypeSize` nicht auf SwiftUI-Textstile an. Ansichten setzen
+  Schriften deshalb mit `.appFont(_:)` und Leerzustände mit `AppUnavailableView`;
+  `AppTextSizeTests` weist neue feste Schriften zurück.
+- Umgesetzt, automatisch geprüft und in einer isolierten App ohne Nutzerdaten
+  visuell geprüft (Dashboard, Allgemeine Einstellungen); Ansichten mit Daten und
+  die Abnahme durch den Eigentümer stehen aus.
+
+### Oberflächenstil
+
+**Daten & Einstellungen → Allgemein → Farben** bietet den Oberflächenstil
+„Klassisch“ (Standard) oder „New Eden HUD“ (Schlüssel
+`app.appearance.interface-style`). Beide zeigen dieselben Inhalte, Spalten,
+Texte, Sortierungen und Berechnungen. Entscheidung:
+[DECISIONS.md, 07.11.2026](Documentation/Consolidation/DECISIONS.md), Plan:
+[DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md).
+
+- „Klassisch“ ist die bisherige Darstellung und folgt dem Farbschema
+  System, Hell oder Dunkel. Das Farbschema gilt für die ganze App
+  (`NSApp.appearance`); „System“ folgt der macOS-Darstellung sofort, auch
+  direkt nach Dunkel oder HUD.
+- „New Eden HUD“ läuft immer dunkel. Die Farbschema-Auswahl ist dann gesperrt
+  und zeigt den Hinweis „New Eden HUD ist immer dunkel“; der gespeicherte Wert
+  bleibt und gilt wieder in „Klassisch“.
+- Im HUD zeigt die Seitenleiste die Bereiche in Gruppen: Übersicht
+  (Dashboard, Nettowert), Industrie (Planer, Reaktionen, Baupläne,
+  Produktionsübersicht), Chancen (Main-, Home-, Coalition-Hub), Markt (Handel,
+  Handelslogbuch, Marktbestand, Lagerverkauf-Abgleich, Öffentliche Verträge,
+  Moon- und Mineralien-Kaufanalyse), Assets (Alle Gegenstände, Lager), System
+  (Daten & Einstellungen). „Klassisch“ zeigt die flache Liste „Etablierte
+  Abläufe“ in bisheriger Reihenfolge. Auswahl und Auswahlmarkierung (macOS)
+  sind in beiden Stilen gleich.
+- Im HUD liegt hinter dem Detailbereich ein Raster (32 pt, Akzentfarbe sehr
+  schwach). Ansichten mit eigener Hintergrundfläche verdecken es dort.
+- Im HUD steht über dem Titel jeder Ansicht die Bereichszeile mit Raute, etwa
+  „◆ ÜBERSICHT“ über „Dashboard“; in Daten & Einstellungen über dem Titel jeder
+  Unterseite („◆ SYSTEM“).
+- Panels mit gemeinsamem Baustein zeigen im HUD Eckwinkel oben links und unten
+  rechts und eine Raute vor dem Titel. Das Dashboard folgt seit DB1 in beiden
+  Stilen der Board-Anordnung (Abschnitt „Dashboard und Vermögensverlauf“).
+  Dashboard, Nettowert (D3), Planer (D4),
+  Reaktionen, Baupläne, Produktionsübersicht, Hub-Chancen (D5), Handel,
+  Handelslogbuch, Marktbestand, Lagerverkauf-Abgleich (D6) sowie Öffentliche
+  Verträge, Moon- und Mineralien-Kaufanalyse, Alle Gegenstände und Lager (D7)
+  nutzen ihn vollständig; außer beim Dashboard bleiben Anordnung und Texte wie
+  bisher, auch wo die Boards abweichen. Sonderflächen zeigen im HUD ebenfalls Eckwinkel, die ihrem Radius
+  folgen: das Planer-Info-Panel „So rechnet der Planer“, Filterdeck,
+  Analysegrundlage und Rechner der Main-, Home- und Coalition-Hub-Chancen und
+  die Handelskacheln (Fläche ohne Rahmen mit Verlaufsbalken). Unterkarten
+  (etwa die Ergebniszeilen der Reaktionen), Karten in Listen (Ergebniskarten
+  der öffentlichen Verträge, Standortkarten in Alle Gegenstände und Lager),
+  Warnkarten, Tabellenköpfe, die Bauplanliste, der Marktbestand ohne Panels
+  und Sheets wie Item-Verlauf und Logbuch-Editor bleiben in beiden Stilen
+  gleich. Daten & Einstellungen nutzen den Baustein auf allen Unterseiten;
+  deren Navigationsleiste, Unterkarten und kleine Karten bleiben gleich.
+  Umgesetzt und automatisch sowie ohne Daten visuell geprüft; die Abnahme
+  durch den Eigentümer steht aus (Checkliste im Plan, Abschnitt 7).
+- Der PNG-Export der Moon- und Mineralien-Kaufanalyse ist in beiden Stilen
+  und jedem Farbschema dasselbe dunkle Tabellenbild ohne HUD-Elemente.
+
 ## Funktionsbereiche
 
 Die Navigation bildet die folgenden Arbeitsbereiche ab:
@@ -168,10 +247,12 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Net Worth | tägliche lokale Bewertung von Wallet, Assets, laufender Produktion, Orders, Contracts und zugänglichen Corporation-Anteilen |
 | Data & Settings | allgemeine Darstellung, SDE, ESI, Industrie- und Marktkonfiguration |
 
-Der eigenständige regionsübergreifende Market Browser ist kein sichtbarer
-Navigationsbereich mehr. Die von Planner, Main-Hub-Chancen sowie Moon- und
-Mineralien-Kaufanalyse benötigten Markt-, Struktur- und Preisroutinen bleiben
-unverändert in ihren jeweiligen Arbeitsabläufen aktiv.
+Einen eigenständigen regionsübergreifenden Market Browser gibt es nicht mehr,
+weder als Navigationsbereich noch im Code: Ansicht, regionsweiter Abrufdienst,
+Browser-Modelle und deren 5-%-Zusammenfassung sind entfernt. Die von Planner,
+Main-Hub-Chancen sowie Moon- und Mineralien-Kaufanalyse benötigten Markt-,
+Struktur- und Preisroutinen bleiben unverändert in ihren jeweiligen
+Arbeitsabläufen aktiv.
 
 Die eigenständige Rekursive Produktionskalkulation ist ebenfalls kein
 Navigationsbereich mehr. Planner und Main-Hub-Chancen behalten den gemeinsamen
@@ -189,9 +270,9 @@ Die Tabellenfilter und die separate Standort-/Jobliste entfallen.
 
 Wallet ist kein eigenständiger Navigationsbereich mehr. Das Dashboard zeigt
 zunächst Gesamtsaldo, Charakteranzahl und Quellzustand. Einzelbeträge, letzte
-Aktualisierungszeitpunkte und Aktualisierungsaktionen stehen im aufklappbaren
-Charakterbereich. Die vollständige Dashboard-Aktualisierung synchronisiert
-weiterhin alle Wallets; einzelne Wallets lassen sich dort gezielt aktualisieren.
+Aktualisierungszeitpunkte und das Aktualisieren einzelner Wallets stehen im
+aufklappbaren Charakterbereich. „Alles aktualisieren“ im Seitenkopf
+synchronisiert weiterhin alle Wallets.
 Letzte bekannte Werte, explizite
 Fehlerzustände und ESI-Snapshot-Metadaten bleiben dabei erhalten.
 
@@ -217,8 +298,8 @@ der Zustand bleibt gespeichert, im eingeklappten Zustand zeigt ein kleiner
 Fortschrittsindikator laufende Vertrags- oder Hub-Markt-Abrufe. Das Menü der
 Karte pausiert oder setzt die Main-Hub-Aktualisierungen fort. Ist die
 Seitenleiste zu schmal, rückt der Zeilenstatus unter den Zeilentitel statt
-abgeschnitten zu werden. Das Dashboard selbst zeigt oben nur noch Titel und
-Untertitel.
+abgeschnitten zu werden. Das Dashboard zeigt oben Titel und Untertitel, rechts
+daneben den ESI-Status und „Alles aktualisieren“.
 
 Die Fußleiste verwendet auch bei der Berechnung der minimalen
 Fenstergröße die Mindestbreite der Seitenleiste (180 Punkte). Mehrzeilige
@@ -252,30 +333,131 @@ Type-ID des sichtbaren Blueprints.
 
 ### Dashboard und Vermögensverlauf
 
-Unter der Kapazitätsübersicht stehen drei Jobkarten: abholbereit, Abschluss in
-den nächsten 48 Stunden und die fünf offenen Produktionsjobs mit dem höchsten
-gesamten Rohstoffwert. Abholbereite und bevorstehende Jobs beginnen mit fünf
-Einträgen und Gesamtzahl; „Alle anzeigen“ öffnet die vollständige Liste.
-Abholbereite Jobs sind nach ältestem Fertigstellungsdatum, kommende Jobs nach
-nächstem Abschluss sortiert, jeweils mit stabiler Jobidentität bei Gleichstand.
-Die Top 5 enthalten offene Manufacturing- und Reaction-Jobs einschließlich
+Das Dashboard folgt in beiden Oberflächenstilen der Anordnung des Boards
+`Main.dc.html` (Plan
+[DASHBOARD_BOARD_2026-11-07.md](Documentation/DASHBOARD_BOARD_2026-11-07.md),
+Stand DB6; bekannte Abweichungen aus der Durchsicht stehen dort in Abschnitt
+7.3, die Eigentümerabnahme steht aus). Unter
+Titel und Untertitel „Jobs, Wallets, Vermögen und Markt auf einen Blick“
+stehen die Kennzahlenreihe und der aufklappbare Bereich „Kapazität je
+Aktivität“, darunter ein Raster aus zwei gleich breiten Spalten. Panels
+einer Zeile sind gleich hoch; unter 2 × 360 Punkten stehen sie untereinander.
+Zeilen: „Industriejobs · bereit und bevorstehend“ neben „Wallets“; „Nettowert ·
+Verlauf“ neben „Main-Hub-Chancen · Top 5“; „Top 5 nach Materialwert“ neben „Reaktionen mit
+negativer Wertschöpfung“; der Mineralpreis-Ticker über die volle Breite;
+Moon- neben Mineralien-Kaufanalyse. Abschnittsüberschriften gibt es nicht mehr.
+Eckwinkel, Raster, Rauten und Bereichszeile erscheinen nur im HUD.
+
+Texte, Zeiten und Beträge des Dashboards folgen der App-Sprache, auch in den
+Popovern (ESI-Status, Bewertungsdetails, Kopier-Rückmeldung) und unabhängig
+von der Systemsprache: Restzeiten der Jobs, Datum und Uhrzeit, Achsen des
+Nettowert-Graphen, Prozent und ISK im Standardformat der Sprache (Englisch
+„ISK 2,097,354,121“, Deutsch „2.097.354.121 ISK“; der gemeinsame
+Nettowert-Formatierer gilt auch in der Nettowert-Ansicht). Kennzahlkarten und
+Jobzeilen behalten ihre Elemente für Bedienungshilfen einzeln: der Info-Knopf
+ist als `dashboard.key-figure.net-worth.info` erreichbar, Blueprint- und
+Charaktername einer Jobzeile sind getrennte Kopierziele.
+
+„Industriejobs · bereit und bevorstehend“ zeigt erst alle abholbereiten Jobs
+nach ältestem Fertigstellungsdatum, dann laufende Jobs mit Abschluss in den
+nächsten 48 Stunden nach nächstem Abschluss, jeweils mit stabiler Jobidentität
+bei Gleichstand. Rechts steht „Bereit“ (grün) oder die Restzeit. Die Liste
+beginnt mit fünf Einträgen und Gesamtzahl; „Alle anzeigen“ öffnet sie
+vollständig. Ohne Einträge nennt sie beide Leerzustände. Die
+„Top 5 nach Materialwert“ enthalten offene Manufacturing- und Reaction-Jobs einschließlich
 abholbereiter Jobs. Ihre Bewertung entsteht aus denselben Einzeljobwerten wie
 **In Produktion**. Fehlende Materialpreise schließen den Job aus der Rangfolge
 aus und machen die Abdeckung ausdrücklich unvollständig; die übrigen Werte
 bleiben als Schätzung gekennzeichnet.
 
-Wallet und Nettowert stehen im Breitenverhältnis 1:2 nebeneinander. Die
-Charakterdetails sind zunächst zugeklappt. Der Hauptgraph ist 280 Punkte hoch
-und reserviert Innenraum für Zeit- und Wertbeschriftungen; die Serienauswahl
-wechselt bei Platzmangel von Segmenten auf ein Menü. Job- und Finanzkarten
-stehen bei schmalen Fenstern untereinander.
+Rechts im Seitenkopf steht der ESI-Status: „ESI“ mit dem zusammengefassten
+Zustand von Charakter-Sync, Wallets, Nettowert-Bewertung sowie Moon-,
+Mineralien- und Reaktionsanalyse und „Stand …“ mit der Zeit der ältesten dieser
+Quellen (heute nur Uhrzeit, sonst Datum und Uhrzeit). Läuft eine Quelle, heißt
+er „Wird aktualisiert“; sonst gilt dieselbe Zusammenfassung wie beim
+Programmstart (gemischt nutzbare und fehlende Quellen ergeben „Teilweise“), und
+eine noch nie geladene Quelle zählt als fehlend. Ein Klick öffnet ein Popover
+mit allen sechs Quellen, je Zustand und Zeit. Daneben startet „Alles
+aktualisieren“ (`dashboard.refresh`) die bisherige Dashboard-Aktualisierung
+(alle Charaktere synchronisieren, Nettowert neu bewerten) und danach Moon-,
+Mineralien- und Reaktionsanalyse gleichzeitig. Gesperrt ist er während einer
+Aktualisierung, solange einzelne Wallets aktualisiert werden, ohne Client-ID
+und ohne Charaktere. Erfolgs- und Fehlermeldungen der Aktualisierung stehen in
+einer Zeile unter dem Seitenkopf bis zur nächsten Aktualisierung. Bei Platzmangel
+rücken Status und Knopf unter den Titel.
 
-Der Marktbereich zeigt alle Reaktionen mit negativer Wertschöpfung aus dem
-gemeinsamen Reaktionssnapshot, zunächst fünf und aufklappbar vollständig.
-Negative Reaktionen, Mondmaterialkaufanalyse und Mineralienkaufanalyse stehen
-unter dem Ticker in drei gleich breiten, oben ausgerichteten Karten direkt
-nebeneinander. Reicht die Fensterbreite nicht aus, stehen die Karten untereinander.
-Markt, Run-Zahl, Transportziel und Kostenbasis stammen aus derselben Analyse
+Die Kennzahlenreihe zeigt vier gleich hohe Karten nebeneinander, bei weniger
+als 4 × 230 Punkten zwei je Zeile, noch schmaler untereinander:
+
+- **Nettowert:** bekannter Gesamtwert der aktuellen Bewertung (bei
+  unvollständiger Bewertung „Bekannt: …“, ohne Bewertung „Nicht verfügbar“),
+  darunter die Veränderung im Zeitraum des Panels „Nettowert · Verlauf“ (Prozent,
+  ohne positiven Ausgangswert ISK) mit denselben Regeln und Kennzeichen. Der
+  Info-Knopf öffnet die Bewertungsdetails als Popover.
+- **Wallet:** Summe der bekannten Salden, Quellzustand und „N von M Charakteren
+  einbezogen“ (bricht bei Platzmangel um); ohne Charaktere „Keine verbundenen
+  Charaktere“.
+- **Fertigungs-Slots:** belegte Slots / Kapazität. Laufende (auch pausierte)
+  und fertige, noch nicht ausgelieferte Jobs belegen einen Slot. Darunter „N
+  bereit · M frei“, frei = Kapazität − belegt, nie negativ. Bei
+  Teilkapazität stehen Kapazität und frei mit „≥“, ohne Kapazität „—“. Der
+  Balken erscheint nur bei vollständig bekannter Kapazität.
+- **Gemeinsame Wissenschafts-Slots:** dasselbe für Kopieren, Erfindung und ME-/TE-
+  Forschung, darunter „Reaktionen belegt / Kapazität“.
+
+Nur die beiden Slot-Karten folgen dem Minutentakt. „Kapazität je Aktivität“
+zeigt im Kopf auch zugeklappt die Gesamtzeile „X von Y verfügbaren Job-Slots
+aktiv“ (nur laufende Jobs, wie bisher) und bei Teilkapazität „Unvollständig“;
+aufgeklappt folgen die sechs Aktivitätskarten und der Jobdaten-Hinweis. Der
+Aufklappzustand wird gespeichert (`dashboard.capacity-by-activity-expanded`,
+anfangs zugeklappt).
+
+„Main-Hub-Chancen · Top 5“ rechnet mit denselben Funktionen wie die
+Main-Hub-Chancen: letzter Main-Hub-Scan, gespeicherte Filter (Suche,
+Kategorie, Gruppe, Favoriten, Produktfamilien und -klassen, Wertfilter,
+Materialbudget, Mindestnachfrage), Lager, Mindestbestände, Reservierungen
+aktiver Pläne, Vertrags-, LP-Store- und Erfindungsangaben und Kostenblatt. Es
+zeigt die fünf sichtbaren Zeilen mit dem höchsten ROI; Zeilen ohne ROI fallen
+heraus, gleicher ROI ordnet nach Type-ID. Runs, ME und TE, die man in der
+Ansicht je Zeile nur für die Sitzung ändert, gelten im Dashboard nicht. Spalten
+Produkt (kopierbar, mit Icon), ROI und Gewinn (Spalte „Gewinn“ der Ansicht) im
+Format der Ansicht; die Köpfe sortieren die fünf Zeilen. Unter dem Titel stehen
+Hub (kopierbar) und „Aktualisiert …“ mit dem Marktstand, rechts „Alle Chancen“
+zur Ansicht. Ohne Scan steht „Noch kein Main-Hub-Scan“; schließen die Filter
+alles aus, „Keine Chance passt zu den Filtern der Main-Hub-Chancen.“; bleiben
+nur Zeilen ohne ROI, „Keine sichtbare Chance hat einen verfügbaren ROI.“ Das
+Dashboard lädt dafür wie die Ansicht die Vertrags- und Erfindungsangaben zum
+Scan. Ein unveränderter Stand wird beim erneuten Öffnen wiederverwendet.
+
+„Wallets“ zeigt drei Kacheln: „Summe verfügbar“, „Charaktere“ (einbezogen
+von gesamt) und „Quellzustand“; sie stehen bei schmalem Panel untereinander.
+Die Charakterdetails sind zunächst zugeklappt. Schlägt „Aktualisieren“ einer
+Wallet fehl, steht darunter der Charaktername mit derselben Meldung wie beim
+Charakter-Sync; lokale Fehler heißen „Der Wallet-Stand konnte lokal nicht
+aktualisiert werden.“ Der Hauptgraph ist 280 Punkte
+hoch und reserviert Innenraum für Zeit- und Wertbeschriftungen; die
+Serienauswahl wechselt bei Platzmangel von Segmenten auf ein Menü. Hat die
+gewählte Serie im Zeitraum keinen Wert, steht statt des Graphen „Keine Werte
+für „…“ im gewählten Zeitraum.“; die Bedienungshilfe des Graphen nennt die
+Serie.
+
+„Nettowert · Verlauf“ hat eine Zeitraumwahl 7 T / 30 T / 90 T / Alle (Start
+30 T, gilt bis zum Verlassen des Dashboards). Sie nutzt dieselbe Auswahl und
+Filterung wie die Nettowert-Ansicht: die letzten N Tage einschließlich des Tags
+des jüngsten Stands, gerechnet ab dessen Zeitpunkt. Hauptgraph und
+Verlaufslinien je Charakter folgen dem Zeitraum. Neben der Auswahl steht die
+Veränderung im Zeitraum: jüngster minus ältester Stand mit bekanntem
+Gesamtwert, in ISK und Prozent (Prozent nur bei positivem Ausgangswert), grün
+mit Pfeil nach oben oder rot nach unten. Ist einer der beiden Stände
+unvollständig bewertet, steht gelb „aus bekannten Bestandteilen“ darunter.
+Gibt es keine zwei bekannten Werte, steht „Veränderung im Zeitraum nicht
+verfügbar“. Ohne gespeicherten Verlauf entfallen Auswahl und Veränderung. Die
+Stufen heißen in beiden Ansichten auf Deutsch „7 T“, „30 T“, „90 T“, „Alle“,
+auf Englisch „7D“, „30D“, „90D“, „All“.
+
+Das Panel der negativen Reaktionen zeigt alle Reaktionen mit negativer
+Wertschöpfung aus dem gemeinsamen Reaktionssnapshot, zunächst fünf und
+aufklappbar vollständig. Markt, Run-Zahl, Transportziel und Kostenbasis stammen aus derselben Analyse
 wie im Reaktionsbereich. Der Detailknopf öffnet diesen mit einmalig aktivem
 Negativfilter. Ein früher gespeicherter Dashboard-Gruppenfilter begrenzt die
 Treffer nicht mehr. Nach Konfigurationsänderungen werden unpassende
@@ -296,6 +478,12 @@ Verkaufsangeboten sind Kandidaten; Preisgleichstände folgen der Reihenfolge der
 konfigurierten Märkte. Fehlen Vergleichsmärkte, lautet die Angabe
 „Günstigster verfügbarer Markt“ mit sichtbarer Einschränkung. Ein Material ohne
 frisches Angebot bleibt ausdrücklich ohne Kaufort und Preis.
+Auf dem Dashboard steht ohne jede Analyse „Noch keine Moon-Kaufanalyse“ bzw.
+„Noch keine Mineralien-Kaufanalyse“, nach geänderten Einstellungen
+„Einstellungen geändert. Aktualisiere die Kauforte.“ In beiden Kaufpanels und
+im Mineralpreis-Panel steht „Einkaufsanalyse öffnen“ vor dem
+Aktualisieren-Symbol („Kaufanalyse aktualisieren“ bzw. „Mineralienpreise
+aktualisieren“).
 In den beiden Fachansichten scrollt die ganze Seite senkrecht; die aufgeklappte
 Einkaufsliste schiebt die Vergleichstabelle nach unten, statt Kopfbereich,
 Berechnungsgrundlage oder Tabelle zu verdrängen. Die Vergleichstabelle scrollt
@@ -425,7 +613,7 @@ als Schätzung gekennzeichnet. Fehlende Job-, Blueprint-, SDE- oder Preisdaten
 bleiben explizit unvollstaendig und werden weder als null noch als erfundener
 Wert behandelt.
 
-Die sechs Karten der Industriekapazität verwenden ein stabiles Raster: bei
+Die sechs Karten von „Kapazität je Aktivität“ verwenden ein stabiles Raster: bei
 ausreichender Breite drei Spalten und zwei Zeilen, bei mittlerer Breite zwei
 Spalten und bei sehr schmaler Darstellung eine Spalte. Die Karten werden damit
 nicht mehr als unausgewogene Fünf-plus-eins-Anordnung verteilt. Die fachliche
@@ -759,6 +947,22 @@ Handel (siehe dort), der Item-Verlauf und die Ansicht **Marktbestand**.
   - **Umschaltbar:** Sell-Bestand, Buy-Nachfrage, niedrigster Sell-Preis.
   - **Skala:** Die Y-Achse zeigt verkürzte Einheiten (Tsd., Mio., B für
     10⁹, T für 10¹²), keine wissenschaftliche Schreibweise.
+    - Bei allen drei Kennzahlen zoomt sie auf den Bereich der gezeichneten
+      Werte (8 % Rand, runde Grenzen) und beginnt nicht zwingend bei 0;
+      negativ wird sie nur bei negativen Werten. Ein Hinweis unter dem
+      Graphen sagt das.
+    - Die Zeitachse bleibt fest bei 30 Tagen.
+  - **Mouse-over:** Der Zeiger rastet am nächsten Punkt eines beliebigen Hubs
+    ein, wenn er höchstens 36 pt entfernt ist; eine gestrichelte Linie
+    markiert den Zeitpunkt.
+    - Der Tooltip zeigt Zeitpunkt (UTC, bei Tageswerten „Tageswert“) und je
+      Hub den Wert seines nächsten Punkts: Einzelpunkte höchstens 3 Stunden
+      entfernt, Tageswerte am selben UTC-Tag. Weicht die Messzeit eines Hubs
+      ab, steht sie daneben.
+    - Ohne passenden Punkt steht „kein Punkt“, nie 0. Preise erscheinen
+      ungerundet in ISK, Mengen als ganze Stück.
+    - Die getroffenen Punkte werden vergrößert. Regeln in
+      `MarketStockChartScale` und `MarketStockChartHover`.
   - **Punkte:** In den letzten 7 Tagen jeder gespeicherte Punkt, davor ein
     Tageswert je UTC-Tag zum Zeitpunkt seines letzten Punkts.
   - **Lücken:** Ein Tag ohne Punkt oder ein fehlender Preis unterbricht die
@@ -1111,6 +1315,8 @@ Informationshinweis.
 **Manueller Bestand** ersetzt bei Lager = Ja das kombinierte Lager in jedem Rechengang, auch bei der Auflösung der Blueprints und ihrer Runs. Der Ablauf bleibt derselbe: Referenzkosten ohne Bestand, Verbrauch vor Kauf und Bewertung wie beim Lager. Mengenziele und Lagerwarnungen gelten dann nicht. Der Schalter für das kombinierte Lager ist gesperrt und ein Hinweis nennt den Grund. Eigene BPO/BPC bleiben nutzbar, denn die Liste enthält nur Mengen. Eine ungültige Zeile stoppt die Berechnung vor dem ersten Rechengang; der bisherige Plan bleibt.
 
 **Mehrere Produkte:** Die Eingabe nimmt ein oder mehrere Produkte an, ein Produkt auch auf mehreren Zeilen. Alle Zeilen werden gemeinsam mit geteiltem Lager gerechnet. Ab zwei Produkten zeigt Schritt 4 eine Tabelle je Produkt mit Summe, sofern alle Werte bekannt sind. Eine Wahl zwischen Einzel- und Sammelproduktion gibt es nicht mehr (Eigentümerentscheidung 07.11.2026, [DECISIONS](Documentation/Consolidation/DECISIONS.md)).
+
+**Eingabefehler:** Schritt 2 prüft die Eingabe beim Tippen und nennt im Panel „Eingabefehler“ je Zeile den Grund in der App-Sprache, etwa „Zeile 1: Gib mindestens einen Produktionsauftrag ein.“ Grenzen wie die höchste Menge erscheinen mit den Tausendertrennern der App-Sprache (`1.000.000.000`). Für jede Meldung der Eingabeprüfung prüft ein Test den deutschen und den englischen Text.
 
 **Rentabel?** zeigt je Produkt eine Zeile: Einheiten, Zwischensumme (Material, Installation, BPC/BPO), Kosten inklusive Lieferung, Kosten pro Item, Mindestpreis, Verkauf, Nettoerlös, Gewinn, ROI und Status. Kosten, Kosten pro Item und Mindestpreis gelten für den gewählten Verkauf einschließlich seines Transports, sodass Nettoerlös minus Kosten den Gewinn derselben Zeile ergibt. Der Mindestpreis deckt mit den verkauften Einheiten alle Kosten und Gebühren. Die Tabelle ist sortierbar, vorläufige Werte tragen „~“, fehlende bleiben unverfügbar, die Summe erscheint nur bei vollständigen Werten. Beträge ab 1.000 ISK stehen ohne Nachkommastellen. Lagerbestand geht zuerst an die obere Produktzeile: Die Summe bleibt gleich, die Aufteilung auf die Produkte hängt aber von der Reihenfolge ab, worauf ein Hinweis unter der Tabelle aufmerksam macht.
 
@@ -1602,7 +1808,8 @@ Jede Rolle hat eigene Dateien (`market/home-hub-*.json`,
 `market/coalition-hub-*.json`); die Main-Hub-Dateien heißen unverändert
 `market/main-hub-*.json`.
 
-Der **Home-Hub-Scan** läuft direkt im Anschluss an jeden Main-Hub-Scan.
+Der **Home-Hub-Scan** läuft direkt im Anschluss an jeden Main-Hub-Scan,
+gleichzeitig mit dem Coalition-Hub-Scan.
 
 - **Gleiche Steuerung:** Er übernimmt damit dessen 6-Stunden-Wiederverwendung
   (mit dem einmaligen Lauf nach jedem Programmstart),
@@ -1659,8 +1866,11 @@ Main-Hub-Chancen.
   - Bei unvollständigem Ort erscheint ein Hinweis auf erneute Auswahl.
   - Ohne bisherigen Scan nennt die Ansicht den nächsten automatischen Lauf.
 
-Der **Coalition-Hub-Scan** läuft im selben Main-Hub-Scan nach dem Home Hub,
-mit denselben Regeln.
+Der **Coalition-Hub-Scan** läuft im selben Main-Hub-Scan gleichzeitig mit dem
+Home Hub, mit denselben Regeln (Eigentümerentscheid 05.11.2026, siehe
+[DECISIONS](Documentation/Consolidation/DECISIONS.md)). Vom Home Hub braucht er
+nur dessen Konfiguration als Startpunkt des Transports, nicht dessen Ergebnis;
+jede Rolle hat eigenen Zustand und eigene Dateien. Ein Abbruch beendet beide.
 
 - **Markt:** Structure-Markt mit Charakter-Lease; der Coalition-Händler hat
   Vorrang.
@@ -3007,8 +3217,9 @@ Der ausführliche Produktionsvertrag steht in
   lokalen Vertragsindex gespeichert (unabhängig vom Speichern der
   Markteinstellungen).
 - Der gewählte Umfang gilt für Regionsabruf, Detailabruf, Fortschritt,
-  Vollständigkeit, Suche, Kategorien/Gruppen und alle Angebotsabfragen. Damit
-  vergleichen Main-, Home- und Coalition-Hub-Chancen, der Vertragsverkauf im
+  Vollständigkeit, Suche, Kategorien/Gruppen/Regionsfilter und alle
+  Angebotsabfragen. Damit vergleichen Main-, Home- und Coalition-Hub-Chancen,
+  der Vertragsverkauf im
   Planner und die Bauplanangebote nur Verträge der gewählten Regionen. Verträge
   abgewählter Regionen bleiben gespeichert, werden aber weder aktualisiert
   noch angezeigt; nach erneuter Auswahl werden sie mit dem nächsten Abruf
@@ -3039,6 +3250,25 @@ Der ausführliche Produktionsvertrag steht in
   gesucht. Die Eingabetaste überspringt die Wartezeit und sucht sofort.
   Ergebnisaufträge tragen weiterhin ihre vollständige Suchidentität, sodass
   eine ältere Suche niemals Treffer einer neueren Eingabe überschreiben darf.
+- **Regionsfilter:** Im Vertragsfilter wählt **Region** eine einzelne Region
+  oder **Alle Regionen** (Standard). Angeboten werden nur Regionen des
+  gewählten Abrufumfangs mit mindestens einem Vertrag mit indizierten Items;
+  die Zahl in Klammern zählt diese Verträge wie bei Kategorie und Gruppe. Die
+  Region schränkt eine Namens-, Kategorie- oder Gruppensuche ein, startet aber
+  allein keine Suche. Fällt die gewählte Region nach einer Änderung des
+  Abrufumfangs weg, springt der Filter auf **Alle Regionen** zurück.
+- **Sortierung:** Rechts neben **Passende Verträge** stehen **Beste Treffer**
+  (Standard, bisherige Reihenfolge: exakter Itemname zuerst, dann früheste
+  Ablaufzeit), **Preis aufsteigend** und **Preis absteigend**. Sortiert wird
+  nach dem angezeigten Vertragspreis (`price`, sonst `buyout`, sonst `reward`),
+  also dem Gesamtpreis des Vertrags, nicht nach einem Stückpreis. 0 ISK ist ein
+  echter Preis; Verträge ohne Preis stehen aufsteigend hinter, absteigend vor
+  allen Verträgen mit Preis. Gleiche Preise ordnet die Ablaufzeit, dann
+  Vertrags- und Positionsnummer. Die Sortierung erfolgt in SQLite vor der
+  Begrenzung auf 300 Treffer, sodass die günstigsten bzw. teuersten Treffer des
+  ganzen lokalen Index erscheinen. Wahl von Region und Sortierung bleibt für
+  die Lebensdauer der Ansicht erhalten und löst wie die übrigen Filter nach der
+  kurzen Wartezeit eine neue Suche aus.
 - Wiederholte Contract-Schreiboperationen verwenden innerhalb einer geöffneten
   SQLite-Verbindung vorbereitete Statements erneut. Bindings werden nach jeder
   Ausführung zurückgesetzt; Transaktionsgrenzen, WAL-Modus, Fremdschlüssel und
@@ -3266,9 +3496,10 @@ mit kurzen, wiederverwendbaren Prompts steht in
   - die Dauer der Profil-Referenzdaten sowie Quelle und Dauer der
     Facility-Dogma (`table` oder `package`) und der Blueprint-Definitionen
     (Cache-Treffer oder Neuladen);
-  - beim Main-Hub-Scan die Dauer jeder Phase einschließlich Home- und
-    Coalition-Hub, die Gesamtdauer, die Volumendiagnose und die ESI-Last des
-    Scans;
+  - beim Main-Hub-Scan die Dauer jeder Phase, für die gleichzeitig laufenden
+    Home- und Coalition-Hubs eine gemeinsame Phase `secondary-hubs` mit der
+    Dauer jeder Rolle, die Gesamtdauer, die Volumendiagnose und die ESI-Last
+    des Scans;
   - je Planer-Klick (`planner.click`): Gesamtdauer, Zahl der
     Planberechnungen (`plan-passes`), Blueprint-Bäume, Rechenläufe,
     Marktabrufe samt angefragter Typen, DOTLAN-Abrufe und wiederverwendete
@@ -3299,7 +3530,9 @@ mit kurzen, wiederverwendbaren Prompts steht in
     - 420- und 429-Antworten;
     - die niedrigsten gemeldeten Fehler- und Token-Budgets.
   - Eine Zusammenfassung seit App-Start erscheint höchstens einmal je Minute,
-    wenn es neue Abrufe gab.
+    wenn es neue Abrufe gab. Sie nennt neben 4xx auch 5xx-Antworten und
+    Abrufe ohne HTTP-Antwort (`failures`, etwa Zeitüberschreitungen); beide
+    verbrauchen ebenfalls das ESI-Fehlerbudget.
   - Der dauerhafte ESI-Antwortcache (oben) verhindert Abrufe vor `Expires`
     auch über App-Neustarts hinweg. Der Zähler „early“ belegt das im
     laufenden Betrieb.

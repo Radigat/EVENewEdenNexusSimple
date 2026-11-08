@@ -165,8 +165,9 @@ struct TradeLogbookView: View {
     HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         Text("Trade logbook")
-          .font(.largeTitle.bold())
+          .appFont(.largeTitle.bold())
           .foregroundStyle(DesignTokens.textPrimary)
+          .nexusPageTitle()
         Text(
           "Logged purchases with planned and realized sale prices. Rates are frozen when an entry is created; unknown values stay empty."
         )
@@ -198,14 +199,14 @@ struct TradeLogbookView: View {
       ProgressView("Loading logbook…")
         .frame(maxWidth: .infinity, minHeight: 160)
     case .failed where isEmpty:
-      ContentUnavailableView(
+      AppUnavailableView(
         "Logbook unavailable",
         systemImage: "book.closed",
         description: Text("The logbook file could not be opened.")
       )
     default:
       if runtime.tradeLogbookEntries.isEmpty {
-        ContentUnavailableView(
+        AppUnavailableView(
           "No logbook entries yet",
           systemImage: "book.closed",
           description: Text(
@@ -269,7 +270,7 @@ struct TradeLogbookView: View {
           Text(
             "Personal wallet transactions, the wallet journal and own orders of every authorized character are stored after each character sync, beyond the 30-day ESI window."
           )
-          .font(.callout)
+          .appFont(.callout)
           .foregroundStyle(DesignTokens.textSecondary)
           Spacer()
           Button {
@@ -302,7 +303,7 @@ struct TradeLogbookView: View {
         Text(
           "Purchases in the Main, Home and Coalition Hub from this date become logbook entries; sales are assigned first-in-first-out per item and target hub. An own order is detected from the order history; otherwise a purchase counts as instant and a sale as own sell order (assumed)."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         if runtime.tradeUnresolvedPurchaseCount > 0 {
           Label(
@@ -315,7 +316,7 @@ struct TradeLogbookView: View {
           .foregroundStyle(DesignTokens.caution)
         }
         if let walletSyncMessage {
-          Text(walletSyncMessage).font(.callout)
+          Text(walletSyncMessage).appFont(.callout)
         }
         if let error = runtime.tradeWalletError {
           Label(error.localizedUI, systemImage: "exclamationmark.triangle.fill")
@@ -369,7 +370,7 @@ struct TradeLogbookView: View {
       }
       Spacer()
     }
-    .font(.callout)
+    .appFont(.callout)
   }
 
   private func walletStateText(_ status: TradeWalletSyncStatus) -> String {
@@ -410,7 +411,7 @@ struct TradeLogbookView: View {
           Text(
             "Sales of logged items that no open purchase with this target hub took. Assign them manually if they belong to a purchase."
           )
-          .font(.callout)
+          .appFont(.callout)
           .foregroundStyle(DesignTokens.textSecondary)
           ForEach(runtime.tradeUnassignedSales) { sale in
             unassignedRow(sale)
@@ -472,7 +473,7 @@ struct TradeLogbookView: View {
       .fixedSize()
       .accessibilityIdentifier("trade-logbook.unassigned.assign.\(sale.id)")
     }
-    .font(.callout)
+    .appFont(.callout)
   }
 
   private func sourceLabel(_ text: String, _ source: TradeValueSource) -> String {
@@ -511,7 +512,7 @@ struct TradeLogbookView: View {
           Int64(reached.count)
         )
       )
-      .font(.callout)
+      .appFont(.callout)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -564,7 +565,7 @@ struct TradeLogbookView: View {
       header("Status", .status, width: 140, alignment: .leading)
       Text("Notes").frame(width: 70, alignment: .leading)
     }
-    .font(.caption.weight(.semibold))
+    .appFont(.caption.weight(.semibold))
     .padding(.vertical, DesignTokens.spacingXS)
   }
 
@@ -612,7 +613,7 @@ struct TradeLogbookView: View {
       .buttonStyle(.borderless)
       .frame(width: 52)
       Text(entry.purchasedAt.formatted(date: .abbreviated, time: .shortened))
-        .font(.callout)
+        .appFont(.callout)
         .frame(width: 104, alignment: .leading)
       EVEItemText(
         value: entry.typeName,
@@ -630,10 +631,10 @@ struct TradeLogbookView: View {
         if case .sale = entry.usage, let name = entry.targetLocationName {
           EVEEntityText(value: name, font: .callout, lineLimit: 1)
         } else if case .sale(let role) = entry.usage {
-          Text(verbatim: TradeHubText.roleName(role)).font(.callout)
+          Text(verbatim: TradeHubText.roleName(role)).appFont(.callout)
         } else {
           Text(verbatim: TradeLogbookText.usage(entry.usage))
-            .font(.callout)
+            .appFont(.callout)
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -663,7 +664,7 @@ struct TradeLogbookView: View {
         } ?? DesignTokens.textPrimary
       )
       Text(verbatim: TradeLogbookText.status(entry.status))
-        .font(.callout)
+        .appFont(.callout)
         .lineLimit(1)
         .frame(width: 140, alignment: .leading)
       markers(entry)
@@ -707,7 +708,7 @@ struct TradeLogbookView: View {
           )
       }
     }
-    .font(.caption)
+    .appFont(.caption)
   }
 
   private func reminderCell(
@@ -732,7 +733,7 @@ struct TradeLogbookView: View {
         Text(verbatim: "—").foregroundStyle(DesignTokens.textSecondary)
       }
     }
-    .font(.callout)
+    .appFont(.callout)
     .lineLimit(1)
     .frame(width: 140, alignment: .leading)
   }
@@ -743,7 +744,7 @@ struct TradeLogbookView: View {
     tint: Color = DesignTokens.textPrimary
   ) -> some View {
     Text(verbatim: text)
-      .font(.callout.monospacedDigit())
+      .appFont(.callout.monospacedDigit())
       .foregroundStyle(tint)
       .lineLimit(1)
       .frame(width: width ?? numberWidth, alignment: .trailing)
@@ -811,7 +812,7 @@ struct TradeLogbookEditor: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Text(request.isNew ? "New logbook entry" : "Edit logbook entry")
-        .font(.title2.bold())
+        .appFont(.title2.bold())
         .padding(DesignTokens.spacingMD)
       Form {
         itemSection
@@ -827,7 +828,7 @@ struct TradeLogbookEditor: View {
           }
           if request.entry.walletLink != nil {
             Text(walletOriginText)
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
           }
           TextField("Price per unit (ISK, without broker fee)", text: $buyPriceText)
@@ -911,7 +912,7 @@ struct TradeLogbookEditor: View {
       .groupedNumberInput($plannedText)
     if request.entry.transportEstimated, !transportEdited {
       Text("Transport estimated for this quantity; replace it with the actual cost.")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
     }
     // Only typing marks the transport as the user's own value.

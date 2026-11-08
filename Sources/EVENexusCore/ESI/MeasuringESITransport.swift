@@ -61,6 +61,11 @@ public final class MeasuringESITransport: ESIHTTPTransporting,
     public var clientErrors: Int {
       routes.values.reduce(0) { $0 + $1.clientErrors }
     }
+    public var serverErrors: Int {
+      routes.values.reduce(0) { $0 + $1.serverErrors }
+    }
+    /// Requests that ended without an HTTP response, such as timeouts.
+    public var failures: Int { routes.values.reduce(0) { $0 + $1.failures } }
     public var earlyRequests: Int {
       routes.values.reduce(0) { $0 + $1.earlyRequests }
     }
@@ -106,6 +111,8 @@ public final class MeasuringESITransport: ESIHTTPTransporting,
         "kb=\(bytes / 1_024)",
         "304=\(notModified)",
         "4xx=\(clientErrors)",
+        "5xx=\(serverErrors)",
+        "failures=\(failures)",
         "early=\(earlyRequests)",
         "420=\(errorLimited)",
         "429=\(rateLimited)",

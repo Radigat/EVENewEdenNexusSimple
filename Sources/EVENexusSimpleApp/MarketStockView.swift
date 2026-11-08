@@ -62,7 +62,8 @@ struct MarketStockView: View {
   private var header: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text("Market stock")
-        .font(.largeTitle.bold())
+        .appFont(.largeTitle.bold())
+        .nexusPageTitle()
       Text(
         "Every item listed at a hub at its latest market stock point, with the change of its sell stock. Partly sold units are surely traded; vanished orders were sold, cancelled or expired."
       )
@@ -136,7 +137,7 @@ struct MarketStockView: View {
           Int64(overview.itemsByType.count)
         ) + " · " + coverage.joined(separator: " · ")
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }

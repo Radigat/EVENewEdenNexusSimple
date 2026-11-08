@@ -39,7 +39,7 @@ struct RecentProductionsView: View {
 
           if let persistenceError {
             Label(persistenceError, systemImage: "externaldrive.badge.xmark")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.negative)
           }
 
@@ -47,43 +47,43 @@ struct RecentProductionsView: View {
             Text(
               "Double-click a production to open its saved historical values in the Planner."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
 
             Text(
               "Historical rows keep the logistics and Refining result saved with that production; current settings do not rewrite them."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
 
             Text(
               "Gerundete Beträge zeigen beim Darüberfahren mit der Maus den genauen ISK-Wert."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
 
             Text(
               "Sale price and sold units can be changed here or in Production Overview. Use the checkbox for not sold or fully sold; enter a quantity for a partial sale."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
 
             Text(
               "Production costs include material, installation, BPO/BPC and logistics. Sales tax and broker fee reduce sale revenue separately."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
 
             Text(
               "For capitals that cannot be sold at the Highsec Main Hub, the broker fee remains not applicable. A known sales-tax rate still applies to an entered sale price, so minimum price and profit remain calculable."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           } else {
             Text(
               "Calculate a plan and choose Record production in the Planner."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -168,7 +168,8 @@ struct ProductionBookView: View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         Text("Production Overview")
-          .font(.largeTitle.bold())
+          .appFont(.largeTitle.bold())
+          .nexusPageTitle()
         Text(
           "One row per produced item, following the Produktionsübersicht in EVE-indu- Delve.xlsx."
         )
@@ -218,7 +219,7 @@ struct ProductionBookView: View {
         .disabled(pageIndex == 0 || isLoadingPage)
 
         Text(pageDescription)
-          .font(.callout.monospacedDigit())
+          .appFont(.callout.monospacedDigit())
           .foregroundStyle(DesignTokens.textSecondary)
           .frame(maxWidth: .infinity, alignment: .center)
 
@@ -236,14 +237,14 @@ struct ProductionBookView: View {
           "Calculating complete history totals…",
           systemImage: "sum"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
       Text(
         "Only the current page is loaded and sorted in the table. The complete totals above always include the full production history."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       if let saveError {
@@ -254,43 +255,43 @@ struct ProductionBookView: View {
       Text(
         "Beträge sind platzsparend gerundet. Der genaue ISK-Wert erscheint beim Darüberfahren mit der Maus."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Text(
         "Sale price and sold units can be changed here or in Production Overview. Use the checkbox for not sold or fully sold; enter a quantity for a partial sale."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Text(
         "Double-click a production to open its saved historical values in the Planner."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Text(
         "Historical rows keep the logistics and Refining result saved with that production; current settings do not rewrite them."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Text(
         "Production costs include material, installation, BPO/BPC and logistics. Sales tax and broker fee reduce sale revenue separately."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Text(
         "For capitals that cannot be sold at the Highsec Main Hub, the broker fee remains not applicable. A known sales-tax rate still applies to an entered sale price, so minimum price and profit remain calculable."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Text(
         "If a production did not record its sales-tax or broker-fee rate, the current Main Hub rate is used and shown in italics."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       GeometryReader { geometry in
@@ -307,14 +308,7 @@ struct ProductionBookView: View {
         }
         .defaultScrollAnchor(.top)
       }
-      .background(DesignTokens.panel)
-      .clipShape(
-        RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
-      )
-      .overlay {
-        RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
-          .stroke(DesignTokens.border)
-      }
+      .nexusPanelSurface(.flat)
     }
     .padding(DesignTokens.spacingLG)
     .navigationTitle(AppLocalization.text("Production Overview"))
@@ -350,7 +344,7 @@ struct ProductionBookView: View {
   ) -> some View {
     Panel(title: LocalizedStringKey(title)) {
       Text(value)
-        .font(.title3.monospacedDigit())
+        .appFont(.title3.monospacedDigit())
         .foregroundStyle(DesignTokens.highlight)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .help(exactValue.map(exactISK) ?? value)
@@ -748,7 +742,7 @@ private struct ProductionOverviewGrid: View {
             column: sortColumns[index],
             sort: $sort
           )
-          .font(.caption2.weight(.semibold))
+          .appFont(.caption2.weight(.semibold))
           .foregroundStyle(DesignTokens.canvas)
           .lineLimit(3)
           .minimumScaleFactor(0.65)
@@ -772,7 +766,7 @@ private struct ProductionOverviewGrid: View {
       if rows.isEmpty {
         GridRow {
           Text("Noch keine Produktion erfasst")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
             .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
             .padding(.horizontal, cellHorizontalPadding)
@@ -1002,7 +996,7 @@ private struct ProductionOverviewGrid: View {
     row: Int
   ) -> some View {
     Text(value)
-      .font(.caption)
+      .appFont(.caption)
       .lineLimit(1)
       .minimumScaleFactor(0.6)
       .help(value)
@@ -1065,7 +1059,7 @@ private struct ProductionOverviewGrid: View {
     row: Int
   ) -> some View {
     Text(compactCount(value))
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .lineLimit(1)
       .minimumScaleFactor(0.6)
       .help(exactCount(value))
@@ -1088,7 +1082,7 @@ private struct ProductionOverviewGrid: View {
     isProvisional: Bool = false
   ) -> some View {
     Text((isProvisional && value != nil ? "~ " : "") + compactISK(value))
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .italic(isCurrentSetting && value != nil)
       .lineLimit(1)
       .minimumScaleFactor(0.55)
@@ -1141,7 +1135,7 @@ private struct ProductionOverviewGrid: View {
       )
         ?? "—"
     )
-    .font(.caption.monospacedDigit())
+    .appFont(.caption.monospacedDigit())
     .lineLimit(1)
     .minimumScaleFactor(0.6)
     .foregroundStyle(valueColor(value, emphasis: .profit))
@@ -1184,7 +1178,7 @@ private struct ProductionOverviewGrid: View {
           .precision(.fractionLength(0...2))
       )
       .textFieldStyle(.plain)
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .multilineTextAlignment(.trailing)
       .accessibilityLabel("BPO/BPC-Kosten bearbeiten")
       .accessibilityIdentifier(
@@ -1234,7 +1228,7 @@ private struct ProductionOverviewGrid: View {
           .precision(.fractionLength(0...2))
       )
       .textFieldStyle(.plain)
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .multilineTextAlignment(.trailing)
       .accessibilityLabel("Verkaufspreis pro Unit bearbeiten")
       .accessibilityIdentifier(
@@ -1277,7 +1271,7 @@ private struct ProductionOverviewGrid: View {
             systemName:
               row.soldUnits > 0 ? "checkmark.square.fill" : "square"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(
             row.soldUnits > 0
               ? DesignTokens.positive : DesignTokens.textSecondary
@@ -1310,7 +1304,7 @@ private struct ProductionOverviewGrid: View {
           format: .number.locale(AppLocalization.currentLanguage.locale)
         )
         .textFieldStyle(.plain)
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .multilineTextAlignment(.trailing)
         .accessibilityLabel("Verkaufte Units bearbeiten")
         .accessibilityIdentifier(

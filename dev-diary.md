@@ -9712,6 +9712,164 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Live gemessen (Eigentümer, Xcode-Debug, derselbe Plan, zwei Klicks nach Neustart):** Erstes Laden im ersten Klick 5,0 s statt 14,3 s mit sechs am Vortag (8,4 s in A3); erster Klick 11,4 s statt 19,7 s. Keine 4xx, 420 oder 429 im Klick. Der warme Klick profitiert nicht. Der automatische Hub-Scan war als Kontrolle unbrauchbar, weil der Mac nach dem Build ausgelastet war.
 - **Offen:** 5xx und Transportfehler stehen nicht im Messprotokoll. Rund 50 Fehlerantworten beim automatischen LP-Store-Abruf je Start (Ursache nicht belegt). Eigentümerabnahme von A4.
 
+## 05.11.2026: A6 – Home und Coalition gleichzeitig, G9 zurückgestellt
+
+- **Auftrag:** Prompt A6 aus [ANALYSE_2026-11-02.md](Documentation/ANALYSE_2026-11-02.md). Eigentümerentscheide: G9 zurückgestellt (nicht bitgleich wie geplant, bitgleiche Überlappung bringt geschätzt 0,4–0,7 s je Klick), G10 umgesetzt; dazu 5xx/Transportfehler im ESI-Protokoll und Korrektur eines datumsabhängigen Tests. Ersatzcharaktere beim Strukturmarkt werden Prompt A6b.
+- **Ergebnis:**
+  - `SecondaryHubScan` (Core, `MarketBrowserModels.swift`) startet Home- und Coalition-Analyse gleichzeitig; Abbruch beendet beide. Messphase `secondary-hubs` mit Dauer je Rolle.
+  - `MeasuringESITransport` schreibt `5xx=` und `failures=` in die Zusammenfassung.
+  - `hubScansRecordMarketStockPointsInTheirOwnFile` rechnet mit einem Datum relativ zu heute.
+  - PRODUCT.md und DECISIONS.md (05.11.2026) ergänzt; Planer-Quellen nicht geändert.
+- **Prüfung:**
+  - 3 neue Tests; Golden-Master unverändert. Der datumsabhängige Test schlug auch auf dem unveränderten Stand fehl (geprüft auf einer Kopie von HEAD).
+  - `swift test`: 785 und 104 Tests grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `git diff --check` fehlerfrei. Logs unter `/private/tmp/eve-a6/logs/`.
+- **Live gemessen (Eigentümer, 05.11. abends):** nicht aussagekräftig. ESI war gestört (Fehlerbudget schon vor dem Scan von 83 auf 17 ohne 4xx). Home und Coalition liefen gleichzeitig 323 s und endeten ohne Marktdaten („Nicht erlaubt“, vermutlich Folgefehler der Ersatzcharaktere); der alte Build ohne G10 brauchte am selben Abend ebenfalls Minuten.
+- **Offen:** Messung in normaler ESI-Lage (bei erneutem Scheitern Reihenfolge zurück), A6b, Eigentümerabnahme.
+
+## 07.11.2026: D1 – Oberflächenstil „New Eden HUD“, Umschalter und gemeinsame Bausteine
+
+- **Auftrag:** Prompt D1 aus [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md). Eigentümerentscheide vor der Umsetzung: Farbschema-Auswahl bei HUD ausgegraut mit Hinweis; Baustein deckt nur die Panel-Varianten A (`Panel`, mit Schatten) und B (handgebaut, ohne Schatten) ab; `Panel` nutzt den Baustein schon in D1. Entscheidung in DECISIONS.md (07.11.2026).
+- **Ergebnis:**
+  - `AppInterfaceStyle` (`classic`, `hud`) in `AppLanguage.swift`, Schlüssel `app.appearance.interface-style`, Standard `classic`; Environment-Value `interfaceStyle`. `EVENexusSimpleApp` setzt bei HUD `preferredColorScheme(.dark)`, sonst das gespeicherte Farbschema.
+  - Allgemeine Einstellungen, Panel „Farben“: Auswahl „Oberflächenstil“ über dem Farbschema; bei HUD ist das Farbschema gesperrt, der Hinweis nennt, dass der gespeicherte Wert wieder in „Klassisch“ gilt. Neue Texte in beiden `Localizable.strings`.
+  - Neue Datei `InterfaceStyleComponents.swift` (auch im Xcode-Projekt): `nexusPanelSurface(.standard/.flat)`, `NexusPanelTitle`, `HUDDiamond`, `HUDCornerBrackets`, `HUDGridBackground`, `nexusCanvasBackground()`. `Panel` verwendet Titel und Fläche daraus. Keine Ansichtsdatei umgestellt; Rastergrund noch nirgends eingesetzt.
+  - Erhobene Panel-Varianten A–F mit Fundstellen: Notiz außerhalb des Repositorys (Sitzungsnotizen D1); die Zuordnung steht in DECISIONS.md.
+- **Prüfung:**
+  - 10 neue Tests in `AppInterfaceStyleTests` (Schlüssel, Standard, unbekannte Werte, Wiederherstellung, Farbschema-Zuordnung, Rückkehr zum gespeicherten Farbschema, Environment, Varianten, HUD-Maße).
+  - `swift test`: 785 und 104 Tests (Swift Testing) und 23 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `git diff --check` fehlerfrei.
+  - Sichtprüfung in einer isolierten Debug-App (eigener Datenordner, eigene UserDefaults-Suite, ohne Hintergrunddienste, Beenden per PID): Umschalten Klassisch → HUD → Klassisch in den Allgemeinen Einstellungen; HUD dunkel mit Eckwinkeln und Rauten an Dashboard- und Einstellungs-Panels; gesperrte Farbschema-Auswahl behält „Hell“, auch nach Klick auf „Dunkel“, und „Hell“ gilt nach der Rückkehr wieder.
+  - „Klassisch“ unverändert: Pixelvergleich gegen einen Build des Arbeitsbaums ohne D1 (gleiche Fenstergröße, leere isolierte Daten). Dashboard-Detailbereich 0 abweichende Pixel; 4 Einzelpixel in Symbolen der durchscheinenden Seitenleiste (von D1 nicht berührt). Allgemeine Einstellungen bis zur neuen Zeile im Panel „Farben“ 0 abweichende Pixel.
+- **Offen:** Eigentümerabnahme; Platzierung der Auswahl im Panel „Farben“ nicht ausdrücklich bestätigt; VoiceOver nicht geprüft; D2–D8.
+
+## 07.11.2026: D2 – HUD-Rahmen: Seitenleiste in Gruppen, Rastergrund, Bereichszeile; Farbschema-Korrektur
+
+- **Auftrag:** Prompt D2 aus [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md). Eigentümerentscheide: Seitenkopf als Bereichszeile über dem vorhandenen Titel (wie die Boards), schon in D2 in allen Ansichten; macOS-Auswahl in der Seitenleiste bleibt; den bei der Prüfung gefundenen Farbschema-Fehler sofort beheben. DECISIONS.md (07.11.2026, D2).
+- **Ergebnis:**
+  - `NavigationGroup` und `NavigationSection.group` (`ContentView.swift`): Übersicht, Industrie, Chancen, Markt, Assets, System. Im HUD zeigt die Seitenleiste diese Gruppen mit Titeln im Panel-Titel-Stil; „Klassisch“ zeigt unverändert „Etablierte Abläufe“. Identifier `navigation.<rawValue>`, Auswahl und Navigationswächter unverändert; neu `navigation.group.<rawValue>`.
+  - Detailbereich: `nexusCanvasBackground()` statt `.background(DesignTokens.canvas)`; Bereich der Ansicht als Environment-Value `navigationGroup`.
+  - Bereichszeile `.nexusPageTitle()` (6-pt-Raute, Gruppenname) an 20 Titeln: alle 19 Bereiche, Daten & Einstellungen an jeder Unterseite. Titel mit Knöpfen auf der Grundlinie (Planer, Lager, Baupläne) behalten die Ausrichtung.
+  - Gemeinsamer Stil `nexusCaptionTitle()` für Panel-Titel, Gruppentitel und Bereichszeile.
+  - Farbschema-Fehler (bestand schon vor D1, in D1 übersehen): Nach HUD → „Klassisch“ und nach Dunkel → System blieb die App bis zum Neustart dunkel. Das Farbschema läuft jetzt über `NSApp.appearance` (`AppAppearanceApplier`, `EVENexusSimpleApp.swift`) statt über `preferredColorScheme`. Ein erster Versuch, nur Fenster-Darstellungen zurückzusetzen, wirkte nicht.
+  - Neue Texte (Gruppentitel) in beiden `Localizable.strings`; PRODUCT.md und Plan aktualisiert. `PlaceholderViews.swift` (Planer-Quelle) bekommt nur die Bereichszeile am Titel; `PlannerFlowGuide.swift` bleibt inhaltlich gleich. Für einen späteren Commit gilt „Planer-Info: geprüft, keine Änderung nötig“.
+- **Prüfung:**
+  - Neu: `HUDNavigationGroupTests` (5 Tests: Klassisch-Reihenfolge, Gruppenreihenfolge laut Plan, jede Ansicht genau einmal, Gruppentitel in beiden Sprachen, Environment) und ein Test zur AppKit-Zuordnung in `AppInterfaceStyleTests`.
+  - `swift test`: 785 und 104 Tests (Swift Testing) und 29 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `check_planner_guide.py --self-test` bestanden; `git diff --check` fehlerfrei.
+  - Sichtprüfung in isolierten Debug-Apps (eigener Datenordner, eigene UserDefaults-Suite, ohne Hintergrunddienste, Beenden per PID): HUD mit Gruppen bis „System“, Rastergrund, Bereichszeile in Dashboard, Planer, Chancen und Einstellungen; Rückkehr zu „Klassisch“ mit flacher Liste und erhaltener Auswahl; Neustart mit gespeichertem HUD startet dunkel mit Gruppen.
+  - Farbschema: 12 Wechsel gemessen (Helligkeit des Detailbereichs), alle wie erwartet, darunter HUD → Klassisch/System hell und Dunkel → System hell.
+  - „Klassisch“ unverändert: Pixelvergleich unter gleichen Bedingungen ab der Titelleiste abwärts, je 8 Ansichten hell gegen D1 und 7 Ansichten dunkel gegen den Stand vor D1: 0 abweichende Pixel. Unterschiede zwischen getrennten Läufen kamen von wechselnder Bildlaufleisten-Darstellung und Übergängen in der Titelleiste, nicht vom Code.
+- **Offen:** Eigentümerabnahme von D1 und D2. Die Menüleisten-Ansicht und eigenständige Hinweisfenster folgen jetzt dem App-Farbschema statt immer macOS; das ist nicht in der App geprüft. VoiceOver nicht geprüft. D3–D8.
+
+## 07.11.2026: D3 – HUD-Übersicht: Dashboard und Nettowert
+
+- **Auftrag:** Prompt D3 aus [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md). Boards `Main.dc.html` und `Nettowert.dc.html` mit der App verglichen; Abweichungen dem Eigentümer vorgelegt. Entscheide: Dashboard-Anordnung des Boards nicht übernehmen, Nettowert-Texte („· heute“, „ggü. gestern“) und eigener Block „EVE-Typen ohne Preis“ nicht übernehmen. DECISIONS.md (07.11.2026, D3).
+- **Ergebnis:**
+  - Dashboard: nutzt bereits ausschließlich `Panel` (seit D1 auf dem Baustein); kein Code geändert.
+  - Nettowert: Summenkarte von handgebautem Panel (Variante B) auf `nexusPanelSurface(.flat)`, ihr Titel auf `NexusPanelTitle`. Bestandteil-Karten, Chart-Zwischentitel und Tabellenköpfe bleiben, sie sind keine Panels der Varianten A/B.
+  - Raute vor Panel-Titel und Bereichszeile als Overlay (`hudDiamondPrefix`), damit Grundlinien-Ausrichtungen neben dem Titel im HUD erhalten bleiben; optisch unverändert.
+  - Neuer Test `NexusPanelSurfaceRenderingTests`: rendert Baustein und handgebaute Varianten A und B sowie den Panel-Titel offscreen in Hell und Dunkel und verlangt in „Klassisch“ gleiche Bitmaps; Gegenproben für Schatten und HUD-Zusätze.
+  - PRODUCT.md, Plan (D3 erledigt) gepflegt. Keine neuen sichtbaren Texte, keine Planer-Quelle geändert.
+- **Prüfung:**
+  - `swift test`: 785 und 104 Tests (Swift Testing) und 34 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `git diff --check` fehlerfrei.
+  - Sichtprüfung in isolierten Debug-Apps (eigener Datenordner, eigene UserDefaults-Suite, ohne Hintergrunddienste, Beenden per PID), D2- und D3-Build direkt nacheinander: „Klassisch“ in 8 Ansichten und HUD in Dashboard, Nettowert und Einstellungen ab der Titelleiste abwärts 0 abweichende Pixel.
+- **Offen:** Die Nettowert-Summenkarte erscheint nur mit Charakterdaten und wurde deshalb in der App nicht gesehen; „Klassisch“ ist dafür über den Render-Test belegt, die HUD-Optik entspricht den übrigen Panels. Eigentümerabnahme von D1–D3; D4–D8.
+
+## 07.11.2026: D4 – HUD-Planer
+
+- **Auftrag:** Prompt D4 aus [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md). Board `Planer.dc.html` mit der App verglichen. Eigentümerentscheide: App-Aufbau bleibt; Info-Panel bekommt im HUD Eckwinkel. DECISIONS.md (07.11.2026, D4).
+- **Ergebnis:**
+  - `PlannerView`, `PlannerSteps`, `PlannerProfitabilityPanel`, `PlannerProductEconomicsPanel` und `PlannerAutomationViews` nutzen bereits ausschließlich `Panel` (seit D1 auf dem Baustein); keine handgebauten Panels der Varianten A/B. Kleine Karten und Unterkarten auf `elevated` bleiben.
+  - Neuer Modifier `hudCornerBrackets()` (`InterfaceStyleComponents.swift`) für Sonderformen; die Panel-Fläche nutzt ihn ebenfalls. Eingesetzt am Info-Panel (`PlannerFlowGuideView.swift`).
+  - `PlannerFlowGuide.swift` inhaltlich unverändert, nur Optik geändert. Für einen späteren Commit gilt „Planer-Info: geprüft, keine Änderung nötig“ (wegen `PlaceholderViews.swift` aus D2).
+  - PRODUCT.md und Plan (D4 erledigt) gepflegt; keine neuen sichtbaren Texte.
+- **Prüfung:**
+  - Neuer Render-Test: Eckwinkel an einer Info-Panel-Form ändern „Klassisch“ in Hell und Dunkel nicht, im HUD schon.
+  - `swift test`: 785 und 104 Tests (Swift Testing, Golden-Master „Planner golden master“ grün) und 35 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `check_planner_guide.py --self-test` bestanden; `git diff --check` fehlerfrei.
+  - Sichtprüfung in isolierten Debug-Apps (eigener Datenordner, eigene UserDefaults-Suite, ohne Hintergrunddienste, Beenden per PID), D3- gegen D4-Build: Planer und geöffnetes Info-Panel in „Klassisch“ 0 abweichende Pixel; im HUD Planer 0, Info-Panel nur an den beiden Eckwinkeln abweichend (311 Pixel).
+- **Offen:** Planer-Schritte mit Daten (ohne SDE im isolierten Datenordner nur Schritt 1 mit Hinweisen sichtbar) nicht im HUD gesehen; sie bestehen aus `Panel` und Unterkarten wie geprüft. Eigentümerabnahme von D1–D4; D5–D8.
+
+## 07.11.2026: D5 – HUD-Industrie und Chancen
+
+- **Auftrag:** Prompt D5 aus [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md). Boards `Reaktionen.dc.html`, `Bauplaene.dc.html`, `Produktion.dc.html` und `Chancen.dc.html` mit der App verglichen. Eigentümerentscheide: App-Anordnung und App-Texte bleiben; Hub-Chancen-Flächen bekommen im HUD Eckwinkel; Bauplanliste bleibt ohne Panel; akzentgefüllter Tabellenkopf der Produktionsübersicht bleibt. DECISIONS.md (07.11.2026, D5).
+- **Ergebnis:**
+  - Reaktionen (`PlaceholderViews.swift`): Kennzahlkarten von handgebauter Variante B auf `nexusPanelSurface(.flat)`. Alle übrigen Panels nutzten bereits `Panel`; Ergebniszeilen (Unterkarten auf `elevated`) bleiben wie im Board ohne Eckwinkel.
+  - Baupläne (`BlueprintsView.swift`): nutzten bereits nur `Panel`; keine Codeänderung.
+  - Produktionsübersicht (`ProductionBookViews.swift`): Tabellenrahmen (Variante B) auf `nexusPanelSurface(.flat)`; Kennzahlen nutzten bereits `Panel`.
+  - Hub-Chancen (`MarketBrowserView.swift`, `ManufacturingOpportunitiesView` für Main, Home und Coalition Hub): Filterdeck und Analysegrundlage mit `hudCornerBrackets(cornerRadius: DesignTokens.badgeRadius)`, die drei Rechner-Zustände (leer, in Vorbereitung, mit Kandidaten) mit `hudCornerBrackets(cornerRadius: 2)`. Form, Radius und Kopfleiste bleiben.
+  - `PlannerFlowGuide.swift` nicht betroffen; für einen späteren Commit gilt weiter „Planer-Info: geprüft, keine Änderung nötig“ (wegen `PlaceholderViews.swift`). Keine neuen sichtbaren Texte.
+  - PRODUCT.md und Plan (D5 erledigt) gepflegt.
+- **Prüfung:**
+  - Neuer Render-Test: Eckwinkel an Karten mit Radius 6 (Rahmen unter dem Clip) und an der Rechner-Fläche mit Radius 2 ändern „Klassisch“ in Hell und Dunkel nicht, im HUD schon. Kennzahlkarten und Tabellenrahmen entsprechen exakt der vom bestehenden Test abgesicherten Variante B.
+  - `swift test`: 785 und 104 Tests (Swift Testing, Golden-Master „Planner golden master“ grün) und 36 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `check_planner_guide.py --self-test` bestanden; `git diff --check` fehlerfrei.
+  - Sichtprüfung in isolierten Debug-Apps (eigener Datenordner, eigene UserDefaults-Suite, ohne Hintergrunddienste, Beenden per PID), D4- gegen D5-Build, je sechs Ansichten (Reaktionen, Baupläne, Produktionsübersicht, Main-, Home-, Coalition-Hub-Chancen): „Klassisch“ überall 0 abweichende Pixel. HUD: Reaktionen, Baupläne, Home- und Coalition-Hub 0; Produktionsübersicht 292 und Main Hub 468 Pixel, nur an den Eckwinkeln.
+- **Offen:**
+  - Im isolierten Datenordner fehlen SDE, Charaktere und Scan: Reaktions-Kennzahlkarten, Bauplan-Detailpanels, Analysegrundlage der Hub-Chancen und Home-/Coalition-Hub mit konfiguriertem Hub (dort nur „Kein Home Hub konfiguriert“) wurden nicht in der App gesehen. Sie nutzen dieselben, per Render-Test abgesicherten Formen bzw. dieselbe Ansicht wie der Main Hub.
+  - Beobachtung für D8: Am Tabellenrahmen der Produktionsübersicht fällt der Eckwinkel oben links mit dem akzentgefüllten Tabellenkopf zusammen; sichtbar ist im HUD nur der Eckwinkel unten rechts.
+  - Eigentümerabnahme von D1–D5; D6–D8.
+
+## 07.11.2026: D6 – HUD-Markt I
+
+- **Auftrag:** Prompt D6 aus [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md). Boards `Handel.dc.html`, `Logbuch.dc.html`, `Marktbestand.dc.html` und `Lagerverkauf.dc.html` mit der App verglichen. Eigentümerentscheide: App-Anordnung und App-Texte bleiben; Handelskacheln bekommen im HUD Eckwinkel; Marktbestand bleibt ohne Panels. DECISIONS.md (07.11.2026, D6).
+- **Ergebnis:**
+  - Handel (`TradeView.swift`): Die gemeinsame Kachelform `tileFrame` (Artikelsuche, Top-Kachel, Marktgruppen-Kacheln) bekommt `hudCornerBrackets(cornerRadius: 10)`; Fläche, Verlaufsbalken und Titel bleiben. „Route und Grundlage“ und „Marktgruppe und Item“ nutzten bereits `Panel`.
+  - Handelslogbuch (`TradeLogbookView.swift`) und Lagerverkauf-Abgleich (`StockSaleComparisonView.swift`) nutzten bereits ausschließlich `Panel`; keine Codeänderung. Der Logbuch-Editor bleibt ein natives Formular-Sheet.
+  - Marktbestand (`MarketStockView.swift`, `MarketStockItemDetailView.swift`): bleibt ohne Panels; keine Codeänderung. Sortierbare Tabellenköpfe und der Zeilen-Cache aus A4 sind unberührt.
+  - Keine Planer-Quelle betroffen; keine neuen sichtbaren Texte. PRODUCT.md und Plan (D6 erledigt) gepflegt.
+- **Prüfung:**
+  - Neuer Render-Test: Eckwinkel an einer Kachelform ohne Rahmen mit Verlaufsbalken ändern „Klassisch“ in Hell und Dunkel nicht, im HUD schon.
+  - `swift test`: 785 und 104 Tests (Swift Testing, Golden-Master „Planner golden master“ grün) und 37 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `git diff --check` fehlerfrei.
+  - Sichtprüfung in isolierten Debug-Apps (eigener Datenordner, eigene UserDefaults-Suite, ohne Hintergrunddienste, Beenden per PID), D5- gegen D6-Build: Handel, Handelslogbuch, Marktbestand und Lagerverkauf-Abgleich in „Klassisch“ und im HUD je 0 abweichende Pixel.
+  - Ohne SDE zeigt der Handel keine Kacheln („Kein SDE-Katalog“). Die Kachelform wurde deshalb zusätzlich offscreen mit dem echten Modifier gerendert (temporärer Test, danach entfernt): HUD mit Eckwinkeln, oben links teils auf dem Verlaufsbalken; „Klassisch“ ohne Winkel.
+- **Offen:**
+  - Handelskacheln, Marktbestand-Tabelle mit Daten und das Item-Verlauf-Sheet wurden mangels SDE und Bestandspunkten im isolierten Datenordner nicht in der App gesehen.
+  - Eigentümerabnahme von D1–D6; D7–D8.
+
+## 07.11.2026: D7 – HUD-Markt II und Assets
+
+- **Auftrag:** Prompt D7 aus [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md). Boards `Vertraege.dc.html`, `Moonkauf.dc.html`, `Mineralkauf.dc.html`, `Gegenstaende.dc.html` und `Lager.dc.html` mit der App verglichen. Eigentümerentscheide: App-Anordnung und App-Texte bleiben; Karten in Listen ohne Eckwinkel; Sync-Panel mit Raute; PNG-Export in beiden Stilen gleich. DECISIONS.md (07.11.2026, D7).
+- **Ergebnis:**
+  - Öffentliche Verträge (`PublicContractsView.swift`): `DisclosurePanel` („ESI-sichere Synchronisierung“) von handgebauter Variante B auf `nexusPanelSurface(.flat)` und `NexusPanelTitle`. Ergebniskarten und Erstimport-Warnkarte unverändert.
+  - Moon-/Mineralien-Kaufanalyse (`MoonMaterialPurchaseAnalysisView.swift`): Panels nutzten bereits `Panel`; Vergleichstabelle bleibt. Das PNG-Rendering liegt jetzt in `MaterialPurchaseImageExportRenderer` (unverändert: eigene Exportansicht, `.dark`, doppelte Auflösung) und setzt ausdrücklich den Stil „Klassisch“. Sichern-Dialog und Meldungen bleiben.
+  - Alle Gegenstände und Lager (`AssetsWarehouseView.swift`): Panels nutzten bereits `Panel`; Standortkarten unverändert. Keine Codeänderung.
+  - Keine Planer-Quelle betroffen; keine neuen sichtbaren Texte. PRODUCT.md und Plan (D7 erledigt) gepflegt.
+- **Prüfung:**
+  - Neuer Test `MaterialPurchaseImageExportTests`: Der Export für Moon-Materialien und Mineralien ist bei hellem und dunklem App-Erscheinungsbild (Klassisch hell bzw. Klassisch dunkel/HUD) gleich groß, weicht höchstens um eine Farbstufe an Textkanten ab (Toleranz 2) und zeigt im Rand die dunkle Hintergrundfarbe. Exakte Byte-Gleichheit gilt nicht: In der vollen Suite wichen 1.384 Pixel um genau eine Stufe ab (Kantenglättung nach vorherigem Rendering im Prozess), einzeln 0.
+  - `swift test`: 785 und 104 Tests (Swift Testing, Golden-Master „Planner golden master“ grün) und 38 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `git diff --check` fehlerfrei.
+  - Sichtprüfung in isolierten Debug-Apps (eigener Datenordner, eigene UserDefaults-Suite, ohne Hintergrunddienste, Beenden per PID), D6- gegen D7-Build: Öffentliche Verträge, Moon- und Mineralien-Kaufanalyse, Alle Gegenstände und Lager in „Klassisch“ je 0 abweichende Pixel; im HUD 0 außer dem Sync-Panel der Verträge (Eckwinkel und Raute, 4.860 Pixel).
+  - Beispiel-Exporte der Mineralien-Kaufanalyse bei hellem und dunklem App-Erscheinungsbild über einen temporären Test (danach entfernt): beide dunkel im Klassisch-Aussehen.
+- **Offen:**
+  - Kaufanalysen mit Marktdaten, Ergebniskarten der Verträge und Standortkarten wurden mangels Daten im isolierten Datenordner nicht in der App gesehen; der Export aus der laufenden App (Sichern-Dialog) wurde nicht ausgelöst.
+  - Eigentümerabnahme von D1–D7; D8.
+
+## 07.11.2026: D8 – HUD-Abschluss: Daten & Einstellungen, Gesamtdurchsicht, Abnahme-Checkliste
+
+- **Auftrag:** Prompt D8 aus [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD_2026-11-07.md). Eigentümerentscheide: In Daten & Einstellungen nichts weiter ändern; „Klassisch“ bleibt Standard für neue Installationen. DECISIONS.md (07.11.2026, D8).
+- **Ergebnis:**
+  - Daten & Einstellungen (Allgemein, SDE, ESI, Industrie-Einstellungen, Logistik, Markteinstellungen) nutzten bereits ausschließlich `Panel`. Navigationsleiste, Unterkarten und kleine Karten bleiben. Keine Codeänderung in D8.
+  - Suche nach verbliebenen handgebauten Flächen (`DesignTokens.panel` ohne Baustein): Liste mit Einordnung im Plan, Abschnitt 7. Auffällig: `MarketBrowserView` ist nirgends mehr eingebunden.
+  - Abnahme-Checkliste für den Eigentümer im Plan, Abschnitt 7; optionaler Prompt D9 nur für Befunde aus der Abnahme. PRODUCT.md, Plan (D8 erledigt) und DECISIONS.md gepflegt.
+- **Prüfung:**
+  - `swift test`: 785 und 104 Tests (Swift Testing, Golden-Master „Planner golden master“ grün) und 38 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests; `git diff --check` fehlerfrei.
+  - Gesamtdurchsicht in isolierten Debug-Apps (eigener Datenordner, eigene UserDefaults-Suite, ohne Hintergrunddienste, Beenden per PID): 18 Ansichten und 6 Einstellungsseiten je Stil, „Klassisch“ hell und „New Eden HUD“, 48 Bilder und Übersichtsbögen im Notizordner (`D8_gesamtdurchsicht`). Die Einstellungsseiten ließen sich per Mausklick auf die Segmente nicht umschalten und wurden per Accessibility-Aktion aufgenommen.
+- **Offen:**
+  - Eigentümerabnahme D1–D8 mit echten Daten nach Abschnitt 7 des Plans.
+  - Altbestand außerhalb der Gestaltung: Seitenkopf der Baupläne ohne Daten steht mittig; `MarketBrowserView` ist unbenutzt.
+
+## 07.11.2026: Market Browser vollständig entfernt
+
+- **Auftrag:** Nutzungsprüfung von `MarketBrowserView` (Hinweis aus D8 und A7 der [App-Analyse](Documentation/ANALYSE_2026-11-02.md)), danach Entfernung nach Eigentümerentscheid „Stufe A und B“. DECISIONS.md (07.11.2026, Market Browser).
+- **Befund:** `MarketBrowserView` war seit `4020a14` (26.09.2026) nirgends eingebunden: kein Aufruf, kein Preview, kein Test, nur die Datei im Xcode-Projekt (die Datei bleibt wegen `ManufacturingOpportunitiesView`).
+- **Ergebnis:**
+  - App: Ansicht (`MarketBrowserView.swift`, rund 880 Zeilen), `MarketOrderSortColumn`, in `RuntimeState.swift` Browser-Zustand, `refreshMarketBrowser`, Strukturnamen-Auflösung und `searchMarketTypes` sowie 47 nur dort genutzte Übersetzungsschlüssel je Sprache entfernt.
+  - Core: `MarketBrowserService.swift` gelöscht (Projektverweise entfernt); in `MarketBrowserModels.swift` `MarketBrowserOrder`, `MarketBrowserRegionFailure`, `MarketBrowserSummary` (Regel `eve-tycoon-five-percent-2026-08-01`), `MarketBrowserSnapshot` und `MarketBrowserFilter` entfernt. Vier Tests und die Testhilfe dazu entfernt.
+  - Reste auf Eigentümerwunsch: `MarketSecurityBand` ist nur noch eine Hülle für `eveDisplayStatus` (`resolved` und die Fälle entfernt); der Test-Fixture `MarketBrowserFixtureTransport` beantwortet nur noch `/markets/10000001/orders` (Regionen-, Namens-, Systemrouten und Fehlerregion entfernt).
+  - Bleibt: `MarketSecurityBand.eveDisplayStatus` (Profile) mit Rundungstest; `ManufacturingOpportunitiesView` unverändert; uncommittete HUD-Änderungen in denselben Dateien erhalten.
+  - PRODUCT.md, ARCHITECTURE.md, ACCEPTANCE.md und HANDOFFS.md auf den aktuellen Stand gebracht. Keine Planer-Quelle betroffen.
+- **Prüfung:**
+  - Nach Stufe A/B und erneut nach Entfernen der Reste: `swift test` (isolierter Build-Ordner): 781 und 104 Tests (Swift Testing, Golden-Master „Planner golden master“ grün) und 38 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip).
+  - Natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 781 Tests; keine neue Warnung. `plutil -lint` für beide `Localizable.strings` und `project.pbxproj` OK; `git diff --check` fehlerfrei.
+- **Offen:**
+  - Die Fundstellen „nicht eingebunden“ in `DESIGN_HUD_2026-11-07.md` und der Punkt in A7 der App-Analyse sind nicht nachgetragen.
+
 ## 07.11.2026: Öffentliche Verträge – Fenster leer bis auf den Leerzustand
 
 - **Fehler (Eigentümer-Screenshot):** Nach Klick auf „Öffentliche Verträge“ waren Seitenleiste, Titel und Filter verschwunden; sichtbar blieb nur „Lokalen Vertragsindex durchsuchen“ unten links.
@@ -9722,6 +9880,34 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - Nachbau des Seitenstapels (Skript außerhalb des Repositorys): Hinweishöhe mit und ohne `fixedSize` gleich (144, 96, 64 pt bei 500, 900, 1.580 pt Breite), also kein Abschneiden bei verfügbarem Platz.
   - `swift test`: 781 und 105 Tests (Swift Testing) und 38 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 781 Tests; `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit den uncommitteten HUD-Änderungen.
 - **Offen:** Sichtprüfung mit sichtbarem Hinweis in der App: In der isolierten Instanz ohne Hintergrunddienste bleibt der Vertragsspeicher deaktiviert und der Hinweis erscheint nicht; die Seite selbst wurde dort im HUD-Stil korrekt dargestellt. Prüfung in der Eigentümer-App nach Neustart aus Xcode und Eigentümerabnahme offen. Nicht geändert: Der Hinweis nennt den „Erstimport“, erscheint aber auch bei ausstehenden Details nach späteren Aktualisierungen.
+
+## 07.11.2026: Item-Verlauf – engere Werteachse und Mouse-over je Hub
+
+- **Auftrag (Eigentümer-Screenshot, Gila):** Im Bestandsverlauf lagen die Preise auf einer Achse von 0 bis 400 Mio. eng beieinander. Skalierung so wählen, dass der Preis klar erkennbar ist, und beim Überfahren eines Punkts den Wert zum Messzeitpunkt für alle gewählten Hubs zeigen. Eigentümerentscheide: Zoom für alle drei Kennzahlen; Zeitachse bleibt 30 Tage; Tooltip mit dem nächsten Punkt je Hub (höchstens 3 Stunden, Tageswerte am selben UTC-Tag).
+- **Ergebnis:**
+  - Core (`MarketStockHistory.swift`): `MarketStockChartScale.valueDomain` (Bereich der Werte plus 8 % Rand, runde Grenzen, nie unter 0 ohne negative Werte) und `MarketStockChartHover` (`anchor`, `sample`, Toleranz 3 Stunden, gleicher Abstand → früherer Punkt).
+  - App (`MarketStockItemDetailView.swift`): `chartYScale` mit diesem Bereich; Hover-Overlay rastet bis 36 pt am nächsten Punkt ein, gestrichelte Linie, vergrößerte Treffer, Tooltip mit Zeit (UTC), Hubfarbe, Wert und abweichender Messzeit, sonst „kein Punkt“. Hinweistext unter dem Graphen; drei neue Texte in beiden `Localizable.strings`. Neue Schriftaufrufe nutzen `appFont` wie der parallele HUD-Umbau.
+  - PRODUCT.md (Item-Verlauf) ergänzt. Keine Planer-Quelle betroffen; Daten und Rechenregeln unverändert.
+- **Prüfung:**
+  - 2 neue Tests in der Suite „Market stock chart scale and hover“ (`MarketStockHistoryTests.swift`): Bereich für Preise (225–290 Mio. → 200–300 Mio.), Mengen, konstante Reihe, 0 und leere Werte; Einrasten, Gleichstand, Toleranz genau 3 Stunden, 4 Stunden ohne Punkt, Tageswerte nur am selben UTC-Tag.
+  - `swift test` (isolierter Build-Ordner): 783 und 105 Tests (Swift Testing) und 45 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild build` `BUILD SUCCEEDED` und `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 783 Tests; keine neue Warnung. `plutil -lint` für beide `Localizable.strings` OK; `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit den uncommitteten HUD-Änderungen paralleler Sitzungen. Logs unter `/private/tmp/eve-nexus-claude-chart/logs/`.
+- **Offen:** Sichtprüfung des Mouse-overs mit echten Bestandsdaten (eine isolierte App ohne Nutzerdaten hat keine Bestandspunkte); Tooltip-Lage am linken und rechten Rand, Darstellung im HUD-Stil und VoiceOver nicht in der App geprüft; Eigentümerabnahme.
+
+## 07.11.2026: Schriftgröße wirkt jetzt in der ganzen App
+
+- **Fehler (Eigentümer-Screenshot, Allgemeine Einstellungen):** Die Auswahl Kompakt bis Barrierefreiheit änderte keine Schriftgröße.
+- **Befund:** Die App setzte nur `\.dynamicTypeSize`. macOS wendet das nicht auf SwiftUI-Textstile an; gemessen auf macOS 27.2 rendert `.body` bzw. `.caption` in allen fünf Stufen gleich breit (177 bzw. 141 pt). Zusätzlich übernehmen umrandete Buttons, Segment- und Menüauswahl keine `.font`, sondern nur die Control-Größe; `ContentUnavailableView` und die Seitenleistenzeilen ignorieren die Umgebungsschrift und folgen nur einer Schrift direkt am Inhalt.
+- **Änderung (`AppLanguage.swift`):**
+  - `AppFont` spiegelt die Textstile und Modifikatoren der App; `.appFont(_:)` skaliert sie mit `AppTextSize.scale` (0,9 / 1 / 1,15 / 1,3 / 1,5). Bei „Standard“ entsteht genau der bisherige SwiftUI-Textstil. Grundgrößen und Gewichte der macOS-Textstile (headline fett, caption2 medium) sind hinterlegt und per Test gegen `NSFont` abgesichert.
+  - `.appTextSize(_:)` an der Fensterwurzel ersetzt `dynamicTypeSize`: Umgebungswert, skalierte Grundschrift und Control-Größe (klein / groß / extragroß) nur abseits von „Standard“.
+  - `AppUnavailableView` ersetzt `ContentUnavailableView` (25 Stellen) mit den gemessenen Systemschriften (Titel `title3` fett, Beschreibung `title3`); `appFontKeepingSystemDefault` für die Seitenleistenzeilen lässt bei „Standard“ die macOS-Seitenleistengröße unangetastet.
+  - Mechanisch umgestellt: rund 1.000 Schriftaufrufe in 27 App-Dateien (`.font(.…)` → `.appFont(.…)`, `font: Font` → `font: AppFont`); vorhandene uncommittete HUD- und Item-Verlauf-Änderungen paralleler Sitzungen erhalten. Der dort vermerkte `appFont`-Einsatz stammt aus diesem Auftrag, nicht aus dem HUD-Umbau.
+  - PRODUCT.md (Schriftgröße) ergänzt; Texte und Rechenregeln unverändert. Betroffene Planer-Quellen (`PlaceholderViews.swift`, `PlannerAutomationViews.swift`) ändern nur Schriftaufrufe: Planer-Info geprüft, keine Änderung nötig.
+- **Prüfung:**
+  - Neu `AppTextSizeTests` (11 Fälle): Standard ergibt dieselben `Font`-Werte; skalierte Form bei Faktor 1 so breit wie der macOS-Textstil; jede Stufe rendert breiter; Standard lässt Schrift und Control-Größe unberührt; Leerzustand bei Standard pixelgleich zu `ContentUnavailableView` (mit und ohne Beschreibung, mit Aktionen) und wachsend; Quelltextwächter gegen feste Textstile, `.system(size:)`, `Font`-Parameter und `ContentUnavailableView`.
+  - `swift test` (isolierter Build-Ordner): 783 und 105 Tests (Swift Testing) und 49 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 783 Tests; keine neue Warnung; `git diff --check` fehlerfrei. Logs unter `/private/tmp/eve-appfont/`.
+  - Isolierte App ohne Nutzerdaten (eigene Defaults-Suite, Hintergrunddienste aus, Steuerung nur per PID), HUD-Stil: Dashboard bei Standard und Barrierefreiheit, Allgemeine Einstellungen bei Barrierefreiheit. Standard nach allen Änderungen pixelgleich zum Zwischenstand bis auf den Hover-Zustand des Seitenleisten-Umschalters.
+- **Offen:** Ansichten mit Daten (Tabellenzeilenhöhen, Planer, Handel) bei großen Stufen, Klassisch-Stil, Englisch und Kompakt nicht in der App geprüft; Fenstertitel, Menüs, Tooltips, Spaltenköpfe nativer Tabellen und `ContentUnavailableView.search` (Bauplansuche) skalieren nicht. Bei Barrierefreiheit lässt der Statusbereich der Seitenleiste wenig Platz für die Navigation. Eigentümerabnahme.
 
 ## 07.11.2026: Planer ohne Umschalter Einzel-/Sammelproduktion
 
@@ -9737,3 +9923,115 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - Isolierte App ohne Nutzerdaten (eigene Defaults-Suite, Hintergrunddienste aus, Steuerung nur per PID): Schritt 2 ohne Umschalter; `Ark` und `Rhea` ergeben „2 gültige Produkte“, Weiter und Schritt 3 frei; Info-Panel zeigt beide neuen Texte.
   - Commit-Stand (HEAD plus nur diese Änderung, als eigener Export) mit `swift test`: 781 Tests grün, darunter `collectiveProductionOfTwoProducts`; von 105 Tests schlägt `hubScansRecordMarketStockPointsInTheirOwnFile` fehl, ebenso auf reinem HEAD. Ursache: Der Test nutzt ein festes Datum, das die 7-Tage-Aufbewahrung der Einzelpunkte seit heute überschreitet. Die uncommittete Testkorrektur einer parallelen Sitzung (`RuntimeFeatureStateTests.swift`, relatives Datum) behebt das, im vollen Arbeitsbaum ist der Test grün. Nicht Teil dieses Commits.
 - **Offen:** Berechnung mit mehreren Produkten in der Eigentümer-App (ohne SDE und Marktdaten nicht isoliert prüfbar); Eigentümerabnahme. Nicht Teil des Auftrags: Die Meldungen der Eingabeprüfung (`ProductionInputParser`, z. B. „Enter at least one production job.“) sind nicht übersetzt und erscheinen auch in der deutschen Oberfläche englisch.
+
+## 07.11.2026: Planer – Eingabefehler in Schritt 2 übersetzt
+
+- **Fehler (Befund der vorigen Sitzung):** Das Panel „Eingabefehler“ zeigte in der deutschen Oberfläche „Zeile 1: Enter at least one production job.“ Die zwölf Meldungen von `ProductionInputParser` gingen unübersetzt in `"Line %lld: %@"`; keine hatte einen Eintrag in den `Localizable.strings`. Fünf Meldungen bauten Grenzwerte per `.formatted()` in der Systemsprache ein und taugten deshalb nicht als Schlüssel.
+- **Änderung:**
+  - Core (`ProductionInputParser.swift`): neues `ProductionInputErrorReason` (`CaseIterable`) mit je einem englischen Formatschlüssel und den Grenzwerten als Argument (`%@`). `ProductionInputError` speichert `reason`; `message` liefert den englischen Satz weiter (Zahlen englisch gruppiert, etwa „Want must not exceed 1,000,000,000.“). Prüfregeln und Grenzen unverändert. `ProductionInputError` wird nirgends gespeichert, die geänderte Codable-Form betrifft keine Daten.
+  - App (`PlaceholderViews.swift`): `ProductionInputErrorReason.localizedUI` übersetzt über `AppLanguage.localized` und gruppiert die Grenzwerte in der App-Sprache; das Panel nutzt es statt `message`.
+  - Beide `Localizable.strings`: zwölf Einträge, deutsch mit den Begriffen der Eingabezeile („Produkt Bedarf ME TE“, Bauplankosten).
+  - PRODUCT.md (Planer, Absatz „Eingabefehler“) ergänzt. Info-Panel geprüft: Es beschreibt das Eingabeformat, das gleich bleibt; Planer-Info: geprüft, keine Änderung nötig.
+- **Prüfung:**
+  - Neu `ProductionInputParserTests.reportsTheReasonOfEachRejectedInput` (jeder Grund hat eine Eingabe, die genau ihn auslöst; ein neuer Grund erzwingt per `switch` eine Beispieleingabe) und `keepsTheEnglishMessageWithItsLimit`; neu `ProductionInputErrorLocalizationTests` (jeder Grund hat einen deutschen und englischen Eintrag mit passender Platzhalterzahl, Deutsch weicht vom Englischen ab, deutsche Gruppierung, Panelzeile „Zeile 1: Gib mindestens einen Produktionsauftrag ein.“).
+  - `swift test` (isolierter Build-Ordner): 784 und 108 Tests (Swift Testing) und 49 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests (ein vorgesehener Real-SDE-Skip); natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 784 Tests. `plutil -lint` beider `Localizable.strings` OK, `check_planner_guide.py --self-test` OK, `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit uncommitteten Änderungen paralleler Sitzungen; Logs unter `/private/tmp/eve-parser-l10n/`.
+  - Isolierte App ohne Nutzerdaten (eigene Defaults-Suite auf Deutsch, Hintergrunddienste aus, Steuerung nur per PID): Schritt 2 zeigt bei leerer Eingabe „Zeile 1: Gib mindestens einen Produktionsauftrag ein.“ und für neun fehlerhafte Zeilen neun deutsche Meldungen, Grenzen als `1.000.000.000` und `1.000.000.000.000.000.000`.
+- **Offen:** Die Meldungen „Eingabe zu groß“ (über 1 MiB) und „zu viele Aufträge“ (über 1.000 Zeilen) nur per Test, nicht in der App geprüft; englische Oberfläche nicht in der App geprüft; Eigentümerabnahme. `IndustryPlannerError.invalidInput` fügt weiter die englischen `message`-Texte ein; die App erreicht diesen Fehler nicht, weil sie nur gültige Eingaben rechnet.
+
+## 07.11.2026: DB1 – Dashboard nach Board „Main.dc.html“, Grundgerüst
+
+- **Auftrag:** Das Dashboard-Board aus dem Claude-Design-Canvas wird die grundlegende Darstellung des Dashboards, alle Funktionen bleiben, fehlende Board-Funktionen kommen hinzu. Auf Wunsch des Eigentümers als Prompt-Reihe DB1–DB7 ([Plan](Documentation/DASHBOARD_BOARD_2026-11-07.md)); Entscheidungen in [DECISIONS](Documentation/Consolidation/DECISIONS.md) („Dashboard nach Board“, ersetzt D3 Nr. 1). Diese Sitzung: Plan und DB1.
+- **Ergebnis (DB1, beide Stile):**
+  - `DashboardView` (`ContentView.swift`) ohne Abschnittsüberschriften, Untertitel aus dem Board. Über dem Raster bleibt bis DB4 die Industriekapazität. Raster mit zwei gleich breiten Spalten (`dashboardRow`, Mindestbreite je 360 pt): Jobs | Wallets, Nettowert-Verlauf (bis DB2 volle Breite), Top 5 nach Materialwert | negative Reaktionen, Mineralpreise (volle Breite), Moon- | Mineralien-Kauf.
+  - `DashboardCardLayout.equalizesHeights`: Panels nebeneinander teilen die Zeilenhöhe; gestapelt behält jedes seine Höhe.
+  - Neu `DashboardReadyAndUpcomingJobs`: ein Panel „Industriejobs · bereit und bevorstehend“ statt zwei; erst bereite Jobs, dann laufende mit Ende in 48 Stunden, je nach Endzeit, Jobidentität als letzter Schlüssel. Zeile mit Aktivitätskachel, rechts „Bereit“ (grün) oder Restzeit. Leer: beide bisherigen Leertexte.
+  - `DashboardPreviewList.showsSeparators` (Trennlinien wie im Board) für Jobliste und negative Reaktionen; Moon-/Mineralien-Listen unverändert.
+  - Wallets nach Board: Kacheln „Summe verfügbar“, „Charaktere“ (einbezogen / gesamt, Bedienhilfe mit dem bisherigen Satz) und „Quellzustand“. Aufklappbereich, Aktualisieren-Knopf (`dashboard.refresh`) und Hinweise unverändert.
+  - Board-Titel: „Wallets“, „Nettowert · Verlauf“. Beide `Localizable.strings`: sechs neue Schlüssel, sechs nicht mehr genutzte entfernt.
+  - PRODUCT.md (Dashboard, Oberflächenstil) angepasst. Rechenregeln, Datenquellen und `.task`-Abläufe unverändert.
+- **Prüfung:**
+  - Neu `DashboardBoardLayoutTests` (Reihenfolge bereit vor bevorstehend, 48-Stunden-Grenze, pausierte und geschlossene Jobs, Gleichstand nach Jobidentität, Spaltenbreiten, gleiche Zeilenhöhe nur nebeneinander per Offscreen-Render).
+  - `swift test`: 784 und 113 Tests (Swift Testing) und 49 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests; natives `xcodebuild build test` (Debug, unsigniert, eigener DerivedData-Ordner) `BUILD SUCCEEDED`, `TEST SUCCEEDED` mit 784 Tests, keine Warnung in `ContentView.swift`. `plutil -lint` beider `Localizable.strings` OK, `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen der HUD-Reihe D1–D8.
+  - Isolierte Debug-App ohne Nutzerdaten (eigener Datenordner, eigene Defaults-Suite, Hintergrunddienste aus, Fenster und Beenden nur per PID), Deutsch: „Klassisch“ breit, „New Eden HUD“ breit und schmal (980 pt). Raster, gleich hohe Panels je Zeile, Board-Titel, Untertitel, Eckwinkel/Raster/Rauten nur im HUD, Stapeln im schmalen Fenster.
+- **Offen:** Jobzeilen, Wallet-Kacheln, Trennlinien und Panels unterhalb der Reaktionen ohne Daten nicht in der App gesehen (nur Leerzustände); Englisch nicht in der App geprüft. DB2–DB6 laut Plan. Eigentümerabnahme. Bekannt, nicht Teil des Auftrags: Die Meldung „No active SDE catalog is installed …“ erscheint im Reaktionen-Panel auch auf Deutsch englisch.
+
+## 07.11.2026: DB2 – Dashboard: Main-Hub-Chancen · Top 5
+
+- **Auftrag:** Prompt DB2 aus dem [Plan](Documentation/DASHBOARD_BOARD_2026-11-07.md). Vorab mit dem Eigentümer geklärt ([DECISIONS](Documentation/Consolidation/DECISIONS.md), „Dashboard DB2“): Dashboard rechnet selbst, Leerzustände mit den Texten der Ansicht ohne Veraltet-Regel, Hub und Marktstand im Panel, „Gewinn“ = Spalte „Gewinn“.
+- **Ergebnis:**
+  - `MarketBrowserView.swift`: gemeinsame Bausteine ausgelagert und von der Chancen-Ansicht selbst genutzt: `ManufacturingOpportunitySettingKey` (Speicherschlüssel, Werte unverändert), `ManufacturingOpportunityStoredSettings` (gespeicherte Main-Hub-Filter und Kosten mit den Standardwerten der Ansicht), `OpportunityWarehouseInputs` (Lager-Payloads, Lager-Identität, Mindestbestände, aktive Pläne), `OpportunityAcquisitionInputs` (Vertragskontext, LP-Store-Angebote, Laden der Vertrags- und Erfindungsangaben), `ManufacturingOpportunityVisibilityFilter` (Wert-, Budget- und Nachfragefilter der Tabelle), `OpportunityValueFormat`. `ManufacturingOpportunityValueFilter` ist dafür nicht mehr dateiprivat.
+  - Neu `MainHubOpportunityTopFiveProjection` (dieselbe Kandidatenprojektion wie die Ansicht, ohne Sitzungs-Runs/ME/TE), `MainHubOpportunityTopSelection` (fünf höchste endliche ROI, Type-ID bei Gleichstand; Kopfsortierung mit fehlenden Werten nach AGENTS.md), Auslöser und Zwischenspeicher für das Dashboard.
+  - `DashboardView`: Panel „Main-Hub-Chancen · Top 5“ rechts neben „Nettowert · Verlauf“ (Zeile gleich hoch), Hub und „Aktualisiert …“, „Alle Chancen“, `SortableTableHeader` für Produkt/ROI/Gewinn, `EVEItemText` für Produkte; zwei `.task`, die wie die Ansicht Vertrags- und Erfindungsangaben laden und die Top 5 neu rechnen.
+  - Beide `Localizable.strings`: vier neue Schlüssel. PRODUCT.md (Dashboard), Plan (Status, Festlegungen) angepasst. Rechenregeln unverändert.
+- **Prüfung:**
+  - Neu `DashboardMainHubTopFiveTests` (Rang nach ROI, Grenze fünf, fehlende und nicht endliche ROI, Gleichstand nach Type-ID, Kopfsortierung für Produkt/ROI/Gewinn mit fehlenden Werten, Wert-/Budget-/Nachfragefilter, gespeicherte Einstellungen mit Standardwerten, gleichen Schlüsseln und ungültigen Werten, verworfene Kategorie).
+  - `swift test`: 784 und 121 Tests (Swift Testing) und 49 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests; natives `xcodebuild build test` (Debug, unsigniert) `BUILD SUCCEEDED`, `TEST SUCCEEDED` mit 784 Tests; keine Warnung in `MarketBrowserView.swift` und `ContentView.swift`. `plutil -lint` beider `Localizable.strings` OK. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen von D1–D8 und DB1.
+  - Isolierte Debug-App ohne Nutzerdaten (eigener Datenordner, eigene Defaults-Suite, Hintergrunddienste aus, nur per PID): „Klassisch“ und „New Eden HUD“ breit. Panel rechts neben dem Nettowert, gleich hoch, „Alle Chancen“, Leerzustand „Noch kein Main-Hub-Scan“; HUD mit Eckwinkeln und Raute.
+- **Offen:** Tabelle mit echtem Scan (Zeilen, Werte, Kopfsortierung, Kopieren) und Gleichheit mit der Ansicht nicht in der App gesehen; „Alle Chancen“ nicht geklickt; Englisch nicht in der App geprüft. Mehrarbeit beim Öffnen des Dashboards: Es lädt Vertrags- und Erfindungsangaben zum Scan und rechnet die Kandidatenprojektion; Laufzeit mit echten Daten nicht gemessen. Eigentümerabnahme.
+- **Befund außerhalb des Auftrags:** In einer von drei HUD-Aufnahmen war das Fenster vier Sekunden nach dem Start noch hell (nach acht Sekunden dunkel). Das Farbschema greift beim Start offenbar verzögert (`AppAppearanceApplier`, D2); nicht untersucht.
+
+## 07.11.2026: DB3 – Dashboard: Nettowert-Zeitraum und Veränderung
+
+- **Auftrag:** Prompt DB3 aus dem [Plan](Documentation/DASHBOARD_BOARD_2026-11-07.md). Vorab mit dem Eigentümer geklärt ([DECISIONS](Documentation/Consolidation/DECISIONS.md), „Dashboard DB3“): Charakterlinien folgen dem Zeitraum, unvollständige Enden rechnen und kennzeichnen, Veränderung bleibt im Panel, Stufen übersetzen.
+- **Ergebnis:**
+  - `NetWorthView.swift`: `NetWorthHistoryRange` nicht mehr dateiprivat, mit `filter(_:calendar:)` (bisherige Regel der Ansicht unverändert, die Ansicht nutzt sie selbst) und übersetzten Stufen. Neu `NetWorthRangeChange.change(in:)` (jüngster minus ältester bekannter Gesamtwert, Prozent nur bei positivem Start, Kennzeichen für unvollständige Enden) und `NetWorthValueFormat` (ISK, ISK und Prozent mit Vorzeichen); die Ansicht nutzt die ISK-Formate.
+  - `DashboardView`: Zeitraumwahl (`dashboard.wealth-range`, Start 30 T, Ansichtslebensdauer) und Veränderung (`dashboard.wealth-range-change`) über der Serienwahl; Hauptdiagramm und Charakterlinien aus dem gefilterten Verlauf. Gespeicherter Verlauf, Serienwahl und Speicherung unverändert.
+  - Beide `Localizable.strings`: sieben neue Schlüssel (Stufen, Veränderungstexte). PRODUCT.md (Dashboard) und Plan angepasst. Rechenregeln der Bewertung unverändert.
+- **Prüfung:**
+  - Neu `DashboardNetWorthRangeTests` (Grenzen 7/30/90/Alle ab dem jüngsten Stand, Uhrzeit der Startgrenze, leerer Verlauf; Veränderung, ein Wert, fehlende und nicht endliche Werte, unvollständige Enden und Zwischenstände, Prozent bei Start 0 und negativ).
+  - `swift test`: 784 und 128 Tests (Swift Testing) und 49 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests; natives `xcodebuild build test` (Debug, unsigniert) `BUILD SUCCEEDED`, `TEST SUCCEEDED` mit 784 Tests; keine Warnung in `NetWorthView.swift` und `ContentView.swift`. `plutil -lint` beider `Localizable.strings` OK. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen von D1–D8, DB1 und DB2.
+  - Isolierte Debug-App mit eigenem Datenordner, eigener Defaults-Suite, ohne Hintergrunddienste, nur per PID; im Testordner ein synthetischer Verlauf über 40 Tage (keine Nutzerdaten), erster Stand im 30-Tage-Zeitraum unvollständig. „Klassisch“ und „New Eden HUD“: Auswahl „7 T / 30 T / 90 T / Alle“ mit 30 T, „+1.010.000.000 ISK · +5,7 % im Zeitraum“ (passt zu den Testwerten) mit „aus bekannten Bestandteilen“, Diagramm über 30 Tage.
+- **Offen:** Umschalten der Stufen und Charakterlinien (ohne Charaktere keine) nicht in der App geklickt bzw. gesehen, nur per Test; Nettowert-Ansicht mit den neuen Stufennamen nicht in der App angesehen; Englisch nicht in der App geprüft. Eigentümerabnahme.
+
+## 07.11.2026: DB4 – Dashboard: Kennzahlenreihe
+
+- **Auftrag:** Prompt DB4 aus dem [Plan](Documentation/DASHBOARD_BOARD_2026-11-07.md). Vorab mit dem Eigentümer geklärt ([DECISIONS](Documentation/Consolidation/DECISIONS.md), „Dashboard DB4“): bereite Jobs belegen Slots, Info-Knopf als Popover mit Bewertungsdetails, Aufklappzustand gespeichert (anfangs zu), Gesamtzeile im Kopf des Aufklappbereichs.
+- **Ergebnis:**
+  - Neu `DashboardSlotFigure` (`ContentView.swift`): laufend, bereit, belegt, frei (nie negativ, bei Teilkapazität Untergrenze) und Balkenanteil (nur bei vollständiger Kapazität) je Slot-Pool.
+  - `DashboardView`: Kennzahlenreihe mit vier Karten (`dashboard.key-figures`, je Karte `dashboard.key-figure.*`) statt des Panels „Industriekapazität“; Nettowert mit `NetWorthRangeChange` aus dem Panel-Zeitraum und Info-Popover (`dashboard.key-figure.net-worth.info`), Wallet, Fertigungs-Slots, Gemeinsame Science-Slots mit Reaktionen. Darunter „Kapazität je Aktivität“ (`dashboard.capacity-by-activity`) mit Gesamtzeile im Kopf, aufgeklappt das bisherige Raster und der Jobdaten-Hinweis. Text der Bewertungsdetails einmal definiert und in Panel und Popover genutzt. Nur Slot-Karten und Kapazitätsbereich im Minutentakt.
+  - Beide `Localizable.strings`: fünf neue Schlüssel, „Industry capacity“ entfernt. PRODUCT.md (Dashboard) und Plan angepasst. Rechenregeln, Kapazitätsermittlung und Jobdaten unverändert.
+- **Prüfung:**
+  - Neu `DashboardKeyFigureTests` (bereite Jobs belegen bis zur Auslieferung, pausierte zählen als laufend, ausgelieferte und abgebrochene nicht; Science-Pool aus Kopieren, Erfindung, ME/TE; Reaktionen getrennt; Teilkapazität ohne Balken, fehlende Kapazität, Kapazität 0, Überbuchung).
+  - `swift test`: 784 und 132 Tests (Swift Testing) und 49 XCTest-Fälle grün; `EVEStaticDataKit` 13 Tests; natives `xcodebuild build test` (Debug, unsigniert) `BUILD SUCCEEDED`, `TEST SUCCEEDED` mit 784 Tests; keine Warnung in `ContentView.swift`. `plutil -lint` beider `Localizable.strings` OK, `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen von D1–D8 und DB1–DB3.
+  - Isolierte Debug-App (eigener Datenordner mit dem synthetischen Verlauf aus DB3, eigene Defaults-Suite, ohne Hintergrunddienste, nur per PID), breit: „Klassisch“ mit zugeklapptem, „New Eden HUD“ mit aufgeklapptem Bereich (Schlüssel in der Test-Suite gesetzt). Vier gleich hohe Karten, Info-Knopf, „+5,7 % im Zeitraum“ mit Kennzeichen, „Keine verbundenen Charaktere“, „0 / — · 0 bereit · — frei“, „Reaktionen 0 / —“, Gesamtzeile mit „Unvollständig“ im Kopf, Aktivitätsraster und Jobdaten-Hinweis.
+- **Offen:** Zwei-Spalten-Anordnung der Karten im schmalen Fenster nicht gesehen: Die Bedienungshilfen-Berechtigung zum Verkleinern des Testfensters per PID stand diesmal nicht zur Verfügung. Info-Popover nicht geöffnet, Auf- und Zuklappen nicht geklickt (Zustand nur über den Schlüssel gesetzt); Slot-Karten mit echten Jobs und Kapazitäten nicht gesehen; Englisch nicht in der App geprüft. Eigentümerabnahme.
+
+## 08.11.2026: DB5 – Dashboard: Seitenkopf mit ESI-Status und „Alles aktualisieren“
+
+- **Auftrag:** Prompt DB5 aus dem [Plan](Documentation/DASHBOARD_BOARD_2026-11-07.md). Vorab mit dem Eigentümer geklärt ([DECISIONS](Documentation/Consolidation/DECISIONS.md), „Dashboard DB5“): Zeit der ältesten Quelle, Meldungen unter dem Seitenkopf, Analysen gleichzeitig, Popover mit Einzelzuständen.
+- **Ergebnis:**
+  - Neu `DashboardSourceArea`, `DashboardSourceStatus`, `DashboardStatusSummary` und `DashboardStatusProjector` (`ContentView.swift`): reine Projektion aus vorhandenen Zuständen; Charaktere über `StartupDataStatusProjector.characters`, Analysen über `StartupDataStatusProjector.analysis`, Zusammenfassung über `StartupDataStatusProjector.combined`. Keine neue Abrufarbeit.
+  - Neu `DashboardHeaderStatusButton`: Status „ESI …“ mit „Stand …“ (`dashboard.esi-status`), Popover mit den sechs Quellen (`dashboard.esi-status.sources`, Zeilen über `AutomaticStatusRow`); beobachtet den Startablauf wie die Seitenleiste.
+  - `DashboardView`: Seitenkopf mit Titel links, Status und „Alles aktualisieren“ rechts (`dashboard.refresh`, bisherige Sperrbedingungen plus „ohne Charaktere“); bei Platzmangel darunter. `refreshAll()` ruft die bisherige `refreshDashboardData` und danach Moon-, Mineralien- und Reaktionsanalyse gleichzeitig. Meldungen unter dem Seitenkopf (`dashboard.refresh.message`, `dashboard.refresh.error`); Knopf und Meldungen im Wallet-Panel entfernt, Aktualisieren je Wallet bleibt. Letztes Sync-Ergebnis für den Charakterzustand gemerkt.
+  - Beide `Localizable.strings`: sechs neue Schlüssel, „Refresh dashboard“ entfernt. PRODUCT.md (Wallet, Seitenleiste/Dashboard-Kopf, Dashboard) und Plan angepasst. Rechenregeln und Abrufe unverändert.
+- **Prüfung:**
+  - Neu `DashboardHeaderStatusTests` (alles aktuell mit ältester Zeit, „läuft“ gewinnt, gemischte Zustände wie beim Programmstart, wartende Quellen als fehlend, Charaktere mit Aktualisierung, Teilergebnis und ältestem Sync, Wallets ohne Charaktere, Nettowert fehlend/teilweise/fehlgeschlagen/laufend, Zuordnung der Analysezeilen).
+  - `swift test`: im ersten Lauf brach `EVENexusCoreTests` (Swift Testing) ohne Zusammenfassung ab, zuletzt gestartet `interruptedTransactionsRollBack(boundary:)`; DB5 ändert keine Kerndatei. Wiederholung des Ziels und danach der volle Lauf grün: 784 und 140 Tests (Swift Testing) und 49 XCTest-Fälle. `EVEStaticDataKit` 13 Tests; natives `xcodebuild build test` (Debug, unsigniert) `BUILD SUCCEEDED`, `TEST SUCCEEDED` mit 784 Tests; keine Warnung in `ContentView.swift`. `plutil -lint` beider `Localizable.strings` OK. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen von D1–D8 und DB1–DB4.
+  - Isolierte Debug-App ohne Charaktere (eigener Datenordner mit dem synthetischen Verlauf aus DB3, eigene Defaults-Suite, ohne Hintergrunddienste, nur per PID): „Klassisch“ und „New Eden HUD“ breit. Rechts im Seitenkopf „ESI Nicht verfügbar“ (rot, ohne Zeit, weil keine Quelle eine Zeit hat) und „Alles aktualisieren“ gesperrt; kein Knopf mehr im Wallet-Panel.
+- **Offen:** Popover, Aktualisierung mit echten Charakteren und Analysen, Meldungszeile und die gestapelte Anordnung im schmalen Fenster nicht in der App gesehen (ohne Charaktere gesperrt; Fenstersteuerung per Bedienungshilfen weiter nicht verfügbar). Einmaliger Abbruch von `EVENexusCoreTests` nicht untersucht. Englisch nicht in der App geprüft. Eigentümerabnahme.
+
+## 08.11.2026: DB6 – Dashboard: Gesamtdurchsicht und Abnahme-Checkliste
+
+- **Auftrag:** Prompt DB6 aus dem [Plan](Documentation/DASHBOARD_BOARD_2026-11-07.md): Durchsicht in beiden Stilen und Sprachen, schmal und breit, ohne und mit synthetischen Testdaten; Funktionsliste einzeln; Abnahme-Checkliste in Abschnitt 7. Kein Commit.
+- **Ergebnis:**
+  - Keine Code-Änderung. Plan: Status DB6 erledigt, Vorspann und DB6-Text auf die erweiterte Fassung, DB7-Prompt konkretisiert, Abschnitt 7 mit 7.1 „ohne echte Daten geprüft“ (A1–A23), 7.2 „nur mit echten Daten prüfbar“ (E1–E13) und 7.3 Befunde (B1–B10). PRODUCT.md verweist auf die bekannten Abweichungen; [DECISIONS](Documentation/Consolidation/DECISIONS.md) „Dashboard DB6“.
+  - Befunde neu durch DB4/DB5: Popover „ESI-Status“ und „Details zur Bewertung“ zeigen in der englischen Oberfläche deutschen Text (B1); die Kennung `dashboard.key-figure.net-worth.info` ist nicht erreichbar, weil die Kachel-Kennung alle inneren Elemente überdeckt (B2); Kürzung und doppelte Begriffe in den Kennzahlen (B9). Ältere Befunde: unübersetzte SDE-Meldung (B3), roher Fehlername beim Aktualisieren je Wallet (B4), Systemsprache statt App-Sprache bei Restzeiten, Diagrammachsen und ISK (B5), leere Serie ohne Hinweis (B6), irreführender Erstzustand der Kaufpanels (B7), unübersetzte Bedienungshilfe „Refresh“ (B8), zusammengefasste Jobzeile für Bedienungshilfen (B10).
+- **Prüfung:**
+  - `swift test` grün: 784 und 140 Tests (Swift Testing) und 49 XCTest-Fälle; `EVEStaticDataKit` 13 Tests; natives `xcodebuild build` und `xcodebuild test` (Debug, unsigniert) `BUILD SUCCEEDED`, `TEST SUCCEEDED` mit 784 Tests. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen von D1–D8 und DB1–DB5.
+  - Isolierte Debug-App (eigener Datenordner, eigene Defaults-Suite, ohne Hintergrunddienste, Netzzugang per `sandbox-exec` gesperrt, Beenden nur per PID; die parallel laufende Eigentümer-App unberührt). Fenstersteuerung per Bedienungshilfen verfügbar, nachdem der Bildschirm entsperrt war. Acht Fälle (Klassisch/HUD × Deutsch/Englisch × ohne Charaktere/synthetische Testdaten), je breit 1600 pt mit drei und schmal 760 pt mit sechs Bildern.
+  - Bedient per AX nach PID: ESI-Status-Popover, Nettowert-Info-Popover (über die Bezeichnung, siehe B2), Kapazität auf/zu mit gespeichertem Zustand, Zeitraum 7/30/90/Alle (Werte aus der Formel der Testdaten nachgerechnet: +5,5 %, +19,5 %, +32,3 % „aus bekannten Bestandteilen“), Serienwahl, „Wallets der Charaktere“, Aktualisieren je Wallet, „Alle anzeigen“, „Alles aktualisieren“, „Alle Reaktionen analysieren“, „Alle Chancen“, „Reaktionen öffnen“, alle drei „Einkaufsanalyse öffnen“ und die Aktualisieren-Knöpfe der Kaufpanels. Kennzahlen aus den Testdaten nachgerechnet.
+- **Offen:** Eigentümerabnahme nach Abschnitt 7; alles in 7.2 (echte Autorisierung, Preise, SDE, Main-Hub-Scan, Analysen, Speicherfehler). Kopieren per Klick nicht ausgelöst. Die Hilfsprogramme für Testdaten und Bedienung liegen nur im Scratchpad der Sitzung, nicht im Repository. DB7 nach Freigabe der Befunde.
+
+## 08.11.2026: Öffentliche Verträge – Sortierung nach Preis und Regionsfilter
+
+- **Auftrag (Eigentümer-Screenshot, Suche „rhea“, Kategorie Ship):** Sortierfunktion nach Preis und weiterer Filter nach Region.
+- **Ergebnis:**
+  - `PublicContractSearchFilter` hat `regionID` und `sort` (`PublicContractSearchSort`: `bestMatch` = bisherige Reihenfolge, `priceAscending`, `priceDescending`); die Vorgaben erhalten das bisherige Verhalten aller übrigen Aufrufer.
+  - `PublicContractStore.search` filtert per `c.region_id` und sortiert in SQLite vor `LIMIT` nach `COALESCE(price, buyout, reward)`, dem bereits angezeigten Gesamtpreis (neu `PublicContractSearchResult.listedPrice`). Fehlender Preis bleibt von 0 ISK getrennt: aufsteigend hinten, absteigend vorne; Tie-Breaker Ablaufzeit, Vertrags- und Positionsnummer.
+  - `facets()` liefert zusätzlich Regionen (im Abrufumfang, mit Verträgen mit indizierten Items); `RuntimeState.publicContractRegionFacets` wird mit Kategorien und Gruppen geladen und nach Abschluss eines Imports oder Änderung des Abrufumfangs aufgefrischt.
+  - `PublicContractsView`: Picker **Region** im Vertragsfilter, Picker **Sortierung** rechts neben **Passende Verträge**; Region und Sortierung gehören zur Suchidentität. Eine weggefallene Region springt auf **Alle Regionen** zurück. „Preis nicht verfügbar“ wird jetzt übersetzt (vorher fester englischer Text).
+  - Beide `Localizable.strings`: fünf neue Schlüssel, der Hinweis ohne Treffer nennt die Region. PRODUCT.md (Contract-Suche, Abrufumfang).
+- **Prüfung:**
+  - Neu `searchFiltersByRegionAndSortsByListedPriceBeforeTheLimit` (Standardreihenfolge unverändert, 0 ISK vs. fehlender Preis, Sortierung vor dem Limit, Regionsfilter, Region allein sucht nicht, Regionsfacetten mit Zählung, Abrufumfang begrenzt Facetten und Filter).
+  - `swift test` grün: 785 und 148 Tests (Swift Testing) und 49 XCTest-Fälle; `EVEStaticDataKit` 13 Tests; natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests, keine Warnung in den geänderten Vertragsdateien; `plutil -lint` beider `Localizable.strings` OK, `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen anderer Sitzungen (D1–D8, DB1–DB6).
+- **Offen:** Sichtprüfung in der App und Eigentümerabnahme. Regionsnamen im Picker und in der Metadatenzeile der Ergebniskarten sind wie bisher Kategorie, Gruppe und Kartenzeile nicht per Klick kopierbar. Ein Wechsel der Sortierung sucht wie die übrigen Filter erst nach 700 ms neu.

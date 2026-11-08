@@ -328,6 +328,97 @@ struct PublicContractTests {
   }
 
   @Test
+  func searchFiltersByRegionAndSortsByListedPriceBeforeTheLimit() async throws {
+    let fixture = try ContractStoreFixture()
+    let store = fixture.store
+    let now = Date(timeIntervalSince1970: 1_000)
+    let forge: Int64 = 10_000_002
+    let domain: Int64 = 10_000_043
+    try await store.upsertRegions([(forge, "The Forge"), (domain, "Domain")])
+    try await store.recordRegionSuccess(
+      regionID: forge,
+      contracts: [
+        contract(id: 1, now: now, price: 8_500_000_000),
+        contract(id: 2, now: now, price: nil),
+        contract(id: 3, now: now, price: 7_000_000_000),
+      ],
+      fetchedAt: now,
+      nextAllowedAt: now.addingTimeInterval(1_800)
+    )
+    try await store.recordRegionSuccess(
+      regionID: domain,
+      contracts: [
+        contract(id: 4, now: now, price: 6_799_000_000),
+        contract(id: 5, now: now, price: 0),
+      ],
+      fetchedAt: now,
+      nextAllowedAt: now.addingTimeInterval(1_800)
+    )
+    let rhea = metadata(
+      typeID: 28_844,
+      name: "Rhea",
+      groupID: 902,
+      group: "Jump Freighter",
+      categoryID: 6,
+      category: "Ship"
+    )
+    for contractID in Int64(1)...5 {
+      try await store.storeItems(
+        contractID: contractID,
+        items: [item(recordID: contractID * 10, typeID: 28_844)],
+        metadata: [28_844: rhea],
+        fetchedAt: now
+      )
+    }
+    func contractIDs(
+      _ sort: PublicContractSearchSort,
+      query: String = "Rhea",
+      regionID: Int64? = nil,
+      limit: Int = 300
+    ) async throws -> [Int64] {
+      try await store.search(
+        PublicContractSearchFilter(
+          itemQuery: query,
+          regionID: regionID,
+          sort: sort,
+          limit: limit
+        ),
+        now: now
+      ).map(\.contractID)
+    }
+
+    // The existing order stays the default.
+    #expect(try await contractIDs(.bestMatch) == [1, 2, 3, 4, 5])
+    // Zero is a real price; a missing price is not treated as zero.
+    #expect(try await contractIDs(.priceAscending) == [5, 4, 3, 1, 2])
+    #expect(try await contractIDs(.priceDescending) == [2, 1, 3, 4, 5])
+    // Sorting happens before the limit: the cheapest matches of the whole
+    // index, not a reordered first page.
+    #expect(try await contractIDs(.priceAscending, limit: 2) == [5, 4])
+    #expect(
+      try await store.search(
+        PublicContractSearchFilter(itemQuery: "Rhea", sort: .priceDescending),
+        now: now
+      ).first?.listedPrice == nil
+    )
+
+    #expect(try await contractIDs(.priceAscending, regionID: forge) == [3, 1, 2])
+    #expect(try await contractIDs(.bestMatch, regionID: domain) == [4, 5])
+    // A region alone does not start a search.
+    #expect(try await contractIDs(.bestMatch, query: "", regionID: forge) == [])
+
+    let facets = try await store.facets()
+    #expect(facets.regions.map(\.name) == ["Domain", "The Forge"])
+    #expect(facets.regions.map(\.resultCount) == [2, 3])
+
+    // The configured import scope still bounds the region filter.
+    try await store.setRegionScope([forge])
+    #expect(try await store.facets().regions.map(\.id) == [forge])
+    #expect(try await contractIDs(.bestMatch, regionID: domain) == [])
+    await fixture.cleanup()
+  }
+
+  @Test
   func synchronizationDoesNotRefetchBeforeExpiryOrReloadKnownItems() async throws {
     let fixture = try ContractStoreFixture()
     let now = Date(timeIntervalSince1970: 2_000)
@@ -1306,7 +1397,8 @@ struct PublicContractTests {
     title: String? = nil,
     forCorporation: Bool? = false,
     type: String = "item_exchange",
-    expiresAfter: TimeInterval = 86_400
+    expiresAfter: TimeInterval = 86_400,
+    price: Double? = 1_000_000
   ) -> ESIPublicContractDTO {
     ESIPublicContractDTO(
       contractID: id,
@@ -1315,7 +1407,7 @@ struct PublicContractTests {
       forCorporation: forCorporation,
       issuerCorporationID: 99,
       issuerID: 100,
-      price: 1_000_000,
+      price: price,
       startLocationID: 60_003_760,
       title: title,
       type: type

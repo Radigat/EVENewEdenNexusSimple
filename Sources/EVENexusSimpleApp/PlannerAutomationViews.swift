@@ -7,7 +7,7 @@ struct PlannerCalculationStatusLabel: View {
 
   var body: some View {
     Label(title, systemImage: icon)
-      .font(.callout)
+      .appFont(.callout)
       .foregroundStyle(color)
       .accessibilityIdentifier("planner.status")
   }
@@ -60,11 +60,11 @@ struct PlannerRouteSummaryPanel: View {
           Int64(summary.stockMaterialCount)
         )
       )
-      .font(.callout.monospacedDigit())
+      .appFont(.callout.monospacedDigit())
       if !summary.purchaseLocationNames.isEmpty {
         HStack(spacing: DesignTokens.spacingSM) {
           Text("Bought at")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           ForEach(summary.purchaseLocationNames, id: \.self) { name in
             EVEEntityText(value: name, font: .caption)
@@ -78,7 +78,7 @@ struct PlannerRouteSummaryPanel: View {
             Int64(manualChoiceCount)
           )
         )
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
         Spacer()
         Button(action: onResetManualChoices) {
@@ -156,7 +156,7 @@ struct PlannerBlueprintChoiceNote: View {
         Label(reason, systemImage: "wand.and.stars")
       }
     }
-    .font(.caption)
+    .appFont(.caption)
     .foregroundStyle(DesignTokens.textSecondary)
   }
 
@@ -179,7 +179,7 @@ struct PlannerFormulaShipmentList: View {
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Label("Ship with the materials", systemImage: "shippingbox")
-        .font(.headline)
+        .appFont(.headline)
       ForEach(shipments, id: \.blueprintTypeID) { shipment in
         VStack(alignment: .leading, spacing: 2) {
           HStack(spacing: DesignTokens.spacingSM) {
@@ -190,7 +190,7 @@ struct PlannerFormulaShipmentList: View {
           }
           if shipment.collateral == nil {
             Text("Transport not included: no ESI price known.")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.caution)
           }
         }

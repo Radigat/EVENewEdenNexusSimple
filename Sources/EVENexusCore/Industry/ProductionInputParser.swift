@@ -78,24 +78,102 @@ public struct ProductionRequestLine: Identifiable, Codable, Equatable, Sendable 
   }
 }
 
+/// Why the parser rejected the input. Each reason has one English format key
+/// that the app translates; `%@` takes the parser limit in `arguments`.
+public enum ProductionInputErrorReason: String, CaseIterable, Codable, Sendable {
+  case inputTooLarge
+  case tooManyJobs
+  case missingFields
+  case invalidBlueprintCost
+  case missingBlueprintCost
+  case missingFieldsBeforeBlueprintCost
+  case invalidNumbers
+  case productNameTooLong
+  case wantNotPositive
+  case wantTooLarge
+  case efficiencyOutOfRange
+  case noJobs
+
+  public var format: String {
+    switch self {
+    case .inputTooLarge:
+      "The production input is too large. Use at most %@ UTF-8 bytes."
+    case .tooManyJobs:
+      "At most %@ production jobs are accepted at once."
+    case .missingFields:
+      "Expected Product Want ME TE, optionally followed by BPC/BPO and its total ISK cost."
+    case .invalidBlueprintCost:
+      "Blueprint cost must be a non-negative ISK amount no greater than %@ after BPC or BPO."
+    case .missingBlueprintCost:
+      "Enter the total ISK cost after BPC or BPO."
+    case .missingFieldsBeforeBlueprintCost:
+      "Expected Product Want ME TE before the optional blueprint cost."
+    case .invalidNumbers:
+      "Product is required; Want, ME and TE must be integers."
+    case .productNameTooLong:
+      "The product name is too long. Use at most %@ UTF-8 bytes."
+    case .wantNotPositive:
+      "Want must be greater than zero."
+    case .wantTooLarge:
+      "Want must not exceed %@."
+    case .efficiencyOutOfRange:
+      "Manufacturing ME must be 0…10 and TE must be 0…20."
+    case .noJobs:
+      "Enter at least one production job."
+    }
+  }
+
+  /// The parser limits the message names, in the order of `format`.
+  public var arguments: [Int64] {
+    switch self {
+    case .inputTooLarge: [Int64(ProductionInputParser.maximumInputBytes)]
+    case .tooManyJobs: [Int64(ProductionInputParser.maximumJobCount)]
+    case .invalidBlueprintCost:
+      [Int64(ProductionInputParser.maximumBlueprintCostISK)]
+    case .productNameTooLong:
+      [Int64(ProductionInputParser.maximumProductNameBytes)]
+    case .wantTooLarge: [Int64(ProductionInputParser.maximumWantedQuantity)]
+    case .missingFields, .missingBlueprintCost,
+      .missingFieldsBeforeBlueprintCost, .invalidNumbers, .wantNotPositive,
+      .efficiencyOutOfRange, .noJobs:
+      []
+    }
+  }
+
+  /// `format`, or its translation, with the limits in `locale`'s number
+  /// format.
+  public func text(format: String, locale: Locale) -> String {
+    String(
+      format: format,
+      locale: locale,
+      arguments: arguments.map { $0.formatted(.number.locale(locale)) }
+    )
+  }
+}
+
 public struct ProductionInputError: Identifiable, Error, Codable, Equatable,
   Sendable
 {
   public let id: UUID
   public let lineNumber: Int
   public let input: String
-  public let message: String
+  public let reason: ProductionInputErrorReason
+
+  /// The English sentence; the app translates `reason` instead.
+  public var message: String {
+    reason.text(format: reason.format, locale: Locale(identifier: "en"))
+  }
 
   public init(
     id: UUID = UUID(),
     lineNumber: Int,
     input: String,
-    message: String
+    reason: ProductionInputErrorReason
   ) {
     self.id = id
     self.lineNumber = lineNumber
     self.input = input
-    self.message = message
+    self.reason = reason
   }
 }
 
@@ -123,8 +201,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: 1,
             input: "",
-            message:
-              "The production input is too large. Use at most \(maximumInputBytes) UTF-8 bytes."
+            reason: .inputTooLarge
           )
         ]
       )
@@ -141,8 +218,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: "",
-            message:
-              "At most \(maximumJobCount) production jobs are accepted at once."
+            reason: .tooManyJobs
           )
         )
         break
@@ -153,8 +229,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: safeErrorInput(rawLine),
-            message:
-              "Expected Product Want ME TE, optionally followed by BPC/BPO and its total ISK cost."
+            reason: .missingFields
           )
         )
         continue
@@ -173,8 +248,7 @@ public enum ProductionInputParser {
             ProductionInputError(
               lineNumber: lineNumber,
               input: safeErrorInput(rawLine),
-              message:
-                "Blueprint cost must be a non-negative ISK amount no greater than \(maximumBlueprintCostISK.formatted()) after BPC or BPO."
+              reason: .invalidBlueprintCost
             )
           )
           continue
@@ -189,7 +263,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: safeErrorInput(rawLine),
-            message: "Enter the total ISK cost after BPC or BPO."
+            reason: .missingBlueprintCost
           )
         )
         continue
@@ -199,8 +273,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: safeErrorInput(rawLine),
-            message:
-              "Expected Product Want ME TE before the optional blueprint cost."
+            reason: .missingFieldsBeforeBlueprintCost
           )
         )
         continue
@@ -216,7 +289,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: safeErrorInput(rawLine),
-            message: "Product is required; Want, ME and TE must be integers."
+            reason: .invalidNumbers
           )
         )
         continue
@@ -226,8 +299,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: safeErrorInput(rawLine),
-            message:
-              "The product name is too long. Use at most \(maximumProductNameBytes) UTF-8 bytes."
+            reason: .productNameTooLong
           )
         )
         continue
@@ -237,7 +309,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: safeErrorInput(rawLine),
-            message: "Want must be greater than zero."
+            reason: .wantNotPositive
           )
         )
         continue
@@ -247,8 +319,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: safeErrorInput(rawLine),
-            message:
-              "Want must not exceed \(maximumWantedQuantity.formatted())."
+            reason: .wantTooLarge
           )
         )
         continue
@@ -258,7 +329,7 @@ public enum ProductionInputParser {
           ProductionInputError(
             lineNumber: lineNumber,
             input: safeErrorInput(rawLine),
-            message: "Manufacturing ME must be 0…10 and TE must be 0…20."
+            reason: .efficiencyOutOfRange
           )
         )
         continue
@@ -281,7 +352,7 @@ public enum ProductionInputParser {
         ProductionInputError(
           lineNumber: 1,
           input: "",
-          message: "Enter at least one production job."
+          reason: .noJobs
         )
       )
     }

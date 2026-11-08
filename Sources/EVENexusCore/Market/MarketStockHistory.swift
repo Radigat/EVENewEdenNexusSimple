@@ -523,6 +523,83 @@ public enum MarketStockChartBuilder {
   }
 }
 
+/// Value axis of the item chart (owner decision 07.11.2026): every metric
+/// zooms to its plotted values instead of starting at 0, so close prices
+/// and stock levels stay distinguishable.
+public enum MarketStockChartScale {
+  /// Share of the value span added above and below the plotted values.
+  public static let paddingShare = 0.08
+
+  /// Range covering every finite value plus a margin, widened to round
+  /// steps (1, 2, 2.5 or 5 times a power of ten). Never below 0 when no
+  /// value is negative; `nil` without a finite value.
+  public static func valueDomain(_ values: [Double]) -> ClosedRange<Double>? {
+    let finite = values.filter(\.isFinite)
+    guard let minimum = finite.min(), let maximum = finite.max() else { return nil }
+    let span = maximum - minimum
+    let padding = span > 0 ? span * paddingShare : max(abs(maximum) * 0.05, 1)
+    let step = roundStep((span + 2 * padding) / 4)
+    var lower = ((minimum - padding) / step).rounded(.down) * step
+    let upper = ((maximum + padding) / step).rounded(.up) * step
+    if minimum >= 0 { lower = max(lower, 0) }
+    return lower...upper
+  }
+
+  static func roundStep(_ raw: Double) -> Double {
+    guard raw.isFinite, raw > 0 else { return 1 }
+    let magnitude = pow(10, log10(raw).rounded(.down))
+    let normalized = raw / magnitude
+    let factor = [1, 2, 2.5, 5].first { normalized <= $0 + 1e-9 } ?? 10
+    return factor * magnitude
+  }
+}
+
+/// Mouse-over of the item chart (owner decision 07.11.2026): the pointer
+/// snaps to the nearest sample of any hub; every hub then shows its own
+/// sample nearest to that moment, if there is one.
+public enum MarketStockChartHover {
+  /// A single point belongs to the hovered moment when it is at most this
+  /// far away. Daily values belong to it on the same UTC day.
+  public static let pointTolerance: TimeInterval = 3 * 60 * 60
+
+  /// The sample of any series nearest to `date`; ties go to the earlier one.
+  public static func anchor(
+    near date: Date,
+    in series: [[MarketStockChartSample]]
+  ) -> MarketStockChartSample? {
+    nearest(to: date, in: series.flatMap { $0 })
+  }
+
+  /// The sample of one hub shown for the hovered moment, or `nil` when the
+  /// hub has no point that close (shown as "no point", never as 0).
+  public static func sample(
+    for anchor: Date,
+    in samples: [MarketStockChartSample]
+  ) -> MarketStockChartSample? {
+    let anchorDay = MarketStockHistoryStore.utcDay(containing: anchor)
+    return nearest(
+      to: anchor,
+      in: samples.filter { sample in
+        sample.isDailyValue
+          ? MarketStockHistoryStore.utcDay(containing: sample.date) == anchorDay
+          : abs(sample.date.timeIntervalSince(anchor)) <= pointTolerance
+      }
+    )
+  }
+
+  private static func nearest(
+    to date: Date,
+    in samples: [MarketStockChartSample]
+  ) -> MarketStockChartSample? {
+    samples.min { left, right in
+      let leftDistance = abs(left.date.timeIntervalSince(date))
+      let rightDistance = abs(right.date.timeIntervalSince(date))
+      return leftDistance == rightDistance
+        ? left.date < right.date : leftDistance < rightDistance
+    }
+  }
+}
+
 /// One row of the item's daily table (E2); `nil` values are unknown.
 public struct MarketStockDayRow: Identifiable, Equatable, Sendable {
   public var id: Date { day }

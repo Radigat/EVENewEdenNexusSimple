@@ -540,6 +540,10 @@ public actor PublicContractStore {
       conditions.append("\(categoryIDColumn) = ?")
       values.append(.integer(categoryID))
     }
+    if let regionID = filter.regionID {
+      conditions.append("c.region_id = ?")
+      values.append(.integer(regionID))
+    }
     switch filter.direction {
     case .included:
       conditions.append("i.is_included = 1")
@@ -548,7 +552,27 @@ public actor PublicContractStore {
     case .both:
       break
     }
-    values.append(.text(query))
+    // Same value as `PublicContractSearchResult.listedPrice`. A missing
+    // price stays distinct from zero: after every priced contract when
+    // ascending, before them when descending. Expiry, contract and record
+    // ID keep equal prices in a stable order.
+    let listedPrice = "COALESCE(c.price, c.buyout, c.reward)"
+    let tieBreaker = "c.date_expired, c.contract_id, i.record_id"
+    let orderClause: String
+    switch filter.sort {
+    case .bestMatch:
+      orderClause = """
+        CASE WHEN \(typeNameColumn) = ? COLLATE NOCASE THEN 0 ELSE 1 END,
+                 \(tieBreaker)
+        """
+      values.append(.text(query))
+    case .priceAscending:
+      orderClause =
+        "\(listedPrice) IS NULL, \(listedPrice), \(tieBreaker)"
+    case .priceDescending:
+      orderClause =
+        "\(listedPrice) IS NULL DESC, \(listedPrice) DESC, \(tieBreaker)"
+    }
     values.append(.integer(Int64(filter.limit)))
     let rows = try database.query(
       """
@@ -577,8 +601,7 @@ public actor PublicContractStore {
       LEFT JOIN contract_locations sl ON sl.location_id=c.start_location_id
       LEFT JOIN contract_locations el ON el.location_id=c.end_location_id
       WHERE \(conditions.joined(separator: " AND "))
-      ORDER BY CASE WHEN \(typeNameColumn) = ? COLLATE NOCASE THEN 0 ELSE 1 END,
-               c.date_expired, c.contract_id, i.record_id
+      ORDER BY \(orderClause)
       LIMIT ?
       """,
       values
@@ -686,7 +709,8 @@ public actor PublicContractStore {
   }
 
   public func facets() throws -> (
-    categories: [PublicContractFacet], groups: [PublicContractFacet]
+    categories: [PublicContractFacet], groups: [PublicContractFacet],
+    regions: [PublicContractFacet]
   ) {
     let regionClause = try regionScopeClause("region_id")
     let regionScope =
@@ -728,7 +752,27 @@ public actor PublicContractStore {
         resultCount: count
       )
     }
-    return (categories, groups)
+    // Regions of the import scope that hold at least one contract with
+    // indexed items, counted like the category facet (contracts, not
+    // item lines). Courier contracts without items cannot match a search.
+    let regions = try database.query(
+      """
+      SELECT c.region_id AS id, r.name AS name,
+             COUNT(*) AS result_count
+      FROM contracts c
+      JOIN regions r ON r.region_id=c.region_id
+      WHERE EXISTS (SELECT 1 FROM contract_items i
+                    WHERE i.contract_id=c.contract_id)\(try regionScopeClause("c.region_id"))
+      GROUP BY c.region_id, r.name
+      ORDER BY r.name COLLATE NOCASE, c.region_id
+      """
+    ).compactMap { row -> PublicContractFacet? in
+      guard let id = row.int64("id"), let name = row.string("name"),
+        let count = row.int("result_count")
+      else { return nil }
+      return PublicContractFacet(id: id, name: name, resultCount: count)
+    }
+    return (categories, groups, regions)
   }
 
   public func progress(

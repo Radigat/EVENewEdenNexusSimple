@@ -55,7 +55,7 @@ struct ConsolidationBackupView: View {
       Button("Wiederherstellung vorbereiten") { verify(restore: true) }.disabled(busy)
       Text(
         "Eine bestätigte Wiederherstellung wird beim nächsten App-Start durchgeführt. Zuvor wird der aktuelle Bestand zusätzlich gesichert. Alte Nexus-Datenbanken werden nicht importiert."
-      ).font(.caption)
+      ).appFont(.caption)
       Button("Anonymisierte Diagnose exportieren") { diagnostics() }
       if busy { ProgressView("Dateien werden geprüft…") }
       if let message { Text(message).textSelection(.enabled) }

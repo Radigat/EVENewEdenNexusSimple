@@ -61,7 +61,8 @@ struct AssetsWarehouseView: View {
         HStack(alignment: .firstTextBaseline) {
           VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
             Text(viewTitle.localizedUI)
-              .font(.largeTitle.bold())
+              .appFont(.largeTitle.bold())
+              .nexusPageTitle()
             Text(viewDescription.localizedUI)
               .foregroundStyle(DesignTokens.textSecondary)
           }
@@ -101,7 +102,7 @@ struct AssetsWarehouseView: View {
       ViewThatFits(in: .horizontal) {
         HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
           Text("Arrange items")
-            .font(.subheadline.weight(.semibold))
+            .appFont(.subheadline.weight(.semibold))
           inventoryOrganizationPicker
             .pickerStyle(.segmented)
             .frame(maxWidth: 520)
@@ -110,7 +111,7 @@ struct AssetsWarehouseView: View {
 
         HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
           Text("Arrange items")
-            .font(.subheadline.weight(.semibold))
+            .appFont(.subheadline.weight(.semibold))
           Spacer(minLength: DesignTokens.spacingSM)
           inventoryOrganizationPicker
             .pickerStyle(.menu)
@@ -122,7 +123,7 @@ struct AssetsWarehouseView: View {
       Text(
         "Group and main group use the hierarchy from the active SDE catalog. Unresolved types remain visible under Unclassified."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Divider()
@@ -136,7 +137,7 @@ struct AssetsWarehouseView: View {
       Text(
         "When enabled, synchronized corporation assets are added to both All items and Warehouse. EVE requires a newly authorized character with the Director role."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       Divider()
@@ -158,7 +159,7 @@ struct AssetsWarehouseView: View {
       Text(
         "Enter at least 3 letters. Matching locations and characters open automatically."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -203,7 +204,7 @@ struct AssetsWarehouseView: View {
             "At least one asset-owner snapshot is partial, stale, forbidden or unavailable. Its state remains visible under the owner.",
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
         if !warehouse.unresolvedLocationIDs.isEmpty {
@@ -211,14 +212,14 @@ struct AssetsWarehouseView: View {
             "\(warehouse.unresolvedLocationIDs.count) nested or unresolved location \(warehouse.unresolvedLocationIDs.count == 1 ? "reference is" : "references are") excluded from allocatable stock.",
             systemImage: "questionmark.diamond.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
         if let nameGaps = warehouse.structureNameGaps, !nameGaps.isEmpty {
           structureNameGapNote(nameGaps)
         }
         Text(summaryExplanation.localizedUI)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       if !includeCorporationHangars {
@@ -226,7 +227,7 @@ struct AssetsWarehouseView: View {
           "Corporation hangars are excluded by the switch.",
           systemImage: "building.2.crop.circle"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       } else {
         corporationAssetStatus
@@ -237,7 +238,7 @@ struct AssetsWarehouseView: View {
         Text(
           "The storage position is the raw ESI location flag: it describes where EVE placed an item inside its parent inventory. It is not an access permission and does not change the counted quantity. Hangar means the personal item hangar; AutoFit normally marks an item inside a container; Unlocked or Locked describes the locking state inside an audit-log container. Other values identify cargo holds, fitting slots or specialized bays."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         .padding(.top, DesignTokens.spacingXS)
       }
@@ -252,7 +253,7 @@ struct AssetsWarehouseView: View {
         "Combined assigned production locations",
         systemImage: "point.3.connected.trianglepath.dotted"
       )
-      .font(.subheadline.weight(.semibold))
+      .appFont(.subheadline.weight(.semibold))
       ForEach(scope.locations) { location in
         HStack(alignment: .firstTextBaseline) {
           EVEEntityText(value: location.structureName)
@@ -264,7 +265,7 @@ struct AssetsWarehouseView: View {
             location.activities.map(\.displayName).sorted()
               .map(\.localizedUI).joined(separator: " · ")
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -273,13 +274,13 @@ struct AssetsWarehouseView: View {
           "Some configured production activities have no exact assigned station or player structure and are excluded from allocatable stock.",
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
       Text(
         "Manufacturing stock comes from the selected manufacturing facilities; reaction, invention, copying and research stock comes from their separately assigned facilities. Main Hub market inventory is not part of this Warehouse."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -346,7 +347,7 @@ struct AssetsWarehouseView: View {
       Text(
         "Set the minimum quantity that should remain across the configured production locations. The planner uses only stock above this minimum. A missing quantity is the active replenishment alarm."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       HStack(alignment: .top, spacing: DesignTokens.spacingSM) {
@@ -369,7 +370,7 @@ struct AssetsWarehouseView: View {
 
       if let targetError {
         Label(targetError, systemImage: "xmark.octagon.fill")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.negative)
       }
 
@@ -403,7 +404,7 @@ struct AssetsWarehouseView: View {
             stockTargetHeader("Missing to target", column: .missing)
             Text("")
           }
-          .font(.caption.bold())
+          .appFont(.caption.bold())
           .foregroundStyle(DesignTokens.textSecondary)
           Divider()
           ForEach(sortedStockTargets) { target in
@@ -465,7 +466,7 @@ struct AssetsWarehouseView: View {
           EVEEntityLabel(value: locationTitle(location), lineLimit: 1)
           Spacer(minLength: DesignTokens.spacingMD)
           Text(locationSummary(location))
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
             .foregroundStyle(DesignTokens.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -500,7 +501,7 @@ struct AssetsWarehouseView: View {
                   systemImage: owner.ownerKind == .corporation
                     ? "building.2.fill" : "person.fill"
                 )
-                .font(.subheadline.weight(.semibold))
+                .appFont(.subheadline.weight(.semibold))
                 freshnessBadge(owner.state)
                 Spacer()
                 Text(
@@ -509,7 +510,7 @@ struct AssetsWarehouseView: View {
                     locationID: location.id
                   )
                 )
-                .font(.caption.monospacedDigit())
+                .appFont(.caption.monospacedDigit())
                 .foregroundStyle(DesignTokens.textSecondary)
               }
             } content: {
@@ -589,11 +590,11 @@ struct AssetsWarehouseView: View {
         if let title = section.title {
           HStack {
             Text(title.localizedUI)
-              .font(.caption.weight(.semibold))
+              .appFont(.caption.weight(.semibold))
               .foregroundStyle(DesignTokens.accent)
             Spacer()
             Text(sectionSummary(section))
-              .font(.caption2.monospacedDigit())
+              .appFont(.caption2.monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
           }
           .padding(.top, DesignTokens.spacingXS)
@@ -601,7 +602,7 @@ struct AssetsWarehouseView: View {
         ownerContentRows(section.rows, owner: owner, targets: targets)
       }
     }
-    .font(.caption)
+    .appFont(.caption)
   }
 
   private var ownerContentHeader: some View {
@@ -617,7 +618,7 @@ struct AssetsWarehouseView: View {
         ownerContentHeader("Minimum", column: .minimum, alignment: .trailing)
       }
     }
-    .font(.caption.bold())
+    .appFont(.caption.bold())
     .foregroundStyle(DesignTokens.textSecondary)
   }
 
@@ -638,7 +639,7 @@ struct AssetsWarehouseView: View {
           lineLimit: 2
         )
         Text(row.quantity.formatted())
-          .font(.body.monospacedDigit())
+          .appFont(.body.monospacedDigit())
         inventoryFlagView(
           row.locationFlag,
           corporationDivisionNames: owner.corporationDivisionNames
@@ -788,7 +789,7 @@ struct AssetsWarehouseView: View {
       Text(displayName)
       if displayName != flag {
         Text(flag)
-          .font(.caption2.monospaced())
+          .appFont(.caption2.monospaced())
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -880,7 +881,7 @@ struct AssetsWarehouseView: View {
         .padding(.leading, DesignTokens.spacingMD)
       }
     }
-    .font(.caption)
+    .appFont(.caption)
     .foregroundStyle(DesignTokens.textSecondary)
     .accessibilityIdentifier("assets.warehouse.structure-name-gaps")
   }
@@ -888,10 +889,10 @@ struct AssetsWarehouseView: View {
   private func summaryMetric(_ title: String, value: String) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text(LocalizedStringKey(title))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       Text(value)
-        .font(.title3.bold().monospacedDigit())
+        .appFont(.title3.bold().monospacedDigit())
     }
   }
 
@@ -935,7 +936,7 @@ struct AssetsWarehouseView: View {
 
   private func freshnessBadge(_ state: DataFreshness) -> some View {
     Text(LocalizedStringKey(state.rawValue.uppercased()))
-      .font(.caption2.bold())
+      .appFont(.caption2.bold())
       .padding(.horizontal, 6)
       .padding(.vertical, 2)
       .background(freshnessColor(state).opacity(0.18))
@@ -1430,16 +1431,16 @@ private struct StockTargetEditorRow: View {
     GridRow {
       EVEItemText(value: target.typeName, typeID: target.typeID)
       Text(stock.factualQuantity.formatted())
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
       WarehouseMinimumEditor(
         currentValue: target.targetQuantity,
         onCommit: onCommit
       )
       .id("target-\(target.typeID)-\(target.targetQuantity)")
       Text(stock.allocatableQuantity.formatted())
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
       Text(stock.missingToTarget.formatted())
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
         .foregroundStyle(
           stock.missingToTarget > 0
             ? DesignTokens.caution : DesignTokens.textSecondary
@@ -1551,7 +1552,7 @@ private struct WarehouseItemSearchField: View {
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
-      .font(.caption)
+      .appFont(.caption)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .onDisappear {

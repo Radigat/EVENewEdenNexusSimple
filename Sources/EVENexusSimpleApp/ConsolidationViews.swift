@@ -17,7 +17,7 @@ struct ConsolidationWorkbenchView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Text(area.rawValue).font(.title2.bold())
+        Text(area.rawValue).appFont(.title2.bold())
         Spacer()
         Button("Schließen") {
           controller.error = nil
@@ -125,7 +125,7 @@ private struct ConsolidationSalesView: View {
       }
       Text(
         "Kosten und frühere manuelle Verkaufswerte werden beim ersten Beleg unveränderlich gesichert. Belegte Erlöse werden separat ausgewiesen; die bisherige manuelle Angabe wird im Belegmodus nicht zusätzlich gezählt."
-      ).font(.caption)
+      ).appFont(.caption)
       Button("Verkäufe aus letzter Wallet-Synchronisierung prüfen") { importWallet() }
       TextField("Menge", text: $quantity)
         .groupedNumberInput($quantity, allowsFraction: false)
@@ -148,7 +148,7 @@ private struct ConsolidationSalesView: View {
       Button("Journalbetrag ausdrücklich als Verkauf prüfen") { journalReceipt() }
       Text(
         "Journalbuchungen enthalten keine verlässliche Artikelmenge. Typ und Menge werden hier ausdrücklich bestätigt. Market-Transaction-Journalzeilen sind ausgeschlossen, damit derselbe Marktverkauf nicht zweimal importiert wird."
-      ).font(.caption)
+      ).appFont(.caption)
 
       Picker("Verkaufsbeleg", selection: $evidenceID) {
         Text("Auswählen").tag(Optional<String>.none)
@@ -162,14 +162,14 @@ private struct ConsolidationSalesView: View {
       Button("Zuordnung prüfen") { allocate() }
       if let rowID, let cost = controller.workspace.costs.first(where: { $0.id == rowID }) {
         Text(cost.evidenceMode ? "Belegmodus aktiv" : "Manuelle historische Angaben aktiv")
-        Text("Gesicherte manuelle Verkaufsmenge: \(cost.historicalManualSoldUnits)").font(.caption)
+        Text("Gesicherte manuelle Verkaufsmenge: \(cost.historicalManualSoldUnits)").appFont(.caption)
         let allocations = controller.workspace.sales.filter { $0.rowID == rowID }
         Text(
           "Belegt verkauft: \(allocations.reduce(Int64(0)) { $0 + $1.quantity }) / \(cost.units)")
         Text(
           "Belegter Bruttoerlös: \(NSDecimalNumber(decimal: allocations.reduce(Decimal.zero) { $0 + Decimal($1.grossCents) } / 100).stringValue) ISK"
         )
-        Text("Bruttoerlös vor Verkaufsgebühren. Vorhandene Planwerte bleiben unverändert.").font(
+        Text("Bruttoerlös vor Verkaufsgebühren. Vorhandene Planwerte bleiben unverändert.").appFont(
           .caption)
       }
     }.formStyle(.grouped)

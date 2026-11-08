@@ -413,9 +413,6 @@ final class RuntimeState {
   }
   private(set) var isRefreshingMineralPurchaseAnalysis = false
   private(set) var mineralPurchaseAnalysisError: String?
-  private(set) var marketBrowserState: Sourced<MarketBrowserSnapshot>?
-  private(set) var isRefreshingMarketBrowser = false
-  private(set) var marketBrowserError: String?
   private(set) var mainHubMarketState: Sourced<MarketOrderSummarySnapshot>?
   private(set) var mainHubMarketAutomaticUpdatesEnabled = true
   private(set) var mainHubMarketNextAutomaticRunAt: Date?
@@ -591,6 +588,9 @@ final class RuntimeState {
   private(set) var publicContractResults: [PublicContractSearchResult] = []
   private(set) var publicContractCategories: [PublicContractFacet] = []
   private(set) var publicContractGroups: [PublicContractFacet] = []
+  /// Regions of the import scope with indexed contract items, for the
+  /// region filter of the contract search.
+  private(set) var publicContractRegionFacets: [PublicContractFacet] = []
   private(set) var publicContractError: String?
   private(set) var isSynchronizingPublicContracts = false
   private(set) var isCancellingPublicContracts = false
@@ -1084,6 +1084,7 @@ final class RuntimeState {
         let facets = try await publicContractIndexer.facets()
         publicContractCategories = facets.categories
         publicContractGroups = facets.groups
+        publicContractRegionFacets = facets.regions
         hasLoadedPublicContractBrowser = true
       }
       let automation = try await publicContractIndexer.automationState(
@@ -1132,6 +1133,7 @@ final class RuntimeState {
       let facets = try await publicContractIndexer.facets()
       publicContractCategories = facets.categories
       publicContractGroups = facets.groups
+      publicContractRegionFacets = facets.regions
       hasLoadedPublicContractBrowser = true
     } catch {
       publicContractError =
@@ -3835,16 +3837,18 @@ final class RuntimeState {
           isAutomatic: isAutomatic,
           stockTrigger: stockTrigger
         )
-      try await analyzeSecondaryHubOpportunities(
-        role: .home,
-        context: secondaryContext
+      // Home and Coalition run at once; each keeps its own state (G10).
+      let secondaryDurations = try await SecondaryHubScan.run { [self] role in
+        try await analyzeSecondaryHubOpportunities(
+          role: role,
+          context: secondaryContext
+        )
+      }
+      scanStopwatch.lap(
+        "secondary-hubs",
+        "home=\(secondaryDurations[.home] ?? .zero) "
+          + "coalition=\(secondaryDurations[.coalition] ?? .zero)"
       )
-      scanStopwatch.lap("home-hub")
-      try await analyzeSecondaryHubOpportunities(
-        role: .coalition,
-        context: secondaryContext
-      )
-      scanStopwatch.lap("coalition-hub")
     } catch is CancellationError {
       return
     } catch ESIError.cancelled {
@@ -4265,132 +4269,6 @@ final class RuntimeState {
     }
     return leasesByCharacterID.isEmpty
       ? .unavailable : .available(leasesByCharacterID)
-  }
-
-  func refreshMarketBrowser(
-    typeID: Int64,
-    itemName: String,
-    authorizations: [AuthorizationSnapshot] = [],
-    clientID: String = ""
-  ) async {
-    guard !isRefreshingMarketBrowser else { return }
-    isRefreshingMarketBrowser = true
-    marketBrowserError = nil
-    defer { isRefreshingMarketBrowser = false }
-
-    do {
-      let publicSnapshot = try await MarketBrowserService(
-        esi: esi,
-        universeNames: universeNameService,
-        systemSecurity: solarSystemSearch
-      ).snapshot(
-        typeID: typeID,
-        itemName: itemName
-      )
-      let latest = await resolvingMarketBrowserStructureNames(
-        in: publicSnapshot,
-        authorizations: authorizations,
-        clientID: clientID
-      )
-      guard !Task.isCancelled else { return }
-      let previous: Sourced<MarketBrowserSnapshot>? = marketBrowserState.flatMap {
-        state in
-        guard state.value?.typeID == typeID else { return nil }
-        return state
-      }
-      marketBrowserState = latest.retainingLastKnownValue(from: previous)
-    } catch is CancellationError {
-      return
-    } catch ESIError.cancelled {
-      return
-    } catch StaticCatalogError.noActiveCatalog {
-      marketBrowserError =
-        "No active SDE catalog is installed. Install or activate static data first."
-    } catch {
-      marketBrowserError =
-        "The cross-region market could not be refreshed. Existing market data was not replaced."
-    }
-  }
-
-  private func resolvingMarketBrowserStructureNames(
-    in sourced: Sourced<MarketBrowserSnapshot>,
-    authorizations: [AuthorizationSnapshot],
-    clientID: String
-  ) async -> Sourced<MarketBrowserSnapshot> {
-    guard let snapshot = sourced.value else { return sourced }
-    let structureIDs = Set(
-      snapshot.orders.lazy
-        .filter(\.isPlayerStructure)
-        .map(\.locationID)
-    )
-    guard !structureIDs.isEmpty else { return sourced }
-
-    let normalizedClientID = clientID.trimmingCharacters(
-      in: .whitespacesAndNewlines
-    )
-    let eligibleAuthorizations = authorizations.filter {
-      $0.scopes.contains(PlayerStructureSearchService.detailScope)
-    }.sorted { $0.characterID < $1.characterID }
-    guard !normalizedClientID.isEmpty, !eligibleAuthorizations.isEmpty else {
-      return marketBrowserStructureResult(
-        sourced: sourced,
-        snapshot: snapshot,
-        names: [:],
-        unresolvedCount: structureIDs.count,
-        diagnostic: "esi.market-browser.structure-authorization-required"
-      )
-    }
-
-    var unresolved = structureIDs
-    var names: [Int64: String] = [:]
-    for authorization in eligibleAuthorizations where !unresolved.isEmpty {
-      do {
-        let lease = try await authService(
-          clientID: normalizedClientID
-        ).accessTokenLease(characterID: authorization.characterID)
-        let resolved = await playerStructureSearch.resolveKnownStructures(
-          structureIDs: unresolved,
-          lease: lease
-        )
-        for option in resolved.value ?? [] {
-          names[option.id] = option.name
-          unresolved.remove(option.id)
-        }
-      } catch is CancellationError {
-        return sourced
-      } catch {
-        continue
-      }
-    }
-    return marketBrowserStructureResult(
-      sourced: sourced,
-      snapshot: snapshot,
-      names: names,
-      unresolvedCount: unresolved.count,
-      diagnostic: "esi.market-browser.structure-name-unavailable"
-    )
-  }
-
-  private func marketBrowserStructureResult(
-    sourced: Sourced<MarketBrowserSnapshot>,
-    snapshot: MarketBrowserSnapshot,
-    names: [Int64: String],
-    unresolvedCount: Int,
-    diagnostic: String
-  ) -> Sourced<MarketBrowserSnapshot> {
-    var diagnostics = sourced.diagnostics
-    if unresolvedCount > 0 {
-      diagnostics.append("\(diagnostic):\(unresolvedCount)")
-    }
-    diagnostics = Array(Set(diagnostics)).sorted()
-    return Sourced(
-      state:
-        sourced.state == .fresh && unresolvedCount > 0
-        ? .partial : sourced.state,
-      value: snapshot.resolvingStructureNames(names),
-      source: sourced.source,
-      diagnostics: diagnostics
-    )
   }
 
   nonisolated private static func materialPurchaseMarketFailure(
@@ -4897,12 +4775,6 @@ final class RuntimeState {
     -> [String: ItemTypeNameResolution]
   {
     try await catalog.resolveItemTypeNames(names)
-  }
-
-  func searchMarketTypes(matching query: String) async throws
-    -> [ItemTypeSearchResult]
-  {
-    try await catalog.searchItemTypes(matching: query, limit: 50)
   }
 
   func searchPlannerManufacturingProducts(matching query: String) async throws

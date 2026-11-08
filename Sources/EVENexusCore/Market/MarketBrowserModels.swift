@@ -1,371 +1,13 @@
 import Foundation
 
-public enum MarketSecurityBand: String, Codable, CaseIterable, Sendable {
-  case highSecurity
-  case lowSecurity
-  case nullSecurity
-  case unknown
-
-  public static func resolved(
-    securityStatus: Double?
-  ) -> MarketSecurityBand {
-    guard let securityStatus, securityStatus.isFinite else { return .unknown }
-    if securityStatus >= 0.45 { return .highSecurity }
-    if securityStatus > 0 { return .lowSecurity }
-    return .nullSecurity
-  }
-
+/// EVE-client display rule for a solar system's security status.
+public enum MarketSecurityBand {
   public static func eveDisplayStatus(
     _ securityStatus: Double?
   ) -> Double? {
     guard let securityStatus, securityStatus.isFinite else { return nil }
     if securityStatus > 0, securityStatus < 0.05 { return 0.1 }
     return (securityStatus * 10).rounded() / 10
-  }
-}
-
-public struct MarketBrowserOrder: Identifiable, Codable, Hashable, Sendable {
-  public let id: Int64
-  public let typeID: Int64
-  public let regionID: Int64
-  public let regionName: String
-  public let locationID: Int64
-  public let locationName: String?
-  public let systemID: Int64
-  public let systemName: String?
-  public let securityStatus: Double?
-  public let side: MarketOrderSide
-  public let price: Double
-  public let volumeRemaining: Int64
-  public let volumeTotal: Int64
-  public let minimumVolume: Int64
-  public let range: String
-  public let issuedAt: Date
-  public let expiresAt: Date
-  public let esiLastModifiedAt: Date?
-  public let observedAt: Date
-
-  public var isPlayerStructure: Bool {
-    locationID >= 1_000_000_000_000
-  }
-
-  public var securityBand: MarketSecurityBand {
-    MarketSecurityBand.resolved(securityStatus: securityStatus)
-  }
-
-  public var eveDisplaySecurityStatus: Double? {
-    MarketSecurityBand.eveDisplayStatus(securityStatus)
-  }
-
-  public init(
-    id: Int64,
-    typeID: Int64,
-    regionID: Int64,
-    regionName: String,
-    locationID: Int64,
-    locationName: String?,
-    systemID: Int64,
-    systemName: String?,
-    securityStatus: Double? = nil,
-    side: MarketOrderSide,
-    price: Double,
-    volumeRemaining: Int64,
-    volumeTotal: Int64,
-    minimumVolume: Int64,
-    range: String,
-    issuedAt: Date,
-    expiresAt: Date,
-    esiLastModifiedAt: Date?,
-    observedAt: Date
-  ) {
-    self.id = id
-    self.typeID = typeID
-    self.regionID = regionID
-    self.regionName = regionName
-    self.locationID = locationID
-    self.locationName = locationName
-    self.systemID = systemID
-    self.systemName = systemName
-    self.securityStatus = securityStatus
-    self.side = side
-    self.price = price
-    self.volumeRemaining = volumeRemaining
-    self.volumeTotal = volumeTotal
-    self.minimumVolume = minimumVolume
-    self.range = range
-    self.issuedAt = issuedAt
-    self.expiresAt = expiresAt
-    self.esiLastModifiedAt = esiLastModifiedAt
-    self.observedAt = observedAt
-  }
-
-  fileprivate func resolvingStructureName(
-    _ structureNames: [Int64: String]
-  ) -> MarketBrowserOrder {
-    guard isPlayerStructure, let name = structureNames[locationID] else {
-      return self
-    }
-    return MarketBrowserOrder(
-      id: id,
-      typeID: typeID,
-      regionID: regionID,
-      regionName: regionName,
-      locationID: locationID,
-      locationName: name,
-      systemID: systemID,
-      systemName: systemName,
-      securityStatus: securityStatus,
-      side: side,
-      price: price,
-      volumeRemaining: volumeRemaining,
-      volumeTotal: volumeTotal,
-      minimumVolume: minimumVolume,
-      range: range,
-      issuedAt: issuedAt,
-      expiresAt: expiresAt,
-      esiLastModifiedAt: esiLastModifiedAt,
-      observedAt: observedAt
-    )
-  }
-}
-
-public struct MarketBrowserRegionFailure: Identifiable, Codable, Equatable,
-  Sendable
-{
-  public var id: Int64 { regionID }
-  public let regionID: Int64
-  public let regionName: String
-  public let diagnostic: String
-
-  public init(regionID: Int64, regionName: String, diagnostic: String) {
-    self.regionID = regionID
-    self.regionName = regionName
-    self.diagnostic = diagnostic
-  }
-}
-
-public struct MarketBrowserSummary: Codable, Equatable, Sendable {
-  public let bestSellPrice: Double?
-  public let bestBuyPrice: Double?
-  public let weightedAverageSellPrice: Double?
-  public let averageSellFivePercent: Double?
-  public let averageBuyFivePercent: Double?
-  public let averageMargin: Double?
-  public let averageMarginPercent: Double?
-  public let activeSellVolume: Int64
-  public let activeBuyVolume: Int64
-  public let sellOrderCount: Int
-  public let buyOrderCount: Int
-  public let representedRegionCount: Int
-
-  public var spread: Double? {
-    guard let bestSellPrice, let bestBuyPrice else { return nil }
-    return bestSellPrice - bestBuyPrice
-  }
-
-  public static func calculate(
-    orders: [MarketBrowserOrder]
-  ) -> MarketBrowserSummary {
-    let valid = orders.filter {
-      $0.price.isFinite && $0.price > 0 && $0.volumeRemaining > 0
-    }
-    let allSells = valid.filter { $0.side == .sell }
-    let allBuys = valid.filter { $0.side == .buy }
-    let bestSellPrice = allSells.map(\.price).min()
-    let bestBuyPrice = allBuys.map(\.price).max()
-    let sells = allSells.filter {
-      guard let bestSellPrice else { return false }
-      let threshold = bestSellPrice * 10
-      return $0.price <= (threshold.isFinite ? threshold : .greatestFiniteMagnitude)
-    }
-    let buys = allBuys.filter {
-      guard let bestBuyPrice else { return false }
-      return $0.price >= bestBuyPrice * 0.1
-    }
-    let sellVolume = sells.reduce(Int64(0)) {
-      $0.addingReportingOverflow($1.volumeRemaining).overflow
-        ? Int64.max : $0 + $1.volumeRemaining
-    }
-    let buyVolume = buys.reduce(Int64(0)) {
-      $0.addingReportingOverflow($1.volumeRemaining).overflow
-        ? Int64.max : $0 + $1.volumeRemaining
-    }
-    let weightedTotal = sells.reduce(0.0) {
-      $0 + ($1.price * Double($1.volumeRemaining))
-    }
-    let averageSellFivePercent = fivePercentAverage(
-      orders: sells,
-      bestPriceFirst: { $0.price < $1.price }
-    )
-    let averageBuyFivePercent = fivePercentAverage(
-      orders: buys,
-      bestPriceFirst: { $0.price > $1.price }
-    )
-    let averageMargin = averageSellFivePercent.flatMap { sell in
-      averageBuyFivePercent.map { sell - $0 }
-    }
-    let averageMarginPercent: Double?
-    if let averageMargin,
-      let averageBuyFivePercent,
-      averageBuyFivePercent > 0
-    {
-      averageMarginPercent = averageMargin / averageBuyFivePercent * 100
-    } else {
-      averageMarginPercent = nil
-    }
-    return MarketBrowserSummary(
-      bestSellPrice: bestSellPrice,
-      bestBuyPrice: bestBuyPrice,
-      weightedAverageSellPrice:
-        sellVolume > 0 && weightedTotal.isFinite
-        ? weightedTotal / Double(sellVolume) : nil,
-      averageSellFivePercent: averageSellFivePercent,
-      averageBuyFivePercent: averageBuyFivePercent,
-      averageMargin: averageMargin,
-      averageMarginPercent: averageMarginPercent,
-      activeSellVolume: sellVolume,
-      activeBuyVolume: buyVolume,
-      sellOrderCount: sells.count,
-      buyOrderCount: buys.count,
-      representedRegionCount: Set(valid.map(\.regionID)).count
-    )
-  }
-
-  private static func fivePercentAverage(
-    orders: [MarketBrowserOrder],
-    bestPriceFirst: (MarketBrowserOrder, MarketBrowserOrder) -> Bool
-  ) -> Double? {
-    let totalVolume = orders.reduce(Int64(0)) {
-      $0.addingReportingOverflow($1.volumeRemaining).overflow
-        ? Int64.max : $0 + $1.volumeRemaining
-    }
-    guard totalVolume > 0 else { return nil }
-    let targetVolume = max(
-      1,
-      totalVolume / 20 + (totalVolume % 20 == 0 ? 0 : 1)
-    )
-    var remaining = targetVolume
-    var weightedTotal = 0.0
-    for order in orders.sorted(by: bestPriceFirst) where remaining > 0 {
-      let acceptedVolume = min(remaining, order.volumeRemaining)
-      weightedTotal += order.price * Double(acceptedVolume)
-      remaining -= acceptedVolume
-    }
-    guard remaining == 0, weightedTotal.isFinite else { return nil }
-    return weightedTotal / Double(targetVolume)
-  }
-}
-
-public struct MarketBrowserSnapshot: Codable, Sendable {
-  public let id: UUID
-  public let typeID: Int64
-  public let itemName: String
-  public let capturedAt: Date
-  public let regionCount: Int
-  public let loadedRegionCount: Int
-  public let orders: [MarketBrowserOrder]
-  public let regionFailures: [MarketBrowserRegionFailure]
-  public let summary: MarketBrowserSummary
-  public let source: SourceIdentity
-
-  public init(
-    id: UUID = UUID(),
-    typeID: Int64,
-    itemName: String,
-    capturedAt: Date,
-    regionCount: Int,
-    loadedRegionCount: Int,
-    orders: [MarketBrowserOrder],
-    regionFailures: [MarketBrowserRegionFailure],
-    source: SourceIdentity
-  ) {
-    self.id = id
-    self.typeID = typeID
-    self.itemName = itemName
-    self.capturedAt = capturedAt
-    self.regionCount = regionCount
-    self.loadedRegionCount = loadedRegionCount
-    self.orders = orders
-    self.regionFailures = regionFailures
-    summary = MarketBrowserSummary.calculate(orders: orders)
-    self.source = source
-  }
-
-  public func resolvingStructureNames(
-    _ structureNames: [Int64: String]
-  ) -> MarketBrowserSnapshot {
-    MarketBrowserSnapshot(
-      id: id,
-      typeID: typeID,
-      itemName: itemName,
-      capturedAt: capturedAt,
-      regionCount: regionCount,
-      loadedRegionCount: loadedRegionCount,
-      orders: orders.map {
-        $0.resolvingStructureName(structureNames)
-      },
-      regionFailures: regionFailures,
-      source: source
-    )
-  }
-}
-
-public struct MarketBrowserFilter: Equatable, Sendable {
-  public var regionQuery = ""
-  public var locationQuery = ""
-  public var minimumPrice: Double?
-  public var maximumPrice: Double?
-  public var minimumQuantity: Int64?
-  public var includesNPCStations = true
-  public var includesPlayerStructures = true
-  public var includesHighSecurity = true
-  public var includesLowSecurity = true
-  public var includesNullSecurity = true
-  public var includesUnknownSecurity = true
-  public var marketHubsOnly = false
-
-  public init() {}
-
-  public func accepts(_ order: MarketBrowserOrder) -> Bool {
-    if !regionQuery.isEmpty,
-      !order.regionName.localizedCaseInsensitiveContains(regionQuery)
-    {
-      return false
-    }
-    if !locationQuery.isEmpty {
-      if order.locationName?.localizedCaseInsensitiveContains(locationQuery)
-        != true
-        && order.systemName?.localizedCaseInsensitiveContains(locationQuery)
-          != true
-      {
-        return false
-      }
-    }
-    if let minimumPrice, order.price < minimumPrice { return false }
-    if let maximumPrice, order.price > maximumPrice { return false }
-    if let minimumQuantity, order.volumeRemaining < minimumQuantity {
-      return false
-    }
-    if order.isPlayerStructure {
-      if !includesPlayerStructures { return false }
-    } else if !includesNPCStations {
-      return false
-    }
-    switch order.securityBand {
-    case .highSecurity where !includesHighSecurity: return false
-    case .lowSecurity where !includesLowSecurity: return false
-    case .nullSecurity where !includesNullSecurity: return false
-    case .unknown where !includesUnknownSecurity: return false
-    default: break
-    }
-    if marketHubsOnly,
-      !MarketTradeHub.allCases.contains(where: {
-        $0.stationID == order.locationID
-      })
-    {
-      return false
-    }
-    return true
   }
 }
 
@@ -2315,6 +1957,36 @@ public enum OpportunityHubRole: String, Codable, CaseIterable, Sendable {
   public var demandFileName: String { "\(storageFilePrefix)-demand.json" }
   public var opportunitiesFileName: String {
     "\(storageFilePrefix)-opportunities.json"
+  }
+}
+
+/// Runs the Home and Coalition analyses of a Main-Hub scan at the same time
+/// (owner decision 2026-11-05, ANALYSE_2026-11-02 G10). Each role keeps its
+/// own state and stores and needs from the other only its configuration. A
+/// cancellation stops both. Returns how long each role took.
+public enum SecondaryHubScan {
+  public static let roles: [OpportunityHubRole] = [.home, .coalition]
+
+  public static func run(
+    _ analyze: @escaping @Sendable (OpportunityHubRole) async throws -> Void
+  ) async throws -> [OpportunityHubRole: Duration] {
+    try await withThrowingTaskGroup(
+      of: (OpportunityHubRole, Duration).self
+    ) { group in
+      for role in roles {
+        group.addTask {
+          let duration = try await ContinuousClock().measure {
+            try await analyze(role)
+          }
+          return (role, duration)
+        }
+      }
+      var durations: [OpportunityHubRole: Duration] = [:]
+      for try await (role, duration) in group {
+        durations[role] = duration
+      }
+      return durations
+    }
   }
 }
 

@@ -166,7 +166,10 @@ struct RuntimeFeatureStateTests {
       runtime.marketStockHistoryURL.path
         == root.appendingPathComponent("market/market-stock-history.sqlite").path
     )
-    let start = Date(timeIntervalSince1970: 1_793_253_600)
+    // 06:00 UTC two days ago: the store's compaction measures its 7-day
+    // fine retention from the real clock, so a fixed date would expire.
+    let utcDayStart = (Date.now.timeIntervalSince1970 / 86_400).rounded(.down) * 86_400
+    let start = Date(timeIntervalSince1970: utcDayStart - 2 * 86_400 + 6 * 3_600)
     func book(_ volume: Int64, at capturedAt: Date, state: DataFreshness = .fresh)
       -> MarketOrderSnapshot
     {

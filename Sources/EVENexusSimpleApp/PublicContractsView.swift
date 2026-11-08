@@ -7,7 +7,9 @@ struct PublicContractsView: View {
   @State private var itemQuery = ""
   @State private var selectedCategoryID: Int64?
   @State private var selectedGroupID: Int64?
+  @State private var selectedRegionID: Int64?
   @State private var direction: PublicContractItemDirection = .included
+  @State private var sortOrder: PublicContractSearchSort = .bestMatch
   @State private var explicitSearchSequence = 0
   @State private var pendingExplicitSearchIdentity: SearchIdentity?
   @AppStorage("contracts.disclosure.esi-safe", store: AppDefaults.store)
@@ -70,14 +72,23 @@ struct PublicContractsView: View {
         self.selectedGroupID = nil
       }
     }
+    .onChange(of: runtime.publicContractRegionFacets) { _, regions in
+      // A changed import scope can remove the selected region.
+      if let selectedRegionID,
+        !regions.contains(where: { $0.id == selectedRegionID })
+      {
+        self.selectedRegionID = nil
+      }
+    }
   }
 
   private var header: some View {
     HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         Text("Public Contracts")
-          .font(.largeTitle.bold())
+          .appFont(.largeTitle.bold())
           .foregroundStyle(DesignTokens.textPrimary)
+          .nexusPageTitle()
         Text(
           "Build a local, resumable index of public contracts from every ESI region, then search by item, group and category."
         )
@@ -88,7 +99,7 @@ struct PublicContractsView: View {
         HStack(spacing: DesignTokens.spacingSM) {
           ProgressView().controlSize(.small)
           Text("Preparing local Public Contracts database")
-            .font(.callout)
+            .appFont(.callout)
             .foregroundStyle(DesignTokens.textSecondary)
         }
         .accessibilityElement(children: .combine)
@@ -187,7 +198,7 @@ struct PublicContractsView: View {
               Text("Next allowed request: \(next.formatted(date: .omitted, time: .standard))")
             }
           }
-          .font(.caption)
+          .appFont(.caption)
         } else {
           Label(statusLabel, systemImage: statusIcon)
             .foregroundStyle(statusColor)
@@ -206,7 +217,7 @@ struct PublicContractsView: View {
               ),
               systemImage: "clock.arrow.circlepath"
             )
-            .font(.caption)
+            .appFont(.caption)
           }
         }
         if runtime.publicContractAutomaticUpdatesEnabled {
@@ -230,13 +241,13 @@ struct PublicContractsView: View {
         Text(
           "After one manual start, unfinished work resumes automatically and a completed index is checked no more than every six hours. ESI expiry and rate-limit headers can postpone every run."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         Label(
           "Public Contracts use public ESI endpoints and require no character, corporation role or Corporation Assets scope. A Corporation Assets authorization failure is reported separately and cannot block this importer.",
           systemImage: "lock.open"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -281,6 +292,14 @@ struct PublicContractsView: View {
                 .tag(Optional(group.id))
             }
           }
+          Picker("Region", selection: $selectedRegionID) {
+            Text("All regions").tag(Int64?.none)
+            ForEach(runtime.publicContractRegionFacets) { region in
+              Text("\(region.name) (\(region.resultCount))")
+                .tag(Optional(region.id))
+            }
+          }
+          .accessibilityIdentifier("public-contracts.region")
         }
         Picker("Contract side", selection: $direction) {
           Text("Offered").tag(PublicContractItemDirection.included)
@@ -292,12 +311,12 @@ struct PublicContractsView: View {
         Text(
           "Example: search for “Ark”, then select Category “Ship” and Group “Jump Freighter” to exclude Arkonor and unrelated matches."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         Text(
           "The search starts after a short typing pause. Press Return to search immediately."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -310,7 +329,7 @@ struct PublicContractsView: View {
       selectedGroupID == nil
     {
       Spacer()
-      ContentUnavailableView(
+      AppUnavailableView(
         "Search the local contract index",
         systemImage: "doc.text.magnifyingglass",
         description: Text(
@@ -320,23 +339,33 @@ struct PublicContractsView: View {
       Spacer()
     } else if runtime.publicContractResults.isEmpty {
       Spacer()
-      ContentUnavailableView(
+      AppUnavailableView(
         "No indexed contracts found",
         systemImage: "doc.text.magnifyingglass",
         description: Text(
           runtime.publicContractProgress.pendingItemContracts > 0
             ? "Matching details may still be waiting in the safe indexing queue."
-            : "Adjust the item, category, group or offered/requested filter."
+            : "Adjust the item, category, group, region or offered/requested filter."
         )
       )
       Spacer()
     } else {
       HStack {
-        Text("Matching contracts").font(.title3.bold())
+        Text("Matching contracts").appFont(.title3.bold())
         Text("\(runtime.publicContractResults.count)")
-          .font(.caption.monospacedDigit())
+          .appFont(.caption.monospacedDigit())
           .foregroundStyle(DesignTokens.textSecondary)
         Spacer()
+        Picker("Sort", selection: $sortOrder) {
+          Text("Best match").tag(PublicContractSearchSort.bestMatch)
+          Text("Price ascending").tag(PublicContractSearchSort.priceAscending)
+          Text("Price descending").tag(PublicContractSearchSort.priceDescending)
+        }
+        .fixedSize()
+        .help(
+          "Sorting applies to the whole local index before the result limit. Contracts without a price follow priced ones in ascending order and precede them in descending order."
+        )
+        .accessibilityIdentifier("public-contracts.sort")
       }
       GeometryReader { geometry in
         ScrollView {
@@ -362,7 +391,7 @@ struct PublicContractsView: View {
         )
         .lineLimit(2)
         Text(result.isIncluded ? "Offered" : "Requested")
-          .font(.caption.bold())
+          .appFont(.caption.bold())
           .padding(.horizontal, DesignTokens.spacingSM)
           .padding(.vertical, 3)
           .background(
@@ -370,10 +399,10 @@ struct PublicContractsView: View {
           )
           .clipShape(Capsule())
         Text("× \(result.quantity)")
-          .font(.callout.monospacedDigit())
+          .appFont(.callout.monospacedDigit())
         Spacer()
-        Text(verbatim: formatPrice(result.price ?? result.buyout ?? result.reward))
-          .font(.headline.monospacedDigit())
+        Text(verbatim: formatPrice(result.listedPrice))
+          .appFont(.headline.monospacedDigit())
           .lineLimit(1)
           .layoutPriority(1)
       }
@@ -383,11 +412,11 @@ struct PublicContractsView: View {
       } icon: {
         Image(systemName: "map")
       }
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       if let title = result.title, !title.isEmpty {
         Text(verbatim: title)
-          .font(.callout)
+          .appFont(.callout)
           .textSelection(.enabled)
       }
       if result.isBlueprintCopy != nil || result.runs != nil {
@@ -414,7 +443,7 @@ struct PublicContractsView: View {
               .foregroundStyle(DesignTokens.caution)
           }
         }
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
       }
     }
     .padding(DesignTokens.spacingMD)
@@ -465,7 +494,9 @@ struct PublicContractsView: View {
       query: itemQuery,
       categoryID: selectedCategoryID,
       groupID: selectedGroupID,
-      direction: direction
+      regionID: selectedRegionID,
+      direction: direction,
+      sort: sortOrder
     )
   }
 
@@ -482,7 +513,9 @@ struct PublicContractsView: View {
         itemQuery: request.query,
         groupID: request.groupID,
         categoryID: request.categoryID,
-        direction: request.direction
+        regionID: request.regionID,
+        direction: request.direction,
+        sort: request.sort
       )
     )
   }
@@ -610,10 +643,10 @@ struct PublicContractsView: View {
   private func statusMetric(_ title: LocalizedStringKey, _ value: String) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(title)
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       Text(verbatim: value)
-        .font(.headline.monospacedDigit())
+        .appFont(.headline.monospacedDigit())
     }
   }
 
@@ -665,7 +698,7 @@ struct PublicContractsView: View {
   }
 
   private func formatPrice(_ value: Double?) -> String {
-    guard let value else { return "Price unavailable" }
+    guard let value else { return "Price unavailable".localizedUI }
     return value.formatted(
       .currency(code: "ISK")
         .precision(.fractionLength(0...2))
@@ -679,7 +712,7 @@ struct PublicContractFirstImportNotice: View {
   var body: some View {
     HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
       Image(systemName: "exclamationmark.octagon.fill")
-        .font(.title2.weight(.bold))
+        .appFont(.title2.weight(.bold))
         .accessibilityHidden(true)
       // No vertical `fixedSize`: SwiftUI also measures the page at zero
       // width to derive the window's minimum size. A text fixed to its full
@@ -690,7 +723,7 @@ struct PublicContractFirstImportNotice: View {
       Text(
         "Important: The first import of all contracts that are still active at that time can take two to three days. It continues in the background while the app is running and resumes after the next app launch. You can leave this section at any time and control the import from the navigation sidebar. During this time, the app can be slower. Import performance will continue to be optimized."
       )
-      .font(.headline.weight(.bold))
+      .appFont(.headline.weight(.bold))
     }
     .foregroundStyle(DesignTokens.negative)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -713,23 +746,14 @@ private struct DisclosurePanel<Content: View>: View {
 
   var body: some View {
     FullWidthDisclosure(isExpanded: $isExpanded) {
-      Text(title)
-        .textCase(.uppercase)
-        .font(.caption.weight(.semibold))
-        .tracking(1.1)
-        .foregroundStyle(DesignTokens.textSecondary)
+      NexusPanelTitle(title)
     } content: {
       content
         .padding(.top, DesignTokens.spacingMD)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(DesignTokens.spacingMD)
-    .background(DesignTokens.panel)
-    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
-    .overlay {
-      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
-        .stroke(DesignTokens.border)
-    }
+    .nexusPanelSurface(.flat)
   }
 }
 
@@ -737,7 +761,9 @@ private struct SearchIdentity: Hashable {
   let query: String
   let categoryID: Int64?
   let groupID: Int64?
+  let regionID: Int64?
   let direction: PublicContractItemDirection
+  let sort: PublicContractSearchSort
 }
 
 private struct SearchTaskIdentity: Hashable {
@@ -775,7 +801,7 @@ struct PublicContractRegionSettingsPanel: View {
       Text(
         "Choose which regions the Public Contracts import fetches. Main, Home and Coalition Hub opportunities, the Planner Contract Sale and the contract search compare only offers from these regions."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       if runtime.publicContractStoreState != .ready {
@@ -797,7 +823,7 @@ struct PublicContractRegionSettingsPanel: View {
           Text(
             "Every EVE region is imported and compared. The first complete import takes considerably longer than a regional selection."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         } else {
           regionSelection
@@ -813,30 +839,30 @@ struct PublicContractRegionSettingsPanel: View {
           }
           if hasChanges {
             Label("Not applied yet", systemImage: "exclamationmark.triangle.fill")
-              .font(.caption.weight(.semibold))
+              .appFont(.caption.weight(.semibold))
               .foregroundStyle(DesignTokens.caution)
           }
         }
         if !draftUsesUniverse, draftSelection.isEmpty {
           Text("Select at least one region or import the entire universe.")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.caution)
         }
         if runtime.isSynchronizingPublicContracts {
           Text(
             "A running contract import finishes with its previous region list; the new selection applies from the next run."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
         if let statusMessage {
           Text(statusMessage)
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
         if let error = runtime.publicContractRegionError {
           Text(LocalizedStringKey(error))
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.caution)
         }
       }
@@ -877,7 +903,7 @@ struct PublicContractRegionSettingsPanel: View {
         .disabled(draftSelection.isEmpty)
       Spacer()
       Text("\(draftSelection.count) of \(options.count) regions selected")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
     }
     if options.isEmpty {
@@ -886,7 +912,7 @@ struct PublicContractRegionSettingsPanel: View {
           ? "Loading the EVE region list…"
           : "The EVE region list is not available yet."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     } else {
       ScrollView {
@@ -895,12 +921,12 @@ struct PublicContractRegionSettingsPanel: View {
           let others = filtered.filter { !$0.isRecommended }
           if !recommended.isEmpty {
             Text("Recommended regions")
-              .font(.headline)
+              .appFont(.headline)
             ForEach(recommended) { regionRow($0) }
           }
           if !others.isEmpty {
             Text("All other regions")
-              .font(.headline)
+              .appFont(.headline)
               .padding(.top, recommended.isEmpty ? 0 : DesignTokens.spacingSM)
             ForEach(others) { regionRow($0) }
           }
@@ -923,7 +949,7 @@ struct PublicContractRegionSettingsPanel: View {
       EVEEntityText(value: option.name, font: .body)
       if let hint = Self.hint(for: option) {
         Text(verbatim: "(\(hint))")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       Spacer(minLength: 0)

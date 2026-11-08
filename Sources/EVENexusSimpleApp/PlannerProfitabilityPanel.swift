@@ -65,7 +65,7 @@ struct PlannerProfitabilityPanel: View {
         Text(
           "Stock goes to the upper product line first. The total stays the same, but the split between products depends on the order."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
       Divider()
@@ -136,7 +136,7 @@ struct PlannerProfitabilityPanel: View {
           .foregroundStyle(DesignTokens.textSecondary)
       } else {
         Text("Decide whether to produce anyway. Your decision applies to this calculation and these sales only.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         Spacer()
         Button("Produce anyway") { onConfirm(key) }
@@ -273,7 +273,7 @@ struct PlannerSaleChoiceTable: View {
           header("ROI", .roi)
           header("Status", .status, alignment: .leading)
         }
-        .font(.caption.weight(.semibold))
+        .appFont(.caption.weight(.semibold))
         Divider()
         ForEach(sortedRows) { row in
           GridRow {
@@ -297,7 +297,7 @@ struct PlannerSaleChoiceTable: View {
               )
               .gridColumnAlignment(.leading)
           }
-          .font(.body.monospacedDigit())
+          .appFont(.body.monospacedDigit())
         }
         if rows.count > 1 {
           Divider()
@@ -315,7 +315,7 @@ struct PlannerSaleChoiceTable: View {
             Text("")
             Text("")
           }
-          .font(.body.monospacedDigit().weight(.semibold))
+          .appFont(.body.monospacedDigit().weight(.semibold))
         }
       }
       .padding(.bottom, DesignTokens.spacingXS)
@@ -418,7 +418,7 @@ struct PlannerAllianceSaleTable: View {
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Alliance market (manual)")
-        .font(.subheadline.weight(.semibold))
+        .appFont(.subheadline.weight(.semibold))
       Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
         GridRow {
           header("Product", .product)
@@ -428,7 +428,7 @@ struct PlannerAllianceSaleTable: View {
           header("Delivery", .delivery)
           Text("")
         }
-        .font(.caption.weight(.semibold))
+        .appFont(.caption.weight(.semibold))
         Divider()
         ForEach(sortedRows) { row in
           PlannerAllianceSaleRow(
@@ -523,7 +523,7 @@ private struct PlannerAllianceSaleRow: View {
       GridRow {
         Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
         Label(message, systemImage: "exclamationmark.triangle")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(inputError == nil ? DesignTokens.caution : DesignTokens.negative)
           .gridCellColumns(5)
       }
@@ -564,7 +564,7 @@ private struct PlannerAllianceSaleRow: View {
         .accessibilityLabel(Text(AppLocalization.format("Units of %@", request.productName)))
         .accessibilityIdentifier("planner.alliance.\(request.lineNumber).units.stepper")
         Text(AppLocalization.format("of %@", produced.formatted()))
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -674,13 +674,13 @@ struct PlannerProductCharacterTable: View {
         header("Production location", .location)
         header("Character", .character)
       }
-      .font(.caption.weight(.semibold))
+      .appFont(.caption.weight(.semibold))
       Divider()
       ForEach(sortedRows) { row in
         GridRow {
           EVEEntityText(value: row.productName, font: .body)
           Text(row.units.formatted())
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
           if let structureName = row.structureName {
             EVEEntityText(value: structureName, font: .body)
           } else {
@@ -806,7 +806,7 @@ struct PlannerSaleSummaryPanel: View {
           header("Profit", .profit)
           header("ROI", .roi)
         }
-        .font(.caption.weight(.semibold))
+        .appFont(.caption.weight(.semibold))
         Divider()
         ForEach(sortedRows) { row in
           GridRow {
@@ -821,7 +821,7 @@ struct PlannerSaleSummaryPanel: View {
               .foregroundStyle(plannerProfitColor(row.selected?.profit))
             Text(PlannerProductFormat.percent(row.selected?.roi))
           }
-          .font(.body.monospacedDigit())
+          .appFont(.body.monospacedDigit())
         }
         if rows.count > 1 {
           Divider()
@@ -835,7 +835,7 @@ struct PlannerSaleSummaryPanel: View {
               .foregroundStyle(plannerProfitColor(profitability.totalProfit))
             Text("")
           }
-          .font(.body.monospacedDigit().weight(.semibold))
+          .appFont(.body.monospacedDigit().weight(.semibold))
         }
       }
       Button("Change sale", action: onChangeSale)

@@ -8,7 +8,9 @@ envelopes below are retained as historical records. All three navigation
 workspaces are retired; their shared market, production and synchronized-job
 contracts remain active only in the workflows that still consume them. Job
 capacity, ready/upcoming status and in-production valuation remain integrated
-in Dashboard and Net Worth; the separate filter table is retired.
+in Dashboard and Net Worth; the separate filter table is retired. The Market
+Browser code itself, including its service, models and browser-only tests, was
+removed on 2026-11-07.
 
 | Source skill | Source identity and version | Accepted output and target boundary | Open risk | Next skill |
 | --- | --- | --- | --- | --- |

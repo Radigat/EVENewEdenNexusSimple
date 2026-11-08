@@ -89,6 +89,59 @@ struct ProductionInputParserTests {
     #expect(oversized.errors.count == 1)
   }
 
+  /// Every message the app translates belongs to an input the parser rejects.
+  @Test
+  func reportsTheReasonOfEachRejectedInput() {
+    for reason in ProductionInputErrorReason.allCases {
+      let result = ProductionInputParser.parse(Self.input(rejectedFor: reason))
+
+      #expect(result.errors.map(\.reason) == [reason], "\(reason)")
+    }
+  }
+
+  @Test
+  func keepsTheEnglishMessageWithItsLimit() {
+    func message(_ reason: ProductionInputErrorReason) -> String {
+      ProductionInputError(lineNumber: 1, input: "", reason: reason).message
+    }
+
+    #expect(message(.wantTooLarge) == "Want must not exceed 1,000,000,000.")
+    #expect(
+      message(.inputTooLarge)
+        == "The production input is too large. Use at most 1,048,576 UTF-8 bytes."
+    )
+    #expect(message(.noJobs) == "Enter at least one production job.")
+  }
+
+  private static func input(
+    rejectedFor reason: ProductionInputErrorReason
+  ) -> String {
+    switch reason {
+    case .inputTooLarge:
+      String(repeating: "x", count: ProductionInputParser.maximumInputBytes + 1)
+    case .tooManyJobs:
+      Array(
+        repeating: "Ark 1 10 20",
+        count: ProductionInputParser.maximumJobCount + 1
+      ).joined(separator: "\n")
+    case .missingFields: "Bad"
+    case .invalidBlueprintCost: "Ark 1 10 20 BPC nope"
+    case .missingBlueprintCost: "Ark 1 10 20 BPC"
+    case .missingFieldsBeforeBlueprintCost: "Ark 1 10 BPC 5"
+    case .invalidNumbers: "Ark no 10 20"
+    case .productNameTooLong:
+      String(
+        repeating: "a",
+        count: ProductionInputParser.maximumProductNameBytes + 1
+      ) + " 1 10 20"
+    case .wantNotPositive: "Ark 0 10 20"
+    case .wantTooLarge:
+      "Ark \(ProductionInputParser.maximumWantedQuantity + 1) 10 20"
+    case .efficiencyOutOfRange: "Ark 1 11 20"
+    case .noJobs: " \n"
+    }
+  }
+
   @Test
   func formatsSavedRequestsAsParseableHistoricalInput() {
     let requests = [

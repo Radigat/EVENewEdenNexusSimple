@@ -44,6 +44,8 @@ struct EVENexusSimpleApp: App {
   private var storedTextSize = AppTextSize.standard.rawValue
   @AppStorage(AppAppearanceStyle.storageKey, store: AppDefaults.store)
   private var storedAppearance = AppAppearanceStyle.system.rawValue
+  @AppStorage(AppInterfaceStyle.storageKey, store: AppDefaults.store)
+  private var storedInterfaceStyle = AppInterfaceStyle.defaultStyle.rawValue
   @AppStorage(BackgroundOperation.keepRunningStorageKey, store: AppDefaults.store)
   private var keepsRunningInBackground = BackgroundOperation.keepRunningDefault
   private let modelContainer: ModelContainer?
@@ -103,6 +105,15 @@ struct EVENexusSimpleApp: App {
     AppAppearanceStyle(rawValue: storedAppearance) ?? .system
   }
 
+  private var appInterfaceStyle: AppInterfaceStyle {
+    AppInterfaceStyle(storedValue: storedInterfaceStyle)
+  }
+
+  /// New Eden HUD always runs dark; Classic follows the stored color scheme.
+  private var preferredColorScheme: ColorScheme? {
+    appInterfaceStyle.preferredColorScheme(for: appAppearance)
+  }
+
   var body: some Scene {
     WindowGroup(id: BackgroundOperation.mainWindowID) {
       Group {
@@ -116,20 +127,23 @@ struct EVENexusSimpleApp: App {
             }
             .environment(runtimeOwner.runtime)
             .environment(\.locale, appLanguage.locale)
-            .environment(\.dynamicTypeSize, appTextSize.dynamicTypeSize)
-            .preferredColorScheme(appAppearance.preferredColorScheme)
+            .appTextSize(appTextSize)
+            .environment(\.interfaceStyle, appInterfaceStyle)
             .defaultAppStorage(AppDefaults.store)
             .modelContainer(modelContainer)
         } else {
           PersistenceUnavailableView(folderURL: persistenceFolderURL)
             .environment(\.locale, appLanguage.locale)
-            .environment(\.dynamicTypeSize, appTextSize.dynamicTypeSize)
-            .preferredColorScheme(appAppearance.preferredColorScheme)
+            .appTextSize(appTextSize)
+            .environment(\.interfaceStyle, appInterfaceStyle)
             .defaultAppStorage(AppDefaults.store)
         }
       }
       .background(InitialWindowMaximizer())
       .background(InactiveWindowToolTips())
+      .onChange(of: preferredColorScheme, initial: true) { _, scheme in
+        AppAppearanceApplier.apply(scheme)
+      }
     }
     .windowStyle(.titleBar)
     .defaultSize(width: 1_180, height: 760)
@@ -155,6 +169,26 @@ struct EVENexusSimpleApp: App {
       Image(systemName: "chart.bar.xaxis")
         .accessibilityLabel(Text("EVE New Eden Nexus"))
     }
+  }
+}
+
+/// Applies the color scheme through AppKit. SwiftUI's `preferredColorScheme`
+/// on macOS keeps the last forced light or dark appearance when it returns to
+/// `nil`, so "System" stayed dark after Dark or New Eden HUD until the next
+/// start. `nil` here follows the macOS appearance again immediately.
+@MainActor
+enum AppAppearanceApplier {
+  static func appearanceName(for scheme: ColorScheme?) -> NSAppearance.Name? {
+    switch scheme {
+    case .dark: .darkAqua
+    case .light: .aqua
+    case nil: nil
+    @unknown default: nil
+    }
+  }
+
+  static func apply(_ scheme: ColorScheme?) {
+    NSApp.appearance = appearanceName(for: scheme).flatMap(NSAppearance.init(named:))
   }
 }
 
@@ -247,7 +281,7 @@ private struct PersistenceUnavailableView: View {
         "Stored data could not be opened safely",
         systemImage: "externaldrive.badge.exclamationmark"
       )
-      .font(.title2.bold())
+      .appFont(.title2.bold())
       Text(
         "The app did not create an empty replacement database and did not delete existing data. Quit the app and back up the data folder before attempting a repair or migration."
       )
@@ -257,7 +291,7 @@ private struct PersistenceUnavailableView: View {
       }
       if let folderURL {
         Text(folderURL.path)
-          .font(.caption.monospaced())
+          .appFont(.caption.monospaced())
           .textSelection(.enabled)
         Button("Show data folder in Finder") {
           NSWorkspace.shared.activateFileViewerSelecting([folderURL])

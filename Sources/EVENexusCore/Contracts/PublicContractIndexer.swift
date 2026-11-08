@@ -222,7 +222,8 @@ public actor PublicContractIndexer {
   }
 
   public func facets() async throws -> (
-    categories: [PublicContractFacet], groups: [PublicContractFacet]
+    categories: [PublicContractFacet], groups: [PublicContractFacet],
+    regions: [PublicContractFacet]
   ) {
     try Task.checkCancellation()
     let result = try await store.facets()

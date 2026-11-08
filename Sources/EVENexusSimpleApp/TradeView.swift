@@ -244,8 +244,9 @@ struct TradeView: View {
   private var header: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text("Trade")
-        .font(.largeTitle.bold())
+        .appFont(.largeTitle.bold())
         .foregroundStyle(DesignTokens.textPrimary)
+        .nexusPageTitle()
       Text(
         "Compare market groups between hubs: what to buy at the source and at which price to sell at the target, after taxes, broker fees and transport."
       )
@@ -296,7 +297,7 @@ struct TradeView: View {
         Text(
           "Own orders are placed one valid price step (four significant digits) better than the best order. Order modification and relist fees are not included."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         indicatorSettings
       }
@@ -342,12 +343,12 @@ struct TradeView: View {
   ) -> some View {
     HStack(spacing: DesignTokens.spacingXS) {
       Text(prefix)
-        .font(.caption.weight(.semibold))
+        .appFont(.caption.weight(.semibold))
       if let location = runtime.tradeLocation(for: role) {
         EVEEntityText(value: location.name, font: .caption, lineLimit: 1)
       } else {
         Text(verbatim: TradeHubText.roleName(role))
-          .font(.caption)
+          .appFont(.caption)
       }
     }
     .padding(.horizontal, DesignTokens.spacingSM)
@@ -454,7 +455,7 @@ struct TradeView: View {
         if unavailable.isEmpty {
           ForEach(Array(basis.legs.enumerated()), id: \.offset) { _, leg in
             Label(transportDescription(leg), systemImage: "shippingbox")
-              .font(.callout)
+              .appFont(.callout)
           }
         } else {
           ForEach(unavailable, id: \.self) { code in
@@ -572,7 +573,7 @@ struct TradeView: View {
       .accessibilityIdentifier("trade.indicator.strong-increase")
       Spacer()
       HStack(spacing: DesignTokens.spacingXS) {
-        Text("Traded volume").font(.caption.weight(.semibold))
+        Text("Traded volume").appFont(.caption.weight(.semibold))
         Picker("Traded volume", selection: $volumeWindowRawValue) {
           ForEach(MarketHistoryWindow.allCases) { window in
             Text(AppLocalization.format("%lld d", Int64(window.days))).tag(window.rawValue)
@@ -588,7 +589,7 @@ struct TradeView: View {
         .toggleStyle(.switch)
         .accessibilityIdentifier("trade.show-details")
     }
-    .font(.callout)
+    .appFont(.callout)
   }
 
   // MARK: Market groups
@@ -648,7 +649,7 @@ struct TradeView: View {
         let path = TradeTileBuilder.path(to: node.id, groups: groups)
         ForEach(path) { group in
           Image(systemName: "chevron.right")
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(DesignTokens.textSecondary)
           EVEEntityText(value: group.name, font: .callout, lineLimit: 1)
           if group.id != node.id {
@@ -714,7 +715,7 @@ struct TradeView: View {
         .foregroundStyle(DesignTokens.negative)
     }
     if marketGroups == nil, marketGroupsFailed {
-      ContentUnavailableView {
+      AppUnavailableView {
         Label("No static data catalog", systemImage: "externaldrive.badge.exclamationmark")
       } description: {
         Text("Install or reimport the SDE in the SDE settings, then restart the app.")
@@ -726,7 +727,7 @@ struct TradeView: View {
       ProgressView("Loading market groups…")
         .frame(maxWidth: .infinity, minHeight: 160)
     } else if marketGroups?.availability == .requiresSDEReimport {
-      ContentUnavailableView {
+      AppUnavailableView {
         Label("SDE reimport required", systemImage: "arrow.triangle.2.circlepath")
       } description: {
         Text(
@@ -744,7 +745,7 @@ struct TradeView: View {
         ProgressView("Loading items…")
           .frame(maxWidth: .infinity, minHeight: 160)
       } else if tiles.isEmpty {
-        ContentUnavailableView(
+        AppUnavailableView(
           "No market items in this group",
           systemImage: "tray",
           description: Text("The selected market group lists no published items.")
@@ -787,7 +788,7 @@ struct TradeView: View {
     )
     return tileFrame(identifier: "trade.item-search-tile") {
       Text("Item search")
-        .font(.title3.weight(.semibold))
+        .appFont(.title3.weight(.semibold))
       HStack(spacing: DesignTokens.spacingSM) {
         hubChip(role: mode.sourceRole, prefix: "Source:", tint: DesignTokens.highlight)
         hubChip(role: mode.targetRole, prefix: "Target:", tint: DesignTokens.accent)
@@ -832,7 +833,7 @@ struct TradeView: View {
               Int64(itemSearchLimit)
             )
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -860,9 +861,9 @@ struct TradeView: View {
       tileFrame(identifier: "trade.top-tile") {
         HStack(spacing: DesignTokens.spacingSM) {
           Text(AppLocalization.format("Top %lld", Int64(TradeTopRanking.limit)))
-            .font(.title3.weight(.semibold))
+            .appFont(.title3.weight(.semibold))
           Spacer()
-          Text("Ranked by").font(.caption.weight(.semibold))
+          Text("Ranked by").appFont(.caption.weight(.semibold))
           Picker("Ranked by", selection: topRankingSelection) {
             Text("Profit/m³").tag(TradeTopRankingMetric.profitPerCubicMeter)
             Text("ROI").tag(TradeTopRankingMetric.returnOnInvestment)
@@ -889,7 +890,7 @@ struct TradeView: View {
           identifierPrefix: "trade.top-tile"
         )
         Text("Only items with a positive profit and a positive value are ranked.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         if rows.isEmpty {
           VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
@@ -897,10 +898,10 @@ struct TradeView: View {
             switch topRanking {
             case .profitPerCubicMeter:
               Text("Profit/m³ needs prices, fees, transport and the packaged volume.")
-                .font(.caption)
+                .appFont(.caption)
             case .returnOnInvestment:
               Text("ROI needs prices, fees and transport.")
-                .font(.caption)
+                .appFont(.caption)
             }
           }
           .foregroundStyle(DesignTokens.textSecondary)
@@ -920,7 +921,7 @@ struct TradeView: View {
           Text(
             AppLocalization.format("Not ranked: %@", unranked.joined(separator: " · "))
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -993,7 +994,8 @@ struct TradeView: View {
     }
   }
 
-  /// Panel, padding and the source-to-target gradient of every tile.
+  /// Panel, padding and the source-to-target gradient of every tile; the HUD
+  /// style adds corner brackets.
   private func tileFrame<Content: View>(
     identifier: String,
     @ViewBuilder content: () -> Content
@@ -1013,13 +1015,14 @@ struct TradeView: View {
       .frame(height: 3)
       .clipShape(RoundedRectangle(cornerRadius: 2))
     }
+    .hudCornerBrackets(cornerRadius: 10)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(identifier)
   }
 
   private func countChip(_ text: String) -> some View {
     Text(verbatim: text)
-      .font(.caption)
+      .appFont(.caption)
       .padding(.horizontal, DesignTokens.spacingSM)
       .padding(.vertical, DesignTokens.spacingXS)
       .overlay(Capsule().stroke(DesignTokens.border))
@@ -1129,7 +1132,7 @@ struct TradeView: View {
     identifier: String
   ) -> some View {
     HStack(spacing: DesignTokens.spacingXS) {
-      Text(title).font(.caption.weight(.semibold))
+      Text(title).appFont(.caption.weight(.semibold))
       Picker(title, selection: selection) {
         ForEach(TradeQuoteSide.allCases, id: \.self) { side in
           Text(verbatim: TradeHubText.sideName(side)).tag(side)
@@ -1405,7 +1408,7 @@ struct TradeView: View {
         }
       }
     }
-    .font(.caption.weight(.semibold))
+    .appFont(.caption.weight(.semibold))
   }
 
   private func numberHeader(
@@ -1444,7 +1447,7 @@ struct TradeView: View {
         )
         if !showsDetails, display.openLogbookQuantity > 0 {
           Label(formatInteger(display.openLogbookQuantity), systemImage: "book.closed")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
             .help(AppLocalization.text("Units of open logbook entries for this hub"))
         }
@@ -1808,7 +1811,7 @@ struct TradeView: View {
     tint: Color = DesignTokens.textPrimary
   ) -> some View {
     Text(verbatim: text)
-      .font(.callout.monospacedDigit())
+      .appFont(.callout.monospacedDigit())
       .foregroundStyle(tint)
       .lineLimit(1)
       .frame(width: numberWidth, alignment: .trailing)
@@ -1832,10 +1835,10 @@ struct TradeView: View {
       }
     return HStack(spacing: 3) {
       if let symbol {
-        Image(systemName: symbol).font(.caption2.bold())
+        Image(systemName: symbol).appFont(.caption2.bold())
       }
       Text(verbatim: formatPercent(fraction))
-        .font(.callout.monospacedDigit())
+        .appFont(.callout.monospacedDigit())
     }
     .foregroundStyle(tint)
     .frame(width: numberWidth, alignment: .trailing)
@@ -2055,7 +2058,7 @@ private struct TradeVolumeHistoryStatus: View {
             )
           )
         }
-        .font(.callout)
+        .appFont(.callout)
         .foregroundStyle(DesignTokens.textSecondary)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("trade.volume-history.progress")

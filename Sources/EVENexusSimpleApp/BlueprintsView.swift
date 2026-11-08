@@ -39,7 +39,7 @@ struct BlueprintsView: View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
       header
       if isPreparingPortfolio {
-        ContentUnavailableView {
+        AppUnavailableView {
           Label("Preparing blueprints…", systemImage: "doc.on.doc")
         } description: {
           Text(
@@ -48,7 +48,7 @@ struct BlueprintsView: View {
         }
         .overlay { ProgressView() }
       } else if storedSourceCount == 0 {
-        ContentUnavailableView {
+        AppUnavailableView {
           Label("No stored blueprints", systemImage: "doc.on.doc")
         } description: {
           Text(
@@ -107,7 +107,8 @@ struct BlueprintsView: View {
     HStack(alignment: .firstTextBaseline) {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         Text("Blueprints")
-          .font(.largeTitle.bold())
+          .appFont(.largeTitle.bold())
+          .nexusPageTitle()
         Text(
           "Owned originals and copies from every stored character, with current ME/TE replacement estimates."
         )
@@ -119,7 +120,7 @@ struct BlueprintsView: View {
           .controlSize(.small)
       }
       Text("\(portfolio.entries.count) blueprints")
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -134,7 +135,7 @@ struct BlueprintsView: View {
         ),
         systemImage: "exclamationmark.octagon.fill"
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.negative)
     }
     if portfolio.sourceStates.contains(where: { $0 != .fresh }) {
@@ -142,7 +143,7 @@ struct BlueprintsView: View {
         "At least one character's blueprint source is partial, stale, forbidden or unavailable. Source state remains visible per blueprint.",
         systemImage: "exclamationmark.triangle.fill"
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.caution)
     }
   }
@@ -161,7 +162,7 @@ struct BlueprintsView: View {
       .accessibilityIdentifier("blueprints.filter")
 
       if portfolio.entries.isEmpty {
-        ContentUnavailableView {
+        AppUnavailableView {
           Label("No blueprints found", systemImage: "doc.on.doc")
         } description: {
           Text(
@@ -220,7 +221,7 @@ struct BlueprintsView: View {
         Image(systemName: "mappin.and.ellipse")
         EVEEntityText(value: locationName(entry))
       }
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       HStack {
         Text("ME \(entry.instance.materialEfficiency)%")
@@ -229,7 +230,7 @@ struct BlueprintsView: View {
           Text("\(entry.instance.runs) runs")
         }
       }
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .foregroundStyle(DesignTokens.highlight)
     }
     .padding(.vertical, 3)
@@ -259,7 +260,7 @@ struct BlueprintsView: View {
         .padding(.leading, DesignTokens.spacingMD)
       }
     } else {
-      ContentUnavailableView(
+      AppUnavailableView(
         "Select a blueprint",
         systemImage: "doc.text.magnifyingglass"
       )
@@ -357,7 +358,7 @@ struct BlueprintsView: View {
         Text(
           "This is a current reproduction estimate, not the historical amount paid and not a guaranteed contract sale price."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         warningList(quote.warnings)
       } else {
@@ -428,7 +429,7 @@ struct BlueprintsView: View {
           GridRow {
             Text("Manufacturing EIV basis")
             Text(isk(quote.manufacturingBaseCost))
-              .font(.body.monospacedDigit())
+              .appFont(.body.monospacedDigit())
           }
           if let facility = quote.materialFacility {
             facilityRow("ME", facility: facility)
@@ -443,7 +444,7 @@ struct BlueprintsView: View {
             quote.adjustedPriceSource.capturedAt.formatted()
           )
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -458,7 +459,7 @@ struct BlueprintsView: View {
       Text(
         "\(facility.facilityName), \(facility.solarSystemName) · index \(facility.systemCostIndex.formatted(.number.precision(.fractionLength(4)))) · tax \((facility.facilityTaxRate * 100).formatted(.number.precision(.fractionLength(2))))%"
       )
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
     }
   }
 
@@ -472,7 +473,7 @@ struct BlueprintsView: View {
           ? "exclamationmark.octagon.fill"
           : "exclamationmark.triangle.fill"
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(
         warning.severity == .blocking
           ? DesignTokens.negative : DesignTokens.caution
@@ -482,13 +483,13 @@ struct BlueprintsView: View {
 
   private func tableHeader(_ text: String) -> some View {
     Text(text)
-      .font(.caption.bold())
+      .appFont(.caption.bold())
       .foregroundStyle(DesignTokens.textSecondary)
   }
 
   private func costCell(_ value: Double?) -> some View {
     Text(isk(value))
-      .font(.body.monospacedDigit())
+      .appFont(.body.monospacedDigit())
       .frame(minWidth: 126, alignment: .trailing)
   }
 
@@ -518,10 +519,10 @@ struct BlueprintsView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text(LocalizedStringKey(title))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       Text("\(value)% / \(maximum)%")
-        .font(.title2.bold().monospacedDigit())
+        .appFont(.title2.bold().monospacedDigit())
         .foregroundStyle(color)
       ProgressView(value: Double(max(0, value)), total: Double(maximum))
         .tint(color)
@@ -536,10 +537,10 @@ struct BlueprintsView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text(LocalizedStringKey(title))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       Text(value)
-        .font(.title3.bold().monospacedDigit())
+        .appFont(.title3.bold().monospacedDigit())
         .foregroundStyle(color)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -560,7 +561,7 @@ struct BlueprintsView: View {
       color = DesignTokens.caution
     }
     return Text(text)
-      .font(.caption2.bold())
+      .appFont(.caption2.bold())
       .padding(.horizontal, 7)
       .padding(.vertical, 3)
       .background(color.opacity(0.18))
@@ -570,7 +571,7 @@ struct BlueprintsView: View {
 
   private func freshnessBadge(_ state: DataFreshness) -> some View {
     Text(LocalizedStringKey(state.rawValue.uppercased()))
-      .font(.caption2.bold())
+      .appFont(.caption2.bold())
       .padding(.horizontal, 6)
       .padding(.vertical, 2)
       .background(freshnessColor(state).opacity(0.18))

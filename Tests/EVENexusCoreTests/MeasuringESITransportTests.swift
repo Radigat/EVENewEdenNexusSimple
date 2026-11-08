@@ -267,6 +267,33 @@ struct MeasuringESITransportTests {
     #expect(!summary.contains("/9/"))
   }
 
+  /// Server errors and timeouts use up the ESI error budget too, so the
+  /// summary names them (A6, ANALYSE_2026-11-02).
+  @Test
+  func summaryNamesServerErrorsAndTransportFailures() async throws {
+    let base = RecordingTransport(
+      responses: [
+        .init(status: 200, body: "{}"),
+        .init(status: 503, body: ""),
+        .init(status: 404, body: ""),
+        .failure,
+      ]
+    )
+    let transport = MeasuringESITransport(base: base, summaryInterval: nil)
+
+    for _ in 0..<4 {
+      _ = try? await transport.data(for: esiRequest("/markets/structures/1/"))
+    }
+
+    let snapshot = transport.snapshot()
+    #expect(snapshot.requests == 4)
+    #expect(snapshot.clientErrors == 1)
+    #expect(snapshot.serverErrors == 1)
+    #expect(snapshot.failures == 1)
+    let summary = snapshot.summary()
+    #expect(summary.contains("4xx=1 5xx=1 failures=1"))
+  }
+
   private func esiRequest(_ path: String) -> URLRequest {
     var request = URLRequest(
       url: URL(string: "https://esi.evetech.net\(path)")!

@@ -78,6 +78,56 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .data: "externaldrive.fill"
     }
   }
+
+  /// Sidebar group in the New Eden HUD style (plan D2, section 4 of
+  /// `Documentation/DESIGN_HUD_2026-11-07.md`).
+  var group: NavigationGroup {
+    switch self {
+    case .dashboard, .netWorth: .overview
+    case .planner, .reactions, .blueprints, .productionBook: .industry
+    case .manufacturingOpportunities, .homeHubOpportunities,
+      .coalitionHubOpportunities:
+      .opportunities
+    case .trade, .tradeLogbook, .marketStock, .stockSaleComparison,
+      .publicContracts, .moonMaterialAnalysis, .mineralPurchaseAnalysis:
+      .market
+    case .items, .warehouse: .assets
+    case .data: .system
+    }
+  }
+}
+
+/// Groups of the HUD sidebar. Classic keeps the flat list "Established
+/// workflows" in the order of `NavigationSection.establishedCases`.
+enum NavigationGroup: String, CaseIterable, Identifiable {
+  case overview
+  case industry
+  case opportunities
+  case market
+  case assets
+  case system
+
+  var id: Self { self }
+
+  var titleKey: String {
+    switch self {
+    case .overview: "Overview"
+    case .industry: "Industry"
+    case .opportunities: "Opportunities"
+    case .market: "Market"
+    case .assets: "Assets"
+    case .system: "System"
+    }
+  }
+
+  var title: LocalizedStringKey {
+    LocalizedStringKey(titleKey)
+  }
+
+  /// Entries of the group in their established relative order.
+  var sections: [NavigationSection] {
+    NavigationSection.establishedCases.filter { $0.group == self }
+  }
 }
 
 struct DashboardNavigationRequest {
@@ -354,15 +404,28 @@ struct ContentView: View {
   @State private var didPreparePlannerConfiguration = false
   @StateObject private var profileNavigationGuard =
     ProfileNavigationGuard()
+  @Environment(\.interfaceStyle) private var interfaceStyle
 
   var body: some View {
     NavigationSplitView {
       List(selection: guardedSelection) {
-        Section("Established workflows") {
-          ForEach(NavigationSection.establishedCases) { item in
-            Label(item.title, systemImage: item.icon)
-              .tag(item)
-              .accessibilityIdentifier("navigation.\(item.rawValue)")
+        if interfaceStyle == .hud {
+          ForEach(NavigationGroup.allCases) { group in
+            Section {
+              ForEach(group.sections) { item in
+                navigationRow(item)
+              }
+            } header: {
+              Text(group.title)
+                .nexusCaptionTitle()
+                .accessibilityIdentifier("navigation.group.\(group.rawValue)")
+            }
+          }
+        } else {
+          Section("Established workflows") {
+            ForEach(NavigationSection.establishedCases) { item in
+              navigationRow(item)
+            }
           }
         }
       }
@@ -504,7 +567,8 @@ struct ContentView: View {
             )
           }
         }
-        .background(DesignTokens.canvas)
+        .environment(\.navigationGroup, (selection ?? .dashboard).group)
+        .nexusCanvasBackground()
       }
     }
     .toolbar {
@@ -681,6 +745,18 @@ struct ContentView: View {
     )
   }
 
+  private func navigationRow(_ item: NavigationSection) -> some View {
+    // The sidebar list style sets its own row font on the label; only a
+    // font on the title and icon themselves follows the text size.
+    Label {
+      Text(item.title).appFontKeepingSystemDefault(.body)
+    } icon: {
+      Image(systemName: item.icon).appFontKeepingSystemDefault(.body)
+    }
+    .tag(item)
+    .accessibilityIdentifier("navigation.\(item.rawValue)")
+  }
+
   private func openHistoricalPlan(_ row: StoredProductionOverviewRow) {
     historicalPlannerRequest = HistoricalPlannerRequest(
       productionOverviewRowID: row.id
@@ -799,7 +875,7 @@ struct SidebarAutomaticDataStatus: View {
         ) {
           HStack(spacing: DesignTokens.spacingXS) {
             Label("Automatic data", systemImage: "arrow.triangle.2.circlepath")
-              .font(.caption.weight(.semibold))
+              .appFont(.caption.weight(.semibold))
               .foregroundStyle(DesignTokens.textPrimary)
             if isUpdatingMarketsOrContracts {
               ProgressView()
@@ -1327,10 +1403,10 @@ struct PublicContractSidebarStatus: View {
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Label("Contract import", systemImage: statusIcon)
-        .font(.caption.weight(.semibold))
+        .appFont(.caption.weight(.semibold))
         .foregroundStyle(statusColor)
       Text(statusText)
-        .font(.caption2)
+        .appFont(.caption2)
         .foregroundStyle(statusDetailColor)
         .fixedSize(horizontal: false, vertical: true)
       if let progressFraction = presentation.progressFraction {
@@ -1339,10 +1415,10 @@ struct PublicContractSidebarStatus: View {
           .controlSize(.mini)
       }
       Text(progressText)
-        .font(.caption2.monospacedDigit())
+        .appFont(.caption2.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
       action
-        .font(.caption)
+        .appFont(.caption)
         .controlSize(.small)
     }
     .padding(.horizontal, DesignTokens.spacingMD)
@@ -1485,7 +1561,7 @@ private struct DashboardIndustryRefreshIdentity: Hashable {
   let activeSDEBuild: Int?
 }
 
-private enum DashboardWealthSeries: String, CaseIterable, Identifiable {
+enum DashboardWealthSeries: String, CaseIterable, Identifiable {
   case total
   case wallet
   case assets
@@ -1493,12 +1569,25 @@ private enum DashboardWealthSeries: String, CaseIterable, Identifiable {
 
   var id: Self { self }
 
-  var title: LocalizedStringKey {
+  /// Localization key of `title`, for formatted texts.
+  var titleKey: String {
     switch self {
     case .total: "Total"
     case .wallet: "Wallet"
     case .assets: "Assets"
     case .industryInProgress: "In production"
+    }
+  }
+
+  var title: LocalizedStringKey { LocalizedStringKey(titleKey) }
+
+  /// Chart points of this series in the given history; empty when no
+  /// snapshot has a value for it (plan DB7, finding B6).
+  func samples(in history: [DashboardWealthSnapshot]) -> [DashboardWealthChartSample] {
+    history.compactMap { snapshot in
+      value(in: snapshot).map {
+        DashboardWealthChartSample(date: snapshot.capturedAt, value: $0)
+      }
     }
   }
 
@@ -1522,10 +1611,13 @@ private enum DashboardWealthSeries: String, CaseIterable, Identifiable {
 }
 
 /// Stacks cards when their minimum widths cannot fit; otherwise preserves ratios.
+/// With `equalizesHeights`, cards side by side share the row height like the
+/// CSS grid rows of the Dashboard board (`Main.dc.html`).
 struct DashboardCardLayout: Layout {
   let weights: [CGFloat]
   let minimumWidths: [CGFloat]
   var spacing: CGFloat = DesignTokens.spacingMD
+  var equalizesHeights = false
 
   func widths(for width: CGFloat) -> [CGFloat] {
     guard !weights.isEmpty else { return [] }
@@ -1549,10 +1641,12 @@ struct DashboardCardLayout: Layout {
     let widths = widths(for: bounds.width)
     let sizes = measured(width: bounds.width, subviews: subviews)
     let stacked = widths.first == bounds.width
+    let rowHeight = sizes.map(\.height).max() ?? 0
     var origin = bounds.origin
     for index in subviews.indices {
+      let height = !stacked && equalizesHeights ? rowHeight : sizes[index].height
       subviews[index].place(at: origin, anchor: .topLeading,
-        proposal: ProposedViewSize(width: widths[index], height: sizes[index].height))
+        proposal: ProposedViewSize(width: widths[index], height: height))
       if stacked { origin.y += sizes[index].height + spacing }
       else { origin.x += widths[index] + spacing }
     }
@@ -1568,15 +1662,33 @@ struct DashboardCardLayout: Layout {
 
 struct DashboardPreviewList<Row: Identifiable, RowContent: View>: View {
   let rows: [Row]
+  /// Thin lines between rows like the lists of the Dashboard board.
+  var showsSeparators = false
   @ViewBuilder var content: (Row) -> RowContent
   @State private var expanded = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+    VStack(
+      alignment: .leading,
+      spacing: showsSeparators ? 0 : DesignTokens.spacingSM
+    ) {
       Text(AppLocalization.format("%lld items", Int64(rows.count)))
-        .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+        .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
+        .padding(.bottom, showsSeparators ? DesignTokens.spacingXS : 0)
       ForEach(Array(rows.prefix(expanded ? rows.count : 5))) { row in
-        content(row)
+        if showsSeparators {
+          content(row)
+            .padding(.vertical, DesignTokens.spacingSM)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .top) {
+              Rectangle()
+                .fill(DesignTokens.border.opacity(0.4))
+                .frame(height: 1)
+                .accessibilityHidden(true)
+            }
+        } else {
+          content(row)
+        }
       }
       if rows.count > 5 {
         Button {
@@ -1590,8 +1702,88 @@ struct DashboardPreviewList<Row: Identifiable, RowContent: View>: View {
         }
         .buttonStyle(.borderless)
         .accessibilityValue(expanded ? "Expanded".localizedUI : "Collapsed".localizedUI)
+        .padding(.top, showsSeparators ? DesignTokens.spacingXS : 0)
       }
     }
+  }
+}
+
+/// Rows of the Dashboard panel "Industry jobs · ready and upcoming" (plan DB1,
+/// `Documentation/DASHBOARD_BOARD_2026-11-07.md`): every job ready for
+/// delivery first, then running jobs ending within 48 hours; each group by end
+/// date with the job identity as the final tie-breaker.
+enum DashboardReadyAndUpcomingJobs {
+  static let upcomingWindow: TimeInterval = 48 * 60 * 60
+
+  struct Row: Identifiable {
+    let owned: DashboardIndustryOwnedJob
+    let isReady: Bool
+
+    var id: String { owned.id }
+  }
+
+  static func rows(
+    jobs: [DashboardIndustryOwnedJob],
+    now: Date
+  ) -> [Row] {
+    func byEndDate(
+      _ lhs: DashboardIndustryOwnedJob,
+      _ rhs: DashboardIndustryOwnedJob
+    ) -> Bool {
+      if lhs.job.endDate != rhs.job.endDate {
+        return lhs.job.endDate < rhs.job.endDate
+      }
+      return lhs.id < rhs.id
+    }
+    let cutoff = now.addingTimeInterval(upcomingWindow)
+    let ready = jobs.filter { $0.job.isReadyForDelivery(at: now) }
+      .sorted(by: byEndDate)
+    let upcoming = jobs.filter {
+      $0.job.isRunning(at: now) && $0.job.endDate <= cutoff
+    }
+    .sorted(by: byEndDate)
+    return ready.map { Row(owned: $0, isReady: true) }
+      + upcoming.map { Row(owned: $0, isReady: false) }
+  }
+}
+
+/// One slot pool of the Dashboard key figures (plan DB4). Running (including
+/// paused) and ready, not yet delivered jobs occupy a slot until delivery.
+struct DashboardSlotFigure: Equatable {
+  let running: Int
+  let ready: Int
+  let capacity: DashboardIndustryCapacitySummary
+
+  var occupied: Int { running + ready }
+
+  /// Free slots, never negative; a lower bound while the capacity is
+  /// partial, `nil` without any known capacity.
+  var free: Int? {
+    capacity.value.map { max(0, $0 - occupied) }
+  }
+
+  /// Occupied share for the bar, only for a complete, positive capacity.
+  var fillFraction: Double? {
+    guard capacity.isComplete, let value = capacity.value, value > 0 else {
+      return nil
+    }
+    return min(1, Double(occupied) / Double(value))
+  }
+
+  static func figure(
+    jobs: [DashboardIndustryOwnedJob],
+    activities: Set<DashboardIndustryActivity>,
+    capacity: DashboardIndustryCapacitySummary,
+    now: Date
+  ) -> Self {
+    let pool = jobs.filter {
+      $0.job.dashboardActivity.map(activities.contains) == true
+    }
+    return Self(
+      running: pool.filter { $0.job.isRunning(at: now) }.count,
+      ready: pool.filter { $0.job.isReadyForDelivery(at: now) }.count,
+      capacity: capacity
+    )
   }
 }
 
@@ -1749,6 +1941,181 @@ enum StartupDataStatusProjector {
   }
 }
 
+/// Sources combined in the Dashboard header status (plan DB5).
+enum DashboardSourceArea: String, CaseIterable, Identifiable, Sendable {
+  case characters
+  case wallets
+  case netWorth
+  case reactions
+  case moonMaterials
+  case minerals
+
+  var id: Self { self }
+
+  var title: LocalizedStringKey {
+    switch self {
+    case .characters: "Characters"
+    case .wallets: "Wallets"
+    case .netWorth: "Net Worth"
+    case .reactions: "Reactions"
+    case .moonMaterials: "Moon materials"
+    case .minerals: "Minerals"
+    }
+  }
+
+  var systemImage: String {
+    switch self {
+    case .characters: "person.2"
+    case .wallets: "creditcard"
+    case .netWorth: "chart.line.uptrend.xyaxis"
+    case .reactions: "flask"
+    case .moonMaterials: "moon"
+    case .minerals: "cube"
+    }
+  }
+}
+
+struct DashboardSourceStatus: Identifiable, Equatable, Sendable {
+  let area: DashboardSourceArea
+  let status: StartupDataStatus
+  /// Age of the area's data: its oldest relevant capture time.
+  let timestamp: Date?
+
+  var id: DashboardSourceArea { area }
+}
+
+struct DashboardStatusSummary: Equatable, Sendable {
+  let status: StartupDataStatus
+  /// Capture time of the oldest source with a known time.
+  let oldestTimestamp: Date?
+  let sources: [DashboardSourceStatus]
+}
+
+/// Content state of a Dashboard purchase panel (plan DB7, finding B7): no
+/// analysis yet is not the same as an analysis made for older settings.
+enum DashboardPurchasePanelState: Equatable {
+  case current
+  case noAnalysis
+  case settingsChanged
+
+  static func state(hasAnalysis: Bool, isCurrent: Bool) -> Self {
+    if isCurrent { return .current }
+    return hasAnalysis ? .settingsChanged : .noAnalysis
+  }
+}
+
+/// Message under a character's wallet after a failed refresh (plan DB7,
+/// finding B4). EVE errors use the same localized texts as the character
+/// sync; anything else is a local failure. Never shows a raw error name.
+@MainActor
+enum DashboardWalletRefreshMessage {
+  static func text(characterName: String, error: Error) -> String {
+    let reason: String
+    switch error {
+    case is AuthError, is ESIError, is URLError:
+      reason = EVEConnectionErrorText.message(for: error)
+    default:
+      reason = AppLocalization.text(
+        "The wallet balance could not be updated locally."
+      )
+    }
+    return "\(characterName): \(reason)"
+  }
+}
+
+/// Pure projection of the Dashboard header status. It starts no work and
+/// never turns missing data into a fresh state.
+enum DashboardStatusProjector {
+  /// Any running source makes the summary running. Otherwise known states
+  /// combine with `StartupDataStatusProjector.combined`; a waiting source has
+  /// no data yet and counts as unavailable unless every source waits.
+  static func summary(_ sources: [DashboardSourceStatus]) -> DashboardStatusSummary {
+    let status: StartupDataStatus
+    if sources.contains(where: { $0.status == .running }) {
+      status = .running
+    } else if sources.isEmpty || sources.allSatisfy({ $0.status == .waiting }) {
+      status = .waiting
+    } else {
+      let states: [DataFreshness] = sources.map {
+        if case .known(let freshness) = $0.status { return freshness }
+        return .unavailable
+      }
+      status = .known(StartupDataStatusProjector.combined(states) ?? .unavailable)
+    }
+    return DashboardStatusSummary(
+      status: status,
+      oldestTimestamp: sources.compactMap(\.timestamp).min(),
+      sources: sources
+    )
+  }
+
+  static func characters(
+    phase: StartupDataLoad.Phase,
+    isRefreshing: Bool,
+    result: CharacterBatchSyncResult?,
+    lastSyncDates: [Date?]
+  ) -> DashboardSourceStatus {
+    let row = StartupDataStatusProjector.characters(
+      phase: phase,
+      result: result,
+      lastSyncDates: lastSyncDates
+    )
+    return DashboardSourceStatus(
+      area: .characters,
+      status: isRefreshing ? .running : row.status,
+      timestamp: lastSyncDates.compactMap { $0 }.min()
+    )
+  }
+
+  static func wallets(
+    freshness: DataFreshness,
+    characterCount: Int,
+    isRefreshing: Bool,
+    lastSyncDates: [Date?]
+  ) -> DashboardSourceStatus {
+    DashboardSourceStatus(
+      area: .wallets,
+      status: isRefreshing
+        ? .running : .known(characterCount == 0 ? .unavailable : freshness),
+      timestamp: lastSyncDates.compactMap { $0 }.min()
+    )
+  }
+
+  /// A failed newer valuation keeps the previous one visible, so it is stale.
+  static func netWorth(
+    snapshot: DashboardWealthSnapshot?,
+    isRefreshing: Bool,
+    hasError: Bool
+  ) -> DashboardSourceStatus {
+    let status: StartupDataStatus
+    if isRefreshing {
+      status = .running
+    } else if let snapshot {
+      status = .known(
+        hasError ? .stale : snapshot.isComplete ? snapshot.freshness : .partial
+      )
+    } else {
+      status = .known(.unavailable)
+    }
+    return DashboardSourceStatus(
+      area: .netWorth,
+      status: status,
+      timestamp: snapshot?.capturedAt
+    )
+  }
+
+  static func analysis(_ row: StartupDataStatusRow) -> DashboardSourceStatus? {
+    let area: DashboardSourceArea
+    switch row.area {
+    case .reactions: area = .reactions
+    case .moonMaterials: area = .moonMaterials
+    case .minerals: area = .minerals
+    case .characters, .warehouseAndBlueprints: return nil
+    }
+    return DashboardSourceStatus(area: area, status: row.status, timestamp: row.timestamp)
+  }
+}
+
 struct DashboardView: View {
   var onNavigate: (DashboardNavigationRequest) -> Void = { _ in }
   @Environment(RuntimeState.self) private var runtime
@@ -1772,7 +2139,25 @@ struct DashboardView: View {
   @State private var refreshingWalletCharacterIDs: Set<Int64> = []
   @State private var walletRefreshErrors: [Int64: String] = [:]
   @State private var selectedDashboardWealthSeries: DashboardWealthSeries = .total
+  /// History range of the net-worth panel for this view lifetime (plan DB3).
+  @State private var selectedWealthRange: NetWorthHistoryRange = .thirty
+  @State private var showsValuationDetailsPopover = false
+  /// "Refresh all" in the header (plan DB5) and the last manual result.
+  @State private var isRefreshingAll = false
+  @State private var lastCharacterSyncResult: CharacterBatchSyncResult?
+  @AppStorage("dashboard.capacity-by-activity-expanded", store: AppDefaults.store)
+  private var capacityByActivityExpanded = false
   @State private var authorizationCache = DashboardAuthorizationCache()
+  // Inputs and result of "Main Hub opportunities · Top 5" (plan DB2).
+  @Query(sort: \StoredStockTarget.typeName)
+  private var stockTargets: [StoredStockTarget]
+  @Query(filter: #Predicate<StoredPlan> { $0.isActive })
+  private var activePlans: [StoredPlan]
+  @State private var mainHubTopFive: MainHubOpportunityTopFive?
+  @State private var mainHubTopFiveSort = AppTableSortDescriptor<MainHubOpportunityTopColumn>(
+    column: .returnOnInvestment,
+    direction: .descending
+  )
   @AppStorage("reactions.analysis-runs", store: AppDefaults.store)
   private var sharedReactionRuns = 100
   @AppStorage("reactions.market-hub-id", store: AppDefaults.store)
@@ -1780,42 +2165,37 @@ struct DashboardView: View {
   private var wealthHistoryCache: DashboardWealthHistoryCache { .shared }
   var body: some View {
     ScrollView {
+      // Arrangement of the Dashboard board `Main.dc.html` (plan DB1,
+      // `Documentation/DASHBOARD_BOARD_2026-11-07.md`, section 4).
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
         header
+          .padding(.bottom, DesignTokens.spacingSM)
         // Only the job panels depend on the clock; the minute tick must not
-        // re-render the finance and market sections.
+        // re-render the finance and market panels.
+        keyFigureRow
         TimelineView(.periodic(from: .now, by: 60)) { context in
-          dashboardSection(
-            title: "Industry & jobs",
-            systemImage: "hammer.fill"
-          ) {
-            jobCapacityPanel(now: context.date)
-            DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340]) {
-              readyJobsPanel(now: context.date)
-              upcomingJobsPanel(now: context.date)
-              largestJobsPanel(now: context.date)
-            }
-          }
+          capacityByActivityPanel(now: context.date)
         }
-        dashboardSection(
-          title: "Finances",
-          systemImage: "creditcard.fill"
-        ) {
-          DashboardCardLayout(weights: [1, 2], minimumWidths: [280, 560]) {
-            walletPanel
-            netWorthPanel
+        dashboardRow {
+          TimelineView(.periodic(from: .now, by: 60)) { context in
+            readyAndUpcomingJobsPanel(now: context.date)
           }
+          walletPanel
         }
-        dashboardSection(
-          title: "Market & opportunities",
-          systemImage: "chart.line.uptrend.xyaxis"
-        ) {
-          mineralTickerPanel
-          DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340]) {
-            reactionOpportunityPanel
-            purchasePanel(kind: .moonMaterials)
-            purchasePanel(kind: .minerals)
+        dashboardRow {
+          netWorthPanel
+          mainHubOpportunitiesPanel
+        }
+        dashboardRow {
+          TimelineView(.periodic(from: .now, by: 60)) { context in
+            largestJobsPanel(now: context.date)
           }
+          reactionOpportunityPanel
+        }
+        mineralTickerPanel
+        dashboardRow {
+          purchasePanel(kind: .moonMaterials)
+          purchasePanel(kind: .minerals)
         }
       }
       .frame(maxWidth: 1_440, alignment: .leading)
@@ -1861,6 +2241,45 @@ struct DashboardView: View {
     .task(id: mainHubAutomationIdentity) {
       runtime.prepareMainHubMarketAutomation()
     }
+    // Same contract, Loyalty Store and invention inputs the Main-Hub
+    // opportunity view loads for its costs (plan DB2).
+    .task(id: mainHubReferenceTrigger) {
+      guard let analysis = runtime.manufacturingOpportunityAnalysis else { return }
+      await OpportunityAcquisitionInputs.loadContractReferences(
+        runtime: runtime,
+        analysis: analysis
+      )
+      guard !Task.isCancelled else { return }
+      await OpportunityAcquisitionInputs.loadInventionEstimates(
+        runtime: runtime,
+        analysis: analysis
+      )
+    }
+    .task(id: mainHubTopFiveTrigger) {
+      let trigger = mainHubTopFiveTrigger
+      guard let analysis = runtime.manufacturingOpportunityAnalysis else {
+        mainHubTopFive = nil
+        return
+      }
+      let cache = MainHubOpportunityTopFiveCache.shared
+      if let cached = cache.result(for: trigger) {
+        mainHubTopFive = cached
+        return
+      }
+      guard
+        let result = await MainHubOpportunityTopFiveProjection.prepare(
+          runtime: runtime,
+          snapshot: analysis,
+          characters: characters,
+          stockTargets: stockTargets,
+          activePlans: activePlans,
+          settings: trigger.settings
+        ),
+        !Task.isCancelled
+      else { return }
+      mainHubTopFive = result
+      cache.store(result, for: trigger)
+    }
     .task(id: marketRefreshIdentity) {
       runtime.rememberMarketAuthorizations(
         authorizationSnapshots,
@@ -1886,58 +2305,158 @@ struct DashboardView: View {
     }
   }
 
-  private func dashboardSection<Content: View>(
-    title: LocalizedStringKey,
-    systemImage: String,
+  /// One row of the board grid: two equal columns of at least 360 pt that
+  /// share the row height and stack on narrow windows.
+  private func dashboardRow<Content: View>(
     @ViewBuilder content: () -> Content
   ) -> some View {
-    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      Label(title, systemImage: systemImage)
-        .font(.title3.weight(.semibold))
-        .foregroundStyle(DesignTokens.textPrimary)
-        .accessibilityAddTraits(.isHeader)
-      content()
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-
-  private func dashboardPairedRow<Content: View>(
-    @ViewBuilder content: () -> Content
-  ) -> some View {
-    LazyVGrid(
-      columns: [
-        GridItem(
-          .adaptive(minimum: 360),
-          spacing: DesignTokens.spacingMD,
-          alignment: .top
-        )
-      ],
-      alignment: .leading,
-      spacing: DesignTokens.spacingMD
+    DashboardCardLayout(
+      weights: [1, 1],
+      minimumWidths: [360, 360],
+      equalizesHeights: true
     ) {
       content()
     }
   }
 
   private var header: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .bottom, spacing: DesignTokens.spacingMD) {
+          headerTitle
+          Spacer(minLength: DesignTokens.spacingMD)
+          headerControls
+        }
+        VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+          headerTitle
+          headerControls
+        }
+      }
+      refreshMessages
+    }
+  }
+
+  private var headerTitle: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text("Dashboard")
-        .font(.largeTitle.bold())
-      Text("Operations, finances and market movement at a glance.")
+        .appFont(.largeTitle.bold())
+        .nexusPageTitle()
+      Text("Jobs, wallets, wealth and market at a glance.")
         .foregroundStyle(DesignTokens.textSecondary)
     }
+  }
+
+  /// ESI status and "Refresh all" on the right of the header (plan DB5).
+  private var headerControls: some View {
+    HStack(spacing: DesignTokens.spacingSM) {
+      DashboardHeaderStatusButton(
+        startupLoad: runtime.startupDataLoad,
+        inputs: headerStatusInputs
+      )
+      Button {
+        Task { await refreshAll() }
+      } label: {
+        HStack(spacing: DesignTokens.spacingXS) {
+          if isRefreshingAll || isRefreshingDashboardData {
+            ProgressView().controlSize(.small)
+          } else {
+            Image(systemName: "arrow.clockwise")
+          }
+          Text(isRefreshingAll || isRefreshingDashboardData ? "Updating…" : "Refresh all")
+        }
+      }
+      .buttonStyle(.bordered)
+      .disabled(
+        isRefreshingAll
+          || isRefreshingDashboardData
+          || !refreshingWalletCharacterIDs.isEmpty
+          || clientID.isEmpty
+          || characters.isEmpty
+      )
+      .accessibilityIdentifier("dashboard.refresh")
+    }
+  }
+
+  @ViewBuilder private var refreshMessages: some View {
+    if let dashboardDataRefreshMessage {
+      Label(dashboardDataRefreshMessage, systemImage: "checkmark.circle.fill")
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.positive)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("dashboard.refresh.message")
+    }
+    if let dashboardDataRefreshError {
+      Label(dashboardDataRefreshError, systemImage: "exclamationmark.triangle.fill")
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.caution)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("dashboard.refresh.error")
+    }
+  }
+
+  private var headerStatusInputs: DashboardHeaderStatusButton.Inputs {
+    DashboardHeaderStatusButton.Inputs(
+      isRefreshingCharacters: isRefreshingDashboardData,
+      characterResult: lastCharacterSyncResult,
+      lastSyncDates: characters.map(\.lastSyncAt),
+      walletFreshness: walletPortfolio.freshness,
+      characterCount: characters.count,
+      isRefreshingWallets: isRefreshingDashboardData || !refreshingWalletCharacterIDs.isEmpty,
+      walletSyncDates: characters.map(\.walletLastSyncAt),
+      wealthSnapshot: runtime.dashboardWealthSnapshot,
+      isRefreshingWealth: runtime.isRefreshingDashboardWealth,
+      wealthHasError: runtime.dashboardWealthError != nil,
+      isAnalyzingReactions: runtime.isAnalyzingReactions,
+      reactionMarketStates: runtime.reactionAnalysis.map { _ in [.fresh] },
+      reactionHasError: runtime.reactionAnalysisError != nil,
+      reactionTimestamp: runtime.reactionAnalysis?.createdAt,
+      isRefreshingMoon: runtime.isRefreshingMoonMaterialAnalysis,
+      moonMarketStates: runtime.moonMaterialAnalysis.map {
+        $0.configuredMarkets.values.map(\.state)
+      },
+      moonHasError: runtime.moonMaterialAnalysisError != nil,
+      moonTimestamp: runtime.moonMaterialAnalysis?.refreshedAt,
+      isRefreshingMinerals: runtime.isRefreshingMineralPurchaseAnalysis,
+      mineralMarketStates: runtime.mineralPurchaseAnalysis.map {
+        $0.configuredMarkets.values.map(\.state)
+      },
+      mineralHasError: runtime.mineralPurchaseAnalysisError != nil,
+      mineralTimestamp: runtime.mineralPurchaseAnalysis?.refreshedAt
+    )
+  }
+
+  /// The former Dashboard refresh, then the Moon, Mineral and Reaction
+  /// analyses together, as the Dashboard starts them on appearance.
+  private func refreshAll() async {
+    guard !isRefreshingAll else { return }
+    isRefreshingAll = true
+    defer { isRefreshingAll = false }
+    await refreshDashboardData(isStartup: false)
+    guard !Task.isCancelled else { return }
+    let authorizations = authorizationSnapshots
+    async let moon: Void = runtime.refreshMoonMaterialAnalysis(
+      authorizations: authorizations, clientID: EVEConstants.ssoClientID)
+    async let minerals: Void = runtime.refreshMineralPurchaseAnalysis(
+      authorizations: authorizations, clientID: EVEConstants.ssoClientID)
+    async let reactions: Void = runtime.refreshConfiguredReactions(
+      authorizations: authorizations, clientID: EVEConstants.ssoClientID)
+    _ = await (moon, minerals, reactions)
   }
 
   private var mineralTickerPanel: some View {
     Panel(title: "Mineral prices") {
       HStack {
         Text("Purchase prices from the mineral analysis")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         Spacer()
         if runtime.isRefreshingMineralPurchaseAnalysis {
           ProgressView().controlSize(.small)
         }
+        // Same order as the purchase panels: open, then refresh (DB7, B8).
+        Button("Open purchase analysis") {
+          onNavigate(DashboardNavigationRequest(section: .mineralPurchaseAnalysis))
+        }.buttonStyle(.borderless)
         Button {
           Task { await runtime.refreshMineralPurchaseAnalysis(
             authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID) }
@@ -1948,16 +2467,13 @@ struct DashboardView: View {
         .disabled(runtime.isRefreshingMineralPurchaseAnalysis)
         .help("Refresh mineral prices")
         .accessibilityLabel("Refresh mineral prices")
-        Button("Open purchase analysis") {
-          onNavigate(DashboardNavigationRequest(section: .mineralPurchaseAnalysis))
-        }.buttonStyle(.borderless)
       }
       if runtime.hasCurrentMineralPurchaseAnalysis, !runtime.mineralPurchaseRecommendations.isEmpty {
         DashboardMineralTicker(rows: runtime.mineralPurchaseRecommendations)
           .frame(height: 62)
         if runtime.mineralPurchaseRecommendations.contains(where: { !$0.hasCompleteMarketCoverage }) {
           Text("Some configured markets are unavailable or stale; the comparison is incomplete.")
-            .font(.caption).foregroundStyle(DesignTokens.caution)
+            .appFont(.caption).foregroundStyle(DesignTokens.caution)
         }
       } else {
         Label(
@@ -1967,7 +2483,7 @@ struct DashboardView: View {
         .foregroundStyle(DesignTokens.textSecondary)
       }
       if let error = runtime.mineralPurchaseAnalysisError {
-        Text(error.localizedUI).font(.caption).foregroundStyle(DesignTokens.caution)
+        Text(error.localizedUI).appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
     }
   }
@@ -1979,13 +2495,161 @@ struct DashboardView: View {
     return runtime.marketAnalysisContextIdentity + "#\(runtime.isPlannerConfigurationReady)#\(sharedReactionRuns)#\(sharedReactionHubID)#" + authorizations
   }
 
+  private var mainHubReferenceTrigger: [String] {
+    [
+      runtime.manufacturingOpportunityAnalysis?.id.uuidString ?? "none",
+      (runtime.publicContractRegionScope?.sorted() ?? []).map(String.init)
+        .joined(separator: ","),
+      runtime.loyaltyStoreCatalog?.id.uuidString ?? "none",
+    ]
+  }
+
+  private var mainHubTopFiveTrigger: MainHubOpportunityTopFiveTrigger {
+    MainHubOpportunityTopFiveTrigger.current(
+      runtime: runtime,
+      characters: characters,
+      stockTargets: stockTargets,
+      activePlans: activePlans,
+      settings: .mainHub(from: AppDefaults.store)
+    )
+  }
+
+  private var mainHubOpportunitiesPanel: some View {
+    let analysis = runtime.manufacturingOpportunityAnalysis
+    let result = mainHubTopFive.flatMap {
+      $0.analysisID == analysis?.id ? $0 : nil
+    }
+    return Panel(title: "Main Hub opportunities · Top 5", fillsAvailableHeight: true) {
+      HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingXS) {
+        if let analysis {
+          Image(systemName: "building.columns")
+            .foregroundStyle(DesignTokens.textSecondary)
+            .accessibilityHidden(true)
+          EVEEntityText(value: analysis.mainHub.name, font: .caption, lineLimit: 1)
+          Text(
+            AppLocalization.format(
+              "Updated %@",
+              analysis.marketSource.capturedAt.formatted(
+                Date.FormatStyle(date: .abbreviated, time: .shortened, locale: AppLocalization.currentLanguage.locale)
+              )
+            )
+          )
+          .monospacedDigit()
+          .foregroundStyle(DesignTokens.textSecondary)
+          .lineLimit(1)
+        }
+        Spacer(minLength: DesignTokens.spacingSM)
+        Button {
+          onNavigate(DashboardNavigationRequest(section: .manufacturingOpportunities))
+        } label: {
+          HStack(spacing: 2) {
+            Text("All opportunities")
+            Image(systemName: "chevron.right").appFont(.caption2.bold())
+          }
+        }
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("dashboard.main-hub-opportunities.open")
+      }
+      .appFont(.caption)
+      if analysis == nil {
+        Label("No Main Hub scan yet", systemImage: "chart.line.uptrend.xyaxis")
+          .foregroundStyle(DesignTokens.textSecondary)
+        if let error = runtime.manufacturingOpportunitySnapshotError {
+          Text(error.localizedUI).appFont(.caption).foregroundStyle(DesignTokens.caution)
+        }
+      } else if let result {
+        if result.rows.isEmpty {
+          Label(
+            result.visibleCount == 0
+              ? "No opportunity matches the filters of the Main Hub opportunities."
+              : "No visible opportunity has an available ROI.",
+            systemImage: "line.3.horizontal.decrease.circle"
+          )
+          .foregroundStyle(DesignTokens.textSecondary)
+        } else {
+          mainHubOpportunityTable(result.rows)
+        }
+      } else {
+        Label("Preparing", systemImage: "hourglass")
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+  }
+
+  private func mainHubOpportunityTable(
+    _ rows: [MainHubOpportunityTopRow]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        SortableTableHeader(
+          title: "Product",
+          column: MainHubOpportunityTopColumn.product,
+          sort: $mainHubTopFiveSort
+        )
+        SortableTableHeader(
+          title: "ROI",
+          column: .returnOnInvestment,
+          sort: $mainHubTopFiveSort,
+          defaultDirection: .descending,
+          alignment: .trailing
+        )
+        .frame(width: 72)
+        SortableTableHeader(
+          title: "Profit",
+          column: .profit,
+          sort: $mainHubTopFiveSort,
+          defaultDirection: .descending,
+          alignment: .trailing
+        )
+        .frame(width: 150)
+      }
+      .appFont(.caption.weight(.semibold))
+      .foregroundStyle(DesignTokens.textSecondary)
+      .padding(.bottom, DesignTokens.spacingXS)
+      .overlay(alignment: .bottom) {
+        Rectangle().fill(DesignTokens.border).frame(height: 1)
+      }
+      ForEach(MainHubOpportunityTopSelection.sorted(rows, by: mainHubTopFiveSort)) { row in
+        HStack(spacing: DesignTokens.spacingSM) {
+          EVEItemText(
+            value: row.productName,
+            typeID: row.productTypeID,
+            font: .callout.weight(.semibold),
+            lineLimit: 1
+          )
+          .frame(maxWidth: .infinity, alignment: .leading)
+          Text(OpportunityValueFormat.percent(row.returnOnInvestment))
+            .monospacedDigit()
+            .frame(width: 72, alignment: .trailing)
+          Text(OpportunityValueFormat.isk(row.profit))
+            .appFont(.callout.weight(.semibold).monospacedDigit())
+            .foregroundStyle(
+              row.profit == nil ? DesignTokens.textSecondary : DesignTokens.highlight
+            )
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(width: 150, alignment: .trailing)
+        }
+        .padding(.vertical, DesignTokens.spacingSM)
+        .overlay(alignment: .bottom) {
+          Rectangle()
+            .fill(DesignTokens.border.opacity(0.4))
+            .frame(height: 1)
+            .accessibilityHidden(true)
+        }
+        .accessibilityElement(children: .contain)
+      }
+    }
+    .accessibilityIdentifier("dashboard.main-hub-opportunities.table")
+  }
+
   private func purchasePanel(kind: MaterialPurchaseAnalysisKind) -> some View {
     let moon = kind == .moonMaterials
     let current = moon ? runtime.hasCurrentMoonMaterialAnalysis : runtime.hasCurrentMineralPurchaseAnalysis
     let rows = moon ? runtime.moonMaterialRecommendations : runtime.mineralPurchaseRecommendations
     let refreshing = moon ? runtime.isRefreshingMoonMaterialAnalysis : runtime.isRefreshingMineralPurchaseAnalysis
     let error = moon ? runtime.moonMaterialAnalysisError : runtime.mineralPurchaseAnalysisError
-    return Panel(title: kind.title) {
+    return Panel(title: kind.title, fillsAvailableHeight: true) {
       HStack {
         if refreshing { ProgressView().controlSize(.small) }
         Spacer()
@@ -2003,48 +2667,316 @@ struct DashboardView: View {
         } label: {
           Image(systemName: "arrow.clockwise")
         }.buttonStyle(.borderless).disabled(refreshing)
-          .accessibilityLabel("Refresh")
+          .help("Refresh purchase analysis")
+          .accessibilityLabel("Refresh purchase analysis")
       }
-      if current {
+      let hasAnalysis =
+        moon ? runtime.moonMaterialAnalysis != nil : runtime.mineralPurchaseAnalysis != nil
+      switch DashboardPurchasePanelState.state(hasAnalysis: hasAnalysis, isCurrent: current) {
+      case .current:
         MaterialPurchaseRecommendationContent(recommendations: rows)
-      } else {
+      case .noAnalysis:
+        Text(
+          moon
+            ? LocalizedStringKey("No Moon purchase analysis yet")
+            : LocalizedStringKey("No mineral purchase analysis yet")
+        )
+        .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
+      case .settingsChanged:
         Text("Settings changed. Refresh to update purchase locations.")
-          .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+          .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
       }
       if let error {
-        Text(error.localizedUI).font(.caption).foregroundStyle(DesignTokens.caution)
+        Text(error.localizedUI).appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
     }
   }
 
-  private func jobCapacityPanel(now: Date) -> some View {
-    let running = industrySnapshot.jobs.filter { $0.job.isRunning(at: now) }
-    let overall = industrySnapshot.overallCapacity
-    return Panel(title: "Industry capacity") {
-      HStack(alignment: .firstTextBaseline) {
-        Text("\(running.count)")
-          .font(.largeTitle.bold().monospacedDigit())
-          .foregroundStyle(DesignTokens.highlight)
-        Text("of")
-          .foregroundStyle(DesignTokens.textSecondary)
-        Text(capacityText(overall))
-          .font(.title2.bold().monospacedDigit())
-        Text("available job slots active")
-          .foregroundStyle(DesignTokens.textSecondary)
-        Spacer()
-        if !overall.isComplete {
-          freshnessPill(.partial, text: "Partial")
+  // MARK: Key figures (plan DB4)
+
+  /// Four key-figure cards like the board; two per row, then one per row,
+  /// when the window is narrow.
+  private var keyFigureRow: some View {
+    ViewThatFits(in: .horizontal) {
+      DashboardCardLayout(
+        weights: [1, 1, 1, 1],
+        minimumWidths: [230, 230, 230, 230],
+        equalizesHeights: true
+      ) {
+        netWorthKeyFigure
+        walletKeyFigure
+        manufacturingSlotKeyFigure
+        scienceSlotKeyFigure
+      }
+      VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+        DashboardCardLayout(
+          weights: [1, 1],
+          minimumWidths: [230, 230],
+          equalizesHeights: true
+        ) {
+          netWorthKeyFigure
+          walletKeyFigure
+        }
+        DashboardCardLayout(
+          weights: [1, 1],
+          minimumWidths: [230, 230],
+          equalizesHeights: true
+        ) {
+          manufacturingSlotKeyFigure
+          scienceSlotKeyFigure
         }
       }
-      ViewThatFits(in: .horizontal) {
-        industryCapacityGrid(running: running, columnCount: 3)
-          .frame(minWidth: 744)
-        industryCapacityGrid(running: running, columnCount: 2)
-          .frame(minWidth: 496)
-        industryCapacityGrid(running: running, columnCount: 1)
-      }
-      jobDataNotice
     }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("dashboard.key-figures")
+  }
+
+  private func keyFigureValue(
+    _ value: String,
+    color: Color = DesignTokens.textPrimary
+  ) -> some View {
+    Text(value)
+      .appFont(.title3.weight(.bold).monospacedDigit())
+      .foregroundStyle(color)
+      .lineLimit(1)
+      .minimumScaleFactor(0.6)
+  }
+
+  private var netWorthKeyFigure: some View {
+    let hasTotal = runtime.dashboardWealthSnapshot?.knownTotalValue != nil
+    let change = NetWorthRangeChange.change(
+      in: selectedWealthRange.filter(wealthHistory)
+    )
+    return Panel(title: "Net Worth", fillsAvailableHeight: true) {
+      keyFigureValue(
+        wealthTotalText,
+        color: hasTotal ? DesignTokens.highlight : DesignTokens.textSecondary
+      )
+      if let change {
+        let amount =
+          change.relative.map(NetWorthValueFormat.signedPercent)
+          ?? NetWorthValueFormat.signedISK(change.absolute)
+        Label(
+          AppLocalization.format("%@ in range", amount),
+          systemImage: change.absolute >= 0 ? "arrow.up.right" : "arrow.down.right"
+        )
+        .appFont(.caption.weight(.semibold).monospacedDigit())
+        .foregroundStyle(
+          change.absolute >= 0 ? DesignTokens.positive : DesignTokens.negative
+        )
+        if change.comparesKnownComponentsOnly {
+          Text("from known components")
+            .appFont(.caption2)
+            .foregroundStyle(DesignTokens.caution)
+        }
+      } else {
+        Text("Change in range unavailable")
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    .overlay(alignment: .topTrailing) {
+      Button {
+        showsValuationDetailsPopover.toggle()
+      } label: {
+        Image(systemName: "info.circle")
+      }
+      .buttonStyle(.borderless)
+      .help("How net worth is calculated")
+      .accessibilityLabel("How net worth is calculated")
+      .accessibilityIdentifier("dashboard.key-figure.net-worth.info")
+      .padding(DesignTokens.spacingMD)
+      .popover(isPresented: $showsValuationDetailsPopover, arrowEdge: .bottom) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+          Text("Valuation details").appFont(.headline)
+          valuationDetailsText
+        }
+        .padding(DesignTokens.spacingMD)
+        .frame(width: 380)
+        .appLanguageLocale()
+      }
+    }
+    // Keep inner elements (such as the info button) addressable (DB7, B2).
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("dashboard.key-figure.net-worth")
+  }
+
+  private var walletKeyFigure: some View {
+    let portfolio = walletPortfolio
+    let hasBalance = portfolio.includedCharacterCount > 0
+    return Panel(title: "Wallet", fillsAvailableHeight: true) {
+      keyFigureValue(
+        hasBalance
+          ? formatISK(portfolio.totalBalance) : AppLocalization.text("Unavailable"),
+        color: hasBalance ? DesignTokens.highlight : DesignTokens.textSecondary
+      )
+      if characters.isEmpty {
+        Text("No connected characters")
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        HStack(spacing: DesignTokens.spacingXS) {
+          freshnessPill(portfolio.freshness)
+          Text(
+            AppLocalization.format(
+              "%lld of %lld characters included",
+              Int64(portfolio.includedCharacterCount),
+              Int64(portfolio.totalCharacterCount)
+            )
+          )
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          .lineLimit(2)
+          // Wrap instead of truncating in narrow windows (DB7, B9).
+          .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("dashboard.key-figure.wallet")
+  }
+
+  /// Only the slot cards follow the minute tick; the finance cards do not.
+  private var manufacturingSlotKeyFigure: some View {
+    TimelineView(.periodic(from: .now, by: 60)) { context in
+      manufacturingSlotKeyFigure(now: context.date)
+    }
+  }
+
+  private var scienceSlotKeyFigure: some View {
+    TimelineView(.periodic(from: .now, by: 60)) { context in
+      scienceSlotKeyFigure(now: context.date)
+    }
+  }
+
+  private func manufacturingSlotKeyFigure(now: Date) -> some View {
+    let figure = DashboardSlotFigure.figure(
+      jobs: industrySnapshot.jobs,
+      activities: [.manufacturing],
+      capacity: industrySnapshot.capacity(for: .manufacturing),
+      now: now
+    )
+    return Panel(title: "Manufacturing slots", fillsAvailableHeight: true) {
+      slotFigureContent(figure)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("dashboard.key-figure.manufacturing-slots")
+  }
+
+  private func scienceSlotKeyFigure(now: Date) -> some View {
+    let science = DashboardSlotFigure.figure(
+      jobs: industrySnapshot.jobs,
+      activities: Set(DashboardIndustryActivity.allCases.filter(\.usesSharedScienceSlots)),
+      capacity: industrySnapshot.capacity(for: .copying),
+      now: now
+    )
+    let reactions = DashboardSlotFigure.figure(
+      jobs: industrySnapshot.jobs,
+      activities: [.reaction],
+      capacity: industrySnapshot.capacity(for: .reaction),
+      now: now
+    )
+    return Panel(title: "Science slots (shared)", fillsAvailableHeight: true) {
+      slotFigureContent(science)
+      Text(
+        AppLocalization.format(
+          "Reactions %@ / %@",
+          String(reactions.occupied),
+          capacityText(reactions.capacity)
+        )
+      )
+      .appFont(.caption.monospacedDigit())
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("dashboard.key-figure.science-slots")
+  }
+
+  @ViewBuilder private func slotFigureContent(
+    _ figure: DashboardSlotFigure
+  ) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 3) {
+      keyFigureValue(String(figure.occupied))
+      Text(verbatim: "/ \(capacityText(figure.capacity))")
+        .appFont(.callout.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+    }
+    if let fraction = figure.fillFraction {
+      ProgressView(value: fraction)
+        .tint(DesignTokens.accent)
+        .accessibilityHidden(true)
+    }
+    Text(
+      AppLocalization.format(
+        "%lld ready · %@ free",
+        Int64(figure.ready),
+        figure.free.map {
+          figure.capacity.isComplete ? String($0) : "≥\($0)"
+        } ?? "—"
+      )
+    )
+    .appFont(.caption.monospacedDigit())
+    .foregroundStyle(DesignTokens.textSecondary)
+  }
+
+  /// Per-activity capacity grid below the key figures; its header keeps the
+  /// overall "X of Y available job slots active" line (plan DB4).
+  private func capacityByActivityPanel(now: Date) -> some View {
+    let running = industrySnapshot.jobs.filter { $0.job.isRunning(at: now) }
+    let overall = industrySnapshot.overallCapacity
+    return VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
+      FullWidthDisclosureButton(
+        isExpanded: capacityByActivityExpanded,
+        action: { capacityByActivityExpanded.toggle() }
+      ) {
+        ViewThatFits(in: .horizontal) {
+          HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
+            NexusPanelTitle("Capacity by activity")
+            Spacer(minLength: DesignTokens.spacingSM)
+            capacityOverallLine(running: running.count, overall: overall)
+          }
+          VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+            NexusPanelTitle("Capacity by activity")
+            capacityOverallLine(running: running.count, overall: overall)
+          }
+        }
+      }
+      .accessibilityIdentifier("dashboard.capacity-by-activity")
+      if capacityByActivityExpanded {
+        ViewThatFits(in: .horizontal) {
+          industryCapacityGrid(running: running, columnCount: 3)
+            .frame(minWidth: 744)
+          industryCapacityGrid(running: running, columnCount: 2)
+            .frame(minWidth: 496)
+          industryCapacityGrid(running: running, columnCount: 1)
+        }
+        jobDataNotice
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .padding(DesignTokens.spacingMD)
+    .nexusPanelSurface(.standard)
+  }
+
+  private func capacityOverallLine(
+    running: Int,
+    overall: DashboardIndustryCapacitySummary
+  ) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingXS) {
+      Text(verbatim: String(running))
+        .appFont(.callout.bold().monospacedDigit())
+        .foregroundStyle(DesignTokens.highlight)
+      Text("of")
+        .foregroundStyle(DesignTokens.textSecondary)
+      Text(verbatim: capacityText(overall))
+        .appFont(.callout.bold().monospacedDigit())
+      Text("available job slots active")
+        .foregroundStyle(DesignTokens.textSecondary)
+      if !overall.isComplete {
+        freshnessPill(.partial, text: "Partial")
+      }
+    }
+    .appFont(.callout)
   }
 
   private func industryCapacityGrid(
@@ -2069,18 +3001,18 @@ struct DashboardView: View {
         let capacity = industrySnapshot.capacity(for: activity)
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           Label(activityTitle(activity), systemImage: activityIcon(activity))
-            .font(.caption.weight(.semibold))
+            .appFont(.caption.weight(.semibold))
             .lineLimit(1)
           HStack(alignment: .firstTextBaseline, spacing: 3) {
             Text("\(activityRunning)")
-              .font(.title2.bold().monospacedDigit())
+              .appFont(.title2.bold().monospacedDigit())
             Text("/ \(capacityText(capacity))")
-              .font(.callout.monospacedDigit())
+              .appFont(.callout.monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
           }
           if activity.usesSharedScienceSlots {
             Text("Shared science slots")
-              .font(.caption2)
+              .appFont(.caption2)
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -2094,9 +3026,9 @@ struct DashboardView: View {
 
   private var walletPanel: some View {
     let walletPortfolio = walletPortfolio
-    return Panel(title: "Wallet", fillsAvailableHeight: true) {
+    return Panel(title: "Wallets", fillsAvailableHeight: true) {
       if characters.isEmpty {
-        ContentUnavailableView(
+        AppUnavailableView(
           "No connected characters",
           systemImage: "creditcard",
           description: Text(
@@ -2104,51 +3036,16 @@ struct DashboardView: View {
           )
         )
       } else {
-        HStack(alignment: .firstTextBaseline) {
-          VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
-            Text(
-              walletPortfolio.includedCharacterCount > 0
-                ? formatISK(walletPortfolio.totalBalance)
-                : AppLocalization.text("Unavailable")
-            )
-            .font(.largeTitle.weight(.semibold).monospacedDigit())
-            .lineLimit(1).minimumScaleFactor(0.6)
-            .foregroundStyle(
-              walletPortfolio.includedCharacterCount > 0
-                ? DesignTokens.highlight : DesignTokens.textSecondary
-            )
-            Text(
-              AppLocalization.format(
-                "%lld of %lld characters included",
-                Int64(walletPortfolio.includedCharacterCount),
-                Int64(walletPortfolio.totalCharacterCount)
-              )
-            )
-            .font(.caption)
-            .foregroundStyle(DesignTokens.textSecondary)
+        // Three tiles like the board; they stack when the panel is narrow.
+        ViewThatFits(in: .horizontal) {
+          HStack(alignment: .top, spacing: DesignTokens.spacingSM) {
+            walletTiles(walletPortfolio)
           }
-          Spacer()
-          VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
-            freshnessPill(walletPortfolio.freshness)
+          VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+            walletTiles(walletPortfolio)
           }
         }
         DisclosureGroup("Character balances") {
-            Button {
-              Task { await refreshDashboardData(isStartup: false) }
-            } label: {
-              if isRefreshingDashboardData {
-                ProgressView().controlSize(.small)
-              } else {
-                Label("Refresh dashboard", systemImage: "arrow.clockwise")
-              }
-            }
-            .buttonStyle(.bordered)
-            .disabled(
-              isRefreshingDashboardData
-                || !refreshingWalletCharacterIDs.isEmpty
-                || clientID.isEmpty
-            )
-            .accessibilityIdentifier("dashboard.refresh")
             ForEach(walletPortfolio.balances) { row in
               dashboardWalletRow(row)
             }
@@ -2158,26 +3055,69 @@ struct DashboardView: View {
             "Save the EVE application client ID in Data & Settings before refreshing.",
             systemImage: "exclamationmark.triangle"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
         if walletPortfolio.includedCharacterCount < walletPortfolio.totalCharacterCount {
           Text("Missing or forbidden balances are not treated as zero.")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
-        }
-        if let dashboardDataRefreshMessage {
-          Label(dashboardDataRefreshMessage, systemImage: "checkmark.circle.fill")
-            .font(.caption)
-            .foregroundStyle(DesignTokens.positive)
-        }
-        if let dashboardDataRefreshError {
-          Label(dashboardDataRefreshError, systemImage: "exclamationmark.triangle.fill")
-            .font(.caption)
-            .foregroundStyle(DesignTokens.caution)
         }
       }
     }
+  }
+
+  @ViewBuilder private func walletTiles(
+    _ portfolio: WalletPortfolioSnapshot
+  ) -> some View {
+    let hasBalance = portfolio.includedCharacterCount > 0
+    walletTile(title: "Available total") {
+      Text(
+        hasBalance
+          ? formatISK(portfolio.totalBalance)
+          : AppLocalization.text("Unavailable")
+      )
+      .appFont(.callout.weight(.bold).monospacedDigit())
+      .lineLimit(1)
+      .foregroundStyle(
+        hasBalance ? DesignTokens.highlight : DesignTokens.textSecondary
+      )
+    }
+    walletTile(title: "Characters") {
+      Text(
+        verbatim:
+          "\(portfolio.includedCharacterCount) / \(portfolio.totalCharacterCount)"
+      )
+      .appFont(.callout.weight(.bold).monospacedDigit())
+      .accessibilityLabel(
+        AppLocalization.format(
+          "%lld of %lld characters included",
+          Int64(portfolio.includedCharacterCount),
+          Int64(portfolio.totalCharacterCount)
+        )
+      )
+    }
+    walletTile(title: "Source state") {
+      freshnessPill(portfolio.freshness)
+    }
+  }
+
+  private func walletTile<Value: View>(
+    title: LocalizedStringKey,
+    @ViewBuilder value: () -> Value
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(title)
+        .appFont(.caption2.weight(.semibold))
+        .foregroundStyle(DesignTokens.textSecondary)
+        .lineLimit(1)
+      value()
+    }
+    .padding(DesignTokens.spacingSM)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(DesignTokens.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+    .accessibilityElement(children: .combine)
   }
 
   private func dashboardWalletRow(
@@ -2191,12 +3131,12 @@ struct DashboardView: View {
             font: .callout.weight(.semibold)
           )
           if let updatedAt = lastWalletSync(for: row.id) {
-            Text("Updated \(updatedAt.formatted())")
-              .font(.caption.monospacedDigit())
+            Text("Updated \(updatedAt.formatted(Date.FormatStyle(date: .numeric, time: .shortened, locale: AppLocalization.currentLanguage.locale)))")
+              .appFont(.caption.monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
           } else {
             Text("Not synchronized")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -2206,7 +3146,7 @@ struct DashboardView: View {
             row.balance.value.map(formatISK)
               ?? AppLocalization.text("Unavailable")
           )
-          .font(.callout.weight(.semibold).monospacedDigit())
+          .appFont(.callout.weight(.semibold).monospacedDigit())
           .foregroundStyle(
             row.balance.value == nil
               ? DesignTokens.textSecondary : DesignTokens.textPrimary
@@ -2239,7 +3179,7 @@ struct DashboardView: View {
       }
       if let message = walletRefreshErrors[row.id] {
         Label(message, systemImage: "xmark.octagon.fill")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.negative)
       }
     }
@@ -2247,62 +3187,39 @@ struct DashboardView: View {
     .accessibilityIdentifier("dashboard.wallet.character.\(row.id)")
   }
 
-  private func readyJobsPanel(now: Date) -> some View {
-    let ready = industrySnapshot.jobs.filter {
-      $0.job.isReadyForDelivery(at: now)
-    }
-    .sorted {
-      if $0.job.endDate != $1.job.endDate { return $0.job.endDate < $1.job.endDate }
-      return $0.id < $1.id
-    }
-    return Panel(title: "Ready for delivery", fillsAvailableHeight: true) {
+  private func readyAndUpcomingJobsPanel(now: Date) -> some View {
+    let rows = DashboardReadyAndUpcomingJobs.rows(
+      jobs: industrySnapshot.jobs,
+      now: now
+    )
+    return Panel(
+      title: "Industry jobs · ready and upcoming",
+      fillsAvailableHeight: true
+    ) {
       if isPreparingIndustrySnapshot {
         Label("Preparing", systemImage: "hourglass")
           .foregroundStyle(DesignTokens.textSecondary)
-      } else if ready.isEmpty {
+      } else if !industrySnapshot.hasAnyJobSnapshot {
         Label(
-          industrySnapshot.hasAnyJobSnapshot
-            ? "No jobs are currently ready for delivery."
-            : "Synchronize characters to load industry jobs.",
-          systemImage:
-            industrySnapshot.hasAnyJobSnapshot
-            ? "checkmark.circle" : "arrow.triangle.2.circlepath"
+          "Synchronize characters to load industry jobs.",
+          systemImage: "arrow.triangle.2.circlepath"
         )
         .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        DashboardPreviewList(rows: ready) { owned in
-          dashboardJobRow(owned, trailing: AppLocalization.text("Ready"))
-        }
-      }
-    }
-  }
-
-  private func upcomingJobsPanel(now: Date) -> some View {
-    let cutoff = now.addingTimeInterval(48 * 60 * 60)
-    let upcoming = industrySnapshot.jobs.filter {
-      $0.job.isRunning(at: now) && $0.job.endDate <= cutoff
-    }.sorted {
-      if $0.job.endDate != $1.job.endDate { return $0.job.endDate < $1.job.endDate }
-      return $0.id < $1.id
-    }
-    return Panel(title: "Next 48 hours", fillsAvailableHeight: true) {
-      if isPreparingIndustrySnapshot {
-        Label("Preparing", systemImage: "hourglass")
-          .foregroundStyle(DesignTokens.textSecondary)
-      } else if upcoming.isEmpty {
-        Label(
-          industrySnapshot.hasAnyJobSnapshot
-            ? "No running jobs finish within the next 48 hours."
-            : "Synchronize characters to load the next completions.",
-          systemImage: "clock"
-        )
-        .foregroundStyle(DesignTokens.textSecondary)
-      } else {
-        DashboardPreviewList(rows: upcoming) { owned in
-          dashboardJobRow(
-            owned,
-            trailing: owned.job.endDate.formatted(.relative(presentation: .named))
+      } else if rows.isEmpty {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Label(
+            "No jobs are currently ready for delivery.",
+            systemImage: "checkmark.circle"
           )
+          Label(
+            "No running jobs finish within the next 48 hours.",
+            systemImage: "clock"
+          )
+        }
+        .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        DashboardPreviewList(rows: rows, showsSeparators: true) { row in
+          dashboardJobRow(row.owned, isReady: row.isReady)
         }
       }
     }
@@ -2316,7 +3233,7 @@ struct DashboardView: View {
     let values = runtime.dashboardIndustryJobValues.filter { currentIDs.contains($0.id) }
     let ranked = DashboardInProgressIndustryProjector.rankedJobs(values)
     let missingCount = currentIDs.count - ranked.count
-    return Panel(title: "Top 5 by material value") {
+    return Panel(title: "Top 5 by material value", fillsAvailableHeight: true) {
       if runtime.isRefreshingDashboardWealth {
         ProgressView().controlSize(.small)
       }
@@ -2336,13 +3253,13 @@ struct DashboardView: View {
             Spacer()
             Text(row.materialValue.map(formatISK) ?? AppLocalization.text("Unavailable"))
               .monospacedDigit()
-          }.font(.caption)
+          }.appFont(.caption)
           if row.freshness != .fresh { freshnessPill(row.freshness) }
         }
       }
       if missingCount > 0 {
         Text(AppLocalization.format("Incomplete ranking · %lld jobs without full material valuation", Int64(missingCount)))
-          .font(.caption).foregroundStyle(DesignTokens.caution)
+          .appFont(.caption).foregroundStyle(DesignTokens.caution)
       } else if ranked.isEmpty {
         Text(industrySnapshot.hasAnyJobSnapshot
           ? "No open production jobs.".localizedUI
@@ -2351,24 +3268,27 @@ struct DashboardView: View {
       }
       if industrySnapshot.incompleteJobSourceCount > 0 {
         Text("Some character job data is incomplete; ranking may omit jobs.")
-          .font(.caption).foregroundStyle(DesignTokens.caution)
+          .appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
       if !ranked.isEmpty {
         Text("Estimated material value · ESI average / adjusted prices")
-          .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+          .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
       }
       if let error = runtime.dashboardWealthError {
-        Text(error.localizedUI).font(.caption).foregroundStyle(DesignTokens.caution)
+        Text(error.localizedUI).appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
     }
   }
 
   private var reactionOpportunityPanel: some View {
     let filteredNegativeReactions = filteredNegativeReactions
-    return Panel(title: "Reactions with negative value creation") {
+    return Panel(
+      title: "Reactions with negative value creation",
+      fillsAvailableHeight: true
+    ) {
       HStack {
         Text("Negative value creation means buying is cheaper than reacting.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         Spacer()
         Button("Open reactions") {
@@ -2382,7 +3302,7 @@ struct DashboardView: View {
         }
       }
       if let error = runtime.reactionAnalysisError {
-        Text(error.localizedUI).font(.caption).foregroundStyle(DesignTokens.caution)
+        Text(error.localizedUI).appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
       if runtime.reactionAnalysis == nil || !runtime.isReactionAnalysisCurrent {
         Label(
@@ -2419,14 +3339,17 @@ struct DashboardView: View {
             } else {
               Text("Production destination unavailable")
             }
-          }.font(.caption).foregroundStyle(DesignTokens.textSecondary)
-          Text(AppLocalization.format("%lld runs · %@", Int64(analysis.runs), analysis.createdAt.formatted()))
-            .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+          }.appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
+          Text(AppLocalization.format("%lld runs · %@", Int64(analysis.runs), analysis.createdAt.formatted(Date.FormatStyle(date: .numeric, time: .shortened, locale: AppLocalization.currentLanguage.locale))))
+            .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
           if analysis.basis == .materialOnlyBaseline {
-            Text("Material-only baseline").font(.caption).foregroundStyle(DesignTokens.caution)
+            Text("Material-only baseline").appFont(.caption).foregroundStyle(DesignTokens.caution)
           }
         }
-        DashboardPreviewList(rows: filteredNegativeReactions) { row in
+        DashboardPreviewList(
+          rows: filteredNegativeReactions,
+          showsSeparators: true
+        ) { row in
           HStack {
             VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
               EVEItemText(
@@ -2435,19 +3358,19 @@ struct DashboardView: View {
                 font: .callout.weight(.semibold)
               )
               Text(row.groupName)
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
               Text("Buy opportunity")
-                .font(.caption.weight(.semibold))
+                .appFont(.caption.weight(.semibold))
                 .foregroundStyle(DesignTokens.positive)
               Text(
                 row.valueCreation.map(formatISK)
                   ?? AppLocalization.text("Unavailable")
               )
-              .font(.callout.monospacedDigit())
+              .appFont(.callout.monospacedDigit())
             }
           }
         }
@@ -2456,10 +3379,11 @@ struct DashboardView: View {
   }
 
   private var netWorthPanel: some View {
-    Panel(title: "Net worth over time", fillsAvailableHeight: true) {
+    let rangeHistory = selectedWealthRange.filter(wealthHistory)
+    return Panel(title: "Net worth · history", fillsAvailableHeight: true) {
       HStack(alignment: .firstTextBaseline) {
         Text(wealthTotalText)
-          .font(.title2.weight(.semibold).monospacedDigit())
+          .appFont(.title2.weight(.semibold).monospacedDigit())
           .foregroundStyle(DesignTokens.highlight)
         Spacer()
         if runtime.isRefreshingDashboardWealth {
@@ -2473,26 +3397,97 @@ struct DashboardView: View {
         }
       }
       if !wealthHistory.isEmpty {
+        let change = NetWorthRangeChange.change(in: rangeHistory)
+        ViewThatFits(in: .horizontal) {
+          HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
+            wealthRangeChangeLabel(change)
+            Spacer(minLength: DesignTokens.spacingSM)
+            wealthRangePicker
+          }
+          VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+            wealthRangeChangeLabel(change)
+            wealthRangePicker
+          }
+        }
         ViewThatFits(in: .horizontal) {
           wealthSeriesPicker.menuStyle(.borderlessButton).pickerStyle(.segmented).frame(minWidth: 480)
           wealthSeriesPicker.pickerStyle(.menu)
         }
-        DashboardWealthChart(
-          samples: wealthHistory.compactMap { snapshot in
-            selectedDashboardWealthSeries.value(in: snapshot).map {
-              DashboardWealthChartSample(date: snapshot.capturedAt, value: $0)
-            }
-          },
-          color: selectedDashboardWealthSeries.color,
-          showsAxes: true
-        )
-        .frame(height: 280)
-        .accessibilityLabel("Total net-worth history")
+        let seriesSamples = selectedDashboardWealthSeries.samples(in: rangeHistory)
+        let seriesTitle = AppLocalization.text(selectedDashboardWealthSeries.titleKey)
+        if seriesSamples.isEmpty {
+          // An explicit state instead of an empty chart (DB7, B6).
+          Label(
+            AppLocalization.format("No values for “%@” in the selected range.", seriesTitle),
+            systemImage: "chart.line.flattrend.xyaxis"
+          )
+          .appFont(.callout)
+          .foregroundStyle(DesignTokens.textSecondary)
+          .frame(maxWidth: .infinity, minHeight: 280)
+          .accessibilityIdentifier("dashboard.wealth-series.empty")
+        } else {
+          DashboardWealthChart(
+            samples: seriesSamples,
+            color: selectedDashboardWealthSeries.color,
+            showsAxes: true
+          )
+          .frame(height: 280)
+          .accessibilityLabel(AppLocalization.format("Net-worth history: %@", seriesTitle))
+        }
       } else {
         Label("Long-term history starts with the current valuation.", systemImage: "clock.arrow.circlepath")
-          .font(.caption).foregroundStyle(DesignTokens.textSecondary)
+          .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
       }
       netWorthDetails
+    }
+  }
+
+  private var wealthRangePicker: some View {
+    Picker("History range", selection: $selectedWealthRange) {
+      ForEach(NetWorthHistoryRange.allCases) { range in
+        Text(range.title).tag(range)
+      }
+    }
+    .pickerStyle(.segmented)
+    .labelsHidden()
+    .fixedSize()
+    .accessibilityIdentifier("dashboard.wealth-range")
+  }
+
+  /// Change of the known total inside the selected range (plan DB3).
+  @ViewBuilder private func wealthRangeChangeLabel(
+    _ change: NetWorthRangeChange?
+  ) -> some View {
+    if let change {
+      let amount = NetWorthValueFormat.signedISK(change.absolute)
+      VStack(alignment: .leading, spacing: 2) {
+        Label(
+          change.relative.map {
+            AppLocalization.format(
+              "%@ · %@ in range",
+              amount,
+              NetWorthValueFormat.signedPercent($0)
+            )
+          } ?? AppLocalization.format("%@ in range", amount),
+          systemImage: change.absolute >= 0 ? "arrow.up.right" : "arrow.down.right"
+        )
+        .appFont(.callout.weight(.semibold).monospacedDigit())
+        .foregroundStyle(
+          change.absolute >= 0 ? DesignTokens.positive : DesignTokens.negative
+        )
+        if change.comparesKnownComponentsOnly {
+          Text("from known components")
+            .appFont(.caption)
+            .foregroundStyle(DesignTokens.caution)
+        }
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier("dashboard.wealth-range-change")
+    } else {
+      Text("Change in range unavailable")
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+        .accessibilityIdentifier("dashboard.wealth-range-change")
     }
   }
 
@@ -2507,7 +3502,9 @@ struct DashboardView: View {
 
   @ViewBuilder private var netWorthDetails: some View {
       if let snapshot = runtime.dashboardWealthSnapshot {
-        let characterSamples = characterWealthSamples
+        let characterSamples = characterWealthSamples(
+          in: selectedWealthRange.filter(wealthHistory)
+        )
         LazyVGrid(
           columns: [GridItem(.adaptive(minimum: 128))],
           alignment: .leading,
@@ -2544,7 +3541,7 @@ struct DashboardView: View {
                     Int64(character.unvaluedAssetTypeCount)
                   )
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.caution)
               }
               if character.excludedBlueprintCopyCount > 0 {
@@ -2554,14 +3551,14 @@ struct DashboardView: View {
                     Int64(character.excludedBlueprintCopyCount)
                   )
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
               }
               if character.unvaluedOrderCount > 0
                 || character.missingEscrowOrderCount > 0
               {
                 Text("Some active order value is unavailable")
-                  .font(.caption)
+                  .appFont(.caption)
                   .foregroundStyle(DesignTokens.caution)
               }
               if character.contractsValue == nil
@@ -2571,7 +3568,7 @@ struct DashboardView: View {
                 || character.invalidCourierCollateralCount > 0
               {
                 Text("Some private contract value is unavailable")
-                  .font(.caption)
+                  .appFont(.caption)
                   .foregroundStyle(DesignTokens.caution)
               }
             }
@@ -2582,18 +3579,13 @@ struct DashboardView: View {
             )
             .frame(width: 92, height: 28)
             Text(wealthText(character))
-              .font(.callout.weight(.semibold).monospacedDigit())
+              .appFont(.callout.weight(.semibold).monospacedDigit())
               .frame(minWidth: 128, alignment: .trailing)
           }
         }
         }
         DisclosureGroup("Valuation details") {
-        Text(
-          "Assets and own outstanding contract items use ESI average prices with adjusted prices as the visible fallback. Consumed Manufacturing and Reaction materials remain under In production until delivery; missing facility or rig modifiers make that component an explicit estimate. Blueprint copies are excluded; courier collateral is an estimate. Missing personal or accessible corporation values remain partial and are never treated as zero."
-        )
-        .font(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
+          valuationDetailsText
         }
         if let error = runtime.dashboardWealthError {
           Label {
@@ -2606,7 +3598,7 @@ struct DashboardView: View {
           } icon: {
             Image(systemName: "exclamationmark.triangle")
           }
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
       } else if let error = runtime.dashboardWealthError {
@@ -2622,9 +3614,18 @@ struct DashboardView: View {
       }
       if let wealthPersistenceError {
         Label(wealthPersistenceError, systemImage: "externaldrive.badge.xmark")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.negative)
       }
+  }
+
+  private var valuationDetailsText: some View {
+    Text(
+      "Assets and own outstanding contract items use ESI average prices with adjusted prices as the visible fallback. Consumed Manufacturing and Reaction materials remain under In production until delivery; missing facility or rig modifiers make that component an explicit estimate. Blueprint copies are excluded; courier collateral is an estimate. Missing personal or accessible corporation values remain partial and are never treated as zero."
+    )
+    .appFont(.caption)
+    .foregroundStyle(DesignTokens.textSecondary)
+    .fixedSize(horizontal: false, vertical: true)
   }
 
   private func dashboardWealthComponent(
@@ -2636,10 +3637,10 @@ struct DashboardView: View {
       HStack(spacing: DesignTokens.spacingXS) {
         Circle().fill(color).frame(width: 7, height: 7)
         Text(title)
-          .font(.caption.weight(.semibold))
+          .appFont(.caption.weight(.semibold))
       }
       Text(value.map(formatISK) ?? AppLocalization.text("Unavailable"))
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(
           value == nil ? DesignTokens.textSecondary : DesignTokens.textPrimary
         )
@@ -2652,12 +3653,21 @@ struct DashboardView: View {
 
   private func dashboardJobRow(
     _ owned: DashboardIndustryOwnedJob,
-    trailing: String
+    isReady: Bool
   ) -> some View {
     HStack(spacing: DesignTokens.spacingSM) {
+      // Activity symbol in a small tile like the board's job list.
       Image(systemName: activityIcon(owned.job.dashboardActivity))
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.accent)
-        .frame(width: 18)
+        .frame(width: 22, height: 22)
+        .background(DesignTokens.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay {
+          RoundedRectangle(cornerRadius: 4)
+            .stroke(DesignTokens.border.opacity(0.7), lineWidth: 0.5)
+        }
+        .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         EVEItemText(
           value: blueprintNames[owned.job.blueprintTypeID]
@@ -2673,11 +3683,24 @@ struct DashboardView: View {
         )
       }
       Spacer()
-      Text(trailing)
-        .font(.caption.monospacedDigit())
+      if isReady {
+        Label("Ready", systemImage: "checkmark.circle.fill")
+          .appFont(.caption.weight(.semibold))
+          .foregroundStyle(DesignTokens.positive)
+      } else {
+        Label(
+          owned.job.endDate.formatted(
+            .relative(presentation: .named)
+              .locale(AppLocalization.currentLanguage.locale)
+          ),
+          systemImage: "clock"
+        )
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
+      }
     }
-    .accessibilityElement(children: .combine)
+    // Both names stay separate copy targets for accessibility (DB7, B10).
+    .accessibilityElement(children: .contain)
   }
 
   private var dashboardIndustryRefreshIdentity: DashboardIndustryRefreshIdentity {
@@ -2763,7 +3786,7 @@ struct DashboardView: View {
         Text("Job activity comes from the last synchronized ESI snapshots.")
       }
     }
-    .font(.caption)
+    .appFont(.caption)
     .foregroundStyle(DesignTokens.textSecondary)
     .fixedSize(horizontal: false, vertical: true)
   }
@@ -2850,9 +3873,11 @@ struct DashboardView: View {
 
   /// Per-character sparkline samples in one pass over the history; the
   /// first matching row of each snapshot counts, as before.
-  private var characterWealthSamples: [Int64: [DashboardWealthChartSample]] {
+  private func characterWealthSamples(
+    in rangeHistory: [DashboardWealthSnapshot]
+  ) -> [Int64: [DashboardWealthChartSample]] {
     var samples: [Int64: [DashboardWealthChartSample]] = [:]
-    for history in wealthHistory {
+    for history in rangeHistory {
       var seen = Set<Int64>()
       for row in history.characters where seen.insert(row.characterID).inserted {
         if let value = row.knownValue {
@@ -2937,6 +3962,7 @@ struct DashboardView: View {
       )
     }
     guard !Task.isCancelled else { return }
+    lastCharacterSyncResult = result
     let synchronizedCount = result.synchronizedCount
     let failures = result.failedCharacterNames
 
@@ -3009,7 +4035,10 @@ struct DashboardView: View {
     } catch {
       modelContext.rollback()
       walletRefreshErrors[character.characterID] =
-        "\(character.characterName): \(String(describing: error))"
+        DashboardWalletRefreshMessage.text(
+          characterName: character.characterName,
+          error: error
+        )
     }
   }
 
@@ -3075,7 +4104,7 @@ struct DashboardView: View {
     HStack(spacing: DesignTokens.spacingSM) {
       if let state { freshnessPill(state) }
       Text("Change compares the latest two available regional market days.")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -3091,7 +4120,7 @@ struct DashboardView: View {
       case .forbidden, .unavailable: DesignTokens.negative
       }
     return Text(text ?? LocalizedStringKey(state.rawValue.uppercased()))
-      .font(.caption2.bold())
+      .appFont(.caption2.bold())
       .padding(.horizontal, DesignTokens.spacingSM)
       .padding(.vertical, DesignTokens.spacingXS)
       .foregroundStyle(color)
@@ -3100,9 +4129,7 @@ struct DashboardView: View {
   }
 
   private func formatISK(_ value: Double) -> String {
-    value.formatted(
-      .currency(code: "ISK").precision(.fractionLength(0))
-    )
+    NetWorthValueFormat.isk(value)
   }
 }
 
@@ -3361,19 +4388,19 @@ struct DashboardWealthChart: View {
           if showsAxes {
             ForEach(0..<3) { step in
               let fraction = Double(step) / 2
-              Text((upper - range * fraction).formatted(.number.notation(.compactName).precision(.fractionLength(1))))
-                .font(.caption2.monospacedDigit())
+              Text((upper - range * fraction).formatted(.number.notation(.compactName).precision(.fractionLength(1)).locale(AppLocalization.currentLanguage.locale)))
+                .appFont(.caption2.monospacedDigit())
                 .foregroundStyle(DesignTokens.textSecondary)
                 .frame(width: 58, alignment: .trailing)
                 .position(x: 29, y: plot.minY + plot.height * CGFloat(fraction))
             }
           }
           HStack {
-            Text(firstDate.formatted(date: .abbreviated, time: .omitted))
+            Text(firstDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: AppLocalization.currentLanguage.locale)))
             Spacer()
-            Text(lastDate.formatted(date: .abbreviated, time: .omitted))
+            Text(lastDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: AppLocalization.currentLanguage.locale)))
           }
-          .font(.caption2)
+          .appFont(.caption2)
           .foregroundStyle(DesignTokens.textSecondary)
           .padding(.leading, plot.minX)
           .padding(.trailing, 10)
@@ -3547,16 +4574,16 @@ private struct DashboardMineralTickerContent: View {
         VStack(alignment: .leading, spacing: 3) {
           HStack(spacing: DesignTokens.spacingSM) {
             EVEItemText(value: row.material.name, typeID: row.material.id, iconSize: 20)
-              .font(.callout.weight(.semibold))
+              .appFont(.callout.weight(.semibold))
             Text(row.unitPrice.map {
-              $0.formatted(.currency(code: "ISK").precision(.fractionLength(2)))
+              $0.formatted(.currency(code: "ISK").precision(.fractionLength(2)).locale(AppLocalization.currentLanguage.locale))
             } ?? AppLocalization.text("Unavailable"))
-              .font(.callout.monospacedDigit())
+              .appFont(.callout.monospacedDigit())
           }
           if let location = row.location {
             EVEEntityText(value: location.name, font: .caption, lineLimit: 1)
           } else {
-            Text("No fresh sell offer available").font(.caption)
+            Text("No fresh sell offer available").appFont(.caption)
           }
         }
         .frame(width: itemWidth, alignment: .leading)
@@ -3582,12 +4609,13 @@ private struct DashboardMineralTickerContent: View {
       Text(
         value?.formatted(
           .percent.precision(.fractionLength(1)).sign(strategy: .always())
+            .locale(AppLocalization.currentLanguage.locale)
         ) ?? "—"
       )
     } icon: {
       Image(systemName: icon)
     }
-    .font(.caption.monospacedDigit())
+    .appFont(.caption.monospacedDigit())
     .foregroundStyle(color)
   }
 
@@ -3670,7 +4698,7 @@ struct DataSettingsNavigationBar: View {
 
       HStack(spacing: DesignTokens.spacingSM) {
         Label(selection.title, systemImage: selection.icon)
-          .font(.headline)
+          .appFont(.headline)
         Spacer(minLength: DesignTokens.spacingSM)
         settingsPicker
           .pickerStyle(.menu)
@@ -3706,6 +4734,8 @@ private struct GeneralSettingsView: View {
   private var storedTextSize = AppTextSize.standard.rawValue
   @AppStorage(AppAppearanceStyle.storageKey, store: AppDefaults.store)
   private var storedAppearance = AppAppearanceStyle.system.rawValue
+  @AppStorage(AppInterfaceStyle.storageKey, store: AppDefaults.store)
+  private var storedInterfaceStyle = AppInterfaceStyle.defaultStyle.rawValue
   @AppStorage(
     EVEEntityAppearance.colorStorageKey,
     store: AppDefaults.store
@@ -3716,7 +4746,8 @@ private struct GeneralSettingsView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
         Text("General Settings")
-          .font(.largeTitle.bold())
+          .appFont(.largeTitle.bold())
+          .nexusPageTitle()
 
         Panel(title: "Language & Terminology") {
           Picker("Language", selection: languageBinding) {
@@ -3731,7 +4762,7 @@ private struct GeneralSettingsView: View {
           Text(
             "Explanations and EVE industry terminology follow this selection immediately. EVE item names, character names, locations, ESI, SDE, ME and TE remain unchanged so they still match the EVE client and imported data."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
 
@@ -3747,7 +4778,7 @@ private struct GeneralSettingsView: View {
           Text(
             "The selected size applies immediately throughout the app and is restored the next time it starts. You can also use Command-Plus, Command-Minus and Command-0."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
 
           Label(
@@ -3758,6 +4789,21 @@ private struct GeneralSettingsView: View {
         }
 
         Panel(title: "Colors") {
+          Picker("Interface style", selection: $storedInterfaceStyle) {
+            ForEach(AppInterfaceStyle.allCases) { style in
+              Text(style.title).tag(style.rawValue)
+            }
+          }
+          .pickerStyle(.segmented)
+          .frame(maxWidth: 440)
+          .accessibilityIdentifier("appearance.interface-style")
+
+          Text(
+            "Classic keeps the established look. New Eden HUD shows the interface in the style of an EVE HUD and always runs dark. Contents, sorting and calculations are the same in both styles."
+          )
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+
           Picker("Color scheme", selection: $storedAppearance) {
             ForEach(AppAppearanceStyle.allCases) { appearance in
               Text(appearance.title).tag(appearance.rawValue)
@@ -3765,12 +4811,23 @@ private struct GeneralSettingsView: View {
           }
           .pickerStyle(.segmented)
           .frame(maxWidth: 440)
+          .disabled(interfaceStyle.locksColorScheme)
           .accessibilityIdentifier("appearance.color-scheme")
+
+          if interfaceStyle.locksColorScheme {
+            Label(
+              "New Eden HUD is always dark. The selected color scheme is kept and applies again in Classic.",
+              systemImage: "moon.fill"
+            )
+            .appFont(.caption)
+            .foregroundStyle(DesignTokens.textSecondary)
+            .accessibilityIdentifier("appearance.color-scheme.hud-hint")
+          }
 
           Text(
             "System follows the current macOS appearance. Light uses cool titanium surfaces with EVE-inspired cyan accents; Dark keeps the graphite command-console look. Status colors retain their meaning in both modes."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
 
@@ -3810,6 +4867,10 @@ private struct GeneralSettingsView: View {
     .navigationTitle(AppLocalization.text("General Settings"))
   }
 
+  private var interfaceStyle: AppInterfaceStyle {
+    AppInterfaceStyle(storedValue: storedInterfaceStyle)
+  }
+
   private var languageBinding: Binding<String> {
     Binding(
       get: { storedLanguage },
@@ -3826,7 +4887,7 @@ private struct GeneralSettingsView: View {
   private var appearancePreview: some View {
     HStack(spacing: DesignTokens.spacingMD) {
       Text("Example")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       EVEItemText(value: "Tritanium", typeID: 34)
       EVEEntityText(value: "Jita IV-4")
@@ -3867,9 +4928,9 @@ struct EVEOnlineServiceBanner: View {
             .accessibilityHidden(true)
           VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
             Text(AppLocalization.text(notice.title))
-              .font(.subheadline.bold())
+              .appFont(.subheadline.bold())
             Text(AppLocalization.text(notice.message))
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
           }
           Spacer(minLength: DesignTokens.spacingSM)
@@ -3877,7 +4938,7 @@ struct EVEOnlineServiceBanner: View {
             AppLocalization.text("Open CCP status"),
             destination: URL(string: "https://status.eveonline.com/")!
           )
-          .font(.caption)
+          .appFont(.caption)
         }
         .padding(.horizontal, DesignTokens.spacingMD)
         .padding(.vertical, DesignTokens.spacingSM)
@@ -4254,7 +5315,7 @@ enum EVEEntityAppearance {
 
 struct EVEEntityLabel: View {
   let value: String
-  var font: Font = .body.weight(.semibold)
+  var font: AppFont = .body.weight(.semibold)
   var lineLimit: Int? = nil
 
   @AppStorage(
@@ -4265,7 +5326,7 @@ struct EVEEntityLabel: View {
 
   var body: some View {
     Text(verbatim: value)
-      .font(font)
+      .appFont(font)
       .foregroundStyle(EVEEntityAppearance.color(from: colorHex))
       .lineLimit(lineLimit)
   }
@@ -4371,7 +5432,7 @@ struct EVEItemIcon: View {
 struct EVEItemText: View {
   let value: String
   let typeID: Int64
-  var font: Font = .body.weight(.semibold)
+  var font: AppFont = .body.weight(.semibold)
   var lineLimit: Int? = nil
   var iconSize: CGFloat = 22
   var imageKind: EVETypeImageKind = .icon
@@ -4441,7 +5502,7 @@ struct SortableTableHeader<Column: Hashable>: View {
         Text(title)
         if sort.column == column {
           Image(systemName: sort.direction.symbolName)
-            .font(.caption2)
+            .appFont(.caption2)
         }
       }
       .frame(maxWidth: .infinity, alignment: alignment)
@@ -4460,7 +5521,7 @@ struct SortableTableHeader<Column: Hashable>: View {
 
 struct EVEEntityText: View {
   let value: String
-  var font: Font = .body.weight(.semibold)
+  var font: AppFont = .body.weight(.semibold)
   var lineLimit: Int? = nil
   var showsTransparentLabel = false
   var accessibilityIdentifier: String? = nil
@@ -4477,7 +5538,7 @@ struct EVEEntityText: View {
     Button(action: copyValue) {
       if showsTransparentLabel {
         Text(verbatim: value)
-          .font(font)
+          .appFont(font)
           .foregroundStyle(Color.clear)
           .lineLimit(lineLimit)
           .contentShape(Rectangle())
@@ -4506,6 +5567,7 @@ struct EVEEntityText: View {
       .padding(DesignTokens.spacingMD)
       .fixedSize()
       .accessibilityIdentifier("eve-entity.copy.feedback")
+      .appLanguageLocale()
     }
     .onDisappear {
       feedbackTask?.cancel()
@@ -4556,11 +5618,7 @@ struct Panel<Content: View>: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-      Text(title)
-        .textCase(.uppercase)
-        .font(.caption.weight(.semibold))
-        .tracking(1.1)
-        .foregroundStyle(DesignTokens.textSecondary)
+      NexusPanelTitle(title)
       content
     }
     .frame(
@@ -4569,17 +5627,7 @@ struct Panel<Content: View>: View {
       alignment: .topLeading
     )
     .padding(DesignTokens.spacingMD)
-    .background(DesignTokens.panel)
-    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
-    .shadow(
-      color: DesignTokens.panelShadow,
-      radius: DesignTokens.panelShadowRadius,
-      y: DesignTokens.panelShadowOffset
-    )
-    .overlay {
-      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
-        .stroke(DesignTokens.border)
-    }
+    .nexusPanelSurface(.standard)
   }
 }
 
@@ -4597,7 +5645,7 @@ struct FullWidthDisclosureButton<Label: View>: View {
         label
         Spacer(minLength: DesignTokens.spacingSM)
         Image(systemName: "chevron.right")
-          .font(.caption.bold())
+          .appFont(.caption.bold())
           .foregroundStyle(DesignTokens.textSecondary)
           .rotationEffect(.degrees(isExpanded ? 90 : 0))
           .accessibilityHidden(true)
@@ -4679,13 +5727,13 @@ struct AutomaticStatusRow: View {
 
   private var titleText: some View {
     Text(title)
-      .font(.caption.weight(.semibold))
+      .appFont(.caption.weight(.semibold))
       .lineLimit(1)
   }
 
   private var detailText: some View {
     Text(detail.localizedUI)
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .foregroundStyle(DesignTokens.textSecondary)
       .lineLimit(1)
   }
@@ -4693,6 +5741,186 @@ struct AutomaticStatusRow: View {
 
 /// Startup-load rows of the sidebar card "Automatic data". Observes the
 /// runtime-owned load so phase changes refresh only this section.
+/// Combined ESI status of the Dashboard header with the single sources in a
+/// popover (plan DB5). It observes the startup load like the sidebar status.
+struct DashboardHeaderStatusButton: View {
+  struct Inputs {
+    let isRefreshingCharacters: Bool
+    let characterResult: CharacterBatchSyncResult?
+    let lastSyncDates: [Date?]
+    let walletFreshness: DataFreshness
+    let characterCount: Int
+    let isRefreshingWallets: Bool
+    let walletSyncDates: [Date?]
+    let wealthSnapshot: DashboardWealthSnapshot?
+    let isRefreshingWealth: Bool
+    let wealthHasError: Bool
+    let isAnalyzingReactions: Bool
+    let reactionMarketStates: [DataFreshness]?
+    let reactionHasError: Bool
+    let reactionTimestamp: Date?
+    let isRefreshingMoon: Bool
+    let moonMarketStates: [DataFreshness]?
+    let moonHasError: Bool
+    let moonTimestamp: Date?
+    let isRefreshingMinerals: Bool
+    let mineralMarketStates: [DataFreshness]?
+    let mineralHasError: Bool
+    let mineralTimestamp: Date?
+  }
+
+  @ObservedObject var startupLoad: StartupDataLoad
+  let inputs: Inputs
+  @State private var showsSources = false
+
+  var summary: DashboardStatusSummary {
+    let phase = startupLoad.phase
+    let analyses = [
+      StartupDataStatusProjector.analysis(
+        area: .reactions,
+        phase: phase,
+        isRefreshing: inputs.isAnalyzingReactions,
+        marketStates: inputs.reactionMarketStates,
+        hasError: inputs.reactionHasError,
+        timestamp: inputs.reactionTimestamp
+      ),
+      StartupDataStatusProjector.analysis(
+        area: .moonMaterials,
+        phase: phase,
+        isRefreshing: inputs.isRefreshingMoon,
+        marketStates: inputs.moonMarketStates,
+        hasError: inputs.moonHasError,
+        timestamp: inputs.moonTimestamp
+      ),
+      StartupDataStatusProjector.analysis(
+        area: .minerals,
+        phase: phase,
+        isRefreshing: inputs.isRefreshingMinerals,
+        marketStates: inputs.mineralMarketStates,
+        hasError: inputs.mineralHasError,
+        timestamp: inputs.mineralTimestamp
+      ),
+    ].compactMap(DashboardStatusProjector.analysis)
+    return DashboardStatusProjector.summary(
+      [
+        DashboardStatusProjector.characters(
+          phase: phase,
+          isRefreshing: inputs.isRefreshingCharacters,
+          result: inputs.characterResult ?? startupLoad.characterResult,
+          lastSyncDates: inputs.lastSyncDates
+        ),
+        DashboardStatusProjector.wallets(
+          freshness: inputs.walletFreshness,
+          characterCount: inputs.characterCount,
+          isRefreshing: inputs.isRefreshingWallets,
+          lastSyncDates: inputs.walletSyncDates
+        ),
+        DashboardStatusProjector.netWorth(
+          snapshot: inputs.wealthSnapshot,
+          isRefreshing: inputs.isRefreshingWealth,
+          hasError: inputs.wealthHasError
+        ),
+      ] + analyses
+    )
+  }
+
+  var body: some View {
+    let summary = summary
+    let color = StartupDataStatusSection.color(for: summary.status)
+    Button {
+      showsSources.toggle()
+    } label: {
+      HStack(spacing: DesignTokens.spacingXS) {
+        Image(systemName: Self.symbol(for: summary.status))
+          .foregroundStyle(color)
+        Text(verbatim: "ESI")
+          .fontWeight(.semibold)
+          .foregroundStyle(color)
+        Text(Self.stateText(summary.status))
+          .fontWeight(.semibold)
+          .foregroundStyle(color)
+        if let timestamp = summary.oldestTimestamp {
+          Text(AppLocalization.format("As of %@", Self.timeText(timestamp)))
+            .foregroundStyle(DesignTokens.textSecondary)
+        }
+      }
+      .appFont(.caption)
+      .padding(.horizontal, 10)
+      .frame(minHeight: 28)
+      .background(DesignTokens.panel)
+      .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
+      .overlay {
+        RoundedRectangle(cornerRadius: DesignTokens.badgeRadius)
+          .stroke(DesignTokens.border)
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("Show the state of every data source.")
+    .accessibilityLabel(
+      Text(verbatim: "ESI \(Self.stateText(summary.status))")
+    )
+    .accessibilityHint("Show the state of every data source.")
+    .accessibilityIdentifier("dashboard.esi-status")
+    .popover(isPresented: $showsSources, arrowEdge: .bottom) {
+      VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+        Text("Data sources").appFont(.headline)
+        ForEach(summary.sources) { source in
+          AutomaticStatusRow(
+            title: source.area.title,
+            detail: Self.detail(for: source),
+            systemImage: source.area.systemImage,
+            color: StartupDataStatusSection.color(for: source.status),
+            progress: nil
+          )
+        }
+        Text("The status combines these sources; its time is the oldest source.")
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .padding(DesignTokens.spacingMD)
+      .frame(width: 340)
+      .accessibilityIdentifier("dashboard.esi-status.sources")
+      .appLanguageLocale()
+    }
+  }
+
+  static func stateText(_ status: StartupDataStatus) -> String {
+    switch status {
+    case .waiting: AppLocalization.text("Waiting")
+    case .running: AppLocalization.text("Updating")
+    case .known(let freshness): StartupDataStatusSection.freshnessText(freshness)
+    }
+  }
+
+  static func symbol(for status: StartupDataStatus) -> String {
+    switch status {
+    case .waiting: "clock"
+    case .running: "arrow.triangle.2.circlepath"
+    case .known(.fresh): "checkmark.circle.fill"
+    case .known(.partial), .known(.stale): "exclamationmark.triangle.fill"
+    case .known(.forbidden), .known(.unavailable): "xmark.octagon.fill"
+    }
+  }
+
+  /// Time only for today, otherwise date and time, in the app language.
+  static func timeText(
+    _ date: Date,
+    locale: Locale = AppLocalization.currentLanguage.locale
+  ) -> String {
+    Calendar.current.isDateInToday(date)
+      ? date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale))
+      : date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, locale: locale))
+  }
+
+  static func detail(for source: DashboardSourceStatus) -> String {
+    let state = stateText(source.status)
+    guard let timestamp = source.timestamp else { return state }
+    return AppLocalization.format("%@ · %@", state, timeText(timestamp))
+  }
+}
+
 struct StartupDataStatusSection: View {
   struct Inputs {
     let lastSyncDates: [Date?]
@@ -4717,7 +5945,7 @@ struct StartupDataStatusSection: View {
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("App start")
-        .font(.caption2)
+        .appFont(.caption2)
         .foregroundStyle(DesignTokens.textSecondary)
       ForEach(rows) { row in
         AutomaticStatusRow(
@@ -4806,7 +6034,7 @@ struct StartupDataStatusSection: View {
         }
       }
     }
-    .font(.caption2)
+    .appFont(.caption2)
     .padding(.leading, 24)
     .fixedSize(horizontal: false, vertical: true)
     .accessibilityIdentifier("dashboard.startup-data-status.character-failures")

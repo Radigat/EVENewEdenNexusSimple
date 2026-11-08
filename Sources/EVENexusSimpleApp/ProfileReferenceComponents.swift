@@ -14,7 +14,7 @@ struct IndustryIndexSummary: View {
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text("Current industry cost indices")
-        .font(.caption.bold())
+        .appFont(.caption.bold())
       if solarSystemID <= 0 {
         Text("Select a solar system to load its indices.")
           .foregroundStyle(DesignTokens.textSecondary)
@@ -47,14 +47,14 @@ struct IndustryIndexSummary: View {
                     .precision(.fractionLength(3...5))
                 )
               )
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
             }
           }
         }
         Text(
           "ESI · \(runtime.industrySystemIndices?.source.capturedAt.formatted() ?? "unknown time")"
         )
-        .font(.caption2)
+        .appFont(.caption2)
         .foregroundStyle(DesignTokens.textSecondary)
       } else {
         Label(
@@ -64,7 +64,7 @@ struct IndustryIndexSummary: View {
         .foregroundStyle(DesignTokens.caution)
       }
     }
-    .font(.caption)
+    .appFont(.caption)
     .padding(DesignTokens.spacingSM)
     .background(DesignTokens.canvas.opacity(0.55))
     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.badgeRadius))
@@ -99,7 +99,7 @@ struct ProductionLabelPicker: View {
     Text(
       "This label is informational and does not change automatic facility selection."
     )
-    .font(.caption)
+    .appFont(.caption)
     .foregroundStyle(DesignTokens.textSecondary)
   }
 

@@ -142,6 +142,16 @@ enum PlannerAllianceInputParser {
   }
 }
 
+extension ProductionInputErrorReason {
+  /// The parser message in the app language, with the limits in its number
+  /// format.
+  var localizedUI: String { localized(in: AppLocalization.currentLanguage) }
+
+  func localized(in language: AppLanguage) -> String {
+    text(format: language.localized(format), locale: language.locale)
+  }
+}
+
 struct PlannerView: View {
   @EnvironmentObject private var consolidation: ConsolidationController
   @Binding var historicalPlannerRequest: HistoricalPlannerRequest?
@@ -361,7 +371,8 @@ struct PlannerView: View {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingMD) {
           Text("Production Planner")
-            .font(.largeTitle.bold())
+            .appFont(.largeTitle.bold())
+            .nexusPageTitle()
           PlannerFlowGuideButton(isPresented: $isFlowGuidePresented)
           if historicalPlannerRequest == nil, historicalPlan == nil {
             Button("Reset Planner", systemImage: "arrow.counterclockwise") {
@@ -405,7 +416,7 @@ struct PlannerView: View {
               .foregroundStyle(DesignTokens.negative)
             if runtime.plan != nil {
               Text("The figures shown are from the last successful calculation.")
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
             }
           }
@@ -432,7 +443,7 @@ struct PlannerView: View {
         }
         if historicalPlannerRequest == nil, let persistenceMessage {
           Label(persistenceMessage, systemImage: "checkmark.circle.fill")
-            .font(.callout)
+            .appFont(.callout)
             .foregroundStyle(DesignTokens.positive)
         }
         if let historicalPlan {
@@ -534,7 +545,7 @@ struct PlannerView: View {
       FullWidthDisclosure(isExpanded: $isBlueprintPanelExpanded) {
         HStack(spacing: DesignTokens.spacingSM) {
           Label("Blueprint sources and efficiencies", systemImage: "doc.on.doc")
-            .font(.headline)
+            .appFont(.headline)
           if let blueprintTree {
             Text(
               AppLocalization.format(
@@ -542,7 +553,7 @@ struct PlannerView: View {
                 Int64(plannerBlueprintSteps(in: blueprintTree).count)
               )
             )
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
             .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -552,7 +563,7 @@ struct PlannerView: View {
           Text(
             "The Planner checks every selected build step against owned Blueprints at its exact production location and attributable Main Hub Blueprint contracts. Missing, stale, partial or other-location evidence remains explicit. ME and TE from a selected owned Blueprint are factual and cannot be overwritten manually."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
 
           if let blueprintTree {
@@ -607,14 +618,14 @@ struct PlannerView: View {
         ) {
           HStack(spacing: DesignTokens.spacingMD) {
             Text(group.title)
-              .font(.headline)
+              .appFont(.headline)
             Text(
               AppLocalization.format(
                 "%lld items",
                 Int64(group.steps.count)
               )
             )
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
             .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -638,7 +649,7 @@ struct PlannerView: View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           if let message = blueprintGroupMessages[group.id] {
             Label(message, systemImage: "checkmark.circle")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
           }
           ForEach(group.steps) { step in
@@ -675,7 +686,7 @@ struct PlannerView: View {
               blueprint.requiredRuns.formatted()
             )
           )
-          .font(.caption.monospacedDigit())
+          .appFont(.caption.monospacedDigit())
           .foregroundStyle(DesignTokens.textSecondary)
         }
         Spacer()
@@ -715,7 +726,7 @@ struct PlannerView: View {
           Text(
             "Science jobs become selectable only after their concrete BPO/BPC, facility, skills, materials, duration and cost have been resolved."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
         .buttonStyle(.bordered)
@@ -750,7 +761,7 @@ struct PlannerView: View {
           ForEach(supplyPlan.manufacturingJobs) { job in
             HStack(spacing: DesignTokens.spacingSM) {
               Text(blueprintSourceLabel(job.allocation.source))
-                .font(.caption.bold())
+                .appFont(.caption.bold())
               Text(
                 AppLocalization.format(
                   "%@ runs · ME %@ · TE %@ · %@ remaining",
@@ -760,7 +771,7 @@ struct PlannerView: View {
                   job.allocation.remainingRuns?.formatted() ?? "unlimited"
                 )
               )
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
               if let ownerName = job.allocation.ownerName {
                 EVEEntityText(value: ownerName, font: .caption)
               }
@@ -775,7 +786,7 @@ struct PlannerView: View {
       if !blueprint.productionLocationNames.isEmpty {
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
           Text("Production location")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           ForEach(blueprint.productionLocationNames, id: \.self) { name in
             EVEEntityText(value: name, font: .caption)
@@ -786,7 +797,7 @@ struct PlannerView: View {
           "The exact production location is unresolved; owned Blueprints are not treated as usable.",
           systemImage: "mappin.slash"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
 
@@ -804,7 +815,7 @@ struct PlannerView: View {
             : blueprint.exactLocationBPOOwnerNames)
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
           Text(action != .useOwnedBPO ? "BPC owner" : "BPO owner")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           ForEach(owners, id: \.self) { owner in
             EVEEntityText(value: owner, font: .caption)
@@ -820,7 +831,7 @@ struct PlannerView: View {
             "Owned Blueprint evidence is retained but not fully fresh.",
             systemImage: "clock.badge.exclamationmark"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
       }
@@ -830,7 +841,7 @@ struct PlannerView: View {
           "Reaction formulas do not use manufacturing ME or TE.",
           systemImage: "atom"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       } else {
         let ownedOptions = plannerOwnedEfficiencyOptions(
@@ -840,7 +851,7 @@ struct PlannerView: View {
         if !ownedOptions.isEmpty {
           HStack(spacing: DesignTokens.spacingSM) {
             Text("Owned Blueprint")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
             Picker(
               "Owned Blueprint quality",
@@ -872,7 +883,7 @@ struct PlannerView: View {
             ),
             systemImage: "checkmark.seal.fill"
           )
-          .font(.caption.monospacedDigit())
+          .appFont(.caption.monospacedDigit())
           .foregroundStyle(DesignTokens.positive)
         } else {
           HStack(spacing: DesignTokens.spacingMD) {
@@ -890,7 +901,7 @@ struct PlannerView: View {
                     .materialEfficiency.formatted()
                 )
               )
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
             }
             Stepper(
               value: plannerBlueprintEfficiencyBinding(
@@ -906,10 +917,10 @@ struct PlannerView: View {
                     .timeEfficiency.formatted()
                 )
               )
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
             }
             Text("Manual planning value")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -922,7 +933,7 @@ struct PlannerView: View {
           "An owned BPO/BPC exists at another location. Move it to the displayed production location, then refresh Blueprints and Assets.",
           systemImage: "shippingbox.and.arrow.backward"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
 
@@ -938,7 +949,7 @@ struct PlannerView: View {
           ),
           systemImage: "checkmark.circle.fill"
         )
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.positive)
       } else if plannerBlueprintActionRequiresCost(action) {
         HStack {
@@ -947,7 +958,7 @@ struct PlannerView: View {
               ? "BPO allocation for this production"
               : "Consumed BPC or activity cost"
           )
-          .font(.caption)
+          .appFont(.caption)
           TextField(
             "ISK",
             text: plannerBlueprintCostBinding(blueprint.blueprintTypeID)
@@ -961,7 +972,7 @@ struct PlannerView: View {
           .onSubmit { calculatePlan() }
           if plannerBlueprintCostIsInvalid(blueprint.blueprintTypeID) {
             Text("Enter a non-negative ISK amount.")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.negative)
           }
         }
@@ -970,7 +981,7 @@ struct PlannerView: View {
           "Blueprint source unresolved; no cost was invented.",
           systemImage: "questionmark.diamond.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
     }
@@ -1045,7 +1056,7 @@ struct PlannerView: View {
     purchaseLocationsPanel
     Panel(title: "Production basis") {
       Text("Structures, rigs, taxes and transport routes. They are maintained outside the Planner.")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       Button("Open industry settings") {
         onOpenDataSettings(.industrySettings)
@@ -1075,10 +1086,10 @@ struct PlannerView: View {
       }
       Divider()
       Text("One job per line: Product Want ME TE [BPC|BPO BlueprintCostISK]")
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       TextEditor(text: $input)
-        .font(.body.monospaced())
+        .appFont(.body.monospaced())
         .scrollContentBackground(.hidden)
         .frame(minHeight: DesignTokens.plannerInputMinimumHeight)
         .padding(DesignTokens.spacingSM)
@@ -1094,13 +1105,13 @@ struct PlannerView: View {
           parseResult.errors.isEmpty
           ? "checkmark.circle" : "exclamationmark.triangle"
       )
-      .font(.callout.monospacedDigit())
+      .appFont(.callout.monospacedDigit())
       .help("The input is checked automatically while typing.")
       if !parseResult.errors.isEmpty || !unknownProductRequests.isEmpty {
         Panel(title: "Input errors") {
           ForEach(parseResult.errors) { error in
             Label(
-              "Line \(error.lineNumber): \(error.message)",
+              "Line \(error.lineNumber): \(error.reason.localizedUI)",
               systemImage: "exclamationmark.triangle.fill"
             )
             .foregroundStyle(DesignTokens.negative)
@@ -1158,7 +1169,7 @@ struct PlannerView: View {
             "Manual stock is in use. It replaces the combined warehouse in this calculation.",
             systemImage: "list.clipboard"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           .accessibilityIdentifier("planner.manual-stock.active")
         }
@@ -1167,14 +1178,14 @@ struct PlannerView: View {
             "Preparing the combined warehouse once…",
             systemImage: "shippingbox.and.arrow.backward"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
         FullWidthDisclosure(isExpanded: $isManualStockExpanded) {
           Text("Manual stock")
         } content: {
           TextEditor(text: $manualStockInput)
-            .font(.body.monospaced())
+            .appFont(.body.monospaced())
             .frame(minHeight: DesignTokens.stockInputMinimumHeight)
             .padding(DesignTokens.spacingSM)
             .background(DesignTokens.elevated)
@@ -1185,13 +1196,13 @@ struct PlannerView: View {
           Text(
             "One line per source-marked quantity: Item name | Quantity. Manual stock takes precedence over the combined warehouse."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           .padding(.top, DesignTokens.spacingSM)
         }
       } else {
         Text("The plan is calculated without any stock. A manual list stays saved but is not used.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -1270,7 +1281,7 @@ struct PlannerView: View {
       let rows = productCharacterRows
       if rows.isEmpty {
         Text("Enter products in step 2 first.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       } else {
         PlannerProductCharacterTable(rows: rows, onChoose: saveProductCharacter)
@@ -1278,7 +1289,7 @@ struct PlannerView: View {
       Text(
         "The skills of the character and the implants planned for that location set the job durations. Intermediates follow their end product if that character works at their location, otherwise the first character set there. Set characters and implants per location in the industry settings."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       Button("Open industry settings") {
         onOpenDataSettings(.industrySettings)
@@ -1310,7 +1321,7 @@ struct PlannerView: View {
       if let calculationPhase {
         ProgressView().controlSize(.small)
         Text(calculationPhase.title)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           .accessibilityIdentifier("planner.calculation.phase")
         Button(
@@ -1344,7 +1355,7 @@ struct PlannerView: View {
             ).localizedUI,
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.negative)
         }
       }
@@ -1467,7 +1478,7 @@ struct PlannerView: View {
       Text(
         "Every successful calculation is saved automatically as the last active plan."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       Button {
         recordProduction(plan.applyingSuggestedSales())
@@ -1488,7 +1499,7 @@ struct PlannerView: View {
       LabeledContent("Jobs", value: "\(plan.jobs.count)")
       if plan.jobs.allSatisfy({ $0.characterName == nil }) {
         Text("Durations use no character skills or implants.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       ExplainedPlannerMetricRow(
@@ -1502,7 +1513,7 @@ struct PlannerView: View {
       )
       if let slotSchedule = plan.slotSchedule {
         Text(Self.slotScheduleDescription(slotSchedule))
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         if let entries = slotSchedule.entries, !entries.isEmpty {
           FullWidthDisclosure(isExpanded: $isJobScheduleExpanded) {
@@ -1531,7 +1542,7 @@ struct PlannerView: View {
         Text(
           "Every successful calculation is saved automatically as the last active plan."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -1626,7 +1637,7 @@ struct PlannerView: View {
       Text(
         "Shared production and Main Hub to Home Hub delivery costs are shown once above. Every preview below already includes the logistics and fees required by that sale location."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       LazyVGrid(
         columns: [
@@ -1759,14 +1770,14 @@ struct PlannerView: View {
       Text(
         "Open a cost block to inspect its composition. Warehouse consumption and Reprocessing fees are marked as included amounts and are never added a second time."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       if plan.materialValuationSources?.isEmpty == false {
         Label(
           "Warehouse consumption is the part of the cost of this order without warehouse that no longer has to be paid. The total stays the same with and without warehouse.",
           systemImage: "info.circle"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
       LazyVGrid(
@@ -1815,7 +1826,7 @@ struct PlannerView: View {
                 : "Compressed ore, remaining direct purchases, warehouse value and the confirmed Reprocessing fee form the selected procurement cost."
             )
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
         financeOverviewCard(
@@ -1852,7 +1863,7 @@ struct PlannerView: View {
             )
           } else {
             Text("Blueprint cost breakdown unavailable")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -1886,7 +1897,7 @@ struct PlannerView: View {
               "The clone-state surcharge contribution. An unavailable value remains unavailable rather than being treated as zero."
           )
           Text(installationCostEquation(plan))
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
             .foregroundStyle(DesignTokens.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -1930,7 +1941,7 @@ struct PlannerView: View {
                 "System-index, facility-tax, SCC and clone-surcharge components for the selected jobs."
             )
             Text(totalCostEquation(plan))
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
               .fixedSize(horizontal: false, vertical: true)
           }
@@ -1960,7 +1971,7 @@ struct PlannerView: View {
             Text(
               "This landed total is the shared cost basis already included in every sale-scenario result below."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           }
           financeOverviewCard(
@@ -2008,7 +2019,7 @@ struct PlannerView: View {
             Text(
               "Cost per item is the break-even before market fees; the minimum listing price includes sales tax and broker fee. For several products both are aggregate averages, not prices per product."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
           }
@@ -2065,14 +2076,14 @@ struct PlannerView: View {
       FullWidthDisclosure(isExpanded: expansion) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           Text(LocalizedStringKey(title))
-            .font(.subheadline.weight(.semibold))
+            .appFont(.subheadline.weight(.semibold))
           Text(value)
-            .font(.title3.monospacedDigit().weight(.semibold))
+            .appFont(.title3.monospacedDigit().weight(.semibold))
             .foregroundStyle(valueColor)
             .minimumScaleFactor(0.75)
           if let annotation {
             Text(LocalizedStringKey(annotation))
-              .font(.caption2)
+              .appFont(.caption2)
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -2109,7 +2120,7 @@ struct PlannerView: View {
           )
           Spacer(minLength: DesignTokens.spacingSM)
           Text(formatISK(refiningPlan.savings))
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
             .foregroundStyle(DesignTokens.positive)
         }
       } content: {
@@ -2152,7 +2163,7 @@ struct PlannerView: View {
                     purchase.batches
                   )
                 )
-                .font(.caption.monospacedDigit())
+                .appFont(.caption.monospacedDigit())
               }
               LabeledContent("Reprocessing facility") {
                 EVEEntityText(
@@ -2187,7 +2198,7 @@ struct PlannerView: View {
                     .percent.precision(.fractionLength(2))
                   )
                 )
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
               }
               LabeledContent("Yield after skills and planned implant") {
                 Text(
@@ -2195,12 +2206,12 @@ struct PlannerView: View {
                     .percent.precision(.fractionLength(2))
                   )
                 )
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
               }
               Text(
                 "The facility base yield comes from the configured Reprocessing service or the stronger compatible Reprocessing rig, including the structure and security-space bonuses. Character skills and the planned implant are applied afterwards."
               )
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
               LabeledContent("Skills") {
                 Text(
@@ -2212,7 +2223,7 @@ struct PlannerView: View {
                     AppLocalization.text(purchase.character.skillsState.rawValue)
                   )
                 )
-                .font(.caption.monospacedDigit())
+                .appFont(.caption.monospacedDigit())
               }
               LabeledContent("Planned implant") {
                 let implant = purchase.character.implant ?? .none
@@ -2237,7 +2248,7 @@ struct PlannerView: View {
                         ) + "%"
                       )
                     )
-                    .font(.caption.monospacedDigit())
+                    .appFont(.caption.monospacedDigit())
                     .foregroundStyle(DesignTokens.positive)
                   }
                 } else {
@@ -2248,15 +2259,15 @@ struct PlannerView: View {
               Text(
                 "The implant is a planning assumption and does not describe the character's current live clone."
               )
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
               LabeledContent("Reprocessing fee") {
                 Text(formatISK(purchase.refiningFee))
-                  .font(.body.monospacedDigit())
+                  .appFont(.body.monospacedDigit())
               }
               VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
                 Text("Mineral output")
-                  .font(.caption.bold())
+                  .appFont(.caption.bold())
                   .foregroundStyle(DesignTokens.textSecondary)
                 ForEach(purchase.outputs, id: \.typeID) { output in
                   HStack(spacing: DesignTokens.spacingSM) {
@@ -2288,7 +2299,7 @@ struct PlannerView: View {
                     Spacer(minLength: DesignTokens.spacingSM)
                     VStack(alignment: .trailing, spacing: 2) {
                       Text(output.quantity.formatted())
-                        .font(.body.monospacedDigit())
+                        .appFont(.body.monospacedDigit())
                       if let usedInPlan = output.usedInPlan {
                         Text(
                           AppLocalization.format(
@@ -2296,7 +2307,7 @@ struct PlannerView: View {
                             usedInPlan
                           )
                         )
-                        .font(.caption.monospacedDigit())
+                        .appFont(.caption.monospacedDigit())
                         .foregroundStyle(DesignTokens.textSecondary)
                       }
                       if let surplus = output.surplusToWarehouse,
@@ -2308,7 +2319,7 @@ struct PlannerView: View {
                             surplus
                           )
                         )
-                        .font(.caption.monospacedDigit())
+                        .appFont(.caption.monospacedDigit())
                         .foregroundStyle(DesignTokens.positive)
                       }
                     }
@@ -2317,7 +2328,7 @@ struct PlannerView: View {
                 Text(
                   "Only the required share covers this plan. Any excess is planned as warehouse intake. The complete ore purchase, transport and Reprocessing fee remain assigned to this product; no surplus credit is deducted."
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
               }
             }
@@ -2328,7 +2339,7 @@ struct PlannerView: View {
           Text(
             "Yield combines the facility base yield, all three Reprocessing skill multipliers and the implant selected for that character."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
         .padding(.top, DesignTokens.spacingSM)
@@ -2357,7 +2368,7 @@ struct PlannerView: View {
               reason ?? "The comparison was not used for this calculation."
             )
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           Text(
             AppLocalization.format(
@@ -2365,7 +2376,7 @@ struct PlannerView: View {
               plan.createdAt.formatted(date: .abbreviated, time: .shortened)
             )
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         }
         .padding(.top, DesignTokens.spacingSM)
@@ -2400,7 +2411,7 @@ struct PlannerView: View {
   private func metric(_ label: String, _ value: Double?) -> some View {
     LabeledContent {
       Text(formatISK(value))
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
         .foregroundStyle(DesignTokens.highlight)
     } label: {
       Text(LocalizedStringKey(label))
@@ -2459,19 +2470,19 @@ struct PlannerView: View {
             formatISK(suggestion.profit)
           )
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       } else {
         Text(
           "No sale scenario has an available, final profit, so no target market is suggested."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
       Text(
         "The target market is a decision label saved with the draft, the plan and the Production Overview. It does not change the calculation; the selected hub is outlined in the sale scenarios below."
       )
-      .font(.caption2)
+      .appFont(.caption2)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -2491,7 +2502,7 @@ struct PlannerView: View {
       ) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           Text(LocalizedStringKey(title))
-            .font(.subheadline.weight(.semibold))
+            .appFont(.subheadline.weight(.semibold))
           HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
             scenarioPreviewMetric(
               label: pendingMetricLabel(base: "Profit", result: result),
@@ -2527,7 +2538,7 @@ struct PlannerView: View {
           "Pending costs are not treated as 0 ISK.",
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption2)
+        .appFont(.caption2)
         .foregroundStyle(DesignTokens.caution)
       }
       if result.hasProvisionalPublicContractReference {
@@ -2535,7 +2546,7 @@ struct PlannerView: View {
           "Provisional contract estimate from the comparable offers observed so far.",
           systemImage: "clock.badge.exclamationmark"
         )
-        .font(.caption2)
+        .appFont(.caption2)
         .foregroundStyle(DesignTokens.caution)
       }
       if isExpanded {
@@ -2576,7 +2587,7 @@ struct PlannerView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text(scenarioSummary(result.scenario, result: result, hub: hub))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
       if let locationName = result.marketLocation?.name {
@@ -2592,7 +2603,7 @@ struct PlannerView: View {
       } else {
         LabeledContent("Sale location") {
           Text("Unavailable")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -2613,7 +2624,7 @@ struct PlannerView: View {
       )
       Divider()
       Text("Revenue and fees")
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .foregroundStyle(DesignTokens.textSecondary)
       costMetric(
         "Gross revenue",
@@ -2668,7 +2679,7 @@ struct PlannerView: View {
           pendingScenarioNotice(result),
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
       if result.hasProvisionalPublicContractReference {
@@ -2676,12 +2687,12 @@ struct PlannerView: View {
           "The Public Contracts index is still updating or incomplete. The calculation uses the lowest comparable offer observed so far, not a claimed complete-universe minimum.",
           systemImage: "clock.badge.exclamationmark"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
       Divider()
       Text("Calculation details")
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .foregroundStyle(DesignTokens.textSecondary)
       calculationDetail(
         title: "Market valuation",
@@ -2714,7 +2725,7 @@ struct PlannerView: View {
       if !result.quotes.isEmpty {
         Divider()
         Text("Market inputs")
-          .font(.caption.bold())
+          .appFont(.caption.bold())
           .foregroundStyle(DesignTokens.textSecondary)
         ForEach(result.quotes) { quote in
           marketQuoteDetail(
@@ -2740,11 +2751,11 @@ struct PlannerView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text(LocalizedStringKey(label))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         .lineLimit(2)
       Text(value)
-        .font(
+        .appFont(
           isPrimary
             ? .headline.monospacedDigit()
             : .title3.monospacedDigit().weight(.semibold)
@@ -2954,9 +2965,9 @@ struct PlannerView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text(LocalizedStringKey(title))
-        .font(.caption.bold())
+        .appFont(.caption.bold())
       Text(text)
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
         .textSelection(.enabled)
     }
@@ -2972,7 +2983,7 @@ struct PlannerView: View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       EVEItemText(value: productName, typeID: typeID)
       Text(quoteDetail(quote, scenario: scenario, result: result))
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
         .textSelection(.enabled)
     }
@@ -3338,7 +3349,7 @@ struct PlannerView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text(LocalizedStringKey(title))
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .foregroundStyle(DesignTokens.textSecondary)
       HStack(alignment: .firstTextBaseline, spacing: DesignTokens.spacingSM) {
         EVEEntityText(
@@ -3358,12 +3369,12 @@ struct PlannerView: View {
         )
         Spacer(minLength: DesignTokens.spacingSM)
         Text(logisticsRouteValue(assessment))
-          .font(.caption.monospacedDigit().bold())
+          .appFont(.caption.monospacedDigit().bold())
           .foregroundStyle(logisticsRouteColor(assessment.status))
       }
       if let reason = assessment.reason, !reason.isEmpty {
         Text(reason)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -3371,13 +3382,13 @@ struct PlannerView: View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           HStack(alignment: .firstTextBaseline) {
             Text("Jump Freighter fuel calculation")
-              .font(.caption.bold())
+              .appFont(.caption.bold())
             Spacer(minLength: DesignTokens.spacingSM)
             HStack(spacing: 4) {
               Text(jump.flights.count.formatted())
               Text(jump.flights.count == 1 ? "flight" : "flights")
             }
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
           }
           LabeledContent("Hull") {
             EVEEntityText(
@@ -3415,11 +3426,11 @@ struct PlannerView: View {
             jump.route.routeProfile == nil
               ? "Automatic DOTLAN route" : "Fixed jump route"
           )
-          .font(.caption.bold())
+          .appFont(.caption.bold())
           if let profile = jump.route.routeProfile {
             LabeledContent("Route profile") {
               Text(profile.name)
-                .font(.caption)
+                .appFont(.caption)
             }
             routeProfileWaypointEvidence(
               profile,
@@ -3447,7 +3458,7 @@ struct PlannerView: View {
               Text(
                 "\(leg.distanceLightYears.formatted(.number.precision(.fractionLength(3)))) ly · \(leg.isotopeQuantity.formatted())"
               )
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
             }
           }
           HStack(alignment: .firstTextBaseline) {
@@ -3459,10 +3470,10 @@ struct PlannerView: View {
             )
             Spacer(minLength: DesignTokens.spacingSM)
             jumpFuelQuantityText(jump)
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
           }
           Text("Four-isotope Main Hub price basis")
-            .font(.caption.bold())
+            .appFont(.caption.bold())
           ForEach(jump.isotopePrices) { entry in
             HStack(alignment: .firstTextBaseline) {
               EVEEntityText(
@@ -3473,16 +3484,16 @@ struct PlannerView: View {
               )
               Spacer(minLength: DesignTokens.spacingSM)
               (Text(formatISK(entry.unitPrice)) + Text(" / unit"))
-                .font(.caption.monospacedDigit())
+                .appFont(.caption.monospacedDigit())
             }
           }
           LabeledContent("Arithmetic average") {
             (Text(formatISK(jump.averageIsotopeUnitPrice)) + Text(" / unit"))
-              .font(.caption.monospacedDigit().bold())
+              .appFont(.caption.monospacedDigit().bold())
               .foregroundStyle(DesignTokens.highlight)
           }
           Text("Flight and cargo breakdown")
-            .font(.caption.bold())
+            .appFont(.caption.bold())
           ForEach(jump.flights) { flight in
             FullWidthDisclosure(
               isExpanded: disclosureBinding(
@@ -3492,14 +3503,14 @@ struct PlannerView: View {
             ) {
               HStack {
                 Text("Flight \(flight.number) of \(flight.count)")
-                  .font(.caption.bold())
+                  .appFont(.caption.bold())
                 Spacer(minLength: DesignTokens.spacingSM)
                 Text(
                   flight.cargoVolumeM3.formatted(
                     .number.precision(.fractionLength(0...2))
                   ) + " m³"
                 )
-                .font(.caption.monospacedDigit())
+                .appFont(.caption.monospacedDigit())
               }
             } content: {
               VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
@@ -3514,14 +3525,14 @@ struct PlannerView: View {
                       )
                     } else {
                       Text("Unresolved item")
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(DesignTokens.textSecondary)
                     }
                     Spacer(minLength: DesignTokens.spacingSM)
                     Text(
                       "× \(item.quantity.formatted()) · \(item.volumeM3.formatted(.number.precision(.fractionLength(0...2)))) m³"
                     )
-                    .font(.caption.monospacedDigit())
+                    .appFont(.caption.monospacedDigit())
                   }
                 }
               }
@@ -3534,7 +3545,7 @@ struct PlannerView: View {
             selfJump: false
           )
           jumpSourceEvidenceText(jump)
-            .font(.caption2.monospaced())
+            .appFont(.caption2.monospaced())
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -3542,7 +3553,7 @@ struct PlannerView: View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
           HStack(alignment: .firstTextBaseline) {
             Text("Capital self-jumps")
-              .font(.caption.bold())
+              .appFont(.caption.bold())
             Spacer(minLength: DesignTokens.spacingSM)
             Text(
               AppLocalization.format(
@@ -3552,16 +3563,16 @@ struct PlannerView: View {
                 capitals.jumps.reduce(Int64(0)) { $0 + $1.quantity }
               )
             )
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
           }
           Text(
             "Each produced hull travels under its own jump drive and is excluded from Jump Freighter cargo. Fuel is charged once per hull."
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           LabeledContent("Four-isotope arithmetic average") {
             (Text(formatISK(capitals.averageIsotopeUnitPrice)) + Text(" / unit"))
-              .font(.caption.monospacedDigit().bold())
+              .appFont(.caption.monospacedDigit().bold())
               .foregroundStyle(DesignTokens.highlight)
           }
           ForEach(capitals.jumps) { jump in
@@ -3580,7 +3591,7 @@ struct PlannerView: View {
                 )
                 Spacer(minLength: DesignTokens.spacingSM)
                 Text("× \(jump.quantity.formatted()) · \(formatISK(jump.totalCost))")
-                  .font(.caption.monospacedDigit().bold())
+                  .appFont(.caption.monospacedDigit().bold())
                   .foregroundStyle(DesignTokens.highlight)
               }
             } content: {
@@ -3588,7 +3599,7 @@ struct PlannerView: View {
                 if let profile = jump.route.routeProfile {
                   LabeledContent("Route profile") {
                     Text(profile.name)
-                      .font(.caption)
+                      .appFont(.caption)
                   }
                   routeProfileWaypointEvidence(
                     profile,
@@ -3597,7 +3608,7 @@ struct PlannerView: View {
                   )
                 } else {
                   Text("Automatic DOTLAN route")
-                    .font(.caption.bold())
+                    .appFont(.caption.bold())
                 }
                 LabeledContent("Jump pilot") {
                   EVEEntityText(
@@ -3640,7 +3651,7 @@ struct PlannerView: View {
                     Text(
                       "\(leg.distanceLightYears.formatted(.number.precision(.fractionLength(3)))) ly · \(leg.isotopeQuantity.formatted())"
                     )
-                    .font(.caption.monospacedDigit())
+                    .appFont(.caption.monospacedDigit())
                   }
                 }
                 HStack(alignment: .firstTextBaseline) {
@@ -3654,7 +3665,7 @@ struct PlannerView: View {
                   Text(
                     "\(jump.isotopeQuantityPerHull.formatted()) per hull · \(jump.totalIsotopeQuantity.formatted()) total"
                   )
-                  .font(.caption.monospacedDigit())
+                  .appFont(.caption.monospacedDigit())
                 }
                 jumpRouteSourceLinks(
                   urls: jump.route.segmentSourceURLs,
@@ -3666,7 +3677,7 @@ struct PlannerView: View {
             }
           }
           Text("\(capitals.ruleVersion) · One-way fuel only")
-            .font(.caption2.monospaced())
+            .appFont(.caption2.monospaced())
             .foregroundStyle(DesignTokens.textSecondary)
         }
       }
@@ -3676,10 +3687,10 @@ struct PlannerView: View {
         Text(
           logisticsContractSummary(breakdown)
         )
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
         Text("Contract breakdown")
-          .font(.caption.bold())
+          .appFont(.caption.bold())
           .foregroundStyle(DesignTokens.textSecondary)
         ForEach(breakdown.legs) { leg in
           FullWidthDisclosure(
@@ -3696,10 +3707,10 @@ struct PlannerView: View {
                   Int64(leg.contractCount ?? 1)
                 )
               )
-              .font(.caption.bold())
+              .appFont(.caption.bold())
               Spacer(minLength: DesignTokens.spacingSM)
               Text(formatISK(leg.roundedCharge))
-                .font(.caption.monospacedDigit().bold())
+                .appFont(.caption.monospacedDigit().bold())
                 .foregroundStyle(DesignTokens.highlight)
             }
           } content: {
@@ -3726,7 +3737,7 @@ struct PlannerView: View {
               if let cargo = leg.cargo {
                 if !cargo.isEmpty {
                   Text("Cargo contents")
-                    .font(.caption.bold())
+                    .appFont(.caption.bold())
                   ForEach(cargo) { item in
                     logisticsCargoRow(item, legID: leg.id)
                   }
@@ -3735,7 +3746,7 @@ struct PlannerView: View {
                 Text(
                   "Cargo contents are unavailable for this historical plan."
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
               }
               LabeledContent("Cargo volume") {
@@ -3744,7 +3755,7 @@ struct PlannerView: View {
                     .number.precision(.fractionLength(0...2))
                   ) + " m³"
                 )
-                .font(.caption.monospacedDigit())
+                .appFont(.caption.monospacedDigit())
               }
             }
             .padding(.top, DesignTokens.spacingSM)
@@ -3800,11 +3811,11 @@ struct PlannerView: View {
           : "Open retained DOTLAN route",
         destination: url
       )
-      .font(.caption)
+      .appFont(.caption)
     } else {
       ForEach(Array(retainedURLs.enumerated()), id: \.offset) { index, url in
         Link("Open DOTLAN route leg \(index + 1)", destination: url)
-          .font(.caption)
+          .appFont(.caption)
       }
     }
   }
@@ -3822,7 +3833,7 @@ struct PlannerView: View {
       )
       Spacer(minLength: DesignTokens.spacingSM)
       Text(AppLocalization.format("Level %lld", Int64(level)))
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -3981,17 +3992,17 @@ struct PlannerView: View {
                   Int64(leg.contractCount ?? 1)
                 )
               )
-              .font(.headline)
+              .appFont(.headline)
               Spacer(minLength: DesignTokens.spacingMD)
               Text(formatISK(leg.roundedCharge))
-                .font(.headline.monospacedDigit())
+                .appFont(.headline.monospacedDigit())
                 .foregroundStyle(DesignTokens.highlight)
             }
           } content: {
             VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
               if !leg.cargoItems.isEmpty {
                 Text("Cargo contents")
-                  .font(.subheadline.weight(.semibold))
+                  .appFont(.subheadline.weight(.semibold))
                 ForEach(leg.cargoItems) { item in
                   logisticsCargoRow(item, legID: leg.id)
                 }
@@ -4003,7 +4014,7 @@ struct PlannerView: View {
                     .number.precision(.fractionLength(0...2))
                   ) + " m³"
                 )
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
               } label: {
                 Text("Cargo volume")
               }
@@ -4062,7 +4073,7 @@ struct PlannerView: View {
             logistics.maximumContractVolumeM3.formatted()
           )
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -4090,13 +4101,13 @@ struct PlannerView: View {
         }
         Spacer(minLength: DesignTokens.spacingSM)
         Text(verbatim: "× \(item.quantity.formatted())")
-          .font(.body.monospacedDigit())
+          .appFont(.body.monospacedDigit())
       }
       HStack(spacing: DesignTokens.spacingMD) {
         Text(verbatim: "\(volumeText) m³")
         Text(formatISK(item.collateral))
       }
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .foregroundStyle(DesignTokens.textSecondary)
     }
     .padding(DesignTokens.spacingSM)
@@ -4138,10 +4149,10 @@ struct PlannerView: View {
             Spacer(minLength: DesignTokens.spacingMD)
             VStack(alignment: .trailing, spacing: DesignTokens.spacingXS) {
               Text(formatISK(entry.amount))
-                .font(.headline.monospacedDigit())
+                .appFont(.headline.monospacedDigit())
                 .foregroundStyle(DesignTokens.highlight)
               Text(LocalizedStringKey(entry.kind.rawValue))
-                .font(.caption.bold())
+                .appFont(.caption.bold())
                 .foregroundStyle(DesignTokens.highlight)
             }
             Button {
@@ -4150,7 +4161,7 @@ struct PlannerView: View {
               }
             } label: {
               Image(systemName: "chevron.right")
-                .font(.caption.bold())
+                .appFont(.caption.bold())
                 .foregroundStyle(DesignTokens.textSecondary)
                 .rotationEffect(.degrees(expansion.wrappedValue ? 90 : 0))
             }
@@ -4164,7 +4175,7 @@ struct PlannerView: View {
           }
           if expansion.wrappedValue {
             Text(LocalizedStringKey(entry.treatment))
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
               .padding(.top, DesignTokens.spacingSM)
           }
@@ -4188,7 +4199,7 @@ struct PlannerView: View {
           ),
           systemImage: "info.circle"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
       if let unresolved = blueprintCosts.unresolvedBlueprintCount,
@@ -4201,21 +4212,21 @@ struct PlannerView: View {
           ),
           systemImage: "exclamationmark.triangle"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
       metric("Total BPC/BPO cost", blueprintCosts.acceptedTotal)
       Text(
         "BPC is treated as a consumed copy acquisition cost. For a reusable BPO, enter only the cost share you want to allocate to this production line."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
 
   private func number(_ value: Int64) -> some View {
     Text(value.formatted())
-      .font(.body.monospacedDigit())
+      .appFont(.body.monospacedDigit())
   }
 
   @ViewBuilder
@@ -4228,7 +4239,7 @@ struct PlannerView: View {
     if !sections.isEmpty {
       Panel(title: LocalizedStringKey(title)) {
         Text(AppLocalization.text(description))
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
         ForEach(sections) { section in
           FullWidthDisclosure(
@@ -4245,7 +4256,7 @@ struct PlannerView: View {
                   Int64(section.materials.count)
                 )
               )
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
             }
           } content: {
@@ -4276,7 +4287,7 @@ struct PlannerView: View {
               EVEItemText(value: material.name, typeID: material.typeID)
               Spacer()
               Text("Required \(material.required.formatted())")
-                .font(.body.monospacedDigit())
+                .appFont(.body.monospacedDigit())
             }
             HStack(spacing: DesignTokens.spacingMD) {
               if historicalPlan == nil {
@@ -4298,7 +4309,7 @@ struct PlannerView: View {
               VStack(alignment: .trailing, spacing: 1) {
                 Text("Full replacement")
                 Text(formatISK(material.replacementQuote?.total))
-                  .font(.caption.monospacedDigit())
+                  .appFont(.caption.monospacedDigit())
               }
               .foregroundStyle(DesignTokens.highlight)
             }
@@ -4317,7 +4328,7 @@ struct PlannerView: View {
                     ),
                     systemImage: "building.columns"
                   )
-                  .font(.caption)
+                  .appFont(.caption)
                   .foregroundStyle(DesignTokens.textSecondary)
                 } else {
                   Label(
@@ -4346,7 +4357,7 @@ struct PlannerView: View {
                     Label("Back to automatic", systemImage: "hand.point.up.left")
                   }
                   .buttonStyle(.borderless)
-                  .font(.caption)
+                  .appFont(.caption)
                   .help("Set by hand. Click to let the Planner choose again.")
                 }
                 Label(
@@ -4356,7 +4367,7 @@ struct PlannerView: View {
                   ),
                   systemImage: "building.columns"
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .trailing)
               }
@@ -4377,7 +4388,7 @@ struct PlannerView: View {
             historicalPlan == nil
             ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     } else {
@@ -4392,7 +4403,7 @@ struct PlannerView: View {
           plannerMaterialHeader("Produced", column: .produced)
           plannerMaterialHeader("Activity", column: .activity)
         }
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .foregroundStyle(DesignTokens.textSecondary)
         Divider()
         ForEach(sortedPlannerMaterials(materials)) { material in
@@ -4413,7 +4424,7 @@ struct PlannerView: View {
   {
     VStack(alignment: .leading, spacing: 1) {
       Text(AppLocalization.text(label))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       number(value)
     }
@@ -4429,7 +4440,7 @@ struct PlannerView: View {
           makeOrBuyRecommendationText(analysis.recommendation),
           systemImage: makeOrBuyRecommendationIcon(analysis.recommendation)
         )
-        .font(.headline)
+        .appFont(.headline)
         .foregroundStyle(makeOrBuyRecommendationColor(analysis.recommendation))
         Spacer()
         if let savings = analysis.savings {
@@ -4439,7 +4450,7 @@ struct PlannerView: View {
               formatISK(savings)
             )
           )
-          .font(.headline.monospacedDigit())
+          .appFont(.headline.monospacedDigit())
           .foregroundStyle(DesignTokens.positive)
         }
       }
@@ -4452,7 +4463,7 @@ struct PlannerView: View {
           analysis.requiredQuantity
         )
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(
         analysis.purchaseQuote.isComplete
           ? DesignTokens.textSecondary : DesignTokens.caution
@@ -4468,7 +4479,7 @@ struct PlannerView: View {
           Text("Buy at Main Hub")
           Text("Build")
         }
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .foregroundStyle(DesignTokens.textSecondary)
         GridRow {
           Text("Market / inputs")
@@ -4487,11 +4498,11 @@ struct PlannerView: View {
         }
         GridRow {
           Text("Total")
-            .font(.body.bold())
+            .appFont(.body.bold())
           Text(formatISK(analysis.purchaseTotalCost))
           Text(formatISK(analysis.buildTotalCost))
         }
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
       }
 
       Text(
@@ -4502,13 +4513,13 @@ struct PlannerView: View {
           analysis.requiredQuantity
         )
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       ForEach(analysis.warnings.filter { $0.severity != .information }) {
         warning in
         Label(warning.localizedUI, systemImage: "exclamationmark.triangle.fill")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
       }
     }
@@ -4606,7 +4617,7 @@ struct PlannerView: View {
               totalQuantity
             )
           )
-          .font(.headline.monospacedDigit())
+          .appFont(.headline.monospacedDigit())
         } icon: {
           Image(systemName: "cart")
         }
@@ -4625,7 +4636,7 @@ struct PlannerView: View {
             Text(
               "Each EVE Multibuy list contains the uncovered quantity to buy at that purchase location."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
             PlannerPurchaseLocationHintPanel(
               items: groups.flatMap(\.shoppingList.items),
@@ -4643,7 +4654,7 @@ struct PlannerView: View {
                 ) {
                   HStack(alignment: .center, spacing: DesignTokens.spacingMD) {
                     Label("Market", systemImage: "cart")
-                      .font(.headline)
+                      .appFont(.headline)
                     VStack(alignment: .leading, spacing: 2) {
                       EVEEntityLabel(value: group.location.name)
                       Text(
@@ -4653,7 +4664,7 @@ struct PlannerView: View {
                           shoppingList.totalQuantity
                         )
                       )
-                      .font(.caption.monospacedDigit())
+                      .appFont(.caption.monospacedDigit())
                       .foregroundStyle(DesignTokens.textSecondary)
                     }
                   }
@@ -4668,7 +4679,7 @@ struct PlannerView: View {
                   Text(
                     "Open Market to review every item before exporting it to EVE."
                   )
-                  .font(.caption)
+                  .appFont(.caption)
                   .foregroundStyle(DesignTokens.textSecondary)
                   Spacer()
                   Button {
@@ -4694,7 +4705,7 @@ struct PlannerView: View {
                 shoppingListCopyStatus.isFailure
                 ? "xmark.octagon.fill" : "checkmark.circle.fill"
             )
-            .font(.callout)
+            .appFont(.callout)
             .foregroundStyle(
               shoppingListCopyStatus.isFailure
                 ? DesignTokens.negative : DesignTokens.positive
@@ -4723,7 +4734,7 @@ struct PlannerView: View {
           shoppingListHeader("Total", column: .total)
           shoppingListHeader("Market coverage", column: .coverage)
         }
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .foregroundStyle(DesignTokens.textSecondary)
         Divider()
         ForEach(sortedShoppingListItems(shoppingList.items)) { item in
@@ -4770,7 +4781,7 @@ struct PlannerView: View {
       Text(
         "Prices and totals are shown only when sell orders cover the complete quantity at the Profile Main Hub. Logistics remains separate in the logistics breakdown."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -4919,7 +4930,7 @@ struct PlannerView: View {
               Int64(jobs.count)
             )
           )
-          .font(.headline.monospacedDigit())
+          .appFont(.headline.monospacedDigit())
         } icon: {
           Image(systemName: "hammer.fill")
         }
@@ -4936,7 +4947,7 @@ struct PlannerView: View {
             Text(
               "These are the production jobs from the recalculated plan, already split by the job-splitting settings; materials are rounded per job. Purchased items are excluded and appear in the Main Hub shopping list instead."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
 
             ForEach(jobs) { job in
@@ -4952,7 +4963,7 @@ struct PlannerView: View {
                         ? "Final product" : "Intermediate"
                     )
                   )
-                  .font(.caption.bold())
+                  .appFont(.caption.bold())
                   .foregroundStyle(
                     job.isTopLevel == true
                       ? DesignTokens.highlight : DesignTokens.textSecondary
@@ -4960,10 +4971,10 @@ struct PlannerView: View {
                   Spacer()
                   VStack(alignment: .trailing, spacing: 1) {
                     Text("Installation")
-                      .font(.caption)
+                      .appFont(.caption)
                       .foregroundStyle(DesignTokens.textSecondary)
                     Text(formatISK(job.total))
-                      .font(.body.monospacedDigit())
+                      .appFont(.body.monospacedDigit())
                       .foregroundStyle(DesignTokens.highlight)
                   }
                 }
@@ -4990,7 +5001,7 @@ struct PlannerView: View {
                         outputQuantity
                       )
                     )
-                    .font(.body.monospacedDigit())
+                    .appFont(.body.monospacedDigit())
                   } else {
                     Text("Recalculate to resolve runs and output quantity.")
                       .foregroundStyle(DesignTokens.caution)
@@ -4999,7 +5010,7 @@ struct PlannerView: View {
                     let timeEfficiency = job.timeEfficiency
                   {
                     Text("ME \(materialEfficiency) · TE \(timeEfficiency)")
-                      .font(.body.monospacedDigit())
+                      .appFont(.body.monospacedDigit())
                   }
                   if let piece = job.piece, let pieceCount = job.pieceCount,
                     pieceCount > 1
@@ -5011,20 +5022,20 @@ struct PlannerView: View {
                         Int64(pieceCount)
                       )
                     )
-                    .font(.body.monospacedDigit())
+                    .appFont(.body.monospacedDigit())
                   }
                   if let durationSeconds = job.durationSeconds {
                     Text(formatJobDuration(durationSeconds))
-                      .font(.body.monospacedDigit())
+                      .appFont(.body.monospacedDigit())
                       .foregroundStyle(DesignTokens.textSecondary)
                   }
                   Spacer()
                 }
-                .font(.callout)
+                .appFont(.callout)
 
                 if let facilityName = job.facilityName?.nonEmpty {
                   Label(facilityName, systemImage: "building.2")
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(DesignTokens.textSecondary)
                 }
               }
@@ -5064,7 +5075,7 @@ struct PlannerView: View {
         Text(
           "Missing items plus used warehouse stock, each at its cheapest selected hub. Together the lists are the full quantity."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         ForEach(groups) { group in
           HStack(spacing: DesignTokens.spacingMD) {
@@ -5077,7 +5088,7 @@ struct PlannerView: View {
                   group.shoppingList.totalQuantity
                 )
               )
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
             }
             Spacer()
@@ -5100,7 +5111,7 @@ struct PlannerView: View {
               shoppingListCopyStatus.isFailure
               ? "xmark.octagon.fill" : "checkmark.circle.fill"
           )
-          .font(.callout)
+          .appFont(.callout)
           .foregroundStyle(
             shoppingListCopyStatus.isFailure
               ? DesignTokens.negative : DesignTokens.positive
@@ -5131,7 +5142,7 @@ struct PlannerView: View {
               totalQuantity
             )
           )
-          .font(.headline.monospacedDigit())
+          .appFont(.headline.monospacedDigit())
         } icon: {
           Image(systemName: "shippingbox.and.arrow.backward")
         }
@@ -5147,7 +5158,7 @@ struct PlannerView: View {
             Text(
               "These quantities were consumed from warehouse stock and must be bought back to restore it. This is a separate future replenishment list; it is not added to the immediate shopping list or charged twice. Unit prices and values use the current Main Hub replacement quote."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
 
             ForEach(groups, id: \.location.id) { group in
@@ -5158,7 +5169,7 @@ struct PlannerView: View {
                 VStack(alignment: .leading, spacing: 2) {
                   EVEEntityText(value: group.location.name)
                   Text("Planned replacement hub")
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(DesignTokens.textSecondary)
                 }
                 Spacer()
@@ -5184,7 +5195,7 @@ struct PlannerView: View {
                   replenishmentHeader("Main Hub unit price", column: .unitPrice)
                   replenishmentHeader("Replacement value", column: .value)
                 }
-                .font(.caption.bold())
+                .appFont(.caption.bold())
                 .foregroundStyle(DesignTokens.textSecondary)
                 Divider()
                 ForEach(sortedReplenishmentMaterials(group.materials)) { material in
@@ -5194,15 +5205,15 @@ struct PlannerView: View {
                       typeID: material.typeID
                     )
                     Text(material.fromStock.formatted())
-                      .font(.body.monospacedDigit())
+                      .appFont(.body.monospacedDigit())
                     Text(
                       formatISK(
                         material.replacementQuote?.weightedUnitPrice
                       )
                     )
-                    .font(.body.monospacedDigit())
+                    .appFont(.body.monospacedDigit())
                     Text(formatISK(material.warehouseConsumptionValue))
-                      .font(.body.monospacedDigit())
+                      .appFont(.body.monospacedDigit())
                       .foregroundStyle(DesignTokens.highlight)
                   }
                 }
@@ -5428,7 +5439,7 @@ struct PlannerView: View {
           "Saved historical snapshot",
           systemImage: "clock.arrow.circlepath"
         )
-        .font(.headline)
+        .appFont(.headline)
         .foregroundStyle(DesignTokens.highlight)
         Spacer()
         Button("Back to current plan") {
@@ -5478,10 +5489,10 @@ struct PlannerView: View {
       }
 
       Text("Saved production input")
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .foregroundStyle(DesignTokens.textSecondary)
       Text(ProductionInputFormatter.format(presentation.plan.requests))
-        .font(.body.monospaced())
+        .appFont(.body.monospaced())
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(DesignTokens.spacingSM)
@@ -5498,14 +5509,14 @@ struct PlannerView: View {
           ),
           systemImage: "square.stack.3d.up"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
       Text(
         "The values below come from the saved snapshot and are not recalculated with current SDE, ESI, market, warehouse or profile data. Your current draft and active plan remain unchanged."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -6558,7 +6569,7 @@ struct PlannerView: View {
       Text(
         "When enabled, jobs follow the splitting rules from the industry settings (minimum and maximum length, free slots). When disabled, that stage is not split: final products keep one job per input line, intermediates one job per product. Each selected BPO or BPC remains its own job."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
     .disabled(runtime.isWorking)
@@ -7155,7 +7166,7 @@ struct PlannerView: View {
                 onOpenDataSettings(.logistics)
               }
               .buttonStyle(.link)
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.caution)
               .accessibilityIdentifier("planner.purchase-location.route.\(option.id)")
             }
@@ -7167,7 +7178,7 @@ struct PlannerView: View {
             "Select at least one purchase location.",
             systemImage: "exclamationmark.triangle"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         }
       }
@@ -7433,7 +7444,7 @@ struct PlannerView: View {
       } ?? plan.allianceSale
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Alliance market (manual)")
-        .font(.subheadline.weight(.semibold))
+        .appFont(.subheadline.weight(.semibold))
       if let result {
         HStack(alignment: .top, spacing: DesignTokens.spacingMD) {
           scenarioPreviewMetric(
@@ -7450,7 +7461,7 @@ struct PlannerView: View {
         }
         if let reason = result.unavailableReason {
           Label(reason.localizedUI, systemImage: "exclamationmark.triangle")
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(DesignTokens.caution)
         } else {
           Text(
@@ -7463,7 +7474,7 @@ struct PlannerView: View {
               formatISK(result.deliveryCost)
             )
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
           if let totalCost = result.totalCost, let gross = result.grossRevenue {
             Text(
@@ -7477,7 +7488,7 @@ struct PlannerView: View {
                 formatISK(result.profit)
               )
             )
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(DesignTokens.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
           }
@@ -7488,11 +7499,11 @@ struct PlannerView: View {
                 formatPercent(result.appliedFeeRate)
               )
             )
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(DesignTokens.textSecondary)
           } else if result.feeIsManualAssumption {
             Text("Fee: 0 % manual assumption")
-              .font(.caption2)
+              .appFont(.caption2)
               .foregroundStyle(DesignTokens.caution)
           }
           if let sold = result.soldQuantity, let produced = result.producedQuantity,
@@ -7504,7 +7515,7 @@ struct PlannerView: View {
                 (produced - sold).formatted()
               )
             )
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(DesignTokens.caution)
           }
           if let offer = PlannerAllianceSaleCalculator.offerText(
@@ -7529,7 +7540,7 @@ struct PlannerView: View {
         }
       } else {
         Text("No alliance sale was entered for this plan.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -7658,11 +7669,11 @@ private struct PlannerManufacturingProductAdder: View {
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Text("Add producible item")
-        .font(.headline)
+        .appFont(.headline)
       Text(
         "Search starts after 3 characters and shows only complete published manufacturing products from the active SDE."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       TextField("Search producible item (3+ characters)", text: $query)
         .textFieldStyle(.roundedBorder)
@@ -7685,7 +7696,7 @@ private struct PlannerManufacturingProductAdder: View {
               selection.outputPerRun
             )
           )
-          .font(.callout.monospacedDigit())
+          .appFont(.callout.monospacedDigit())
           .foregroundStyle(DesignTokens.textSecondary)
         }
       } else {
@@ -7695,7 +7706,7 @@ private struct PlannerManufacturingProductAdder: View {
             : "Select an exact manufacturing product from the results",
           systemImage: "magnifyingglass"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
 
@@ -7722,14 +7733,14 @@ private struct PlannerManufacturingProductAdder: View {
 
       if let feedbackMessage {
         Label(feedbackMessage.localizedUI, systemImage: "checkmark.circle.fill")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.positive)
       } else if selection != nil, !canAppend {
         Label(
           "Runs, ME or TE are outside the supported planner range.",
           systemImage: "exclamationmark.triangle.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
     }
@@ -7745,7 +7756,7 @@ private struct PlannerManufacturingProductAdder: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text(title)
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       TextField(title, value: value, format: .number.grouping(.never))
         .textFieldStyle(.roundedBorder)
@@ -7780,7 +7791,7 @@ private struct PlannerManufacturingProductAdder: View {
                     item.outputPerRun
                   )
                 )
-                .font(.caption.monospacedDigit())
+                .appFont(.caption.monospacedDigit())
                 .foregroundStyle(DesignTokens.textSecondary)
                 Button("Select") {
                   select(item)
@@ -7946,13 +7957,13 @@ private struct ExplainedPlannerMetricRow: View {
         HStack(spacing: DesignTokens.spacingXS) {
           Text(LocalizedStringKey(label))
           Image(systemName: "info.circle")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.information)
             .accessibilityHidden(true)
           Spacer(minLength: DesignTokens.spacingSM)
         }
         Text(value)
-          .font(.body.monospacedDigit())
+          .appFont(.body.monospacedDigit())
           .foregroundStyle(
             highlightsValue
               ? DesignTokens.highlight : DesignTokens.textPrimary
@@ -7980,7 +7991,7 @@ private struct ExplainedPlannerMetricRow: View {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
         HStack {
           Text(LocalizedStringKey(label))
-            .font(.headline)
+            .appFont(.headline)
           Spacer()
           Button {
             isExplanationPresented = false
@@ -8089,7 +8100,8 @@ struct ReactionsView: View {
       VStack(alignment: .leading, spacing: DesignTokens.spacingLG) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           Text("Reaction profitability")
-            .font(.largeTitle.bold())
+            .appFont(.largeTitle.bold())
+            .nexusPageTitle()
           Text(
             "Compares every complete published SDE reaction against live order depth at the selected trade hub. Inputs are bought from sell orders; outputs are valued both as a replacement purchase and as an immediate sale to buy orders."
           )
@@ -8104,11 +8116,11 @@ struct ReactionsView: View {
               ProgressView()
               VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
                 Text("Analyzing all reactions…")
-                  .font(.headline)
+                  .appFont(.headline)
                 Text(
                   "The app is loading every required input and output order book. The previous complete result remains visible while prices refresh."
                 )
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(DesignTokens.textSecondary)
               }
             }
@@ -8169,7 +8181,7 @@ struct ReactionsView: View {
       HStack(alignment: .bottom, spacing: DesignTokens.spacingMD) {
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           Text("Trade hub")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           Picker("Trade hub", selection: $marketHubID) {
             ForEach(runtime.productionBasis.marketHubSnapshots) { hub in
@@ -8182,7 +8194,7 @@ struct ReactionsView: View {
         }
         VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
           Text("Runs")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           HStack(spacing: DesignTokens.spacingSM) {
             TextField("Runs", value: $runs, format: .number)
@@ -8216,7 +8228,7 @@ struct ReactionsView: View {
           )
         }
       }
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
 
       if let snapshot = runtime.reactionAnalysis,
@@ -8227,7 +8239,7 @@ struct ReactionsView: View {
           "Settings changed. Analyze again to replace the displayed snapshot.",
           systemImage: "arrow.triangle.2.circlepath"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.caution)
       }
     }
@@ -8244,7 +8256,7 @@ struct ReactionsView: View {
             snapshot.basis == .configuredFacility
             ? "building.2.fill" : "doc.text.magnifyingglass"
         )
-        .font(.headline)
+        .appFont(.headline)
         Spacer()
         if snapshot.basis == .configuredFacility {
           Text(verbatim: snapshot.basisName)
@@ -8263,7 +8275,7 @@ struct ReactionsView: View {
       Text(
         "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       ForEach(snapshot.warnings) { warning in
         Label(
@@ -8271,7 +8283,7 @@ struct ReactionsView: View {
           systemImage: warning.severity == .blocking
             ? "xmark.octagon.fill" : "exclamationmark.triangle.fill"
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(
           warning.severity == .blocking
             ? DesignTokens.negative : DesignTokens.caution
@@ -8292,7 +8304,7 @@ struct ReactionsView: View {
           )
         )
       }
-      .font(.caption.monospacedDigit())
+      .appFont(.caption.monospacedDigit())
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -8325,20 +8337,15 @@ struct ReactionsView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text(LocalizedStringKey(title))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       Text(value.formatted())
-        .font(.title2.bold().monospacedDigit())
+        .appFont(.title2.bold().monospacedDigit())
         .foregroundStyle(color)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(DesignTokens.spacingMD)
-    .background(DesignTokens.panel)
-    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
-    .overlay {
-      RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
-        .stroke(DesignTokens.border)
-    }
+    .nexusPanelSurface(.flat)
   }
 
   private func results(_ snapshot: ReactionAnalysisSnapshot) -> some View {
@@ -8366,7 +8373,7 @@ struct ReactionsView: View {
         .frame(width: 220)
         Spacer()
         Text("\(rows.count) / \(snapshot.rows.count)")
-          .font(.caption.monospacedDigit())
+          .appFont(.caption.monospacedDigit())
           .foregroundStyle(DesignTokens.textSecondary)
       }
       if rows.isEmpty {
@@ -8390,34 +8397,34 @@ struct ReactionsView: View {
         VStack(alignment: .leading, spacing: 2) {
           EVEEntityLabel(value: row.productName)
           Text(row.groupName)
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
         }
         Spacer()
         VStack(alignment: .trailing, spacing: 2) {
           Text("Value creation")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           Text(formatSignedISK(row.valueCreation))
-            .font(.body.bold().monospacedDigit())
+            .appFont(.body.bold().monospacedDigit())
             .foregroundStyle(statusColor(row.valueStatus))
         }
         .frame(minWidth: 145, alignment: .trailing)
         VStack(alignment: .trailing, spacing: 2) {
           Text("Value margin")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           Text(formatPercent(row.valueCreationMargin))
-            .font(.body.bold().monospacedDigit())
+            .appFont(.body.bold().monospacedDigit())
             .foregroundStyle(statusColor(row.valueStatus))
         }
         .frame(minWidth: 105, alignment: .trailing)
         VStack(alignment: .trailing, spacing: 2) {
           Text("Make or buy")
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
           Text(makeOrBuyLabel(row))
-            .font(.body.weight(.semibold))
+            .appFont(.body.weight(.semibold))
             .foregroundStyle(
               row.makeIsCheaperThanBuy == nil
                 ? DesignTokens.textDisabled
@@ -8477,7 +8484,7 @@ struct ReactionsView: View {
             )
           }
         }
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(DesignTokens.textSecondary)
         if !row.warnings.isEmpty {
           Divider()
@@ -8486,7 +8493,7 @@ struct ReactionsView: View {
               localizedWarning(warning),
               systemImage: "exclamationmark.triangle"
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(
               warning.severity == .blocking
                 ? DesignTokens.negative : DesignTokens.caution
@@ -8525,7 +8532,7 @@ struct ReactionsView: View {
   ) -> some View {
     let selection = supplyVariantSelection[row.id] ?? .cheapest
     return VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-      Text("Cost analysis down to raw materials").font(.headline)
+      Text("Cost analysis down to raw materials").appFont(.headline)
       LazyVGrid(
         columns: [GridItem(.adaptive(minimum: 200, maximum: 320))],
         alignment: .leading,
@@ -8584,13 +8591,13 @@ struct ReactionsView: View {
         }
       } else {
         Text("No complete supply can be calculated for this reaction.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
       Text(
         "Built quantities are rounded up to whole runs per node, without job splits or credit for surplus output. The shopping list is priced in total against the order book, so node costs can add up to less than the bought materials. Duration and job limits above apply to the final reaction only."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -8641,17 +8648,17 @@ struct ReactionsView: View {
             .accessibilityLabel(Text("Cheapest option"))
         }
       }
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       Text(formatISK(total))
-        .font(.body.bold().monospacedDigit())
+        .appFont(.body.bold().monospacedDigit())
         .foregroundStyle(DesignTokens.highlight)
       if let savings {
         HStack(spacing: 3) {
           Text(formatSignedISK(savings))
           Text("vs. direct purchase")
         }
-        .font(.caption.monospacedDigit())
+        .appFont(.caption.monospacedDigit())
         .foregroundStyle(
           savings >= 0 ? DesignTokens.positive : DesignTokens.negative
         )
@@ -8661,7 +8668,7 @@ struct ReactionsView: View {
 
   private func supplyTree(_ variant: ReactionSupplyVariant) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      Text("Supply chain").font(.headline)
+      Text("Supply chain").appFont(.headline)
       ForEach(variant.treeLines) { line in
         HStack {
           VStack(alignment: .leading, spacing: 1) {
@@ -8672,13 +8679,13 @@ struct ReactionsView: View {
               Text("•")
               Text(line.node.isBuilt ? "Make" : "Buy")
             }
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
             .foregroundStyle(DesignTokens.textSecondary)
           }
           .padding(.leading, CGFloat(line.depth) * DesignTokens.spacingMD)
           Spacer()
           Text(formatISK(line.node.cost))
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
             .foregroundStyle(DesignTokens.highlight)
         }
       }
@@ -8689,10 +8696,10 @@ struct ReactionsView: View {
   private func reactionMetric(_ title: String, _ value: Double?) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(LocalizedStringKey(title))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       Text(formatISK(value))
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
         .foregroundStyle(DesignTokens.highlight)
     }
   }
@@ -8703,10 +8710,10 @@ struct ReactionsView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(LocalizedStringKey(title))
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       Text(value?.formatted(.percent.precision(.fractionLength(1))) ?? "—")
-        .font(.body.monospacedDigit())
+        .appFont(.body.monospacedDigit())
         .foregroundStyle(DesignTokens.highlight)
     }
   }
@@ -8716,7 +8723,7 @@ struct ReactionsView: View {
     _ materials: [ReactionMaterialValuation]
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      Text(LocalizedStringKey(title)).font(.headline)
+      Text(LocalizedStringKey(title)).appFont(.headline)
       ForEach(materials) { material in
         HStack {
           VStack(alignment: .leading, spacing: 1) {
@@ -8725,12 +8732,12 @@ struct ReactionsView: View {
               Text(material.quantity.formatted())
               Text("units")
             }
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
             .foregroundStyle(DesignTokens.textSecondary)
           }
           Spacer()
           Text(formatISK(material.quote.total))
-            .font(.body.monospacedDigit())
+            .appFont(.body.monospacedDigit())
             .foregroundStyle(DesignTokens.highlight)
         }
       }
@@ -8991,11 +8998,11 @@ struct CharactersView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-        Text("ESI").font(.largeTitle.bold())
+        Text("ESI").appFont(.largeTitle.bold()).nexusPageTitle()
         esiConfiguration
         Panel(title: "EVE SSO") {
           if characters.isEmpty {
-            ContentUnavailableView(
+            AppUnavailableView(
               "No characters",
               systemImage: "person.crop.circle.badge.plus",
               description: Text(
@@ -9049,7 +9056,7 @@ struct CharactersView: View {
           .accessibilityIdentifier("characters.authorization.show-permissions")
           if let batchMessage {
             Text(batchMessage)
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
           }
           if let localError {
@@ -9063,7 +9070,7 @@ struct CharactersView: View {
             Text(
               "Scope grants, corporation roles, and data completeness are separate checks. Corporation data is only applicable to a character with the required EVE role."
             )
-            .font(.caption)
+            .appFont(.caption)
             .foregroundStyle(DesignTokens.textSecondary)
             sourceState("Skills", "skills", sync.capabilities.skills)
             sourceState("Standings", "standings", sync.capabilities.standings)
@@ -9123,7 +9130,7 @@ struct CharactersView: View {
     Panel(title: "ESI Configuration") {
       LabeledContent("EVE application client ID") {
         Text(verbatim: EVEConstants.ssoClientID)
-          .font(.body.monospaced())
+          .appFont(.body.monospaced())
           .textSelection(.enabled)
       }
       LabeledContent(
@@ -9142,7 +9149,7 @@ struct CharactersView: View {
       Text(
         "EVE authorizations are stored securely in the macOS Keychain, not in the app database or plain files."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
   }
@@ -9203,7 +9210,7 @@ struct CharactersView: View {
             VStack(alignment: .leading, spacing: 2) {
               Text(character.characterName)
               Text(scopeStatus(for: character))
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(
                   missingScopeCount(for: character) == 0
                     ? DesignTokens.positive
@@ -9211,7 +9218,7 @@ struct CharactersView: View {
                 )
               if let dataSummary {
                 Text(dataSummary)
-                  .font(.caption)
+                  .appFont(.caption)
                   .foregroundStyle(
                     hasDataIssues
                       ? DesignTokens.caution
@@ -9221,7 +9228,7 @@ struct CharactersView: View {
             }
             Spacer()
             Text(lastSyncText)
-              .font(.caption.monospacedDigit())
+              .appFont(.caption.monospacedDigit())
               .foregroundStyle(DesignTokens.textSecondary)
           }
         }
@@ -9262,10 +9269,10 @@ struct CharactersView: View {
       VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
         HStack {
           Text("Loaded permissions")
-            .font(.subheadline.bold())
+            .appFont(.subheadline.bold())
           Spacer()
           Text("\(authorization.sortedScopes.count)")
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
             .foregroundStyle(DesignTokens.textSecondary)
         }
         if authorization.sortedScopes.isEmpty {
@@ -9273,13 +9280,13 @@ struct CharactersView: View {
             "No permissions are stored for this character.",
             systemImage: "exclamationmark.triangle"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
         } else {
           ForEach(authorization.sortedScopes, id: \.self) { scope in
             Label {
               Text(requestedScopePurpose(scope))
-                .font(.caption)
+                .appFont(.caption)
             } icon: {
               Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(DesignTokens.positive)
@@ -9289,7 +9296,7 @@ struct CharactersView: View {
         Text(
           "Granted by EVE SSO \(authorization.authorizedAt.formatted(date: .abbreviated, time: .shortened))."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
         Button {
           Task { await connect(expectedCharacterID: character.characterID) }
@@ -9319,7 +9326,7 @@ struct CharactersView: View {
         "The stored authorization snapshot could not be read.",
         systemImage: "xmark.octagon.fill"
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.negative)
     }
   }
@@ -9329,10 +9336,10 @@ struct CharactersView: View {
     let metadata = metadata(for: character)
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text("Last ESI data status for this character")
-        .font(.subheadline.bold())
+        .appFont(.subheadline.bold())
       if metadata.isEmpty {
         Text("No synchronization result is stored for this character yet.")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       } else {
         ForEach(metadata) { item in
@@ -9351,7 +9358,7 @@ struct CharactersView: View {
         "Requested ESI permissions",
         systemImage: "checklist"
       )
-      .font(.title2.bold())
+      .appFont(.title2.bold())
 
       Text(
         "This overview explains which permissions EVE New Eden Nexus - Assets, Industry, Markets requests, why each permission is needed, and which app modules use it. It is available here at any time and no longer interrupts authorization. EVE SSO still asks you to approve the requested permissions. The refresh token remains only in the macOS Keychain."
@@ -9363,10 +9370,10 @@ struct CharactersView: View {
           ForEach(EVEScope.versionOne.sorted(), id: \.self) { scope in
             VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
               Text(scope)
-                .font(.caption.monospaced())
+                .appFont(.caption.monospaced())
                 .textSelection(.enabled)
               Text(requestedScopePurpose(scope))
-                .font(.body)
+                .appFont(.body)
               Label(
                 AppLocalization.format(
                   "Used by: %@",
@@ -9374,7 +9381,7 @@ struct CharactersView: View {
                 ),
                 systemImage: "square.grid.2x2"
               )
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -10053,7 +10060,7 @@ struct CharactersView: View {
             ? AppLocalization.text("NOT APPLICABLE")
             : AppLocalization.text(state.rawValue.uppercased())
         )
-        .font(.caption.bold())
+        .appFont(.caption.bold())
         .foregroundStyle(
           notApplicable
             ? DesignTokens.textSecondary
@@ -10070,7 +10077,7 @@ struct CharactersView: View {
         diagnostics: diagnostics
       ) {
         Text(explanation)
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       }
     }
@@ -10246,7 +10253,7 @@ struct DataSettingsView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
-        Text("SDE").font(.largeTitle.bold())
+        Text("SDE").appFont(.largeTitle.bold()).nexusPageTitle()
         Panel(title: "Static Data Export") {
           LabeledContent(
             "Active catalog",
@@ -10260,14 +10267,14 @@ struct DataSettingsView: View {
             if runtime.isWorking {
               ProgressView().controlSize(.small)
               Text(runtime.installationPhase ?? runtime.statusMessage)
-                .font(.caption.monospaced())
+                .appFont(.caption.monospaced())
             }
           }
           Label(
             "After a successful SDE update or reimport, completely quit and reopen the app before using SDE-dependent areas. Then run the Main Hub analysis again.",
             systemImage: "arrow.clockwise.circle"
           )
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
           if let preview = runtime.updatePreview {
             Divider()
@@ -10324,7 +10331,7 @@ struct DataSettingsView: View {
               Text(
                 "Rebuilds the same official SDE build with the current catalog adapter. Use this after catalog or classification support was added."
               )
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(.secondary)
             }
           }
@@ -10655,11 +10662,11 @@ struct PlannerPurchaseLocationHintPanel: View {
     )
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
       Label("Purchase-location hint · minerals and moon materials", systemImage: "mappin.and.ellipse")
-        .font(.headline)
+        .appFont(.headline)
       Text(
         "Decision aid from the mineral and moon-material purchase analyses. The plan costs above stay based on the Main Hub; no ESI request is started."
       )
-      .font(.caption)
+      .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
       analysisStatus(
         title: "Minerals",
@@ -10678,7 +10685,7 @@ struct PlannerPurchaseLocationHintPanel: View {
             ? "Analysis not loaded"
             : "No mineral or moon material is on this shopping list."
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       } else {
         table(PurchaseLocationHintSorting.sorted(hints, by: sort))
@@ -10714,7 +10721,7 @@ struct PlannerPurchaseLocationHintPanel: View {
     isCurrent: Bool
   ) -> some View {
     HStack(spacing: DesignTokens.spacingSM) {
-      Text(title).font(.caption.weight(.semibold))
+      Text(title).appFont(.caption.weight(.semibold))
       if let refreshedAt {
         Text(
           AppLocalization.format(
@@ -10722,11 +10729,11 @@ struct PlannerPurchaseLocationHintPanel: View {
             refreshedAt.formatted(date: .abbreviated, time: .shortened)
           )
         )
-        .font(.caption)
+        .appFont(.caption)
         .foregroundStyle(isCurrent ? DesignTokens.textSecondary : DesignTokens.caution)
       } else {
         Text("Analysis not loaded")
-          .font(.caption)
+          .appFont(.caption)
           .foregroundStyle(DesignTokens.caution)
       }
     }
@@ -10746,27 +10753,27 @@ struct PlannerPurchaseLocationHintPanel: View {
         SortableTableHeader(title: "Main Hub unit price", column: .mainHubUnitPrice, sort: $sort)
         SortableTableHeader(title: "Difference per unit", column: .difference, sort: $sort)
       }
-      .font(.caption.bold())
+      .appFont(.caption.bold())
       .foregroundStyle(DesignTokens.textSecondary)
       Divider()
       ForEach(hints) { hint in
         GridRow {
           EVEItemText(value: hint.item.name, typeID: hint.item.typeID, font: .caption)
           Text(hint.item.quantity.formatted())
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
           if let location = hint.location {
             EVEEntityText(value: location.name, font: .caption)
           } else {
             Text("No fresh offer")
-              .font(.caption)
+              .appFont(.caption)
               .foregroundStyle(DesignTokens.caution)
           }
           Text(Self.formatISK(hint.unitPrice))
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
           Text(Self.formatISK(hint.mainHubUnitPrice))
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
           Text(Self.formatSignedISK(hint.priceDifferencePerUnit))
-            .font(.caption.monospacedDigit())
+            .appFont(.caption.monospacedDigit())
             .foregroundStyle(
               (hint.priceDifferencePerUnit ?? 0) < 0
                 ? DesignTokens.positive : DesignTokens.textSecondary
@@ -10840,7 +10847,7 @@ struct PlannerJobScheduleTable: View {
     Text(
       "Start and finish are offsets from the start of the plan. The pieces are the jobs of the production job list."
     )
-    .font(.caption)
+    .appFont(.caption)
     .foregroundStyle(DesignTokens.textSecondary)
   }
 }

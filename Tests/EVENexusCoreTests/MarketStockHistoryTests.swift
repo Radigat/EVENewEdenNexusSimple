@@ -443,3 +443,81 @@ private struct SeededGenerator: RandomNumberGenerator {
     return value ^ (value >> 31)
   }
 }
+
+/// Value axis and mouse-over of the item chart (owner decision 07.11.2026).
+@Suite("Market stock chart scale and hover")
+struct MarketStockChartInteractionTests {
+  /// 2026-10-26 00:00 UTC.
+  private static let dayStart = Date(timeIntervalSince1970: 1_792_972_800)
+  private static let hour: TimeInterval = 60 * 60
+  private static let day: TimeInterval = 24 * hour
+
+  @Test
+  func valueDomainZoomsToThePlottedValuesWithRoundBounds() {
+    #expect(MarketStockChartScale.valueDomain([]) == nil)
+    #expect(MarketStockChartScale.valueDomain([.nan, .infinity]) == nil)
+    // Prices around 225–290 million no longer sit on a 0–400 million axis.
+    #expect(
+      MarketStockChartScale.valueDomain([225e6, 260e6, 290e6, .nan]) == 200e6...300e6)
+    #expect(MarketStockChartScale.valueDomain([89, 49, 64]) == 40...100)
+    // A constant series still gets a visible range around its value.
+    #expect(MarketStockChartScale.valueDomain([49]) == 46...52)
+    // Never below 0 when no value is negative.
+    #expect(MarketStockChartScale.valueDomain([0]) == 0...1)
+    #expect(MarketStockChartScale.valueDomain([0, 12]) == 0...15)
+  }
+
+  @Test
+  func hoverSnapsToTheNearestSampleAndMatchesEveryHubNearby() {
+    let main = [
+      sample(at: -3 * Self.day + 22 * Self.hour, value: 230, daily: true),
+      sample(at: 10 * Self.hour, value: 240),
+      sample(at: 12 * Self.hour, value: 241),
+    ]
+    let home = [
+      sample(at: -3 * Self.day + 5 * Self.hour, value: 250, daily: true),
+      sample(at: 10 * Self.hour + 20 * 60, value: 255),
+      sample(at: 14 * Self.hour + 30 * 60, value: 256),
+    ]
+    let coalition = [sample(at: 6 * Self.hour, value: 260)]
+    let all = [main, home, coalition]
+
+    let anchor = MarketStockChartHover.anchor(
+      near: Self.dayStart.addingTimeInterval(10 * Self.hour + 5 * 60), in: all)
+    #expect(anchor == main[1])
+    // Equal distance: the earlier sample wins, so the snap never flickers.
+    #expect(
+      MarketStockChartHover.anchor(
+        near: Self.dayStart.addingTimeInterval(10 * Self.hour + 10 * 60), in: all)
+        == main[1])
+    #expect(MarketStockChartHover.anchor(near: Self.dayStart, in: [[], []]) == nil)
+
+    let moment = main[1].date
+    #expect(MarketStockChartHover.sample(for: moment, in: main) == main[1])
+    #expect(MarketStockChartHover.sample(for: moment, in: home) == home[1])
+    // Four hours away: no point at that moment, not the far one and not 0.
+    #expect(MarketStockChartHover.sample(for: moment, in: coalition) == nil)
+    // Exactly three hours still belongs to the moment.
+    #expect(
+      MarketStockChartHover.sample(for: Self.dayStart.addingTimeInterval(9 * Self.hour), in: coalition)
+        == coalition[0])
+
+    // Daily values match on the same UTC day, whatever their time.
+    #expect(MarketStockChartHover.sample(for: main[0].date, in: home) == home[0])
+    let nextDayDaily = [sample(at: -2 * Self.day + 1 * Self.hour, value: 270, daily: true)]
+    #expect(MarketStockChartHover.sample(for: main[0].date, in: nextDayDaily) == nil)
+  }
+
+  private func sample(
+    at offset: TimeInterval,
+    value: Double,
+    daily: Bool = false
+  ) -> MarketStockChartSample {
+    MarketStockChartSample(
+      date: Self.dayStart.addingTimeInterval(offset),
+      value: value,
+      segment: 0,
+      isDailyValue: daily
+    )
+  }
+}
