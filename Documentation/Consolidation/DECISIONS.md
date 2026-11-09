@@ -655,3 +655,16 @@ Von Claude festgelegt (DB7): Die Popover übernehmen die App-Sprache über den g
 Entscheidungen des Eigentümers (08.11.2026) zu DB8: Bearbeitet wird nur die Beobachtung aus DB7 zum Kacheltitel (in Abschnitt 7 war nichts angekreuzt). Die Kennzahlkarte heißt auf Deutsch kurz „Wissenschafts-Slots“ wie „Fertigungs-Slots“; das Aktivitätsraster behält „Gemeinsame Wissenschafts-Slots“. Damit gilt Punkt 2 der DB7-Entscheidungen für die Karte in dieser kürzeren Form.
 
 Entscheidung des Eigentümers (08.11.2026, zweiter Durchlauf DB8): Die Abnahme des Dashboards nach Abschnitt 7 ist insgesamt „i. O.“; es gibt keine weiteren Nacharbeiten. Die Kästchen der Checkliste wurden nicht einzeln angekreuzt, Ergebnisse je Punkt mit echten Daten (7.2) liegen nicht vor.
+
+## 09.11.2026: Bestandsverlauf neben jedem Item
+
+Grundregel des Eigentümers (09.11.2026): Der Link auf den Hub-Bestandsverlauf steht nicht nur im Handel, sondern neben jedem Item in allen Bereichen. Er verlinkt auf den einen bestehenden Verlauf; kein Bereich baut einen eigenen Graphen. Regel: [AGENTS.md](../../AGENTS.md), „Bestandsverlauf je Item“.
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Der Verlauf öffnet überall wie im Handel als Sheet über der Seite.
+2. Das Symbol steht bei jedem Item mit Type-ID, auch ohne Marktdaten (der Verlauf zeigt dann seinen Leerzustand); ausgenommen sind Such-/Auswahllisten und der Kopf des Verlaufs.
+3. Reine Namenszeilen mit bekannter Type-ID werden auf die gemeinsame Darstellung mit Bild, Name und Symbol umgestellt.
+4. Die Tagestabelle startet außerhalb von Handel (Ziel-Hub der Route) und Marktbestand (gewählter Hub) mit dem Home Hub.
+
+Von Claude festgelegt: Ohne Host bleibt das Symbol verborgen, statt einen wirkungslosen Klick anzubieten. Handel und Marktbestand behalten die bisherige Position und Kennung des Symbols. In Reaktionskarten liegt das Symbol wie das Kopierziel über dem Disclosure-Kopf. Skill-Zeilen und Planer-Eingabezeilen ohne aufgelöste Type-ID bleiben ohne Symbol.

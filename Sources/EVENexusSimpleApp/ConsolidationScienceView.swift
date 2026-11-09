@@ -61,7 +61,11 @@ struct ConsolidationScienceView: View {
         }
       }
       if let entry {
-        EVEEntityText(value: names[entry.instance.blueprintTypeID] ?? "Name nicht aufgelöst")
+        if let name = names[entry.instance.blueprintTypeID] {
+          EVEItemText(value: name, typeID: entry.instance.blueprintTypeID)
+        } else {
+          EVEEntityText(value: "Name nicht aufgelöst")
+        }
       }
       Picker("Aktivität", selection: $activity) {
         Text("Copying").tag(BlueprintActivityDefinition.Kind.copying)
@@ -123,7 +127,12 @@ struct ConsolidationScienceView: View {
         controller.workspace.science.filter { !$0.archived }
       ) { job in
         VStack(alignment: .leading) {
-          EVEEntityText(value: job.name)
+          // Jobs saved without a resolved name keep the stored fallback text.
+          if job.name == "Name nicht aufgelöst" {
+            EVEEntityText(value: job.name)
+          } else {
+            EVEItemText(value: job.name, typeID: job.blueprintTypeID)
+          }
           EVEEntityText(value: job.facilityName, font: .caption)
           Text(scienceDescription(job.job)).appFont(.caption).textSelection(.enabled)
           if job.supplyPlan != nil {

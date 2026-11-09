@@ -12,6 +12,88 @@ struct MarketStockItemRequest: Identifiable, Equatable {
   var id: Int64 { typeID }
 }
 
+/// The one place that opens the stock history (owner rule 09.11.2026):
+/// every item link in a window or sheet asks its nearest host, so all areas
+/// show the same `MarketStockItemDetailView` with the same stored hub data.
+@MainActor
+@Observable
+final class MarketStockHistoryRouter {
+  var request: MarketStockItemRequest?
+
+  func open(_ request: MarketStockItemRequest) {
+    self.request = request
+  }
+}
+
+private struct MarketStockHistoryRouterKey: EnvironmentKey {
+  static let defaultValue: MarketStockHistoryRouter? = nil
+}
+
+extension EnvironmentValues {
+  /// Nearest stock history host; `nil` outside a host, where the item link
+  /// stays hidden instead of offering a click that cannot open anything.
+  var marketStockHistoryRouter: MarketStockHistoryRouter? {
+    get { self[MarketStockHistoryRouterKey.self] }
+    set { self[MarketStockHistoryRouterKey.self] = newValue }
+  }
+}
+
+/// Presents the stock history for its content. The main window installs one
+/// host; a sheet that shows items installs its own, because a second sheet
+/// can only be presented from inside the sheet that is already open.
+private struct MarketStockHistoryHost: ViewModifier {
+  @Environment(RuntimeState.self) private var runtime: RuntimeState?
+  @State private var router = MarketStockHistoryRouter()
+
+  func body(content: Content) -> some View {
+    @Bindable var router = router
+    content
+      .environment(\.marketStockHistoryRouter, runtime == nil ? nil : router)
+      .sheet(item: $router.request) { request in
+        if let runtime {
+          MarketStockItemDetailView(request: request)
+            .environment(runtime)
+        }
+      }
+  }
+}
+
+extension View {
+  func marketStockHistoryHost() -> some View {
+    modifier(MarketStockHistoryHost())
+  }
+}
+
+/// The stock history link next to an item name: a separate control, so the
+/// name keeps its copy click. Hidden without a host or a positive type ID.
+struct MarketStockHistoryButton: View {
+  let typeID: Int64
+  let name: String
+  /// Hub whose daily table is shown first; Home Hub outside Trade and
+  /// Market stock (owner decision 09.11.2026).
+  var preferredRole: OpportunityHubRole = .home
+  var accessibilityIdentifier: String? = nil
+
+  @Environment(\.marketStockHistoryRouter) private var router
+
+  var body: some View {
+    if let router, typeID > 0 {
+      Button {
+        router.open(
+          MarketStockItemRequest(typeID: typeID, name: name, preferredRole: preferredRole)
+        )
+      } label: {
+        Image(systemName: "chart.xyaxis.line")
+      }
+      .buttonStyle(.borderless)
+      .help(AppLocalization.text("Market stock history"))
+      .accessibilityLabel("Market stock history")
+      .accessibilityValue(Text(verbatim: name))
+      .accessibilityIdentifier(accessibilityIdentifier ?? "market-stock-history.\(typeID)")
+    }
+  }
+}
+
 /// Y-axis labels of the item chart: scaled units instead of scientific
 /// notation. A value that rounds up to 1000 moves to the next unit.
 enum MarketStockAxisFormat {
@@ -100,7 +182,8 @@ struct MarketStockItemDetailView: View {
           font: .title2.weight(.semibold),
           lineLimit: 1,
           iconSize: 28,
-          accessibilityIdentifier: "market-stock.detail.name.copy"
+          accessibilityIdentifier: "market-stock.detail.name.copy",
+          showsMarketStockHistory: false
         )
       }
       Spacer()

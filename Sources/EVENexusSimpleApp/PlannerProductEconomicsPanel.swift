@@ -134,7 +134,11 @@ struct PlannerProductEconomicsPanel: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Select product"))
-                EVEEntityText(value: row.costs.productName, font: .body)
+                PlannerProductNameText(
+                  name: row.costs.productName,
+                  typeID: row.costs.typeID,
+                  font: .body
+                )
               }
               .gridColumnAlignment(.leading)
               Text(row.costs.units.formatted())
@@ -265,7 +269,7 @@ private struct PlannerProductSaleDetail: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-      EVEEntityText(value: costs.productName, font: .headline)
+      PlannerProductNameText(name: costs.productName, typeID: costs.typeID, font: .headline)
       targetSection
       LazyVGrid(
         columns: [GridItem(.adaptive(minimum: 260), alignment: .top)],

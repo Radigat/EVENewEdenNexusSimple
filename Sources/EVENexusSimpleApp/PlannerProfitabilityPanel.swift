@@ -34,6 +34,30 @@ private func plannerNameOrder(_ lhs: String, _ rhs: String) -> Bool? {
   return order == .orderedSame ? nil : order == .orderedAscending
 }
 
+/// A Planner end product: the shared item presentation with image and stock
+/// history link when the plan resolved its type ID, otherwise the copyable
+/// name alone (the produced root node owns the type ID, ITEM_PRESENTATION.md).
+struct PlannerProductNameText: View {
+  let name: String
+  let typeID: Int64?
+  var font: AppFont = .body
+
+  var body: some View {
+    if let typeID, typeID > 0 {
+      EVEItemText(value: name, typeID: typeID, font: font, iconSize: 18)
+    } else {
+      EVEEntityText(value: name, font: font)
+    }
+  }
+}
+
+extension IndustryPlanSnapshot {
+  /// Type ID of a request's produced root item, `nil` when unresolved.
+  func productTypeID(for requestID: UUID) -> Int64? {
+    topLevelProductNode(for: requestID)?.typeID
+  }
+}
+
 /// Step 4's answer to "Profitable?": one row per product with its costs and the
 /// selected sale, the alliance prices and the owner's decision when a selected
 /// sale earns no money.
@@ -115,7 +139,10 @@ struct PlannerProfitabilityPanel: View {
           Image(systemName: "exclamationmark.triangle")
             .foregroundStyle(DesignTokens.caution)
             .accessibilityHidden(true)
-          EVEEntityText(value: product.request.productName, font: .body)
+          PlannerProductNameText(
+            name: product.request.productName,
+            typeID: plan.productTypeID(for: product.request.id)
+          )
           Text(PlannerSaleChoiceTable.statusText(product.verdict))
             .foregroundStyle(DesignTokens.textSecondary)
           Spacer()
@@ -277,8 +304,11 @@ struct PlannerSaleChoiceTable: View {
         Divider()
         ForEach(sortedRows) { row in
           GridRow {
-            EVEEntityText(value: row.product.request.productName, font: .body)
-              .gridColumnAlignment(.leading)
+            PlannerProductNameText(
+              name: row.product.request.productName,
+              typeID: plan.productTypeID(for: row.product.request.id)
+            )
+            .gridColumnAlignment(.leading)
             Text(row.units.map { $0.formatted() } ?? AppLocalization.text("Unavailable"))
             Text(PlannerProductFormat.isk(row.costs?.productionSubtotal))
             Text(Self.money(row.figures.cost, row.selected))
@@ -433,6 +463,7 @@ struct PlannerAllianceSaleTable: View {
         ForEach(sortedRows) { row in
           PlannerAllianceSaleRow(
             request: row.request,
+            productTypeID: plan.productTypeID(for: row.request.id),
             produced: row.produced,
             result: row.result,
             onApply: { onApply(row.request, $0) }
@@ -463,6 +494,7 @@ private struct PlannerAllianceSaleRow: View {
   private static let defaultFeePercent = "2"
 
   let request: ProductionRequestLine
+  let productTypeID: Int64?
   let produced: Int64?
   let result: PlannerAllianceSaleResult?
   let onApply: (PlannerAllianceSaleInput) -> Void
@@ -481,7 +513,7 @@ private struct PlannerAllianceSaleRow: View {
 
   var body: some View {
     GridRow {
-      EVEEntityText(value: request.productName, font: .body)
+      PlannerProductNameText(name: request.productName, typeID: productTypeID)
       unitsControl
       TextField("Required", text: $unitPriceText)
         .textFieldStyle(.roundedBorder)
@@ -810,8 +842,11 @@ struct PlannerSaleSummaryPanel: View {
         Divider()
         ForEach(sortedRows) { row in
           GridRow {
-            EVEEntityText(value: row.product.request.productName, font: .body)
-              .gridColumnAlignment(.leading)
+            PlannerProductNameText(
+              name: row.product.request.productName,
+              typeID: plan.productTypeID(for: row.product.request.id)
+            )
+            .gridColumnAlignment(.leading)
             Text(row.units.map { $0.formatted() } ?? AppLocalization.text("Unavailable"))
             Text(row.selected.map(PlannerSaleChoiceTable.title) ?? AppLocalization.text("Not chosen"))
               .gridColumnAlignment(.leading)

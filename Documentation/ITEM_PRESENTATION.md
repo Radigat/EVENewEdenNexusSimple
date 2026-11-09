@@ -41,6 +41,21 @@ Planung oder Auswahl stammen.
   Suchergebnis- oder Picker-Zeilen bleibt dagegen der umgebende Auswahl-Click
   maßgeblich; das dortige Icon ist rein visuell.
 
+## Bestandsverlauf (seit 09.11.2026)
+
+`EVEItemText` zeigt hinter dem Namen den gemeinsamen `MarketStockHistoryButton`
+(Kurvensymbol). Er öffnet über den nächsten `.marketStockHistoryHost()` die
+eine `MarketStockItemDetailView` mit den zentral gespeicherten Hub-Daten
+([MARKTBESTAND_PLAN.md](MARKTBESTAND_PLAN.md), P6). Das Hauptfenster und
+jedes Sheet installieren einen Host; ohne Host bleibt der Button verborgen.
+Die Tagestabelle startet mit dem Home Hub; Handel übergibt den Ziel-Hub der
+Route, Marktbestand den gewählten Hub. `showsMarketStockHistory: false` gilt
+nur für Such- und Auswahlergebnisse, den Kopf des Verlaufs und Stellen, die den
+gemeinsamen Button selbst platzieren (Handel nach dem Logbuch-Plus,
+Marktbestand am Zeilenende). Besitzt eine Disclosure den Zeilenklick
+(Reaktionskarten), liegt der Button mit dem transparenten Kopierziel darüber.
+Regel: [AGENTS.md](../AGENTS.md), „Bestandsverlauf je Item“.
+
 ## Abdeckung
 
 Die gemeinsame Darstellung ist für aufgelöste Items in Dashboard und

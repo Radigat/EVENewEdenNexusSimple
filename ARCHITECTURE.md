@@ -588,7 +588,10 @@ Market stock history ([MARKTBESTAND_PLAN.md](Documentation/MARKTBESTAND_PLAN.md)
     and released when the last one disappears.
 - **Views:**
   - `MarketStockItemDetailView`: Swift Charts with
-    `MarketStockChartBuilder`, sortable `MarketStockDayRow` table.
+    `MarketStockChartBuilder`, sortable `MarketStockDayRow` table. It is the
+    only history view; `.marketStockHistoryHost()` (main window and every
+    sheet) presents it through the environment `MarketStockHistoryRouter`,
+    and `EVEItemText` / `MarketStockHistoryButton` link every item to it.
   - `MarketStockView`: native `Table` with `MarketStockOverviewComparator`.
 - **Background operation:** `BackgroundOperation.swift` holds
   `AppBackgroundDelegate` (keep running, Dock policy, hidden login launch

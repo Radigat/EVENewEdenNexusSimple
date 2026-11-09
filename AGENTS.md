@@ -59,6 +59,16 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 - A copy click must not also select a row, toggle disclosure, activate a picker or trigger a double-click action. If an enclosing control must own the primary click, provide a separate, equally visible copy target instead of leaving the name uncopyable.
 - Preserve unresolved or unavailable names as explicit states. Never replace missing domain data with an invented name, raw identifier presented as a resolved name, or zero.
 
+## Bestandsverlauf je Item
+
+- Jedes sichtbare EVE-Item mit aufgelöster Type-ID zeigt direkt neben dem Namen den Link (Kurvensymbol) auf seinen Bestandsverlauf der Hubs, in jedem Bereich und nicht nur im Handel (Eigentümerregel 09.11.2026).
+- Es gibt genau eine Verlaufsansicht, `MarketStockItemDetailView`, mit den zentral gespeicherten Hub-Daten. Bereiche bauen keinen eigenen Graphen und kein eigenes Verlaufs-Sheet; sie verlinken über `EVEItemText` (zeigt den Link automatisch) oder den gemeinsamen `MarketStockHistoryButton`.
+- Das Hauptfenster und jedes Sheet installieren `.marketStockHistoryHost()`, denn ein zweites Sheet öffnet nur aus dem bereits offenen Sheet heraus. Ohne Host bleibt der Link verborgen.
+- Der Link ist eine eigene Schaltfläche neben dem kopierbaren Namen und löst keine andere Aktion aus. Besitzt eine umschließende Steuerung den Zeilenklick, liegt der Link wie das Kopierziel darüber.
+- Die Tagestabelle startet im Handel mit dem Ziel-Hub der Route, im Marktbestand mit dem gewählten Hub, sonst mit dem Home Hub.
+- Ausgenommen sind nur Such- und Auswahlergebnisse, deren Zeile zum Auswählen da ist, und der Kopf der Verlaufsansicht selbst. Namen ohne aufgelöste Type-ID bleiben ohne Link; nie eine Type-ID raten.
+- `Tests/EVENexusSimpleAppTests/MarketStockHistoryLinkTests.swift` prüft die einzige Öffnen-Stelle und die Hosts aller Sheets.
+
 ## Sortable data tables
 
 - Every column header in a tabular collection of peer data rows must be clickable and sort that column.

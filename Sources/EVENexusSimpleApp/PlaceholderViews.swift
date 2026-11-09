@@ -3391,9 +3391,11 @@ struct PlannerView: View {
             .appFont(.caption.monospacedDigit())
           }
           LabeledContent("Hull") {
-            EVEEntityText(
+            EVEItemText(
               value: jump.hull.name,
+              typeID: jump.hull.typeID,
               font: .caption,
+              iconSize: 16,
               accessibilityIdentifier: "\(accessibilityPrefix).hull.copy"
             )
           }
@@ -3462,9 +3464,11 @@ struct PlannerView: View {
             }
           }
           HStack(alignment: .firstTextBaseline) {
-            EVEEntityText(
+            EVEItemText(
               value: jump.route.isotope.name,
+              typeID: jump.route.isotope.typeID,
               font: .caption,
+              iconSize: 16,
               accessibilityIdentifier:
                 "\(accessibilityPrefix).route-isotope.copy"
             )
@@ -3476,9 +3480,11 @@ struct PlannerView: View {
             .appFont(.caption.bold())
           ForEach(jump.isotopePrices) { entry in
             HStack(alignment: .firstTextBaseline) {
-              EVEEntityText(
+              EVEItemText(
                 value: entry.isotope.name,
+                typeID: entry.isotope.typeID,
                 font: .caption,
+                iconSize: 16,
                 accessibilityIdentifier:
                   "\(accessibilityPrefix).price.\(entry.id).copy"
               )
@@ -3517,9 +3523,11 @@ struct PlannerView: View {
                 ForEach(flight.cargo) { item in
                   HStack(alignment: .firstTextBaseline) {
                     if let name = item.name {
-                      EVEEntityText(
+                      EVEItemText(
                         value: name,
+                        typeID: item.typeID,
                         font: .caption,
+                        iconSize: 16,
                         accessibilityIdentifier:
                           "\(accessibilityPrefix).flight.\(flight.number).cargo.\(item.typeID).copy"
                       )
@@ -3583,9 +3591,11 @@ struct PlannerView: View {
               )
             ) {
               HStack(alignment: .firstTextBaseline) {
-                EVEEntityText(
+                EVEItemText(
                   value: jump.product.name,
+                  typeID: jump.product.typeID,
                   font: .caption.bold(),
+                  iconSize: 16,
                   accessibilityIdentifier:
                     "\(accessibilityPrefix).capital.\(jump.id).name.copy"
                 )
@@ -3655,9 +3665,11 @@ struct PlannerView: View {
                   }
                 }
                 HStack(alignment: .firstTextBaseline) {
-                  EVEEntityText(
+                  EVEItemText(
                     value: jump.route.isotope.name,
+                    typeID: jump.route.isotope.typeID,
                     font: .caption,
+                    iconSize: 16,
                     accessibilityIdentifier:
                       "\(accessibilityPrefix).capital.\(jump.id).isotope.copy"
                   )
@@ -4088,10 +4100,12 @@ struct PlannerView: View {
     return VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       HStack(alignment: .firstTextBaseline) {
         if let name = item.name {
-          EVEEntityText(
+          EVEItemText(
             value: name,
+            typeID: item.typeID,
             font: .body,
             lineLimit: 2,
+            iconSize: 18,
             accessibilityIdentifier:
               "planner.logistics.\(legID.uuidString).cargo.\(item.typeID).copy"
           )
@@ -7787,7 +7801,8 @@ private struct PlannerManufacturingProductAdder: View {
           LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(results) { item in
               HStack(spacing: DesignTokens.spacingMD) {
-                EVEItemText(value: item.name, typeID: item.id)
+                // A search result: its row exists to be selected.
+                EVEItemText(value: item.name, typeID: item.id, showsMarketStockHistory: false)
                 Spacer()
                 Text(
                   AppLocalization.format(
@@ -8515,11 +8530,16 @@ struct ReactionsView: View {
         .stroke(DesignTokens.border)
     }
     .overlay(alignment: .topLeading) {
-      EVEEntityText(
-        value: row.productName,
-        showsTransparentLabel: true,
-        accessibilityIdentifier: "reactions.copy-name.\(row.id)"
-      )
+      // The disclosure owns the row click, so copy target and stock history
+      // link both sit above the drawn name instead of inside the label.
+      HStack(spacing: DesignTokens.spacingXS) {
+        EVEEntityText(
+          value: row.productName,
+          showsTransparentLabel: true,
+          accessibilityIdentifier: "reactions.copy-name.\(row.id)"
+        )
+        MarketStockHistoryButton(typeID: row.productTypeID, name: row.productName)
+      }
       .padding(.horizontal, 2)
       .padding(.vertical, 1)
       .padding(
@@ -9106,6 +9126,7 @@ struct CharactersView: View {
     .navigationTitle(AppLocalization.text("ESI"))
     .sheet(isPresented: $isShowingRequestedPermissions) {
       requestedPermissionsView
+        .marketStockHistoryHost()
     }
     .confirmationDialog(
       disconnectDialogTitle,
@@ -10817,7 +10838,9 @@ struct PlannerJobScheduleTable: View {
   var body: some View {
     Table(rows, sortOrder: $order) {
       TableColumn("Product", value: \.nameKey) { row in
-        if let name = row.entry.name {
+        if let name = row.entry.name, let typeID = row.entry.typeID {
+          EVEItemText(value: name, typeID: typeID, lineLimit: 1, iconSize: 18)
+        } else if let name = row.entry.name {
           EVEEntityText(value: name, lineLimit: 1)
         } else {
           Text(

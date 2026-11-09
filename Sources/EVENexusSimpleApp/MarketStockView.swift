@@ -20,7 +20,6 @@ struct MarketStockView: View {
   @State private var sortOrder = [
     MarketStockOverviewComparator(column: .sellUnits, order: .reverse)
   ]
-  @State private var detailRequest: MarketStockItemRequest?
 
   private static let consumer = "market-stock"
   private static let windows = [1, 7, 30]
@@ -51,10 +50,6 @@ struct MarketStockView: View {
     .task { await loadMarketGroups() }
     .task(id: selectedRootGroupID) { await loadGroupFilter() }
     .onDisappear { runtime.releaseMarketStockOverviews(consumer: Self.consumer) }
-    .sheet(item: $detailRequest) { request in
-      MarketStockItemDetailView(request: request)
-        .environment(runtime)
-    }
   }
 
   // MARK: Header and controls
@@ -244,7 +239,14 @@ struct MarketStockView: View {
   private func nameCell(_ row: MarketStockOverviewRow) -> some View {
     HStack(spacing: DesignTokens.spacingXS) {
       if let name = row.name {
-        EVEItemText(value: name, typeID: row.typeID, font: .callout, lineLimit: 1, iconSize: 18)
+        EVEItemText(
+          value: name,
+          typeID: row.typeID,
+          font: .callout,
+          lineLimit: 1,
+          iconSize: 18,
+          showsMarketStockHistory: false
+        )
       } else {
         Text(
           AppLocalization.format("Unresolved type (ID %lld)", row.typeID)
@@ -253,21 +255,15 @@ struct MarketStockView: View {
         .help(AppLocalization.text("The active SDE has no name for this type."))
       }
       Spacer(minLength: DesignTokens.spacingXS)
-      // Separate from the copy click (MARKTBESTAND_PLAN P6/P7).
-      Button {
-        detailRequest = MarketStockItemRequest(
-          typeID: row.typeID,
-          name: row.name
-            ?? AppLocalization.format("Unresolved type (ID %lld)", row.typeID),
-          preferredRole: role
-        )
-      } label: {
-        Image(systemName: "chart.xyaxis.line")
-      }
-      .buttonStyle(.borderless)
-      .help(AppLocalization.text("Market stock history"))
-      .accessibilityLabel("Market stock history")
-      .accessibilityIdentifier("market-stock.\(row.typeID).history")
+      // The shared link at the row end, also for unresolved names
+      // (MARKTBESTAND_PLAN P6/P7); it opens with the selected hub.
+      MarketStockHistoryButton(
+        typeID: row.typeID,
+        name: row.name
+          ?? AppLocalization.format("Unresolved type (ID %lld)", row.typeID),
+        preferredRole: role,
+        accessibilityIdentifier: "market-stock.\(row.typeID).history"
+      )
     }
   }
 

@@ -579,7 +579,11 @@ struct ContentView: View {
         if selection == .productionBook { Button("Verkaufsbelege") { consolidationArea = .sales } }
       }
     }
-    .sheet(item: $consolidationArea) { area in ConsolidationWorkbenchView(area: area) }
+    .sheet(item: $consolidationArea) { area in
+      ConsolidationWorkbenchView(area: area)
+        .marketStockHistoryHost()
+    }
+    .marketStockHistoryHost()
     .navigationSplitViewStyle(.balanced)
     .tint(DesignTokens.accent)
     .frame(minWidth: 640, minHeight: 480)
@@ -5437,6 +5441,10 @@ struct EVEItemText: View {
   var iconSize: CGFloat = 22
   var imageKind: EVETypeImageKind = .icon
   var accessibilityIdentifier: String? = nil
+  /// The stock history link beside the name (owner rule 09.11.2026). Off
+  /// only where an enclosing control owns the click (search results), in
+  /// the history itself, or where the screen places the shared button itself.
+  var showsMarketStockHistory = true
 
   var body: some View {
     HStack(spacing: DesignTokens.spacingXS) {
@@ -5447,6 +5455,9 @@ struct EVEItemText: View {
         lineLimit: lineLimit,
         accessibilityIdentifier: accessibilityIdentifier
       )
+      if showsMarketStockHistory {
+        MarketStockHistoryButton(typeID: typeID, name: value)
+      }
     }
   }
 }

@@ -147,7 +147,6 @@ struct TradeView: View {
     direction: .ascending
   )
   @State private var logbookRequest: TradeLogbookEditorRequest?
-  @State private var stockHistoryRequest: MarketStockItemRequest?
   @State private var topSourceSide = TradeQuoteSide.minSell
   @State private var topTargetSide = TradeQuoteSide.minSell
   /// The Top-20 tile's own sort; `nil` follows the metric, descending
@@ -232,10 +231,7 @@ struct TradeView: View {
     .sheet(item: $logbookRequest) { request in
       TradeLogbookEditor(request: request)
         .environment(runtime)
-    }
-    .sheet(item: $stockHistoryRequest) { request in
-      MarketStockItemDetailView(request: request)
-        .environment(runtime)
+        .marketStockHistoryHost()
     }
   }
 
@@ -1443,7 +1439,8 @@ struct TradeView: View {
           typeID: row.typeID,
           font: .callout,
           lineLimit: 1,
-          iconSize: 18
+          iconSize: 18,
+          showsMarketStockHistory: false
         )
         if !showsDetails, display.openLogbookQuantity > 0 {
           Label(formatInteger(display.openLogbookQuantity), systemImage: "book.closed")
@@ -1465,21 +1462,14 @@ struct TradeView: View {
         .help(AppLocalization.text("Add to logbook"))
         .accessibilityLabel("Add to logbook")
         .accessibilityIdentifier("\(identifierPrefix).\(row.typeID).add-to-logbook")
-        // Stock history of the item (MARKTBESTAND_PLAN P6), also separate
-        // from the copy click.
-        Button {
-          stockHistoryRequest = MarketStockItemRequest(
-            typeID: row.typeID,
-            name: row.name,
-            preferredRole: mode.targetRole
-          )
-        } label: {
-          Image(systemName: "chart.xyaxis.line")
-        }
-        .buttonStyle(.borderless)
-        .help(AppLocalization.text("Market stock history"))
-        .accessibilityLabel("Market stock history")
-        .accessibilityIdentifier("\(identifierPrefix).\(row.typeID).stock-history")
+        // The shared stock history link (MARKTBESTAND_PLAN P6), after the
+        // logbook control as before; it opens with the route's target hub.
+        MarketStockHistoryButton(
+          typeID: row.typeID,
+          name: row.name,
+          preferredRole: mode.targetRole,
+          accessibilityIdentifier: "\(identifierPrefix).\(row.typeID).stock-history"
+        )
         if !row.issues.isEmpty {
           Image(systemName: "info.circle")
             .foregroundStyle(DesignTokens.caution)

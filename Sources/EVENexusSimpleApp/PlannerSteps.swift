@@ -211,8 +211,13 @@ struct PlannerMaterialCheckPanel: View {
             Divider()
             ForEach(rows) { material in
               GridRow {
-                EVEEntityText(value: material.name, font: .body)
-                  .gridColumnAlignment(.leading)
+                EVEItemText(
+                  value: material.name,
+                  typeID: material.typeID,
+                  font: .body,
+                  iconSize: 18
+                )
+                .gridColumnAlignment(.leading)
                 Text(material.required.formatted())
                 Text(material.fromStock.formatted())
                 Text(material.toBuy.formatted())

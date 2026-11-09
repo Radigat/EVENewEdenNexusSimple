@@ -1436,8 +1436,9 @@ struct LogisticsSettingsView: View {
           }
         }
         LabeledContent("Selected hull") {
-          EVEEntityText(
+          EVEItemText(
             value: logistics.jumpFreighter.hull.name,
+            typeID: logistics.jumpFreighter.hull.typeID,
             accessibilityIdentifier: "settings.jump-freighter.hull.copy"
           )
         }

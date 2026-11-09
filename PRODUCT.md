@@ -331,6 +331,22 @@ Material-, Kauf-, Lager- oder Zwischenproduktknoten werden nicht als
 Fertigprodukt dargestellt; Blueprintzeilen behalten dagegen bewusst die
 Type-ID des sichtbaren Blueprints.
 
+Neben jedem solchen Item steht in allen Bereichen das Verlaufssymbol
+(Kurvensymbol). Es öffnet den einen gemeinsamen
+[Item-Verlauf](#marktbestand-historie-erfassung) mit den zentral gespeicherten
+Hub-Daten; kein Bereich baut einen eigenen Graphen. Das Symbol ist eine eigene
+Schaltfläche neben dem kopierbaren Namen. Es fehlt nur in Such- und
+Auswahlergebnissen, im Kopf des Verlaufs selbst und bei Namen ohne aufgelöste
+Type-ID. Bisher reine Namenszeilen mit bekannter Type-ID zeigen deshalb jetzt
+auch Bild und Symbol: Planer-Materialtabelle, Rentabilität, Allianzverkauf,
+Verkaufsübersicht und Produktkosten, Jobplan, Logistikfracht, Jump-Freighter-
+Hull, Isotope und Capital-Selbstsprünge, Formelversand, Wissenschaftsaufträge
+und die Jump-Freighter-Hull in den Logistik-Einstellungen. Reaktionskarten
+zeigen das Symbol neben dem Namen im Kartenkopf, ohne die Karte aufzuklappen.
+Ohne aufgelöste Type-ID bleiben die Skill-Zeilen der Jump-Planung und die
+Produktzeilen in Planer-Schritt 3 (Eingabe vor der Berechnung). Regel:
+[AGENTS.md](AGENTS.md), Abschnitt „Bestandsverlauf je Item“.
+
 ### Dashboard und Vermögensverlauf
 
 Das Dashboard folgt in beiden Oberflächenstilen der Anordnung des Boards
@@ -942,8 +958,11 @@ Handel (siehe dort), der Item-Verlauf und die Ansicht **Marktbestand**.
   - Die Werte werden nur geladen, solange die Ansicht oder der Handel
     angezeigt wird.
 
-- **Item-Verlauf (Handel):** Das Verlaufssymbol neben einem Item öffnet den
-  Bestandsverlauf. Es ist getrennt vom Kopier-Klick und vom Logbuch-Plus.
+- **Item-Verlauf:** Das Verlaufssymbol neben einem Item öffnet den
+  Bestandsverlauf, im Handel ebenso wie in allen anderen Bereichen (siehe
+  Itemdarstellung). Es ist getrennt vom Kopier-Klick und im Handel vom
+  Logbuch-Plus. Eine zentrale Stelle des Fensters öffnet den Verlauf als
+  Sheet; ein Sheet wie der Logbuch-Editor öffnet ihn über sich.
   - **Graph über 30 Tage** für Main, Home und Coalition; ein Hub am Ort eines
     anderen erscheint einmal („Main Hub = Home Hub“).
   - **Umschaltbar:** Sell-Bestand, Buy-Nachfrage, niedrigster Sell-Preis.
@@ -969,7 +988,8 @@ Handel (siehe dort), der Item-Verlauf und die Ansicht **Marktbestand**.
     Tageswert je UTC-Tag zum Zeitpunkt seines letzten Punkts.
   - **Lücken:** Ein Tag ohne Punkt oder ein fehlender Preis unterbricht die
     Linie und wird nie als 0 gezeichnet.
-  - **Tagestabelle** je Hub (Standard: Zielhub der Route) über 30 Tage mit
+  - **Tagestabelle** je Hub (Standard: im Handel der Zielhub der Route, im
+    Marktbestand der gewählte Hub, sonst der Home Hub) über 30 Tage mit
     Datum (UTC), Sell-Bestand, Zugang, Teilverkauf, Verschwunden und Netto.
     - Alle Spalten sind sortierbar, unbekannte Werte stehen am Ende.
     - Netto ist positiv grün und negativ rot.

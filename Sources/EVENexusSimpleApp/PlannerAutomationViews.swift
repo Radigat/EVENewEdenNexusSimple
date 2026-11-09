@@ -183,7 +183,7 @@ struct PlannerFormulaShipmentList: View {
       ForEach(shipments, id: \.blueprintTypeID) { shipment in
         VStack(alignment: .leading, spacing: 2) {
           HStack(spacing: DesignTokens.spacingSM) {
-            EVEEntityText(value: shipment.formulaName)
+            EVEItemText(value: shipment.formulaName, typeID: shipment.blueprintTypeID)
             Text("from")
               .foregroundStyle(DesignTokens.textSecondary)
             EVEEntityText(value: shipment.originName, font: .body)

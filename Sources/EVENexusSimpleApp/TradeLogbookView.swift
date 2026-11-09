@@ -141,6 +141,7 @@ struct TradeLogbookView: View {
     .sheet(item: $editorRequest) { request in
       TradeLogbookEditor(request: request)
         .environment(runtime)
+        .marketStockHistoryHost()
     }
     .confirmationDialog(
       "Delete logbook entry?",
