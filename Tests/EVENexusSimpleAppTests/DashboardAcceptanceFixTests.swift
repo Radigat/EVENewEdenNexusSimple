@@ -149,7 +149,10 @@ struct DashboardAcceptanceFixTests {
   @Test
   func purchaseRefreshAndScienceSlotsUseOneGermanTerm() {
     #expect(AppLanguage.german.localized("Refresh purchase analysis") == "Kaufanalyse aktualisieren")
-    #expect(AppLanguage.german.localized("Science slots (shared)") == "Gemeinsame Wissenschafts-Slots")
+    // DB8: the card title is short like „Fertigungs-Slots“; the activity grid
+    // keeps „Gemeinsame Wissenschafts-Slots“.
+    #expect(AppLanguage.german.localized("Science slots (shared)") == "Wissenschafts-Slots")
+    #expect(AppLanguage.german.localized("Manufacturing slots") == "Fertigungs-Slots")
     #expect(AppLanguage.german.localized("Shared science slots") == "Gemeinsame Wissenschafts-Slots")
   }
 }

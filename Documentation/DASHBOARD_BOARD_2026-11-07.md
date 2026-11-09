@@ -1,8 +1,10 @@
 # Dashboard nach Board „Main.dc.html“ – Übernahmeplan (07.11.2026)
 
-Status: **DB1 bis DB7 erledigt** (07./08.11.2026, nicht committet). DB7 hat
-die Befunde B1–B10 der Durchsicht DB6 behoben (Abschnitt 7.4). Offen ist die
-Eigentümerabnahme nach Abschnitt 7; DB8 nur bei Befunden daraus. Umsetzung nur
+Status: **DB1 bis DB8 erledigt** (07./08.11.2026; DB1–DB7 im Sammel-Commit
+`0b7fb5c` einer anderen Sitzung enthalten, DB8 nicht committet). DB7 hat die
+Befunde B1–B10 der Durchsicht DB6 behoben (Abschnitt 7.4), DB8 den Titel der
+Kachel „Wissenschafts-Slots“ (Abschnitt 7.5). Die Eigentümerabnahme ist am
+08.11.2026 erteilt (Abschnitt 7); die Reihe ist abgeschlossen. Umsetzung nur
 auf ausdrücklichen Auftrag, je Schritt ein Prompt aus Abschnitt 6.
 
 ## 1. Ziel und Entscheidungen des Eigentümers (07.11.2026)
@@ -127,7 +129,7 @@ Raster    Z1  Industriejobs · bereit und bevorstehend │ Wallets
 | DB5 | Seitenkopf mit ESI-Status und „Alles aktualisieren“ | erledigt |
 | DB6 | Gesamtdurchsicht beider Stile, Abnahme-Checkliste | erledigt |
 | DB7 | Nur bei Befunden aus der Abnahme: Nacharbeiten | erledigt (B1–B10, 08.11.2026) |
-| DB8 | Nur bei Befunden aus der Eigentümerabnahme: Nacharbeiten | bei Bedarf |
+| DB8 | Nur bei Befunden aus der Eigentümerabnahme: Nacharbeiten | erledigt (Kacheltitel, 08.11.2026); zweiter Durchlauf ohne Befund, Abnahme erteilt |
 
 ## 6. Prompts (einzeln kopierbar)
 
@@ -287,7 +289,15 @@ Raster    Z1  Industriejobs · bereit und bevorstehend │ Wallets
 > Testdaten wie in DB6; Punkte, die nur mit echten Daten prüfbar sind, als
 > solche ausweisen. Trage das Ergebnis je Punkt in Abschnitt 7 ein.
 
+→ Nächster Prompt: keiner; die Reihe ist mit der Abnahme vom 08.11.2026
+abgeschlossen.
+
 ## 7. Abnahme-Checkliste (Eigentümer)
+
+**Abnahme:** Am 08.11.2026 vom Eigentümer insgesamt als „i. O.“ erklärt
+(zweiter Durchlauf von DB8, ohne Einzelmarkierungen). Die Kästchen unten sind
+deshalb nicht einzeln angekreuzt; für die Punkte in 7.2 liegen keine
+Ergebnisse je Punkt mit echten Daten vor.
 
 Erstellt in DB6 (08.11.2026). Spalte „Eigentümer“: `[ ] i. O.` oder
 `[ ] nicht i. O.` ankreuzen, Bemerkung dahinter. DB7 bearbeitet nur, was hier
@@ -374,7 +384,8 @@ Dashboards tragen „Update“ (Main-Hub-Chancen) und „Refresh“
 
 ### 7.4 Ergebnis DB7 (08.11.2026)
 
-Alle Befunde B1–B10 umgesetzt, nicht committet. „Test“ = neuer Test in
+Alle Befunde B1–B10 umgesetzt; der Code ist im Sammel-Commit `0b7fb5c` einer
+anderen Sitzung enthalten. „Test“ = neuer Test in
 `DashboardAcceptanceFixTests`; „Sicht“ = isolierte Debug-App mit den
 synthetischen Testdaten aus DB6, per Bedienungshilfen gelesen und fotografiert.
 
@@ -399,3 +410,12 @@ weil beide dieselbe Bundle-ID nutzen; die Seitenleiste war in DB7 rund 43 pt
 breiter als in DB6, daher stehen die Kennzahlen bei 760 pt Fensterbreite jetzt
 untereinander (Inhalt 433 pt, Grenze für 2 × 2 sind 476 pt) und ab etwa
 820 pt wieder 2 × 2. Gespeicherte Fensterrahmen zeigen keine Prüfmaße.
+
+### 7.5 Ergebnis DB8 (08.11.2026)
+
+In Abschnitt 7 war nichts angekreuzt; der Eigentümer hat auf Nachfrage die
+Beobachtung aus DB7 zum Kacheltitel genannt und die kürzere Fassung gewählt.
+
+| Punkt | Ursache | Umsetzung | Test | Sicht | Eigentümer |
+|---|---|---|---|---|---|
+| Titel „Gemeinsame Wissenschafts-Slots“ bricht bei 2 × 2 um, der Wert steht tiefer als nebenan | Der gesperrte Großbuchstabentitel ist 233 pt breit; die Karte hat bei 2 × 2 innen etwa 206 pt, bei vier nebeneinander mindestens 198 pt | Deutscher Kacheltitel „Wissenschafts-Slots“ wie „Fertigungs-Slots“; das Aktivitätsraster behält „Gemeinsame Wissenschafts-Slots“; Englisch unverändert „Shared science slots“ | ja (`DashboardAcceptanceFixTests`) | Klassisch und HUD, Deutsch und Englisch bei 820 pt (2 × 2): Titel einzeilig, Werte beider Slot-Karten auf gleicher Höhe; bei 1600 pt ebenso | [ ] i. O. |

@@ -1376,7 +1376,7 @@
 "Data sources" = "Datenquellen";
 "Show the state of every data source." = "Zeigt den Zustand jeder Datenquelle.";
 "The status combines these sources; its time is the oldest source." = "Der Status fasst diese Quellen zusammen; seine Zeit ist die der ältesten Quelle.";
-"Science slots (shared)" = "Gemeinsame Wissenschafts-Slots";
+"Science slots (shared)" = "Wissenschafts-Slots";
 "%lld ready · %@ free" = "%lld bereit · %@ frei";
 "Reactions %@ / %@" = "Reaktionen %@ / %@";
 "Capacity by activity" = "Kapazität je Aktivität";

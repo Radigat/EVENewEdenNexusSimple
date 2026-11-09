@@ -649,3 +649,9 @@ Entscheidungen des Eigentümers (08.11.2026) zu DB7:
 2. B9: Im Dashboard heißt es einheitlich „Wissenschafts-Slots“, wie im Planer.
 3. B8: Das Aktualisieren-Symbol steht in den Panels Mineralienpreise, Moon-Kauf und Mineralien-Kauf hinter „Einkaufsanalyse öffnen“.
 4. B5: ISK-Beträge folgen dem Standardformat der App-Sprache wie in den Marktansichten (Englisch „ISK 2,097,354,121“, Deutsch „2.097.354.121 ISK“).
+
+Von Claude festgelegt (DB7): Die Popover übernehmen die App-Sprache über den gemeinsamen Modifikator `appLanguageLocale()`; das gilt auch für die Kopier-Rückmeldung von `EVEEntityText`, weil sie dieselbe Ursache hat. Beim Aktualisieren je Wallet nennen EVE-Fehler (Autorisierung, ESI, Netzwerk) dieselbe Meldung wie der Charakter-Sync, alle übrigen „Der Wallet-Stand konnte lokal nicht aktualisiert werden.“ Die Aktualisieren-Knöpfe der Kaufpanels heißen sprechend „Kaufanalyse aktualisieren“ statt eines allgemeinen Schlüssels „Refresh“, damit Beschriftungen außerhalb des Dashboards unverändert bleiben. Der Leerzustand einer Serie trägt die Kennung `dashboard.wealth-series.empty`; der nicht mehr genutzte Schlüssel „Total net-worth history“ ist entfernt. Der Test für B3 liest die Fehlertexte aus `RuntimeState.swift`, damit ein neuer unübersetzter Analyse-Fehlertext auffällt.
+
+Entscheidungen des Eigentümers (08.11.2026) zu DB8: Bearbeitet wird nur die Beobachtung aus DB7 zum Kacheltitel (in Abschnitt 7 war nichts angekreuzt). Die Kennzahlkarte heißt auf Deutsch kurz „Wissenschafts-Slots“ wie „Fertigungs-Slots“; das Aktivitätsraster behält „Gemeinsame Wissenschafts-Slots“. Damit gilt Punkt 2 der DB7-Entscheidungen für die Karte in dieser kürzeren Form.
+
+Entscheidung des Eigentümers (08.11.2026, zweiter Durchlauf DB8): Die Abnahme des Dashboards nach Abschnitt 7 ist insgesamt „i. O.“; es gibt keine weiteren Nacharbeiten. Die Kästchen der Checkliste wurden nicht einzeln angekreuzt, Ergebnisse je Punkt mit echten Daten (7.2) liegen nicht vor.

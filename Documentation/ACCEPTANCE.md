@@ -749,3 +749,13 @@ Automatisch geprüft, Live- und Eigentümerabnahme offen:
 - [ ] Warnungen auf Deutsch; Vertragsindex- und Kurierwarnung verschwinden bei Allianzverkauf am Home Hub und erscheinen bei Vertragsverkauf oder Main Hub.
 - [ ] Schritt 6: Multibuy je Hub aus fehlenden Items und Lagerverbrauch; in EVE einfügbar, Listen ergeben zusammen die Gesamtmenge.
 - [ ] Schritt 8: nur Zusammenfassung, **Verkauf ändern** führt zu Schritt 4, **Produktion erfassen** vermerkt die Wahl.
+
+## Dashboard nach Board „Main.dc.html“ (08.11.2026)
+
+Plan, Checkliste und Ergebnisse: [DASHBOARD_BOARD_2026-11-07.md](DASHBOARD_BOARD_2026-11-07.md),
+Abschnitt 7. Automatisch geprüft (`swift test`, `xcodebuild test`,
+`DashboardAcceptanceFixTests`) und in einer isolierten Debug-App mit
+synthetischen Testdaten gesehen (DB6–DB8). Vom Eigentümer am 08.11.2026
+insgesamt als „i. O.“ abgenommen, ohne Einzelmarkierungen; für die Punkte, die
+nur mit echten Daten prüfbar sind (Abschnitt 7.2), liegen keine Ergebnisse je
+Punkt vor.

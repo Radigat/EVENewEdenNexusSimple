@@ -336,8 +336,9 @@ Type-ID des sichtbaren Blueprints.
 Das Dashboard folgt in beiden Oberflächenstilen der Anordnung des Boards
 `Main.dc.html` (Plan
 [DASHBOARD_BOARD_2026-11-07.md](Documentation/DASHBOARD_BOARD_2026-11-07.md),
-Stand DB6; bekannte Abweichungen aus der Durchsicht stehen dort in Abschnitt
-7.3, die Eigentümerabnahme steht aus). Unter
+Stand DB8; die Befunde der Durchsicht DB6 sind behoben, Ergebnisse in
+Abschnitt 7.4 und 7.5; vom Eigentümer am 08.11.2026 insgesamt abgenommen).
+Unter
 Titel und Untertitel „Jobs, Wallets, Vermögen und Markt auf einen Blick“
 stehen die Kennzahlenreihe und der aufklappbare Bereich „Kapazität je
 Aktivität“, darunter ein Raster aus zwei gleich breiten Spalten. Panels
@@ -402,7 +403,8 @@ als 4 × 230 Punkten zwei je Zeile, noch schmaler untereinander:
   bereit · M frei“, frei = Kapazität − belegt, nie negativ. Bei
   Teilkapazität stehen Kapazität und frei mit „≥“, ohne Kapazität „—“. Der
   Balken erscheint nur bei vollständig bekannter Kapazität.
-- **Gemeinsame Wissenschafts-Slots:** dasselbe für Kopieren, Erfindung und ME-/TE-
+- **Wissenschafts-Slots** (englisch „Shared science slots“; im Aktivitätsraster
+  „Gemeinsame Wissenschafts-Slots“): dasselbe für Kopieren, Erfindung und ME-/TE-
   Forschung, darunter „Reaktionen belegt / Kapazität“.
 
 Nur die beiden Slot-Karten folgen dem Minutentakt. „Kapazität je Aktivität“

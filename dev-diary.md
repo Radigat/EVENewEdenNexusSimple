@@ -10036,6 +10036,44 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - `swift test` grün: 785 und 148 Tests (Swift Testing) und 49 XCTest-Fälle; `EVEStaticDataKit` 13 Tests; natives `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED` mit 785 Tests, keine Warnung in den geänderten Vertragsdateien; `plutil -lint` beider `Localizable.strings` OK, `git diff --check` fehlerfrei. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen anderer Sitzungen (D1–D8, DB1–DB6).
 - **Offen:** Sichtprüfung in der App und Eigentümerabnahme. Regionsnamen im Picker und in der Metadatenzeile der Ergebniskarten sind wie bisher Kategorie, Gruppe und Kartenzeile nicht per Klick kopierbar. Ein Wechsel der Sortierung sucht wie die übrigen Filter erst nach 700 ms neu.
 
+## 08.11.2026: DB7 – Dashboard: Abnahme-Nacharbeiten B1–B10
+
+- **Auftrag:** Befunde B1–B10 aus der Durchsicht DB6 ([Plan](Documentation/DASHBOARD_BOARD_2026-11-07.md), Abschnitt 7.3), vom Eigentümer alle freigegeben; Antworten zu B5, B8 und B9 in [DECISIONS](Documentation/Consolidation/DECISIONS.md) „Dashboard DB6“. Vor der Umsetzung je Punkt Ursache und Vorschlag genannt.
+- **Ergebnis:**
+  - B1: neuer Modifikator `appLanguageLocale()` (`AppLanguage.swift`) an den Popovern „ESI-Status“, „Details zur Bewertung“ und an der Kopier-Rückmeldung von `EVEEntityText` (gilt damit app-weit).
+  - B2: die vier Kennzahlkarten gruppieren mit `.accessibilityElement(children: .contain)`; `dashboard.key-figure.net-worth.info` ist erreichbar.
+  - B3: die Schlüssel „No active SDE catalog is installed. Install or activate static data first.“ und „The active SDE catalog contains no complete published reaction definitions.“ in beiden `Localizable.strings`.
+  - B4: neu `DashboardWalletRefreshMessage`: EVE-Fehler über `EVEConnectionErrorText`, sonst „Der Wallet-Stand konnte lokal nicht aktualisiert werden.“; Schlüssel „Refresh %@'s wallet“.
+  - B5: Restzeit der Jobs, Datumsangaben (Wallet-Zeile, Marktstand in „Main-Hub-Chancen · Top 5“, Reaktionsanalyse), Achsen des Nettowert-Graphen, Prozent im Ticker, `NetWorthValueFormat.isk`/`signedISK` (auch Nettowert-Ansicht) und die Zeiten des ESI-Status in der App-Sprache; ISK im Standardformat der Sprache wie `OpportunityValueFormat`.
+  - B6: `DashboardWealthSeries.samples(in:)`; ohne Werte „Keine Werte für „…“ im gewählten Zeitraum.“ (`dashboard.wealth-series.empty`), Bedienungshilfe „Nettowertverlauf: …“; der Schlüssel „Total net-worth history“ entfällt.
+  - B7: neu `DashboardPurchasePanelState`; ohne Analyse „Noch keine Moon-/Mineralien-Kaufanalyse“, sonst wie bisher „Einstellungen geändert …“.
+  - B8: Bedienungshilfe und Tooltip „Kaufanalyse aktualisieren“; im Mineralpreis-Panel steht das Symbol jetzt hinter „Einkaufsanalyse öffnen“.
+  - B9: „Gemeinsame Wissenschafts-Slots“ für Kachel und Raster; der Text der Wallet-Kachel bricht um statt zu kürzen.
+  - B10: Jobzeilen gruppieren mit `.contain` statt `.combine`.
+  - Neu `DashboardAcceptanceFixTests` (8 Tests). PRODUCT.md (Dashboard), Plan (Status, DB8-Prompt, Abschnitt 7.4) und DECISIONS nachgezogen. Rechenregeln, Abrufe, UserDefaults-Schlüssel und bestehende Kennungen unverändert; neu nur `dashboard.wealth-series.empty`.
+- **Prüfung:**
+  - `swift test` grün: 148 und 784 Tests (Swift Testing) und 49 XCTest-Fälle; `EVEStaticDataKit` 13 Tests; natives `xcodebuild build` und `xcodebuild test` (Debug, unsigniert) `BUILD SUCCEEDED`, `TEST SUCCEEDED` mit 784 Tests; keine Warnung in den geänderten Dateien. `plutil -lint` beider `Localizable.strings` OK. Lauf auf dem Arbeitsbaum mit den uncommitteten Änderungen von D1–D8 und DB1–DB6.
+  - Während der Sichtprüfung hat eine andere Sitzung den Sammel-Commit `0b7fb5c` erstellt; er enthält den DB7-Code, den Test und den Plan mit Abschnitt 7.4, die Nachträge in PRODUCT.md, DECISIONS und diesem Eintrag nicht. Danach `swift test` auf dem neuen Stand erneut grün: 148 und 785 Tests (Swift Testing), 49 XCTest-Fälle. `xcodebuild test` auf diesem Stand nicht wiederholt.
+  - Isolierte Debug-App wie in DB6 (synthetische Testdaten, ohne Netz, Beenden per PID): Bedienungsläufe HUD/Englisch und Klassisch/Deutsch, Fotos HUD/Englisch und Klassisch/Deutsch mit Testdaten sowie Klassisch/Englisch ohne Daten, breit und schmal, dazu Breitenmessung bei 760–850 pt. Je Befund gelesen und gesehen, Ergebnis in Abschnitt 7.4 des Plans.
+- **Offen:** Eigentümerabnahme nach Abschnitt 7 (7.1, 7.2, 7.4). Titel „Gemeinsame Wissenschafts-Slots“ wird bei 2 × 2 zweizeilig. Die isolierte Debug-App teilt Fenster- und Seitenleisten-Autosave mit der echten App (gleiche Bundle-ID); deshalb hängt die schmale Anordnung von der zuletzt gespeicherten Seitenleistenbreite ab. Kopieren per Klick weiter nicht ausgelöst.
+
+## 08.11.2026: DB8 – Dashboard: Kacheltitel „Wissenschafts-Slots“
+
+- **Auftrag:** Prompt DB8 aus dem [Plan](Documentation/DASHBOARD_BOARD_2026-11-07.md). In Abschnitt 7 war nichts als „nicht i. O.“ markiert; auf Nachfrage hat der Eigentümer die Beobachtung aus DB7 zum Kacheltitel genannt und die kürzere Fassung gewählt ([DECISIONS](Documentation/Consolidation/DECISIONS.md), DB8).
+- **Ursache:** Der gesperrte Großbuchstabentitel „GEMEINSAME WISSENSCHAFTS-SLOTS“ ist 233 pt breit; eine Kennzahlkarte hat bei 2 × 2 innen etwa 206 pt, bei vier nebeneinander mindestens 198 pt. Der Titel brach um und schob den Wert unter den der Nachbarkarte.
+- **Ergebnis:** Deutscher Wert von „Science slots (shared)“ jetzt „Wissenschafts-Slots“ (148 pt), wie „Fertigungs-Slots“. Das Aktivitätsraster behält „Gemeinsame Wissenschafts-Slots“, Englisch bleibt „Shared science slots“. Kein Code geändert außer dem Test; PRODUCT.md, Plan (Status, Abschnitt 5, 7.5) und DECISIONS nachgezogen.
+- **Prüfung:**
+  - `DashboardAcceptanceFixTests` prüft die neuen Texte. `swift test` grün: 148 und 785 Tests (Swift Testing), 49 XCTest-Fälle; `EVEStaticDataKit` 13 Tests; natives `xcodebuild build` und `xcodebuild test` (Debug, unsigniert) `BUILD SUCCEEDED`, `TEST SUCCEEDED` mit 785 Tests. `plutil -lint` OK.
+  - Isolierte Debug-App mit den synthetischen Testdaten aus DB6 (ohne Netz, Beenden per PID): Klassisch und HUD, Deutsch und Englisch bei 820, 760 und 1600 pt fotografiert. Bei 820 und 1600 pt sind beide Slot-Titel einzeilig, die Werte stehen auf gleicher Höhe (per Bedienungshilfen gemessen).
+- **Offen:** Eigentümerabnahme nach Abschnitt 7. Nicht committet; DB1–DB7 liegen im Sammel-Commit `0b7fb5c` einer anderen Sitzung.
+
+## 08.11.2026: Dashboard nach Board – Abnahme (DB8, zweiter Durchlauf)
+
+- **Auftrag:** Prompt DB8 erneut. In Abschnitt 7 des [Plans](Documentation/DASHBOARD_BOARD_2026-11-07.md) war nichts als „nicht i. O.“ markiert; auf Nachfrage hat der Eigentümer die Abnahme insgesamt als „i. O.“ erklärt.
+- **Ergebnis:** Keine Code-Änderung. Abnahme im Plan (Status, Abschnitt 5, Abschnitt 7), in PRODUCT.md, [DECISIONS](Documentation/Consolidation/DECISIONS.md) und [ACCEPTANCE](Documentation/ACCEPTANCE.md) eingetragen; die Reihe DB1–DB8 ist abgeschlossen.
+- **Prüfung:** Keine neuen Prüfläufe nötig, weil nur Dokumentation geändert wurde; letzter Stand aus DB8: `swift test` (148 und 785 Tests, 49 XCTest-Fälle), `EVEStaticDataKit` (13), `xcodebuild build`/`test` (785) grün.
+- **Offen:** Die Kästchen der Checkliste sind nicht einzeln angekreuzt; für die Punkte in 7.2 liegen keine Ergebnisse je Punkt mit echten Daten vor. DB8 und die DB7-Nachträge sind nicht committet.
+
 ## 08.11.2026: ROADMAP und PROJECT_STATE auf den Stand vom 08.11.2026 nachgezogen
 
 - **Auftrag:** Eigentümerfrage nach den offenen Punkten; danach ROADMAP und PROJECT_STATE nachziehen, die auf dem Stand vom 23./24.10.2026 standen.
