@@ -138,7 +138,7 @@ enum PlannerFlowGuide {
       id: .productList, role: .input, column: .inputs,
       title: "Product list",
       explanation:
-        "One or more products. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost."
+        "One line per job: product, quantity, ME and TE, optionally a BPC or BPO with its cost. The hammer beside an item elsewhere in the app selects it here for adding."
     ),
     PlannerFlowNode(
       id: .purchaseLocations, role: .input, column: .inputs,

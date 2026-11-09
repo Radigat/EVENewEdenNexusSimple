@@ -401,6 +401,9 @@ struct ContentView: View {
   @State private var dataSettingsSelection: DataSettingsSection = .general
   @State private var historicalPlannerRequest: HistoricalPlannerRequest?
   @State private var plannerLaunchRequest: PlannerLaunchRequest?
+  /// Build link (hammer) clicks from every area except the Planner.
+  @State private var plannerBuildRouter = PlannerBuildRouter()
+  @State private var plannerBuildRequest: PlannerBuildRequest?
   @State private var didPreparePlannerConfiguration = false
   @StateObject private var profileNavigationGuard =
     ProfileNavigationGuard()
@@ -470,6 +473,7 @@ struct ContentView: View {
             PlannerView(
               historicalPlannerRequest: $historicalPlannerRequest,
               launchRequest: $plannerLaunchRequest,
+              buildRequest: $plannerBuildRequest,
               runtime: runtime,
               onOpenDataSettings: { section in
                 guardedDataSettingsSelection.wrappedValue = section
@@ -584,6 +588,25 @@ struct ContentView: View {
         .marketStockHistoryHost()
     }
     .marketStockHistoryHost()
+    // Outside the history host, so its sheets see the router too; no router
+    // while the Planner is shown (owner rule 09.11.2026).
+    .environment(
+      \.plannerBuildRouter,
+      selection == .planner ? nil : plannerBuildRouter
+    )
+    .onChange(of: plannerBuildRouter.request) { _, request in
+      guard let request else { return }
+      plannerBuildRouter.request = nil
+      openPlannerBuild(request)
+    }
+    .onChange(of: runtime.plannerBuildTargetIndex, initial: true) { _, targets in
+      plannerBuildRouter.targets = targets
+    }
+    .task {
+      if runtime.plannerBuildTargetIndex == nil {
+        await runtime.refreshPlannerBuildTargetIndex()
+      }
+    }
     .navigationSplitViewStyle(.balanced)
     .tint(DesignTokens.accent)
     .frame(minWidth: 640, minHeight: 480)
@@ -766,6 +789,18 @@ struct ContentView: View {
       productionOverviewRowID: row.id
     )
     selection = .planner
+  }
+
+  /// A build link click: unsaved settings keep their warning, and a
+  /// cancelled navigation drops the request instead of applying it later.
+  private func openPlannerBuild(_ request: PlannerBuildRequest) {
+    profileNavigationGuard.attemptNavigation {
+      // The consolidation sheet belongs to the window and would stay open.
+      consolidationArea = nil
+      historicalPlannerRequest = nil
+      plannerBuildRequest = request
+      selection = .planner
+    }
   }
 }
 
@@ -5445,6 +5480,11 @@ struct EVEItemText: View {
   /// only where an enclosing control owns the click (search results), in
   /// the history itself, or where the screen places the shared button itself.
   var showsMarketStockHistory = true
+  /// The build link (hammer) after the history link (owner rule
+  /// 09.11.2026); it appears only for types the Planner can build and never
+  /// inside the Planner. Off where an enclosing control owns the click
+  /// (search results) or where the screen places the shared button itself.
+  var showsPlannerBuild = true
 
   var body: some View {
     HStack(spacing: DesignTokens.spacingXS) {
@@ -5457,6 +5497,9 @@ struct EVEItemText: View {
       )
       if showsMarketStockHistory {
         MarketStockHistoryButton(typeID: typeID, name: value)
+      }
+      if showsPlannerBuild {
+        PlannerBuildButton(typeID: typeID, name: value)
       }
     }
   }

@@ -347,6 +347,22 @@ Ohne aufgelöste Type-ID bleiben die Skill-Zeilen der Jump-Planung und die
 Produktzeilen in Planer-Schritt 3 (Eingabe vor der Berechnung). Regel:
 [AGENTS.md](AGENTS.md), Abschnitt „Bestandsverlauf je Item“.
 
+Hinter dem Kurvensymbol steht bei jedem Item, das der Planer laut aktivem SDE
+bauen kann, ein Hammer („Im Planer bauen“). Baubar heißt: Fertigung über eine
+Blaupause oder Reaktion über eine Formel; Rohstoffe wie Minerale, Erze oder
+Mondmaterialien und reine Invention-Ergebnisse bekommen keinen Hammer. Bei
+einer Blaupause oder Reaktionsformel gilt der Hammer ihrem Produkt, etwa in der
+Blaupausenliste, den Job-Zeilen des Dashboards oder den Blaupausenquellen der
+Hub-Chancen. Ein Klick öffnet den Planer im Schritt „Produzieren“ und wählt das
+Item im Feld „Produzierbares Item hinzufügen“ mit der ME/TE-Vorgabe aus; das
+Runs-Feld bleibt leer und hat den Fokus. Erst „Am Ende der Planereingabe
+hinzufügen“ hängt die Zeile an, Eingabe und berechneter Plan bleiben bis dahin
+unverändert. In einem Sheet oder Popover schließt der Klick zuerst die
+Präsentation; ungesicherte Einstellungen lösen die bekannte Warnung aus, ein
+Abbruch verwirft den Wechsel. Der Hammer fehlt im Planer selbst, in Such- und
+Auswahlergebnissen, bei Namen ohne aufgelöste Type-ID und ohne aktives SDE.
+Regel: [AGENTS.md](AGENTS.md), Abschnitt „Bauen im Planer je Item“.
+
 ### Dashboard und Vermögensverlauf
 
 Das Dashboard folgt in beiden Oberflächenstilen der Anordnung des Boards
@@ -1527,7 +1543,18 @@ startet ab drei Zeichen in einem großen Ergebnisfeld und zeigt ausschließlich
 veröffentlichte, vollständig aufgelöste Manufacturing-Produkte des aktiven
 SDE-Katalogs. Sie benötigt deshalb weder ESI-Login noch Charakterscopes. Nach
 der Auswahl werden Runs, ME und TE eingegeben; der SDE-Output je Run wird
-sichtbar ausgewiesen. Beim Hinzufügen rechnet die Domänenschicht Runs mal
+sichtbar ausgewiesen. ME und TE starten mit der gemeinsamen Vorgabe
+`PlannerBuildEfficiencyPreset` (Eigentümerentscheidung 09.11.2026): T1,
+Structure Tech I und Produkte ohne Meta-Gruppe und Tech-Level (Bauteile, Fuel
+Blocks, Upwell-Strukturen) ME 10 / TE 20; T2, Structure Tech II und T3
+ME 3 / TE 2; Faction, Structure Faction, Storyline und sonstige Meta-Gruppen
+ME 0 / TE 0. Beide Werte bleiben änderbar. Der Hammer neben einem Item-Namen
+in anderen Bereichen wählt das Item hier mit derselben Vorgabe vor, lässt das
+Runs-Feld leer und setzt den Fokus hinein; über ihn kommen auch
+Reaktionsprodukte ins Feld, bei denen ME und TE gesperrt sind, weil der Planer
+sie für Reaktionen nicht anwendet. Kann das aktive SDE das Item nicht mehr
+liefern, erscheint eine Meldung statt einer Auswahl. Die Suche selbst bleibt
+auf Manufacturing-Produkte beschränkt. Beim Hinzufügen rechnet die Domänenschicht Runs mal
 Output je Run in den bestehenden `Produkt Bedarf ME TE`-Vertrag um und hängt
 die neue Zeile unverändert ans Ende der Planereingabe. Dadurch bleibt die
 Run-Anzahl auch bei Mehrfach-Outputs exakt. Der sichtbare Itemname ist über die

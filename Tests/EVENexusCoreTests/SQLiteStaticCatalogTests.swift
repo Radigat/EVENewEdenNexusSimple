@@ -1219,6 +1219,178 @@ struct SQLiteStaticCatalogTests {
   /// Manufacturing variants around the base fixture: several ordered
   /// materials, a second product, one product offered by two blueprints and
   /// one blueprint with an unresolved material.
+  /// Owner rule 09.11.2026: the hammer beside an item name appears exactly
+  /// for the types the Planner can build.
+  @Test
+  func plannerBuildTargetsLinkExactlyThePlannerBuildableTypes() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-build-targets-sde-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    _ = try await catalog.activate(try plannerBuildTargetFixture(build: 8))
+
+    let targets = try await catalog.plannerBuildTargets()
+
+    // Products link to themselves, blueprints and formulas to their product.
+    #expect(targets[1] == 1)
+    #expect(targets[100] == 1)
+    #expect(targets[3] == 3)
+    #expect(targets[101] == 3)
+    #expect(targets[600] == 600)
+    #expect(targets[610] == 600)
+    #expect(targets[611] == 601)
+    #expect(targets[622] == 622)
+    #expect(targets[612] == 602)
+    #expect(targets[613] == 602)
+    #expect(targets[720] == 730)
+    // An invented T2 BPC links to its T2 product, never to itself.
+    #expect(targets[710] == 700)
+    #expect(targets[700] == 700)
+    // Raw materials, unpublished and incomplete blueprints get no link.
+    for typeID: Int64 in [2, 4, 99, 603, 614, 620, 621] {
+      #expect(targets[typeID] == nil, "type \(typeID)")
+    }
+    // Every linked product is one the Planner calculates.
+    for product in Set(targets.values) {
+      let definition = try #require(
+        try await catalog.productionDefinition(productTypeID: product)
+      )
+      #expect(definition.activity.kind != .invention, "product \(product)")
+    }
+
+    _ = try await catalog.activate(
+      try fixture(build: 9, productName: "Second Ship")
+    )
+    let replaced = try await catalog.plannerBuildTargets()
+    #expect(replaced == [1: 1, 100: 1])
+  }
+
+  @Test
+  func plannerBuildTargetCarriesEnglishNameOutputAndPreset() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eve-simple-build-target-sde-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let catalog = SQLiteStaticCatalog(rootURL: root)
+    _ = try await catalog.activate(try plannerBuildTargetFixture(build: 8))
+
+    // A blueprint name builds its product (meta group 2: Tech II).
+    let ship = try #require(
+      try await catalog.plannerBuildTarget(displayedTypeID: 100)
+    )
+    #expect(ship.product.id == 1)
+    #expect(ship.product.name == "Parity Ship")
+    #expect(ship.product.outputPerRun == 1)
+    #expect(ship.product.blueprintTypeID == 100)
+    #expect(ship.activity == .manufacturing)
+    #expect(ship.preset == PlannerBuildEfficiencyPreset(basis: .techII))
+
+    let reaction = try #require(
+      try await catalog.plannerBuildTarget(displayedTypeID: 3)
+    )
+    #expect(reaction.product.outputPerRun == 200)
+    #expect(reaction.activity == .reaction)
+    #expect(reaction.preset.efficiencyLocked)
+    #expect(reaction.preset.materialEfficiency == 0)
+    #expect(reaction.preset.timeEfficiency == 0)
+
+    // Without meta group and tech level a product counts as Tech I.
+    let module = try #require(
+      try await catalog.plannerBuildTarget(displayedTypeID: 610)
+    )
+    #expect(module.product.id == 600)
+    #expect(module.preset == PlannerBuildEfficiencyPreset(basis: .techI))
+
+    let invented = try #require(
+      try await catalog.plannerBuildTarget(displayedTypeID: 710)
+    )
+    #expect(invented.product.id == 700)
+    #expect(invented.product.name == "Advanced Item")
+    #expect(invented.preset == PlannerBuildEfficiencyPreset(basis: .techII))
+
+    #expect(try await catalog.plannerBuildTarget(displayedTypeID: 2) == nil)
+    #expect(try await catalog.plannerBuildTarget(displayedTypeID: 603) == nil)
+    #expect(try await catalog.plannerBuildTarget(displayedTypeID: 0) == nil)
+  }
+
+  /// `definitionFixture` plus a Tech I blueprint whose invention yields a
+  /// Tech II BPC that manufactures a Tech II item.
+  private func plannerBuildTargetFixture(build: Int) throws
+    -> StaticDataCatalogSnapshot
+  {
+    let base = try definitionFixture(build: build)
+    func product(_ typeID: Int64, _ quantity: Int64, probability: Double? = nil)
+      -> StaticBlueprintProductSnapshot
+    {
+      StaticBlueprintProductSnapshot(
+        itemTypeID: typeID,
+        quantity: quantity,
+        probability: probability,
+        sortOrder: 0
+      )
+    }
+    let material = StaticBlueprintMaterialSnapshot(
+      itemTypeID: 620,
+      quantity: 1,
+      sortOrder: 0
+    )
+    let extraTypes = [
+      itemType(id: 700, name: "Advanced Item", metaGroupID: 2, techLevel: 2),
+      itemType(id: 710, name: "Advanced Item Blueprint"),
+      itemType(id: 720, name: "Basic Item Blueprint"),
+      itemType(id: 730, name: "Basic Item", metaGroupID: 1, techLevel: 1),
+    ]
+    let extraBlueprints = [
+      StaticBlueprintSnapshot(
+        blueprintTypeID: 720,
+        maxProductionLimit: 10,
+        activities: [
+          StaticBlueprintActivitySnapshot(
+            activity: .manufacturing,
+            timeSeconds: 60,
+            materials: [material],
+            products: [product(730, 1)]
+          ),
+          StaticBlueprintActivitySnapshot(
+            activity: .invention,
+            timeSeconds: 600,
+            materials: [material],
+            products: [product(710, 1, probability: 0.3)]
+          ),
+        ]
+      ),
+      StaticBlueprintSnapshot(
+        blueprintTypeID: 710,
+        maxProductionLimit: 10,
+        activities: [
+          StaticBlueprintActivitySnapshot(
+            activity: .manufacturing,
+            timeSeconds: 120,
+            materials: [material],
+            products: [product(700, 1)]
+          )
+        ]
+      ),
+    ]
+    return try StaticDataCatalogSnapshot(
+      buildNumber: base.buildNumber,
+      contentSHA256: base.contentSHA256,
+      officialArchiveURL: base.officialArchiveURL,
+      sourceFormat: base.sourceFormat,
+      categories: base.categories,
+      groups: base.groups,
+      itemTypes: base.itemTypes + extraTypes,
+      typeMaterials: base.typeMaterials,
+      blueprints: base.blueprints + extraBlueprints,
+      decryptors: base.decryptors,
+      marketGroups: base.marketGroups,
+      reactionRuleProfile: base.reactionRuleProfile
+    )
+  }
+
   private func definitionFixture(build: Int) throws
     -> StaticDataCatalogSnapshot
   {

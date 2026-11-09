@@ -156,9 +156,13 @@ struct PlannerView: View {
   @EnvironmentObject private var consolidation: ConsolidationController
   @Binding var historicalPlannerRequest: HistoricalPlannerRequest?
   @Binding var launchRequest: PlannerLaunchRequest?
+  /// Build link (hammer) click from another area; preselects the product
+  /// adder instead of appending a line.
+  @Binding var buildRequest: PlannerBuildRequest?
   let runtime: RuntimeState
   let onOpenDataSettings: (DataSettingsSection) -> Void
   @ObservedObject private var featureState: RuntimeFeatureState
+  @State private var adderPreselection: PlannerAdderPreselection?
   @Environment(\.modelContext) private var modelContext
   @Query(filter: #Predicate<StoredPlan> { $0.isActive })
   private var activePlans: [StoredPlan]
@@ -340,11 +344,13 @@ struct PlannerView: View {
   init(
     historicalPlannerRequest: Binding<HistoricalPlannerRequest?>,
     launchRequest: Binding<PlannerLaunchRequest?>,
+    buildRequest: Binding<PlannerBuildRequest?> = .constant(nil),
     runtime: RuntimeState,
     onOpenDataSettings: @escaping (DataSettingsSection) -> Void = { _ in }
   ) {
     _historicalPlannerRequest = historicalPlannerRequest
     _launchRequest = launchRequest
+    _buildRequest = buildRequest
     self.runtime = runtime
     self.onOpenDataSettings = onOpenDataSettings
     _featureState = ObservedObject(
@@ -490,6 +496,7 @@ struct PlannerView: View {
       }
       openRequestedHistoricalPlanIfNeeded()
       applyPlannerLaunchRequestIfNeeded()
+      applyPlannerBuildRequestIfNeeded()
       parseResult = ProductionInputParser.parse(input)
     }
     .onChange(of: automaticCalculationKey) { _, key in
@@ -517,6 +524,9 @@ struct PlannerView: View {
     }
     .onChange(of: launchRequest?.id) {
       applyPlannerLaunchRequestIfNeeded()
+    }
+    .onChange(of: buildRequest?.id) {
+      applyPlannerBuildRequestIfNeeded()
     }
     .task(id: assetProjectionIdentity) {
       await prepareAssetWarehouse()
@@ -1081,7 +1091,10 @@ struct PlannerView: View {
   @ViewBuilder
   private var plannerProductsStep: some View {
     Panel(title: "Produce") {
-      PlannerManufacturingProductAdder(runtime: runtime) { line in
+      PlannerManufacturingProductAdder(
+        runtime: runtime,
+        preselection: $adderPreselection
+      ) { line in
         appendPlannerInputLine(line)
       }
       Divider()
@@ -5720,6 +5733,35 @@ struct PlannerView: View {
     input = ProductionInputFormatter.appending(line, to: input)
   }
 
+  /// A build link click (owner rule 09.11.2026): opens "Produce" with the
+  /// product preselected in the adder. Input text and calculated plan stay
+  /// untouched; only the user's "Add" appends the line.
+  private func applyPlannerBuildRequestIfNeeded() {
+    guard let request = buildRequest else { return }
+    buildRequest = nil
+    historicalPlan = nil
+    historicalLoadError = nil
+    historicalPlannerRequest = nil
+    plannerStep = .products
+    Task {
+      let outcome: PlannerAdderPreselection.Outcome
+      do {
+        if let target = try await runtime.plannerBuildTarget(
+          displayedTypeID: request.productTypeID
+        ) {
+          outcome = .target(target)
+        } else {
+          outcome = .notBuildable
+        }
+      } catch is CancellationError {
+        return
+      } catch {
+        outcome = .unavailable
+      }
+      adderPreselection = PlannerAdderPreselection(outcome: outcome)
+    }
+  }
+
   private func applyPlannerLaunchRequestIfNeeded() {
     guard let request = launchRequest else { return }
     // "Add to Planner" always appends to an existing draft (owner decision
@@ -7670,14 +7712,23 @@ struct PlannerView: View {
 
 private struct PlannerManufacturingProductAdder: View {
   let runtime: RuntimeState
+  /// A build link click from another area (owner rule 09.11.2026); the
+  /// adder consumes it once, so a later step change does not reapply it.
+  @Binding var preselection: PlannerAdderPreselection?
   let onAppend: (String) -> Void
 
   @State private var query = ""
   @State private var results: [ManufacturingProductSearchResult] = []
   @State private var selection: ManufacturingProductSearchResult?
-  @State private var runs = 1
+  /// Empty after a build link click: the user enters the runs.
+  @State private var runs: Int? = 1
   @State private var materialEfficiency = 10
   @State private var timeEfficiency = 20
+  /// Reactions use no ME/TE, so both fields are locked for them.
+  @State private var efficiencyLocked = false
+  @State private var preselectionMessage: String?
+  @State private var preselectionFailed = false
+  @FocusState private var isRunsFocused: Bool
   @State private var isSearching = false
   @State private var isShowingResults = false
   @State private var searchMessage: String?
@@ -7689,7 +7740,7 @@ private struct PlannerManufacturingProductAdder: View {
       Text("Add producible item")
         .appFont(.headline)
       Text(
-        "Search starts after 3 characters and shows only complete published manufacturing products from the active SDE."
+        "Search starts after 3 characters and shows only complete published manufacturing products from the active SDE. The hammer beside an item name elsewhere in the app also preselects reaction products here."
       )
       .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
@@ -7729,17 +7780,19 @@ private struct PlannerManufacturingProductAdder: View {
       }
 
       HStack(alignment: .bottom, spacing: DesignTokens.spacingMD) {
-        plannerNumberField("Runs", value: $runs, range: 1...1_000_000_000)
+        runsField
         plannerNumberField(
           "ME",
           value: $materialEfficiency,
           range: materialEfficiencyRange
         )
+        .disabled(efficiencyLocked)
         plannerNumberField(
           "TE",
           value: $timeEfficiency,
           range: 0...20
         )
+        .disabled(efficiencyLocked)
         Spacer()
         Button("Add to end of planner input") {
           appendSelection()
@@ -7749,10 +7802,27 @@ private struct PlannerManufacturingProductAdder: View {
         .accessibilityIdentifier("planner.product-adder.append")
       }
 
+      if selection != nil, efficiencyLocked {
+        Label("Reactions use no ME or TE.", systemImage: "info.circle")
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+
       if let feedbackMessage {
         Label(feedbackMessage.localizedUI, systemImage: "checkmark.circle.fill")
           .appFont(.caption)
           .foregroundStyle(DesignTokens.positive)
+      } else if let preselectionMessage {
+        Label(
+          preselectionMessage,
+          systemImage: preselectionFailed
+            ? "exclamationmark.triangle.fill" : "hammer"
+        )
+        .appFont(.caption)
+        .foregroundStyle(
+          preselectionFailed ? DesignTokens.caution : DesignTokens.textSecondary
+        )
+        .accessibilityIdentifier("planner.product-adder.preselection")
       } else if selection != nil, !canAppend {
         Label(
           "Runs, ME or TE are outside the supported planner range.",
@@ -7762,8 +7832,72 @@ private struct PlannerManufacturingProductAdder: View {
         .foregroundStyle(DesignTokens.caution)
       }
     }
+    .onAppear {
+      applyPreselectionIfNeeded()
+    }
+    .onChange(of: preselection?.id) {
+      applyPreselectionIfNeeded()
+    }
     .onDisappear {
       searchTask?.cancel()
+    }
+  }
+
+  private var runsField: some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      Text("Runs")
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      TextField("Runs", value: $runs, format: .number.grouping(.never))
+        .textFieldStyle(.roundedBorder)
+        .multilineTextAlignment(.trailing)
+        .frame(width: 96)
+        .focused($isRunsFocused)
+        .accessibilityIdentifier("planner.product-adder.runs")
+        .onChange(of: runs) { _, updated in
+          if let updated {
+            preselectionMessage = nil
+            if !(1...1_000_000_000).contains(updated) {
+              feedbackMessage = nil
+            }
+          }
+        }
+    }
+  }
+
+  /// Takes over a build link click: product, ME/TE preset and an empty runs
+  /// field with focus. Input and calculated plan stay untouched until the
+  /// user adds the line.
+  private func applyPreselectionIfNeeded() {
+    guard let preselection else { return }
+    self.preselection = nil
+    feedbackMessage = nil
+    switch preselection.outcome {
+    case .target(let target):
+      apply(
+        target.product,
+        defaults: PlannerProductAdderSelectionDefaults.buildLink(target)
+      )
+      preselectionFailed = false
+      preselectionMessage = AppLocalization.format(
+        "Selected %@ for adding. Enter the runs, then add it to the end of the planner input.",
+        target.product.name
+      )
+      Task { @MainActor in
+        isRunsFocused = true
+      }
+    case .notBuildable:
+      selection = nil
+      preselectionFailed = true
+      preselectionMessage = AppLocalization.text(
+        "The active SDE offers no Planner production for this item."
+      )
+    case .unavailable:
+      selection = nil
+      preselectionFailed = true
+      preselectionMessage = AppLocalization.text(
+        "The item could not be loaded from the active SDE."
+      )
     }
   }
 
@@ -7802,7 +7936,12 @@ private struct PlannerManufacturingProductAdder: View {
             ForEach(results) { item in
               HStack(spacing: DesignTokens.spacingMD) {
                 // A search result: its row exists to be selected.
-                EVEItemText(value: item.name, typeID: item.id, showsMarketStockHistory: false)
+                EVEItemText(
+                  value: item.name,
+                  typeID: item.id,
+                  showsMarketStockHistory: false,
+                  showsPlannerBuild: false
+                )
                 Spacer()
                 Text(
                   AppLocalization.format(
@@ -7834,7 +7973,7 @@ private struct PlannerManufacturingProductAdder: View {
   }
 
   private var canAppend: Bool {
-    guard let selection else { return false }
+    guard let selection, let runs else { return false }
     return (1...1_000_000_000).contains(runs)
       && materialEfficiencyRange.contains(materialEfficiency)
       && (0...20).contains(timeEfficiency)
@@ -7884,17 +8023,29 @@ private struct PlannerManufacturingProductAdder: View {
   }
 
   private func select(_ item: ManufacturingProductSearchResult) {
+    apply(
+      item,
+      defaults: PlannerProductAdderSelectionDefaults.manualSearch(
+        item,
+        currentRuns: runs
+      )
+    )
+    preselectionMessage = nil
+    preselectionFailed = false
+  }
+
+  /// One preset for manual search and build link (owner decision
+  /// 09.11.2026).
+  private func apply(
+    _ item: ManufacturingProductSearchResult,
+    defaults: PlannerProductAdderSelectionDefaults
+  ) {
     selection = item
-    if ManufacturingOpportunityProductionClass.classify(
-      metaGroupID: item.metaGroupID,
-      techLevel: item.techLevel
-    ) == .techII {
-      materialEfficiency = 3
-      timeEfficiency = 2
-    } else {
-      materialEfficiency = 10
-      timeEfficiency = 20
-    }
+    runs = defaults.runs
+    materialEfficiency = defaults.materialEfficiency
+    timeEfficiency = defaults.timeEfficiency
+    efficiencyLocked = defaults.efficiencyLocked
+    searchTask?.cancel()
     query = ""
     results = []
     searchMessage = nil
@@ -7903,7 +8054,7 @@ private struct PlannerManufacturingProductAdder: View {
   }
 
   private func appendSelection() {
-    guard let selection,
+    guard let selection, let runs,
       let line = try? ProductionInputFormatter.manufacturingLine(
         productName: selection.name,
         runs: runs,
@@ -7921,6 +8072,8 @@ private struct PlannerManufacturingProductAdder: View {
     self.selection = nil
     query = ""
     self.runs = 1
+    efficiencyLocked = false
+    preselectionMessage = nil
   }
 }
 
@@ -8530,8 +8683,8 @@ struct ReactionsView: View {
         .stroke(DesignTokens.border)
     }
     .overlay(alignment: .topLeading) {
-      // The disclosure owns the row click, so copy target and stock history
-      // link both sit above the drawn name instead of inside the label.
+      // The disclosure owns the row click, so copy target, stock history and
+      // build link all sit above the drawn name instead of inside the label.
       HStack(spacing: DesignTokens.spacingXS) {
         EVEEntityText(
           value: row.productName,
@@ -8539,6 +8692,7 @@ struct ReactionsView: View {
           accessibilityIdentifier: "reactions.copy-name.\(row.id)"
         )
         MarketStockHistoryButton(typeID: row.productTypeID, name: row.productName)
+        PlannerBuildButton(typeID: row.productTypeID, name: row.productName)
       }
       .padding(.horizontal, 2)
       .padding(.vertical, 1)

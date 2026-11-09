@@ -63,7 +63,9 @@
 		01A0B0020000000000000011 /* JumpFreighterLogisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0B0020000000000000001 /* JumpFreighterLogisticsTests.swift */; };
 		0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */; };
 		0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */; };
+		01A0C1100000000000000011 /* PlannerBuildPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C1100000000000000001 /* PlannerBuildPreset.swift */; };
 		12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */; };
+		01A0C1100000000000000013 /* PlannerBuildPresetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C1100000000000000003 /* PlannerBuildPresetTests.swift */; };
 		01A0D0030000000000000011 /* ESIRememberedFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */; };
 		01A0D0020000000000000012 /* ESIResponseDiskCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */; };
 		01A0D0010000000000000014 /* StaticCatalogBenchmarkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */; };
@@ -131,6 +133,7 @@
 		4CAB87215971ABF16D8550FC /* InterfaceStyleComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F30E89D926D560E087B099A /* InterfaceStyleComponents.swift */; };
 		7139788BC82D4237983AB835 /* PlannerFlowGuideLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */; };
 		FC46923AD7C44E2395783399 /* PlannerFlowGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */; };
+		01A0C1100000000000000012 /* PlannerBuildLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C1100000000000000002 /* PlannerBuildLink.swift */; };
 		B423BE0A780DB11666C21244 /* CharacterSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A27A374100B41BDD33F693 /* CharacterSyncService.swift */; };
 		B4A6044E7D0440319E7C77C8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AC75DF5C57565C1C95D785 /* ContentView.swift */; };
 		B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */; };
@@ -336,6 +339,7 @@
 		63E840AAB5750A598C980F11 /* BlueprintModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlueprintModels.swift; sourceTree = "<group>"; };
 		653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBookViews.swift; sourceTree = "<group>"; };
 		788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryPlanner.swift; sourceTree = "<group>"; };
+		01A0C1100000000000000001 /* PlannerBuildPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerBuildPreset.swift; sourceTree = "<group>"; };
 		79314710617118DE88CEF5C0 /* AssetWarehouse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetWarehouse.swift; sourceTree = "<group>"; };
 		7A4B40B0706769D9277F8172 /* ReservationLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReservationLedger.swift; sourceTree = "<group>"; };
 		7EC853A700690D67F134C4BE /* sqlite_shim.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sqlite_shim.h; sourceTree = "<group>"; };
@@ -346,6 +350,7 @@
 		A1F8BCA0919BF5F62E0A72F1 /* AssetsWarehouseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetsWarehouseView.swift; sourceTree = "<group>"; };
 		A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAndBlueprintTests.swift; sourceTree = "<group>"; };
 		A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLiteStaticCatalogTests.swift; sourceTree = "<group>"; };
+		01A0C1100000000000000003 /* PlannerBuildPresetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerBuildPresetTests.swift; sourceTree = "<group>"; };
 		01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIRememberedFailureTests.swift; sourceTree = "<group>"; };
 		01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIResponseDiskCacheTests.swift; sourceTree = "<group>"; };
 		01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaticCatalogBenchmarkTests.swift; sourceTree = "<group>"; };
@@ -398,6 +403,7 @@
 		8F30E89D926D560E087B099A /* InterfaceStyleComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterfaceStyleComponents.swift; sourceTree = "<group>"; };
 		311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuideLayout.swift; sourceTree = "<group>"; };
 		46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerFlowGuide.swift; sourceTree = "<group>"; };
+		01A0C1100000000000000002 /* PlannerBuildLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerBuildLink.swift; sourceTree = "<group>"; };
 		FBA1E247F20C1B75EBE50449 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		FEE2812212934D7FCB3FA513 /* EVEStaticDataKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = EVEStaticDataKit; path = Packages/EVEStaticDataKit; sourceTree = SOURCE_ROOT; };
 		0F9FE09B2DC20F96EAAB86DD /* ConsolidationBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationBackup.swift; sourceTree = "<group>"; };
@@ -585,6 +591,7 @@
 				41FF0E55C71072B6AA3517B9 /* IndustryFacilityReference.swift */,
 				CA2F5055B38824F803FA5FBA /* IndustryModels.swift */,
 				788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */,
+				01A0C1100000000000000001 /* PlannerBuildPreset.swift */,
 				2752B0216E3CA21C973CDD83 /* IndustrySystemIndices.swift */,
 				8DC8486F6DF515AE09308AE1 /* InventionReadiness.swift */,
 				01A0B0010000000000000001 /* JumpFreighterLogistics.swift */,
@@ -693,6 +700,7 @@
 				8F30E89D926D560E087B099A /* InterfaceStyleComponents.swift */,
 				311F34864B6C47E4A85E1334 /* PlannerFlowGuideLayout.swift */,
 				46DCC10ECBE640A6BBF0DABD /* PlannerFlowGuide.swift */,
+				01A0C1100000000000000002 /* PlannerBuildLink.swift */,
 				653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */,
 				E6E4B1931F263ACAF2755139 /* ProfileReferenceComponents.swift */,
 				F0286F2EDFA98529CB41A5CD /* ProfilesView.swift */,
@@ -747,6 +755,7 @@
 				C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */,
 				ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */,
 				A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */,
+				01A0C1100000000000000003 /* PlannerBuildPresetTests.swift */,
 				01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */,
 				01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */,
 				01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */,
@@ -978,6 +987,7 @@
 				83ACBCF3A448CEFBA0AA0E3F /* ReactionContractTests.swift in Sources */,
 				0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */,
 				12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */,
+				01A0C1100000000000000013 /* PlannerBuildPresetTests.swift in Sources */,
 				01A0D0030000000000000011 /* ESIRememberedFailureTests.swift in Sources */,
 				01A0D0020000000000000012 /* ESIResponseDiskCacheTests.swift in Sources */,
 				01A0D0010000000000000014 /* StaticCatalogBenchmarkTests.swift in Sources */,
@@ -1025,6 +1035,7 @@
 				4CAB87215971ABF16D8550FC /* InterfaceStyleComponents.swift in Sources */,
 				7139788BC82D4237983AB835 /* PlannerFlowGuideLayout.swift in Sources */,
 				FC46923AD7C44E2395783399 /* PlannerFlowGuide.swift in Sources */,
+				01A0C1100000000000000012 /* PlannerBuildLink.swift in Sources */,
 				FCF8390826A399782F7C592A /* ProductionBookViews.swift in Sources */,
 				29C8FE6790AABEC4AFF6E560 /* ProfileReferenceComponents.swift in Sources */,
 				9492F8F84CA2B812F38B0730 /* ProfilesView.swift in Sources */,
@@ -1074,6 +1085,7 @@
 				B66FC6C96B939A883D6AFF5A /* IndustryFacilityReference.swift in Sources */,
 				77707C0132DD1407672A8302 /* IndustryModels.swift in Sources */,
 				0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */,
+				01A0C1100000000000000011 /* PlannerBuildPreset.swift in Sources */,
 				01A0A0010000000000000011 /* OreRefining.swift in Sources */,
 				019FC3000000000000000011 /* ProductionTree.swift in Sources */,
 				012EB53DCA55C2E96CBDD71F /* IndustrySystemIndexService.swift in Sources */,

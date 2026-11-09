@@ -668,3 +668,18 @@ Antworten des Eigentümers auf die Rückfragen:
 4. Die Tagestabelle startet außerhalb von Handel (Ziel-Hub der Route) und Marktbestand (gewählter Hub) mit dem Home Hub.
 
 Von Claude festgelegt: Ohne Host bleibt das Symbol verborgen, statt einen wirkungslosen Klick anzubieten. Handel und Marktbestand behalten die bisherige Position und Kennung des Symbols. In Reaktionskarten liegt das Symbol wie das Kopierziel über dem Disclosure-Kopf. Skill-Zeilen und Planer-Eingabezeilen ohne aufgelöste Type-ID bleiben ohne Symbol.
+
+## 09.11.2026: Hammer „Im Planer bauen“ neben jedem baubaren Item
+
+Grundregel des Eigentümers (09.11.2026): Neben jedem Item, das gebaut werden kann (keine Rohstoffe), steht ein Hammer. Er öffnet den Planer und setzt das Item dort mit einer ME/TE-Vorgabe ein; Runs trägt der Benutzer ein. Regel: [AGENTS.md](../../AGENTS.md), „Bauen im Planer je Item“.
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Vorgaben: T1 ME 10 / TE 20 (statt der zunächst genannten TE 10, wie die bestehende Planer-Suche); T2 und T3 ME 3 / TE 2; Faction, Storyline und sonstige Meta-Gruppen ME 0 / TE 0.
+2. Übergabe: Der Hammer belegt das Feld „Produzierbares Item hinzufügen“ vor; das Runs-Feld bleibt leer und bekommt den Fokus. Die manuelle Suche dort nutzt dieselben Vorgaben (T3 jetzt 3/2 statt 10/20, Faction 0/0 statt 10/20).
+3. Umfang: alle Bereiche außer dem Planer selbst, einschließlich Reaktionsprodukten (ME/TE gesperrt) und Blaupausen-Namen (Hammer gilt dem Produkt).
+4. Reihenfolge hinter dem Namen: Kurvensymbol, dann Hammer. Regel in AGENTS.md aufnehmen.
+5. Erst die Sitzung „Item-Historie überall verlinken“ committen, dann aufsetzen (erfolgt mit `4305a4f`).
+6. Nachfrage nach Auswertung des aktiven SDE: Produkte ohne Meta-Gruppe und Tech-Level (383 Stück: Bauteile, Capital-Bauteile, Fuel Blocks, R.A.M., Upwell-Strukturen, Container, Booster, POS-Teile) gelten als T1 (10/20). Structure Tech I (54) wie T1, Structure Tech II (53) wie T2, Structure Faction (52) wie Faction. Die Einordnung gilt nur für Hammer und Planer-Suche; `ManufacturingOpportunityProductionClass` und die Hub-Chancen bleiben unverändert.
+
+Von Claude festgelegt: Ohne aktives SDE gibt es keinen Hammer statt eines wirkungslosen Klicks. Der Hammer-Klick geht über die bestehende Warnung für ungesicherte Einstellungen; ein Abbruch verwirft ihn. In Sheets und Popovers schließt der Klick zuerst die Präsentation. Auch der Bestandsverlauf zeigt den Hammer im Kopf, außer er wurde aus dem Planer geöffnet. Die manuelle Suche bleibt auf Fertigungsprodukte beschränkt; Reaktionsprodukte kommen nur über den Hammer ins Feld. Kann das SDE das Item beim Klick nicht mehr liefern, zeigt das Feld eine Meldung statt einer Auswahl.

@@ -161,6 +161,9 @@ struct MarketStockItemDetailView: View {
     }
     .padding(DesignTokens.spacingLG)
     .frame(minWidth: 780, minHeight: 640)
+    // The build link in the header closes this sheet before the Planner
+    // opens; the sheet would otherwise stay over the new area.
+    .environment(\.plannerBuildClosesPresentation, dismiss)
     .task {
       let loaded = await runtime.marketStockItemHistory(typeID: request.typeID)
       histories = loaded

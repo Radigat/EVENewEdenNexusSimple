@@ -245,7 +245,8 @@ struct MarketStockView: View {
           font: .callout,
           lineLimit: 1,
           iconSize: 18,
-          showsMarketStockHistory: false
+          showsMarketStockHistory: false,
+          showsPlannerBuild: false
         )
       } else {
         Text(
@@ -264,6 +265,14 @@ struct MarketStockView: View {
         preferredRole: role,
         accessibilityIdentifier: "market-stock.\(row.typeID).history"
       )
+      // The build link after the history link; unresolved names get none.
+      if let name = row.name {
+        PlannerBuildButton(
+          typeID: row.typeID,
+          name: name,
+          accessibilityIdentifier: "market-stock.\(row.typeID).planner-build"
+        )
+      }
     }
   }
 

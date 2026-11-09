@@ -172,7 +172,7 @@
 
 /* Planner Main Hub and make-or-buy */
 "Add producible item" = "Add producible item";
-"Search starts after 3 characters and shows only complete published manufacturing products from the active SDE." = "Search starts after 3 characters and shows only complete published manufacturing products from the active SDE.";
+"Search starts after 3 characters and shows only complete published manufacturing products from the active SDE. The hammer beside an item name elsewhere in the app also preselects reaction products here." = "Search starts after 3 characters and shows only complete published manufacturing products from the active SDE. The hammer beside an item name elsewhere in the app also preselects reaction products here.";
 "Search producible item (3+ characters)" = "Search producible item (3+ characters)";
 "Selected item" = "Selected item";
 "Select an exact manufacturing product from the results" = "Select an exact manufacturing product from the results";
@@ -180,6 +180,10 @@
 "Add to end of planner input" = "Add to end of planner input";
 "Runs, ME or TE are outside the supported planner range." = "Runs, ME or TE are outside the supported planner range.";
 "Searching producible items…" = "Searching producible items…";
+"Reactions use no ME or TE." = "Reactions use no ME or TE.";
+"Selected %@ for adding. Enter the runs, then add it to the end of the planner input." = "Selected %@ for adding. Enter the runs, then add it to the end of the planner input.";
+"The active SDE offers no Planner production for this item." = "The active SDE offers no Planner production for this item.";
+"The item could not be loaded from the active SDE." = "The item could not be loaded from the active SDE.";
 "No matching producible items." = "No matching producible items.";
 "Producible-item search is currently unavailable." = "Producible-item search is currently unavailable.";
 "Select %@" = "Select %@";
@@ -2451,6 +2455,10 @@
 "The order books of the last hub scan are still inside ESI's cache time. CCP asks not to request them again before it ends; a new scan is possible from %@." = "The order books of the last hub scan are still inside ESI's cache time. CCP asks not to request them again before it ends; a new scan is possible from %@.";
 "Fetching possible from %@" = "Fetching possible from %@";
 
+/* Build link beside item names (owner rule 09.11.2026) */
+"Build in Planner" = "Build in Planner";
+"Opens the Planner with this item selected for adding; enter the runs there." = "Opens the Planner with this item selected for adding; enter the runs there.";
+
 /* Market stock item detail (MARKTBESTAND_PLAN P6) */
 "Market stock history" = "Market stock history";
 "No hub with a known location is configured." = "No hub with a known location is configured.";
@@ -2668,7 +2676,7 @@
 
 /* Planer: Schritte, Rentabilität und mehrere Produkte */
 "The Planner leads through eight steps and calculates only on click. Hover over a step or an arrow for its explanation." = "The Planner leads through eight steps and calculates only on click. Hover over a step or an arrow for its explanation.";
-"One or more products. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost." = "One or more products. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost.";
+"One line per job: product, quantity, ME and TE, optionally a BPC or BPO with its cost. The hammer beside an item elsewhere in the app selects it here for adding." = "One line per job: product, quantity, ME and TE, optionally a BPC or BPO with its cost. The hammer beside an item elsewhere in the app selects it here for adding.";
 "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock." = "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock.";
 "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up." = "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up.";
 "Manual stock is in use. It replaces the combined warehouse in this calculation." = "Manual stock is in use. It replaces the combined warehouse in this calculation.";

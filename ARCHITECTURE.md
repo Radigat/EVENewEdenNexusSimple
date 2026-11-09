@@ -1474,6 +1474,26 @@ TE directly into the established Planner. `PlannerLaunchInputPolicy.mode`
 appends the line to an existing draft or result and replaces only an empty
 Planner; there is no replace/keep prompt any more.
 
+The build link (hammer, owner rule 09.11.2026) is a second, lighter path into
+the Planner. `SQLiteStaticCatalog.plannerBuildTargets()` maps every visible
+type ID the Planner can build (manufacturing or reaction, the
+`productionDefinition` filter without invention) to its product; it is cached
+per immutable catalog file and mirrored into `RuntimeState`
+(`plannerBuildTargetIndex`) and the main window's `PlannerBuildRouter`.
+`EVEItemText` / `PlannerBuildButton` read the router from the environment;
+`ContentView` removes it while the Planner is shown. A click goes through
+`ProfileNavigationGuard.attemptNavigation` and hands a `PlannerBuildRequest`
+(product type ID only) to `PlannerView`, which resolves a `PlannerBuildTarget`
+(English SDE name, output per run, `PlannerBuildEfficiencyPreset`) and
+preselects `PlannerManufacturingProductAdder`. Nothing is appended and the
+calculated plan stays untouched until the user enters the runs and adds the
+line; the manual adder search uses the same preset. Sheets and popovers of an
+area close with the area. Only presentations that outlive the area change are
+closed explicitly: `ContentView` resets its consolidation sheet, and the stock
+history sheet hands its own `dismiss` through
+`plannerBuildClosesPresentation`. The link never calls the environment's
+`dismiss` by itself, because at window level it closes the main window.
+
 `ManufacturingOpportunityAnalyzer.ComponentCostResolver` attaches a
 `ManufacturingOpportunityComponentBuild` to every direct input with a buildable
 recipe during the scan. It recurses down to bought materials, takes the cheaper

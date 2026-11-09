@@ -69,6 +69,16 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 - Ausgenommen sind nur Such- und Auswahlergebnisse, deren Zeile zum Auswählen da ist, und der Kopf der Verlaufsansicht selbst. Namen ohne aufgelöste Type-ID bleiben ohne Link; nie eine Type-ID raten.
 - `Tests/EVENexusSimpleAppTests/MarketStockHistoryLinkTests.swift` prüft die einzige Öffnen-Stelle und die Hosts aller Sheets.
 
+## Bauen im Planer je Item
+
+- Jedes sichtbare EVE-Item, das der Planer laut aktivem SDE bauen kann (Fertigung oder Reaktion, keine Rohstoffe), zeigt hinter dem Kurvensymbol einen Hammer. Ein Klick öffnet den Planer im Schritt „Produzieren“ und wählt das Item im Feld „Produzierbares Item hinzufügen“ vor. Das Runs-Feld bleibt leer, der Benutzer trägt die Runs ein und fügt die Zeile selbst hinzu (Eigentümerregel 09.11.2026).
+- Bei einer Blaupause oder Reaktionsformel setzt der Hammer ihr Produkt ein. Welche Type-ID einen Hammer bekommt, bestimmt allein `SQLiteStaticCatalog.plannerBuildTargets()`; nie eine Type-ID raten.
+- ME/TE-Vorgabe (`PlannerBuildEfficiencyPreset`), gleich für Hammer und manuelle Planer-Suche: T1 und Structure Tech I sowie Produkte ohne Meta-Gruppe und Tech-Level 10/20, T2, Structure Tech II und T3 3/2, Faction, Structure Faction, Storyline und sonstige Meta-Gruppen 0/0. Bei Reaktionen sind ME und TE gesperrt.
+- Bereiche verlinken über `EVEItemText` (zeigt den Hammer automatisch) oder den gemeinsamen `PlannerBuildButton`. Der Router gehört allein dem Hauptfenster; solange der Planer angezeigt wird, gibt es keinen Router und damit keinen Hammer.
+- Der Hammer ist eine eigene Schaltfläche neben dem kopierbaren Namen und löst keine andere Aktion aus. In einem Sheet oder Popover schließt er zuerst die Präsentation. Ungesicherte Einstellungen behalten ihre Warnung; ein abgebrochener Wechsel verwirft die Anfrage.
+- Ausgenommen sind der Planer selbst, Such- und Auswahlergebnisse und Namen ohne aufgelöste Type-ID.
+- `Tests/EVENexusSimpleAppTests/PlannerBuildLinkTests.swift` und `Tests/EVENexusCoreTests/PlannerBuildPresetTests.swift` prüfen Router, Sichtbarkeit, Vorgaben und Übersetzungen; `SQLiteStaticCatalogTests` prüft die Auswahl der Type-IDs.
+
 ## Sortable data tables
 
 - Every column header in a tabular collection of peer data rows must be clickable and sort that column.

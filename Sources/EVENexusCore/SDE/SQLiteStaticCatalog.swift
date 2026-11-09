@@ -184,6 +184,11 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
     [BlueprintActivityDefinition.Kind: (
       fileName: String, definitions: [BlueprintDefinition]
     )] = [:]
+  /// Planner build link index of one immutable catalog file.
+  private var plannerBuildTargetsCache:
+    (
+      fileName: String, targets: [Int64: Int64]
+    )?
 
   public init(
     rootURL: URL,
@@ -687,6 +692,104 @@ public actor SQLiteStaticCatalog: IndustryCatalogQuerying,
       )
     }
     return results
+  }
+
+  /// Every visible type ID that gets the Planner build link, mapped to the
+  /// product the Planner builds: a product maps to itself, a manufacturing
+  /// blueprint or reaction formula to its product. It uses the filter of
+  /// `productionDefinition` restricted to manufacturing and reactions, so a
+  /// link appears exactly where the Planner can calculate the product; an
+  /// invention result alone (a T2 BPC as product) never qualifies.
+  public func plannerBuildTargets() async throws -> [Int64: Int64] {
+    guard let pointer = try loadPointer() else {
+      throw StaticCatalogError.noActiveCatalog
+    }
+    if let cached = plannerBuildTargetsCache,
+      cached.fileName == pointer.fileName
+    {
+      return cached.targets
+    }
+    let database = try activeDatabase()
+    let rows = try database.rows(
+      """
+      SELECT DISTINCT p.blueprint_type_id, p.item_type_id
+      FROM blueprint_products p
+      JOIN blueprint_activities a
+        ON a.blueprint_type_id = p.blueprint_type_id
+       AND a.activity = p.activity
+      JOIN blueprints b
+        ON b.blueprint_type_id = a.blueprint_type_id
+      JOIN item_types blueprint_type
+        ON blueprint_type.id = b.blueprint_type_id
+      JOIN item_types product_type
+        ON product_type.id = p.item_type_id
+      WHERE a.activity IN ('manufacturing','reaction')
+        AND p.resolved = 1
+        AND p.quantity > 0
+        AND blueprint_type.published = 1
+        AND product_type.published = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM blueprint_materials unresolved_material
+          WHERE unresolved_material.blueprint_type_id = b.blueprint_type_id
+            AND unresolved_material.activity = a.activity
+            AND unresolved_material.resolved = 0
+        )
+      ORDER BY p.item_type_id, p.blueprint_type_id
+      """
+    )
+    let pairs = rows.compactMap { row -> (blueprint: Int64, product: Int64)? in
+      guard row.count == 2,
+        let blueprint = Int64(row[0] ?? ""),
+        let product = Int64(row[1] ?? "")
+      else { return nil }
+      return (blueprint, product)
+    }
+    var targets: [Int64: Int64] = [:]
+    targets.reserveCapacity(pairs.count * 2)
+    // Products first, so a product always links to itself.
+    for pair in pairs {
+      targets[pair.product] = pair.product
+    }
+    for pair in pairs where targets[pair.blueprint] == nil {
+      targets[pair.blueprint] = pair.product
+    }
+    plannerBuildTargetsCache = (pointer.fileName, targets)
+    return targets
+  }
+
+  /// The product the build link hands to the Planner for a visible type ID,
+  /// or `nil` when the Planner cannot build it from the active SDE.
+  public func plannerBuildTarget(displayedTypeID: Int64) async throws
+    -> PlannerBuildTarget?
+  {
+    guard let productTypeID = try await plannerBuildTargets()[displayedTypeID],
+      let definition = try await productionDefinition(
+        productTypeID: productTypeID
+      ),
+      definition.activity.kind != .invention,
+      let outputPerRun = definition.activity.products.first(where: {
+        $0.typeID == productTypeID
+      })?.quantity,
+      outputPerRun > 0,
+      let name = try await typeName(id: productTypeID)
+    else { return nil }
+    let classification = try await industryClassification(
+      productTypeID: productTypeID
+    )
+    return PlannerBuildTarget(
+      product: ManufacturingProductSearchResult(
+        id: productTypeID,
+        name: name,
+        outputPerRun: outputPerRun,
+        blueprintTypeID: definition.blueprintTypeID,
+        categoryName: classification?.categoryName,
+        groupName: classification?.groupName,
+        metaGroupID: classification?.metaGroupID,
+        techLevel: classification?.techLevel
+      ),
+      activity: definition.activity.kind
+    )
   }
 
   public func materialPurchaseCatalog(

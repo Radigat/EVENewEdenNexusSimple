@@ -559,6 +559,10 @@ final class RuntimeState {
   private(set) var sdeLastCheckedAt: Date?
   var activeSDEBuild: Int?
   var activeSDEContentSHA256: String?
+  /// Visible type ID → product the Planner builds, for the build link
+  /// (hammer) beside item names; `nil` without an active SDE, where no link
+  /// appears instead of a guessed one.
+  private(set) var plannerBuildTargetIndex: [Int64: Int64]?
   var installationPhase: String?
   var lastCharacterSync: CharacterSyncSnapshot?
   var selectedAssetLocationID: Int64?
@@ -4786,6 +4790,13 @@ final class RuntimeState {
     )
   }
 
+  /// The product a build link click hands to the Planner's product adder.
+  func plannerBuildTarget(displayedTypeID: Int64) async throws
+    -> PlannerBuildTarget?
+  {
+    try await catalog.plannerBuildTarget(displayedTypeID: displayedTypeID)
+  }
+
   func consolidationScienceDefinitions(_ blueprintID: Int64) async throws -> ([BlueprintScienceActivityDefinition], [BlueprintDecryptorDefinition]) {
     async let activities = catalog.blueprintScienceActivities(blueprintTypeID: blueprintID)
     async let decryptors = catalog.decryptorDefinitions()
@@ -6423,6 +6434,22 @@ final class RuntimeState {
     let active = try? await catalog.activeSDEVersion()
     activeSDEBuild = active?.buildNumber
     activeSDEContentSHA256 = active?.contentSHA256
+    await refreshPlannerBuildTargetIndex()
+  }
+
+  /// Reloads the build link index from the active SDE. The catalog caches it
+  /// per immutable catalog file, so repeated calls are cheap.
+  func refreshPlannerBuildTargetIndex() async {
+    do {
+      let targets = try await catalog.plannerBuildTargets()
+      if targets != plannerBuildTargetIndex {
+        plannerBuildTargetIndex = targets
+      }
+    } catch is CancellationError {
+      return
+    } catch {
+      plannerBuildTargetIndex = nil
+    }
   }
 
   func refreshEVEOnlineServiceStatus(force: Bool = false) async {

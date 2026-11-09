@@ -56,6 +56,29 @@ Marktbestand am Zeilenende). Besitzt eine Disclosure den Zeilenklick
 (Reaktionskarten), liegt der Button mit dem transparenten Kopierziel darüber.
 Regel: [AGENTS.md](../AGENTS.md), „Bestandsverlauf je Item“.
 
+## Bauen im Planer (seit 09.11.2026)
+
+Hinter dem Kurvensymbol zeigt `EVEItemText` den gemeinsamen
+`PlannerBuildButton` (Hammer), wenn der Planer den Typ laut aktivem SDE bauen
+kann. `SQLiteStaticCatalog.plannerBuildTargets()` bildet jede sichtbare
+Type-ID auf das gebaute Produkt ab: ein Produkt auf sich selbst, eine
+Fertigungsblaupause oder Reaktionsformel auf ihr Produkt. Der Filter ist der
+von `productionDefinition`, beschränkt auf Fertigung und Reaktion; ein reines
+Invention-Ergebnis zählt nicht. Ohne aktives SDE gibt es keinen Index und damit
+keinen Hammer.
+
+Der Router `PlannerBuildRouter` gehört dem Hauptfenster. Solange der Planer
+angezeigt wird, setzt das Hauptfenster ihn auf `nil`; der Planer und seine
+Unterpanels zeigen deshalb keinen Hammer. Ein Klick in einem Sheet oder
+Popover schließt zuerst die Präsentation. Der Planer wählt das Produkt im
+Feld „Produzierbares Item hinzufügen“ vor, setzt ME/TE nach
+`PlannerBuildEfficiencyPreset` und lässt die Runs leer.
+
+`showsPlannerBuild: false` gilt für Such- und Auswahlergebnisse und für
+Stellen, die den gemeinsamen Button selbst hinter das Kurvensymbol setzen
+(Handel, Marktbestand). Reaktionskarten tragen ihn im Kopf über dem
+Disclosure-Klick. Regel: [AGENTS.md](../AGENTS.md), „Bauen im Planer je Item“.
+
 ## Abdeckung
 
 Die gemeinsame Darstellung ist für aufgelöste Items in Dashboard und

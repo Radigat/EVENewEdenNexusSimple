@@ -1440,7 +1440,8 @@ struct TradeView: View {
           font: .callout,
           lineLimit: 1,
           iconSize: 18,
-          showsMarketStockHistory: false
+          showsMarketStockHistory: false,
+          showsPlannerBuild: false
         )
         if !showsDetails, display.openLogbookQuantity > 0 {
           Label(formatInteger(display.openLogbookQuantity), systemImage: "book.closed")
@@ -1469,6 +1470,12 @@ struct TradeView: View {
           name: row.name,
           preferredRole: mode.targetRole,
           accessibilityIdentifier: "\(identifierPrefix).\(row.typeID).stock-history"
+        )
+        // The shared build link right after the history link.
+        PlannerBuildButton(
+          typeID: row.typeID,
+          name: row.name,
+          accessibilityIdentifier: "\(identifierPrefix).\(row.typeID).planner-build"
         )
         if !row.issues.isEmpty {
           Image(systemName: "info.circle")

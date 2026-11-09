@@ -759,3 +759,23 @@ synthetischen Testdaten gesehen (DB6–DB8). Vom Eigentümer am 08.11.2026
 insgesamt als „i. O.“ abgenommen, ohne Einzelmarkierungen; für die Punkte, die
 nur mit echten Daten prüfbar sind (Abschnitt 7.2), liegen keine Ergebnisse je
 Punkt vor.
+
+## Hammer „Im Planer bauen“ (09.11.2026)
+
+Regel: [AGENTS.md](../AGENTS.md), „Bauen im Planer je Item“. Automatisch geprüft
+mit `PlannerBuildLinkTests`, `PlannerBuildPresetTests` und
+`SQLiteStaticCatalogTests`. In einer isolierten Debug-App (eigener Datenordner,
+Kopie des öffentlichen SDE, keine Benutzerdaten, keine Hintergrunddienste)
+gesehen: der Hammer in den Reaktionskarten und im Kopf des Bestandsverlaufs;
+der Klick öffnet „2 Produkte“ mit vorgewähltem Reaktionsprodukt, leerem Runs-Feld
+und gesperrtem ME/TE; das Sheet schließt, das Hauptfenster bleibt; 5 Runs
+ergeben die Zeile `Isotropic Neofullerene Gamma-9 100 0 0`. Eigentümerabnahme
+ausstehend.
+
+- [ ] Hammer steht hinter dem Kurvensymbol in Dashboard, Hub-Chancen, Handel, Marktbestand, Lager, Bauplänen, Reaktionen, Verträgen, Nettowert, Produktionsübersicht und Einstellungen, aber nicht bei Mineralen, Erzen und Mondmaterialien.
+- [ ] Im Planer (alle Schritte), in Such- und Auswahlergebnissen und bei unaufgelösten Namen steht kein Hammer.
+- [ ] Blaupausen-Name (Bauplanliste, Dashboard-Job, Blaupausenquelle): Der Hammer setzt das Produkt ein, eine T2-BPC das T2-Item.
+- [ ] T1-Item ME 10 / TE 20, T2- und T3-Item ME 3 / TE 2, Faction- oder Storyline-Item ME 0 / TE 0, Bauteil oder Fuel Block ME 10 / TE 20, Reaktionsprodukt ME/TE gesperrt; dieselben Werte bei der manuellen Suche im Feld.
+- [ ] Nach dem Klick ist das Runs-Feld leer und hat den Fokus; „Hinzufügen“ bleibt gesperrt, bis Runs eingetragen sind; Eingabe und berechneter Plan bleiben bis dahin unverändert.
+- [ ] Hammer in einem Popover (Nettowert, Kostendetails) oder Sheet (Wissenschaftsaufträge, Logbuch-Editor, Bestandsverlauf): Die Präsentation schließt, der Planer erscheint im selben Fenster.
+- [ ] Ungesicherte Einstellungen: Der Hammer-Klick zeigt die bekannte Warnung; „Abbrechen“ bleibt in den Einstellungen.

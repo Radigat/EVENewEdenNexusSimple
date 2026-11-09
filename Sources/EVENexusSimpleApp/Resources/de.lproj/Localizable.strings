@@ -333,7 +333,7 @@
 "Production Planner" = "Produktionsplaner";
 "Produce" = "Produzieren";
 "Add producible item" = "Produzierbares Item hinzufügen";
-"Search starts after 3 characters and shows only complete published manufacturing products from the active SDE." = "Die Suche startet ab 3 Zeichen und zeigt nur vollständige veröffentlichte Fertigungsprodukte aus dem aktiven SDE.";
+"Search starts after 3 characters and shows only complete published manufacturing products from the active SDE. The hammer beside an item name elsewhere in the app also preselects reaction products here." = "Die Suche startet ab 3 Zeichen und zeigt nur vollständige veröffentlichte Fertigungsprodukte aus dem aktiven SDE. Der Hammer neben einem Item-Namen in anderen Bereichen wählt hier auch Reaktionsprodukte vor.";
 "Search producible item (3+ characters)" = "Produzierbares Item suchen (ab 3 Zeichen)";
 "Selected item" = "Ausgewähltes Item";
 "Select an exact manufacturing product from the results" = "Wähle ein genaues Fertigungsprodukt aus den Treffern";
@@ -341,6 +341,10 @@
 "Add to end of planner input" = "Am Ende der Planereingabe hinzufügen";
 "Runs, ME or TE are outside the supported planner range." = "Runs, ME oder TE liegen außerhalb des unterstützten Planerbereichs.";
 "Searching producible items…" = "Produzierbare Items werden gesucht …";
+"Reactions use no ME or TE." = "Reaktionen nutzen kein ME/TE.";
+"Selected %@ for adding. Enter the runs, then add it to the end of the planner input." = "„%@“ zum Hinzufügen ausgewählt. Trage die Runs ein und füge es dann am Ende der Planereingabe hinzu.";
+"The active SDE offers no Planner production for this item." = "Das aktive SDE bietet für dieses Item keine Planer-Fertigung.";
+"The item could not be loaded from the active SDE." = "Das Item konnte nicht aus dem aktiven SDE geladen werden.";
 "No matching producible items." = "Keine passenden produzierbaren Items gefunden.";
 "Producible-item search is currently unavailable." = "Die Suche nach produzierbaren Items ist derzeit nicht verfügbar.";
 "Select %@" = "%@ auswählen";
@@ -3077,6 +3081,10 @@
 "The order books of the last hub scan are still inside ESI's cache time. CCP asks not to request them again before it ends; a new scan is possible from %@." = "Die Orderbücher des letzten Hub-Scans liegen noch in der ESI-Cachezeit. CCP verlangt, sie vorher nicht erneut abzurufen; ein neuer Scan ist ab %@ möglich.";
 "Fetching possible from %@" = "Abruf möglich ab %@";
 
+/* Build link beside item names (owner rule 09.11.2026) */
+"Build in Planner" = "Im Planer bauen";
+"Opens the Planner with this item selected for adding; enter the runs there." = "Öffnet den Planer mit diesem Item im Feld „Produzierbares Item hinzufügen“; die Runs trägst du dort ein.";
+
 /* Market stock item detail (MARKTBESTAND_PLAN P6) */
 "Market stock history" = "Bestandsverlauf";
 "No hub with a known location is configured." = "Kein Hub mit bekanntem Ort konfiguriert.";
@@ -3289,7 +3297,7 @@
 
 /* Planer: Schritte, Rentabilität und mehrere Produkte */
 "The Planner leads through eight steps and calculates only on click. Hover over a step or an arrow for its explanation." = "Der Planer führt durch acht Schritte und rechnet nur auf Klick. Fahre über einen Schritt oder Pfeil für die Erklärung.";
-"One or more products. One line per job: product, quantity, ME and TE. A line can add a BPC or BPO with its cost." = "Ein oder mehrere Produkte. Eine Zeile je Auftrag: Produkt, Menge, ME und TE. Eine Zeile kann eine BPC oder BPO mit Kosten nennen.";
+"One line per job: product, quantity, ME and TE, optionally a BPC or BPO with its cost. The hammer beside an item elsewhere in the app selects it here for adding." = "Eine Zeile je Auftrag: Produkt, Menge, ME und TE, optional eine BPC oder BPO mit Kosten. Der Hammer neben einem Item in anderen Bereichen wählt es hier zum Hinzufügen aus.";
 "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock." = "Ja oder Nein. Bei Ja gilt das kombinierte Lager oder ein Bestand von Hand; der ersetzt das Lager. Bei Nein rechnet der Plan ohne Bestand.";
 "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up." = "Bei Ja wird zuerst der Bestand verbraucht. Eine manuelle Liste ersetzt das Lager in jedem Rechengang, auch für die Blueprint-Runs. Schritt 4 zeigt, was der Markt ergänzt.";
 "Manual stock is in use. It replaces the combined warehouse in this calculation." = "Manueller Bestand ist aktiv. Er ersetzt in dieser Berechnung das kombinierte Lager.";
