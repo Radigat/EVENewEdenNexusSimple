@@ -44,34 +44,6 @@ Sammelstelle für alles, was nicht erledigt ist. Einzelheiten stehen in den
 verlinkten Plänen und im [dev-diary.md](dev-diary.md); offene Abnahmen je
 Vorhaben in [ROADMAP.md](ROADMAP.md), „Umgesetzt, Abnahme offen“.
 
-- **CI rot seit 03.11.2026; dritte Korrektur gepusht, CI-Nachweis offen:** Job
-  „Swift package tests“ (`macos-15`, Swift 6.1.2).
-  - Übersetzung, behoben mit `abc1b10`: Ab `c36c27e` (A1–A3) meldete der
-    Compiler in `PlaceholderViews.swift` beim Erzeugen von
-    `PlannerCalculationPipeline` (`resolveBasis`, `calculate`) „converting
-    non-sendable function value … may introduce data races“. Die
-    Pipeline erhält jetzt Closure-Literale statt der lokalen Funktionen. Im
-    CI-Lauf `42528721333` übersetzt Swift 6.1 den Stand, alle 933
-    Swift-Testing-Tests sind grün.
-  - Leerzustände, behoben mit `178920d`: `AppUnavailableView` setzte auch bei
-    „Standard“ feste Schriften (Titel `title3` fett, Beschreibung `title3`),
-    die nur unter macOS 27.2 dem Systemleerzustand gleichen; unter macOS 15
-    scheiterte `testUnavailableViewMatchesTheSystemViewAtStandardSize`. Nach
-    Wahl des Eigentümers bleiben bei „Standard“ jetzt die Systemschriften
-    unberührt (`appFontKeepingSystemDefault`); die übrigen Stufen skalieren
-    `title3` wie bisher. Im CI-Lauf `42529888263` ist dieser Pixelvergleich
-    unter macOS 15 grün.
-  - Rot seit `178920d`: `testUnavailableViewGrowsWithTheTextSize`. Unter
-    macOS 15 sind zwei der fünf Stufen gleich hoch (vier verschiedene Höhen
-    statt fünf); die Reihenfolge stimmt. Welche zwei Stufen, zeigt das Log
-    nicht. Ursache ist die gewählte Lösung: „Standard“ nutzt unter macOS 15
-    andere Schriften als die skalierten Stufen. Unter macOS 27.2 grün.
-    Am 08.11.2026 nach Wahl des Eigentümers den Test angepasst, committet und
-    nach `origin/main` gepusht:
-    Die vier skalierten Stufen müssen weiter jeweils höher werden, „Standard“
-    muss nur zwischen „Kompakt“ und „Groß“ liegen und darf so hoch sein wie
-    eine der beiden. Lokal grün; ob der Test unter macOS 15 hält, zeigt der
-    CI-Lauf zu diesem Push.
 - **Eigentümerentscheidungen:**
   - P-L5: Zykluserkennung in der Automatik mit Wahl des günstigsten Zustands
     ([Analyse](Documentation/ANALYSE_2026-11-02.md), Abschnitt 6);
@@ -180,17 +152,32 @@ Der Eigentümer hat die Korrektur am 19.10.2026 mit dem signierten Build
 `~/Developer/EVE New Eden Nexus Builds/2026-10-19-debug-8961e00-bplocations/`
 live geprüft: Die Standorte werden korrekt angezeigt.
 
-## Git-Stand (08.11.2026)
+## Git-Stand (09.11.2026)
 
-- `main` und `origin/main` stehen nach dem Push vom 08.11.2026 auf dem
-  Commit mit der CI-Korrektur (Planer-Pipeline für Swift 6.1) und diesem
-  Nachtrag von ROADMAP und PROJECT_STATE. Mit ihm gingen `f63dc83`
-  (Erstimport-Hinweis der Öffentlichen Verträge), `69f285f` (Planer ohne
-  Umschalter Einzel-/Sammelproduktion) und der Sammel-Commit `0b7fb5c` (A6,
-  HUD D1–D8, Dashboard DB1–DB7, Market Browser entfernt, Item-Verlauf,
-  Schriftgröße, Eingabefehler im Planer, Vertragssuche nach Preis und Region)
-  nach `origin/main`; vorher lag `origin/main` auf `85749de` (A5b,
-  05.11.2026).
+- `main` und `origin/main` stehen auf dem Commit mit dem Nachtrag des grünen
+  CI-Laufs, gepusht am 09.11.2026 direkt nach `30105c6`. Am 08.11.2026 gingen
+  nach `origin/main`: `f63dc83` (Erstimport-Hinweis der Öffentlichen Verträge),
+  `69f285f` (Planer ohne Umschalter Einzel-/Sammelproduktion), der
+  Sammel-Commit `0b7fb5c` (A6, HUD D1–D8, Dashboard DB1–DB7, Market Browser
+  entfernt, Item-Verlauf, Schriftgröße, Eingabefehler im Planer,
+  Vertragssuche nach Preis und Region) sowie die CI-Korrekturen `abc1b10`
+  (mit dem Nachtrag von ROADMAP und PROJECT_STATE), `178920d` und `30105c6`.
+  Vorher lag `origin/main` auf `85749de` (A5b, 05.11.2026).
+- **CI grün seit `30105c6`:** Lauf `42530746707` (`macos-15`, Swift 6.1.2)
+  mit 933 Swift-Testing-Tests, 49 XCTest-Fällen und der Planer-Info-Prüfung.
+  Rot war sie von `c36c27e` (03.11.2026) bis `178920d`, mit drei Ursachen,
+  die erst nacheinander sichtbar wurden:
+  - `abc1b10`: Swift 6.1 lehnte in `PlaceholderViews.swift` die lokalen
+    Funktionen als `@MainActor`-Argumente von `PlannerCalculationPipeline`
+    ab; die Pipeline erhält jetzt Closure-Literale.
+  - `178920d`: `AppUnavailableView` setzte auch bei „Standard“ feste
+    Schriften, die nur unter macOS 27.2 dem Systemleerzustand gleichen. Nach
+    Wahl des Eigentümers bleiben bei „Standard“ die Systemschriften
+    unberührt.
+  - `30105c6`: Unter macOS 15 ist der Leerzustand bei „Standard“ dadurch so
+    hoch wie bei einer Nachbarstufe. Nach Wahl des Eigentümers verlangt der
+    Wachstumstest nur noch bei den vier skalierten Stufen jeweils mehr Höhe.
+  - Einzelheiten im [dev-diary.md](dev-diary.md), Einträge vom 08.11.2026.
 - Beim Schreiben dieses Stands uncommittet (parallele Sitzung): die
   Doku-Nachträge zu DB7, die Änderungen aus DB8 und der Abnahmevermerk des
   Dashboards.
@@ -592,10 +579,8 @@ Bericht, Messwerte und Prompt-Reihe: [ANALYSE_2026-11-02.md](Documentation/ANALY
 - **Offen:** Sichtprüfung von A4; Messung von A6 bei normaler ESI-Lage;
   A6b–A8; Eigentümerabnahme.
 - Commits `1195e18` bis `85749de` gepusht; A6 im Sammel-Commit `0b7fb5c`,
-  gepusht am 08.11.2026. Die CI scheiterte ab `c36c27e` an der Übersetzung;
-  seit `abc1b10` übersetzt sie wieder, ein Test in `AppTextSizeTests` ist rot;
-  seit `178920d` ist dieser grün und ein anderer rot, angepasst und
-  gepusht, Nachweis offen (siehe „Offene Punkte“).
+  gepusht am 08.11.2026. Die CI scheiterte ab `c36c27e` an der Übersetzung
+  und ist seit `30105c6` wieder grün (siehe „Git-Stand“).
 
 ## Oberflächenstil „New Eden HUD“ D1–D8 (07.11.2026)
 
@@ -634,7 +619,7 @@ Plan und Abnahme-Checkliste: [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD
   (`AppUnavailableView`) sahen bei „Standard“ unter macOS 14 und 15 anders
   aus als der Systemleerzustand; mit `178920d` korrigiert. Unter macOS 15
   sind seitdem zwei Schriftstufen im Leerzustand gleich hoch; das ist nach
-  Wahl des Eigentümers zulässig (siehe „Offene Punkte“).
+  Wahl des Eigentümers zulässig (siehe „Git-Stand“).
 - Commits `f63dc83`, `69f285f` und `0b7fb5c`, gepusht am 08.11.2026.
 
 ## Dashboard nach Board DB1–DB8 (07./08.11.2026)

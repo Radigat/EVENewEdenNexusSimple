@@ -10092,3 +10092,11 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
   - Nicht geprüft: macOS 15. Erwartet wird, dass die gleich hohen Stufen dort „Standard“ und eine Nachbarstufe sind; belegt ist das erst mit dem nächsten CI-Lauf.
 - **Commit und Push:** Am 08.11.2026 auf Auftrag committet und nach `origin/main` gepusht, zusammen mit dem vorigen Eintrag; ohne die uncommitteten DB7/DB8-Änderungen der parallelen Sitzung.
 - **Offen:** Ergebnis des CI-Laufs zu diesem Push.
+
+## 08.11.2026: CI wieder grün mit `30105c6`
+
+- **Auftrag:** Nach Commit und Push (Eintrag oben) den CI-Lauf auswerten.
+- **Ergebnis:** Lauf `42530746707` (`macos-15`, Swift 6.1.2) ist grün: Planer-Info-Prüfung ok, 933 Swift-Testing-Tests und 49 XCTest-Fälle ohne Fehler, darunter `testUnavailableViewMatchesTheSystemViewAtStandardSize` und `testUnavailableViewGrowsWithTheTextSize`. Die CI war seit `c36c27e` (03.11.2026) rot. PROJECT_STATE: Der CI-Punkt ist aus „Offene Punkte“ in den Git-Stand verschoben.
+- **Prüfung:** `gh run view 42530746707 --log` ausgewertet.
+- **Commit und Push:** Am 09.11.2026 auf Auftrag zusammen mit dem Nachtrag in PROJECT_STATE committet und nach `origin/main` gepusht; ohne die uncommitteten DB7/DB8-Änderungen der parallelen Sitzung.
+- **Offen:** Welche zwei Schriftstufen unter macOS 15 gleich hoch sind, ist weiter nicht ermittelt; nach Wahl des Eigentümers zulässig.
