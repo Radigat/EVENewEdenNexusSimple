@@ -622,6 +622,23 @@ Plan und Abnahme-Checkliste: [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD
   Wahl des Eigentümers zulässig (siehe „Git-Stand“).
 - Commits `f63dc83`, `69f285f` und `0b7fb5c`, gepusht am 08.11.2026.
 
+## Planer-Absturz bei den Verkaufswegen (09.11.2026)
+
+- **Implementiert:** Der Debug-Build stürzte mit einem Stapelüberlauf des
+  Hauptthreads ab, wenn in Schritt 4 eines Plans mit einem Produkt „Alle
+  Verkaufswege im Detail“ aufgeklappt wurde. Schrittinhalt, historischer
+  Plan, Szenarioübersicht und jede Szenariokarte werden jetzt über
+  `DeferredViewBody` in eigenen Body-Durchläufen gebaut. Darstellung und
+  Rechenregeln sind unverändert.
+- **Automatisch geprüft:** Absturz ohne Korrektur in einem temporären Test
+  mit demselben Stack reproduziert, mit Korrektur bestanden; neu
+  `PlannerViewStackBudgetTests`; `swift test` (158 + 791 Tests, 54
+  XCTest-Fälle), `EVEStaticDataKit` und natives `xcodebuild build`/`test`
+  grün.
+- **Offen:** Prüfung im Xcode-Debug mit echten Daten und Eigentümerabnahme;
+  Release-Build nicht untersucht.
+- Am 09.11.2026 auf Auftrag committet, nicht gepusht.
+
 ## Dashboard nach Board DB1–DB8 (07./08.11.2026)
 
 Plan und Abnahme-Checkliste: [DASHBOARD_BOARD_2026-11-07.md](Documentation/DASHBOARD_BOARD_2026-11-07.md).

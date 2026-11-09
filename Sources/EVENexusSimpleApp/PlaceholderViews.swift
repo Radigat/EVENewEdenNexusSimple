@@ -152,6 +152,25 @@ extension ProductionInputErrorReason {
   }
 }
 
+/// Builds its content in a body pass of its own instead of inline in the
+/// parent's body. The value stores only the closure, so the parent's view
+/// type stays small, and SwiftUI starts the content from a shallow stack.
+///
+/// The Planner needs this: a plan snapshot is about 17 KB inline, and an
+/// unoptimised Debug build keeps several copies of every nested view value on
+/// the main-thread stack. Built inline, opening all sale paths of a single
+/// product overflowed that stack (`EXC_BAD_ACCESS` in `___chkstk_darwin`,
+/// 09.11.2026). Multi-view content lays out like the inline content.
+struct DeferredViewBody<Content: View>: View {
+  private let content: () -> Content
+
+  init(@ViewBuilder content: @escaping () -> Content) {
+    self.content = content
+  }
+
+  var body: some View { content() }
+}
+
 struct PlannerView: View {
   @EnvironmentObject private var consolidation: ConsolidationController
   @Binding var historicalPlannerRequest: HistoricalPlannerRequest?
@@ -453,9 +472,9 @@ struct PlannerView: View {
             .foregroundStyle(DesignTokens.positive)
         }
         if let historicalPlan {
-          historicalResultView(historicalPlan.plan)
+          DeferredViewBody { historicalResultView(historicalPlan.plan) }
         } else if historicalPlannerRequest == nil {
-          plannerStepContent
+          DeferredViewBody { plannerStepContent }
           PlannerStepNavigation(
             current: currentPlannerStep,
             access: plannerStepAccess,
@@ -1462,7 +1481,9 @@ struct PlannerView: View {
       if isHistorical {
         targetMarketPanel(plan)
       }
-      plannerSaleScenarioPanel(plan, isHistorical: isHistorical)
+      DeferredViewBody {
+        plannerSaleScenarioPanel(plan, isHistorical: isHistorical)
+      }
     }
   }
 
@@ -1716,7 +1737,9 @@ struct PlannerView: View {
           hub: .coalition,
           plan: plan
         )
-        allianceScenarioCard(plan, isHistorical: isHistorical)
+        DeferredViewBody {
+          allianceScenarioCard(plan, isHistorical: isHistorical)
+        }
       }
     }
   }
@@ -2500,7 +2523,20 @@ struct PlannerView: View {
     }
   }
 
+  /// Every card builds in a body pass of its own: ten cards with their
+  /// details inline are too large for the Debug stack (see `DeferredViewBody`).
   private func saleScenarioPreview(
+    title: String,
+    result: SaleScenarioResult,
+    hub: PlannerSaleHub,
+    plan: IndustryPlanSnapshot
+  ) -> some View {
+    DeferredViewBody {
+      saleScenarioCard(title: title, result: result, hub: hub, plan: plan)
+    }
+  }
+
+  private func saleScenarioCard(
     title: String,
     result: SaleScenarioResult,
     hub: PlannerSaleHub,

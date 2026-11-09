@@ -1168,6 +1168,17 @@ reports expanded/collapsed state; the chevron is only a visual indicator.
 Embedded actions such as sync or disconnect remain separate controls rather
 than nested buttons.
 
+`PlannerView` builds the content of its steps and of the historical plan
+through `DeferredViewBody`, and so do the sale scenario overview and each of
+its cards. The wrapper stores only the content closure, so SwiftUI evaluates
+that content in a body pass of its own instead of inline in the parent's body.
+An `IndustryPlanSnapshot` is about 17 KB inline, and an unoptimised Debug build
+keeps several copies of every nested view value on the main-thread stack;
+built inline, opening "All sale paths in detail" for a single product
+overflowed that stack (09.11.2026). Large new Planner parts take the same
+path or become a view type of their own instead of growing `PlannerView.body`.
+`PlannerViewStackBudgetTests` keeps the body type small.
+
 The SwiftUI theme uses the exact semantic values from `SPEC_DESIGN.md`: base
 `#0B0F1A`, surface `#131A2A`, elevated `#1B2438`, border `#263149`, cyan accent
 `#35C7E8`, amber highlight `#F5B942` and the specified status colors. Layout
