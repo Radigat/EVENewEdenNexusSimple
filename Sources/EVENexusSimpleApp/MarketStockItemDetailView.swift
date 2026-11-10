@@ -119,6 +119,13 @@ enum MarketStockAxisFormat {
   }
 }
 
+/// What the chart area shows: one metric for every hub, or all three
+/// metrics of a single hub.
+enum MarketStockChartSelection: Hashable {
+  case metric(MarketStockChartMetric)
+  case hub(OpportunityHubRole)
+}
+
 /// Item detail: 30-day chart for Main, Home and Coalition (single points of
 /// the last 7 days, daily values before; gaps stay gaps) and a sortable
 /// daily table of one hub.
@@ -129,7 +136,7 @@ struct MarketStockItemDetailView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.locale) private var locale
   @State private var histories: [MarketStockItemHubHistory]?
-  @State private var metric: MarketStockChartMetric = .sellUnits
+  @State private var selection: MarketStockChartSelection = .metric(.sellUnits)
   /// Sample the pointer snapped to; drives rule, highlights and tooltip.
   @State private var hoverAnchor: MarketStockChartSample?
   @State private var tableRole: OpportunityHubRole?
@@ -197,24 +204,54 @@ struct MarketStockItemDetailView: View {
 
   @ViewBuilder
   private func content(_ histories: [MarketStockItemHubHistory]) -> some View {
-    // Label separat und beide Teile in Idealbreite: Der fett gesetzte
-    // Segmenttext darf das Label beim Umschalten nicht zusammendrücken.
-    HStack(spacing: DesignTokens.spacingSM) {
-      Text("Show")
+    // Zwei Zeilen mit derselben Auswahl: oben eine Kennzahl über alle Hubs,
+    // unten ein Hub mit allen drei Kennzahlen. Genau ein Segment beider
+    // Zeilen ist aktiv. Labels separat und Picker in Idealbreite: Der fett
+    // gesetzte Segmenttext darf das Label nicht zusammendrücken.
+    Grid(
+      alignment: .leading,
+      horizontalSpacing: DesignTokens.spacingSM,
+      verticalSpacing: DesignTokens.spacingXS
+    ) {
+      GridRow {
+        Text("All hubs")
+          .fixedSize()
+        Picker("All hubs", selection: $selection) {
+          ForEach(MarketStockChartMetric.allCases) { metric in
+            Text(metricTitle(metric)).tag(MarketStockChartSelection.metric(metric))
+          }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
         .fixedSize()
-      Picker("Show", selection: $metric) {
-        Text("Sell stock").tag(MarketStockChartMetric.sellUnits)
-        Text("Buy demand").tag(MarketStockChartMetric.buyUnits)
-        Text("Lowest sell price").tag(MarketStockChartMetric.sellPrice)
+        .accessibilityIdentifier("market-stock.detail.metric")
       }
-      .labelsHidden()
-      .pickerStyle(.segmented)
-      .fixedSize()
-      .accessibilityIdentifier("market-stock.detail.metric")
+      GridRow {
+        Text("One hub")
+          .fixedSize()
+        Picker("One hub", selection: $selection) {
+          ForEach(histories) { history in
+            Text(hubTitle(history)).tag(MarketStockChartSelection.hub(history.role))
+          }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .accessibilityIdentifier("market-stock.detail.hub-view")
+      }
     }
 
-    chart(histories)
-      .frame(minHeight: 240)
+    Group {
+      switch selection {
+      case .metric(let metric):
+        chart(series: hubSeries(histories, metric: metric), metric: metric, minHeight: 240)
+      case .hub(let role):
+        if let history = histories.first(where: { $0.role == role }) {
+          hubCharts(history)
+        }
+      }
+    }
+    .onChange(of: selection) { hoverAnchor = nil }
 
     Text(
       "Last 7 days: every stored point. Before: one daily value per UTC day (its last point). A day without a point leaves a gap; it is never drawn as 0."
@@ -254,16 +291,21 @@ struct MarketStockItemDetailView: View {
   private struct HubSeries: Identifiable {
     let id: OpportunityHubRole
     let name: String
+    /// First stored UTC day of the hub; left end of the time axis.
+    let start: Date?
     let samples: [MarketStockChartSample]
   }
 
-  private func chart(_ histories: [MarketStockItemHubHistory]) -> some View {
-    let now = Date()
-    let fineStart = now.addingTimeInterval(-7 * 24 * 60 * 60)
-    let series = histories.map { history in
+  private func hubSeries(
+    _ histories: [MarketStockItemHubHistory],
+    metric: MarketStockChartMetric
+  ) -> [HubSeries] {
+    let fineStart = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+    return histories.map { history in
       HubSeries(
         id: history.role,
         name: hubTitle(history),
+        start: history.days.first?.day,
         samples: MarketStockChartBuilder.samples(
           days: history.days,
           points: history.points,
@@ -272,7 +314,39 @@ struct MarketStockItemDetailView: View {
         )
       )
     }
-    let start = histories.first?.days.first?.day ?? now.addingTimeInterval(-30 * 24 * 60 * 60)
+  }
+
+  /// Hub view: one chart per metric for the selected hub only, stacked with
+  /// a shared time axis; hovering marks the same moment in all three.
+  private func hubCharts(_ history: MarketStockItemHubHistory) -> some View {
+    VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
+      ForEach(MarketStockChartMetric.allCases) { metric in
+        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+          Text(metricTitle(metric))
+            .appFont(.caption.weight(.semibold))
+            .foregroundStyle(DesignTokens.textSecondary)
+          chart(
+            series: hubSeries([history], metric: metric),
+            metric: metric,
+            minHeight: 120,
+            showsLegend: false
+          )
+        }
+      }
+    }
+    .accessibilityIdentifier("market-stock.detail.hub-charts")
+  }
+
+  private func chart(
+    series: [HubSeries],
+    metric: MarketStockChartMetric,
+    minHeight: CGFloat,
+    showsLegend: Bool = true
+  ) -> some View {
+    let now = Date()
+    let title = metricTitle(metric)
+    let start =
+      series.compactMap(\.start).first ?? now.addingTimeInterval(-30 * 24 * 60 * 60)
     return Group {
       if series.allSatisfy({ $0.samples.isEmpty }) {
         Label(
@@ -280,20 +354,20 @@ struct MarketStockItemDetailView: View {
           systemImage: "chart.xyaxis.line"
         )
         .foregroundStyle(DesignTokens.textSecondary)
-        .frame(maxWidth: .infinity, minHeight: 240)
+        .frame(maxWidth: .infinity, minHeight: minHeight)
       } else {
         Chart {
           ForEach(series) { hub in
             ForEach(Array(hub.samples.enumerated()), id: \.offset) { _, sample in
               LineMark(
                 x: .value("Time", sample.date),
-                y: .value(metricTitle, sample.value),
+                y: .value(title, sample.value),
                 series: .value("Segment", "\(hub.name)#\(sample.segment)")
               )
               .foregroundStyle(by: .value("Hub", hub.name))
               PointMark(
                 x: .value("Time", sample.date),
-                y: .value(metricTitle, sample.value)
+                y: .value(title, sample.value)
               )
               .foregroundStyle(by: .value("Hub", hub.name))
               .symbolSize(sample.isDailyValue ? 30 : 12)
@@ -309,7 +383,7 @@ struct MarketStockItemDetailView: View {
               {
                 PointMark(
                   x: .value("Time", sample.date),
-                  y: .value(metricTitle, sample.value)
+                  y: .value(title, sample.value)
                 )
                 .foregroundStyle(by: .value("Hub", hub.name))
                 .symbolSize(90)
@@ -327,10 +401,10 @@ struct MarketStockItemDetailView: View {
             series.flatMap { $0.samples.map(\.value) }) ?? 0...1
         )
         .chartOverlay { proxy in
-          hoverOverlay(proxy: proxy, series: series)
+          hoverOverlay(proxy: proxy, series: series, metric: metric)
         }
-        .onChange(of: metric) { hoverAnchor = nil }
-        .chartYAxisLabel(metricTitle)
+        .chartLegend(showsLegend ? .automatic : .hidden)
+        .chartYAxisLabel(title)
         .chartYAxis {
           AxisMarks { value in
             AxisGridLine()
@@ -342,7 +416,8 @@ struct MarketStockItemDetailView: View {
             }
           }
         }
-        .accessibilityLabel(Text(metricTitle))
+        .accessibilityLabel(Text(title))
+        .frame(minHeight: minHeight)
       }
     }
   }
@@ -350,7 +425,11 @@ struct MarketStockItemDetailView: View {
   /// Pointer distance (pt) within which the nearest sample is shown.
   private let hoverSnapDistance: CGFloat = 36
 
-  private func hoverOverlay(proxy: ChartProxy, series: [HubSeries]) -> some View {
+  private func hoverOverlay(
+    proxy: ChartProxy,
+    series: [HubSeries],
+    metric: MarketStockChartMetric
+  ) -> some View {
     GeometryReader { geometry in
       Rectangle()
         .fill(.clear)
@@ -372,7 +451,7 @@ struct MarketStockItemDetailView: View {
         let ruleX = origin.x + anchorX
         let placeLeft = ruleX > geometry.size.width / 2
         let gap: CGFloat = 10
-        hoverTooltip(anchor: hoverAnchor, series: series)
+        hoverTooltip(anchor: hoverAnchor, series: series, metric: metric)
           .fixedSize()
           .frame(
             width: max(placeLeft ? ruleX - gap : geometry.size.width - ruleX - gap, 0),
@@ -410,7 +489,8 @@ struct MarketStockItemDetailView: View {
 
   private func hoverTooltip(
     anchor: MarketStockChartSample,
-    series: [HubSeries]
+    series: [HubSeries],
+    metric: MarketStockChartMetric
   ) -> some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
       Text(hoverHeader(anchor))
@@ -425,7 +505,7 @@ struct MarketStockItemDetailView: View {
           Text(hub.name)
           Spacer(minLength: DesignTokens.spacingMD)
           if let sample {
-            Text(hoverValue(sample.value))
+            Text(hoverValue(sample.value, metric: metric))
               .appFont(.callout.monospacedDigit().weight(.semibold))
             if abs(sample.date.timeIntervalSince(anchor.date)) >= 60 {
               Text(hoverTime(sample.date, anchor: anchor.date))
@@ -470,7 +550,7 @@ struct MarketStockItemDetailView: View {
     return date.formatted(style)
   }
 
-  private func hoverValue(_ value: Double) -> String {
+  private func hoverValue(_ value: Double, metric: MarketStockChartMetric) -> String {
     switch metric {
     case .sellPrice:
       "\(value.formatted(.number.locale(locale).precision(.fractionLength(0...2)))) ISK"
@@ -479,7 +559,7 @@ struct MarketStockItemDetailView: View {
     }
   }
 
-  private var metricTitle: String {
+  private func metricTitle(_ metric: MarketStockChartMetric) -> String {
     switch metric {
     case .sellUnits: AppLocalization.text("Sell stock")
     case .buyUnits: AppLocalization.text("Buy demand")

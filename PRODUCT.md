@@ -981,7 +981,15 @@ Handel (siehe dort), der Item-Verlauf und die Ansicht **Marktbestand**.
   Sheet; ein Sheet wie der Logbuch-Editor öffnet ihn über sich.
   - **Graph über 30 Tage** für Main, Home und Coalition; ein Hub am Ort eines
     anderen erscheint einmal („Main Hub = Home Hub“).
-  - **Umschaltbar:** Sell-Bestand, Buy-Nachfrage, niedrigster Sell-Preis.
+  - **Umschaltbar („Alle Hubs“):** Sell-Bestand, Buy-Nachfrage, niedrigster Sell-Preis.
+  - **Hub-Ansichten:** Zwei Schalterzeilen mit einer gemeinsamen Auswahl:
+    „Alle Hubs“ (die drei Kennzahlen oben) und „Ein Hub“ mit je Hub einem
+    Segment (Main Hub, Home Hub, Koalitions-Hub; zusammenfallende Hubs als
+    ein Segment „Main Hub = Home Hub“). Aktiv ist genau ein Segment. Es zeigt nur diesen Hub mit drei
+    Diagrammen untereinander: Sell-Bestand, Buy-Nachfrage, niedrigster
+    Sell-Preis, jedes mit eigener Werteachse und gleicher 30-Tage-Zeitachse.
+    Mouse-over markiert den Zeitpunkt in allen drei. Das gilt für jeden
+    Bestandsverlauf, da es nur diese eine Ansicht gibt.
   - **Skala:** Die Y-Achse zeigt verkürzte Einheiten (Tsd., Mio., B für
     10⁹, T für 10¹²), keine wissenschaftliche Schreibweise.
     - Bei allen drei Kennzahlen zoomt sie auf den Bereich der gezeichneten
@@ -2238,12 +2246,13 @@ stimmen Bauschritte und Run-Zahlen der Blueprint-Versorgung mit dem
 berechneten Plan überein. Reicht ein vorab geplanter Versorgungsjob auf einem
 Blueprint-Original (BPO) nicht für alle Runs, läuft der Rest auf demselben
 Original weiter; nur endliche BPC-Runs können eine Fehlmenge erzeugen. Ein
-BPO-Kaufpreis wird vollständig als Kapitalbedarf angezeigt, aber nie komplett
-einer einzelnen Produktion belastet. Eine noch zu kaufende BPO (Markt oder
-Vertrag) ohne eingetragene Umlage wird mit den BPC-Runs bewertet, die sie
-ersetzt: genutzte Runs × günstigster Preis pro Run eines gleich- oder
-besserwertigen öffentlichen Einzel-BPC-Vertrags am Main Hub. Gibt es keinen
-solchen Vertrag, bleibt die Quelle ungeklärt. Eine eigene BPO ohne eingetragene
+BPO-Kaufpreis wird vollständig als Kapitalbedarf angezeigt. Eine noch zu
+kaufende BPO (Markt oder Vertrag) ohne eingetragene Umlage wird mit den BPC-Runs
+bewertet, die sie ersetzt: genutzte Runs × günstigster Preis pro Run eines
+gleich- oder besserwertigen öffentlichen Einzel-BPC-Vertrags am Main Hub. Gibt
+es keinen solchen Vertrag, zählt eine Markt-BPO einmal mit ihrem vollen Preis
+der gewählten Sell Order am Main Hub (Eigentümerentscheidung 09.11.2026); eine
+Vertrags-BPO bleibt dann ungeklärt. Eine eigene BPO ohne eingetragene
 Kosten zählt weiterhin als 0 ISK. Bündel, Nullpreise und
 alte Vertragszeilen ohne Runs/ME/TE bleiben ausdrücklich unkalkulierbar. Fehlt
 bei irgendeinem produzierten Knoten eine Blueprintkostenquelle (zum Beispiel
@@ -2496,12 +2505,13 @@ Charge ansetzen. Bündelverträge, fehlende Blueprint-Details und unvollständig
 Contract-Abdeckung werden nicht als billige oder nicht vorhandene Blaupause
 interpretiert. Eine ausdrücklich eingegebene Umlage hat für BPO-Kauf und
 eigene BPO immer Vorrang. Ohne Umlage zählt eine eigene BPO als 0 ISK, eine
-noch zu kaufende BPO mit dem BPC-Vertragswert der genutzten Runs (siehe oben).
+noch zu kaufende BPO mit dem BPC-Vertragswert der genutzten Runs, eine
+Markt-BPO ohne solchen Vertrag mit ihrem vollen Marktpreis (siehe oben).
 
 T1-BPOs aus tatsächlichen Sell Orders am Main Hub und BPO-Verträge sind
 getrennte Quellen. Der Markt- oder Vertragspreis ist Kapitalbedarf; in die
 Charge fließt die eingegebene BPO-Umlage oder, ohne sie, der BPC-Vertragswert
-der genutzten Runs ein. Normale Marktorders
+der genutzten Runs ein; fehlt dieser bei einer Markt-BPO, ihr voller Marktpreis. Normale Marktorders
 werden niemals als BPC interpretiert.
 
 Das Tagesbedarf-Ledger bewahrt für den exakten Main Hub zusätzlich den letzten

@@ -6481,7 +6481,11 @@ struct PlannerView: View {
           timeEfficiency: supplyJobs.map(\.allocation.timeEfficiency).min() ?? 0,
           contractOptions: blueprint.attributableContractOptions,
           formulaMarketPrice: step.node.activity == .reaction
-            ? blueprint.marketBPOOptions.first?.price : nil
+            ? blueprint.marketBPOOptions.first?.price : nil,
+          marketBPOPrice: step.node.activity == .reaction
+            ? nil
+            : contractSupplyPlans[blueprint.blueprintTypeID]?.capitalPurchaseCost
+              ?? blueprint.marketBPOOptions.first?.price
         )
       }
     var allocations = ProductionTreeBlueprintCostProjector.allocations(

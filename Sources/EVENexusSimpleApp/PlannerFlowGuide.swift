@@ -195,7 +195,7 @@ enum PlannerFlowGuide {
       id: .blueprintSource, role: .automatic, column: .calculation,
       title: "Choose Blueprint source",
       explanation:
-        "Fixed order: own BPO, own BPC, contracts, market, loyalty store. Reactions use a NPC formula if none is owned. Without a source it stays unresolved."
+        "Order: own BPO, own BPC, contracts, market, loyalty store; reactions use a NPC formula. A market BPO without BPC Contracts counts at full price. Else unresolved."
     ),
     PlannerFlowNode(
       id: .billOfMaterials, role: .automatic, column: .calculation,

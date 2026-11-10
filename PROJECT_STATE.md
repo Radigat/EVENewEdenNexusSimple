@@ -154,18 +154,23 @@ live geprüft: Die Standorte werden korrekt angezeigt.
 
 ## Git-Stand (09.11.2026)
 
-- `main` und `origin/main` stehen auf dem Commit mit dem Nachtrag des grünen
-  CI-Laufs, gepusht am 09.11.2026 direkt nach `30105c6`. Am 08.11.2026 gingen
-  nach `origin/main`: `f63dc83` (Erstimport-Hinweis der Öffentlichen Verträge),
+- `origin/main` steht seit dem Push vom 09.11.2026 auf `76e5791`. Mit ihm
+  gingen `320da12` (Dashboard DB7/DB8, Nachträge und Abnahme), `4305a4f`
+  (Bestandsverlauf neben jedem Item), `0a19949` (Hammer „Im Planer bauen“)
+  und `76e5791` (Planer-Absturz bei den Verkaufswegen) nach `origin/main`.
+  Davor lag `origin/main` auf `427d45a`, dem Nachtrag des grünen CI-Laufs zu
+  `30105c6`. Am 08.11.2026 gingen nach `origin/main`: `f63dc83` (Erstimport-Hinweis der Öffentlichen Verträge),
   `69f285f` (Planer ohne Umschalter Einzel-/Sammelproduktion), der
   Sammel-Commit `0b7fb5c` (A6, HUD D1–D8, Dashboard DB1–DB7, Market Browser
   entfernt, Item-Verlauf, Schriftgröße, Eingabefehler im Planer,
   Vertragssuche nach Preis und Region) sowie die CI-Korrekturen `abc1b10`
   (mit dem Nachtrag von ROADMAP und PROJECT_STATE), `178920d` und `30105c6`.
   Vorher lag `origin/main` auf `85749de` (A5b, 05.11.2026).
-- **CI grün seit `30105c6`:** Lauf `42530746707` (`macos-15`, Swift 6.1.2)
-  mit 933 Swift-Testing-Tests, 49 XCTest-Fällen und der Planer-Info-Prüfung.
-  Rot war sie von `c36c27e` (03.11.2026) bis `178920d`, mit drei Ursachen,
+- **CI grün mit `76e5791`:** Lauf `42699039095` (`macos-15`, Swift 6.1.2)
+  mit 949 Swift-Testing-Tests, 54 XCTest-Fällen und der Planer-Info-Prüfung;
+  drei Tests sind wie vorgesehen übersprungen (Real-SDE-Paket,
+  Real-SDE-Vergleich, 90-Tage-Messung). Grün ist sie seit `30105c6` (Lauf
+  `42530746707`). Rot war sie von `c36c27e` (03.11.2026) bis `178920d`, mit drei Ursachen,
   die erst nacheinander sichtbar wurden:
   - `abc1b10`: Swift 6.1 lehnte in `PlaceholderViews.swift` die lokalen
     Funktionen als `@MainActor`-Argumente von `PlannerCalculationPipeline`
@@ -178,9 +183,6 @@ live geprüft: Die Standorte werden korrekt angezeigt.
     hoch wie bei einer Nachbarstufe. Nach Wahl des Eigentümers verlangt der
     Wachstumstest nur noch bei den vier skalierten Stufen jeweils mehr Höhe.
   - Einzelheiten im [dev-diary.md](dev-diary.md), Einträge vom 08.11.2026.
-- Beim Schreiben dieses Stands uncommittet (parallele Sitzung): die
-  Doku-Nachträge zu DB7, die Änderungen aus DB8 und der Abnahmevermerk des
-  Dashboards.
 - Letzter Sicherungs-Tag ist `stand-2026-10-19` (auch auf GitHub). Der
   Konsolidierungsbranch ist am 19.10.2026 in `main` aufgegangen; gearbeitet
   wird auf `main`.
@@ -637,7 +639,8 @@ Plan und Abnahme-Checkliste: [DESIGN_HUD_2026-11-07.md](Documentation/DESIGN_HUD
   grün.
 - **Offen:** Prüfung im Xcode-Debug mit echten Daten und Eigentümerabnahme;
   Release-Build nicht untersucht.
-- Am 09.11.2026 auf Auftrag committet, nicht gepusht.
+- Commit `76e5791`, am 09.11.2026 auf Auftrag gepusht; CI-Lauf
+  `42699039095` grün.
 
 ## Dashboard nach Board DB1–DB8 (07./08.11.2026)
 

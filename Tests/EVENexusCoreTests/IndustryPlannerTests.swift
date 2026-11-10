@@ -7001,6 +7001,43 @@ struct ReactionFormulaCostTests {
   }
 
   @Test
+  func marketBPOWithoutBPCContractsCountsAtFullMarketPrice() throws {
+    let offer = ProductionTreeContractBlueprintOption(
+      recordID: 1, contractID: 1, kind: .copy, runs: 10,
+      materialEfficiency: 10, timeEfficiency: 20, price: 10_000_000,
+      locationID: 60_003_760, locationName: "Jita"
+    )
+    let allocations = ProductionTreeBlueprintCostProjector.allocations(for: [
+      ProductionTreeBlueprintCostChoice(
+        blueprintTypeID: 1, productName: "T3 Component",
+        action: .buyMarketBPO, usedRuns: 4, marketBPOPrice: 250_000_000),
+      ProductionTreeBlueprintCostChoice(
+        blueprintTypeID: 2, productName: "Contract BPO",
+        action: .buyContractBPO, usedRuns: 4, marketBPOPrice: 250_000_000),
+      ProductionTreeBlueprintCostChoice(
+        blueprintTypeID: 3, productName: "Valued by BPC",
+        action: .buyMarketBPO, usedRuns: 1, contractOptions: [offer],
+        marketBPOPrice: 250_000_000),
+      ProductionTreeBlueprintCostChoice(
+        blueprintTypeID: 4, productName: "Entered allocation",
+        action: .buyMarketBPO, manualAmount: 5_000, usedRuns: 4,
+        marketBPOPrice: 250_000_000),
+    ])
+    let market = try #require(allocations[1])
+    #expect(market.kind == .bpo)
+    #expect(market.amount == 250_000_000)
+    #expect(
+      market.source
+        == ProductionTreeBlueprintCostProjector.purchasedMarketBPOFullPriceSource)
+    #expect(allocations[2] == nil)
+    #expect(allocations[3]?.amount == 1_000_000)
+    #expect(
+      allocations[3]?.source
+        == ProductionTreeBlueprintCostProjector.purchasedBPOValuedByBPCContractsSource)
+    #expect(allocations[4]?.amount == 5_000)
+  }
+
+  @Test
   func manufacturingBPOWithoutContractsStaysUnresolved() {
     let allocations = ProductionTreeBlueprintCostProjector.allocations(for: [
       ProductionTreeBlueprintCostChoice(

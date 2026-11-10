@@ -3096,6 +3096,8 @@
 "The value axis covers only the plotted range and need not start at 0. Hover over a point: every hub shows its nearest point within 3 hours (daily values: same UTC day)." = "Die Werteachse zeigt nur den Bereich der Punkte und beginnt nicht zwingend bei 0. Maus über einen Punkt: Jeder Hub zeigt seinen nächsten Punkt innerhalb von 3 Stunden (Tageswerte: selber UTC-Tag).";
 "Daily value" = "Tageswert";
 "no point" = "kein Punkt";
+"All hubs" = "Alle Hubs";
+"One hub" = "Ein Hub";
 "Daily table" = "Tagestabelle";
 "No stored market stock point for this item yet." = "Für dieses Item gibt es noch keinen gespeicherten Bestandspunkt.";
 "Date (UTC)" = "Datum (UTC)";
@@ -3147,6 +3149,7 @@
 "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics." = "Positive Wertschöpfung bedeutet, dass der Direktkauf des erzeugten Produkts einschließlich Transport zur Reaktionsanlage teurer ist als die günstigste bewertete Versorgung einschließlich Transport der gekauften Materialien. Die günstigste Versorgung kann Zwischenprodukte kaufen oder aus Ursprungsmaterialien herstellen. Die Sofortverkaufsspanne wird getrennt ausgewiesen und verwendet aktuelle Kaufaufträge vor charakterspezifischer Verkaufssteuer und Ausgangslogistik.";
 "Use owned BPC, rest from contracts" = "Vorhandene BPC verwenden, Rest aus Verträgen";
 "Owned BPC runs plus whole public BPC Contract prices" = "Eigene BPC-Runs plus volle Preise öffentlicher BPC-Verträge";
+"Market BPO without BPC Contracts counted at its full Main Hub market price" = "Markt-BPO ohne BPC-Verträge mit vollem Main-Hub-Marktpreis angerechnet";
 "Purchase locations" = "Einkaufsorte";
 "Select at least one purchase location." = "Wähle mindestens einen Einkaufsort aus.";
 "Recalculate to apply the purchase locations." = "Neu berechnen, um die Einkaufsorte zu übernehmen.";
@@ -3211,7 +3214,7 @@
 "Blueprint offers" = "Blueprint-Angebote";
 "Market orders, NPC formula orders and public contracts are possible sources." = "Marktorders, NPC-Formel-Orders und öffentliche Verträge sind mögliche Quellen.";
 "Choose Blueprint source" = "Blueprint-Quelle wählen";
-"Fixed order: own BPO, own BPC, contracts, market, loyalty store. Reactions use a NPC formula if none is owned. Without a source it stays unresolved." = "Feste Reihenfolge: eigene BPO, eigene BPC, Verträge, Markt, Loyalty Store. Reaktionen nutzen ohne eigene Formel eine NPC-Formel. Ohne Quelle bleibt sie ungeklärt.";
+"Order: own BPO, own BPC, contracts, market, loyalty store; reactions use a NPC formula. A market BPO without BPC Contracts counts at full price. Else unresolved." = "Reihenfolge: eigene BPO, eigene BPC, Verträge, Markt, Loyalty Store; Reaktionen nutzen eine NPC-Formel. Markt-BPO ohne BPC-Verträge: voller Preis. Sonst ungeklärt.";
 "Bill of materials" = "Stückliste";
 "Expands the recipe level by level. Runs and materials are rounded up per job, as in EVE." = "Löst das Rezept Ebene für Ebene auf. Runs und Materialien werden je Auftrag aufgerundet, wie in EVE.";
 "Build or buy" = "Bauen oder kaufen";

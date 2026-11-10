@@ -2470,6 +2470,8 @@
 "The value axis covers only the plotted range and need not start at 0. Hover over a point: every hub shows its nearest point within 3 hours (daily values: same UTC day)." = "The value axis covers only the plotted range and need not start at 0. Hover over a point: every hub shows its nearest point within 3 hours (daily values: same UTC day).";
 "Daily value" = "Daily value";
 "no point" = "no point";
+"All hubs" = "All hubs";
+"One hub" = "One hub";
 "Daily table" = "Daily table";
 "No stored market stock point for this item yet." = "No stored market stock point for this item yet.";
 "Date (UTC)" = "Date (UTC)";
@@ -2521,6 +2523,7 @@
 "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics." = "Positive value creation means the produced output's direct-purchase total, including transport to the reaction facility, costs more than the cheapest evaluated supply, including transport of its bought materials. The cheapest supply can buy intermediates or build them from raw materials. The immediate-sale spread is shown separately and uses current buy orders before character-specific sales tax and outbound logistics.";
 "Use owned BPC, rest from contracts" = "Use owned BPC, rest from contracts";
 "Owned BPC runs plus whole public BPC Contract prices" = "Owned BPC runs plus whole public BPC Contract prices";
+"Market BPO without BPC Contracts counted at its full Main Hub market price" = "Market BPO without BPC Contracts counted at its full Main Hub market price";
 "Purchase locations" = "Purchase locations";
 "Select at least one purchase location." = "Select at least one purchase location.";
 "Recalculate to apply the purchase locations." = "Recalculate to apply the purchase locations.";
@@ -2587,7 +2590,7 @@
 "Blueprint offers" = "Blueprint offers";
 "Market orders, NPC formula orders and public contracts are possible sources." = "Market orders, NPC formula orders and public contracts are possible sources.";
 "Choose Blueprint source" = "Choose Blueprint source";
-"Fixed order: own BPO, own BPC, contracts, market, loyalty store. Reactions use a NPC formula if none is owned. Without a source it stays unresolved." = "Fixed order: own BPO, own BPC, contracts, market, loyalty store. Reactions use a NPC formula if none is owned. Without a source it stays unresolved.";
+"Order: own BPO, own BPC, contracts, market, loyalty store; reactions use a NPC formula. A market BPO without BPC Contracts counts at full price. Else unresolved." = "Order: own BPO, own BPC, contracts, market, loyalty store; reactions use a NPC formula. A market BPO without BPC Contracts counts at full price. Else unresolved.";
 "Bill of materials" = "Bill of materials";
 "Expands the recipe level by level. Runs and materials are rounded up per job, as in EVE." = "Expands the recipe level by level. Runs and materials are rounded up per job, as in EVE.";
 "Build or buy" = "Build or buy";

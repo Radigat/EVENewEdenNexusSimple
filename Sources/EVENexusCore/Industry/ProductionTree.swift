@@ -41,6 +41,9 @@ public struct ProductionTreeBlueprintCostChoice: Sendable {
   /// Cheapest market price of a reaction formula. A formula has no BPC runs to
   /// compare with, so buying it counts at this full price.
   public let formulaMarketPrice: Double?
+  /// Price of the Main Hub market sell order a manufacturing BPO is bought
+  /// from. Used at its full amount only when no BPC Contract values the runs.
+  public let marketBPOPrice: Double?
 
   public init(
     blueprintTypeID: Int64,
@@ -54,9 +57,11 @@ public struct ProductionTreeBlueprintCostChoice: Sendable {
     materialEfficiency: Int = 0,
     timeEfficiency: Int = 0,
     contractOptions: [ProductionTreeContractBlueprintOption] = [],
-    formulaMarketPrice: Double? = nil
+    formulaMarketPrice: Double? = nil,
+    marketBPOPrice: Double? = nil
   ) {
     self.formulaMarketPrice = formulaMarketPrice
+    self.marketBPOPrice = marketBPOPrice
     self.blueprintTypeID = blueprintTypeID
     self.productName = productName
     self.action = action
@@ -92,6 +97,11 @@ public enum ProductionTreeBlueprintCostProjector {
   /// formula adds no further cost.
   public static let purchasedFormulaSource =
     "Reaction formula bought once at the cheapest NPC sell order in the Main Hub region"
+  /// Owner decision 2026-11-09: a market BPO without a BPC Contract to value
+  /// its runs counts once at its full Main Hub market price instead of
+  /// keeping the plan unresolved. Contract BPOs keep the previous rule.
+  public static let purchasedMarketBPOFullPriceSource =
+    "Market BPO without BPC Contracts counted at its full Main Hub market price"
 
   public static func allocations(
     for choices: [ProductionTreeBlueprintCostChoice]
@@ -173,7 +183,19 @@ public enum ProductionTreeBlueprintCostProjector {
             timeEfficiency: choice.timeEfficiency,
             offers: choice.contractOptions
           )
-        else { return }
+        else {
+          guard choice.action == .buyMarketBPO,
+            let price = choice.marketBPOPrice.flatMap(validAmount)
+          else { return }
+          result[choice.blueprintTypeID] = IndustryBlueprintCostAllocation(
+            blueprintTypeID: choice.blueprintTypeID,
+            productName: choice.productName,
+            kind: .bpo,
+            amount: price,
+            source: purchasedMarketBPOFullPriceSource
+          )
+          return
+        }
         allocation = IndustryBlueprintCostAllocation(
           blueprintTypeID: choice.blueprintTypeID,
           productName: choice.productName,

@@ -3281,7 +3281,8 @@ final class RuntimeState {
         }
       case .buyContractBPO, .buyMarketBPO:
         // The same rule as the Planner: a bought BPO without an entered amount
-        // is valued by the BPC runs it replaces, or stays unresolved.
+        // is valued by the BPC runs it replaces; a market BPO without such a
+        // Contract counts at its full market price, a Contract BPO stays unresolved.
         let jobs = blueprintSupplyPlans[blueprintTypeID]?.manufacturingJobs ?? []
         let choice = ProductionTreeBlueprintCostChoice(
           blueprintTypeID: blueprintTypeID,
@@ -3298,7 +3299,13 @@ final class RuntimeState {
             ? preflightTree.nodes.lazy.compactMap(\.blueprint)
               .first { $0.blueprintTypeID == blueprintTypeID }?
               .marketBPOOptions.first?.price
-            : nil
+            : nil,
+          marketBPOPrice: formulaTypeIDs.contains(blueprintTypeID)
+            ? nil
+            : blueprintSupplyPlans[blueprintTypeID]?.capitalPurchaseCost
+              ?? preflightTree.nodes.lazy.compactMap(\.blueprint)
+              .first { $0.blueprintTypeID == blueprintTypeID }?
+              .marketBPOOptions.first?.price
         )
         if let allocation = ProductionTreeBlueprintCostProjector.allocations(
           for: [choice]
