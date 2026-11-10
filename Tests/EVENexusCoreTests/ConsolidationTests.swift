@@ -111,6 +111,52 @@ struct ConsolidationTests {
     let applied = try preview.applying(to: w)
     #expect(throws: ConsolidationError.stalePreview) { try preview.applying(to: applied) }
   }
+  @Test func takingAnAssignmentBackRedistributesAndEndsReceiptMode() throws {
+    var w = try workspace()
+    let first = UUID()
+    let second = UUID()
+    for id in [first, second] {
+      w.costs.append(
+        ImmutableProductionCost(
+          id: id, typeID: 34, units: 2, sourceSnapshot: Data(), material: nil,
+          installation: nil, blueprint: nil, logistics: nil, historicalManualSoldUnits: 1,
+          historicalManualSalePrice: 5, recordedAt: .now))
+    }
+    try w.addEvidence(
+      ProductionSaleEvidence(
+        id: "1:journal:2", typeID: 34, quantity: 3, unitPrice: nil, recordedAt: .now,
+        source: "Vertrag", totalCents: 100))
+    try w.allocateSale(rowID: first, evidenceID: "1:journal:2", quantity: 1, switchToEvidence: true)
+    try w.allocateSale(rowID: second, evidenceID: "1:journal:2", quantity: 1, switchToEvidence: true)
+    try w.allocateSale(rowID: first, evidenceID: "1:journal:2", quantity: 1, switchToEvidence: true)
+    #expect(w.sales.map(\.grossCents) == [33, 33, 34])
+
+    // An earlier share goes: the remaining shares still add up to the cent.
+    try w.removeAllocation(id: w.sales[0].id)
+    #expect(w.sales.map(\.grossCents) == [33, 33])
+    #expect(w.costs.map(\.evidenceMode) == [true, true])
+    try w.validate()
+
+    try w.removeAllocation(id: w.sales[1].id)
+    #expect(w.costs.map(\.evidenceMode) == [false, true])
+    #expect(w.costs[0].historicalManualSoldUnits == 1)
+    try w.validate()
+    #expect(throws: (any Error).self) { try w.removeUnassignedEvidence(id: "1:journal:2") }
+
+    // The last share removes the receipt with it.
+    try w.removeAllocation(id: w.sales[0].id)
+    #expect(w.sales.isEmpty && w.evidence.isEmpty)
+    #expect(w.costs.map(\.evidenceMode) == [false, false])
+    try w.validate()
+    #expect(throws: (any Error).self) { try w.removeAllocation(id: UUID()) }
+
+    try w.addEvidence(
+      ProductionSaleEvidence(
+        id: "manual:1", typeID: 34, quantity: 1, unitPrice: try ISKAmount.parse("1"),
+        recordedAt: .now, source: "Manueller Beleg"))
+    try w.removeUnassignedEvidence(id: "manual:1")
+    #expect(w.evidence.isEmpty)
+  }
   @Test func moneyIsExact() throws {
     #expect(try ISKAmount.parse("123,45").hundredths == 12345)
     for invalid in ["", "0", "-1", "1.234", "1,234.50", "1 000", "92233720368547759"] {

@@ -58,7 +58,9 @@ allgemeinen Einstellungen. Der frühere bereichsumschaltende Projektverwaltungsd
   Marktverkauf nicht doppelt zu importieren. Teilbeträge werden centgenau verteilt, der Rundungsrest bleibt
   beim abschließenden Teil. Beleg-ID, Restmenge und Produktionsmenge begrenzen jede Zuordnung. Beim Wechsel
   in den Belegmodus werden frühere manuelle Verkaufswerte gesichert; die aktuelle Zeile folgt ausschließlich
-  den Zuordnungen. Historische Daten bleiben nach Trennen eines Charakters erhalten. Die bestehende
+  den Zuordnungen. Seit 10.11.2026 erkennt der Dialog Verkäufe in den gespeicherten Wallet-Daten aller
+  Charaktere, schlägt die Produktion vor und ordnet mit einem Klick zu; Zuordnungen sind rücknehmbar
+  (aktuelles Verhalten in `PRODUCT.md`). Historische Daten bleiben nach Trennen eines Charakters erhalten. Die bestehende
   Gebühren-/Gewinnberechnung bleibt maßgeblich; belegte Erlöse werden zusätzlich ausdrücklich brutto gezeigt.
 - Sicherung: Die Bedienung liegt in den allgemeinen Einstellungen. Konsistente SQLite-Online-Snapshots
   einschließlich WAL, Prüfsummen, Manifest und verifizierte

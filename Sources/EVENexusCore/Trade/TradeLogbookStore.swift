@@ -12,7 +12,7 @@ public enum TradeLogbookStoreError: Error, Equatable, Sendable {
 /// (`dataRoot/trade/trade-logbook.sqlite`, HANDEL_PLAN P5). It never touches
 /// the SwiftData store or its migration chain.
 public actor TradeLogbookStore {
-  public static let schemaVersion = 3
+  public static let schemaVersion = 4
 
   private let database: TradeLogbookSQLiteDatabase
 
@@ -417,6 +417,29 @@ public actor TradeLogbookStore {
         )
       }
     }
+    if version < 4 {
+      // Production sale receipts: sender and receiver of a journal booking
+      // and the item lines of own, accepted contracts.
+      try database.transaction {
+        try database.execute(
+          """
+          ALTER TABLE wallet_journal ADD COLUMN first_party_id INTEGER;
+          ALTER TABLE wallet_journal ADD COLUMN second_party_id INTEGER;
+          CREATE TABLE IF NOT EXISTS wallet_contract_items (
+            character_id INTEGER NOT NULL,
+            contract_id INTEGER NOT NULL,
+            record_id INTEGER NOT NULL,
+            type_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL,
+            is_included INTEGER NOT NULL,
+            first_seen_at REAL NOT NULL,
+            PRIMARY KEY (character_id, contract_id, record_id)
+          );
+          PRAGMA user_version = 4;
+          """
+        )
+      }
+    }
   }
 }
 
@@ -518,9 +541,13 @@ extension TradeLogbookStore {
           """
           INSERT INTO wallet_journal (
             character_id, journal_id, date, ref_type, amount, context_id,
-            context_id_type, tax, description, first_seen_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(character_id, journal_id) DO NOTHING
+            context_id_type, tax, description, first_seen_at,
+            first_party_id, second_party_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(character_id, journal_id) DO UPDATE SET
+            first_party_id = COALESCE(first_party_id, excluded.first_party_id),
+            second_party_id = COALESCE(
+              second_party_id, excluded.second_party_id)
           """,
           [
             .integer(characterID),
@@ -533,6 +560,8 @@ extension TradeLogbookStore {
             .optional(entry.tax.flatMap { $0.isFinite ? $0 : nil }),
             .optionalText(entry.description),
             .real(now.timeIntervalSince1970),
+            entry.firstPartyID.map { .integer($0) } ?? .null,
+            entry.secondPartyID.map { .integer($0) } ?? .null,
           ]
         )
       }
@@ -672,9 +701,96 @@ extension TradeLogbookStore {
         contextID: row.int64("context_id"),
         contextIDType: row.string("context_id_type"),
         tax: row.double("tax"),
-        description: row.string("description")
+        description: row.string("description"),
+        firstPartyID: row.int64("first_party_id"),
+        secondPartyID: row.int64("second_party_id")
       )
     }
+  }
+
+  /// Stores the item lines of one own contract idempotently; lines with a
+  /// non-positive quantity are not kept.
+  public func recordContractItems(
+    characterID: Int64,
+    contractID: Int64,
+    items: [ESIPrivateContractItemDTO],
+    at now: Date = .now
+  ) throws {
+    try database.transaction {
+      for item in items where item.quantity > 0 {
+        try database.run(
+          """
+          INSERT INTO wallet_contract_items (
+            character_id, contract_id, record_id, type_id, quantity,
+            is_included, first_seen_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(character_id, contract_id, record_id) DO NOTHING
+          """,
+          [
+            .integer(characterID),
+            .integer(contractID),
+            .integer(item.recordID),
+            .integer(item.typeID),
+            .integer(item.quantity),
+            .integer(item.isIncluded ? 1 : 0),
+            .real(now.timeIntervalSince1970),
+          ]
+        )
+      }
+    }
+  }
+
+  public func walletContractItems() throws -> [TradeWalletContractItem] {
+    try database.query(
+      """
+      SELECT * FROM wallet_contract_items
+      ORDER BY character_id, contract_id, record_id
+      """
+    ).map { row in
+      guard let character = row.int64("character_id"),
+        let contractID = row.int64("contract_id"),
+        let recordID = row.int64("record_id"),
+        let typeID = row.int64("type_id"),
+        let quantity = row.int64("quantity"),
+        let isIncluded = row.int64("is_included")
+      else { throw TradeLogbookStoreError.invalidRow }
+      return TradeWalletContractItem(
+        characterID: character,
+        contractID: contractID,
+        recordID: recordID,
+        typeID: typeID,
+        quantity: quantity,
+        isIncluded: isIncluded != 0
+      )
+    }
+  }
+
+  /// Contracts a character was paid for (`contract_price` income) from
+  /// `since` on whose item lines are not stored yet, newest first.
+  public func paidContractIDsWithoutItems(
+    characterID: Int64,
+    since: Date
+  ) throws -> [Int64] {
+    try database.query(
+      """
+      SELECT DISTINCT j.context_id AS contract_id, MAX(j.date) AS latest
+      FROM wallet_journal j
+      WHERE j.character_id = ?
+        AND j.ref_type = 'contract_price'
+        AND j.amount > 0
+        AND j.context_id_type = 'contract_id'
+        AND j.context_id IS NOT NULL
+        AND j.date >= ?
+        AND NOT EXISTS (
+          SELECT 1 FROM wallet_contract_items i
+          WHERE i.character_id = j.character_id
+            AND i.contract_id = j.context_id
+        )
+      GROUP BY j.context_id
+      ORDER BY latest DESC, j.context_id DESC
+      """,
+      [.integer(characterID), .real(since.timeIntervalSince1970)]
+    ).compactMap { $0.int64("contract_id") }
   }
 
   public func walletOrders() throws -> [TradeWalletOrder] {

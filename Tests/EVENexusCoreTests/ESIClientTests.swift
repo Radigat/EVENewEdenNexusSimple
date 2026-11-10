@@ -1713,6 +1713,30 @@ struct ESIClientTests {
   }
 
   @Test
+  func soldContractItemsLoadByContractIDAndReportUnavailableOnes() async {
+    let transport = PrivateContractTransport()
+    let scopes: Set<String> = [SoldContractItemSyncService.requiredScope]
+    let result = await SoldContractItemSyncService(
+      esi: ESIClient(transport: transport)
+    ).load(
+      characterID: 99,
+      contractIDs: [1, 7],
+      lease: corporationLease(scopes: scopes)
+    )
+
+    #expect(result.loaded.map(\.contractID) == [1])
+    #expect(result.loaded.first?.items.map(\.typeID) == [34, 35])
+    #expect(result.unavailableContractIDs == [7])
+
+    let forbidden = PrivateContractTransport()
+    let denied = await SoldContractItemSyncService(
+      esi: ESIClient(transport: forbidden)
+    ).load(characterID: 99, contractIDs: [1], lease: corporationLease(scopes: []))
+    #expect(denied.loaded.isEmpty && denied.unavailableContractIDs == [1])
+    #expect(await forbidden.requestedPaths.isEmpty)
+  }
+
+  @Test
   func publicContractFeeSyncRequiresBothScopesBeforeTransport() async {
     let transport = PublicContractFeeTransport()
     let scopes: Set<String> = [PublicContractFeeSyncService.contractsScope]

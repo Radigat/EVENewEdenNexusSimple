@@ -528,6 +528,8 @@ final class RuntimeState {
   private(set) var tradeWalletError: String?
   /// Wallet reconciliation (HANDEL_PLAN P7).
   private(set) var tradeUnassignedSales: [TradeUnassignedSale] = []
+  /// Changes when wallet data usable as production sale receipt was stored.
+  private(set) var productionSaleDataRevision = 0
   private(set) var tradeWalletImportStart: Date?
   private(set) var tradeUnresolvedPurchaseCount = 0
   private(set) var isReconcilingTradeLogbook = false
@@ -5772,6 +5774,8 @@ final class RuntimeState {
     if let lastCharacterSync {
       await recordTradeWallet(from: lastCharacterSync)
     }
+    await recordSoldContractItems(
+      characterID: authorization.characterID, lease: lease)
     await syncLoyaltyPoints(authorization: authorization, lease: lease)
   }
 
@@ -7130,10 +7134,62 @@ extension RuntimeState {
         orders: orders
       )
       tradeWalletStatuses = try await store.walletSyncStatuses()
+      productionSaleDataRevision &+= 1
       tradeWalletError = nil
     } catch {
       tradeWalletError =
         "The wallet data could not be stored in the trade logbook. Previously stored wallet data was not changed."
+    }
+  }
+
+  /// Loads the item lines of contracts the character was paid for during the
+  /// last 30 days and whose lines are not stored yet, so a contract sale can
+  /// name its item (production sale receipts). A failure never fails the sync.
+  func recordSoldContractItems(characterID: Int64, lease: AccessTokenLease) async {
+    do {
+      let store = try await openedTradeLogbookStore()
+      let contractIDs = try await store.paidContractIDsWithoutItems(
+        characterID: characterID,
+        since: Date.now.addingTimeInterval(-30 * 86_400)
+      )
+      if !contractIDs.isEmpty {
+        let result = await SoldContractItemSyncService(esi: esi).load(
+          characterID: characterID, contractIDs: contractIDs, lease: lease)
+        for contract in result.loaded {
+          try await store.recordContractItems(
+            characterID: characterID, contractID: contract.contractID,
+            items: contract.items)
+        }
+      }
+    } catch {
+      // The contract stays listed as "item not recognized".
+    }
+    productionSaleDataRevision &+= 1
+  }
+
+  /// Stored wallet data of all characters for the production sale receipts;
+  /// `nil` when the logbook file cannot be read.
+  func productionSaleWalletData() async -> ProductionSaleWalletData? {
+    do {
+      let store = try await openedTradeLogbookStore()
+      let statuses = try await store.walletSyncStatuses()
+      var tradeAssigned: [TradeWalletLink: Int64] = [:]
+      for entry in try await store.entries() {
+        for sale in entry.sales {
+          if let link = sale.walletLink {
+            tradeAssigned[link, default: 0] += sale.quantity
+          }
+        }
+      }
+      return ProductionSaleWalletData(
+        transactions: try await store.walletTransactions(),
+        journal: try await store.walletJournal(),
+        contractItems: try await store.walletContractItems(),
+        tradeAssigned: tradeAssigned,
+        statuses: statuses
+      )
+    } catch {
+      return nil
     }
   }
 
@@ -7174,7 +7230,10 @@ extension RuntimeState {
   /// Matches the stored wallet data with the logbook. Only callers that know
   /// the active Planner plans run it, so manufacturing purchases are never
   /// mistaken for trade.
-  func reconcileTradeLogbook(manufacturingTypeIDs: Set<Int64>) async {
+  func reconcileTradeLogbook(
+    manufacturingTypeIDs: Set<Int64>,
+    productionSaleQuantities: [TradeWalletLink: Int64] = [:]
+  ) async {
     guard !isReconcilingTradeLogbook else { return }
     isReconcilingTradeLogbook = true
     defer { isReconcilingTradeLogbook = false }
@@ -7225,7 +7284,8 @@ extension RuntimeState {
         typeNames: names,
         charactersWithOrders: Set(
           statuses.filter { $0.ordersSyncedAt != nil }.map(\.characterID)
-        )
+        ),
+        productionSaleQuantities: productionSaleQuantities
       )
       // The matching is pure and walks the whole wallet history, so it runs
       // off the main thread; the result is applied here as before.

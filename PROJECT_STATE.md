@@ -667,3 +667,11 @@ Plan und Abnahme-Checkliste: [DASHBOARD_BOARD_2026-11-07.md](Documentation/DASHB
 - DB1–DB7 im Sammel-Commit `0b7fb5c`, gepusht am 08.11.2026; DB8, die
   DB7-Nachträge und der Abnahmevermerk sind beim Schreiben dieses Stands
   uncommittet.
+
+## Verkaufsbelege mit Erkennung (10.11.2026)
+
+Implementiert und automatisch geprüft, Live- und Eigentümerabnahme offen; am
+10.11.2026 auf Auftrag committet, nicht gepusht: Verkäufe aus den gespeicherten Wallet-Daten aller Charaktere werden
+erkannt und mit einem Klick einer Produktion zugeordnet; Zuordnungen sind
+rücknehmbar. Handelslogbuch-Schema 4 (additiv). Verhalten in
+[PRODUCT.md](PRODUCT.md), Nachweise im [dev-diary.md](dev-diary.md).

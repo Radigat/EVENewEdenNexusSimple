@@ -232,6 +232,76 @@ struct ConsolidationPersistenceTests {
     #expect(controller.error != nil)
   }
 
+  @Test func oneClickAssignmentWritesTheRowAndTakingBackRestoresManualValues() throws {
+    let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
+    let container = try ModelContainer(
+      for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+    let plan = makePlan()
+    let requestID = try #require(plan.requests.first?.id)
+    let rowID = UUID()
+    let context = ModelContext(container)
+    context.insert(
+      StoredProductionOverviewRow(
+        id: rowID, sequenceNumber: 1, recordedAt: Date(timeIntervalSince1970: 100),
+        planID: UUID(), requestID: requestID, productName: "Fixture Ship", runs: 1,
+        materialEfficiency: 4, timeEfficiency: 2, systemName: "Fixture system", units: 2,
+        materialCost: 12, indexCost: nil, blueprintCost: 0, marketTax: nil,
+        salePricePerUnit: 5.25, soldUnits: 2, sourceSnapshot: try JSONEncoder().encode(plan),
+        sdeBuild: 1, esiCompatibilityDate: "fixture",
+        priceTimestamp: Date(timeIntervalSince1970: 90), ruleVersion: "fixture"))
+    try context.save()
+    let controller = ConsolidationController()
+    try controller.start(container: container)
+    func storedRow() throws -> StoredProductionOverviewRow {
+      try #require(
+        try ModelContext(container).fetch(FetchDescriptor<StoredProductionOverviewRow>()).first)
+    }
+    #expect(ProductionSaleReceipts.saleRows(for: [try storedRow()]).map(\.typeID) == [100])
+
+    let contract = ProductionSaleEvidence(
+      id: "91:journal:7", typeID: 100, quantity: 1, unitPrice: nil,
+      recordedAt: Date(timeIntervalSince1970: 200), source: "Vertrag · 55",
+      totalCents: 620_000_000_000)
+    let market = ProductionSaleEvidence(
+      id: "91:transaction:8", typeID: 100, quantity: 1,
+      unitPrice: try ISKAmount.parse("6000000000"),
+      recordedAt: Date(timeIntervalSince1970: 300), source: "Wallet · 91 · 8")
+    try controller.assignSales(
+      [
+        ProductionSaleAssignment(evidence: contract, rowID: rowID, quantity: 1),
+        ProductionSaleAssignment(evidence: market, rowID: rowID, quantity: 1),
+      ], rows: [try storedRow()])
+    let cost = try #require(controller.workspace.costs.first)
+    #expect(cost.evidenceMode && cost.typeID == 100 && cost.units == 2)
+    // The manual values of the row are kept, not added to the receipts.
+    #expect(cost.historicalManualSoldUnits == 2 && cost.historicalManualSalePrice == 5.25)
+    #expect(controller.workspace.sales.map(\.grossCents) == [620_000_000_000, 600_000_000_000])
+    #expect(try storedRow().soldUnits == 2)
+    #expect(try storedRow().salePricePerUnit == 6_100_000_000)
+    // The production is full; a further receipt is refused and changes nothing.
+    #expect(throws: (any Error).self) {
+      try controller.assignSales(
+        [
+          ProductionSaleAssignment(
+            evidence: ProductionSaleEvidence(
+              id: "manual:x", typeID: 100, quantity: 1, unitPrice: try ISKAmount.parse("1"),
+              recordedAt: .now, source: "Manueller Beleg"), rowID: rowID, quantity: 1)
+        ], rows: [try storedRow()])
+    }
+    #expect(controller.workspace.evidence.count == 2)
+
+    try controller.removeSaleAllocation(controller.workspace.sales[1].id)
+    #expect(try storedRow().soldUnits == 1)
+    #expect(try storedRow().salePricePerUnit == 6_200_000_000)
+    try controller.removeSaleAllocation(controller.workspace.sales[0].id)
+    #expect(controller.workspace.sales.isEmpty && controller.workspace.evidence.isEmpty)
+    #expect(controller.workspace.costs.first?.evidenceMode == false)
+    #expect(try storedRow().soldUnits == 2)
+    #expect(try storedRow().salePricePerUnit == 5.25)
+    #expect(
+      ProductionSaleReceipts.walletSaleQuantities(in: ModelContext(container)).isEmpty)
+  }
+
   @Test func changingStockInvalidatesPreview() throws {
     let schema = Schema(versionedSchema: EVENexusSchemaV3.self)
     let container = try ModelContainer(

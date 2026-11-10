@@ -135,7 +135,9 @@ struct TradeLogbookView: View {
         await runtime.loadTradeLogbook()
       }
       await runtime.reconcileTradeLogbook(
-        manufacturingTypeIDs: TradePlannerMaterials.typeIDs(in: modelContext)
+        manufacturingTypeIDs: TradePlannerMaterials.typeIDs(in: modelContext),
+        productionSaleQuantities: ProductionSaleReceipts.walletSaleQuantities(
+          in: modelContext)
       )
     }
     .sheet(item: $editorRequest) { request in

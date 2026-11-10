@@ -596,6 +596,92 @@ struct TradeLogbookTests {
     #expect(legacy.locationID == nil)
     #expect(legacy.isPersonal == nil)
   }
+
+  @Test
+  func schemaFourKeepsPartyIDsAndContractItemsAndMigratesVersionThree() async throws {
+    let url = temporaryStoreURL()
+    defer {
+      try? FileManager.default.removeItem(
+        at: url.deletingLastPathComponent().deletingLastPathComponent()
+      )
+    }
+    func journal(parties: Bool) -> [ESIWalletJournalDTO] {
+      [
+        ESIWalletJournalDTO(
+          amount: 6_200_000_000,
+          contextID: 55,
+          contextIDType: "contract_id",
+          date: Date(timeIntervalSince1970: 1_800_000_010),
+          journalID: 7,
+          refType: "contract_price",
+          firstPartyID: parties ? 500 : nil,
+          secondPartyID: parties ? 91 : nil
+        )
+      ]
+    }
+    let since = Date(timeIntervalSince1970: 1_800_000_000)
+    // A version 3 file: the store as written before, without the new parts.
+    do {
+      let store = try await TradeLogbookStore.open(url: url)
+      try await store.recordWallet(
+        characterID: 91, characterName: "Seller",
+        transactions: sourced([]), journal: sourced(journal(parties: false)))
+      await store.close()
+    }
+    var database: OpaquePointer?
+    #expect(sqlite3_open(url.path, &database) == SQLITE_OK)
+    #expect(
+      sqlite3_exec(
+        database,
+        """
+        ALTER TABLE wallet_journal DROP COLUMN first_party_id;
+        ALTER TABLE wallet_journal DROP COLUMN second_party_id;
+        DROP TABLE wallet_contract_items;
+        PRAGMA user_version = 3;
+        """,
+        nil, nil, nil
+      ) == SQLITE_OK
+    )
+    sqlite3_close(database)
+
+    let store = try await TradeLogbookStore.open(url: url)
+    let migrated = try #require(try await store.walletJournal().first)
+    #expect(migrated.amount == 6_200_000_000 && migrated.contextID == 55)
+    #expect(migrated.firstPartyID == nil && migrated.secondPartyID == nil)
+    #expect(try await store.walletContractItems().isEmpty)
+    #expect(
+      try await store.paidContractIDsWithoutItems(characterID: 91, since: since) == [55])
+    #expect(
+      try await store.paidContractIDsWithoutItems(
+        characterID: 91, since: Date(timeIntervalSince1970: 1_800_000_011)
+      ).isEmpty)
+
+    // A later hand-over fills the party IDs of the stored row.
+    try await store.recordWallet(
+      characterID: 91, characterName: "Seller",
+      transactions: sourced([]), journal: sourced(journal(parties: true)))
+    let filled = try #require(try await store.walletJournal().first)
+    #expect(filled.firstPartyID == 500 && filled.secondPartyID == 91)
+    #expect(try await store.walletJournal().count == 1)
+
+    let items = [
+      ESIPrivateContractItemDTO(
+        isIncluded: true, quantity: 1, rawQuantity: nil, recordID: 1, typeID: 28844),
+      ESIPrivateContractItemDTO(
+        isIncluded: false, quantity: 0, rawQuantity: nil, recordID: 2, typeID: 34),
+    ]
+    try await store.recordContractItems(characterID: 91, contractID: 55, items: items)
+    try await store.recordContractItems(characterID: 91, contractID: 55, items: items)
+    #expect(
+      try await store.walletContractItems() == [
+        TradeWalletContractItem(
+          characterID: 91, contractID: 55, recordID: 1, typeID: 28844, quantity: 1,
+          isIncluded: true)
+      ])
+    #expect(
+      try await store.paidContractIDsWithoutItems(characterID: 91, since: since).isEmpty)
+  }
+
 }
 
 @Suite("Trade wallet reconciliation")
@@ -869,4 +955,38 @@ struct TradeWalletReconcilerTests {
     #expect(rerun.unassignedSales.isEmpty)
     #expect(TradeWalletReconciler.assign(sale, to: assigned) == nil)
   }
+
+  @Test
+  func unitsUsedAsProductionSaleReceiptAreNotTakenAgain() throws {
+    let link = TradeWalletLink(characterID: 91, transactionID: 2)
+    func run(_ used: [TradeWalletLink: Int64]) -> TradeReconciliationResult {
+      TradeWalletReconciler.reconcile(
+        entries: [],
+        transactions: [
+          transaction(1, isBuy: true, quantity: 5, location: jita, date: day(1)),
+          transaction(2, isBuy: false, quantity: 3, location: home, date: day(2)),
+        ],
+        journal: [], orders: [],
+        context: TradeReconciliationContext(
+          startDate: start,
+          hubLocations: [.main: jita, .home: home],
+          fees: [:],
+          manufacturingTypeIDs: [],
+          transportBases: [:],
+          packagedVolumes: [:],
+          typeNames: [482: "Miner II"],
+          charactersWithOrders: [],
+          productionSaleQuantities: used,
+          now: day(10)
+        )
+      )
+    }
+    #expect(run([:]).changedEntries.first?.sales.map(\.quantity) == [3])
+    // Two of the three units belong to a production; one is left for trade.
+    #expect(run([link: 2]).changedEntries.first?.sales.map(\.quantity) == [1])
+    let whole = run([link: 3])
+    #expect(whole.changedEntries.first?.sales.isEmpty == true)
+    #expect(whole.unassignedSales.isEmpty)
+  }
+
 }

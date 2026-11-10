@@ -376,7 +376,9 @@ enum CharacterBatchSynchronizer {
     }
     // Fresh wallet data is matched with the trade logbook (HANDEL_PLAN P7).
     await runtime.reconcileTradeLogbook(
-      manufacturingTypeIDs: TradePlannerMaterials.typeIDs(in: modelContext)
+      manufacturingTypeIDs: TradePlannerMaterials.typeIDs(in: modelContext),
+      productionSaleQuantities: ProductionSaleReceipts.walletSaleQuantities(
+        in: modelContext)
     )
     return CharacterBatchSyncResult(
       synchronizedCount: synchronizedCount,
@@ -580,7 +582,9 @@ struct ContentView: View {
         if selection == .blueprints {
           Button("Wissenschaftsaufträge") { consolidationArea = .science }
         }
-        if selection == .productionBook { Button("Verkaufsbelege") { consolidationArea = .sales } }
+        if selection == .productionBook {
+          SaleReceiptsToolbarButton { consolidationArea = .sales }
+        }
       }
     }
     .sheet(item: $consolidationArea) { area in

@@ -15,6 +15,9 @@ public struct TradeReconciliationContext: Sendable {
   public let typeNames: [Int64: String]
   /// Characters whose own open orders and order history were delivered.
   public let charactersWithOrders: Set<Int64>
+  /// Units of wallet sales already assigned to a production as sale
+  /// receipt; the logbook does not take them again.
+  public let productionSaleQuantities: [TradeWalletLink: Int64]
   public let now: Date
 
   public init(
@@ -27,8 +30,10 @@ public struct TradeReconciliationContext: Sendable {
     packagedVolumes: [Int64: Double],
     typeNames: [Int64: String],
     charactersWithOrders: Set<Int64>,
+    productionSaleQuantities: [TradeWalletLink: Int64] = [:],
     now: Date = .now
   ) {
+    self.productionSaleQuantities = productionSaleQuantities
     self.startDate = startDate
     self.hubLocations = hubLocations
     self.hubNames = hubNames
@@ -116,6 +121,8 @@ public struct TradeReconciliationResult: Equatable, Sendable {
 ///   rest of a sale of a logged item stays unassigned;
 /// - paid sales tax comes from the journal (`transaction_tax`), the broker
 ///   fee is calculated from the frozen rate;
+/// - units of a sale assigned to a production as sale receipt are neither
+///   assigned to a purchase nor reported as unassigned;
 /// - an own order is detected from the character's orders; without order
 ///   data a purchase counts as instant and a sale as own sell order
 ///   ("assumed").
@@ -231,7 +238,7 @@ public enum TradeWalletReconciler {
       changed.insert(entry.id)
     }
 
-    var assignedBySale: [TradeWalletLink: Int64] = [:]
+    var assignedBySale = context.productionSaleQuantities
     for entry in working.values {
       for sale in entry.sales {
         if let link = sale.walletLink {

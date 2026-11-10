@@ -64,8 +64,10 @@
 		0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */; };
 		0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */; };
 		01A0C1100000000000000011 /* PlannerBuildPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C1100000000000000001 /* PlannerBuildPreset.swift */; };
+		01A0D2200000000000000012 /* ProductionSaleDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D2200000000000000002 /* ProductionSaleDetector.swift */; };
 		12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */; };
 		01A0C1100000000000000013 /* PlannerBuildPresetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C1100000000000000003 /* PlannerBuildPresetTests.swift */; };
+		01A0D2200000000000000014 /* ProductionSaleDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D2200000000000000004 /* ProductionSaleDetectorTests.swift */; };
 		01A0D0030000000000000011 /* ESIRememberedFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */; };
 		01A0D0020000000000000012 /* ESIResponseDiskCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */; };
 		01A0D0010000000000000014 /* StaticCatalogBenchmarkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */; };
@@ -78,6 +80,7 @@
 		1E600417C5B848EEAF4C1755 /* CharacterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F452FB1FDAFBD6E12B798D6 /* CharacterModels.swift */; };
 		20EFB0D2B0CE105388134CB5 /* libCSQLite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D9C5B78C7CD3A3F612224ED /* libCSQLite.a */; };
 		01A09B0C0000000000000013 /* LoyaltyPointsSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A09B0C0000000000000003 /* LoyaltyPointsSyncService.swift */; };
+		01A0D2200000000000000013 /* SoldContractItemSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D2200000000000000003 /* SoldContractItemSyncService.swift */; };
 		228924544F2948A22F9CFF98 /* UniverseNameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */; };
 		237C28B3A49F5D209A81A7D1 /* BlueprintsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEED60D10F72549632C98A56 /* BlueprintsView.swift */; };
 		2671DB95E43D8F7804261A61 /* ReactionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29789B46A3F6749D2E76BCE3 /* ReactionModels.swift */; };
@@ -172,6 +175,7 @@
 		58DFD988B13B7E2DA8D93872 /* ConsolidationPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9646D9B42C8D2BB01C851515 /* ConsolidationPersistence.swift */; };
 		045606C176F5692C1B14889A /* ConsolidationScienceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC843DF084E747C25AA50FA /* ConsolidationScienceView.swift */; };
 		D1C3A78E6F72CC9F6174896C /* ConsolidationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */; };
+		01A0D2200000000000000011 /* ProductionSaleReceiptsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D2200000000000000001 /* ProductionSaleReceiptsView.swift */; };
 		5E6D9BCA1E56982470D7E62E /* ConsolidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B5940BF552F364923C5845 /* ConsolidationTests.swift */; };
 		F66E6E33B78C4D9C8A9DE56E /* StoreFullRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E058E1D97984F438DA68ADF /* StoreFullRestore.swift */; };
 		BA8EC9716A3A49338CFB49F2 /* FullStoreRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E5863ADAD5470097811E6C /* FullStoreRecovery.swift */; };
@@ -319,6 +323,7 @@
 		34B7BB4788BEBA60D7A5800B /* MarketModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketModels.swift; sourceTree = "<group>"; };
 		352419F9823C08E1AC6895B6 /* IndustryRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryRulesTests.swift; sourceTree = "<group>"; };
 		01A09B0C0000000000000003 /* LoyaltyPointsSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoyaltyPointsSyncService.swift; sourceTree = "<group>"; };
+		01A0D2200000000000000003 /* SoldContractItemSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoldContractItemSyncService.swift; sourceTree = "<group>"; };
 		38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseNameService.swift; sourceTree = "<group>"; };
 		39DBB992564EF207D526DC27 /* ProductionOverview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionOverview.swift; sourceTree = "<group>"; };
 		3C5E612A0056AAB168E0190B /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -340,6 +345,7 @@
 		653DD975620A68C7A4B24B6F /* ProductionBookViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBookViews.swift; sourceTree = "<group>"; };
 		788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndustryPlanner.swift; sourceTree = "<group>"; };
 		01A0C1100000000000000001 /* PlannerBuildPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerBuildPreset.swift; sourceTree = "<group>"; };
+		01A0D2200000000000000002 /* ProductionSaleDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionSaleDetector.swift; sourceTree = "<group>"; };
 		79314710617118DE88CEF5C0 /* AssetWarehouse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetWarehouse.swift; sourceTree = "<group>"; };
 		7A4B40B0706769D9277F8172 /* ReservationLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReservationLedger.swift; sourceTree = "<group>"; };
 		7EC853A700690D67F134C4BE /* sqlite_shim.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sqlite_shim.h; sourceTree = "<group>"; };
@@ -351,6 +357,7 @@
 		A350E34BC57727BBDAD4E47A /* AuthAndBlueprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAndBlueprintTests.swift; sourceTree = "<group>"; };
 		A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLiteStaticCatalogTests.swift; sourceTree = "<group>"; };
 		01A0C1100000000000000003 /* PlannerBuildPresetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerBuildPresetTests.swift; sourceTree = "<group>"; };
+		01A0D2200000000000000004 /* ProductionSaleDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionSaleDetectorTests.swift; sourceTree = "<group>"; };
 		01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIRememberedFailureTests.swift; sourceTree = "<group>"; };
 		01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESIResponseDiskCacheTests.swift; sourceTree = "<group>"; };
 		01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaticCatalogBenchmarkTests.swift; sourceTree = "<group>"; };
@@ -414,6 +421,7 @@
 		9646D9B42C8D2BB01C851515 /* ConsolidationPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationPersistence.swift; sourceTree = "<group>"; };
 		DFC843DF084E747C25AA50FA /* ConsolidationScienceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationScienceView.swift; sourceTree = "<group>"; };
 		7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationViews.swift; sourceTree = "<group>"; };
+		01A0D2200000000000000001 /* ProductionSaleReceiptsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionSaleReceiptsView.swift; sourceTree = "<group>"; };
 		45B5940BF552F364923C5845 /* ConsolidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationTests.swift; sourceTree = "<group>"; };
 		6E058E1D97984F438DA68ADF /* StoreFullRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreFullRestore.swift; sourceTree = "<group>"; };
 		68E5863ADAD5470097811E6C /* FullStoreRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullStoreRecovery.swift; sourceTree = "<group>"; };
@@ -504,6 +512,7 @@
 				200372FAEF4F92809C607302 /* SolarSystemSearchService.swift */,
 				38D5A987EBDC776BFEDF643F /* UniverseNameService.swift */,
 				01A09B0C0000000000000003 /* LoyaltyPointsSyncService.swift */,
+				01A0D2200000000000000003 /* SoldContractItemSyncService.swift */,
 			);
 			path = ESI;
 			sourceTree = "<group>";
@@ -592,6 +601,7 @@
 				CA2F5055B38824F803FA5FBA /* IndustryModels.swift */,
 				788B5E28F4A512BA35658F6C /* IndustryPlanner.swift */,
 				01A0C1100000000000000001 /* PlannerBuildPreset.swift */,
+				01A0D2200000000000000002 /* ProductionSaleDetector.swift */,
 				2752B0216E3CA21C973CDD83 /* IndustrySystemIndices.swift */,
 				8DC8486F6DF515AE09308AE1 /* InventionReadiness.swift */,
 				01A0B0010000000000000001 /* JumpFreighterLogistics.swift */,
@@ -674,6 +684,7 @@
 			children = (
 				68E5863ADAD5470097811E6C /* FullStoreRecovery.swift */,
 				7EDB0FE178C88F7B062D9EDA /* ConsolidationViews.swift */,
+				01A0D2200000000000000001 /* ProductionSaleReceiptsView.swift */,
 				DFC843DF084E747C25AA50FA /* ConsolidationScienceView.swift */,
 				9646D9B42C8D2BB01C851515 /* ConsolidationPersistence.swift */,
 				6D0DC66FD179C9D08ED08CC0 /* ConsolidationBackupView.swift */,
@@ -756,6 +767,7 @@
 				ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */,
 				A4AF526C9B89AF3BDC5593DF /* SQLiteStaticCatalogTests.swift */,
 				01A0C1100000000000000003 /* PlannerBuildPresetTests.swift */,
+				01A0D2200000000000000004 /* ProductionSaleDetectorTests.swift */,
 				01A0D0030000000000000001 /* ESIRememberedFailureTests.swift */,
 				01A0D0020000000000000002 /* ESIResponseDiskCacheTests.swift */,
 				01A0D0010000000000000004 /* StaticCatalogBenchmarkTests.swift */,
@@ -988,6 +1000,7 @@
 				0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */,
 				12B152D53E33D87751100840 /* SQLiteStaticCatalogTests.swift in Sources */,
 				01A0C1100000000000000013 /* PlannerBuildPresetTests.swift in Sources */,
+				01A0D2200000000000000014 /* ProductionSaleDetectorTests.swift in Sources */,
 				01A0D0030000000000000011 /* ESIRememberedFailureTests.swift in Sources */,
 				01A0D0020000000000000012 /* ESIResponseDiskCacheTests.swift in Sources */,
 				01A0D0010000000000000014 /* StaticCatalogBenchmarkTests.swift in Sources */,
@@ -1009,6 +1022,7 @@
 			files = (
 				BA8EC9716A3A49338CFB49F2 /* FullStoreRecovery.swift in Sources */,
 				D1C3A78E6F72CC9F6174896C /* ConsolidationViews.swift in Sources */,
+				01A0D2200000000000000011 /* ProductionSaleReceiptsView.swift in Sources */,
 				045606C176F5692C1B14889A /* ConsolidationScienceView.swift in Sources */,
 				58DFD988B13B7E2DA8D93872 /* ConsolidationPersistence.swift in Sources */,
 				130BCA3F0F7FB4F2D3301A66 /* ConsolidationBackupView.swift in Sources */,
@@ -1086,6 +1100,7 @@
 				77707C0132DD1407672A8302 /* IndustryModels.swift in Sources */,
 				0D4737E231CBB859EE476795 /* IndustryPlanner.swift in Sources */,
 				01A0C1100000000000000011 /* PlannerBuildPreset.swift in Sources */,
+				01A0D2200000000000000012 /* ProductionSaleDetector.swift in Sources */,
 				01A0A0010000000000000011 /* OreRefining.swift in Sources */,
 				019FC3000000000000000011 /* ProductionTree.swift in Sources */,
 				012EB53DCA55C2E96CBDD71F /* IndustrySystemIndexService.swift in Sources */,
@@ -1132,6 +1147,7 @@
 				DECA0A6F7B397D308D8B6CFD /* SourceState.swift in Sources */,
 				228924544F2948A22F9CFF98 /* UniverseNameService.swift in Sources */,
 				01A09B0C0000000000000013 /* LoyaltyPointsSyncService.swift in Sources */,
+				01A0D2200000000000000013 /* SoldContractItemSyncService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

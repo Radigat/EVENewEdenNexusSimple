@@ -24,8 +24,35 @@ als nicht mehr verwendete Altdaten unverändert erhalten ([Entscheidung](Documen
 Copying, ME-/TE-Forschung und Invention sind global gespeicherte Wissenschaftsaufträge; jeder nicht
 archivierte Auftrag liefert konkrete Versorgung und übernimmt deren Effizienzen, Kosten und
 vorgeschaltete Zeiten in die aktuelle Fertigung.
-Verkaufsbelege besitzen eine kontrollierte Teilzuordnung und ersetzen bei ausdrücklichem
-Wechsel die manuelle Verkaufsschätzung. Kostenstände und ursprüngliche Werte bleiben erhalten.
+Verkaufsbelege (Produktionsübersicht) erkennt Verkäufe in den gespeicherten Wallet-Daten aller
+Charaktere und ordnet sie mit einem Klick einer Produktion zu; ohne Bestätigung ändert sich nichts.
+
+- **Erkannte Verkäufe:** Marktverkäufe (Wallet-Transaktionen) und Vertragsverkäufe (Journalzeile
+  `contract_price` mit genau einem übergebenen Item-Typ im gespeicherten Vertragsinhalt). Vorgeschlagen
+  wird die älteste Produktion desselben Items mit Units ohne Beleg; die Produktion ist vor dem
+  Übernehmen änderbar. „Alle Vorschläge übernehmen“ ordnet alle auf einmal zu. Verkäufe von Items
+  ohne Produktion im Buch werden nicht gelistet.
+- **Item nicht erkannt:** ISK-Überweisungen (`player_donation`), Verträge mit mehreren Item-Typen
+  oder verlangten Items und Verträge, deren Inhalt ESI nicht (mehr) liefert, stehen mit Grund in
+  einer eigenen Liste. Der Benutzer wählt die Produktion; die Menge ist mit deren freien Units
+  vorbelegt. Überweisungen eigener Charaktere werden ausgeblendet (Absender-ID, ersatzweise der
+  ESI-Buchungstext); ohne erkennbaren Absender steht „Absender unbekannt“.
+- **Vertragsinhalt:** Bei der Charaktersynchronisierung lädt die App die Item-Zeilen der Verträge,
+  für die in den letzten 30 Tagen ein `contract_price`-Eingang gebucht wurde, höchstens 50 je
+  Charakter, und speichert sie im Handelslogbuch (Schema 4).
+- **Zugeordnet / Zurücknehmen:** Jede Zuordnung lässt sich zurücknehmen. Ohne verbleibende Zuordnung
+  endet der Belegmodus der Produktion und ihre gesicherten manuellen Verkaufswerte gelten wieder;
+  ein Beleg ohne Zuordnung wird dabei entfernt.
+- **Manueller Beleg:** Produktion, Menge, Einzelpreis und Datum; ein Klick legt an und ordnet zu.
+  Ein nicht zugeordneter manueller Altbeleg erscheint unter den erkannten Verkäufen und kann
+  verworfen werden.
+- Im Belegmodus kommen verkaufte Units und Verkaufspreis der Zeile aus den Belegen (centgenaue
+  Teilzuordnung, kein Überverkauf); Kostenstände und ursprüngliche manuelle Werte bleiben erhalten.
+- Kein Doppelverbrauch: Im Handelslogbuch verbuchte Units eines Marktverkaufs werden nicht
+  angeboten, und das Handelslogbuch nimmt Units nicht, die einer Produktion zugeordnet sind.
+- Der Knopf „Verkaufsbelege“ zeigt die Zahl der Verkäufe mit Vorschlag.
+- Grenze: Verkaufssteuer und Brokergebühr der Zeile folgen weiter den gespeicherten Sätzen, auch
+  bei Vertragsverkäufen.
 Lokale Sicherungen werden geprüft und bei Wiederherstellung erst beim nächsten Start aktiviert.
 Bestätigungsvorschauen zeigen die konkreten geprüften Zielwerte. Ein Bereichswechsel verwirft eine
 noch ungespeicherte Vorschau; bereits gespeicherte Daten bleiben erhalten.

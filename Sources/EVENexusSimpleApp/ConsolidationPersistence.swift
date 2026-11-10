@@ -22,6 +22,13 @@ enum EVENexusSchemaV3: VersionedSchema {
   }
 }
 
+/// One receipt and the units of it a production receives.
+struct ProductionSaleAssignment {
+  let evidence: ProductionSaleEvidence
+  let rowID: UUID
+  let quantity: Int64
+}
+
 @MainActor
 final class ConsolidationController: ObservableObject {
   @Published private(set) var workspace = ConsolidationWorkspace()
@@ -137,6 +144,21 @@ final class ConsolidationController: ObservableObject {
       bookRow.salePricePerUnit =
         quantity > 0 ? NSDecimalNumber(decimal: gross / Decimal(quantity) / 100).doubleValue : nil
     }
+    // A production whose last receipt assignment was taken back shows its
+    // saved manual sale values again.
+    for cost in proposed.costs
+    where !cost.evidenceMode
+      && workspace.costs.first(where: { $0.id == cost.id })?.evidenceMode == true
+    {
+      let id = cost.id
+      guard
+        let bookRow = try context.fetch(
+          FetchDescriptor<StoredProductionOverviewRow>(predicate: #Predicate { $0.id == id })
+        ).first
+      else { continue }
+      bookRow.soldUnits = cost.historicalManualSoldUnits
+      bookRow.salePricePerUnit = cost.historicalManualSalePrice
+    }
     row.payload = try JSONEncoder().encode(proposed)
     row.revision = proposed.revision
     do {
@@ -150,20 +172,67 @@ final class ConsolidationController: ObservableObject {
   }
   func registerProduction(_ row: StoredProductionOverviewRow, plan: IndustryPlanSnapshot) throws {
     guard !workspace.costs.contains(where: { $0.id == row.id }),
-      let node = plan.topLevelProductNode(for: row.requestID)
+      let cost = Self.productionCost(for: row, plan: plan)
     else { return }
-    let typeID = node.typeID
+    try edit { $0.costs.append(cost) }
+  }
+  /// Frozen cost record of a production row; `nil` when the plan snapshot no
+  /// longer names the product.
+  static func productionCost(for row: StoredProductionOverviewRow, plan: IndustryPlanSnapshot)
+    -> ImmutableProductionCost?
+  {
+    guard let node = plan.topLevelProductNode(for: row.requestID) else { return nil }
     let projection = ProductionOverviewProjector.projection(for: row.requestID, in: plan)
-    try edit {
-      $0.costs.append(
-        ImmutableProductionCost(
-          id: row.id, typeID: typeID, units: row.units,
-          sourceSnapshot: row.sourceSnapshot, material: row.materialCost,
-          installation: row.indexCost,
-          blueprint: row.blueprintCost, logistics: projection?.logisticsCost,
-          historicalManualSoldUnits: row.soldUnits, historicalManualSalePrice: row.salePricePerUnit,
-          recordedAt: row.recordedAt))
+    return ImmutableProductionCost(
+      id: row.id, typeID: node.typeID, units: row.units,
+      sourceSnapshot: row.sourceSnapshot, material: row.materialCost,
+      installation: row.indexCost,
+      blueprint: row.blueprintCost, logistics: projection?.logisticsCost,
+      historicalManualSoldUnits: row.soldUnits, historicalManualSalePrice: row.salePricePerUnit,
+      recordedAt: row.recordedAt)
+  }
+  /// Assigns receipts to productions in one saved step: registers missing
+  /// cost records, keeps the manual sale values of a production entering the
+  /// receipt mode, stores each receipt and assigns its units.
+  func assignSales(
+    _ assignments: [ProductionSaleAssignment], rows: [StoredProductionOverviewRow]
+  ) throws {
+    guard !assignments.isEmpty else { return }
+    var costs: [ImmutableProductionCost] = []
+    var manual: [UUID: (sold: Int64, price: Double?)] = [:]
+    for rowID in Set(assignments.map(\.rowID)) {
+      guard let row = rows.first(where: { $0.id == rowID }) else {
+        throw ConsolidationError.invalid("Die verknüpfte Produktion wurde entfernt.")
+      }
+      manual[rowID] = (row.soldUnits, row.salePricePerUnit)
+      guard let plan = PlannerPersistenceController.decodePlan(row),
+        let cost = Self.productionCost(for: row, plan: plan)
+      else { throw ConsolidationError.invalid("Produkttyp nicht aufgelöst.") }
+      costs.append(cost)
     }
+    try edit { workspace in
+      for cost in costs where !workspace.costs.contains(where: { $0.id == cost.id }) {
+        workspace.costs.append(cost)
+      }
+      for assignment in assignments {
+        guard let index = workspace.costs.firstIndex(where: { $0.id == assignment.rowID })
+        else { throw ConsolidationError.invalid("Produkttyp nicht aufgelöst.") }
+        if !workspace.costs[index].evidenceMode, let values = manual[assignment.rowID] {
+          workspace.costs[index].historicalManualSoldUnits = values.sold
+          workspace.costs[index].historicalManualSalePrice = values.price
+        }
+        try workspace.addEvidence(assignment.evidence)
+        try workspace.allocateSale(
+          rowID: assignment.rowID, evidenceID: assignment.evidence.id,
+          quantity: assignment.quantity, switchToEvidence: true)
+      }
+    }
+  }
+  func removeSaleAllocation(_ id: UUID) throws {
+    try edit { try $0.removeAllocation(id: id) }
+  }
+  func discardUnassignedReceipt(_ id: String) throws {
+    try edit { try $0.removeUnassignedEvidence(id: id) }
   }
   func updateESIStock(_ stock: [Int64: Int64], known: Bool = true) {
     if stock != esiStock || known != esiAvailable {

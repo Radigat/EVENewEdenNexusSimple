@@ -364,9 +364,13 @@ public struct ESIWalletJournalDTO: Codable, Identifiable, Sendable {
   public let contextIDType: String?
   public let date: Date
   public let description: String?
+  /// Sender (first party) and receiver (second party) of the booking; `nil`
+  /// when ESI did not deliver them.
+  public let firstPartyID: Int64?
   public let journalID: Int64
   public let reason: String?
   public let refType: String
+  public let secondPartyID: Int64?
   public let tax: Double?
   public let taxReceiverID: Int64?
 
@@ -375,6 +379,8 @@ public struct ESIWalletJournalDTO: Codable, Identifiable, Sendable {
     case contextID = "context_id"
     case contextIDType = "context_id_type"
     case date, description
+    case firstPartyID = "first_party_id"
+    case secondPartyID = "second_party_id"
     case journalID = "id"
     case reason
     case refType = "ref_type"
@@ -393,7 +399,9 @@ public struct ESIWalletJournalDTO: Codable, Identifiable, Sendable {
     reason: String? = nil,
     refType: String,
     tax: Double? = nil,
-    taxReceiverID: Int64? = nil
+    taxReceiverID: Int64? = nil,
+    firstPartyID: Int64? = nil,
+    secondPartyID: Int64? = nil
   ) {
     self.amount = amount
     self.balance = balance
@@ -401,6 +409,8 @@ public struct ESIWalletJournalDTO: Codable, Identifiable, Sendable {
     self.contextIDType = contextIDType
     self.date = date
     self.description = description
+    self.firstPartyID = firstPartyID
+    self.secondPartyID = secondPartyID
     self.journalID = journalID
     self.reason = reason
     self.refType = refType

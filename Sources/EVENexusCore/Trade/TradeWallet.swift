@@ -54,6 +54,10 @@ public struct TradeWalletJournalEntry: Identifiable, Equatable, Sendable {
   public let contextIDType: String?
   public let tax: Double?
   public let description: String?
+  /// Sender and receiver of the booking; `nil` for rows stored before the
+  /// party IDs were kept and not delivered again since.
+  public let firstPartyID: Int64?
+  public let secondPartyID: Int64?
 
   public init(
     characterID: Int64,
@@ -64,8 +68,12 @@ public struct TradeWalletJournalEntry: Identifiable, Equatable, Sendable {
     contextID: Int64?,
     contextIDType: String?,
     tax: Double?,
-    description: String?
+    description: String?,
+    firstPartyID: Int64? = nil,
+    secondPartyID: Int64? = nil
   ) {
+    self.firstPartyID = firstPartyID
+    self.secondPartyID = secondPartyID
     self.characterID = characterID
     self.journalID = journalID
     self.date = date
@@ -75,6 +83,35 @@ public struct TradeWalletJournalEntry: Identifiable, Equatable, Sendable {
     self.contextIDType = contextIDType
     self.tax = tax
     self.description = description
+  }
+}
+
+/// One item line of an own, accepted contract, kept so a `contract_price`
+/// journal booking can name what was sold after ESI forgets the contract.
+public struct TradeWalletContractItem: Identifiable, Equatable, Sendable {
+  public var id: String { "\(characterID):\(contractID):\(recordID)" }
+  public let characterID: Int64
+  public let contractID: Int64
+  public let recordID: Int64
+  public let typeID: Int64
+  public let quantity: Int64
+  /// `true` for items the issuer handed over, `false` for requested items.
+  public let isIncluded: Bool
+
+  public init(
+    characterID: Int64,
+    contractID: Int64,
+    recordID: Int64,
+    typeID: Int64,
+    quantity: Int64,
+    isIncluded: Bool
+  ) {
+    self.characterID = characterID
+    self.contractID = contractID
+    self.recordID = recordID
+    self.typeID = typeID
+    self.quantity = quantity
+    self.isIncluded = isIncluded
   }
 }
 

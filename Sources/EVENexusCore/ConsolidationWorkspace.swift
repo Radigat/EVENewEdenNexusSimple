@@ -296,6 +296,39 @@ public struct ConsolidationWorkspace: Codable, Sendable {
       ProductionSaleAllocation(
         rowID: rowID, evidenceID: evidenceID, quantity: quantity, grossCents: gross))
   }
+  /// Takes one sale assignment back. The remaining shares of the same receipt
+  /// are redistributed to the cent; a receipt without any assignment left is
+  /// removed with it. A production without any assignment left leaves the
+  /// receipt mode, so its saved manual sale values apply again.
+  public mutating func removeAllocation(id: UUID) throws {
+    guard let index = sales.firstIndex(where: { $0.id == id }) else {
+      throw ConsolidationError.invalid("Die Zuordnung ist nicht mehr vorhanden.")
+    }
+    let removed = sales.remove(at: index)
+    if let receipt = evidence.first(where: { $0.id == removed.evidenceID }) {
+      var used: Int64 = 0
+      var assigned: Int64 = 0
+      for position in sales.indices where sales[position].evidenceID == receipt.id {
+        used = try Self.add(used, sales[position].quantity)
+        let cumulative = try receipt.cumulativeCents(for: used)
+        sales[position].grossCents = cumulative - assigned
+        assigned = cumulative
+      }
+      if used == 0 { evidence.removeAll { $0.id == receipt.id } }
+    }
+    if !sales.contains(where: { $0.rowID == removed.rowID }),
+      let costIndex = costs.firstIndex(where: { $0.id == removed.rowID })
+    {
+      costs[costIndex].evidenceMode = false
+    }
+  }
+  /// Discards a receipt no production is assigned to.
+  public mutating func removeUnassignedEvidence(id: String) throws {
+    guard !sales.contains(where: { $0.evidenceID == id }) else {
+      throw ConsolidationError.invalid("Der Beleg ist einer Produktion zugeordnet.")
+    }
+    evidence.removeAll { $0.id == id }
+  }
   public func scienceRunReservations() -> [BlueprintRunReservation] {
     science.compactMap { saved in
       guard !saved.archived, case .invention(let job) = saved.job,
