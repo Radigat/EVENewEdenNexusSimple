@@ -86,7 +86,7 @@ struct MarketStockHistoryButton: View {
         Image(systemName: "chart.xyaxis.line")
       }
       .buttonStyle(.borderless)
-      .help(AppLocalization.text("Market stock history"))
+      .nameTooltip(AppLocalization.text("Market stock history"))
       .accessibilityLabel("Market stock history")
       .accessibilityValue(Text(verbatim: name))
       .accessibilityIdentifier(accessibilityIdentifier ?? "market-stock-history.\(typeID)")

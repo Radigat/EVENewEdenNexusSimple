@@ -258,8 +258,8 @@ Abschnitt 9. Nach O1 kann sich die Reihenfolge ändern.
 
 | Prompt | Inhalt | Status |
 |---|---|---|
-| O1 | T0 Messung mit dem Eigentümer | offen |
-| O2 | T1–T5 Dashboard-Darstellung | offen |
+| O1 | T0 Messung mit dem Eigentümer | erledigt (Abschnitt 10); A/B-Lauf `tooltips` nicht gemacht |
+| O2 | T1–T5 Dashboard-Darstellung | erledigt: T1, T8, statisches Raster statt Laufband; vom Eigentümer am 14.11.2026 als passend bestätigt (Abschnitt 10). T2, T3, T5 nicht begonnen |
 | O3 | T6–T8 Dashboard-Hauptthread | offen |
 | O4 | T9–T12 gemeinsame Bausteine | offen |
 | O5 | T13–T16, T18, T20 Hub-Chancen öffnen | offen |
@@ -448,5 +448,343 @@ Abschnitt 9. Nach O1 kann sich die Reihenfolge ändern.
 
 ## 10. Ergebnisse
 
-Noch keine. Jeder Prompt trägt hier Messwerte, Umfang, Prüfungen und offene
-Punkte ein.
+Jeder Prompt trägt hier Messwerte, Umfang, Prüfungen und offene Punkte ein.
+
+### O1 (13.11.2026): Messpunkte und Schalter, Messung offen
+
+**Implementiert, ohne Verhaltensänderung:**
+
+- `dashboard.body`, `dashboard.identities`, `dashboard.wallet-portfolio`,
+  `dashboard.wealth-history` (`PerformanceAccumulator`, je höchstens eine
+  Zeile in fünf Sekunden). Ohne neue Auswertung des Dashboards erscheint
+  keine Zeile.
+- `hub.open` je Besuch und Rolle (`HubOpenMetrics` in
+  `MarketBrowserView.swift`): Phasen `analysis-demand`, `warehouse`,
+  `reservations`, jede `projection` mit Hintergrund- und Hauptthread-Dauer,
+  `first-table`. Der Hauptthread-Anteil einer Projektion ist das
+  Nachrechnen und Sortieren aus H1.
+- `hub.visible-candidates`, `hub.invention`, `hub.contract-references`.
+- Debug-Schalter `EVE_NEXUS_PERF_DISABLE=shadows,ticker,tooltips`
+  (`PerformanceDebugSwitch` in `InterfaceStyleComponents.swift`). Der Name
+  folgt den vorhandenen `EVE_NEXUS_…`-Variablen und wurde ohne Rückfrage
+  gewählt.
+
+**Automatisch geprüft:** `swift test` grün (801 Core-, 159 App-Tests und die
+XCTest-Suiten, darunter die neun Rendertests samt neuem Schaltertest),
+`EVEStaticDataKit` 13 Tests, natives `xcodebuild test` (Debug, unsigniert)
+`TEST SUCCEEDED`. Die Rendertests belegen, dass ohne Variable jede Fläche
+unverändert zeichnet.
+
+**Nicht geprüft:** Die Messzeilen wurden noch in keiner laufenden App
+gelesen. Die Schalter wurden nicht in der App angesehen.
+
+**Offen:** der A/B-Vergleich (Lauf 2) und die Eindrücke des Eigentümers je
+Lauf.
+
+### O1, erste Messung (13.11.2026, 18:23–18:29 Uhr)
+
+> Xcode-Debug-Build (PID 1597) mit den echten Daten des Eigentümers, rund 23
+> Minuten nach dem Start, ohne A/B-Schalter. Der Eigentümer bediente die App;
+> aufgezeichnet wurden das Messprotokoll, `sample` (je 8 Sekunden) und `top`
+> für App und WindowServer. Ein Debug-Build rechnet langsamer als Release.
+> Die Zuordnung der Proben zu den Schritten folgt den Zeitstempeln von
+> `hub.open`.
+
+**Dashboard:**
+
+- Beim Scrollen ist der Hauptthread zu 89–99 % belegt. 44–63 % der Zeit
+  stecken in `NSHostingView.layout()` → `minSize()` → `sizeThatFits` über
+  den ganzen Seitenbaum; darin `DashboardCardLayout.measured` mit 18–20 % und
+  die `ViewThatFits`-Varianten mit 17–20 %. Die Seite wird also beim Scrollen
+  laufend vollständig neu vermessen. Das war in der Durchsicht nicht
+  erkannt (D8 galt als klein).
+- `dashboard.body` läuft dabei nicht: drei Auswertungen je Besuch, keine
+  während des Scrollens. Die Kennungen kosten je Besuch 6–45 ms
+  (`dashboard.identities`, 21 Aufrufe). D6 und D7 sind für das Ruckeln
+  nicht die Ursache.
+- Der WindowServer braucht 45–58 % CPU, solange das Dashboard sichtbar ist,
+  auch in Ruhe bei 0 % App-Last; in den anderen Bereichen 6–25 %, mit
+  einzelnen Spitzen bis 49 %. Was davon Schatten und was Laufband ist, zeigt
+  erst Lauf 2.
+- 3–4 % des Hauptthreads liest die Sprachdatei neu ein
+  (`_CFPropertyListCreateWithData`); beim Öffnen der Hub-Chancen sind es bis
+  11 %. G1 ist damit schwerer als angenommen: Die Übersetzungstabelle wird
+  nicht nur gesucht, sondern wiederholt geparst.
+
+**Hub-Chancen** (`hub.open`, Zeit seit dem Öffnen):
+
+| Besuch | Reservierungen | Lager | 1. Projektion (Hintergrund / Hauptthread) | erste Tabelle | sichtbare Zeilen |
+|---|---|---|---|---|---|
+| Main, 1. | 1,6 s | 3,4 s | 1.192 ms / 25 ms | 4,7 s | 141 von 221 |
+| Home, 1. | 1,3 s | 3,7 s | 221 ms / 96 ms | 4,2 s | 371 von 1.318 |
+| Main, 2. | 1,3 s | 4,6 s | 136 ms / 29 ms | 4,9 s | 141 |
+| Home, 2. | 7,8 s | 9,4 s | 126 ms / 81 ms | 9,7 s | 371 |
+
+- Die Projektion selbst ist kurz. **H1 ist nicht die Hauptursache:**
+  `visibleCandidates` kostet 26–116 ms je Aufruf, weil die Filter die
+  4.172 Scanzeilen auf 221 bzw. 1.318 Kandidaten begrenzen.
+- Die Wartezeit liegt davor: 1,3–1,6 s bis zum ersten Ergebnis überhaupt
+  (einmal 7,8 s) und weitere 1,6–3,3 s bis das Lager bereit ist, obwohl
+  dessen Projektion im Cache liegt. Der Hauptthread ist dabei zu 98–100 %
+  belegt: Aufbau und Platzierung der Tabellenzeilen (`LazyStack`, 12–50 %),
+  `NSHostingView.layout()`/`minSize()` (20–70 %) und in einer Probe 25 %
+  `accessibilityHitTest`. Die Hintergrundschritte warten also vor allem auf
+  den Hauptthread. Wer die Accessibility-Abfrage auslöst, ist nicht belegt.
+- Beim ersten Besuch folgte eine zweite Projektion nach 13,9 s (Hintergrund
+  4,2 s), ausgelöst durch die Vertragsreferenzen: `hub.contract-references`
+  4,1 s für 6.075 Typen (H4).
+- `hub.invention` brauchte beim Start 11,4 s für 999 Typen (H5).
+
+**Eindruck des Eigentümers (13.11.2026):** Die Wartezeiten passen zu dem,
+was er gesehen hat, auch die 9,7 s beim zweiten Öffnen der
+Home-Hub-Chancen. Der Hub-Bereich ist insgesamt langsam, nicht nur beim
+Öffnen. Zum Dashboard-Scrollen liegt aus diesem Lauf kein eigener Eindruck
+vor.
+
+**Hub-Scan (beim Start, automatisch):** 49,2 s, davon Orderbuch, Preise und
+Indizes 22,4 s, Analyse 1,6 s, Home 5,0 s und Coalition 22,0 s
+gleichzeitig; 482 Anfragen, 107 MB, keine Fehler.
+
+**Nicht ausgewertet:** Lager, Marktbestand und Nettowert (Lauf 5) haben
+keine eigenen Messpunkte; die Proben zeigen dort 20–83 % Hauptthread-Last,
+wieder mit `NSHostingView.layout()` vorn.
+
+### O1, A/B-Lauf ohne Laufband (13.11.2026, 18:42–18:44 Uhr)
+
+> Neuer Prozess (PID 4956) mit `EVE_NEXUS_PERF_DISABLE=ticker`; im
+> Protokoll `perf.switches disabled=ticker`. Je Variante ein Lauf. Als
+> Scrollen gewertet ist der Abschnitt 18:43:17–18:43:43; der genaue Beginn
+> ist nicht belegt.
+
+| | mit Laufband (18:23) | ohne Laufband (18:43) |
+|---|---|---|
+| Hauptthread beim Scrollen | 89–99 % belegt | 14–31 % |
+| davon `NSHostingView.layout()` | 44–63 % | 3–8 % |
+| App-CPU beim Scrollen | 43–78 % | 10–17 % |
+| WindowServer, Dashboard sichtbar | 45–58 % | 21–42 % |
+
+**Eindruck des Eigentümers:** Ohne Laufband scrollt das Dashboard deutlich
+flüssiger.
+
+Das Laufband (D4) ist damit die Hauptursache des Ruckelns im Dashboard: Mit
+ihm wird beim Scrollen die ganze Seite laufend neu vermessen, ohne es kaum.
+Der Mechanismus ist nicht belegt; naheliegend ist `update` mit
+`needsLayout = true` und `layoutSubtreeIfNeeded()`
+(`DashboardMineralTickerMarqueeView`) zusammen mit dem `layout()`, das den
+Rahmen der inneren `NSHostingView` setzt. Die Hub-Chancen haben kein
+Laufband und waren trotzdem voll belegt; dort bremst etwas anderes.
+
+### O1, A/B-Lauf ohne Schatten (13.11.2026, 18:47–18:49 Uhr)
+
+> Neuer Prozess (PID 5268) mit `EVE_NEXUS_PERF_DISABLE=shadows`, Laufband
+> aktiv. Ruhe 18:47:50–18:48:24, Scrollen ab etwa 18:48:30.
+
+| | normal (18:23) | ohne Laufband | ohne Schatten |
+|---|---|---|---|
+| WindowServer in Ruhe, Dashboard sichtbar | 50–68 % (18:03) | 29–34 % (kurz) | 36–44 % |
+| WindowServer beim Scrollen | 43–58 % | 21–42 % | 35–51 % |
+| Hauptthread beim Scrollen | 89–99 % | 14–31 % | 53–95 % |
+| davon `NSHostingView.layout()` | 44–63 % | 3–8 % | 22–38 % |
+
+Die Schatten (D1) kosten im Bildaufbau grob 10–15 Prozentpunkte
+WindowServer-Last und ändern am belegten Hauptthread wenig. Auch ohne
+Schatten bleibt der WindowServer in Ruhe bei 36–44 %, solange das Laufband
+läuft. Reihenfolge der Wirkung also: Laufband deutlich vor Schatten. Der
+Eindruck des Eigentümers zu diesem Lauf fehlt.
+
+**Vorschlag zur Reihenfolge nach O1:**
+
+1. O2 mit T4 (Laufband) zuerst, dann T1 (Schatten, pixelgleich), T8 und
+   weniger `ViewThatFits`-Varianten; T2, T3 und T5 nur, wenn danach noch
+   Bedarf besteht.
+2. O4 mit T9 (Lokalisierung) vorziehen, weil das wiederholte Parsen der
+   Sprachdatei alle Bereiche trifft.
+3. Hub-Chancen: zuerst eine Probe-Auswertung nur für die Tabelle (Aufbau der
+   Zeilen, `NSHostingView.minSize()`, Accessibility), dann O6 (T19) vor O5;
+   aus O5 zuerst T16 und T14, T13 zuletzt.
+4. O3 (Dashboard-Hauptthread) rückt nach hinten: `dashboard.body` ist nicht
+   die Ursache.
+
+**Folgerung (Vorschlag, Stand nach dem Laufband-Lauf):** T4 rückt an die
+erste Stelle und wird in O2 zuerst umgesetzt. Die folgende Einschätzung zu
+T27 stammt aus der ersten Messung und gilt für das Dashboard nur noch
+eingeschränkt; für die Hub-Chancen bleibt sie zu prüfen.
+
+**Folgerung aus der ersten Messung:** Vor allen anderen Maßnahmen
+steht eine neue: **T27**, das Fenster so begrenzen, dass `NSHostingView`
+für seine Mindestgröße nicht den ganzen Inhalt vermisst (vollständig
+bestimmter Rahmen an Fenster und Detailspalte; `ContentView.swift:616` setzt
+heute nur Mindestwerte), dazu der Layout-Cache in `DashboardCardLayout` (T8)
+und weniger `ViewThatFits`-Varianten. Das betrifft alle Bereiche. Danach
+T9 (Lokalisierung), T19 (leichtere Tabellenzeilen) und T16; T13 rückt nach
+hinten. Die Wirkung von T27 ist eine Annahme aus den Proben und muss in O2
+zuerst mit einem Versuch belegt werden.
+
+### O2 (13.11.2026): Laufband, Schatten, Layout-Cache; Nachmessung offen
+
+**Implementiert:**
+
+- **T4:** Die innere `NSHostingView` des Laufbands hat `sizingOptions = []`,
+  `update` fordert ein Layout nur noch bei neuem Inhalt oder neuer
+  Streifengröße an und erzwingt keines mehr, `layout()` setzt den Rahmen nur
+  bei Änderung. Aussehen, Geschwindigkeit und „Bewegung reduzieren“ sind
+  unverändert gewollt. Ob das die Ursache aus O1 behebt, ist eine Annahme;
+  der Mechanismus wurde nicht nachgestellt.
+- **T1:** `NexusPanelSurface` legt den Schatten an die Hintergrundform. Das
+  ist **nicht bitgleich**: Bisher warf auch jede Schrift im Panel einen
+  schwachen eigenen Schatten, und der Rand wurde minimal anders
+  weichgezeichnet. Gemessene Abweichung höchstens 6 von 255 Farbstufen
+  (hell) und 2 (dunkel). Der Eigentümer hat die Änderung am 13.11.2026 auf
+  Rückfrage freigegeben. Nebenbefund: SwiftUI zeichnete den Schatten also je
+  Inhaltselement, nicht für das zusammengesetzte Panel, wie D1 annahm.
+- **T8:** `DashboardCardLayout` hält die Kartengrößen je Breite im
+  Layout-Cache; Größe, Platzierung und Ausrichtung eines Durchlaufs messen
+  nicht mehr jeweils neu.
+- T2, T3 und T5 nicht begonnen.
+
+**Automatisch geprüft:** `swift test` grün (801 Core-, 159 App-Tests,
+XCTest-Suiten), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug,
+unsigniert) `TEST SUCCEEDED`. Der Rendertest vergleicht das neue Panel mit
+dem früheren und lässt höchstens 8 Farbstufen Abweichung zu; die
+Dashboard-Layouttests sind unverändert grün.
+
+**Nicht geprüft:** Laufband und Panels wurden nach der Änderung in keiner
+laufenden App angesehen.
+
+### O2, Nachmessung (13.11.2026, 18:58–19:00 Uhr)
+
+> Neu gebauter Xcode-Debug-Build (PID 6777), kein Schalter, ein Lauf.
+
+| | vor O2 (18:23) | nach O2 | ohne Laufband (O1) |
+|---|---|---|---|
+| Hauptthread beim Scrollen | 89–99 % | 56–84 % | 14–31 % |
+| davon `NSHostingView.layout()` | 44–63 % | 29–32 % | 3–8 % |
+| davon `DashboardCardLayout.measured` | 18–20 % | 0–5 % | – |
+| WindowServer beim Scrollen | 43–58 % | 35–58 % | 21–42 % |
+
+- **T8 wirkt:** Das mehrfache Vermessen der Karten ist aus den Proben fast
+  verschwunden.
+- **T4 behebt die Ursache nicht:** Auch ohne Größenbedingungen und ohne
+  erzwungenes Layout wird beim Scrollen weiter die ganze Seite neu
+  vermessen; es bleiben die `ViewThatFits`-Varianten (11–13 %) und der
+  Durchlauf selbst. Die Annahme zum Mechanismus war falsch. Der Auslöser ist
+  nicht belegt; die Proben nennen ihn nicht. Vermutung: Schon die
+  eingebettete AppKit-Ansicht mit innerer `NSHostingView` in der ScrollView
+  fordert je Scroll-Schritt ein Fenster-Layout an.
+- **T1:** Am WindowServer ist in diesem einen Lauf keine klare Wirkung zu
+  sehen (Ruhe 48–64 % in den ersten Sekunden, danach 35–44 % beim Scrollen).
+  Nicht belegt.
+
+**Offen:** Entscheid 2 (wie mit dem Laufband weiter), Eindruck und
+Sichtabnahme des Eigentümers.
+
+### O2, Laufband neu gebaut (13.11.2026), Nachmessung offen
+
+Eigentümerentscheid zu Entscheid 2: Laufband als reines SwiftUI neu bauen,
+bei fehlender Wirkung statische Zeile. **Implementiert:**
+`DashboardMineralTickerMarquee` ist eine SwiftUI-Ansicht mit
+`TimelineView(.animation)` und `offset`; `NSViewRepresentable` und
+`DashboardMineralTickerMarqueeView` sind entfernt. Umlauf weiter 32
+Sekunden, „Bewegung reduzieren“ unverändert. **Automatisch geprüft:**
+`swift test` (801 Core-, 160 App-Tests, XCTest-Suiten), `EVEStaticDataKit`
+13 Tests, `xcodebuild test` `TEST SUCCEEDED`; neuer Test für die Phase.
+**Nicht geprüft:** nicht in der App angesehen, nicht gemessen. Offen:
+Nachmessung, Sichtabnahme (Tempo, Aussehen, Klick auf Namen), Dauerlast des
+Tickers in Ruhe.
+
+### O2, Nachmessung des SwiftUI-Laufbands (13.11.2026, 23:10–23:12 Uhr)
+
+> Xcode-Debug-Build (PID 7913), kein Schalter, ein Lauf: erst Ruhe, dann
+> Scrollen. Ein Lauf um 23:02 Uhr ist verworfen (der Eigentümer hatte nicht
+> gescrollt und die App beendet).
+
+| | vor O2 | SwiftUI-Laufband | ohne Laufband (O1) |
+|---|---|---|---|
+| Hauptthread, Ruhe und Scrollen | 89–99 % nur beim Scrollen | 98–99 % durchgehend | 14–31 % beim Scrollen |
+| App-CPU | 0–3 % in Ruhe, 43–78 % beim Scrollen | 47–76 % durchgehend | 10–17 % beim Scrollen |
+| davon `NSHostingView.layout()` | 44–63 % | 21–40 % | 3–8 % |
+| WindowServer | 45–58 % | 14–66 %, meist 25–50 % | 21–42 % |
+
+**Eindruck des Eigentümers:** Das Scrollen fühlt sich flüssiger an, das
+Laufband läuft wie gewohnt, die Namen darin lassen sich anklicken, die
+Panels sehen aus wie vorher.
+
+**Widerspruch zwischen Eindruck und Messung:** Gefühlt ist es besser,
+gemessen belegt das SwiftUI-Laufband den Hauptthread jetzt dauerhaft, auch
+in Ruhe, solange das Dashboard sichtbar und die App im Vordergrund ist. Jedes
+Bild der Animation löst ein Fenster-Layout aus. Die frühere Fassung
+kostete in Ruhe keine App-CPU. Warum es sich trotzdem flüssiger anfühlt, ist
+nicht belegt.
+
+**Erkenntnis:** Nicht die AppKit-Einbettung ist die Ursache, sondern dass
+jede SwiftUI-Aktualisierung des Fensters `NSHostingView.layout()` mit dem
+Vermessen der ganzen Seite auslöst. Das stützt T27 als eigentliche
+Maßnahme, auch für die Hub-Chancen.
+
+**Offen:** Entscheidung des Eigentümers, ob das SwiftUI-Laufband bleibt,
+die statische Zeile kommt oder zuerst T27 versucht wird.
+
+### T27, Versuch (13.11.2026): nicht bestätigt
+
+Eigentümerentscheid: zuerst T27 versuchen. **Ergebnis: Die Maßnahme trägt
+nicht.**
+
+- Versuchsaufbau als temporärer Test (nicht im Repository): Fenster mit
+  `NavigationSplitView`, ScrollView, `ViewThatFits`-Zeilen und einer
+  `TimelineView`-Animation, sechs Rahmenvarianten an Fenster und
+  Detailspalte sowie `sizingOptions = []`. Die Zeit im Fenster-Layout war in
+  allen Varianten gleich (0,05–0,07 s in 2 s). Der Aufbau stellt das teure
+  Vermessen der echten Seite nicht nach; ein Rahmen an der Wurzel ändert
+  dort nichts.
+- Die Probe der echten App mit dem SwiftUI-Laufband (23:11 Uhr) zeigt
+  zudem, dass dort nicht die Mindestgröße kostet: Je Bild der Animation
+  läuft ein vollständiger SwiftUI-Durchlauf des Fensters (Aktualisieren und
+  Zeichnen 24 %), dazu das Erneuern der Mausbereiche mit Treffertests
+  (17–20 %) und das Übertragen an den Bildaufbau. Bei 120 Bildern je
+  Sekunde füllt das den Hauptthread.
+- Das Vermessen über `minSize()` trat nur in der früheren
+  Core-Animation-Fassung beim Scrollen auf; T8 hat den größten Anteil davon
+  beseitigt.
+
+**Folgerung:** Eine Animation in dieser großen, nicht-lazy Seite kostet je
+Bild einen ganzen Fensterdurchlauf, gleich wie sie gebaut ist. Wege: das
+Laufband seltener aktualisieren (zum Beispiel 30 statt 120 Bilder je
+Sekunde; Wirkung nicht gemessen) oder die statische Zeile (gemessen). T27
+entfällt.
+
+### O2, Laufband entfernt (13.11.2026)
+
+Eigentümerentscheid zu Entscheid 2: statische Preise ohne Bewegung und ohne
+Scrollen; bei zu wenig Breite eine weitere Zeile. **Implementiert:**
+`DashboardMineralTicker` ist ein festes, umbrechendes Raster (`LazyVGrid`,
+adaptive Spalten ab 300 pt); Laufband, `TimelineView`, die Phase samt Test
+und der Schalter `ticker` sind entfernt, die feste Höhe von 62 pt ebenfalls.
+Inhalt je Mineral unverändert: Name mit Icon und Links, Stückpreis, Kaufort.
+„Bewegung reduzieren“ hat keine eigene Fassung mehr. **Automatisch
+geprüft:** `swift test` (801 Core-, 159 App-Tests, XCTest-Suiten),
+`EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert)
+`TEST SUCCEEDED`. **Nicht geprüft:** nicht in der App angesehen,
+nicht gemessen. **Offen:** Nachmessung und Sichtabnahme (Umbruch bei
+schmalem Fenster, Abstände).
+
+### O2, Nachmessung des statischen Rasters (14.11.2026, 00:08–00:09 Uhr)
+
+> Xcode-Debug-Build (PID 10791, Build 23:53 Uhr), kein Schalter, ein kurzer
+> Lauf. Als Scrollen gewertet ist 00:08:50–00:09:03, als Ruhe
+> 00:08:42–00:08:48; die Zuordnung folgt der CPU-Last und ist nicht belegt.
+
+| | vor O2 | statisches Raster |
+|---|---|---|
+| Hauptthread beim Scrollen | 89–99 % | 17 % (eine Probe) |
+| davon `NSHostingView.layout()` | 44–63 % | 3 % |
+| App-CPU beim Scrollen | 43–78 % | 16–30 % |
+| App-CPU in Ruhe | 0–3 % | 3–11 % (kurz) |
+| WindowServer beim Scrollen | 43–58 % | 34–49 % |
+
+Die ersten zwölf Sekunden (App 28–69 %, Hauptthread 77 %, davon Layout
+52 %) passen zu einer Größenänderung des Fensters, nicht zum Scrollen; nicht
+belegt. Der WindowServer bleibt hoch; was ihn außer der App belastet, ist
+nicht untersucht.
+
+**Eigentümer (14.11.2026):** „Passt“, Auftrag zum Commit. Einzelpunkte
+(Umbruch, Kopieren der Namen) sind nicht einzeln bestätigt.

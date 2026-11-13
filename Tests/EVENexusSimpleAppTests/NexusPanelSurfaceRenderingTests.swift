@@ -9,9 +9,14 @@ import XCTest
 /// so replacing a hand-built panel never changes the Classic look.
 @MainActor
 final class NexusPanelSurfaceRenderingTests: XCTestCase {
-  func testStandardSurfaceDrawsTheEstablishedSharedPanelInClassic() throws {
+  /// Since 13.11.2026 only the panel shape throws the shadow (owner
+  /// decision, GESCHWINDIGKEIT O2/T1). The former shadow on the whole panel
+  /// content also gave every text a faint halo and blurred the edge
+  /// slightly differently. The panel must otherwise look as before: no
+  /// channel may differ by more than 8 of 255 (measured: 6 light, 2 dark).
+  func testStandardSurfaceStaysWithinTheShadowToleranceOfTheFormerPanel() throws {
     for scheme in [ColorScheme.light, .dark] {
-      let handBuilt = try render(
+      let former = try render(
         sample
           .background(DesignTokens.panel)
           .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
@@ -32,7 +37,12 @@ final class NexusPanelSurfaceRenderingTests: XCTestCase {
         style: .classic,
         scheme: scheme
       )
-      XCTAssertEqual(handBuilt, surface, "\(scheme)")
+      XCTAssertEqual(former.width, surface.width, "\(scheme)")
+      XCTAssertEqual(former.height, surface.height, "\(scheme)")
+      let largest = zip(former.bytes, surface.bytes)
+        .map { abs(Int($0) - Int($1)) }
+        .max() ?? 0
+      XCTAssertLessThanOrEqual(largest, 8, "\(scheme)")
     }
   }
 
@@ -223,6 +233,24 @@ final class NexusPanelSurfaceRenderingTests: XCTestCase {
       NexusPanelTitle("Wallet").padding(4), style: .hud, scheme: .dark
     )
     XCTAssertNotEqual(classicTitle, hudTitle)
+  }
+
+  func testMeasurementSwitchesParseKnownNamesOnlyAndAreOffWithoutTheVariable() {
+    XCTAssertEqual(PerformanceDebugSwitch.parse(nil), [])
+    XCTAssertEqual(PerformanceDebugSwitch.parse(""), [])
+    XCTAssertEqual(
+      PerformanceDebugSwitch.parse(" Shadows, tooltips ,unknown"),
+      [.shadows, .tooltips]
+    )
+    XCTAssertEqual(
+      PerformanceDebugSwitch.parse("tooltips"),
+      [.tooltips]
+    )
+    // The test run sets no variable, so every surface draws as usual.
+    XCTAssertNil(
+      ProcessInfo.processInfo.environment[PerformanceDebugSwitch.environmentKey]
+    )
+    XCTAssertEqual(PerformanceDebugSwitch.disabled, [])
   }
 
   private var sample: some View {

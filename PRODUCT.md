@@ -3561,14 +3561,14 @@ mit kurzen, wiederverwendbaren Prompts steht in
 - Ein Sprachwechsel aktualisiert weiterhin die Locale und die lokalisierten
   Inhalte, ersetzt aber nicht mehr synchron den gesamten sichtbaren Detailbaum
   während der segmentierten Accessibility-Aktion.
-- Der Mineralpreisticker des Dashboards baut seine doppelte
-  Zeilenfolge einmal in einer `NSHostingView` auf. Eine lineare Core Animation
-  verschiebt anschließend ausschließlich deren Layer, statt den vollständigen
-  SwiftUI-/AppKit-Layoutbaum pro Frame neu zu berechnen. Bei inaktiver App wird
-  die Animation entfernt. **Bewegung reduzieren** verwendet weiterhin eine
-  statisch horizontal scrollbare einfache Zeilenfolge. Der Umlauf dauert
-  weiterhin 32 Sekunden. Die Inhalte verwenden die gemeinsame
-  Mineralien-Kaufempfehlung und direkt kopierbare Material- und Ortsnamen.
+- Die Mineralienpreise des Dashboards stehen als festes Raster im Panel
+  „Mineralienpreise“: je Mineral Name, Stückpreis und Kaufort. Reicht die
+  Breite nicht, bricht das Raster in weitere Zeilen um; nichts bewegt sich
+  und nichts muss gescrollt werden (Eigentümerentscheid 13.11.2026). Das
+  frühere Laufband ist entfernt, weil seine Animation das Scrollen bremste
+  und den Hauptthread dauerhaft belegte. Die Inhalte verwenden weiter die
+  gemeinsame Mineralien-Kaufempfehlung und direkt kopierbare Material- und
+  Ortsnamen.
 - Ein Messprotokoll schreibt Zeiten und Zähler ins macOS-Systemprotokoll
   (Subsystem `com.local.EVENexusSimple`, Kategorie `performance`). Es enthält
   nur Schrittnamen, Dauern und Anzahlen, keine Charakter-, Struktur- oder
@@ -3598,10 +3598,33 @@ mit kurzen, wiederverwendbaren Prompts steht in
   - im Handel (`trade.rows`) höchstens alle fünf Sekunden eine Zeile mit
     Aufrufen, neu berechneten Zeilen (`units`), Gesamt- und Höchstdauer der
     Zeilenberechnung im Fenster, dazu `trade.render` mit der Zahl der
-    Neuaufbauten der Handelsansicht.
+    Neuaufbauten der Handelsansicht;
+  - im Dashboard höchstens alle fünf Sekunden je eine Zeile `dashboard.body`
+    (Zahl der Auswertungen der Ansicht), `dashboard.identities` (Aufrufe und
+    Dauer der Auslöser-Kennungen), `dashboard.wallet-portfolio` und
+    `dashboard.wealth-history`;
+  - in den Hub-Chancen je Besuch (`hub.open`, mit Rolle) die Zeit seit dem
+    Öffnen für die Phasen `analysis-demand`, `warehouse`, `reservations`,
+    jede `projection` (laufende Nummer, Zeilen, Dauer im Hintergrund und auf
+    dem Hauptthread, oder `discarded`) und `first-table`; dazu
+    `hub.visible-candidates` (Aufrufe, Zeilen, Gesamt- und Höchstdauer im
+    Fenster), `hub.invention` und `hub.contract-references` (Dauer und Zahl
+    der Typen).
 
   Die Messung zählt nur und ändert kein Ergebnis; ein Golden-Master-Test
   belegt das (siehe [App-Analyse](Documentation/ANALYSE_2026-11-02.md)).
+- Der Schatten der gemeinsamen Panel-Fläche gehört zur Hintergrundform des
+  Panels; Texte und andere Inhalte im Panel werfen keinen eigenen Schatten
+  (Eigentümerentscheid 13.11.2026). Die Kartenreihen des Dashboards messen
+  ihre Karten je Layout-Durchlauf und Breite einmal.
+- Nur im Debug-Build gibt es einen Messschalter für den A/B-Vergleich der
+  Darstellung: Die Umgebungsvariable
+  `EVE_NEXUS_PERF_DISABLE=shadows,tooltips` schaltet beim Start einzeln die
+  Panel-Schatten und die Tooltips an Item-Namen samt Verlaufs- und
+  Hammer-Link ab. Unbekannte Namen werden ignoriert; aktive
+  Schalter stehen als `perf.switches` im Messprotokoll. Ohne die Variable und
+  im Release-Build zeichnet die App alles wie gewohnt (siehe
+  [Reaktionsgeschwindigkeit](Documentation/GESCHWINDIGKEIT_2026-11-13.md)).
 - Die ESI-Last zählt ein rein beobachtender Transport unter dem ESI-Client.
   Er verändert keine Anfrage und keine Antwort und sendet selbst nichts; die
   Grenzen setzt weiter die gemeinsame Warteschlange durch.

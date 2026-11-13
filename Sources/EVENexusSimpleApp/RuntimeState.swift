@@ -5143,6 +5143,8 @@ final class RuntimeState {
       return
     }
     isEstimatingOpportunityInvention = true
+    let inventionWatch = PerformanceStopwatch("hub.invention")
+    defer { inventionWatch.finish("types=\(blueprintTypeIDs.count)") }
     await estimateOpportunityInvention(blueprintTypeIDs: blueprintTypeIDs)
     while !pendingInventionTypeIDs.isEmpty, !Task.isCancelled {
       let pending = pendingInventionTypeIDs
@@ -5858,6 +5860,8 @@ final class RuntimeState {
         "The local Public Contracts index is not ready. Contract prices remain unavailable."
       return
     }
+    let referenceWatch = PerformanceStopwatch("hub.contract-references")
+    defer { referenceWatch.finish("types=\(requestedTypeIDs.count)") }
     do {
       let limitPerType = 500
       let snapshot = try await publicContractIndexer.includedOfferSnapshot(

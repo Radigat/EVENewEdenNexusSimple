@@ -169,6 +169,11 @@ struct ManufacturingOpportunitiesView: View {
   @State private var treeBlueprintActions: [Int64: ProductionTreeBlueprintAction] = [:]
   @State private var treePreferredBlueprintSources: [Int64: [BlueprintSourceReference]] = [:]
   @State private var treeBlueprintCostTexts: [Int64: String] = [:]
+  /// Performance log only (GESCHWINDIGKEIT O1).
+  @State private var openMetrics = HubOpenMetrics()
+  private static let visibleCandidateMetrics = PerformanceAccumulator(
+    "hub.visible-candidates"
+  )
 
   init(
     hubRole: OpportunityHubRole = .main,
@@ -317,6 +322,13 @@ struct ManufacturingOpportunitiesView: View {
     let valueFilter = valueFilter
     let maximumMaterialPurchaseISK = parsedMaximumMaterialPurchaseISK
     let minimumAverageDailyDemand = Int64(minimumAverageDailyDemand)
+    let started = ContinuousClock.now
+    defer {
+      Self.visibleCandidateMetrics.record(
+        units: candidates?.count ?? 0,
+        since: started
+      )
+    }
     return candidates.map { candidates in
       candidates
         .map(candidateApplyingRequestedParameters)
@@ -463,6 +475,10 @@ struct ManufacturingOpportunitiesView: View {
     // prepared; only the very first projection shows the full progress pane.
     let allPreparedCandidates = preparedCandidateProjection?.candidates
     let preparedCandidates = visibleCandidates(allPreparedCandidates)
+    let _ = openMetrics.markFirstTable(
+      role: hubRole,
+      rows: analysis == nil ? nil : preparedCandidates?.count
+    )
     GeometryReader { geometry in
       let upperControlsHeight =
         ManufacturingOpportunityPageLayout.upperControlsHeight(
@@ -547,6 +563,11 @@ struct ManufacturingOpportunitiesView: View {
       guard !Task.isCancelled else { return }
       preparedPlanReservations = prepared
       preparedPlanReservationRevision = planPayloads.hashValue
+      openMetrics.mark(
+        role: hubRole,
+        phase: "reservations",
+        details: "plans=\(planPayloads.count)"
+      )
     }
     .task(id: candidateTrigger) {
       await prepareCandidates(trigger: candidateTrigger)
@@ -580,6 +601,11 @@ struct ManufacturingOpportunitiesView: View {
       if hubRole != .main {
         await runtime.loadSecondaryHubOpportunityData(role: hubRole)
       }
+      openMetrics.mark(
+        role: hubRole,
+        phase: "analysis-demand",
+        details: "rows=\(analysis?.rows.count ?? 0)"
+      )
       runtime.prepareMainHubMarketAutomation()
     }
     .onChange(of: analysis?.id) { _, _ in
@@ -4444,13 +4470,24 @@ struct ManufacturingOpportunitiesView: View {
       sort: activeCandidateSort,
       contract: contractContext
     )
+    let projectionStarted = ContinuousClock.now
     let candidates = await ManufacturingOpportunityCandidateProjection.prepare(
       input: input
     )
+    let backgroundDuration = ContinuousClock.now - projectionStarted
     guard
       !Task.isCancelled,
       trigger == candidateProjectionTrigger
-    else { return }
+    else {
+      openMetrics.markProjection(
+        role: hubRole,
+        rows: candidates.count,
+        background: backgroundDuration,
+        main: nil
+      )
+      return
+    }
+    let mainStarted = ContinuousClock.now
     // Project every row once before sorting; projecting inside the
     // comparator repeated it for each of the n·log n comparisons.
     let sort = activeCandidateSort
@@ -4471,6 +4508,12 @@ struct ManufacturingOpportunitiesView: View {
     preparedCandidateProjection = PreparedManufacturingOpportunityCandidates(
       trigger: trigger,
       candidates: sortedCandidates
+    )
+    openMetrics.markProjection(
+      role: hubRole,
+      rows: sortedCandidates.count,
+      background: backgroundDuration,
+      main: ContinuousClock.now - mainStarted
     )
   }
 
@@ -4493,6 +4536,11 @@ struct ManufacturingOpportunitiesView: View {
     guard !Task.isCancelled else { return }
     preparedWarehouse = productionWarehouse
     preparedWarehouseIdentity = identity
+    openMetrics.mark(
+      role: hubRole,
+      phase: "warehouse",
+      details: "types=\(productionWarehouse.factualQuantities.count)"
+    )
   }
 
   private func detailMetric(_ title: LocalizedStringKey, _ value: String) -> some View {
@@ -5233,6 +5281,61 @@ private struct OpportunityExplanationButton: View {
     }
     .accessibilityLabel(Text(title))
     .accessibilityHint("Shows explanatory details.")
+  }
+}
+
+/// Timeline of one visit of a hub opportunity view for the performance log
+/// (GESCHWINDIGKEIT O1): each phase with the time since the view was opened.
+/// It only measures and never changes what the view shows.
+@MainActor
+final class HubOpenMetrics {
+  private let started = ContinuousClock.now
+  private var projections = 0
+  private var loggedFirstTable = false
+
+  static func milliseconds(_ duration: Duration) -> String {
+    let components = duration.components
+    let value =
+      Double(components.seconds) * 1_000
+      + Double(components.attoseconds) / 1_000_000_000_000_000
+    return String(format: "%.1f ms", value)
+  }
+
+  func mark(role: OpportunityHubRole, phase: String, details: String = "") {
+    PerformanceLog.event(
+      "hub.open",
+      "role=\(role.rawValue) phase=\(phase)"
+        + " at +\(Self.milliseconds(ContinuousClock.now - started))"
+        + (details.isEmpty ? "" : " \(details)")
+    )
+  }
+
+  /// `main` is `nil` for a projection that was discarded as outdated.
+  func markProjection(
+    role: OpportunityHubRole,
+    rows: Int,
+    background: Duration,
+    main: Duration?
+  ) {
+    projections += 1
+    mark(
+      role: role,
+      phase: "projection",
+      details: "n=\(projections) rows=\(rows)"
+        + " background=\(Self.milliseconds(background))"
+        + " main=\(main.map(Self.milliseconds) ?? "discarded")"
+    )
+  }
+
+  /// Logs once, at the first evaluation that has a table to show.
+  func markFirstTable(role: OpportunityHubRole, rows: Int?) {
+    guard !loggedFirstTable, let rows else { return }
+    loggedFirstTable = true
+    mark(
+      role: role,
+      phase: "first-table",
+      details: "rows=\(rows) projections=\(projections)"
+    )
   }
 }
 

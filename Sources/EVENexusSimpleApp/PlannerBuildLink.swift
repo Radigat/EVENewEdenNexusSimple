@@ -88,7 +88,7 @@ struct PlannerBuildButton: View {
         Image(systemName: "hammer")
       }
       .buttonStyle(.borderless)
-      .help(AppLocalization.text("Build in Planner"))
+      .nameTooltip(AppLocalization.text("Build in Planner"))
       .accessibilityLabel("Build in Planner")
       .accessibilityValue(Text(verbatim: name))
       .accessibilityHint(

@@ -1670,9 +1670,20 @@ struct DashboardCardLayout: Layout {
     return weights.map { available * $0 / weights.reduce(0, +) }
   }
 
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+  /// Card sizes per laid-out width. SwiftUI asks for the size, the placement
+  /// and the alignment of one pass separately; each used to measure every
+  /// card again. SwiftUI discards the cache when a card changes.
+  struct Cache {
+    var sizesByWidth: [CGFloat: [CGSize]] = [:]
+  }
+
+  func makeCache(subviews: Subviews) -> Cache {
+    Cache()
+  }
+
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
     let width = max(0, proposal.width ?? minimumWidths.reduce(0, +) + spacing * CGFloat(max(0, weights.count - 1)))
-    let sizes = measured(width: width, subviews: subviews)
+    let sizes = measured(width: width, subviews: subviews, cache: &cache)
     let stacked = widths(for: width).first == width
     let height = stacked
       ? sizes.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, sizes.count - 1))
@@ -1680,9 +1691,9 @@ struct DashboardCardLayout: Layout {
     return CGSize(width: width, height: height)
   }
 
-  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
     let widths = widths(for: bounds.width)
-    let sizes = measured(width: bounds.width, subviews: subviews)
+    let sizes = measured(width: bounds.width, subviews: subviews, cache: &cache)
     let stacked = widths.first == bounds.width
     let rowHeight = sizes.map(\.height).max() ?? 0
     var origin = bounds.origin
@@ -1695,11 +1706,20 @@ struct DashboardCardLayout: Layout {
     }
   }
 
-  private func measured(width: CGFloat, subviews: Subviews) -> [CGSize] {
+  private func measured(
+    width: CGFloat,
+    subviews: Subviews,
+    cache: inout Cache
+  ) -> [CGSize] {
+    if let sizes = cache.sizesByWidth[width], sizes.count == subviews.count {
+      return sizes
+    }
     let widths = widths(for: width)
-    return subviews.indices.map {
+    let sizes = subviews.indices.map {
       subviews[$0].sizeThatFits(ProposedViewSize(width: widths[$0], height: nil))
     }
+    cache.sizesByWidth[width] = sizes
+    return sizes
   }
 }
 
@@ -2206,7 +2226,21 @@ struct DashboardView: View {
   @AppStorage("reactions.market-hub-id", store: AppDefaults.store)
   private var sharedReactionHubID = ""
   private var wealthHistoryCache: DashboardWealthHistoryCache { .shared }
+  /// Performance log only (GESCHWINDIGKEIT O1): evaluations of `body`, and
+  /// calls and durations of the values every evaluation computes.
+  private static let bodyMetrics = PerformanceAccumulator("dashboard.body")
+  private static let identityMetrics = PerformanceAccumulator("dashboard.identities")
+  private static let walletMetrics = PerformanceAccumulator("dashboard.wallet-portfolio")
+  private static let historyMetrics = PerformanceAccumulator("dashboard.wealth-history")
+
+  private func measuredIdentity<Value>(_ value: () -> Value) -> Value {
+    let started = ContinuousClock.now
+    defer { Self.identityMetrics.record(units: 1, since: started) }
+    return value()
+  }
+
   var body: some View {
+    let _ = Self.bodyMetrics.record(units: 1, since: ContinuousClock.now)
     ScrollView {
       // Arrangement of the Dashboard board `Main.dc.html` (plan DB1,
       // `Documentation/DASHBOARD_BOARD_2026-11-07.md`, section 4).
@@ -2246,7 +2280,7 @@ struct DashboardView: View {
       .padding(DesignTokens.spacingLG)
     }
     .navigationTitle(AppLocalization.text("Dashboard"))
-    .task(id: dashboardIndustryRefreshIdentity) {
+    .task(id: measuredIdentity { dashboardIndustryRefreshIdentity }) {
       let identity = dashboardIndustryRefreshIdentity
       let cache = DashboardIndustrySnapshotCache.shared
       // Returning to the Dashboard reuses the snapshot prepared for the same
@@ -2267,7 +2301,7 @@ struct DashboardView: View {
       blueprintNames = names
       cache.store(identity: identity, snapshot: prepared, blueprintNames: names)
     }
-    .task(id: wealthInputIdentity) {
+    .task(id: measuredIdentity { wealthInputIdentity }) {
       guard hasFinishedDashboardStartupRefresh else { return }
       // A running full refresh values the portfolio itself once all
       // characters are synchronized, and a running valuation would discard
@@ -2281,12 +2315,12 @@ struct DashboardView: View {
         persistWealthSnapshot(snapshot)
       }
     }
-    .task(id: mainHubAutomationIdentity) {
+    .task(id: measuredIdentity { mainHubAutomationIdentity }) {
       runtime.prepareMainHubMarketAutomation()
     }
     // Same contract, Loyalty Store and invention inputs the Main-Hub
     // opportunity view loads for its costs (plan DB2).
-    .task(id: mainHubReferenceTrigger) {
+    .task(id: measuredIdentity { mainHubReferenceTrigger }) {
       guard let analysis = runtime.manufacturingOpportunityAnalysis else { return }
       await OpportunityAcquisitionInputs.loadContractReferences(
         runtime: runtime,
@@ -2298,7 +2332,7 @@ struct DashboardView: View {
         analysis: analysis
       )
     }
-    .task(id: mainHubTopFiveTrigger) {
+    .task(id: measuredIdentity { mainHubTopFiveTrigger }) {
       let trigger = mainHubTopFiveTrigger
       guard let analysis = runtime.manufacturingOpportunityAnalysis else {
         mainHubTopFive = nil
@@ -2323,7 +2357,7 @@ struct DashboardView: View {
       mainHubTopFive = result
       cache.store(result, for: trigger)
     }
-    .task(id: marketRefreshIdentity) {
+    .task(id: measuredIdentity { marketRefreshIdentity }) {
       runtime.rememberMarketAuthorizations(
         authorizationSnapshots,
         clientID: EVEConstants.ssoClientID
@@ -2337,7 +2371,7 @@ struct DashboardView: View {
         authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID)
       _ = await (moon, minerals, reactions)
     }
-    .task(id: dashboardStartupCharacterIdentity) {
+    .task(id: measuredIdentity { dashboardStartupCharacterIdentity }) {
       guard !characters.isEmpty else { return }
       guard runtime.reserveDashboardStartupRefresh() else {
         hasFinishedDashboardStartupRefresh = true
@@ -2513,7 +2547,6 @@ struct DashboardView: View {
       }
       if runtime.hasCurrentMineralPurchaseAnalysis, !runtime.mineralPurchaseRecommendations.isEmpty {
         DashboardMineralTicker(rows: runtime.mineralPurchaseRecommendations)
-          .frame(height: 62)
         if runtime.mineralPurchaseRecommendations.contains(where: { !$0.hasCompleteMarketCoverage }) {
           Text("Some configured markets are unavailable or stale; the comparison is incomplete.")
             .appFont(.caption).foregroundStyle(DesignTokens.caution)
@@ -3835,7 +3868,9 @@ struct DashboardView: View {
   }
 
   private var walletPortfolio: WalletPortfolioSnapshot {
-    WalletPortfolioSnapshot(
+    let started = ContinuousClock.now
+    defer { Self.walletMetrics.record(units: characters.count, since: started) }
+    return WalletPortfolioSnapshot(
       balances: characters.map { character in
         CharacterWalletBalance(
           character: CharacterIdentity(
@@ -3907,7 +3942,9 @@ struct DashboardView: View {
   }
 
   private var wealthHistory: [DashboardWealthSnapshot] {
-    wealthHistoryCache.history(
+    let started = ContinuousClock.now
+    defer { Self.historyMetrics.record(units: 1, since: started) }
+    return wealthHistoryCache.history(
       encoded: settings.first(where: {
         $0.key == AppSettingKey.dashboardWealthHistory
       })?.value
@@ -4455,165 +4492,29 @@ struct DashboardWealthChart: View {
   }
 }
 
+/// Mineral prices as a static grid that wraps into further rows when the
+/// panel is too narrow; nothing moves and nothing scrolls (owner decision
+/// 13.11.2026). Until then the prices ran as an endless marquee, whose
+/// animation cost a pass of the whole window per frame (GESCHWINDIGKEIT
+/// O1/O2).
 private struct DashboardMineralTicker: View {
   let rows: [MaterialPurchaseRecommendation]
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.scenePhase) private var scenePhase
 
-  private let itemWidth: CGFloat = 340
-  private let animationDuration: TimeInterval = 32
+  private let itemMinimumWidth: CGFloat = 300
 
   var body: some View {
-    if reduceMotion {
-      ScrollView(.horizontal) {
-        DashboardMineralTickerContent(
-          rows: rows,
-          repetitions: 1,
-          itemWidth: itemWidth
+    LazyVGrid(
+      columns: [
+        GridItem(
+          .adaptive(minimum: itemMinimumWidth),
+          spacing: DesignTokens.spacingMD,
+          alignment: .topLeading
         )
-      }
-      .scrollIndicators(.hidden)
-    } else {
-      DashboardMineralTickerMarquee(
-        rows: rows,
-        itemWidth: itemWidth,
-        animationDuration: animationDuration,
-        isActive: scenePhase == .active
-      )
-      .clipped()
-    }
-  }
-}
-
-private struct DashboardMineralTickerMarquee: NSViewRepresentable {
-  let rows: [MaterialPurchaseRecommendation]
-  let itemWidth: CGFloat
-  let animationDuration: TimeInterval
-  let isActive: Bool
-
-  func makeNSView(context: Context) -> DashboardMineralTickerMarqueeView {
-    let view = DashboardMineralTickerMarqueeView()
-    view.update(
-      rows: rows,
-      itemWidth: itemWidth,
-      animationDuration: animationDuration,
-      isActive: isActive
-    )
-    return view
-  }
-
-  func updateNSView(
-    _ nsView: DashboardMineralTickerMarqueeView,
-    context: Context
-  ) {
-    nsView.update(
-      rows: rows,
-      itemWidth: itemWidth,
-      animationDuration: animationDuration,
-      isActive: isActive
-    )
-  }
-}
-
-@MainActor
-private final class DashboardMineralTickerMarqueeView: NSView {
-  private var hostingView: NSHostingView<DashboardMineralTickerContent>?
-  private var rows: [MaterialPurchaseRecommendation] = []
-  private var itemWidth: CGFloat = 340
-  private var animationDuration: TimeInterval = 32
-  private var isAnimationActive = false
-  private var lastLayoutSize: CGSize = .zero
-
-  override init(frame frameRect: NSRect) {
-    super.init(frame: frameRect)
-    wantsLayer = true
-    layer?.masksToBounds = true
-  }
-
-  required init?(coder: NSCoder) {
-    nil
-  }
-
-  func update(
-    rows: [MaterialPurchaseRecommendation],
-    itemWidth: CGFloat,
-    animationDuration: TimeInterval,
-    isActive: Bool
-  ) {
-    let contentChanged = self.rows != rows || self.itemWidth != itemWidth
-    let timingChanged = self.animationDuration != animationDuration
-    self.rows = rows
-    self.itemWidth = itemWidth
-    self.animationDuration = animationDuration
-    isAnimationActive = isActive && !rows.isEmpty
-
-    let content = DashboardMineralTickerContent(
-      rows: rows,
-      repetitions: 2,
-      itemWidth: itemWidth
-    )
-    if let hostingView {
-      if contentChanged {
-        hostingView.rootView = content
-      }
-    } else {
-      let hostingView = NSHostingView(rootView: content)
-      hostingView.wantsLayer = true
-      hostingView.layerContentsRedrawPolicy = .onSetNeedsDisplay
-      addSubview(hostingView)
-      self.hostingView = hostingView
-    }
-
-    needsLayout = true
-    layoutSubtreeIfNeeded()
-    updateAnimation(restart: contentChanged || timingChanged)
-  }
-
-  override func layout() {
-    super.layout()
-    guard let hostingView else { return }
-    let contentWidth = max(itemWidth, CGFloat(rows.count) * itemWidth)
-    let newSize = CGSize(
-      width: max(bounds.width, contentWidth * 2),
-      height: bounds.height
-    )
-    hostingView.frame = CGRect(origin: .zero, size: newSize)
-    if newSize != lastLayoutSize {
-      lastLayoutSize = newSize
-      updateAnimation(restart: true)
-    }
-  }
-
-  private func updateAnimation(restart: Bool) {
-    guard let contentLayer = hostingView?.layer else { return }
-    if !isAnimationActive {
-      contentLayer.removeAnimation(forKey: "mineral-marquee")
-      return
-    }
-    guard restart || contentLayer.animation(forKey: "mineral-marquee") == nil
-    else { return }
-
-    let contentWidth = max(itemWidth, CGFloat(rows.count) * itemWidth)
-    let animation = CABasicAnimation(keyPath: "transform.translation.x")
-    animation.fromValue = 0
-    animation.toValue = -contentWidth
-    animation.duration = animationDuration
-    animation.repeatCount = .infinity
-    animation.timingFunction = CAMediaTimingFunction(name: .linear)
-    animation.isRemovedOnCompletion = false
-    contentLayer.add(animation, forKey: "mineral-marquee")
-  }
-}
-
-private struct DashboardMineralTickerContent: View {
-  let rows: [MaterialPurchaseRecommendation]
-  let repetitions: Int
-  let itemWidth: CGFloat
-
-  var body: some View {
-    HStack(spacing: 0) {
-      ForEach(0..<(rows.count * repetitions), id: \.self) { index in
-        let row = rows[index % rows.count]
+      ],
+      alignment: .leading,
+      spacing: DesignTokens.spacingSM
+    ) {
+      ForEach(rows) { row in
         VStack(alignment: .leading, spacing: 3) {
           HStack(spacing: DesignTokens.spacingSM) {
             EVEItemText(value: row.material.name, typeID: row.material.id, iconSize: 20)
@@ -4629,44 +4530,10 @@ private struct DashboardMineralTickerContent: View {
             Text("No fresh sell offer available").appFont(.caption)
           }
         }
-        .frame(width: itemWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
       }
     }
-  }
-
-  private func trend(_ value: Double?) -> some View {
-    let color: Color = {
-      guard let value else { return DesignTokens.textSecondary }
-      if value > 0 { return DesignTokens.positive }
-      if value < 0 { return DesignTokens.negative }
-      return DesignTokens.textSecondary
-    }()
-    let icon: String = {
-      guard let value else { return "minus" }
-      if value > 0 { return "arrow.up.right" }
-      if value < 0 { return "arrow.down.right" }
-      return "minus"
-    }()
-    return Label {
-      Text(
-        value?.formatted(
-          .percent.precision(.fractionLength(1)).sign(strategy: .always())
-            .locale(AppLocalization.currentLanguage.locale)
-        ) ?? "—"
-      )
-    } icon: {
-      Image(systemName: icon)
-    }
-    .appFont(.caption.monospacedDigit())
-    .foregroundStyle(color)
-  }
-
-  private func trendAccessibility(_ value: Double?) -> String {
-    guard let value else { return AppLocalization.text("Change unavailable") }
-    if value > 0 { return AppLocalization.text("Price increased") }
-    if value < 0 { return AppLocalization.text("Price decreased") }
-    return AppLocalization.text("Price unchanged")
   }
 }
 
@@ -5606,7 +5473,7 @@ struct EVEEntityText: View {
       }
     }
     .buttonStyle(.plain)
-    .help(AppLocalization.format("Click to copy %@.", value))
+    .nameTooltip(AppLocalization.format("Click to copy %@.", value))
     .accessibilityLabel(copyAccessibilityLabel)
     .accessibilityValue(Text(verbatim: value))
     .accessibilityHint(copyAccessibilityHint)

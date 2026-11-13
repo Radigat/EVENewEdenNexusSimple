@@ -1,3 +1,4 @@
+import EVENexusCore
 import SwiftUI
 
 // Shared building blocks for both interface styles (plan D1 in
@@ -31,11 +32,7 @@ struct NexusPanelSurface: ViewModifier {
   let variant: NexusPanelVariant
 
   func body(content: Content) -> some View {
-    shadowed(
-      content
-        .background(DesignTokens.panel)
-        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cardRadius))
-    )
+    surface(content)
     .overlay {
       RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
         .stroke(DesignTokens.border)
@@ -43,16 +40,29 @@ struct NexusPanelSurface: ViewModifier {
     .hudCornerBrackets()
   }
 
+  /// The shadow belongs to the plain background shape. A shadow on the
+  /// clipped panel content made the renderer flatten the whole panel for
+  /// every frame; the opaque shape throws the same shadow.
   @ViewBuilder
-  private func shadowed(_ view: some View) -> some View {
-    if variant.hasShadow {
-      view.shadow(
-        color: DesignTokens.panelShadow,
-        radius: DesignTokens.panelShadowRadius,
-        y: DesignTokens.panelShadowOffset
-      )
+  private func surface(_ content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: DesignTokens.cardRadius)
+    if variant.hasShadow, !PerformanceDebugSwitch.shadows.isDisabled {
+      content
+        .clipShape(shape)
+        .background {
+          shape
+            .fill(DesignTokens.panel)
+            .compositingGroup()
+            .shadow(
+              color: DesignTokens.panelShadow,
+              radius: DesignTokens.panelShadowRadius,
+              y: DesignTokens.panelShadowOffset
+            )
+        }
     } else {
-      view
+      content
+        .background(DesignTokens.panel)
+        .clipShape(shape)
     }
   }
 }
@@ -306,5 +316,58 @@ extension View {
   /// View title; the HUD style adds the area label above it.
   func nexusPageTitle() -> some View {
     modifier(NexusPageTitle())
+  }
+}
+
+/// Measurement-only switches (GESCHWINDIGKEIT_2026-11-13, prompt O1). In a
+/// Debug build `EVE_NEXUS_PERF_DISABLE=shadows,tooltips` turns off panel
+/// shadows and the tooltips of item names, each on its own, to compare scrolling with and without them. A Release build
+/// ignores the variable and always draws everything.
+enum PerformanceDebugSwitch: String, CaseIterable {
+  case shadows
+  case tooltips
+
+  static let environmentKey = "EVE_NEXUS_PERF_DISABLE"
+
+  /// Comma-separated switch names; unknown names are ignored.
+  static func parse(_ value: String?) -> Set<PerformanceDebugSwitch> {
+    Set(
+      (value ?? "").split(separator: ",").compactMap {
+        PerformanceDebugSwitch(
+          rawValue: $0.trimmingCharacters(in: .whitespaces).lowercased()
+        )
+      }
+    )
+  }
+
+  /// Read once per process start.
+  static let disabled: Set<PerformanceDebugSwitch> = {
+    #if DEBUG
+      let switches = parse(ProcessInfo.processInfo.environment[environmentKey])
+      if !switches.isEmpty {
+        PerformanceLog.event(
+          "perf.switches",
+          "disabled=" + switches.map(\.rawValue).sorted().joined(separator: ",")
+        )
+      }
+      return switches
+    #else
+      return []
+    #endif
+  }()
+
+  var isDisabled: Bool { Self.disabled.contains(self) }
+}
+
+extension View {
+  /// Tooltip of an item name or of its links; the measurement switch
+  /// `tooltips` leaves it out.
+  @ViewBuilder
+  func nameTooltip(_ text: String) -> some View {
+    if PerformanceDebugSwitch.tooltips.isDisabled {
+      self
+    } else {
+      help(text)
+    }
   }
 }

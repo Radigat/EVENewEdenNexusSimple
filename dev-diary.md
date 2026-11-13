@@ -10225,3 +10225,77 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Prüfung:** Nur statische Durchsicht auf HEAD `b57accd`. Kein Swift geändert, deshalb weder `swift test` noch `xcodebuild` noch `EVEStaticDataKit` gelaufen; nichts gebaut, nichts gemessen, nichts live geprüft. Zeilenangaben gegen den Stand geprüft, `git diff --check` fehlerfrei. Planer-Info: nicht betroffen.
 - **Offen:** O1 (Messung mit dem Eigentümer) und alle weiteren Prompts; die vier Eigentümerentscheidungen.
 - **Commit:** Am 13.11.2026 auf Auftrag committet, nicht gepusht.
+
+## 13.11.2026: Reaktionsgeschwindigkeit O1 – Messpunkte und Debug-Schalter
+
+- **Auftrag:** Prompt O1 aus `Documentation/GESCHWINDIGKEIT_2026-11-13.md`: messen, ohne Verhalten zu ändern.
+- **Ergebnis:** Messzeilen `dashboard.body`, `dashboard.identities`, `dashboard.wallet-portfolio`, `dashboard.wealth-history`, `hub.open` (Phasen je Besuch und Rolle, Projektionen mit Hintergrund- und Hauptthread-Dauer), `hub.visible-candidates`, `hub.invention`, `hub.contract-references`. Nur im Debug-Build: `EVE_NEXUS_PERF_DISABLE=shadows,ticker,tooltips` für den A/B-Vergleich der Darstellung; Name ohne Rückfrage nach dem Muster der vorhandenen Variablen gewählt. Rechenregeln, Daten und Optik ohne Variable unverändert. PRODUCT.md und Abschnitte 8 und 10 des Dokuments nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-, 159 App-Tests, XCTest-Suiten mit neun Rendertests samt neuem Schaltertest), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`. Planer-Info: geprüft, keine Änderung nötig (in `RuntimeState.swift` nur zwei Stoppuhren für die Hub-Chancen).
+- **Offen:** Messzeilen und Schalter sind noch in keiner laufenden App gelesen oder angesehen. Die Messung mit den echten Daten des Eigentümers (Läufe 1–5) steht aus. Nicht committet.
+
+## 13.11.2026: Reaktionsgeschwindigkeit O1 – erste Messung mit echten Daten
+
+- **Auftrag:** Messung aus Prompt O1; der Eigentümer bediente den Xcode-Debug-Build (PID 1597), aufgezeichnet wurden Messprotokoll, `sample` und `top`, die App wurde nicht bedient.
+- **Ergebnis (live gemessen, Debug-Build):** Beim Dashboard-Scrollen ist der Hauptthread zu 89–99 % belegt, 44–63 % davon in `NSHostingView.layout()` → `minSize()` mit vollständigem Vermessen der Seite; `dashboard.body` läuft dabei nicht. WindowServer 45–58 % CPU, solange das Dashboard sichtbar ist, sonst 6–25 %. Hub-Chancen: erste Tabelle nach 4,2–4,9 s, einmal 9,7 s; die Projektion ist kurz (126–221 ms, einmal 1,2 s), die Wartezeit liegt im belegten Hauptthread davor. `hub.contract-references` 4,1 s, `hub.invention` 11,4 s. Die Sprachdatei wird wiederholt geparst (3–11 % des Hauptthreads). Die Annahme H1 der Durchsicht ist widerlegt; neu ist Maßnahme T27 (Fenster-Mindestgröße ohne Vermessen des Inhalts). Einzelheiten in Abschnitt 10 des Dokuments.
+- **Eindruck des Eigentümers:** Die gemessenen Wartezeiten passen, auch die 9,7 s; der Hub-Bereich ist insgesamt langsam.
+- **Offen:** A/B-Lauf mit `EVE_NEXUS_PERF_DISABLE`, Auslöser der Accessibility-Abfrage, Wirkung von T27 (nur Annahme). Nicht committet.
+
+## 13.11.2026: Reaktionsgeschwindigkeit O1 – A/B-Lauf ohne Laufband
+
+- **Ergebnis (live gemessen, je Variante ein Lauf):** Mit `EVE_NEXUS_PERF_DISABLE=ticker` ist der Hauptthread beim Dashboard-Scrollen zu 14–31 % belegt statt zu 89–99 %, `NSHostingView.layout()` 3–8 % statt 44–63 %, WindowServer 21–42 % statt 45–58 %. Eindruck des Eigentümers: deutlich flüssiger. Das Mineral-Laufband ist damit die Hauptursache des Ruckelns im Dashboard; der Mechanismus ist nicht belegt. Im Dokument (Abschnitt 10) eingetragen, T4 rückt in O2 nach vorn.
+- **Offen:** Lauf mit `shadows`; Ursache der Last in den Hub-Chancen. Nicht committet.
+
+## 13.11.2026: Reaktionsgeschwindigkeit O1 – A/B-Lauf ohne Schatten, Abschluss
+
+- **Ergebnis (live gemessen, ein Lauf):** Mit `EVE_NEXUS_PERF_DISABLE=shadows` braucht der WindowServer in Ruhe 36–44 % statt 50–68 %, beim Scrollen 35–51 %; der Hauptthread bleibt beim Scrollen zu 53–95 % belegt. Die Schatten kosten grob 10–15 Prozentpunkte im Bildaufbau, das Laufband wirkt deutlich stärker. O1 ist damit abgeschlossen; der Vorschlag zur Reihenfolge steht in Abschnitt 10 des Dokuments.
+- **Nicht gemacht:** A/B-Lauf `tooltips`; eigene Messpunkte für Lager, Marktbestand und Nettowert. Der Eindruck des Eigentümers zum Schatten-Lauf fehlt.
+- **Offen:** Mechanismus hinter dem Laufband, Ursache der Hauptthread-Last in den Hub-Chancen, Auslöser der Accessibility-Abfrage. Nicht committet.
+
+## 13.11.2026: Reaktionsgeschwindigkeit O2 – Laufband, Schatten, Layout-Cache
+
+- **Auftrag:** Prompt O2 aus `Documentation/GESCHWINDIGKEIT_2026-11-13.md`.
+- **Ergebnis:** T4: innere `NSHostingView` des Mineral-Laufbands ohne Größenbedingungen, kein erzwungenes Layout bei unverändertem Inhalt. T1: Panel-Schatten an der Hintergrundform; nicht bitgleich (bisher schwacher Schatten auch um Schrift, Abweichung höchstens 6 von 255 hell, 2 dunkel), vom Eigentümer auf Rückfrage freigegeben; Rendertest auf Toleranz 8 umgestellt. T8: Layout-Cache in `DashboardCardLayout`. Rechenregeln und Daten unverändert. PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-, 159 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`. Planer-Info: nicht betroffen (keine Planer-Quelle geändert).
+- **Offen:** Nicht in der App angesehen. Nachmessung mit echten Daten und Sichtabnahme durch den Eigentümer; ob T4 die Ursache aus O1 behebt, ist bis dahin eine Annahme. T2, T3, T5 nicht begonnen. Nicht committet.
+
+## 13.11.2026: Reaktionsgeschwindigkeit O2 – Nachmessung
+
+- **Ergebnis (live gemessen, ein Lauf, neuer Debug-Build):** Hauptthread beim Dashboard-Scrollen 56–84 % statt 89–99 %, `NSHostingView.layout()` 29–32 % statt 44–63 %; das mehrfache Vermessen der Karten (T8) ist fast verschwunden. Die Änderung am Laufband (T4) behebt die Ursache nicht: Die Seite wird weiter je Scroll-Schritt neu vermessen, der Auslöser ist nicht belegt. Wirkung der Schattenänderung am WindowServer nicht belegt.
+- **Offen:** Entscheid 2 zum Laufband, Eindruck und Sichtabnahme des Eigentümers. Nicht committet.
+
+## 13.11.2026: Reaktionsgeschwindigkeit O2 – Laufband als SwiftUI-Ansicht
+
+- **Auftrag:** Eigentümerentscheid nach der Nachmessung: Laufband neu bauen, sonst statische Zeile.
+- **Ergebnis:** Mineral-Laufband ohne AppKit-Einbettung (`TimelineView` und `offset`), alte `NSViewRepresentable`-Fassung entfernt; PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-, 160 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests, `xcodebuild test` `TEST SUCCEEDED`.
+- **Offen:** Nicht in der App angesehen und nicht gemessen; Nachmessung und Sichtabnahme durch den Eigentümer. Nicht committet.
+
+## 13.11.2026: Reaktionsgeschwindigkeit O2 – Nachmessung des SwiftUI-Laufbands
+
+- **Ergebnis (live gemessen, ein Lauf):** Mit dem SwiftUI-Laufband ist der Hauptthread dauerhaft zu 98–99 % belegt, die App braucht 47–76 % CPU auch in Ruhe (vorher 0–3 % in Ruhe); `NSHostingView.layout()` 21–40 %. Eindruck des Eigentümers dagegen: flüssiger, Laufband wie gewohnt, Namen anklickbar, Panels wie vorher. Erkenntnis: Jede SwiftUI-Aktualisierung des Fensters löst das Vermessen der ganzen Seite aus; die AppKit-Einbettung war nicht die Ursache. Ein Lauf um 23:02 Uhr wurde verworfen.
+- **Zwischenstand im Code:** Kurzzeitig auf die statische Zeile umgebaut und wieder auf das getestete SwiftUI-Laufband zurückgestellt; `swift test` danach grün (801 Core-, 160 App-Tests). `xcodebuild test` und `EVEStaticDataKit` nach dem Zurückstellen nicht erneut gelaufen.
+- **Offen:** Entscheidung des Eigentümers (SwiftUI-Laufband, statische Zeile oder zuerst T27). Nicht committet.
+
+## 13.11.2026: Reaktionsgeschwindigkeit – Versuch zu T27 nicht bestätigt
+
+- **Auftrag:** Eigentümerentscheid: vor der Entscheidung zum Laufband T27 versuchen (Fenster-Mindestgröße ohne Vermessen des Inhalts).
+- **Ergebnis:** Ein temporärer Testaufbau (wieder entfernt) zeigte bei sechs Rahmenvarianten keinen Unterschied in der Layoutzeit und stellte das teure Vermessen der echten Seite nicht nach. Die Probe der echten App zeigt, dass beim SwiftUI-Laufband je Bild ein vollständiger Fensterdurchlauf läuft (Aktualisieren und Zeichnen 24 %, Mausbereiche 17–20 %), nicht die Mindestgröße. T27 entfällt; kein Code dafür geändert.
+- **Offen:** Entscheidung zum Laufband (seltener aktualisieren oder statische Zeile). `xcodebuild test` und `EVEStaticDataKit` seit dem Zurückstellen des Laufbands nicht erneut gelaufen. Nicht committet.
+
+## 13.11.2026: Dashboard – Mineralienpreise als festes Raster statt Laufband
+
+- **Auftrag:** Eigentümerentscheid nach den Messungen: keine Bewegung, kein Scrollen; bei zu wenig Breite eine weitere Zeile.
+- **Ergebnis:** `DashboardMineralTicker` ist ein statisches, umbrechendes Raster; Laufband (zuletzt SwiftUI-Fassung), Phase samt Test und Messschalter `ticker` entfernt. Inhalt je Mineral unverändert. PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-, 159 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`. Planer-Info: nicht betroffen.
+- **Offen:** Nicht in der App angesehen, nicht gemessen; Nachmessung und Sichtabnahme durch den Eigentümer. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit O2 – Nachmessung des statischen Rasters
+
+- **Ergebnis (live gemessen, ein kurzer Lauf):** Beim Dashboard-Scrollen ist der Hauptthread zu 17 % belegt (vor O2 89–99 %), `NSHostingView.layout()` 3 %, App-CPU 16–30 % statt 43–78 %. WindowServer weiter 34–49 %; Ursache nicht untersucht. Zuordnung von Ruhe und Scrollen nach CPU-Verlauf, nicht belegt.
+- **Offen:** Eindruck und Sichtabnahme des Eigentümers. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit O1 und O2 – Abnahme und Commit
+
+- **Eigentümer:** Dashboard mit statischem Preisraster „passt“; Einzelpunkte nicht einzeln bestätigt.
+- **Commit:** Am 14.11.2026 auf Auftrag committet, nicht gepusht. Die lokale Änderung am Xcode-Schema (`EVE_NEXUS_PERF_DISABLE`, deaktiviert) ist nicht enthalten.
+- **Offen:** T2, T3, T5; Hub-Chancen (O5, O6), Lokalisierung (O4); WindowServer-Last im Dashboard nicht untersucht.
