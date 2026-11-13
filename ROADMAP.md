@@ -36,6 +36,11 @@ Prompts liegen fertig vor; umgesetzt wird nur auf ausdrücklichen Auftrag
   - Zurückgestellt: A5 (G5, G11) und G9.
 - D9 im [HUD-Plan](Documentation/DESIGN_HUD_2026-11-07.md): nur für Befunde
   aus der Eigentümerabnahme.
+- Prompt-Reihe O1–O9 zur
+  [Reaktionsgeschwindigkeit](Documentation/GESCHWINDIGKEIT_2026-11-13.md)
+  (13.11.2026): zuerst O1, die Messung mit dem Eigentümer; danach
+  Dashboard-Darstellung, Dashboard-Hauptthread, gemeinsame Bausteine und
+  Hub-Chancen. O8 (Schema) und O9 (Hub-Scan) nur nach Messung und Entscheid.
 
 Offene Eigentümerentscheidungen und Befunde ohne Auftrag stehen gesammelt in
 [PROJECT_STATE.md](PROJECT_STATE.md), Abschnitt „Offene Punkte“.

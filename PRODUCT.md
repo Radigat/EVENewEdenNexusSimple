@@ -3804,3 +3804,6 @@ dokumentiert.
   Sicherheits- und Robustheitsprüfung
 - [App-Analyse 02.11.2026](Documentation/ANALYSE_2026-11-02.md) – Stärken,
   Schwächen und Geschwindigkeit (statische Durchsicht) mit Prompt-Reihe
+- [Reaktionsgeschwindigkeit 13.11.2026](Documentation/GESCHWINDIGKEIT_2026-11-13.md)
+  – Dashboard, Hub-Chancen und gemeinsame Bausteine (statische Durchsicht,
+  noch nicht gemessen) mit Prompt-Reihe O1–O9

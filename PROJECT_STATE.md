@@ -52,8 +52,16 @@ Vorhaben in [ROADMAP.md](ROADMAP.md), „Umgesetzt, Abnahme offen“.
   - Planner-Kosten auf Abruf in der Hub-Chancen-Ansicht: braucht eine
     Herauslösung der Planner-Endrechnung aus dem Planner-Fenster (dev-diary
     24.10.2026).
+  - Dashboard-Top-5 mit denselben ME/TE-Annahmen wie die Hub-Tabelle? Heute
+    rechnet das Top-5 mit ME 0/TE 0, die Tabelle mit ME 10/TE 20 (T1-Module)
+    und ME 3/TE 2 (T2); im Code gesehen, nicht in der App nachgestellt
+    ([Reaktionsgeschwindigkeit](Documentation/GESCHWINDIGKEIT_2026-11-13.md),
+    Abschnitte 5 und 7; dort auch die Entscheide zu Optik, ESI und Schema).
 - **Vorbereitete Prompts:** A6b, A7, A8; zurückgestellt A5 und G9
-  ([ROADMAP.md](ROADMAP.md), „Geplant“).
+  ([ROADMAP.md](ROADMAP.md), „Geplant“). Seit 13.11.2026 zusätzlich O1–O9
+  zur Reaktionsgeschwindigkeit von Dashboard und Hub-Chancen
+  ([GESCHWINDIGKEIT_2026-11-13.md](Documentation/GESCHWINDIGKEIT_2026-11-13.md));
+  alle Befunde dort sind statisch, die Messung ist O1.
 - **Messungen und ungeklärte Ursachen:**
   - G10 (Home und Coalition gleichzeitig) bei normaler ESI-Lage messen; bei
     erneutem Scheitern zurück zur Reihenfolge;
