@@ -261,9 +261,9 @@ Abschnitt 9. Nach O1 kann sich die Reihenfolge ändern.
 | O1 | T0 Messung mit dem Eigentümer | erledigt (Abschnitt 10); A/B-Lauf `tooltips` nicht gemacht |
 | O2 | T1–T5 Dashboard-Darstellung | erledigt: T1, T8, statisches Raster statt Laufband; vom Eigentümer am 14.11.2026 als passend bestätigt (Abschnitt 10). T2, T3, T5 nicht begonnen |
 | O3 | T6–T8 Dashboard-Hauptthread | offen |
-| O4 | T9–T12 gemeinsame Bausteine | offen |
+| O4 | T9–T12 gemeinsame Bausteine | T9 implementiert (Wirkung nicht belegt), T29 Umgebungs-Locale implementiert, Nachmessung offen (Abschnitt 10); T28 nur noch für abweichende App-Sprache; T10–T12 offen |
 | O5 | T13–T16, T18, T20 Hub-Chancen öffnen | offen |
-| O6 | T17, T19 Hub-Tabelle und Invention | offen |
+| O6 | T17, T19 Hub-Tabelle und Invention | T19 teilweise: Messschalter, A/B-Läufe, Eingabefelder erst beim Klick (14.11.2026, nicht nachgemessen); Links, erklärte Zellen und T17 offen |
 | O7 | T22, T23, T25, T26 Zustand und Speichern | offen |
 | O8 | T24 Blobs und Schema, nur nach Messung | offen |
 | O9 | T21 Hub-Scan, nur nach Messung und Entscheid | offen |
@@ -788,3 +788,459 @@ nicht untersucht.
 
 **Eigentümer (14.11.2026):** „Passt“, Auftrag zum Commit. Einzelpunkte
 (Umbruch, Kopieren der Namen) sind nicht einzeln bestätigt.
+
+### O4, T9 Lokalisierung (14.11.2026), Nachmessung offen
+
+**Implementiert:** `AppLanguage` hält je Sprache das Sprach-Bundle und die
+`Locale` als statische Tabelle (`AppLanguage.swift`). Ursache des
+wiederholten Parsens aus O1: Das je Aufruf erzeugte `Bundle` wurde wieder
+freigegeben und mit ihm die eingelesene Übersetzungstabelle. Die aktuelle
+Sprache wird weiter je Aufruf aus den Einstellungen gelesen, ein
+Sprachwechsel wirkt also sofort. **Automatisch geprüft:** `swift test`
+(801 Core-, 160 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests,
+`xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`; neuer Test für beide Sprachen, fehlende Schlüssel und die Locale.
+**Nicht geprüft:** nicht in der App angesehen, kein Sprachwechsel in der
+laufenden App, nicht gemessen. **Offen:** Nachmessung
+(`_CFPropertyListCreateWithData` in den Proben, vorher 3–11 %).
+
+### O4, T9 Nachmessung (14.11.2026, 09:19–09:21 Uhr): keine Wirkung belegt
+
+> Xcode-Debug-Build (PID 15524, Build 09:18 Uhr mit T9), kein Schalter.
+> Der Eigentümer öffnete die Hub-Chancen; Dashboard und Sprachwechsel
+> entfielen.
+
+- `_CFPropertyListCreateWithData` liegt in den fünf Proben weiter bei
+  3–9 % des Hauptthreads (O1: 3–11 %). **T9 hat das wiederholte Einlesen
+  nicht beseitigt.**
+- **Ursache gefunden:** Das Einlesen kommt nicht aus `AppLocalization`,
+  sondern aus SwiftUI selbst. Jeder `Text` mit Schlüssel wird über
+  `-[NSBundle localizedAttributedStringForKey:value:table:localization:]`
+  für die Sprache der Umgebung (`\.locale`) aufgelöst; dieser Weg liest die
+  Übersetzungstabelle je Auflösung neu ein (`_copyStringTable` →
+  `_loadStringsFromData`). Die Annahme zu G1 war damit nur zum Teil richtig.
+  Ob der Weg nur dann so teuer ist, wenn die App-Sprache von der
+  Systemsprache abweicht, ist nicht geprüft.
+- T9 bleibt als unschädliche Vereinfachung im Code; ein Nutzen ist nicht
+  gemessen.
+- Hub-Chancen in diesem Lauf: Home, erste Tabelle nach 3,5 s (Lager 3,0 s,
+  Projektion 191 ms Hintergrund, 95 ms Hauptthread); Hauptthread durchgehend
+  89–100 % belegt, `NSHostingView.layout()` 26–71 %.
+
+**Neue Maßnahme T28 (offen, braucht einen Eigentümerentscheid):** die
+bevorzugte Sprache des App-Bundles an die App-Sprache binden (zum Beispiel
+`AppleLanguages` beim Start), damit SwiftUI die zwischengespeicherte Tabelle
+nutzt. Das wirkt erst nach einem Neustart und stellt auch Systemdialoge der
+App auf die App-Sprache um; die Wirkung ist eine Annahme.
+
+### Hub-Chancen und T29 Umgebungs-Locale (14.11.2026), Nachmessung offen
+
+**Aufschlüsselung der Hub-Proben (09:20 Uhr):** Beim Scrollen der Tabelle
+steckt der Hauptthread im Anlegen und Vermessen neuer Zeilen (`LazyStack`
+27 %, `applyNodes` 22 %). Darin löst SwiftUI die übersetzten Texte der
+Zeilen auf (`LocalizedStringKey.resolve`, 8–12 %) und liest dabei die
+Sprachdatei neu ein. Dazu kommen rund 7 % `accessibilityHitTest`; der
+Auslöser ist nicht belegt.
+
+**Versuch (temporärer Test, nicht im Repository):** 300 `Text` mit
+Schlüssel zeichnen.
+
+| Umgebung | Dauer |
+|---|---|
+| keine `\.locale` gesetzt | 0,024 s |
+| `\.locale` = Systemlocale (`de_DE`, auch `Locale.current`) | 0,023 s |
+| `\.locale` = `de` | 1,07 s |
+| `\.locale` = `en` | 0,81 s |
+| Text bereits übersetzt (`AppLocalization`, verbatim) | 0,019 s |
+
+Sobald die Umgebungs-Locale von der Systemlocale abweicht, kostet jeder
+Text rund 3 ms statt 0,08 ms. Die App setzte bisher immer die reine
+Sprach-Locale (`de`), auch bei deutschem System.
+
+**Implementiert (T29):** `AppLanguage.environmentLocale` gibt die
+Systemlocale zurück, wenn App-Sprache und Systemsprache übereinstimmen und
+das Bundle diese Sprache bevorzugt; sonst wie bisher die Sprach-Locale.
+Alle fünf Stellen, die `\.locale` setzen, nutzen sie. Die Texte bleiben
+gleich; von SwiftUI selbst formatierte Werte folgen damit der Region des
+Systems (`de_DE` statt `de`). Die App formatiert ihre Zahlen überwiegend mit
+`AppLocalization.currentLanguage.locale`; das bleibt unverändert.
+
+**Automatisch geprüft:** `swift test` (801 Core-, 161 App-Tests,
+XCTest-Suiten), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug,
+unsigniert) `TEST SUCCEEDED`; neuer Test für die Auswahl der Locale. **Nicht geprüft:** nicht in der App angesehen, nicht gemessen, kein
+Sprachwechsel bedient. **Offen:** Nachmessung der Hub-Chancen; T28 bleibt
+nur für den Fall, dass die App-Sprache von der Systemsprache abweicht.
+
+### T29, Nachmessung (14.11.2026, 09:49–09:51 Uhr)
+
+> Xcode-Debug-Build (PID 17003, Build 09:48 Uhr), App-Sprache Deutsch auf
+> deutschem System (Angabe des Eigentümers), kein Schalter. Die
+> Main-Hub-Chancen waren schon während des Hub-Scans offen; ein
+> vergleichbarer Öffnen-Wert liegt nur für Home vor.
+
+| Hauptthread, Hub-Chancen | vor T29 (09:20) | mit T29 |
+|---|---|---|
+| `LocalizedStringKey.resolve` | 8–12 % | 0 % |
+| `_CFPropertyListCreateWithData` | 3–9 % | unter 2 %, in keiner Probe gelistet |
+| belegt insgesamt | 89–100 % | 90–100 % |
+| `NSHostingView.layout()` | 26–71 % | 26–54 % |
+| Zeilen anlegen und platzieren | 22–27 % | 9–30 % |
+
+- **T29 wirkt wie im Versuch:** Die Textauflösung mit erneutem Einlesen der
+  Sprachdatei ist aus den Proben verschwunden.
+- **Der Hub-Bereich bleibt ausgelastet:** Der Hauptthread ist beim Scrollen
+  weiter zu 90–100 % belegt. Übrig sind das Anlegen und Vermessen der
+  Tabellenzeilen und das Fenster-Layout; dazu 2–13 %
+  `accessibilityHitTest` (Auslöser nicht belegt).
+- Home-Hub: erste Tabelle nach 3,3 s (09:20 Uhr: 3,5 s); der Unterschied
+  liegt in der Streuung.
+
+**Eindruck des Eigentümers (14.11.2026):** Der Hub-Bereich ist unverändert
+zäh.
+
+**Offen:** nächste Maßnahme für die Hub-Tabelle (T19: leichtere Zeilen).
+
+### T19, Vorbereitung (14.11.2026): Messschalter für die Hub-Zeilen
+
+Die Proben nennen in der Hub-Tabelle keinen einzelnen Verursacher: 23 % der
+Eigenzeit liegen in der Swift-Laufzeit (Typ-Metadaten und
+Konformitätssuche), 16 % in SwiftUI, 14 % im Abhängigkeitsgraphen;
+`NSTextField` taucht nicht auf. Jede erklärte Zelle trägt zudem einen
+eigenen Schatten, vier je Zeile. Vor dem Umbau der Zeilen klärt deshalb ein
+A/B-Vergleich, welcher Teil kostet. **Implementiert, nur im Debug-Build:**
+`EVE_NEXUS_PERF_DISABLE` kennt zusätzlich `rowfields` (Runs/ME/TE als Text),
+`rowexplain` (erklärte Zellen ohne Knopf, Schatten und Popover) und
+`rowlinks` (Produktname ohne Verlaufs- und Hammer-Link). Ohne Variable ist
+die Tabelle unverändert. **Automatisch geprüft:** `swift test` grün.
+**Nachtrag 14.11.2026, 20:56 Uhr:** `EVEStaticDataKit` und `xcodebuild test`
+(Debug, unsigniert) für diesen Stand grün.
+
+### T19, A/B-Lauf mit allen drei Zeilen-Schaltern (14.11.2026, 15:48–15:50 Uhr)
+
+> Xcode-Debug-Build (PID 19643, Build 12:05 Uhr), App-Sprache Deutsch,
+> `EVE_NEXUS_PERF_DISABLE=rowfields,rowexplain,rowlinks`. Ein Lauf, zehn
+> Proben zu je 8 s. Drei frühere Aufzeichnungen desselben Tages (12:07,
+> 14:12, 15:25 Uhr) erfassten nur Leerlauf und sind verworfen. Der Eindruck
+> des Eigentümers zu diesem Lauf liegt nicht vor.
+
+| Hauptthread beim Scrollen, Main-Hub | ohne Schalter (09:49) | alle drei Schalter |
+|---|---|---|
+| belegt insgesamt | 90–100 % | 85–86 % |
+| `NSHostingView.layout()` | 26–54 % | 15 % |
+| Zeilen anlegen und platzieren | 9–30 % | 4–5 % |
+| `CA::Transaction::commit()` | nicht ausgewiesen | 19–21 % |
+| Abfrage „Element unter dem Mauszeiger“ (`CopyElementAtPosition`) | 2–13 % (`accessibilityHitTest`) | 6–17 % |
+| Menüleisten-Symbol neu zeichnen (`NSStatusItem _updateReplicants`) | nicht ausgewiesen | 5–14 % |
+
+- **Die Zeile ist leichter, der Hauptthread bleibt voll:** Ohne Felder,
+  erklärte Zellen und Links sinken Zeilenaufbau und Fenster-Layout auf etwa
+  ein Drittel. Die Gesamtbelegung fällt aber nur von 90–100 % auf rund
+  85 %. Ein Umbau der Zeilen allein beseitigt die Last also nicht.
+- **Herkunft von `accessibilityHitTest` belegt:** Die Abfrage kommt von
+  außen über die Bedienungshilfen-Schnittstelle (`mshMIGPerform` →
+  `_AXXMIGCopyElementAtPosition`). Ein anderes Programm fragt während des
+  Scrollens laufend, welches Element unter dem Mauszeiger liegt; SwiftUI
+  baut dafür jedes Mal den Bedienungshilfen-Baum der Ansicht auf
+  (`ViewRendererHost.accessibilityNodes`). Welches Programm fragt, zeigt die
+  Probe nicht. Zum Messzeitpunkt liefen unter anderem Logi Options+, Magnet
+  und zwei Computer-Use-Dienste; keines davon ist als Auslöser belegt.
+- **Neu: Menüleisten-Symbol.** Solange „im Hintergrund weiterlaufen“ aktiv
+  ist, zeichnet AppKit das Symbol der App in der Menüleiste während des
+  Scrollens immer wieder neu, samt Bildschirmkopie des Symbols. Auslöser
+  nicht belegt; das Symbol selbst ist ein festes Bild.
+- **Home-Hub:** Direkt nach dem Öffnen kostet die Höhenschätzung der
+  Zeilenliste (`makeEstimatedAnchorTranslation` über 381 Zeilen) 25 % einer
+  Probe. Während des Besuchs lief die Inventionsschätzung 31,2 s, davon
+  4–11 % der Proben auf dem Hauptthread; sie löste nach 12,5 s eine zweite
+  Projektion aus. Die Scroll-Werte für Home sind dadurch überlagert und
+  nicht mit 09:49 Uhr vergleichbar.
+- **Öffnen:** Main erste Tabelle nach 0,42 s, Home nach 0,68 s (Lager
+  0,38 s). Der Wert von 09:49 Uhr (3,3 s, davon Lager 3,0 s) war der erste
+  Besuch nach dem Start; der Unterschied ist deshalb nicht den Schaltern
+  zuzuschreiben. Vertragsreferenzen 7,0 s, parallel zum Öffnen.
+- CPU laut `top` beim Scrollen: App 50–60 %, Spitzen 90–138 %;
+  WindowServer 7–15 %.
+
+**Offen:** Eindruck des Eigentümers; welcher der drei Schalter den Gewinn
+bringt (Einzelläufe); Auslöser der Bedienungshilfen-Abfrage und des
+Menüleisten-Neuzeichnens; Inventionsschätzung abseits des Hauptthreads
+(T17).
+
+**Eindruck des Eigentümers (14.11.2026):** Mit den drei Zeilen-Schaltern
+kaum ein Unterschied beim Scrollen.
+
+**Nachtrag, Aufrufkette des Menüleisten-Symbols (aus der Probe 15:49:04):**
+Ein verzögerter AppKit-Aufruf zeichnet die Kopien des Symbols neu
+(`_updateReplicants`), setzt dabei das Erscheinungsbild der Schaltfläche,
+SwiftUI beobachtet diese Änderung (`MenuBarExtraController.observeValue`)
+und setzt daraufhin Bild und Titel der Schaltfläche erneut
+(`updateButton` → `_adjustLength`). Die Kette liegt vollständig in AppKit
+und SwiftUI; App-Code kommt darin nicht vor. In Ruhe tritt sie nicht auf
+(Hauptthread 0–1 %). Was sie beim Scrollen anstößt, ist nicht belegt.
+
+**Nächster Lauf (geplant):** dieselbe App-Instanz, „im Hintergrund
+weiterlaufen“ aus und Logi Options+ beendet. Die Proben zeigen beide
+Posten getrennt.
+
+### T19, Lauf mit Mausrad und Rollbalken (14.11.2026, 21:20–21:21 Uhr)
+
+> Dieselbe App-Instanz (PID 19643, weiter mit den drei Zeilen-Schaltern),
+> Main-Hub-Chancen, Logi Options+ lief (ließ sich nicht beenden). Ein Lauf,
+> fünf Proben zu je 8 s. Die Zuordnung der Phasen folgt der Reihenfolge der
+> Anleitung (erst Mausrad, dann Rollbalken); der Eindruck des Eigentümers
+> liegt nicht vor.
+
+| Hauptthread, Main-Hub | 15:49 Uhr | Mausrad (21:20:07–21:20:36) | Rollbalken ziehen (21:20:39–21:20:57) |
+|---|---|---|---|
+| belegt insgesamt | 85–86 % | 56–64 % | 91–94 % |
+| `CA::Transaction::commit()` | 19–21 % | 17–26 % | 53–54 % |
+| `NSHostingView.layout()` | 15 % | 16–22 % | 45–46 % |
+| Zeilen anlegen und platzieren | 4–5 % | 3–4 % | 8–11 % |
+| Abfrage „Element unter dem Mauszeiger“ | 6–17 % | unter 2 % | unter 2 % |
+| Menüleisten-Symbol neu zeichnen | 5–14 % | 3–5 % | 6–7 % |
+
+- **Die Abfrage von außen fehlt in diesem Lauf**, mit dem Mausrad wie mit
+  dem Rollbalken, obwohl Logi Options+ lief. Logi Options+ ist damit als
+  Auslöser nicht bestätigt. Was am Nachmittag fragte, bleibt unbelegt; die
+  Last ist nicht dauerhaft vorhanden.
+- **Ohne die Abfrage ist der Hauptthread beim Mausrad nicht mehr voll:**
+  56–64 % statt 85 %.
+- **Rollbalken ziehen ist die teuerste Art:** Fenster-Layout 45 %,
+  Gesamtbelegung über 90 %. Beim Ziehen springt die Liste über viele Zeilen
+  und schätzt deren Höhen neu (`LazyHVStack.lengthAndSpacing`).
+- **Menüleisten-Symbol weiter in den Proben** (3–7 %). Ob „im Hintergrund
+  weiterlaufen“ in diesem Lauf ausgeschaltet war, ist nicht bestätigt.
+
+**Offen:** Eindruck des Eigentümers; Stand der Einstellung „im Hintergrund
+weiterlaufen“ in diesem Lauf; Vergleich ohne Zeilen-Schalter unter denselben
+Bedingungen (ohne die Abfrage von außen).
+
+**Eindruck des Eigentümers (14.11.2026, Lauf 21:20 Uhr):** Scrollen mit dem
+Mausrad flüssiger als am Nachmittag.
+
+### T19, Vergleichslauf mit normaler Tabelle (14.11.2026, 21:36–21:38 Uhr)
+
+> Neu gestarteter Xcode-Debug-Build (PID 97422, 21:35 Uhr), kein Schalter,
+> Main-Hub-Chancen, Mausrad. Die Ansicht wurde schon während des Hub-Scans
+> geöffnet (Scan-Ende 21:36:58); gewertet sind die Proben danach.
+
+| Hauptthread, Main-Hub, Mausrad | schlichte Zeilen (21:20) | normale Tabelle, Probe ohne Abfrage (21:37:41) | normale Tabelle, Proben mit Abfrage |
+|---|---|---|---|
+| belegt insgesamt | 56–64 % | 64 % | 58–100 % |
+| `NSHostingView.layout()` | 16–22 % | 27 % | 11–32 % |
+| Zeilen anlegen und platzieren | 3–4 % | 11 % | 4–14 % |
+| Abfrage „Element unter dem Mauszeiger“ | unter 2 % | unter 2 % | 5–34 % |
+
+- **Die Abfrage von außen war wieder da** und kostete in einzelnen Proben
+  bis zu 34 % des Hauptthreads; mit ihr steigt die Belegung auf 97–100 %.
+  Sie kommt und geht zwischen den Läufen, ohne dass an der App etwas
+  geändert wurde.
+- **Zeilen:** In der einen Probe ohne Abfrage kostet die normale Tabelle
+  rund 8 Punkte mehr Zeilenaufbau und 5–11 Punkte mehr Layout als die
+  schlichte. Das ist ein Einzelwert.
+- **Eindruck des Eigentümers:** nicht so flüssig wie der Lauf von 21:20 Uhr.
+  Der Unterschied lässt sich wegen der Abfrage nicht den Zeilen allein
+  zuschreiben.
+
+**Offen:** das fragende Programm benennen (Proben der in Frage kommenden
+Programme während des Scrollens); danach ein sauberer Vergleich normale
+gegen schlichte Zeilen.
+
+### Auslöser der Bedienungshilfen-Abfrage: Magnet (14.11.2026, 21:39–21:41 Uhr)
+
+> Parallel zur App (PID 97422, normale Tabelle, Mausrad in den
+> Main-Hub-Chancen) wurden neun in Frage kommende Programme je 6 s
+> beprobt: Logi Options+ (Agent und Updater), Magnet, Claude, ChatGPT,
+> SkyComputerUseService, WindowManager, universalaccessd,
+> AccessibilityUIServer. Nur beobachtet, nichts beendet oder verändert.
+
+- **Live gemessen:** Nur Magnet (Fensterverwaltung) ruft
+  `_AXUIElementCopyElementAtPositionIncludeIgnored` auf, aus einem
+  entprellten Combine-Abonnement. In den Proben während des Scrollens
+  (21:40:30–21:41:26) stehen 989–3013 von rund 6000 Stichproben eines
+  Magnet-Threads in diesem Aufruf, in den Proben davor 2–42. In keinem
+  anderen Kandidaten kommt der Aufruf als Anfragender vor.
+- In denselben Sekunden zeigt die App die Gegenseite: 9–17 % des
+  Hauptthreads in `CopyElementAtPosition` →
+  `ViewRendererHost.accessibilityNodes`.
+- **Einordnung:** Magnet fragt, welches Element unter dem Mauszeiger liegt;
+  die App beantwortet jede Anfrage auf dem Hauptthread und baut dafür den
+  Bedienungshilfen-Baum der großen Hub-Ansicht auf. Das erklärt die
+  2–34 % in den Läufen des Tages. Warum Magnet im Lauf von 21:20 Uhr nicht
+  fragte, ist nicht belegt.
+- Die Ursache liegt außerhalb der App. Eine Gegenmaßnahme in der App ist
+  nicht geplant; ob es eine gibt (billigerer Bedienungshilfen-Baum), ist
+  nicht untersucht.
+
+**Offen:** Gegenprobe des Eigentümers mit beendetem Magnet oder mit der App
+auf Magnets Ausnahmeliste; danach sauberer Vergleich normale gegen
+schlichte Zeilen.
+
+### Gegenprobe ohne Magnet (14.11.2026, 21:43 Uhr)
+
+> Dieselbe App-Instanz (PID 97422, normale Tabelle), Magnet beendet (vom
+> Eigentümer; per Prozessliste bestätigt), Mausrad in den
+> Main-Hub-Chancen. Nur eine Probe mit Scroll-Last (21:43:22–21:43:30);
+> der Eindruck des Eigentümers liegt nicht vor.
+
+| Hauptthread, normale Tabelle | mit Magnet (21:37–21:41) | ohne Magnet (eine Probe) |
+|---|---|---|
+| Abfrage „Element unter dem Mauszeiger“ | 5–34 % | 0 % (kein Aufruf in der Probe) |
+| belegt insgesamt | 58–100 % | 95 % |
+| `NSHostingView.layout()` | 9–32 % | 62 % |
+| Zeilen anlegen und platzieren | 2–14 % | 18 % |
+| Darstellung aufbauen (`render`) | 3–5 % | 14 % |
+
+- **Magnet als Auslöser bestätigt:** Ohne Magnet kommt die Abfrage in der
+  Probe nicht mehr vor.
+- **Die Tabelle lastet den Hauptthread auch allein aus:** Die frei
+  gewordene Zeit füllt das Fenster-Layout (62 %), darin 18 % für das
+  Anlegen und Platzieren der Zeilen. Die Belegung hängt davon ab, wie
+  schnell gescrollt wird; die Prozentwerte verschiedener Läufe sind deshalb
+  nur grob vergleichbar. Ein Einzelwert.
+- Folgerung für T19: Die Abfrage von außen war ein zusätzlicher Posten,
+  nicht die Ursache. Der Umbau der Zeilen bleibt nötig; die schlichten
+  Zeilen hatten Zeilenaufbau und Layout auf etwa ein Drittel gesenkt.
+
+**Offen:** Eindruck des Eigentümers; Einzelläufe je Zeilen-Schalter ohne
+Magnet.
+
+**Eindruck des Eigentümers (14.11.2026, Gegenprobe 21:43 Uhr):** Ohne
+Magnet scrollt die normale Tabelle flüssiger.
+
+### T19, Einzellauf `rowexplain` (14.11.2026, 21:49–21:50 Uhr)
+
+> Xcode-Debug-Build (PID 99234, 21:48 Uhr), `EVE_NEXUS_PERF_DISABLE=rowexplain`
+> (im Protokoll bestätigt), Magnet beendet, Main-Hub-Chancen, Mausrad. Neun
+> Proben mit Scroll-Last; der Eindruck des Eigentümers liegt nicht vor.
+
+| Hauptthread, Main-Hub, Mausrad, ohne Abfrage von außen | normale Tabelle (1 Probe) | nur `rowexplain` (9 Proben) | alle drei Schalter (3 Proben, 21:20) |
+|---|---|---|---|
+| belegt insgesamt | 95 % | 28–93 %, Mitte 77 % | 56–64 % |
+| `NSHostingView.layout()` | 62 % | 7–45 %, Mitte 32 % | 16–22 % |
+| Zeilen anlegen und platzieren | 18 % | 3–29 %, Mitte 13 % | 3–4 % |
+
+- **`rowexplain` allein bringt den Gewinn nicht:** Zeilenaufbau und Layout
+  liegen nahe an der normalen Tabelle und deutlich über dem Lauf mit allen
+  drei Schaltern. Der Hauptteil muss bei den Eingabefeldern (`rowfields`)
+  oder den Links am Namen (`rowlinks`) liegen.
+- Die Werte streuen stark mit der Scroll-Geschwindigkeit; verglichen wird
+  deshalb die Größenordnung, nicht der einzelne Prozentwert.
+
+**Offen:** Einzelläufe `rowfields` und `rowlinks`.
+
+### T19, Einzellauf `rowfields` (14.11.2026, 21:56–21:58 Uhr)
+
+> Xcode-Debug-Build (PID 99620, 21:52 Uhr), `EVE_NEXUS_PERF_DISABLE=rowfields`
+> (in der Prozessumgebung bestätigt), Magnet beendet, Main-Hub-Chancen,
+> Mausrad. Acht Proben mit Scroll-Last, davon vier mit über 50 %
+> Belegung; der Eindruck des Eigentümers liegt nicht vor.
+
+| Hauptthread, stärker belastete Proben | nur `rowexplain` | nur `rowfields` | alle drei Schalter |
+|---|---|---|---|
+| belegt insgesamt | 77–93 % | 60–80 % | 56–64 % |
+| `NSHostingView.layout()` | 32–45 % | 18–25 % | 16–22 % |
+| Zeilen anlegen und platzieren | 13–29 % | 7–10 % | 3–4 % |
+| Menüleisten-Symbol neu zeichnen | 2–8 % | 4–14 % | 3–5 % |
+
+- **Die Eingabefelder sind der größte der drei Posten:** Ohne sie fällt das
+  Fenster-Layout fast auf den Wert des Laufs mit allen drei Schaltern, der
+  Zeilenaufbau auf etwa die Hälfte.
+- Der Rest des Zeilenaufbaus (7–10 % gegen 3–4 %) liegt bei den Links am
+  Namen oder den erklärten Zellen.
+- Das Menüleisten-Symbol kostet in diesem Lauf bis zu 14 %; es ist nach
+  dem Wegfall der Abfrage von außen der größte Posten außerhalb der
+  Tabelle.
+
+**Offen:** Einzellauf `rowlinks`.
+
+### T19, Einzellauf `rowlinks` und Zusammenfassung (14.11.2026, 22:08–22:10 Uhr)
+
+> Xcode-Debug-Build (PID 201, 22:06 Uhr), `EVE_NEXUS_PERF_DISABLE=rowlinks`
+> (in der Prozessumgebung bestätigt), Magnet beendet, Main-Hub-Chancen,
+> Mausrad. Neun Proben mit Scroll-Last; der Eindruck des Eigentümers liegt
+> nicht vor.
+
+| Hauptthread, stärker belastete Proben, ohne Abfrage von außen | normal (1 Probe) | nur `rowexplain` | nur `rowfields` | nur `rowlinks` | alle drei |
+|---|---|---|---|---|---|
+| belegt insgesamt | 95 % | 77–93 % | 60–80 % | 60–73 %, einmal 93 % | 56–64 % |
+| `NSHostingView.layout()` | 62 % | 32–45 % | 18–25 % | 17–33 % | 16–22 % |
+| Zeilen anlegen und platzieren | 18 % | 13–29 % | 7–10 % | 5–10 % | 3–4 % |
+
+- **Eingabefelder und Links am Namen bringen je etwa gleich viel**, die
+  erklärten Zellen am wenigsten. Eine Rangfolge zwischen Feldern und Links
+  geben die Läufe nicht her: Die Werte hängen von der Scroll-Geschwindigkeit
+  ab, die zwischen den Läufen nicht gleich war.
+- Belastbar ist die Größenordnung: Jeder der beiden Teile allein senkt den
+  Zeilenaufbau auf etwa die Hälfte, beide zusammen mit den erklärten Zellen
+  auf etwa ein Fünftel der normalen Tabelle.
+- **Grenze der Methode:** Für eine genauere Aufteilung taugen weitere
+  Läufe von Hand nicht. Dafür wäre ein automatischer Zeitvergleich nötig,
+  der dieselben Zeilen in allen Varianten gleich oft aufbaut.
+
+**Folgerung für T19 (geplant, nicht begonnen):** zuerst die Eingabefelder
+(Runs, ME, TE erst beim Klick als Feld, Aussehen und Tabulator-Reihenfolge
+unverändert), dann die Links am Namen leichter bauen, ohne dass Kurvensymbol
+und Hammer wegfallen (Eigentümerregeln „Bestandsverlauf je Item“ und „Bauen
+im Planer je Item“ bleiben). Die erklärten Zellen zuletzt.
+
+### T19, Umsetzung Teil 1: Eingabefelder erst beim Klick (14.11.2026)
+
+**Auftrag des Eigentümers:** „Ja, Felder umbauen“.
+
+**Implementiert:** Runs, ME und TE der Hub-Tabelle sind umrandete Zahlen
+(`ClickToEditNumberField`) und werden erst beim Anklicken zum `TextField`;
+`MarketBrowserView.editingField` hält höchstens eine Zelle im
+Eingabezustand. Tab und Umschalt-Tab wechseln über
+`HubTableFieldNavigation` zur Nachbarzelle der sichtbaren Tabelle. Werte,
+Bindungen, Prüfung, `onSubmit`, Tooltip, rote Markierung und
+Bedienungshilfen-Beschriftung sind unverändert. Die Rechenregeln sind nicht
+berührt.
+
+**Bewusste Abweichungen:**
+
+- Die Umrandung ist nachgebaut (Hintergrund `textBackgroundColor`, Rand
+  `separatorColor`, Radius 5) und nicht pixelgleich zum nativen Feld. Die
+  Höhe weicht je Schriftgröße um höchstens einen Punkt ab.
+- Mit der Tabulatortaste von außerhalb der Tabelle erreicht man die Zellen
+  nicht mehr; der Einstieg ist der Klick.
+- Liegt die Nachbarzelle außerhalb des gezeichneten Bereichs, wird sie zum
+  Feld, sobald sie in den Bereich scrollt; die Tabelle scrollt nicht von
+  selbst mit.
+
+**Automatisch geprüft:** Tab-Reihenfolge, gleiche Höhe in allen
+Schriftgrößen, Fokus beim Start der Eingabe sowie Tab und Umschalt-Tab in
+einem Testfenster (`EVEItemPresentationTests`).
+
+**Offen:** Nachmessung und Sichtprüfung durch den Eigentümer; Links am
+Namen; erklärte Zellen; T17.
+
+### T19, Teil 1: Nachmessung der Eingabefelder (14.11.2026, 22:24–22:26 Uhr)
+
+> Xcode-Debug-Build von 22:22 Uhr (PID 2781) mit dem Umbau, kein Schalter,
+> Magnet beendet, Main-Hub-Chancen, Mausrad. Vier Proben mit Scroll-Last
+> über 40 %; der Eindruck des Eigentümers liegt nicht vor.
+
+| Hauptthread, stärker belastete Proben | Felder wie bisher (Lauf `rowexplain`) | Messschalter `rowfields` | Umbau, Felder erst beim Klick |
+|---|---|---|---|
+| belegt insgesamt | 77–93 % | 60–80 % | 44–85 % |
+| `NSHostingView.layout()` | 32–45 % | 18–25 % | 22–34 % |
+| Zeilen anlegen und platzieren | 13–29 % | 7–10 % | 9–12 % |
+
+- **Der Umbau liegt zwischen dem alten Stand und dem Messschalter.** Der
+  Zeilenaufbau ist niedriger als mit echten Feldern, erreicht aber den
+  Wert des Schalters nicht ganz: Die Zelle trägt weiter Hintergrund, Rand,
+  Klickziel und Bedienungshilfen-Angaben.
+- Der Unterschied zum alten Stand liegt in der Größenordnung der Streuung
+  durch die Scroll-Geschwindigkeit. Ein Gewinn ist wahrscheinlich, aber mit
+  Handläufen nicht sicher belegt.
+- Beim Bedienen der Felder (22:25–22:26 Uhr) war der Hauptthread zu
+  20–45 % belegt; ein Klick löst einen Durchlauf der sichtbaren Zeilen aus
+  (`visibleCandidates` 6 % einer Probe).
+
+**Offen:** Eindruck des Eigentümers zu Scrollen, Aussehen und Bedienung der
+Felder.
+
+**Eindruck und Sichtprüfung des Eigentümers (14.11.2026, Lauf 22:24 Uhr):**
+Scrollen flüssiger als mit der normalen Tabelle; Klick, Enter, Tab,
+Umschalt-Tab und die rote Markierung funktionieren; am Aussehen der Zellen
+stört nichts.

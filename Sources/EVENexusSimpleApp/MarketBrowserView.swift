@@ -157,6 +157,9 @@ struct ManufacturingOpportunitiesView: View {
   @State private var requestedMETextsByTypeID: [Int64: String] = [:]
   @State private var requestedTEByTypeID: [Int64: Int] = [:]
   @State private var requestedTETextsByTypeID: [Int64: String] = [:]
+  /// The one Runs, ME or TE cell that currently is a real text field; every
+  /// other cell shows its value as text until clicked (GESCHWINDIGKEIT T19).
+  @State private var editingField: HubTableFieldID?
   @State private var shoppingCopyStatus: String?
   @State private var expandedOpportunityTypeID: Int64?
   @State private var productionTree: ManufacturingProductionTreeSnapshot?
@@ -1308,7 +1311,8 @@ struct ManufacturingOpportunitiesView: View {
                   opportunityRow(
                     candidate.row,
                     costs: candidate.costs,
-                    isFavorite: favorites.contains(candidate.row.productTypeID)
+                    isFavorite: favorites.contains(candidate.row.productTypeID),
+                    fieldOrder: candidates
                   )
                 }
               }
@@ -1414,7 +1418,8 @@ struct ManufacturingOpportunitiesView: View {
   private func opportunityRow(
     _ row: ManufacturingOpportunityRow,
     costs: ManufacturingOpportunityCostProjection,
-    isFavorite: Bool
+    isFavorite: Bool,
+    fieldOrder: [ManufacturingOpportunityCandidate]
   ) -> some View {
     HStack(spacing: 0) {
       Button {
@@ -1457,15 +1462,17 @@ struct ManufacturingOpportunitiesView: View {
         font: .caption.monospacedDigit(),
         lineLimit: 1,
         accessibilityIdentifier:
-          "market-opportunities.product.copy.\(row.productTypeID)"
+          "market-opportunities.product.copy.\(row.productTypeID)",
+        showsMarketStockHistory: !PerformanceDebugSwitch.rowlinks.isDisabled,
+        showsPlannerBuild: !PerformanceDebugSwitch.rowlinks.isDisabled
       )
       .help(row.productName)
       .frame(width: 210, alignment: .leading)
       dailyDemandCell(row)
       textCell(formatInteger(row.producedQuantity), width: 70)
-      requestedRunsCell(row)
-      requestedEfficiencyCell(row, kind: .material)
-      requestedEfficiencyCell(row, kind: .time)
+      requestedRunsCell(row, fieldOrder: fieldOrder)
+      requestedEfficiencyCell(row, kind: .material, fieldOrder: fieldOrder)
+      requestedEfficiencyCell(row, kind: .time, fieldOrder: fieldOrder)
       textCell(formatDuration(row.durationSeconds), width: 80)
       ExplainedTableCell(title: "Cost", width: 100, alignment: .trailing) {
         Text(verbatim: formatISK(costs.totalCost))
@@ -2065,8 +2072,48 @@ struct ManufacturingOpportunitiesView: View {
     }
   }
 
+  /// The row's number field. It is text until clicked and only then a real
+  /// text field, because three text fields per row made rows expensive to
+  /// create while scrolling (GESCHWINDIGKEIT T19). Tab and Shift-Tab move
+  /// to the neighbouring field of the visible table. The measurement switch
+  /// `rowfields` shows plain text without the click.
+  @ViewBuilder
+  private func measuredField(
+    _ title: LocalizedStringKey,
+    text: Binding<String>,
+    id: HubTableFieldID,
+    fieldOrder: [ManufacturingOpportunityCandidate]
+  ) -> some View {
+    if PerformanceDebugSwitch.rowfields.isDisabled {
+      Text(verbatim: text.wrappedValue)
+        .appFont(.caption.monospacedDigit())
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    } else {
+      ClickToEditNumberField(
+        title: title,
+        text: text,
+        isEditing: editingField == id,
+        beginEditing: { editingField = id },
+        endEditing: { if editingField == id { editingField = nil } },
+        moveFocus: { forward in
+          editingField = HubTableFieldNavigation.neighbor(
+            of: id,
+            forward: forward,
+            rows: fieldOrder.map {
+              HubTableFieldNavigation.Row(
+                typeID: $0.row.productTypeID,
+                supportsEfficiency: $0.row.supportsBlueprintEfficiency
+              )
+            }
+          )
+        }
+      )
+    }
+  }
+
   private func requestedRunsCell(
-    _ row: ManufacturingOpportunityRow
+    _ row: ManufacturingOpportunityRow,
+    fieldOrder: [ManufacturingOpportunityCandidate]
   ) -> some View {
     let text =
       requestedRunTextsByTypeID[row.productTypeID]
@@ -2074,13 +2121,12 @@ struct ManufacturingOpportunitiesView: View {
     let isValid = requestedRuns(from: text) != nil
     let hasOverride = requestedRunsByTypeID[row.productTypeID] != nil
     return HStack(spacing: 3) {
-      TextField(
+      measuredField(
         "Runs",
-        text: requestedRunsBinding(for: row)
+        text: requestedRunsBinding(for: row),
+        id: HubTableFieldID(typeID: row.productTypeID, column: .runs),
+        fieldOrder: fieldOrder
       )
-      .textFieldStyle(.roundedBorder)
-      .appFont(.caption.monospacedDigit())
-      .multilineTextAlignment(.trailing)
       .frame(width: hasOverride ? 50 : 68)
       .overlay {
         if !isValid {
@@ -2113,7 +2159,8 @@ struct ManufacturingOpportunitiesView: View {
   @ViewBuilder
   private func requestedEfficiencyCell(
     _ row: ManufacturingOpportunityRow,
-    kind: OpportunityEfficiencyKind
+    kind: OpportunityEfficiencyKind,
+    fieldOrder: [ManufacturingOpportunityCandidate]
   ) -> some View {
     if !row.supportsBlueprintEfficiency {
       textCell("—", width: 58)
@@ -2127,13 +2174,15 @@ struct ManufacturingOpportunitiesView: View {
       let text = requestedEfficiencyText(for: row, kind: kind)
       let isValid =
         requestedEfficiency(from: text, kind: kind, row: row) != nil
-      TextField(
+      measuredField(
         kind == .material ? "ME" : "TE",
-        text: requestedEfficiencyBinding(for: row, kind: kind)
+        text: requestedEfficiencyBinding(for: row, kind: kind),
+        id: HubTableFieldID(
+          typeID: row.productTypeID,
+          column: kind == .material ? .material : .time
+        ),
+        fieldOrder: fieldOrder
       )
-      .textFieldStyle(.roundedBorder)
-      .appFont(.caption.monospacedDigit())
-      .multilineTextAlignment(.trailing)
       .frame(width: 58)
       .overlay {
         if !isValid {
@@ -4819,6 +4868,112 @@ enum ManufacturingOpportunityPageLayout {
   }
 }
 
+/// One Runs, ME or TE cell of the hub opportunity table.
+struct HubTableFieldID: Hashable, Sendable {
+  enum Column: Int, CaseIterable, Sendable {
+    case runs
+    case material
+    case time
+  }
+
+  let typeID: Int64
+  let column: Column
+}
+
+/// Tab order of the hub table's number fields: Runs, ME, TE, then the next
+/// visible row. Rows without blueprint efficiency (reactions) only have Runs.
+enum HubTableFieldNavigation {
+  struct Row: Equatable, Sendable {
+    let typeID: Int64
+    let supportsEfficiency: Bool
+  }
+
+  /// The field before or after `field`, or nil at either end of the table
+  /// and for a field that is not part of `rows`.
+  static func neighbor(
+    of field: HubTableFieldID,
+    forward: Bool,
+    rows: [Row]
+  ) -> HubTableFieldID? {
+    let fields = rows.flatMap { row in
+      (row.supportsEfficiency ? HubTableFieldID.Column.allCases : [.runs]).map {
+        HubTableFieldID(typeID: row.typeID, column: $0)
+      }
+    }
+    guard let index = fields.firstIndex(of: field) else { return nil }
+    let target = index + (forward ? 1 : -1)
+    return fields.indices.contains(target) ? fields[target] : nil
+  }
+}
+
+/// A number cell that looks like a bordered text field but only becomes one
+/// while it is edited. The owner of `isEditing` keeps at most one cell in
+/// edit mode. Modifiers such as `onSubmit`, `help` and the accessibility
+/// label are applied by the caller and work in both states.
+struct ClickToEditNumberField: View {
+  let title: LocalizedStringKey
+  @Binding var text: String
+  let isEditing: Bool
+  let beginEditing: () -> Void
+  let endEditing: () -> Void
+  /// Called for Tab (true) and Shift-Tab (false).
+  let moveFocus: (Bool) -> Void
+
+  @FocusState private var isFocused: Bool
+
+  static let tabKeyCode: UInt16 = 48
+  static let backtab = KeyEquivalent("\u{19}")
+
+  var body: some View {
+    if isEditing {
+      TextField(title, text: $text)
+        .textFieldStyle(.roundedBorder)
+        .appFont(.caption.monospacedDigit())
+        .multilineTextAlignment(.trailing)
+        .focused($isFocused)
+        .onAppear { isFocused = true }
+        .onKeyPress(keys: [.tab, Self.backtab]) { press in
+          moveFocus(press.key == .tab && !press.modifiers.contains(.shift))
+          return .handled
+        }
+        .onChange(of: isFocused) { _, focused in
+          guard !focused else { return }
+          // Tab that AppKit handled itself still moves to the neighbour.
+          if let event = NSApp.currentEvent, event.type == .keyDown,
+            event.keyCode == Self.tabKeyCode
+          {
+            moveFocus(!event.modifierFlags.contains(.shift))
+          } else {
+            endEditing()
+          }
+        }
+    } else {
+      Text(verbatim: text)
+        .appFont(.caption.monospacedDigit())
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, Self.horizontalInset)
+        .padding(.vertical, Self.verticalInset)
+        .background {
+          RoundedRectangle(cornerRadius: Self.cornerRadius)
+            .fill(Color(nsColor: .textBackgroundColor))
+        }
+        .overlay {
+          RoundedRectangle(cornerRadius: Self.cornerRadius)
+            .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: beginEditing)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, beginEditing)
+    }
+  }
+
+  static let horizontalInset: CGFloat = 4
+  static let verticalInset: CGFloat = 4
+  static let cornerRadius: CGFloat = 5
+}
+
 enum ManufacturingOpportunityTableLayout {
   static func clampedViewportLength(_ proposedLength: CGFloat) -> CGFloat {
     guard proposedLength.isFinite, proposedLength > 0 else { return 0 }
@@ -4894,6 +5049,16 @@ private struct ExplainedTableCell<Content: View, Detail: View>: View {
   }
 
   var body: some View {
+    if PerformanceDebugSwitch.rowexplain.isDisabled {
+      content()
+        .padding(.horizontal, 6)
+        .frame(width: width, alignment: alignment)
+    } else {
+      explainedBody
+    }
+  }
+
+  private var explainedBody: some View {
     Button {
       isExplanationPresented.toggle()
     } label: {

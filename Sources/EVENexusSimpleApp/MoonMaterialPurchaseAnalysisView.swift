@@ -959,7 +959,7 @@ enum MaterialPurchaseImageExportRenderer {
       materials: materials,
       exportedAt: exportedAt
     )
-    .environment(\.locale, AppLocalization.currentLanguage.locale)
+    .environment(\.locale, AppLocalization.currentLanguage.environmentLocale)
     .environment(\.colorScheme, .dark)
     .environment(\.interfaceStyle, .classic)
 

@@ -16,8 +16,56 @@ enum AppLanguage: String, CaseIterable, Identifiable {
   var id: Self { self }
 
   var locale: Locale {
-    Locale(identifier: rawValue)
+    Self.locales[self] ?? Locale(identifier: rawValue)
   }
+
+  /// Locale for the SwiftUI environment (`\.locale`). SwiftUI resolves a
+  /// `Text` with a localization key about forty times slower when the
+  /// environment locale differs from the system locale: it then reads and
+  /// parses `Localizable.strings` for every text (measured 14.11.2026,
+  /// GESCHWINDIGKEIT O4). When the app language is the system language and
+  /// the bundle already prefers it, the system locale selects the same
+  /// texts on the fast path; any other combination keeps the language's own
+  /// locale.
+  var environmentLocale: Locale {
+    Self.environmentLocale(
+      for: self,
+      systemLocale: .current,
+      preferredLocalization: AppLocalization.resourceBundle
+        .preferredLocalizations.first
+    )
+  }
+
+  static func environmentLocale(
+    for language: AppLanguage,
+    systemLocale: Locale,
+    preferredLocalization: String?
+  ) -> Locale {
+    guard
+      systemLocale.language.languageCode?.identifier == language.rawValue,
+      preferredLocalization == language.rawValue
+    else { return language.locale }
+    return systemLocale
+  }
+
+  /// One `Locale` per language instead of a new one for every formatted
+  /// value.
+  private static let locales: [AppLanguage: Locale] = Dictionary(
+    uniqueKeysWithValues: allCases.map { ($0, Locale(identifier: $0.rawValue)) }
+  )
+
+  /// The language bundles stay alive for the process. A bundle created per
+  /// call was released again, and with it the parsed strings table: every
+  /// lookup then read and parsed `Localizable.strings` anew (measured
+  /// 13.11.2026, GESCHWINDIGKEIT O1).
+  private static let languageBundles: [AppLanguage: Bundle] = Dictionary(
+    uniqueKeysWithValues: allCases.compactMap { language in
+      AppLocalization.resourceBundle
+        .path(forResource: language.rawValue, ofType: "lproj")
+        .flatMap(Bundle.init(path:))
+        .map { (language, $0) }
+    }
+  )
 
   var title: LocalizedStringKey {
     switch self {
@@ -27,13 +75,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
   }
 
   func localized(_ key: String) -> String {
-    guard
-      let path = AppLocalization.resourceBundle.path(
-        forResource: rawValue,
-        ofType: "lproj"
-      ),
-      let languageBundle = Bundle(path: path)
-    else {
+    guard let languageBundle = Self.languageBundles[self] else {
       return key
     }
     return languageBundle.localizedString(
@@ -516,6 +558,6 @@ extension View {
   /// bodies, which otherwise resolve their texts in the system language
   /// (plan DB7, finding B1).
   func appLanguageLocale() -> some View {
-    environment(\.locale, AppLocalization.currentLanguage.locale)
+    environment(\.locale, AppLocalization.currentLanguage.environmentLocale)
   }
 }

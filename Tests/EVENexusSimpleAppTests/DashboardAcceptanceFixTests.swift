@@ -155,4 +155,68 @@ struct DashboardAcceptanceFixTests {
     #expect(AppLanguage.german.localized("Manufacturing slots") == "Fertigungs-Slots")
     #expect(AppLanguage.german.localized("Shared science slots") == "Gemeinsame Wissenschafts-Slots")
   }
+
+  /// T9 of `Documentation/GESCHWINDIGKEIT_2026-11-13.md`: the language
+  /// bundles and locales are kept; the texts stay the same.
+  @Test
+  func keptLanguageBundlesReturnTheSameTextsForBothLanguages() {
+    for _ in 0..<3 {
+      #expect(AppLanguage.german.localized("Mineral prices") == "Mineralienpreise")
+      #expect(AppLanguage.english.localized("Mineral prices") == "Mineral prices")
+      #expect(AppLanguage.german.localized("Manufacturing slots") == "Fertigungs-Slots")
+    }
+    // A key without translation stays the key, never an empty text.
+    let missing = "No such key for the kept language bundles"
+    #expect(AppLanguage.german.localized(missing) == missing)
+    #expect(AppLanguage.english.localized(missing) == missing)
+    #expect(AppLanguage.german.locale == Locale(identifier: "de"))
+    #expect(AppLanguage.english.locale == Locale(identifier: "en"))
+  }
+
+  /// The environment locale stays on SwiftUI's fast text path whenever the
+  /// app language is the system language (GESCHWINDIGKEIT O4).
+  @Test
+  func environmentLocaleUsesTheSystemLocaleOnlyForTheSameLanguage() {
+    let germany = Locale(identifier: "de_DE")
+    let austria = Locale(identifier: "de_AT")
+    let britain = Locale(identifier: "en_GB")
+    #expect(
+      AppLanguage.environmentLocale(
+        for: .german, systemLocale: germany, preferredLocalization: "de"
+      ) == germany
+    )
+    #expect(
+      AppLanguage.environmentLocale(
+        for: .german, systemLocale: austria, preferredLocalization: "de"
+      ) == austria
+    )
+    #expect(
+      AppLanguage.environmentLocale(
+        for: .english, systemLocale: britain, preferredLocalization: "en"
+      ) == britain
+    )
+    // Another app language than the system language keeps its own locale.
+    #expect(
+      AppLanguage.environmentLocale(
+        for: .english, systemLocale: germany, preferredLocalization: "de"
+      ) == AppLanguage.english.locale
+    )
+    #expect(
+      AppLanguage.environmentLocale(
+        for: .german, systemLocale: britain, preferredLocalization: "en"
+      ) == AppLanguage.german.locale
+    )
+    // The bundle must already prefer the language, or the texts would
+    // appear in the bundle's language.
+    #expect(
+      AppLanguage.environmentLocale(
+        for: .german, systemLocale: germany, preferredLocalization: "en"
+      ) == AppLanguage.german.locale
+    )
+    #expect(
+      AppLanguage.environmentLocale(
+        for: .german, systemLocale: germany, preferredLocalization: nil
+      ) == AppLanguage.german.locale
+    )
+  }
 }

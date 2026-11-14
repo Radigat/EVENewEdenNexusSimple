@@ -1,4 +1,5 @@
 import EVENexusCore
+import SwiftUI
 import XCTest
 
 @testable import EVENexusSimpleApp
@@ -142,6 +143,124 @@ final class EVEItemPresentationTests: XCTestCase {
     XCTAssertNil(EVETypeImageURL.icon(typeID: -1))
     XCTAssertNil(EVETypeImageURL.render(typeID: 0))
     XCTAssertNil(EVETypeImageURL.render(typeID: -1))
+  }
+
+  func testHubTableFieldTabOrderRunsThroughRowsAndSkipsMissingEfficiency() {
+    let rows = [
+      HubTableFieldNavigation.Row(typeID: 10, supportsEfficiency: true),
+      HubTableFieldNavigation.Row(typeID: 20, supportsEfficiency: false),
+      HubTableFieldNavigation.Row(typeID: 30, supportsEfficiency: true),
+    ]
+    func next(_ typeID: Int64, _ column: HubTableFieldID.Column, forward: Bool = true)
+      -> HubTableFieldID?
+    {
+      HubTableFieldNavigation.neighbor(
+        of: HubTableFieldID(typeID: typeID, column: column),
+        forward: forward,
+        rows: rows
+      )
+    }
+
+    XCTAssertEqual(next(10, .runs), HubTableFieldID(typeID: 10, column: .material))
+    XCTAssertEqual(next(10, .material), HubTableFieldID(typeID: 10, column: .time))
+    XCTAssertEqual(next(10, .time), HubTableFieldID(typeID: 20, column: .runs))
+    // A reaction row only has Runs.
+    XCTAssertEqual(next(20, .runs), HubTableFieldID(typeID: 30, column: .runs))
+    XCTAssertEqual(
+      next(30, .runs, forward: false),
+      HubTableFieldID(typeID: 20, column: .runs)
+    )
+    XCTAssertEqual(
+      next(20, .runs, forward: false),
+      HubTableFieldID(typeID: 10, column: .time)
+    )
+    // Both ends of the table and unknown fields end editing.
+    XCTAssertNil(next(30, .time))
+    XCTAssertNil(next(10, .runs, forward: false))
+    XCTAssertNil(next(20, .material))
+    XCTAssertNil(next(99, .runs))
+  }
+
+  /// The text stand-in must be as tall as the real field, so a row does not
+  /// change its height when a cell is clicked. The native field grows in
+  /// control-size steps, so one point of difference is allowed.
+  @MainActor
+  func testClickToEditFieldKeepsItsHeightWhenEditingStarts() {
+    for size in AppTextSize.allCases {
+      func height(isEditing: Bool) -> CGFloat {
+        NSHostingView(
+          rootView: ClickToEditNumberField(
+            title: "Runs",
+            text: .constant("1234"),
+            isEditing: isEditing,
+            beginEditing: {},
+            endEditing: {},
+            moveFocus: { _ in }
+          )
+          .frame(width: 68)
+          .fixedSize()
+          .environment(\.appTextSize, size)
+        ).fittingSize.height
+      }
+      XCTAssertEqual(
+        height(isEditing: false),
+        height(isEditing: true),
+        accuracy: 1,
+        "text size \(size)"
+      )
+    }
+  }
+
+  /// A clicked cell takes the keyboard focus; Tab and Shift-Tab hand it to
+  /// the neighbouring cell exactly once, and Shift-Tab on the first cell
+  /// ends editing.
+  @MainActor
+  func testClickToEditFieldTakesFocusAndTabMovesToTheNeighbour() throws {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 200, height: 40),
+      styleMask: [.titled],
+      backing: .buffered,
+      defer: false
+    )
+    window.isReleasedWhenClosed = false
+    let log = ClickToEditProbeLog()
+    window.contentView = NSHostingView(rootView: ClickToEditProbe(log: log))
+    window.orderFront(nil)
+    defer { window.close() }
+    func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.4)) }
+    var timestamp: TimeInterval = 0
+    func press(shift: Bool) throws {
+      timestamp += 1
+      let character = shift ? "\u{19}" : "\t"
+      window.sendEvent(
+        try XCTUnwrap(
+          NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: shift ? [.shift] : [],
+            timestamp: timestamp,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: character,
+            charactersIgnoringModifiers: character,
+            isARepeat: false,
+            keyCode: ClickToEditNumberField.tabKeyCode
+          )
+        )
+      )
+      settle()
+    }
+    func editedText() -> String? { (window.firstResponder as? NSTextView)?.string }
+
+    settle()
+    XCTAssertEqual(editedText(), "11")
+    try press(shift: false)
+    XCTAssertEqual(editedText(), "22")
+    try press(shift: true)
+    XCTAssertEqual(editedText(), "11")
+    try press(shift: true)
+    XCTAssertNil(editedText())
+    XCTAssertEqual(log.moves, ["forward 1", "back 2", "back 1"])
   }
 
   func testManufacturingOpportunityTableRejectsInvalidViewportGeometry() {
@@ -354,6 +473,52 @@ final class EVEItemPresentationTests: XCTestCase {
         preferredSources: [],
         in: choices
       )
+    )
+  }
+}
+
+@MainActor
+private final class ClickToEditProbeLog {
+  var moves: [String] = []
+}
+
+/// Two cells with the first one in edit mode, wired like the hub table.
+private struct ClickToEditProbe: View {
+  let log: ClickToEditProbeLog
+  @State private var editing: HubTableFieldID? = HubTableFieldID(
+    typeID: 1,
+    column: .runs
+  )
+  @State private var first = "11"
+  @State private var second = "22"
+
+  var body: some View {
+    HStack {
+      field(1, $first)
+      field(2, $second)
+    }
+    .frame(width: 200, height: 40)
+  }
+
+  private func field(_ typeID: Int64, _ text: Binding<String>) -> some View {
+    let id = HubTableFieldID(typeID: typeID, column: .runs)
+    return ClickToEditNumberField(
+      title: "Runs",
+      text: text,
+      isEditing: editing == id,
+      beginEditing: { editing = id },
+      endEditing: { if editing == id { editing = nil } },
+      moveFocus: { forward in
+        log.moves.append("\(forward ? "forward" : "back") \(typeID)")
+        editing = HubTableFieldNavigation.neighbor(
+          of: id,
+          forward: forward,
+          rows: [
+            HubTableFieldNavigation.Row(typeID: 1, supportsEfficiency: false),
+            HubTableFieldNavigation.Row(typeID: 2, supportsEfficiency: false),
+          ]
+        )
+      }
     )
   }
 }

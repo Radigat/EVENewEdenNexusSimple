@@ -126,14 +126,14 @@ struct EVENexusSimpleApp: App {
               }
             }
             .environment(runtimeOwner.runtime)
-            .environment(\.locale, appLanguage.locale)
+            .environment(\.locale, appLanguage.environmentLocale)
             .appTextSize(appTextSize)
             .environment(\.interfaceStyle, appInterfaceStyle)
             .defaultAppStorage(AppDefaults.store)
             .modelContainer(modelContainer)
         } else {
           PersistenceUnavailableView(folderURL: persistenceFolderURL)
-            .environment(\.locale, appLanguage.locale)
+            .environment(\.locale, appLanguage.environmentLocale)
             .appTextSize(appTextSize)
             .environment(\.interfaceStyle, appInterfaceStyle)
             .defaultAppStorage(AppDefaults.store)
@@ -164,7 +164,7 @@ struct EVENexusSimpleApp: App {
       )
     ) {
       BackgroundMenuBarContent(runtime: runtimeOwner.runtime)
-        .environment(\.locale, appLanguage.locale)
+        .environment(\.locale, appLanguage.environmentLocale)
     } label: {
       Image(systemName: "chart.bar.xaxis")
         .accessibilityLabel(Text("EVE New Eden Nexus"))

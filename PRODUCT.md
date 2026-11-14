@@ -3558,6 +3558,18 @@ mit kurzen, wiederverwendbaren Prompts steht in
   werden durch diese Regel nicht ungefragt beendet. Ein abgebrochener
   Contract-Lauf behält seinen fortsetzbaren Teilindex; ein abgebrochener
   Main-Hub-Lauf ersetzt nicht die letzte vollständige Chancenanalyse.
+- Die App hält je Oberflächensprache das Sprachpaket und die Locale für
+  die Laufzeit bereit, statt sie bei jedem übersetzten Text neu zu suchen und
+  die Übersetzungstabelle neu einzulesen. Die aktuelle Sprache wird weiter
+  bei jedem Text aus den Einstellungen gelesen; ein Sprachwechsel wirkt
+  sofort. Texte und Formate sind unverändert.
+- Ist die App-Sprache auch die Systemsprache, bekommt die Oberfläche die
+  Locale des Systems (zum Beispiel `de_DE`) statt der reinen Sprach-Locale
+  (`de`). SwiftUI löst übersetzte Texte sonst rund vierzigmal langsamer auf,
+  weil es die Übersetzungstabelle je Text neu einliest. Die Texte sind
+  dieselben; von der Oberfläche selbst formatierte Datums- und Zahlenwerte
+  folgen damit der Region des Systems. Weicht die App-Sprache von der
+  Systemsprache ab, bleibt die Sprach-Locale und damit der langsame Weg.
 - Ein Sprachwechsel aktualisiert weiterhin die Locale und die lokalisierten
   Inhalte, ersetzt aber nicht mehr synchron den gesamten sichtbaren Detailbaum
   während der segmentierten Accessibility-Aktion.
@@ -3617,11 +3629,21 @@ mit kurzen, wiederverwendbaren Prompts steht in
   Panels; Texte und andere Inhalte im Panel werfen keinen eigenen Schatten
   (Eigentümerentscheid 13.11.2026). Die Kartenreihen des Dashboards messen
   ihre Karten je Layout-Durchlauf und Breite einmal.
+- In den Tabellen der Hub-Chancen sind Runs, ME und TE je Zeile umrandete
+  Zahlen, die erst beim Anklicken zum Eingabefeld werden; es ist immer nur
+  eine Zelle ein Feld. Tab und Umschalt-Tab wechseln zur nächsten und
+  vorigen Zelle (Runs, ME, TE, dann die nächste sichtbare Zeile;
+  Reaktionen haben nur Runs), am Tabellenanfang und -ende endet die
+  Eingabe. Werte, Prüfung, Enter und die rote Markierung ungültiger Eingaben
+  sind unverändert. Mit der Tabulatortaste von außerhalb erreicht man die
+  Zellen nicht mehr; der Einstieg ist der Klick.
 - Nur im Debug-Build gibt es einen Messschalter für den A/B-Vergleich der
   Darstellung: Die Umgebungsvariable
   `EVE_NEXUS_PERF_DISABLE=shadows,tooltips` schaltet beim Start einzeln die
   Panel-Schatten und die Tooltips an Item-Namen samt Verlaufs- und
-  Hammer-Link ab. Unbekannte Namen werden ignoriert; aktive
+  Hammer-Link ab. Für die Zeilen der Hub-Chancen ersetzen `rowfields` die
+  Felder Runs/ME/TE, `rowexplain` die erklärten Zellen und `rowlinks` die
+  Verlaufs- und Hammer-Links jeweils durch schlichte Anzeige. Unbekannte Namen werden ignoriert; aktive
   Schalter stehen als `perf.switches` im Messprotokoll. Ohne die Variable und
   im Release-Build zeichnet die App alles wie gewohnt (siehe
   [Reaktionsgeschwindigkeit](Documentation/GESCHWINDIGKEIT_2026-11-13.md)).

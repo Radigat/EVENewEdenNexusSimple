@@ -321,11 +321,16 @@ extension View {
 
 /// Measurement-only switches (GESCHWINDIGKEIT_2026-11-13, prompt O1). In a
 /// Debug build `EVE_NEXUS_PERF_DISABLE=shadows,tooltips` turns off panel
-/// shadows and the tooltips of item names, each on its own, to compare scrolling with and without them. A Release build
+/// shadows and the tooltips of item names, each on its own; `rowfields`,
+/// `rowexplain` and `rowlinks` replace the input fields, the explained
+/// cells and the item links of the hub opportunity rows by plain text, to compare scrolling with and without them. A Release build
 /// ignores the variable and always draws everything.
 enum PerformanceDebugSwitch: String, CaseIterable {
   case shadows
   case tooltips
+  case rowfields
+  case rowexplain
+  case rowlinks
 
   static let environmentKey = "EVE_NEXUS_PERF_DISABLE"
 

@@ -10299,3 +10299,98 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Eigentümer:** Dashboard mit statischem Preisraster „passt“; Einzelpunkte nicht einzeln bestätigt.
 - **Commit:** Am 14.11.2026 auf Auftrag committet, nicht gepusht. Die lokale Änderung am Xcode-Schema (`EVE_NEXUS_PERF_DISABLE`, deaktiviert) ist nicht enthalten.
 - **Offen:** T2, T3, T5; Hub-Chancen (O5, O6), Lokalisierung (O4); WindowServer-Last im Dashboard nicht untersucht.
+
+## 14.11.2026: Reaktionsgeschwindigkeit O4/T9 – Lokalisierung ohne wiederholtes Einlesen
+
+- **Auftrag:** Eigentümer: T9 aus `Documentation/GESCHWINDIGKEIT_2026-11-13.md`.
+- **Ergebnis:** `AppLanguage` hält Sprach-Bundle und `Locale` je Sprache; bisher wurde das Bundle je Aufruf erzeugt und wieder freigegeben, wodurch `Localizable.strings` wiederholt geparst wurde (O1: 3–11 % des Hauptthreads). Texte, Formate und sofortiger Sprachwechsel unverändert. PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-, 160 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests. Planer-Info: nicht betroffen.
+- **Nachtrag:** `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`.
+- **Offen:** Nicht in der App angesehen, Sprachwechsel zur Laufzeit nicht bedient, nicht gemessen. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit O4/T9 – Nachmessung ohne Wirkung, Ursache in SwiftUI
+
+- **Ergebnis (live gemessen, ein Lauf, nur Hub-Chancen):** Das Einlesen der Übersetzungstabelle liegt weiter bei 3–9 % des Hauptthreads; T9 hat es nicht beseitigt. Die Aufrufkette zeigt die Ursache: SwiftUI löst jeden `Text` mit Schlüssel über `localizedAttributedStringForKey:…localization:` für die Sprache der Umgebung auf und liest die Tabelle dabei je Auflösung neu ein. T9 bleibt als unschädliche Vereinfachung; neue Maßnahme T28 (Bundle-Sprache an die App-Sprache binden) im Dokument, offen und mit Eigentümerentscheid.
+- **Offen:** T28; Dashboard und Sprachwechsel zur Laufzeit in diesem Lauf nicht bedient. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit – Umgebungs-Locale auf SwiftUIs schnellem Textweg (T29)
+
+- **Auftrag:** Eigentümer: zuerst die Hub-Chancen untersuchen.
+- **Befund:** Beim Scrollen der Hub-Tabelle kostet das Anlegen und Vermessen neuer Zeilen den Hauptthread; 8–12 % davon ist die Textauflösung von SwiftUI mit erneutem Einlesen der Sprachdatei. Ein temporärer Test (wieder entfernt) zeigt: 300 Texte mit Schlüssel brauchen 0,024 s ohne oder mit Systemlocale, aber 1,07 s mit `\.locale` = `de`.
+- **Ergebnis:** `AppLanguage.environmentLocale` nutzt die Systemlocale, wenn App- und Systemsprache übereinstimmen und das Bundle die Sprache bevorzugt; alle fünf Stellen mit `\.locale` umgestellt. Texte unverändert; von SwiftUI selbst formatierte Werte folgen der Systemregion. PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-, 161 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests. Planer-Info: nicht betroffen.
+- **Nachtrag:** `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`.
+- **Offen:** Nicht in der App angesehen, nicht gemessen, Sprachwechsel nicht bedient. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T29 – Nachmessung
+
+- **Ergebnis (live gemessen, ein Lauf, App-Sprache Deutsch):** `LocalizedStringKey.resolve` 0 % statt 8–12 % des Hauptthreads, das Einlesen der Sprachdatei taucht in den Proben nicht mehr auf. Der Hub-Bereich bleibt beim Scrollen zu 90–100 % belegt (Zeilen anlegen und platzieren 9–30 %, Fenster-Layout 26–54 %). Home-Hub erste Tabelle nach 3,3 s.
+- **Eindruck des Eigentümers:** Hub-Bereich unverändert zäh.
+- **Offen:** Sprachwechsel zur Laufzeit nicht bedient, Hub-Tabelle (T19). Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Messschalter für die Hub-Zeilen
+
+- **Auftrag:** Eigentümer: T19 beginnen (leichtere Tabellenzeilen der Hub-Chancen).
+- **Ergebnis:** Die Proben zeigen keinen einzelnen Verursacher in der Zeile (Eigenzeit vor allem Swift-Laufzeit, SwiftUI, Abhängigkeitsgraph). Statt eines Umbaus auf Verdacht drei weitere Debug-Schalter: `rowfields`, `rowexplain`, `rowlinks`. Ohne Variable keine Änderung. PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün. `xcodebuild test` und `EVEStaticDataKit` für diesen Stand nicht gelaufen.
+- **Offen:** A/B-Läufe mit dem Eigentümer, danach Umbau der Zeilen. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – A/B-Lauf mit allen drei Zeilen-Schaltern
+
+- **Ergebnis (live gemessen, ein Lauf, 15:48 Uhr):** Mit `rowfields,rowexplain,rowlinks` sinken beim Scrollen der Main-Hub-Chancen der Zeilenaufbau von 9–30 % auf 4–5 % und das Fenster-Layout von 26–54 % auf 15 % des Hauptthreads; die Gesamtbelegung fällt nur von 90–100 % auf rund 85 %. Übrig: `CA::Transaction::commit` 19–21 %, eine Bedienungshilfen-Abfrage von außen („Element unter dem Mauszeiger“, 6–17 %, fragendes Programm nicht belegt) und das Neuzeichnen des Menüleisten-Symbols (5–14 %). Home: Inventionsschätzung 31,2 s überlagert die Scroll-Werte. Details in `Documentation/GESCHWINDIGKEIT_2026-11-13.md`, Abschnitt 10.
+- **Hinweis zur Messung:** Drei Aufzeichnungen davor erfassten nur Leerlauf und sind verworfen. In den Hintergrund-Skripten griff zudem die zsh-Funktion `log` statt `/usr/bin/log`; die Messzeilen stammen deshalb aus `log show`.
+- **Offen:** Eindruck des Eigentümers, Einzelläufe je Schalter, Auslöser der beiden neuen Posten, T17. Kein Code geändert. Nicht committet.
+- **Nachtrag (20:56 Uhr):** Eindruck des Eigentümers zum Lauf mit allen drei Schaltern: kaum Unterschied. Für den Stand mit den Zeilen-Schaltern nachgeholt: `EVEStaticDataKit` 13 Tests grün, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Lauf mit Mausrad und Rollbalken
+
+- **Ergebnis (live gemessen, ein Lauf, 21:20 Uhr, Zeilen-Schalter weiter aktiv):** Die Bedienungshilfen-Abfrage von außen fehlt diesmal (unter 2 %), obwohl Logi Options+ lief; damit ist Logi Options+ als Auslöser nicht bestätigt. Ohne sie ist der Hauptthread beim Scrollen mit dem Mausrad zu 56–64 % belegt (15:49 Uhr: 85 %). Ziehen am Rollbalken kostet 91–94 % (Fenster-Layout 45 %). Menüleisten-Symbol weiter 3–7 %.
+- **Offen:** Eindruck des Eigentümers, Stand von „im Hintergrund weiterlaufen“ im Lauf, Vergleichslauf ohne Zeilen-Schalter. Kein Code geändert. Nicht committet.
+- **Eindruck des Eigentümers:** Scrollen mit dem Mausrad im Lauf von 21:20 Uhr flüssiger als am Nachmittag.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Vergleichslauf mit normaler Tabelle
+
+- **Ergebnis (live gemessen, ein Lauf, 21:37 Uhr, kein Schalter):** Die Bedienungshilfen-Abfrage von außen war wieder da (5–34 % des Hauptthreads, Belegung bis 100 %). In der einzigen Probe ohne Abfrage: 64 % belegt, Zeilenaufbau 11 % (schlichte Zeilen 3–4 %), Layout 27 % (16–22 %).
+- **Eindruck des Eigentümers:** nicht so flüssig wie um 21:20 Uhr.
+- **Offen:** fragendes Programm benennen, dann sauberer Vergleich. Kein Code geändert. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit – Bedienungshilfen-Abfrage kommt von Magnet
+
+- **Ergebnis (live gemessen, 21:40 Uhr):** Proben von neun in Frage kommenden Programmen während des Scrollens: Nur Magnet ruft `_AXUIElementCopyElementAtPositionIncludeIgnored` auf, bis zur Hälfte der Stichproben eines Threads; gleichzeitig 9–17 % des App-Hauptthreads in der Antwort. Logi Options+ fragt nicht. Ursache außerhalb der App.
+- **Offen:** Gegenprobe ohne Magnet, danach sauberer Zeilenvergleich. Kein Code geändert. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit – Gegenprobe ohne Magnet
+
+- **Ergebnis (live gemessen, eine Probe, 21:43 Uhr, normale Tabelle):** Ohne Magnet kein `CopyElementAtPosition` mehr; Magnet als Auslöser bestätigt. Der Hauptthread ist beim Scrollen trotzdem zu 95 % belegt: Fenster-Layout 62 %, Zeilen anlegen und platzieren 18 %. Der Umbau der Zeilen (T19) bleibt nötig.
+- **Offen:** Eindruck des Eigentümers, Einzelläufe je Schalter ohne Magnet. Kein Code geändert. Nicht committet.
+- **Eindruck des Eigentümers:** ohne Magnet flüssiger.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Einzellauf `rowexplain`
+
+- **Ergebnis (live gemessen, neun Proben, 21:49 Uhr, ohne Magnet):** Nur mit `rowexplain` bleibt der Hauptthread beim Scrollen bei 77–93 % (Layout 32–45 %, Zeilenaufbau 13–29 %), nahe an der normalen Tabelle und weit über dem Lauf mit allen drei Schaltern (Zeilenaufbau 3–4 %). Die erklärten Zellen sind nicht der Hauptposten.
+- **Offen:** Einzelläufe `rowfields` und `rowlinks`. Kein Code geändert. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Einzellauf `rowfields`
+
+- **Ergebnis (live gemessen, acht Proben, 21:56 Uhr, ohne Magnet):** Nur mit `rowfields` sinkt das Fenster-Layout auf 18–25 % (nur `rowexplain`: 32–45 %, alle drei: 16–22 %), der Zeilenaufbau auf 7–10 % (13–29 %, 3–4 %). Die drei Eingabefelder je Zeile sind der größte der drei Posten. Menüleisten-Symbol bis 14 %.
+- **Offen:** Einzellauf `rowlinks`. Kein Code geändert. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Einzellauf `rowlinks`, Zusammenfassung der A/B-Läufe
+
+- **Ergebnis (live gemessen, neun Proben, 22:08 Uhr, ohne Magnet):** Nur mit `rowlinks`: Layout 17–33 %, Zeilenaufbau 5–10 %, ähnlich wie nur `rowfields` (18–25 %, 7–10 %). Eingabefelder und Links am Namen bringen je etwa gleich viel, die erklärten Zellen am wenigsten; eine Rangfolge zwischen Feldern und Links geben die Handläufe nicht her (Scroll-Geschwindigkeit nicht gleich).
+- **Geplant, nicht begonnen:** T19 zuerst an den Eingabefeldern, dann leichtere Links ohne Wegfall von Kurvensymbol und Hammer.
+- **Offen:** Eigentümerentscheid zum Umbau der Felder. Kein Code geändert. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Runs, ME und TE erst beim Klick als Eingabefeld
+
+- **Auftrag:** Eigentümer: „Ja, Felder umbauen“ (nach den A/B-Läufen des Tages).
+- **Ergebnis:** In den Tabellen der Hub-Chancen sind Runs, ME und TE umrandete Zahlen (`ClickToEditNumberField`) und werden erst beim Anklicken zum `TextField`; höchstens eine Zelle ist ein Feld (`MarketBrowserView.editingField`). Tab und Umschalt-Tab wechseln über `HubTableFieldNavigation` zur Nachbarzelle (Runs, ME, TE, nächste sichtbare Zeile; Reaktionen nur Runs). Werte, Prüfung, Enter, Tooltip und rote Markierung unverändert, Rechenregeln nicht berührt. PRODUCT.md und Dokument nachgezogen.
+- **Bewusste Abweichungen:** Umrandung nachgebaut, nicht pixelgleich; Höhe je Schriftgröße höchstens einen Punkt anders; kein Einstieg per Tabulator von außerhalb der Tabelle; Nachbarzelle außerhalb des gezeichneten Bereichs wird erst beim Hineinscrollen zum Feld.
+- **Prüfung:** `swift test` grün (801 Core-Tests, App-XCTest-Suiten inkl. drei neuer Tests in `EVEItemPresentationTests`: Tab-Reihenfolge, gleiche Höhe, Fokus und Tab im Testfenster), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. Planer-Info: nicht betroffen (Hub-Tabelle, kein Planer-Ablauf).
+- **Offen:** Nicht in der App angesehen, nicht nachgemessen; Links am Namen, erklärte Zellen, T17, Menüleisten-Symbol. Nicht committet.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Nachmessung der Eingabefelder
+
+- **Ergebnis (live gemessen, vier Proben, 22:24 Uhr, ohne Magnet):** Mit dem Umbau Layout 22–34 % und Zeilenaufbau 9–12 % des Hauptthreads; mit echten Feldern 32–45 % und 13–29 %, mit dem Messschalter `rowfields` 18–25 % und 7–10 %. Der Umbau liegt dazwischen; der Gewinn ist wahrscheinlich, aber wegen der Streuung durch die Scroll-Geschwindigkeit nicht sicher belegt.
+- **Offen:** Eindruck des Eigentümers zu Scrollen, Aussehen und Bedienung. Nicht committet.
+- **Eigentümer (Sichtprüfung im Lauf 22:24 Uhr):** Scrollen flüssiger; Klick, Enter, Tab, Umschalt-Tab und rote Markierung funktionieren; Aussehen der Zellen in Ordnung.
