@@ -10394,3 +10394,26 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Ergebnis (live gemessen, vier Proben, 22:24 Uhr, ohne Magnet):** Mit dem Umbau Layout 22–34 % und Zeilenaufbau 9–12 % des Hauptthreads; mit echten Feldern 32–45 % und 13–29 %, mit dem Messschalter `rowfields` 18–25 % und 7–10 %. Der Umbau liegt dazwischen; der Gewinn ist wahrscheinlich, aber wegen der Streuung durch die Scroll-Geschwindigkeit nicht sicher belegt.
 - **Offen:** Eindruck des Eigentümers zu Scrollen, Aussehen und Bedienung. Nicht committet.
 - **Eigentümer (Sichtprüfung im Lauf 22:24 Uhr):** Scrollen flüssiger; Klick, Enter, Tab, Umschalt-Tab und rote Markierung funktionieren; Aussehen der Zellen in Ordnung.
+
+## 14.11.2026: Reaktionsgeschwindigkeit T19 – Links am Namen als Symbol mit Klickziel
+
+- **Auftrag:** Eigentümer: „Ja, Links angehen“; Entscheid „Symbol mit Klickziel“ für alle Bereiche.
+- **Befund (automatischer Zeitvergleich, temporärer Test, wieder entfernt):** 300 Zeilen mit beiden Links kosten bisher 227–350 ms, ohne Links 12 ms. Kostentreiber ist der Schaltflächenstil `borderless` (193 ms ohne jeden Zusatz); ein Symbol mit Klickziel, Tooltip und Bedienungshilfen kostet 51 ms.
+- **Ergebnis:** `ItemLinkSymbol` ersetzt die randlose Schaltfläche in `MarketStockHistoryButton` und `PlannerBuildButton`; gleiche Größe und Farbe, Tooltip, Beschriftungen und VoiceOver-Aktion bleiben. Es entfallen das Abdunkeln beim Drücken und die Tabulator-Bedienung bei eingeschalteter macOS-Tastatursteuerung. PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-Tests, App-Suiten inkl. zwei neuer Tests in `MarketStockHistoryLinkTests`: Aussehen wie die randlose Schaltfläche, Kosten höchstens 60 %), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. Planer-Info: nicht betroffen (der Hammer öffnet den Planer unverändert).
+- **Offen:** Klick nicht automatisch prüfbar und nicht in der App angesehen; nicht nachgemessen; erklärte Zellen, T17, Menüleisten-Symbol. Nicht committet.
+
+## 15.11.2026: Reaktionsgeschwindigkeit T19 – Nachmessung der Links, neuer Störfaktor
+
+- **Ergebnis (live gemessen, 12:54–12:58 Uhr, ohne Magnet):** Zeilenaufbau in drei von vier Scroll-Proben höchstens 4 % (vorher 9–12 %). Kein sauberer Gesamtvergleich: Die Bedienungshilfen der App waren aktiv (ein anderes Programm liest Attribute, Auslöser nicht belegt), und SwiftUI gleicht dann bei Fokuswechseln alle Bedienungshilfen-Knoten ab (`AccessibilityNode.updateFocus`): bis 48 % einer Probe nach dem Öffnen, 10–16 % beim Scrollen. Am 14.11. ohne Magnet kam das nicht vor.
+- **Offen:** Bestätigung der Klicks durch den Eigentümer, Auslöser der Abfrage, mögliche Abhilfe in der App. Kein weiterer Code geändert. Nicht committet.
+- **Eigentümer (Sichtprüfung 15.11.):** Kurvensymbol, Hammer und Namens-Kopie funktionieren.
+- **Nachtrag, Auslöser am 15.11. (live gemessen, eine Probe):** Das RIFT Intel Fusion Tool fragt über die Bedienungshilfen die Fensterliste der App ab (läuft seit 14.11., 22:36 Uhr). Dass diese Abfrage den Fokus-Abgleich auslöst, ist nicht belegt, passt aber zeitlich. Gegenprobe und mögliche Abhilfe in der App offen.
+
+## 15.11.2026: Verzicht auf Bedienungshilfen im Hauptfenster
+
+- **Auftrag:** Eigentümerentscheid 15.11.2026: Die App verzichtet auf Bedienungshilfen.
+- **Ergebnis:** `View.withoutAccessibility()` blendet den Inhalt des Hauptfensters für Hilfstechnik aus; vorhandene Beschriftungen bleiben im Code. Sheets, Popover und Menüleisten-Eintrag sind nicht erfasst. Debug-Schalter `axhidden` lässt das Hauptfenster zum Vergleich zugänglich. Neuer Abschnitt „Bedienungshilfen“ in `AGENTS.md`; PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-Tests, App-Suiten inkl. neuem Quelltext-Test in `NexusPanelSurfaceRenderingTests`), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. Planer-Info: nicht betroffen.
+- **Offen:** Wirkung nicht belegt (kein automatischer Nachweis möglich), Nachmessung mit dem Eigentümer bei laufendem RIFT und Magnet. Nicht committet.
+- **Nachmessung (live, 15.11., 13:35 Uhr, Magnet und RIFT laufen):** Magnets Abfrage und der Fokus-Abgleich liegen in allen zehn Proben unter 2 % des Hauptthreads (vorher 5–34 % und 10–48 %). Beim Scrollen bleibt der Hauptthread zu 54–88 % belegt (Layout, Darstellung, Treffersuche). Eindruck des Eigentümers offen.

@@ -119,6 +119,7 @@ struct EVENexusSimpleApp: App {
       Group {
         if let modelContainer {
           ContentView(runtime: runtimeOwner.runtime)
+            .withoutAccessibility()
             .environmentObject(consolidation)
             .task {
               do { try consolidation.start(container: modelContainer) } catch {

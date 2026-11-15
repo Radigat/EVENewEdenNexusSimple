@@ -3629,6 +3629,20 @@ mit kurzen, wiederverwendbaren Prompts steht in
   Panels; Texte und andere Inhalte im Panel werfen keinen eigenen Schatten
   (Eigentümerentscheid 13.11.2026). Die Kartenreihen des Dashboards messen
   ihre Karten je Layout-Durchlauf und Breite einmal.
+- Die App verzichtet auf Bedienungshilfen (Eigentümerentscheid 15.11.2026):
+  Der Inhalt des Hauptfensters ist für VoiceOver und andere Hilfstechnik
+  ausgeblendet. Sheets, Popover, Menüs und der Menüleisten-Eintrag sind
+  eigene Fenster und davon nicht erfasst. Maus- und Tastaturbedienung,
+  Tooltips und sichtbare Rückmeldungen sind unverändert. Im Debug-Build
+  lässt der Messschalter `axhidden` das Hauptfenster zum Vergleich
+  zugänglich.
+- Kurvensymbol (Bestandsverlauf) und Hammer (Bauen im Planer) neben einem
+  Item-Namen sind in allen Bereichen Symbole mit eigenem Klickziel
+  (`ItemLinkSymbol`), in Größe und Farbe wie die frühere randlose
+  Schaltfläche. Klick, Tooltip und die Bedienung per VoiceOver
+  (Schaltfläche mit Standardaktion) bleiben. Es entfallen das kurze
+  Abdunkeln beim Drücken und die Tabulator-Bedienung bei eingeschalteter
+  macOS-Tastatursteuerung (Eigentümerentscheid 14.11.2026).
 - In den Tabellen der Hub-Chancen sind Runs, ME und TE je Zeile umrandete
   Zahlen, die erst beim Anklicken zum Eingabefeld werden; es ist immer nur
   eine Zelle ein Feld. Tab und Umschalt-Tab wechseln zur nächsten und

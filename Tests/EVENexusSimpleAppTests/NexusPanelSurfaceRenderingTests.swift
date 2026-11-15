@@ -253,6 +253,40 @@ final class NexusPanelSurfaceRenderingTests: XCTestCase {
     XCTAssertEqual(PerformanceDebugSwitch.disabled, [])
   }
 
+  /// Owner decision 15.11.2026: the main window is hidden from assistive
+  /// technology; only the measurement switch `axhidden` keeps it exposed.
+  func testMainWindowIsHiddenFromAssistiveTechnology() throws {
+    XCTAssertEqual(PerformanceDebugSwitch.parse("axhidden"), [.axhidden])
+    let sources = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("Sources/EVENexusSimpleApp")
+    let app = try String(
+      contentsOf: sources.appendingPathComponent("EVENexusSimpleApp.swift"),
+      encoding: .utf8
+    )
+    XCTAssertTrue(
+      app.contains(
+        "ContentView(runtime: runtimeOwner.runtime)\n            .withoutAccessibility()"
+      )
+    )
+    let components = try String(
+      contentsOf: sources.appendingPathComponent("InterfaceStyleComponents.swift"),
+      encoding: .utf8
+    )
+    XCTAssertTrue(
+      components.contains(
+        """
+            if PerformanceDebugSwitch.axhidden.isDisabled {
+              self
+            } else {
+              accessibilityHidden(true)
+            }
+        """
+      )
+    )
+  }
+
   private var sample: some View {
     VStack(alignment: .leading, spacing: DesignTokens.spacingMD) {
       Text("PANEL")

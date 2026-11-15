@@ -81,13 +81,10 @@ struct PlannerBuildButton: View {
 
   var body: some View {
     if let router, router.productTypeID(for: typeID) != nil {
-      Button {
+      ItemLinkSymbol(systemName: "hammer") {
         closePresentation?()
         router.open(typeID: typeID)
-      } label: {
-        Image(systemName: "hammer")
       }
-      .buttonStyle(.borderless)
       .nameTooltip(AppLocalization.text("Build in Planner"))
       .accessibilityLabel("Build in Planner")
       .accessibilityValue(Text(verbatim: name))

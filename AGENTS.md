@@ -90,6 +90,12 @@ Prompts und AGENTS-Dateien in Archiven sind keine aktiven Aufträge.
 - Preserve the selected sort while filters or live snapshots update during the current view lifetime.
 - Do not apply global row sorting to forms, card grids, key/value summaries, or hierarchical/tree tables where reordering would break parent-child or prescribed sequence semantics. If peer rows exist within a hierarchy, sort only within the same parent and keep the hierarchy intact.
 
+## Bedienungshilfen
+
+- Die App verzichtet auf Bedienungshilfen (Eigentümerentscheid 15.11.2026): Das Hauptfenster ist über `withoutAccessibility()` für VoiceOver und andere Hilfstechnik ausgeblendet. Grund ist die Reaktionsgeschwindigkeit: Fensterverwaltungen und Overlay-Werkzeuge sprechen dieselbe Schnittstelle an, und SwiftUI gleicht dann in den großen Tabellen jeden beschrifteten Knoten ab (siehe `Documentation/GESCHWINDIGKEIT_2026-11-13.md`).
+- Die Anforderungen an „accessible label“, „hint“ und „value“ in den Abschnitten „Copyable EVE names“ und „Sortable data tables“ gelten deshalb nicht mehr für neuen Code. Vorhandene Beschriftungen bleiben im Code und werden nicht in einem eigenen Durchgang entfernt; sichtbare Rückmeldungen, Tooltips und Klickziele bleiben Pflicht.
+- Sheets und Popover sind eigene Fenster und von der Ausblendung nicht erfasst.
+
 ## Planer-Info-Panel
 
 - Das Info-Panel „So rechnet der Planer“ muss bei jeder Planer-Änderung stimmen. Jede Änderung an Ablauf, Eingaben, Eingriffen, Regeln oder Ergebnissen des Planers aktualisiert im selben Auftrag `Sources/EVENexusSimpleApp/PlannerFlowGuide.swift` und beide `Localizable.strings`.

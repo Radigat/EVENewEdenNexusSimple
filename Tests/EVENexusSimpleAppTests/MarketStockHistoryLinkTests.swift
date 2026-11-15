@@ -77,6 +77,99 @@ final class MarketStockHistoryLinkTests: XCTestCase {
     )
   }
 
+  /// The link symbol replaces a borderless button (GESCHWINDIGKEIT T19) and
+  /// must keep its size and colour in both appearances.
+  func testItemLinkSymbolLooksLikeABorderlessButton() throws {
+    for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+      let button = try strongestPixel(
+        of: Button {
+        } label: {
+          Image(systemName: "hammer")
+        }
+        .buttonStyle(.borderless),
+        appearance: appearance
+      )
+      let symbol = try strongestPixel(
+        of: ItemLinkSymbol(systemName: "hammer") {},
+        appearance: appearance
+      )
+      XCTAssertEqual(symbol.size, button.size, "\(appearance.rawValue)")
+      XCTAssertEqual(symbol.white, button.white, accuracy: 0.05, "\(appearance.rawValue)")
+      XCTAssertEqual(symbol.alpha, button.alpha, accuracy: 0.08, "\(appearance.rawValue)")
+    }
+  }
+
+  /// Both links of 200 rows must stay well below the cost of the borderless
+  /// buttons they replaced (measured about one sixth; the bound is loose).
+  func testItemLinksStayCheaperThanBorderlessButtons() {
+    let history = MarketStockHistoryRouter()
+    let build = PlannerBuildRouter(
+      targets: Dictionary(uniqueKeysWithValues: (1...200).map { (Int64($0), Int64($0)) })
+    )
+    func milliseconds(@ViewBuilder _ links: @escaping (Int64) -> some View) -> Double {
+      let runs = (0..<5).map { _ in
+        let started = ContinuousClock.now
+        let host = NSHostingView(
+          rootView: VStack(spacing: 0) {
+            ForEach(1...200, id: \.self) { index in
+              HStack { links(Int64(index)) }
+            }
+          }
+          .environment(\.marketStockHistoryRouter, history)
+          .environment(\.plannerBuildRouter, build)
+        )
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        host.layoutSubtreeIfNeeded()
+        let elapsed = ContinuousClock.now - started
+        return Double(elapsed.components.seconds) * 1_000
+          + Double(elapsed.components.attoseconds) / 1e15
+      }
+      return runs.sorted()[2]
+    }
+    _ = milliseconds { _ in EmptyView() }
+    let borderless = milliseconds { _ in
+      Button {
+      } label: {
+        Image(systemName: "chart.xyaxis.line")
+      }
+      .buttonStyle(.borderless)
+      Button {
+      } label: {
+        Image(systemName: "hammer")
+      }
+      .buttonStyle(.borderless)
+    }
+    let links = milliseconds { typeID in
+      MarketStockHistoryButton(typeID: typeID, name: "Fixture")
+      PlannerBuildButton(typeID: typeID, name: "Fixture")
+    }
+    XCTAssertLessThan(links, borderless * 0.6, "links \(links) ms, borderless \(borderless) ms")
+  }
+
+  private func strongestPixel(
+    of view: some View,
+    appearance: NSAppearance.Name
+  ) throws -> (size: CGSize, white: CGFloat, alpha: CGFloat) {
+    let host = NSHostingView(rootView: view.padding(4))
+    host.appearance = NSAppearance(named: appearance)
+    host.frame = NSRect(origin: .zero, size: host.fittingSize)
+    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    var strongest: (white: CGFloat, alpha: CGFloat) = (0, 0)
+    for x in 0..<bitmap.pixelsWide {
+      for y in 0..<bitmap.pixelsHigh {
+        guard let color = bitmap.colorAt(x: x, y: y),
+          color.alphaComponent > strongest.alpha
+        else { continue }
+        strongest = (
+          (color.redComponent + color.greenComponent + color.blueComponent) / 3,
+          color.alphaComponent
+        )
+      }
+    }
+    return (host.bounds.size, strongest.white, strongest.alpha)
+  }
+
   private func width(of view: some View) -> CGFloat {
     NSHostingView(rootView: view.fixedSize()).fittingSize.width
   }

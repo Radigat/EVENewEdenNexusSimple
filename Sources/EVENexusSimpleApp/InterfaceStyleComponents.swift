@@ -331,6 +331,9 @@ enum PerformanceDebugSwitch: String, CaseIterable {
   case rowfields
   case rowexplain
   case rowlinks
+  /// Leaves the main window exposed to assistive technology, to compare
+  /// against the default without it (owner decision 15.11.2026).
+  case axhidden
 
   static let environmentKey = "EVE_NEXUS_PERF_DISABLE"
 
@@ -367,6 +370,22 @@ enum PerformanceDebugSwitch: String, CaseIterable {
 extension View {
   /// Tooltip of an item name or of its links; the measurement switch
   /// `tooltips` leaves it out.
+  /// Owner decision 15.11.2026: the main window is not exposed to assistive
+  /// technology. Window managers and overlay tools query every app through
+  /// the same interface; SwiftUI then builds and keeps an accessibility
+  /// node for each labelled element and matches all of them on every hit
+  /// test and focus change, which cost up to half of the main thread in the
+  /// large tables (GESCHWINDIGKEIT, 14./15.11.2026). Labels and hints stay
+  /// in the code but are inert below this modifier.
+  @ViewBuilder
+  func withoutAccessibility() -> some View {
+    if PerformanceDebugSwitch.axhidden.isDisabled {
+      self
+    } else {
+      accessibilityHidden(true)
+    }
+  }
+
   @ViewBuilder
   func nameTooltip(_ text: String) -> some View {
     if PerformanceDebugSwitch.tooltips.isDisabled {
@@ -374,5 +393,25 @@ extension View {
     } else {
       help(text)
     }
+  }
+}
+
+/// The symbol of an item link (stock history, build in Planner). It looks
+/// like a borderless button but is an image with a click target: the native
+/// borderless style costs about six times as much per row, which showed
+/// while scrolling long item tables (GESCHWINDIGKEIT T19). VoiceOver keeps
+/// a button with a default action; the caller adds label, value and tooltip.
+struct ItemLinkSymbol: View {
+  let systemName: String
+  let action: () -> Void
+
+  var body: some View {
+    Image(systemName: systemName)
+      .foregroundStyle(.secondary)
+      .contentShape(Rectangle())
+      .onTapGesture(perform: action)
+      .accessibilityRemoveTraits(.isImage)
+      .accessibilityAddTraits(.isButton)
+      .accessibilityAction(.default, action)
   }
 }

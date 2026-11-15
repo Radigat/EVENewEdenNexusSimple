@@ -263,7 +263,7 @@ Abschnitt 9. Nach O1 kann sich die Reihenfolge ändern.
 | O3 | T6–T8 Dashboard-Hauptthread | offen |
 | O4 | T9–T12 gemeinsame Bausteine | T9 implementiert (Wirkung nicht belegt), T29 Umgebungs-Locale implementiert, Nachmessung offen (Abschnitt 10); T28 nur noch für abweichende App-Sprache; T10–T12 offen |
 | O5 | T13–T16, T18, T20 Hub-Chancen öffnen | offen |
-| O6 | T17, T19 Hub-Tabelle und Invention | T19 teilweise: Messschalter, A/B-Läufe, Eingabefelder erst beim Klick (14.11.2026, nicht nachgemessen); Links, erklärte Zellen und T17 offen |
+| O6 | T17, T19 Hub-Tabelle und Invention | T19 teilweise: Messschalter, A/B-Läufe, Eingabefelder erst beim Klick und leichtere Links am Namen (14.11.2026); erklärte Zellen und T17 offen |
 | O7 | T22, T23, T25, T26 Zustand und Speichern | offen |
 | O8 | T24 Blobs und Schema, nur nach Messung | offen |
 | O9 | T21 Hub-Scan, nur nach Messung und Entscheid | offen |
@@ -1244,3 +1244,166 @@ Felder.
 Scrollen flüssiger als mit der normalen Tabelle; Klick, Enter, Tab,
 Umschalt-Tab und die rote Markierung funktionieren; am Aussehen der Zellen
 stört nichts.
+
+### T19, Umsetzung Teil 2: Links am Namen als Symbol mit Klickziel (14.11.2026)
+
+**Automatischer Zeitvergleich (temporärer Test, wieder entfernt):** 300
+Zeilen mit je einem Text und den beiden Links, in einem `NSHostingView`
+aufgebaut und vermessen, Median aus sieben Durchläufen.
+
+| Variante der beiden Links | Zeit für 300 Zeilen |
+|---|---|
+| ohne Links | 12 ms |
+| nur die beiden Symbole | 28 ms |
+| Symbol mit Klickziel, Tooltip und Bedienungshilfen | 51 ms |
+| Schaltfläche mit Stil `plain` | 94 ms |
+| Schaltfläche mit eigenem Stil, Tooltip und Bedienungshilfen | 123 ms |
+| Schaltfläche mit Stil `borderless`, ohne Zusätze | 193 ms |
+| bisheriger Stand (`borderless`, Tooltip, Bedienungshilfen) | 227–350 ms |
+
+- **Der Schaltflächenstil `borderless` ist der Kostentreiber**, nicht
+  Tooltip oder Bedienungshilfen-Angaben: rund 0,3 ms je Schaltfläche.
+- Die randlose Schaltfläche zeichnet ihr Symbol in der Sekundärfarbe; ein
+  Symbol mit `.secondary` hat dieselbe Größe und Farbe (hell und dunkel
+  verglichen).
+
+**Eigentümerentscheid (14.11.2026):** „Symbol mit Klickziel“ für alle
+Bereiche.
+
+**Implementiert:** `ItemLinkSymbol` in `InterfaceStyleComponents.swift`;
+`MarketStockHistoryButton` und `PlannerBuildButton` nutzen es. Sichtbarkeit,
+Router, Tooltip, Beschriftungen und Kennungen sind unverändert. Für
+VoiceOver bleibt es eine Schaltfläche mit Standardaktion.
+
+**Bewusste Abweichungen:** kein Abdunkeln beim Drücken; nicht per Tabulator
+erreichbar, wenn die macOS-Tastatursteuerung eingeschaltet ist.
+
+**Automatisch geprüft:** gleiche Größe und Farbe wie die randlose
+Schaltfläche in beiden Erscheinungsbildern; beide Links kosten höchstens
+60 % der randlosen Schaltflächen (`MarketStockHistoryLinkTests`). **Nicht
+automatisch prüfbar:** der Mausklick; simulierte Klicks lösen im Testfenster
+auch eine gewöhnliche `onTapGesture` nicht aus.
+
+**Offen:** Sichtprüfung des Klicks und Nachmessung durch den Eigentümer;
+erklärte Zellen; T17.
+
+### T19, Teil 2: Nachmessung der Links (15.11.2026, 12:54–12:58 Uhr)
+
+> Xcode-Debug-Build von 12:52 Uhr (PID 13184) mit beiden Umbauten, kein
+> Schalter, Magnet beendet, Main-Hub-Chancen. Zwei Durchgänge; im zweiten
+> wurde gescrollt und die Links wurden bedient. Die Bestätigung der Klicks
+> durch den Eigentümer liegt nicht vor.
+
+| Hauptthread, Proben mit Mausrad | Stand 14.11. nach Teil 1 | mit Teil 2 |
+|---|---|---|
+| belegt insgesamt | 44–85 % | 34–92 % |
+| `NSHostingView.layout()` | 22–34 % | 8–56 % |
+| Zeilen anlegen und platzieren | 9–12 % | unter 2 % bis 4 %, einmal 16 % |
+| Fokus-Abgleich der Bedienungshilfen | 0 % | 10–16 % |
+
+- **Zeilenaufbau:** In drei von vier Scroll-Proben liegt er bei höchstens
+  4 % (vorher 9–12 %). Das passt zum automatischen Zeitvergleich.
+- **Neuer Störfaktor, deshalb kein sauberer Vergleich:** In diesem Lauf
+  sind die Bedienungshilfen der App aktiv, obwohl Magnet nicht läuft. Ein
+  anderes Programm liest etwa einmal je Probe ein Attribut
+  (`_XCopyAttributeValue`); welches, ist nicht belegt. Seitdem gleicht
+  SwiftUI bei Fokuswechseln jeden Bedienungshilfen-Knoten mit allen
+  fokussierbaren Elementen ab (`AccessibilityNode.updateFocus` →
+  `ViewRendererHost.focusResponder`): 48 % einer Probe direkt nach dem
+  Öffnen der Ansicht, 27 % beim Bedienen der Links, 10–16 % beim Scrollen.
+  In den sechs Läufen vom 14.11. ohne Magnet kam dieser Abgleich nicht vor
+  (0 Proben über 3 %), mit Magnet in 15 Proben (4–16 %).
+- **Einordnung:** Sobald irgendein Programm die Bedienungshilfen der App
+  anspricht, zahlt die große Hub-Ansicht dafür auf dem Hauptthread. Das ist
+  derselbe Mechanismus wie bei Magnet, nur von einem anderen Auslöser.
+- Nicht belegt ist, ob die Umbauten vom 14.11. den Abgleich verteuern
+  (`@FocusState` im Eingabefeld, Bedienungshilfen-Aktion am Link-Symbol).
+  Dagegen spricht: Der Lauf mit dem Eingabefeld-Umbau (22:24 Uhr) zeigt ihn
+  nicht.
+
+**Offen:** Bestätigung der Klicks durch den Eigentümer; Auslöser der
+Bedienungshilfen-Abfrage am 15.11.; ob sich der Fokus-Abgleich in der App
+verbilligen lässt.
+
+**Sichtprüfung des Eigentümers (15.11.2026):** Kurvensymbol öffnet den
+Bestandsverlauf, Hammer öffnet den Planer mit dem Item, Klick auf den Namen
+kopiert ihn.
+
+### Auslöser der Bedienungshilfen-Abfrage am 15.11.: RIFT Intel Fusion Tool
+
+> 15.11.2026, gegen 13:00 Uhr: App (PID 13184) und 24 in Frage kommende
+> Prozesse gleichzeitig 8 s beprobt, App in Ruhe. Nur beobachtet.
+
+- **Live gemessen:** Nur das RIFT Intel Fusion Tool (Java, über JNA) ruft
+  `AXUIElementCopyAttributeValue` in nennenswertem Umfang auf (35 Zeilen der
+  Probe; alle anderen Kandidaten höchstens 2, ohne Aufrufzähler). Die App
+  beantwortet in derselben Probe `_XCopyAttributeValue` mit
+  `accessibilityWindowsAttribute`: Abgefragt wird die Fensterliste.
+- RIFT läuft seit 14.11.2026, 22:36 Uhr, also erst nach den Läufen ohne
+  Magnet vom Abend. Das passt dazu, dass der Fokus-Abgleich dort fehlte.
+- Der Eigentümer nennt außerdem ChatGPT (arbeitet gerade an Dateien); in
+  dessen Probe steht eine einzige Bedienungshilfen-Zeile.
+- **Nicht belegt:** dass RIFTs Abfrage den teuren Fokus-Abgleich in der App
+  auslöst. Belegt ist nur, dass RIFT die App über die Bedienungshilfen
+  anspricht und dass der Abgleich seit dem Start von RIFT auftritt.
+- **Einordnung:** RIFT ist ein EVE-Werkzeug und läuft im normalen Betrieb
+  neben der App. Anders als bei Magnet ist „beenden“ hier keine Dauerlösung;
+  die App müsste mit aktiven Bedienungshilfen schnell bleiben.
+
+**Offen:** Gegenprobe (RIFT beenden, App neu starten, scrollen); Abhilfe in
+der App, etwa weniger Bedienungshilfen-Knoten je Tabellenzeile (ändert die
+Vorlese-Gliederung und braucht einen Eigentümerentscheid).
+
+### Verzicht auf Bedienungshilfen im Hauptfenster (15.11.2026)
+
+**Eigentümerentscheid (15.11.2026):** „Ich möchte in der App auf
+Bedienhilfen verzichten.“
+
+**Implementiert:** `View.withoutAccessibility()` blendet den Inhalt des
+Hauptfensters für Hilfstechnik aus (`accessibilityHidden(true)` an
+`ContentView` in `EVENexusSimpleApp.swift`). Die vorhandenen
+Beschriftungen bleiben im Code und sind darunter wirkungslos. Sheets,
+Popover und der Menüleisten-Eintrag sind eigene Fenster und nicht erfasst.
+Nur im Debug-Build lässt `EVE_NEXUS_PERF_DISABLE=axhidden` das Hauptfenster
+zum A/B-Vergleich zugänglich. `AGENTS.md` (neuer Abschnitt
+„Bedienungshilfen“) und `PRODUCT.md` sind nachgezogen.
+
+**Erwartung, nicht belegt:** Ohne Bedienungshilfen-Knoten im Hauptfenster
+entfallen der Baumaufbau bei Magnets Abfrage und der Fokus-Abgleich bei
+aktiven Bedienungshilfen weitgehend. Ein automatischer Nachweis war nicht
+möglich: Im Testprozess baut SwiftUI den Baum nicht auf, weil ihn dort kein
+fremdes Programm anfordert (Abfrage des eigenen Prozesses scheitert mit
+Fehler −25208).
+
+**Automatisch geprüft:** Quelltext-Test für die Stelle am Hauptfenster und
+den Schalter (`NexusPanelSurfaceRenderingTests`).
+
+**Offen:** Nachmessung mit dem Eigentümer bei laufendem RIFT und Magnet.
+
+### Verzicht auf Bedienungshilfen: Nachmessung (15.11.2026, 13:35–13:36 Uhr)
+
+> Xcode-Debug-Build von 13:11 Uhr (PID 16626) mit allen Umbauten, kein
+> Schalter, **Magnet und RIFT laufen** (per Prozessliste bestätigt),
+> Main-Hub-Chancen, Mausrad und ein Klick auf ein Kurvensymbol. Zehn Proben
+> mit Last; der Eindruck des Eigentümers liegt nicht vor.
+
+| Hauptthread | mit Bedienungshilfen | ohne (dieser Lauf) |
+|---|---|---|
+| Abfrage „Element unter dem Mauszeiger“ (Magnet) | 5–34 % (14.11., 21:37–21:41) | unter 2 % in allen Proben |
+| Fokus-Abgleich der Bedienungshilfen (bei aktivem RIFT) | 10–48 % (15.11., 12:56–12:57) | unter 2 % in allen Proben |
+| belegt insgesamt, Proben mit Mausrad | 58–100 % | 54–88 % |
+| `NSHostingView.layout()` | 9–56 % | 14–35 % |
+| Zeilen anlegen und platzieren | 2–16 % | unter 2 % bis 7 % |
+
+- **Live gemessen: Beide Posten sind weg.** Magnets Abfragen kommen weiter
+  an (drei Zeilen je Probe), kosten aber nichts Messbares mehr, weil der
+  Inhalt des Hauptfensters keinen Bedienungshilfen-Baum mehr hat. Der
+  Fokus-Abgleich taucht in keiner Probe auf, auch nicht beim Öffnen des
+  Bestandsverlaufs.
+- **Der Hauptthread ist beim Scrollen weiter zu 54–88 % belegt.** Übrig
+  sind das Fenster-Layout und die Darstellung (22–40 % `commit`), die
+  Treffersuche für Mausereignisse (5–10 %), die Tooltip-Verfolgung (6 %
+  einer Probe) und das Menüleisten-Symbol (3–6 %).
+
+**Offen:** Eindruck des Eigentümers; die verbleibenden Posten (Layout der
+Tabelle, erklärte Zellen, Menüleisten-Symbol, T17).

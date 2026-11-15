@@ -78,14 +78,11 @@ struct MarketStockHistoryButton: View {
 
   var body: some View {
     if let router, typeID > 0 {
-      Button {
+      ItemLinkSymbol(systemName: "chart.xyaxis.line") {
         router.open(
           MarketStockItemRequest(typeID: typeID, name: name, preferredRole: preferredRole)
         )
-      } label: {
-        Image(systemName: "chart.xyaxis.line")
       }
-      .buttonStyle(.borderless)
       .nameTooltip(AppLocalization.text("Market stock history"))
       .accessibilityLabel("Market stock history")
       .accessibilityValue(Text(verbatim: name))
