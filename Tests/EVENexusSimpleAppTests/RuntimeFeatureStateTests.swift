@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 @testable import EVENexusCore
+import EVEStaticDataKit
 import SwiftData
 import SwiftUI
 import Testing
@@ -1624,3 +1625,260 @@ private struct DashboardRenderingFixture: View {
     }
   }
 }
+
+/// The invention estimate runs off the main thread (GESCHWINDIGKEIT T17);
+/// its values follow the documented rule: (T1 copy job + attempt materials
+/// + invention job fee) ÷ (success probability × output runs).
+struct InventionCostEstimateTests {
+  private static let tritanium: Int64 = 34
+  private static let datacore: Int64 = 700
+  private static let techOneItem: Int64 = 800
+  private static let techOneBlueprint: Int64 = 801
+  private static let techTwoItem: Int64 = 810
+  private static let techTwoBlueprint: Int64 = 811
+  private static let skills: [Int64] = [900, 901, 902]
+
+  private static func catalog() async throws -> SQLiteStaticCatalog {
+    let build = 4_243
+    let hash = String(repeating: "b", count: 64)
+    func type(_ id: Int64, _ name: String) -> StaticItemTypeSnapshot {
+      StaticItemTypeSnapshot(
+        externalID: id,
+        groupExternalID: 20,
+        categoryExternalID: 10,
+        marketGroupExternalID: nil,
+        name: name,
+        description: nil,
+        volume: 1,
+        packagedVolume: 1,
+        basePrice: nil,
+        portionSize: 1,
+        published: true,
+        iconExternalID: nil
+      )
+    }
+    func activity(
+      _ kind: StaticIndustryActivity,
+      materials: [(Int64, Int64)],
+      product: Int64,
+      quantity: Int64,
+      probability: Double? = nil,
+      skills: [Int64] = []
+    ) -> StaticBlueprintActivitySnapshot {
+      StaticBlueprintActivitySnapshot(
+        activity: kind,
+        timeSeconds: 600,
+        materials: materials.enumerated().map {
+          StaticBlueprintMaterialSnapshot(
+            itemTypeID: $0.element.0,
+            quantity: $0.element.1,
+            sortOrder: $0.offset
+          )
+        },
+        products: [
+          StaticBlueprintProductSnapshot(
+            itemTypeID: product,
+            quantity: quantity,
+            probability: probability,
+            sortOrder: 0
+          )
+        ],
+        skills: skills.enumerated().map {
+          StaticBlueprintSkillSnapshot(itemTypeID: $0.element, level: 1, sortOrder: $0.offset)
+        }
+      )
+    }
+    let snapshot = try StaticDataCatalogSnapshot(
+      buildNumber: build,
+      contentSHA256: hash,
+      officialArchiveURL:
+        "https://developers.eveonline.com/static-data/tranquility/eve-online-static-data-\(build)-jsonl.zip",
+      sourceFormat: .jsonLines,
+      categories: [
+        StaticItemCategorySnapshot(externalID: 10, name: "Fixture", published: true)
+      ],
+      groups: [
+        StaticItemGroupSnapshot(
+          externalID: 20,
+          categoryExternalID: 10,
+          name: "Fixture Group",
+          published: true
+        )
+      ],
+      itemTypes: [
+        type(tritanium, "Tritanium"),
+        type(datacore, "Fixture Datacore"),
+        type(techOneItem, "Fixture Module I"),
+        type(techOneBlueprint, "Fixture Module I Blueprint"),
+        type(techTwoItem, "Fixture Module II"),
+        type(techTwoBlueprint, "Fixture Module II Blueprint"),
+        type(skills[0], "Fixture Encryption Methods"),
+        type(skills[1], "Fixture Science A"),
+        type(skills[2], "Fixture Science B"),
+      ],
+      blueprints: [
+        StaticBlueprintSnapshot(
+          blueprintTypeID: techOneBlueprint,
+          maxProductionLimit: 100,
+          activities: [
+            activity(
+              .manufacturing,
+              materials: [(tritanium, 100)],
+              product: techOneItem,
+              quantity: 1
+            ),
+            activity(
+              .invention,
+              materials: [(datacore, 2)],
+              product: techTwoBlueprint,
+              quantity: 10,
+              probability: 0.3,
+              skills: skills
+            ),
+          ]
+        ),
+        StaticBlueprintSnapshot(
+          blueprintTypeID: techTwoBlueprint,
+          maxProductionLimit: 10,
+          activities: [
+            activity(
+              .manufacturing,
+              materials: [(tritanium, 200)],
+              product: techTwoItem,
+              quantity: 1
+            )
+          ]
+        ),
+      ],
+      reactionRuleProfile: ReactionRuleProfile(
+        catalogBuildNumber: build,
+        catalogContentSHA256: hash,
+        verificationStatus: .needsReview,
+        verifiedAt: .distantPast,
+        sourceURLs: ["fixture://type-dogma"],
+        formulaGroupKinds: [:],
+        facilities: [],
+        reactors: [],
+        rigs: [],
+        reactionsSkillTypeID: 1,
+        skillTimeBonusBasisPointsPerLevel: -400
+      )
+    )
+    let catalog = SQLiteStaticCatalog(
+      rootURL: FileManager.default.temporaryDirectory
+        .appendingPathComponent("eve-invention-estimate-\(UUID().uuidString)", isDirectory: true)
+    )
+    _ = try await catalog.activate(snapshot)
+    return catalog
+  }
+
+  private static func context(
+    copyFeeFactor: Double? = 0.5,
+    inventionFeeFactor: Double? = 0.25
+  ) -> RuntimeState.ScienceCostContext {
+    RuntimeState.ScienceCostContext(
+      prices: [
+        tritanium: AdjustedPrice(typeID: tritanium, adjustedPrice: 5, averagePrice: nil)
+      ],
+      decryptors: [],
+      copyFeeFactor: copyFeeFactor,
+      inventionFeeFactor: inventionFeeFactor
+    )
+  }
+
+  /// One character with the encryption skill at 4 and both sciences at 3.
+  private static var trained: [CharacterCapabilitySnapshot] {
+    let source = SourceIdentity(provider: "fixture", version: "1")
+    return [
+      CharacterCapabilitySnapshot(
+        character: CharacterIdentity(id: 1, name: "Fixture Inventor"),
+        cloneState: .unknown,
+        skills: Sourced(
+          state: .fresh,
+          value: zip(skills, [4, 3, 3]).map {
+            TrainedSkill(skillID: $0, trainedLevel: $1, activeLevel: $1, skillpoints: 1)
+          },
+          source: source
+        ),
+        standings: Sourced(state: .fresh, value: [:], source: source)
+      )
+    ]
+  }
+
+  @Test
+  func estimateFollowsTheDocumentedRuleOffTheMainThread() async throws {
+    let catalog = try await Self.catalog()
+    let estimate = try #require(
+      await RuntimeState.inventionCost(
+        outputBlueprintTypeID: Self.techTwoBlueprint,
+        catalog: catalog,
+        context: Self.context(),
+        capabilities: Self.trained,
+        decryptorCandidates: { _, _ in [nil] },
+        buyCost: { materials in
+          #expect(!runsOnMainThread())
+          #expect(materials == [BlueprintMaterial(typeID: Self.datacore, quantity: 2)])
+          return 200
+        }
+      )
+    )
+    // Copy job: 100 × 5 ISK × 2 % × 0.5 = 5. Invention fee: 200 × 5 ISK ×
+    // 2 % × 0.25 = 5. Attempt: 5 + 200 + 5.
+    #expect(estimate.attemptCost == 210)
+    #expect(estimate.outputRuns == 10)
+    // 30 % × (1 + 4/40 + (3 + 3)/30) = 39 %.
+    let probability = try #require(estimate.successProbability)
+    #expect(abs(probability - 0.39) < 1e-9)
+    let perRun = try #require(estimate.costPerRun)
+    #expect(abs(perRun - 210 / (0.39 * 10)) < 1e-9)
+    #expect(estimate.candidates.count == 1)
+  }
+
+  @Test
+  func missingInputsStayUnavailableAndOtherTypesAreNotInvented() async throws {
+    let catalog = try await Self.catalog()
+    func estimate(
+      _ typeID: Int64,
+      context: RuntimeState.ScienceCostContext = Self.context(),
+      capabilities: [CharacterCapabilitySnapshot] = Self.trained,
+      materials: Double? = 200
+    ) async -> RuntimeState.InventionCostEstimate? {
+      await RuntimeState.inventionCost(
+        outputBlueprintTypeID: typeID,
+        catalog: catalog,
+        context: context,
+        capabilities: capabilities,
+        decryptorCandidates: { _, _ in [nil] },
+        buyCost: { _ in materials }
+      )
+    }
+    // A Tech I Blueprint is not invented: no estimate at all.
+    #expect(await estimate(Self.techOneBlueprint) == nil)
+    // No fee factor (no science structure): present but without a value.
+    let withoutCopyFee = try #require(
+      await estimate(Self.techTwoBlueprint, context: Self.context(copyFeeFactor: nil))
+    )
+    #expect(withoutCopyFee.costPerRun == nil)
+    #expect(withoutCopyFee.candidates.isEmpty)
+    let withoutInventionFee = try #require(
+      await estimate(Self.techTwoBlueprint, context: Self.context(inventionFeeFactor: nil))
+    )
+    #expect(withoutInventionFee.costPerRun == nil)
+    // Materials without a Main-Hub price: the candidate stays without a value.
+    let withoutMaterials = try #require(
+      await estimate(Self.techTwoBlueprint, materials: nil)
+    )
+    #expect(withoutMaterials.costPerRun == nil)
+    #expect(withoutMaterials.candidates.count == 1)
+    // Without the trained skills the attempt is priced, the chance is not.
+    let withoutSkills = try #require(
+      await estimate(Self.techTwoBlueprint, capabilities: [])
+    )
+    #expect(withoutSkills.attemptCost == 210)
+    #expect(withoutSkills.successProbability == nil)
+    #expect(withoutSkills.costPerRun == nil)
+  }
+}
+
+/// Synchronous, so it may be asked from an asynchronous context.
+private func runsOnMainThread() -> Bool { Thread.isMainThread }

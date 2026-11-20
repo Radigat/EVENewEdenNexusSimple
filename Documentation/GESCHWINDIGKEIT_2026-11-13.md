@@ -263,7 +263,7 @@ Abschnitt 9. Nach O1 kann sich die Reihenfolge ändern.
 | O3 | T6–T8 Dashboard-Hauptthread | offen |
 | O4 | T9–T12 gemeinsame Bausteine | T9 implementiert (Wirkung nicht belegt), T29 Umgebungs-Locale implementiert, Nachmessung offen (Abschnitt 10); T28 nur noch für abweichende App-Sprache; T10–T12 offen |
 | O5 | T13–T16, T18, T20 Hub-Chancen öffnen | offen |
-| O6 | T17, T19 Hub-Tabelle und Invention | T19 teilweise: Messschalter, A/B-Läufe, Eingabefelder erst beim Klick und leichtere Links am Namen (14.11.2026); erklärte Zellen und T17 offen |
+| O6 | T17, T19 Hub-Tabelle und Invention | T19 teilweise: Messschalter, A/B-Läufe, Eingabefelder erst beim Klick und leichtere Links am Namen (14.11.2026), T17 implementiert (15.11.2026, nicht nachgemessen); erklärte Zellen offen |
 | O7 | T22, T23, T25, T26 Zustand und Speichern | offen |
 | O8 | T24 Blobs und Schema, nur nach Messung | offen |
 | O9 | T21 Hub-Scan, nur nach Messung und Entscheid | offen |
@@ -1407,3 +1407,105 @@ den Schalter (`NexusPanelSurfaceRenderingTests`).
 
 **Offen:** Eindruck des Eigentümers; die verbleibenden Posten (Layout der
 Tabelle, erklärte Zellen, Menüleisten-Symbol, T17).
+
+**Eindruck des Eigentümers (15.11.2026, Lauf 13:35 Uhr):** Das Scrollen
+fühlt sich auch mit laufendem Magnet und RIFT flüssig an.
+
+### T17: Inventionsschätzung abseits des Hauptthreads (15.11.2026)
+
+**Auftrag des Eigentümers:** „weitermachen“ nach dem Vorschlag, die
+Inventionsschätzung anzugehen.
+
+**Befund (im Code gesehen, zu den Messwerten passend):** Die Schätzung lief
+je Blueprint über etwa sechs Wechsel zwischen Hauptthread und SDE-Katalog,
+bei 999 Typen also mehrere tausend. Ist der Hauptthread beschäftigt
+(Scrollen), wartet jeder Wechsel; daher 1,0 s in Ruhe und 31,2 s beim
+Home-Besuch vom 14.11., mit 4–11 % Hauptthread-Anteil.
+
+**Implementiert:** `RuntimeState.inventionCost(outputBlueprintTypeID:
+catalog:context:capabilities:decryptorCandidates:buyCost:)` ist eine vom
+Hauptthread unabhängige Funktion; Preise, Decryptoren und die beiden
+Gebührenfaktoren gehen als Werte hinein (`ScienceCostContext`). Die Liste
+der Hub-Chancen wird als Ganzes abseits des Hauptthreads geschätzt und nutzt
+das vorab geladene Orderbuch direkt; nur für Materialien, die es nicht
+abdeckt, fragt sie wie bisher über den Hauptthread nach. Auch die
+SDE-Abfragen des Vorabladens laufen abseits. Die BPC-Bewertung des Planers
+nutzt dieselbe Funktion. Rechenregel, Reihenfolge der Prüfungen und die
+Zustände „nicht erfunden“ und „ohne Wert“ sind unverändert.
+
+**Automatisch geprüft:** neue Tests `InventionCostEstimateTests` mit einem
+SDE-Fixture: Wert nach der dokumentierten Regel, Ausführung abseits des
+Hauptthreads, fehlende Gebührenfaktoren, fehlende Materialpreise, fehlende
+Skills, nicht erfundene Typen. Für die Schätzwerte gab es vorher keinen
+Test; ein Vergleich alt gegen neu mit echten Daten liegt nicht vor.
+
+**Offen:** Nachmessung mit dem Eigentümer (`hub.invention` beim Start und
+während des Scrollens).
+
+### T17, Nachmessung und Korrektur zum Fokus-Abgleich (15.11.2026, 14:03–14:08 Uhr)
+
+> Xcode-Debug-Build von 14:03 Uhr (PID 19839) mit allen Umbauten, kein
+> Schalter, Magnet und RIFT laufen. Der Eigentümer scrollte um 14:07 Uhr
+> etwa 50 Sekunden; die zuletzt geöffnete Ansicht waren die
+> Home-Hub-Chancen (14:05:32). Sein Eindruck zu den Werten liegt nicht vor.
+
+**T17, live gemessen (ein Wert):** `hub.invention` beim Start 1,6 s für
+999 Typen. Frühere Starts: 7,1 s, 7,6 s und 11,4 s; in Ruhe einmal 1,0 s.
+Während der Home-Besuche dieses Laufs wurde keine neue Schätzung ausgelöst
+(die Typmenge war schon geschätzt). Der Problemfall „Schätzung während des
+Scrollens“ (31,2 s am 14.11.) ist damit **nicht nachgemessen**.
+
+**Korrektur zum Verzicht auf Bedienungshilfen:** Die Aussage vom 13:35-Lauf,
+der Fokus-Abgleich sei weg, gilt nicht allgemein. In diesem Lauf ist er
+trotz ausgeblendetem Hauptfenster wieder da:
+
+| Hauptthread, Proben mit Mausrad | 13:35 Uhr (Main) | 14:07 Uhr (Home) |
+|---|---|---|
+| Magnets Abfrage `CopyElementAtPosition` | unter 2 % | unter 2 % |
+| Fokus-Abgleich (`AccessibilityNode.updateFocus`) | 0 % | 9–16 % |
+| belegt insgesamt | 54–88 % | 46–100 % |
+| `NSHostingView.layout()` | 14–35 % | 29–45 % |
+
+- **Belegt bleibt:** Magnets Abfrage kostet in beiden Läufen nichts
+  Messbares mehr.
+- **Nicht belegt, was den Fokus-Abgleich auslöst und warum er um 13:35 Uhr
+  fehlte.** `accessibilityHidden(true)` am Fensterinhalt verhindert also
+  nicht, dass SwiftUI Bedienungshilfen-Knoten anlegt und bei Fokuswechseln
+  abgleicht. Mögliche Unterschiede der beiden Läufe: andere Ansicht (Home
+  mit 383 statt 146 Zeilen), ein anderes abfragendes Programm, oder ein
+  Fokuswechsel durch die App selbst.
+
+**Offen:** Auslöser des Fokus-Abgleichs bestimmen (abfragende Programme
+während des Scrollens beproben; Vergleich mit dem Schalter `axhidden`);
+T17 während des Scrollens nachmessen.
+
+### Auslöser des Fokus-Abgleichs im Nachbau (16.11.2026, Zwischenstand)
+
+**Automatischer Nachbau (temporärer Test, wieder entfernt):** Testfenster mit
+400 Zeilen, ein zweiter Prozess fragt es über die Bedienungshilfen ab,
+programmatisches Scrollen in 400 Schritten.
+
+| Abfrage von außen / Variante | ms je Scrollschritt |
+|---|---|
+| keine | 4,5–4,8 |
+| nur Fensterliste (wie RIFT) | 4,7 |
+| „Element unter dem Mauszeiger“ (wie Magnet) | 16,1–16,9 |
+| dasselbe mit `accessibilityHidden(true)` | 16,1–16,7 |
+| dasselbe mit `accessibilityElement(children: .ignore)` | 16,2–16,8 |
+| 2 s Abfragen, danach keine mehr | 15,6 (bleibt teuer) |
+| Fenster beantwortet die Abfragen selbst | 4,7–4,9 |
+
+- Auslöser ist die Abfrage „Element unter dem Mauszeiger“, nicht die
+  Fensterliste. Schon eine kurze Abfrage schaltet die Bedienungshilfen von
+  SwiftUI für dieses Fenster dauerhaft ein; danach kostet jedes Rendern den
+  Fokus-Abgleich (`AccessibilityNode.updateFocus`).
+- `accessibilityHidden(true)` hilft nicht; der Commit `52688ec` beseitigt
+  den Posten also nicht. Der Messwert „Magnet unter 2 %“ vom 15.11.,
+  13:35 Uhr, beruhte darauf, dass Magnet in diesem Lauf kaum fragte.
+- Wirksam ist im Nachbau, die Abfragen schon am Fenster zu beantworten
+  (`accessibilityHitTest` und `accessibilityChildren` am `NSWindow`), sodass
+  sie SwiftUI nie erreichen.
+
+**Offen:** Umsetzung in der App (das Fenster gehört `WindowGroup`; nötig
+wäre eine Laufzeit-Unterklasse des SwiftUI-Fensters); danach
+`withoutAccessibility()` prüfen und gegebenenfalls zurücknehmen.

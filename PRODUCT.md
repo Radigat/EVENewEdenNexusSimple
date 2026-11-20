@@ -3629,6 +3629,12 @@ mit kurzen, wiederverwendbaren Prompts steht in
   Panels; Texte und andere Inhalte im Panel werfen keinen eigenen Schatten
   (Eigentümerentscheid 13.11.2026). Die Kartenreihen des Dashboards messen
   ihre Karten je Layout-Durchlauf und Breite einmal.
+- Die Inventionsschätzung der Hub-Chancen und der BPC-Bewertung rechnet
+  abseits des Hauptthreads; nur das Ergebnis wird im Hauptthread
+  übernommen. Regel und Werte sind unverändert: (T1-Kopierjob +
+  Materialien des Versuchs am Main Hub + Inventionsgebühr) ÷
+  (Erfolgswahrscheinlichkeit × Output-Runs); fehlende Eingaben bleiben
+  ohne Wert.
 - Die App verzichtet auf Bedienungshilfen (Eigentümerentscheid 15.11.2026):
   Der Inhalt des Hauptfensters ist für VoiceOver und andere Hilfstechnik
   ausgeblendet. Sheets, Popover, Menüs und der Menüleisten-Eintrag sind

@@ -4918,7 +4918,19 @@ final class RuntimeState {
       outputBlueprintTypeIDs: Set<Int64>,
       catalog: SQLiteStaticCatalog
     ) async {
-      var typeIDs = Set(decryptors.map(\.typeID))
+      let materialTypeIDs = await Self.inventionMaterialTypeIDs(
+        outputBlueprintTypeIDs: outputBlueprintTypeIDs,
+        catalog: catalog
+      )
+      await ensureBook(Set(decryptors.map(\.typeID)).union(materialTypeIDs))
+    }
+
+    /// The SDE lookups of the prefetch, off the main thread.
+    nonisolated private static func inventionMaterialTypeIDs(
+      outputBlueprintTypeIDs: Set<Int64>,
+      catalog: SQLiteStaticCatalog
+    ) async -> Set<Int64> {
+      var typeIDs: Set<Int64> = []
       for outputTypeID in outputBlueprintTypeIDs {
         guard
           let invention = try? await catalog.productionDefinition(
@@ -4931,11 +4943,19 @@ final class RuntimeState {
         else { continue }
         typeIDs.formUnion(activity.materials.map(\.typeID))
       }
-      await ensureBook(typeIDs)
+      return typeIDs
     }
 
-    func buyCost(_ materials: [BlueprintMaterial]) async -> Double? {
-      await ensureBook(Set(materials.map(\.typeID)))
+    /// The loaded order book and the types it covers, for estimates that
+    /// run off the main thread.
+    var loadedBook: (book: PreparedMarketOrderBook, typeIDs: Set<Int64>)? {
+      book.map { ($0, bookTypeIDs) }
+    }
+
+    nonisolated static func buyCost(
+      _ materials: [BlueprintMaterial],
+      book: PreparedMarketOrderBook?
+    ) -> Double? {
       var total = 0.0
       for material in materials {
         guard
@@ -4950,6 +4970,11 @@ final class RuntimeState {
       return total.isFinite ? total : nil
     }
 
+    func buyCost(_ materials: [BlueprintMaterial]) async -> Double? {
+      await ensureBook(Set(materials.map(\.typeID)))
+      return Self.buyCost(materials, book: book)
+    }
+
     private func ensureBook(_ typeIDs: Set<Int64>) async {
       guard !typeIDs.isSubset(of: bookTypeIDs) else { return }
       let wanted = bookTypeIDs.union(typeIDs)
@@ -4959,12 +4984,33 @@ final class RuntimeState {
     }
   }
 
-  struct InventionCostEstimate {
+  struct InventionCostEstimate: Sendable {
     let costPerRun: Double?
     let attemptCost: Double?
     let successProbability: Double?
     let outputRuns: Int?
     let candidates: [BlueprintDecryptorDefinition?]
+  }
+
+  /// Everything an invention or copy estimate reads besides the SDE and the
+  /// order book, as values, so the estimate runs off the main thread
+  /// (GESCHWINDIGKEIT T17).
+  struct ScienceCostContext: Sendable {
+    let prices: [Int64: AdjustedPrice]
+    let decryptors: [BlueprintDecryptorDefinition]
+    let copyFeeFactor: Double?
+    let inventionFeeFactor: Double?
+  }
+
+  private func scienceCostContext(
+    inputs: ScienceCostInputs
+  ) -> ScienceCostContext {
+    ScienceCostContext(
+      prices: inputs.prices,
+      decryptors: inputs.decryptors,
+      copyFeeFactor: scienceFeeFactor(for: .copying),
+      inventionFeeFactor: scienceFeeFactor(for: .invention)
+    )
   }
 
   func scienceCostInputs() async -> ScienceCostInputs? {
@@ -4996,9 +5042,10 @@ final class RuntimeState {
     )
   }
 
-  private func estimatedItemValue(
+  nonisolated private static func estimatedItemValue(
     _ blueprintTypeID: Int64,
-    inputs: ScienceCostInputs
+    catalog: SQLiteStaticCatalog,
+    prices: [Int64: AdjustedPrice]
   ) async -> Double? {
     guard
       let definition = try? await catalog
@@ -5006,7 +5053,26 @@ final class RuntimeState {
     else { return nil }
     return OwnedBPCValuation.estimatedItemValue(
       materials: definition.activity.materials,
-      adjustedPrices: inputs.prices
+      adjustedPrices: prices
+    )
+  }
+
+  nonisolated private static func copyCostPerRun(
+    _ blueprintTypeID: Int64,
+    catalog: SQLiteStaticCatalog,
+    context: ScienceCostContext
+  ) async -> Double? {
+    guard
+      let value = await estimatedItemValue(
+        blueprintTypeID,
+        catalog: catalog,
+        prices: context.prices
+      ),
+      let factor = context.copyFeeFactor
+    else { return nil }
+    return OwnedBPCValuation.scienceJobCostPerRun(
+      estimatedItemValue: value,
+      feeFactor: factor
     )
   }
 
@@ -5014,12 +5080,10 @@ final class RuntimeState {
     _ blueprintTypeID: Int64,
     inputs: ScienceCostInputs
   ) async -> Double? {
-    guard let value = await estimatedItemValue(blueprintTypeID, inputs: inputs),
-      let factor = scienceFeeFactor(for: .copying)
-    else { return nil }
-    return OwnedBPCValuation.scienceJobCostPerRun(
-      estimatedItemValue: value,
-      feeFactor: factor
+    await Self.copyCostPerRun(
+      blueprintTypeID,
+      catalog: catalog,
+      context: scienceCostContext(inputs: inputs)
     )
   }
 
@@ -5032,8 +5096,29 @@ final class RuntimeState {
     outputBlueprintTypeID: Int64,
     inputs: ScienceCostInputs,
     capabilities: [CharacterCapabilitySnapshot],
-    decryptorCandidates: (Int, [BlueprintDecryptorDefinition])
+    decryptorCandidates: @Sendable (Int, [BlueprintDecryptorDefinition])
       -> [BlueprintDecryptorDefinition?]? = { _, _ in [nil] }
+  ) async -> InventionCostEstimate? {
+    await Self.inventionCost(
+      outputBlueprintTypeID: outputBlueprintTypeID,
+      catalog: catalog,
+      context: scienceCostContext(inputs: inputs),
+      capabilities: capabilities,
+      decryptorCandidates: decryptorCandidates,
+      buyCost: { await inputs.buyCost($0) }
+    )
+  }
+
+  /// The estimate itself. It runs off the main thread; `buyCost` prices the
+  /// attempt's materials at the Main Hub.
+  nonisolated static func inventionCost(
+    outputBlueprintTypeID: Int64,
+    catalog: SQLiteStaticCatalog,
+    context: ScienceCostContext,
+    capabilities: [CharacterCapabilitySnapshot],
+    decryptorCandidates: @Sendable (Int, [BlueprintDecryptorDefinition])
+      -> [BlueprintDecryptorDefinition?]?,
+    buyCost: @Sendable ([BlueprintMaterial]) async -> Double?
   ) async -> InventionCostEstimate? {
     guard
       let invention = try? await catalog.productionDefinition(
@@ -5056,13 +5141,18 @@ final class RuntimeState {
       let baseRuns = activity.products.first(where: {
         $0.typeID == outputBlueprintTypeID
       }).map({ Int(clamping: $0.quantity) }),
-      let candidates = decryptorCandidates(baseRuns, inputs.decryptors),
-      let copyCost = await copyCostPerRun(sourceBlueprintTypeID, inputs: inputs),
+      let candidates = decryptorCandidates(baseRuns, context.decryptors),
+      let copyCost = await copyCostPerRun(
+        sourceBlueprintTypeID,
+        catalog: catalog,
+        context: context
+      ),
       let productValue = await estimatedItemValue(
         outputBlueprintTypeID,
-        inputs: inputs
+        catalog: catalog,
+        prices: context.prices
       ),
-      let inventionFactor = scienceFeeFactor(for: .invention),
+      let inventionFactor = context.inventionFeeFactor,
       let inventionFee = OwnedBPCValuation.scienceJobCostPerRun(
         estimatedItemValue: productValue,
         feeFactor: inventionFactor
@@ -5081,7 +5171,7 @@ final class RuntimeState {
     var lastPlan: BlueprintInventionPlan?
     for decryptor in candidates {
       guard
-        let materials = await inputs.buyCost(
+        let materials = await buyCost(
           activity.materials
             + (decryptor.map {
               [BlueprintMaterial(typeID: $0.typeID, quantity: 1)]
@@ -5166,14 +5256,56 @@ final class RuntimeState {
       outputBlueprintTypeIDs: blueprintTypeIDs,
       catalog: catalog
     )
+    // The whole list is estimated off the main thread (GESCHWINDIGKEIT
+    // T17); only inputs the prefetched order book does not cover fall back
+    // to the main-actor lookup.
+    let loadedBook = inputs.loadedBook
+    guard
+      let estimates = await Self.opportunityInventionEstimates(
+        blueprintTypeIDs: blueprintTypeIDs.sorted(),
+        catalog: catalog,
+        context: scienceCostContext(inputs: inputs),
+        capabilities: rememberedCapabilities,
+        buyCost: { materials in
+          if let loadedBook,
+            materials.allSatisfy({ loadedBook.typeIDs.contains($0.typeID) })
+          {
+            return ScienceCostInputs.buyCost(materials, book: loadedBook.book)
+          }
+          return await inputs.buyCost(materials)
+        }
+      )
+    else { return }
+    let merged = opportunityInventionEstimates.merging(estimates) { $1 }
+    opportunityInventionEstimatesLoadedAt = .now
+    // Unchanged estimates keep the revision, so the opportunity tables do
+    // not recompute after a refresh that produced the same values.
+    if merged != opportunityInventionEstimates {
+      opportunityInventionEstimates = merged
+      opportunityInventionRevision = UUID()
+    }
+    opportunityInventionError = nil
+  }
+
+  /// `nil` when the task was cancelled; nothing is published then.
+  nonisolated private static func opportunityInventionEstimates(
+    blueprintTypeIDs: [Int64],
+    catalog: SQLiteStaticCatalog,
+    context: ScienceCostContext,
+    capabilities: [CharacterCapabilitySnapshot],
+    buyCost: @Sendable ([BlueprintMaterial]) async -> Double?
+  ) async -> [Int64: ManufacturingOpportunityInventionEstimate]? {
     var estimates: [Int64: ManufacturingOpportunityInventionEstimate] = [:]
-    for typeID in blueprintTypeIDs.sorted() {
-      if Task.isCancelled { return }
+    for typeID in blueprintTypeIDs {
+      if Task.isCancelled { return nil }
       guard
         let estimate = await inventionCost(
           outputBlueprintTypeID: typeID,
-          inputs: inputs,
-          capabilities: rememberedCapabilities
+          catalog: catalog,
+          context: context,
+          capabilities: capabilities,
+          decryptorCandidates: { _, _ in [nil] },
+          buyCost: buyCost
         )
       else {
         estimates[typeID] = .notInvented
@@ -5186,15 +5318,7 @@ final class RuntimeState {
         outputRuns: estimate.outputRuns
       )
     }
-    let merged = opportunityInventionEstimates.merging(estimates) { $1 }
-    opportunityInventionEstimatesLoadedAt = .now
-    // Unchanged estimates keep the revision, so the opportunity tables do
-    // not recompute after a refresh that produced the same values.
-    if merged != opportunityInventionEstimates {
-      opportunityInventionEstimates = merged
-      opportunityInventionRevision = UUID()
-    }
-    opportunityInventionError = nil
+    return estimates
   }
 
   func consolidationManufacturingDefinition(_ blueprintID: Int64) async throws -> BlueprintDefinition? {

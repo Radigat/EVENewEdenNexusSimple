@@ -10417,3 +10417,18 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Prüfung:** `swift test` grün (801 Core-Tests, App-Suiten inkl. neuem Quelltext-Test in `NexusPanelSurfaceRenderingTests`), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. Planer-Info: nicht betroffen.
 - **Offen:** Wirkung nicht belegt (kein automatischer Nachweis möglich), Nachmessung mit dem Eigentümer bei laufendem RIFT und Magnet. Nicht committet.
 - **Nachmessung (live, 15.11., 13:35 Uhr, Magnet und RIFT laufen):** Magnets Abfrage und der Fokus-Abgleich liegen in allen zehn Proben unter 2 % des Hauptthreads (vorher 5–34 % und 10–48 %). Beim Scrollen bleibt der Hauptthread zu 54–88 % belegt (Layout, Darstellung, Treffersuche). Eindruck des Eigentümers offen.
+- **Eindruck des Eigentümers (15.11., Lauf 13:35 Uhr):** Scrollen auch mit laufendem Magnet und RIFT flüssig. Committet als `52688ec`; dieser Nachtrag ist noch nicht committet.
+
+## 15.11.2026: Reaktionsgeschwindigkeit T17 – Inventionsschätzung abseits des Hauptthreads
+
+- **Auftrag:** Eigentümer: „weitermachen“ (Inventionsschätzung).
+- **Ergebnis:** Die Schätzung ist eine vom Hauptthread unabhängige Funktion mit Werten als Eingabe (`ScienceCostContext`); die Liste der Hub-Chancen wird als Ganzes abseits geschätzt und nutzt das vorab geladene Orderbuch direkt. Vorher mehrere tausend Wechsel zwischen Hauptthread und SDE-Katalog je Lauf (31,2 s beim Home-Besuch vom 14.11.). Rechenregel und fehlende Zustände unverändert; die BPC-Bewertung des Planers nutzt dieselbe Funktion. PRODUCT.md und Dokument nachgezogen.
+- **Prüfung:** `swift test` grün (801 Core-Tests, 163 App-Tests inkl. zwei neuer Tests `InventionCostEstimateTests` mit SDE-Fixture), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. Planer-Info: geprüft, keine Änderung nötig (Rechenweg und Ergebnisse der BPC-Bewertung unverändert).
+- **Offen:** Nicht nachgemessen; kein Vergleich alt gegen neu mit echten Daten. Nicht committet.
+- **Nachmessung T17 (live, 15.11., 14:03 Uhr, ein Wert):** `hub.invention` beim Start 1,6 s (frühere Starts 7,1–11,4 s). Schätzung während des Scrollens nicht ausgelöst und damit nicht nachgemessen.
+- **Korrektur (15.11., 14:07 Uhr):** Der Fokus-Abgleich der Bedienungshilfen ist trotz ausgeblendetem Hauptfenster wieder gemessen (9–16 % beim Scrollen der Home-Hub-Chancen); um 13:35 Uhr fehlte er. Magnets Abfrage bleibt unter 2 %. Auslöser offen.
+
+## 16.11.2026: Reaktionsgeschwindigkeit – Auslöser des Fokus-Abgleichs im Nachbau (unterbrochen)
+
+- **Ergebnis (automatischer Nachbau, temporärer Test entfernt, Quelle im Scratchpad):** Die Abfrage „Element unter dem Mauszeiger“ (wie Magnet) schaltet die Bedienungshilfen von SwiftUI je Fenster dauerhaft ein; Scrollen kostet danach 16 statt 4,7 ms je Schritt. Fensterliste (wie RIFT) kostet nichts. `accessibilityHidden(true)` hilft nicht. Wirksam: Abfragen am Fenster selbst beantworten.
+- **Offen:** Umsetzung in der App; Überprüfung von `withoutAccessibility()`. T17 weiter nicht committet. Unterbrochen auf Wunsch des Eigentümers.

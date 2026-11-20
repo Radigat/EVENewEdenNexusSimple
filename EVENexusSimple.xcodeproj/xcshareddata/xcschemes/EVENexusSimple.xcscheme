@@ -70,6 +70,13 @@
             ReferencedContainer = "container:EVENexusSimple.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "EVE_NEXUS_PERF_DISABLE"
+            value = "rowlinks"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
