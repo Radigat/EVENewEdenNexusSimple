@@ -10432,3 +10432,11 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 
 - **Ergebnis (automatischer Nachbau, temporärer Test entfernt, Quelle im Scratchpad):** Die Abfrage „Element unter dem Mauszeiger“ (wie Magnet) schaltet die Bedienungshilfen von SwiftUI je Fenster dauerhaft ein; Scrollen kostet danach 16 statt 4,7 ms je Schritt. Fensterliste (wie RIFT) kostet nichts. `accessibilityHidden(true)` hilft nicht. Wirksam: Abfragen am Fenster selbst beantworten.
 - **Offen:** Umsetzung in der App; Überprüfung von `withoutAccessibility()`. T17 weiter nicht committet. Unterbrochen auf Wunsch des Eigentümers.
+
+## 20.11.2026: CI rot nach dem Push – Höhe der Klick-Felder unter macOS 15
+
+- **Auftrag:** Eigentümer: „push“, danach „fehler beim push“ (CI-Mail zu `6ff37cc`).
+- **Befund (CI-Lauf `44805787045`, `macos-15`, Swift 6.1.2):** Einziger Fehler `testClickToEditFieldKeepsItsHeightWhenEditingStarts`. Unter macOS 15 behält das native Eingabefeld der Hub-Tabelle bei jeder Textgröße 22 pt Höhe; der Text-Platzhalter ist 19 pt (Kompakt), 24 pt (Sehr groß) und 27 pt (Bedienungshilfe) hoch. Die Zeile sprang dort beim Klick also tatsächlich. Unter macOS 27.2 wächst das Feld mit, deshalb lokal grün.
+- **Ergebnis:** Im Bearbeitungszustand bestimmt der ausgeblendete Text-Platzhalter (mit einer Ziffer als Muster) die Größe der Zelle, das Eingabefeld liegt darüber. Die Zeilenhöhe hängt damit weder von der macOS-Version noch vom eingegebenen Text ab. Ruhezustand der Tabelle unverändert (keine zusätzlichen Views je Zeile). Der Test verlangt jetzt exakt gleiche Höhen, auch für ein geleertes Feld.
+- **Prüfung:** Gegenprobe lokal: Mit einem auf 40 pt erzwungenen Eingabefeld bleibt der Test grün, die Zellhöhe hängt also nicht mehr vom Feld ab (danach zurückgesetzt). Unter macOS 27.2 (Swift 6.4.2): `swift test` grün (801 Core-Tests, 163 App-Tests, XCTest-Suiten inkl. Fokus- und Tab-Test), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. macOS 15 nicht lokal geprüft, erst mit dem nächsten CI-Lauf. Sichtprüfung in der App offen.
+- **Offen:** Commit und Push nur auf Auftrag; CI-Ergebnis danach.

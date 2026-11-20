@@ -181,17 +181,18 @@ final class EVEItemPresentationTests: XCTestCase {
     XCTAssertNil(next(99, .runs))
   }
 
-  /// The text stand-in must be as tall as the real field, so a row does not
-  /// change its height when a cell is clicked. The native field grows in
-  /// control-size steps, so one point of difference is allowed.
+  /// A row must not change its height when a cell is clicked, in every text
+  /// size and on every macOS version: the editing cell takes its height from
+  /// the hidden text stand-in, because on macOS 15 the native field keeps
+  /// one height for all text sizes. An emptied field keeps the height too.
   @MainActor
   func testClickToEditFieldKeepsItsHeightWhenEditingStarts() {
     for size in AppTextSize.allCases {
-      func height(isEditing: Bool) -> CGFloat {
+      func height(isEditing: Bool, text: String = "1234") -> CGFloat {
         NSHostingView(
           rootView: ClickToEditNumberField(
             title: "Runs",
-            text: .constant("1234"),
+            text: .constant(text),
             isEditing: isEditing,
             beginEditing: {},
             endEditing: {},
@@ -202,11 +203,12 @@ final class EVEItemPresentationTests: XCTestCase {
           .environment(\.appTextSize, size)
         ).fittingSize.height
       }
+      let resting = height(isEditing: false)
+      XCTAssertEqual(resting, height(isEditing: true), "text size \(size)")
       XCTAssertEqual(
-        height(isEditing: false),
-        height(isEditing: true),
-        accuracy: 1,
-        "text size \(size)"
+        resting,
+        height(isEditing: true, text: ""),
+        "emptied field, text size \(size)"
       )
     }
   }

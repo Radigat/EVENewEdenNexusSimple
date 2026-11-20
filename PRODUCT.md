@@ -3656,7 +3656,9 @@ mit kurzen, wiederverwendbaren Prompts steht in
   Reaktionen haben nur Runs), am Tabellenanfang und -ende endet die
   Eingabe. Werte, Prüfung, Enter und die rote Markierung ungültiger Eingaben
   sind unverändert. Mit der Tabulatortaste von außerhalb erreicht man die
-  Zellen nicht mehr; der Einstieg ist der Klick.
+  Zellen nicht mehr; der Einstieg ist der Klick. Die Zeile behält beim Klick
+  in jeder Textgröße ihre Höhe, auch unter macOS 15, wo das native
+  Eingabefeld immer gleich hoch ist.
 - Nur im Debug-Build gibt es einen Messschalter für den A/B-Vergleich der
   Darstellung: Die Umgebungsvariable
   `EVE_NEXUS_PERF_DISABLE=shadows,tooltips` schaltet beim Start einzeln die

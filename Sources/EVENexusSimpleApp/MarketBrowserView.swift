@@ -4926,48 +4926,63 @@ struct ClickToEditNumberField: View {
 
   var body: some View {
     if isEditing {
-      TextField(title, text: $text)
-        .textFieldStyle(.roundedBorder)
-        .appFont(.caption.monospacedDigit())
-        .multilineTextAlignment(.trailing)
-        .focused($isFocused)
-        .onAppear { isFocused = true }
-        .onKeyPress(keys: [.tab, Self.backtab]) { press in
-          moveFocus(press.key == .tab && !press.modifiers.contains(.shift))
-          return .handled
-        }
-        .onChange(of: isFocused) { _, focused in
-          guard !focused else { return }
-          // Tab that AppKit handled itself still moves to the neighbour.
-          if let event = NSApp.currentEvent, event.type == .keyDown,
-            event.keyCode == Self.tabKeyCode
-          {
-            moveFocus(!event.modifierFlags.contains(.shift))
-          } else {
-            endEditing()
-          }
+      // The hidden stand-in sizes the cell, so the row keeps its height
+      // on every macOS version: on macOS 15 the native field keeps one
+      // height for all text sizes.
+      standIn(Self.sizingSample)
+        .hidden()
+        .overlay {
+          TextField(title, text: $text)
+            .textFieldStyle(.roundedBorder)
+            .appFont(.caption.monospacedDigit())
+            .multilineTextAlignment(.trailing)
+            .focused($isFocused)
+            .onAppear { isFocused = true }
+            .onKeyPress(keys: [.tab, Self.backtab]) { press in
+              moveFocus(press.key == .tab && !press.modifiers.contains(.shift))
+              return .handled
+            }
+            .onChange(of: isFocused) { _, focused in
+              guard !focused else { return }
+              // Tab that AppKit handled itself still moves to the neighbour.
+              if let event = NSApp.currentEvent, event.type == .keyDown,
+                event.keyCode == Self.tabKeyCode
+              {
+                moveFocus(!event.modifierFlags.contains(.shift))
+              } else {
+                endEditing()
+              }
+            }
         }
     } else {
-      Text(verbatim: text)
-        .appFont(.caption.monospacedDigit())
-        .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.horizontal, Self.horizontalInset)
-        .padding(.vertical, Self.verticalInset)
-        .background {
-          RoundedRectangle(cornerRadius: Self.cornerRadius)
-            .fill(Color(nsColor: .textBackgroundColor))
-        }
-        .overlay {
-          RoundedRectangle(cornerRadius: Self.cornerRadius)
-            .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
-        }
+      standIn(text)
         .contentShape(Rectangle())
         .onTapGesture(perform: beginEditing)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, beginEditing)
     }
   }
+
+  private func standIn(_ value: String) -> some View {
+    Text(verbatim: value)
+      .appFont(.caption.monospacedDigit())
+      .lineLimit(1)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .padding(.horizontal, Self.horizontalInset)
+      .padding(.vertical, Self.verticalInset)
+      .background {
+        RoundedRectangle(cornerRadius: Self.cornerRadius)
+          .fill(Color(nsColor: .textBackgroundColor))
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: Self.cornerRadius)
+          .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+      }
+  }
+
+  /// One line of digits; sizes the editing cell independently of the
+  /// typed text, which may be empty.
+  static let sizingSample = "0"
 
   static let horizontalInset: CGFloat = 4
   static let verticalInset: CGFloat = 4

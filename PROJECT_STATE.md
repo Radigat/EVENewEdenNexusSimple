@@ -160,9 +160,20 @@ Der Eigentümer hat die Korrektur am 19.10.2026 mit dem signierten Build
 `~/Developer/EVE New Eden Nexus Builds/2026-10-19-debug-8961e00-bplocations/`
 live geprüft: Die Standorte werden korrekt angezeigt.
 
-## Git-Stand (09.11.2026)
+## Git-Stand (20.11.2026)
 
-- `origin/main` steht seit dem Push vom 09.11.2026 auf `76e5791`. Mit ihm
+- `origin/main` steht seit dem Push vom 20.11.2026 auf `6ff37cc`. Mit ihm
+  gingen die Reaktionsgeschwindigkeits-Commits `831fca1`, `48357ea`,
+  `f1a8eb7`, `52688ec` und `6ff37cc` nach `origin/main`; davor lag es auf
+  `b57accd` (Verkaufsbelege, mit `eeb9264` am 10.11.2026 gepusht, CI grün).
+- **CI rot mit `6ff37cc`:** Lauf `44805787045` (`macos-15`, Swift 6.1.2),
+  einzig `testClickToEditFieldKeepsItsHeightWhenEditingStarts`. Unter
+  macOS 15 behält das native Eingabefeld der Hub-Tabelle bei jeder
+  Textgröße 22 pt Höhe, die Zeile sprang dort beim Klick. Korrektur: Das
+  Feld nimmt seine Höhe vom ausgeblendeten Text-Platzhalter. Lokal unter
+  macOS 27.2 geprüft, macOS 15 erst mit dem nächsten CI-Lauf; Einzelheiten
+  im [dev-diary.md](dev-diary.md), Eintrag vom 20.11.2026.
+- Am 09.11.2026 ging `origin/main` auf `76e5791`. Mit ihm
   gingen `320da12` (Dashboard DB7/DB8, Nachträge und Abnahme), `4305a4f`
   (Bestandsverlauf neben jedem Item), `0a19949` (Hammer „Im Planer bauen“)
   und `76e5791` (Planer-Absturz bei den Verkaufswegen) nach `origin/main`.
