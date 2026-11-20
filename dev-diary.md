@@ -10440,3 +10440,10 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Ergebnis:** Im Bearbeitungszustand bestimmt der ausgeblendete Text-Platzhalter (mit einer Ziffer als Muster) die Größe der Zelle, das Eingabefeld liegt darüber. Die Zeilenhöhe hängt damit weder von der macOS-Version noch vom eingegebenen Text ab. Ruhezustand der Tabelle unverändert (keine zusätzlichen Views je Zeile). Der Test verlangt jetzt exakt gleiche Höhen, auch für ein geleertes Feld.
 - **Prüfung:** Gegenprobe lokal: Mit einem auf 40 pt erzwungenen Eingabefeld bleibt der Test grün, die Zellhöhe hängt also nicht mehr vom Feld ab (danach zurückgesetzt). Unter macOS 27.2 (Swift 6.4.2): `swift test` grün (801 Core-Tests, 163 App-Tests, XCTest-Suiten inkl. Fokus- und Tab-Test), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. macOS 15 nicht lokal geprüft, erst mit dem nächsten CI-Lauf. Sichtprüfung in der App offen.
 - **Offen:** Commit und Push nur auf Auftrag; CI-Ergebnis danach.
+
+## 20.11.2026: CI weiter rot – Zeitmessung der Item-Links unter macOS 15
+
+- **Befund (CI-Lauf `44811985315` zu `957b693`, `macos-15`, Swift 6.1.2):** Der Höhentest der Klick-Felder ist grün. Gescheitert ist `testItemLinksStayCheaperThanBorderlessButtons`: 200 Zeilen mit beiden Item-Links 167,6 ms, mit randlosen Schaltflächen 250,7 ms (67 %, Grenze 60 %). Im Lauf `44805787045` hat derselbe Test bestanden; unter macOS 15 liegt das Verhältnis also um die Grenze. Unter macOS 27.2 etwa ein Sechstel. Ursache des Unterschieds nicht untersucht (kein macOS 15 vor Ort).
+- **Entscheidung des Eigentümers (20.11.2026):** „Strikt ab macOS 26“.
+- **Ergebnis:** Ab macOS 26 müssen die Links weiter unter 60 % der randlosen Schaltflächen bleiben, unter älteren Versionen nur darunter (Grenze 100 %). Versionsabfrage über `ProcessInfo`. App-Code unverändert.
+- **Prüfung:** Unter macOS 27.2 (Swift 6.4.2): `swift test` grün (801 Core-Tests, 163 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. macOS 15 erst mit dem nächsten CI-Lauf.

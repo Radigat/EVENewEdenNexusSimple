@@ -100,7 +100,10 @@ final class MarketStockHistoryLinkTests: XCTestCase {
   }
 
   /// Both links of 200 rows must stay well below the cost of the borderless
-  /// buttons they replaced (measured about one sixth; the bound is loose).
+  /// buttons they replaced. Measured under macOS 27 about one sixth, so from
+  /// macOS 26 on the loose bound of 0.6 applies. Under macOS 15 (CI) the
+  /// ratio is about 0.6 to 0.7; there the links only have to be cheaper
+  /// (owner decision 20.11.2026).
   func testItemLinksStayCheaperThanBorderlessButtons() {
     let history = MarketStockHistoryRouter()
     let build = PlannerBuildRouter(
@@ -143,7 +146,12 @@ final class MarketStockHistoryLinkTests: XCTestCase {
       MarketStockHistoryButton(typeID: typeID, name: "Fixture")
       PlannerBuildButton(typeID: typeID, name: "Fixture")
     }
-    XCTAssertLessThan(links, borderless * 0.6, "links \(links) ms, borderless \(borderless) ms")
+    let bound = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 ? 0.6 : 1.0
+    XCTAssertLessThan(
+      links,
+      borderless * bound,
+      "links \(links) ms, borderless \(borderless) ms, bound \(bound)"
+    )
   }
 
   private func strongestPixel(

@@ -170,9 +170,13 @@ live geprüft: Die Standorte werden korrekt angezeigt.
   einzig `testClickToEditFieldKeepsItsHeightWhenEditingStarts`. Unter
   macOS 15 behält das native Eingabefeld der Hub-Tabelle bei jeder
   Textgröße 22 pt Höhe, die Zeile sprang dort beim Klick. Korrektur: Das
-  Feld nimmt seine Höhe vom ausgeblendeten Text-Platzhalter. Lokal unter
-  macOS 27.2 geprüft, macOS 15 erst mit dem nächsten CI-Lauf; Einzelheiten
-  im [dev-diary.md](dev-diary.md), Eintrag vom 20.11.2026.
+  Feld nimmt seine Höhe vom ausgeblendeten Text-Platzhalter (`957b693`,
+  gepusht; im Lauf `44811985315` grün). Derselbe Lauf scheiterte an der
+  Zeitmessung `testItemLinksStayCheaperThanBorderlessButtons` (Links 67 %
+  der randlosen Schaltflächen, Grenze 60 %; im Lauf davor bestanden). Nach
+  Wahl des Eigentümers gilt die Grenze von 60 % ab macOS 26; darunter
+  müssen die Links nur günstiger sein. Einzelheiten im
+  [dev-diary.md](dev-diary.md), Einträge vom 20.11.2026.
 - Am 09.11.2026 ging `origin/main` auf `76e5791`. Mit ihm
   gingen `320da12` (Dashboard DB7/DB8, Nachträge und Abnahme), `4305a4f`
   (Bestandsverlauf neben jedem Item), `0a19949` (Hammer „Im Planer bauen“)
