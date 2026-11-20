@@ -175,7 +175,12 @@ live geprüft: Die Standorte werden korrekt angezeigt.
   Zeitmessung `testItemLinksStayCheaperThanBorderlessButtons` (Links 67 %
   der randlosen Schaltflächen, Grenze 60 %; im Lauf davor bestanden). Nach
   Wahl des Eigentümers gilt die Grenze von 60 % ab macOS 26; darunter
-  müssen die Links nur günstiger sein. Einzelheiten im
+  müssen die Links nur günstiger sein (`a8ceec5`, gepusht). Dessen Lauf
+  `44818785391` scheiterte am Fokus-Test der Klick-Felder
+  (`testClickToEditFieldTakesFocusAndTabMovesToTheNeighbour`): Auf dem
+  langsameren Rechner reichten feste 0,4 s Wartezeit nicht, jeder Schritt
+  hinkte um einen hinterher. Der Test wartet jetzt bis zum Fokus, höchstens
+  5 s; lokal unter Volllast grün. Einzelheiten im
   [dev-diary.md](dev-diary.md), Einträge vom 20.11.2026.
 - Am 09.11.2026 ging `origin/main` auf `76e5791`. Mit ihm
   gingen `320da12` (Dashboard DB7/DB8, Nachträge und Abnahme), `4305a4f`

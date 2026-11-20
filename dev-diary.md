@@ -10447,3 +10447,11 @@ Nicht geprüft: Hinweis „Mit den Materialien versenden“ in der App; formale 
 - **Entscheidung des Eigentümers (20.11.2026):** „Strikt ab macOS 26“.
 - **Ergebnis:** Ab macOS 26 müssen die Links weiter unter 60 % der randlosen Schaltflächen bleiben, unter älteren Versionen nur darunter (Grenze 100 %). Versionsabfrage über `ProcessInfo`. App-Code unverändert.
 - **Prüfung:** Unter macOS 27.2 (Swift 6.4.2): `swift test` grün (801 Core-Tests, 163 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. macOS 15 erst mit dem nächsten CI-Lauf.
+
+## 20.11.2026: CI weiter rot – Wartezeit im Fokus-Test der Klick-Felder
+
+- **Befund (CI-Lauf `44818785391` zu `a8ceec5`, `macos-15`, Swift 6.1.2):** Der Zeittest der Links ist grün. Gescheitert ist `testClickToEditFieldTakesFocusAndTabMovesToTheNeighbour` mit vier Meldungen; jeder Schritt hinkte um einen hinterher (nach Tab noch kein Feld, nach Umschalt-Tab erst „22“). Der Rechner war langsamer (XCTest-Suiten 14,2 s statt 11,2 s, Lauf 7 statt 5 Minuten). In den beiden Läufen davor war derselbe Test grün, im zweiten schon mit dem Platzhalter aus `957b693`.
+- **Ursache (lokal nachgestellt):** Der Test wartete nach jedem Tastendruck fest 0,4 s. Mit verkürzter Wartezeit entsteht lokal dasselbe Fehlerbild. App-Verhalten nicht betroffen.
+- **Ergebnis:** Der Test wartet jetzt, bis der Fokus im erwarteten Feld ist (höchstens 5 s), und lässt danach weiter 0,4 s laufen, damit ein doppelter Wechsel im Protokoll auffiele. Geprüft wird dasselbe wie vorher. App-Code unverändert.
+- **Prüfung:** Fokus-Test lokal dreimal grün und einmal unter Volllast (28 Lastprozesse auf 14 Kernen, 10,4 s statt 3 s). Die Lastprozesse liefen wegen eines Fehlers im Aufräumbefehl etwa zehn Minuten länger und wurden dann gezielt beendet. Unter macOS 27.2 (Swift 6.4.2): `swift test` grün (801 Core-Tests, 163 App-Tests, XCTest-Suiten), `EVEStaticDataKit` 13 Tests, `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`, `check_planner_guide: ok`. macOS 15 erst mit dem nächsten CI-Lauf.
+- **Offen:** CI-Ergebnis nach dem Push.

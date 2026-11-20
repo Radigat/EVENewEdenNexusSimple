@@ -229,7 +229,22 @@ final class EVEItemPresentationTests: XCTestCase {
     window.contentView = NSHostingView(rootView: ClickToEditProbe(log: log))
     window.orderFront(nil)
     defer { window.close() }
-    func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.4)) }
+    func editedText() -> String? { (window.firstResponder as? NSTextView)?.string }
+    /// Waits until the focus has arrived, up to five seconds for a slow CI
+    /// runner (a fixed 0.4 s pause was too short there on 20.11.2026), then
+    /// keeps the loop running briefly so a duplicate move would still show.
+    func expectEdited(
+      _ expected: String?,
+      file: StaticString = #filePath,
+      line: UInt = #line
+    ) {
+      let deadline = Date().addingTimeInterval(5)
+      while editedText() != expected, Date() < deadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+      }
+      XCTAssertEqual(editedText(), expected, file: file, line: line)
+      RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+    }
     var timestamp: TimeInterval = 0
     func press(shift: Bool) throws {
       timestamp += 1
@@ -250,18 +265,15 @@ final class EVEItemPresentationTests: XCTestCase {
           )
         )
       )
-      settle()
     }
-    func editedText() -> String? { (window.firstResponder as? NSTextView)?.string }
 
-    settle()
-    XCTAssertEqual(editedText(), "11")
+    expectEdited("11")
     try press(shift: false)
-    XCTAssertEqual(editedText(), "22")
+    expectEdited("22")
     try press(shift: true)
-    XCTAssertEqual(editedText(), "11")
+    expectEdited("11")
     try press(shift: true)
-    XCTAssertNil(editedText())
+    expectEdited(nil)
     XCTAssertEqual(log.moves, ["forward 1", "back 2", "back 1"])
   }
 
