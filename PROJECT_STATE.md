@@ -162,11 +162,15 @@ live geprüft: Die Standorte werden korrekt angezeigt.
 
 ## Git-Stand (20.11.2026)
 
-- `origin/main` steht seit dem Push vom 20.11.2026 auf `6ff37cc`. Mit ihm
-  gingen die Reaktionsgeschwindigkeits-Commits `831fca1`, `48357ea`,
-  `f1a8eb7`, `52688ec` und `6ff37cc` nach `origin/main`; davor lag es auf
+- `origin/main` steht seit dem Push vom 20.11.2026 auf `c83f726`. Am
+  20.11.2026 gingen die Reaktionsgeschwindigkeits-Commits `831fca1`,
+  `48357ea`, `f1a8eb7`, `52688ec` und `6ff37cc` sowie die CI-Korrekturen
+  `957b693`, `a8ceec5` und `c83f726` nach `origin/main`; davor lag es auf
   `b57accd` (Verkaufsbelege, mit `eeb9264` am 10.11.2026 gepusht, CI grün).
-- **CI rot mit `6ff37cc`:** Lauf `44805787045` (`macos-15`, Swift 6.1.2),
+- **CI grün mit `c83f726`:** Lauf `44825859567` (`macos-15`, Swift 6.1.2)
+  mit 964 Swift-Testing-Tests, den XCTest-Suiten und der
+  Planer-Info-Prüfung.
+- **CI rot von `6ff37cc` bis `a8ceec5`:** Lauf `44805787045` (`macos-15`, Swift 6.1.2),
   einzig `testClickToEditFieldKeepsItsHeightWhenEditingStarts`. Unter
   macOS 15 behält das native Eingabefeld der Hub-Tabelle bei jeder
   Textgröße 22 pt Höhe, die Zeile sprang dort beim Klick. Korrektur: Das
@@ -180,7 +184,7 @@ live geprüft: Die Standorte werden korrekt angezeigt.
   (`testClickToEditFieldTakesFocusAndTabMovesToTheNeighbour`): Auf dem
   langsameren Rechner reichten feste 0,4 s Wartezeit nicht, jeder Schritt
   hinkte um einen hinterher. Der Test wartet jetzt bis zum Fokus, höchstens
-  5 s; lokal unter Volllast grün. Einzelheiten im
+  5 s (`c83f726`). Einzelheiten im
   [dev-diary.md](dev-diary.md), Einträge vom 20.11.2026.
 - Am 09.11.2026 ging `origin/main` auf `76e5791`. Mit ihm
   gingen `320da12` (Dashboard DB7/DB8, Nachträge und Abnahme), `4305a4f`
