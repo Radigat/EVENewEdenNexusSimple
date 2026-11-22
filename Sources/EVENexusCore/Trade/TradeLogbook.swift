@@ -232,6 +232,28 @@ public struct TradeLogbookEntry: Identifiable, Equatable, Sendable {
     }
   }
 
+  /// Sets one usage for several entries at once, with the same rules as the
+  /// editor: a changed target hub takes that hub's current location name, and
+  /// an entry reopened for a sale whose units are all sold stays sold.
+  /// Returns only the entries that actually change, in input order.
+  public static func applyingUsage(
+    _ usage: TradeLogbookUsage,
+    to entries: [TradeLogbookEntry],
+    targetLocationNames: [OpportunityHubRole: String]
+  ) -> [TradeLogbookEntry] {
+    entries.compactMap { entry in
+      var updated = entry
+      updated.setUsage(usage)
+      if updated.targetRole != entry.targetRole {
+        updated.targetLocationName = targetLocationNames[updated.targetRole]
+      }
+      if updated.status.isOpen, updated.soldQuantity >= updated.quantity {
+        updated.status = .sold
+      }
+      return updated == entry ? nil : updated
+    }
+  }
+
   public var soldQuantity: Int64 {
     sales.reduce(0) { $0 + $1.quantity }
   }

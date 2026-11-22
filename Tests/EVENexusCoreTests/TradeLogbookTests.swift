@@ -272,6 +272,70 @@ struct TradeLogbookTests {
   }
 
   @Test
+  func bulkUsageChangesOnlyEntriesThatDifferAndFollowsTheEditorRules() async throws {
+    let open = entry(quantity: 10, target: .home)
+    let produced = entry(quantity: 20, status: .manufacturingIgnored, target: .home)
+    let consumed = entry(quantity: 30, status: .consumed, target: .main)
+    let soldOut = entry(
+      quantity: 5,
+      status: .manufacturingIgnored,
+      target: .home,
+      sales: [
+        TradeLogbookSale(
+          soldAt: Date(timeIntervalSince1970: 1_800_100_000),
+          quantity: 5,
+          unitPrice: 700_000,
+          kind: .listedSellOrder
+        )
+      ]
+    )
+    let names: [OpportunityHubRole: String] = [.coalition: "Coalition Station"]
+
+    // Production: the already produced entry is not changed again, the
+    // target hub of the others stays.
+    let production = TradeLogbookEntry.applyingUsage(
+      .production,
+      to: [open, produced, consumed],
+      targetLocationNames: names
+    )
+    #expect(production.map(\.id) == [open.id, consumed.id])
+    #expect(production.allSatisfy { $0.usage == .production && $0.openQuantity == 0 })
+    #expect(production.map(\.targetRole) == [.home, .main])
+    #expect(production.map(\.targetLocationName) == ["Home", "Home"])
+
+    let consumption = TradeLogbookEntry.applyingUsage(
+      .consumption,
+      to: [open, produced, consumed],
+      targetLocationNames: names
+    )
+    #expect(consumption.map(\.id) == [open.id, produced.id])
+    #expect(consumption.allSatisfy { $0.status == .consumed })
+
+    // Back to a sale: a new target hub takes its current location name, an
+    // unknown name stays unknown, and fully sold units close as sold.
+    let sale = TradeLogbookEntry.applyingUsage(
+      .sale(.coalition),
+      to: [open, consumed, soldOut],
+      targetLocationNames: names
+    )
+    #expect(sale.map(\.id) == [open.id, consumed.id, soldOut.id])
+    #expect(sale.allSatisfy { $0.usage == .sale(.coalition) })
+    #expect(sale.map(\.targetLocationName) == ["Coalition Station", "Coalition Station", "Coalition Station"])
+    #expect(sale.map(\.status) == [.bought, .bought, .sold])
+    let unnamed = TradeLogbookEntry.applyingUsage(
+      .sale(.main),
+      to: [open],
+      targetLocationNames: names
+    )
+    #expect(unnamed.first?.targetRole == .main)
+    #expect(unnamed.first?.targetLocationName == nil)
+    #expect(
+      TradeLogbookEntry.applyingUsage(.sale(.home), to: [open], targetLocationNames: names)
+        .isEmpty
+    )
+  }
+
+  @Test
   func sortingUsesTypedValuesAndKeepsUnknownCostsLast() {
     var cheap = entry(quantity: 10)
     cheap.buyUnitPrice = 1

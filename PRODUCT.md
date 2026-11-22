@@ -1167,6 +1167,20 @@ SwiftData-Datenbank bleibt unberührt.
     Orts und sortiert nach Main, Home, Coalition, Produktion, Verbrauch.
   - Produktion entspricht dem früheren Status „Fertigung, ignoriert“
     (gespeicherter Wert `manufacturingIgnored` unverändert, keine Migration).
+  - **Sammelzuordnung:** Ein Kästchen vorn in jeder Zeile wählt Einträge aus;
+    Umschalt-Klick wählt den sichtbaren Bereich ab dem zuletzt angeklickten
+    Eintrag, das Kästchen im Tabellenkopf alle sichtbaren Einträge (gemischt,
+    wenn nur ein Teil gewählt ist). Ausgewählte Zeilen sind hinterlegt.
+    - Die Leiste über der Tabelle setzt für alle ausgewählten Einträge auf
+      einmal **Produktion**, **Verbrauch** oder über **Verkauf in …** einen
+      Hub. Es gelten dieselben Regeln wie im Editor; ein neuer Ziel-Hub
+      übernimmt den aktuellen Ortsnamen, vollständig verkaufte Einträge
+      bleiben „verkauft“.
+    - Gespeichert wird in einer einzigen Transaktion: Schlägt sie fehl, bleibt
+      kein Eintrag verändert und die Auswahl erhalten. Danach zeigt die
+      Leiste die Zahl der geänderten Einträge und hebt die Auswahl auf.
+    - Geändert werden nur Einträge, die der Filter gerade zeigt; ein
+      Filterwechsel hebt die Auswahl auf.
 - **Status:** gekauft, im Transport, gelistet, verkauft, Produktion,
   Verbrauch, ausgeschlossen. Nur die ersten drei zählen als offen.
 - **Verkäufe:** Datum, Menge, Preis und Art (eigene Sell-Order oder

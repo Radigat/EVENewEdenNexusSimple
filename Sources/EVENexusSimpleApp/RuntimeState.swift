@@ -7493,6 +7493,43 @@ extension RuntimeState {
     }
   }
 
+  /// Sets one usage for the given entries in a single transaction (bulk
+  /// assignment in the logbook table). Returns the number of changed
+  /// entries, or nil when nothing was saved and the stored data stays.
+  @discardableResult
+  func setTradeLogbookUsage(
+    _ usage: TradeLogbookUsage,
+    forEntryIDs ids: Set<UUID>
+  ) async -> Int? {
+    if tradeLogbookStore == nil { await loadTradeLogbook() }
+    guard let tradeLogbookStore else { return nil }
+    var names: [OpportunityHubRole: String] = [:]
+    for role in OpportunityHubRole.allCases {
+      names[role] = tradeLocation(for: role)?.name
+    }
+    let now = Date.now
+    let changed = TradeLogbookEntry.applyingUsage(
+      usage,
+      to: tradeLogbookEntries.filter { ids.contains($0.id) },
+      targetLocationNames: names
+    ).map { entry in
+      var updated = entry
+      updated.updatedAt = now
+      return updated
+    }
+    guard !changed.isEmpty else { return 0 }
+    do {
+      try await tradeLogbookStore.save(changed)
+      tradeLogbookEntries = try await tradeLogbookStore.entries()
+      tradeLogbookError = nil
+      return changed.count
+    } catch {
+      tradeLogbookError =
+        "The usage could not be changed. Existing entries were not changed."
+      return nil
+    }
+  }
+
   func deleteTradeLogbookEntry(id: UUID) async {
     guard let tradeLogbookStore else { return }
     do {

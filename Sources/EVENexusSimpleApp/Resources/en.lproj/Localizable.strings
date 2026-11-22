@@ -2962,3 +2962,14 @@
 "Contract holds several items; its price names no single item." = "Contract holds several items; its price names no single item.";
 "An ISK transfer names no item." = "An ISK transfer names no item.";
 "An ISK transfer names no item; sender unknown." = "An ISK transfer names no item; sender unknown.";
+
+/* Trade logbook: bulk usage (22.11.2026) */
+"Select entries with the checkboxes; Shift-click selects a range." = "Select entries with the checkboxes; Shift-click selects a range.";
+"%lld selected" = "%lld selected";
+"Set usage:" = "Set usage:";
+"Sale at…" = "Sale at…";
+"Select all visible entries" = "Select all visible entries";
+"Select this entry; Shift-click selects the range from the last clicked entry." = "Select this entry; Shift-click selects the range from the last clicked entry.";
+"Sets the usage of every selected entry at once, as in the editor. Production and consumption close the entries." = "Sets the usage of every selected entry at once, as in the editor. Production and consumption close the entries.";
+"Usage set to %@ · %lld changed" = "Usage set to %1$@ · %2$lld changed";
+"The usage could not be changed. Existing entries were not changed." = "The usage could not be changed. Existing entries were not changed.";

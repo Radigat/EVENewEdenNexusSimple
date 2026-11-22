@@ -1,3 +1,4 @@
+import AppKit
 import EVENexusCore
 import SwiftData
 import SwiftUI
@@ -55,6 +56,35 @@ enum TradePlannerMaterials {
   }
 }
 
+/// Checkbox selection of the logbook table: a click toggles one entry, a
+/// Shift click gives the visible range from the last clicked entry the same
+/// new state.
+enum TradeLogbookSelection {
+  static func toggled(
+    _ id: UUID,
+    isOn: Bool,
+    extendingRange: Bool,
+    anchor: UUID?,
+    orderedIDs: [UUID],
+    selection: Set<UUID>
+  ) -> Set<UUID> {
+    var ids = [id]
+    if extendingRange, let anchor,
+      let from = orderedIDs.firstIndex(of: anchor),
+      let to = orderedIDs.firstIndex(of: id)
+    {
+      ids = Array(orderedIDs[min(from, to)...max(from, to)])
+    }
+    var result = selection
+    if isOn {
+      result.formUnion(ids)
+    } else {
+      result.subtract(ids)
+    }
+    return result
+  }
+}
+
 /// Locale-aware number input: empty text means unknown (`nil`), never zero.
 enum TradeNumberText {
   static var locale: Locale { AppLocalization.currentLanguage.locale }
@@ -108,12 +138,17 @@ struct TradeLogbookView: View {
   private var filterRawValue = "open"
   @State private var editorRequest: TradeLogbookEditorRequest?
   @State private var pendingDeletion: TradeLogbookEntry?
+  @State private var selectedEntryIDs = Set<UUID>()
+  @State private var selectionAnchorID: UUID?
+  @State private var isApplyingUsage = false
+  @State private var usageMessage: String?
   @State private var sort = AppTableSortDescriptor(
     column: TradeLogbookSortColumn.purchasedAt,
     direction: .descending
   )
 
   private let numberWidth: CGFloat = 96
+  private let selectionWidth: CGFloat = 20
 
   var body: some View {
     ScrollView(.vertical) {
@@ -219,15 +254,18 @@ struct TradeLogbookView: View {
         .frame(maxWidth: .infinity, minHeight: 240)
       } else {
         Panel(title: "Purchases") {
+          let entries = visibleEntries
+          let orderedIDs = entries.map(\.id)
           VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
             filterBar
+            selectionBar(orderedIDs)
             ScrollView(.horizontal) {
               VStack(alignment: .leading, spacing: 0) {
-                tableHeader
+                tableHeader(orderedIDs)
                 Divider()
                 LazyVStack(alignment: .leading, spacing: 0) {
-                  ForEach(visibleEntries) { entry in
-                    row(entry)
+                  ForEach(entries) { entry in
+                    row(entry, orderedIDs: orderedIDs)
                     Divider().opacity(0.4)
                   }
                 }
@@ -235,7 +273,138 @@ struct TradeLogbookView: View {
             }
           }
         }
+        // A hidden entry must never be changed by a bulk action.
+        .onChange(of: filterRawValue) { _, _ in clearSelection() }
       }
+    }
+  }
+
+  // MARK: Bulk usage
+
+  /// Selected entries that the current filter shows; only these are changed.
+  private func selectedVisibleIDs(_ orderedIDs: [UUID]) -> Set<UUID> {
+    Set(orderedIDs.filter(selectedEntryIDs.contains))
+  }
+
+  private func selectionBar(_ orderedIDs: [UUID]) -> some View {
+    let selected = selectedVisibleIDs(orderedIDs)
+    let isDisabled = selected.isEmpty || isApplyingUsage
+    return HStack(spacing: DesignTokens.spacingSM) {
+      Group {
+        if selected.isEmpty {
+          Text("Select entries with the checkboxes; Shift-click selects a range.")
+            .foregroundStyle(DesignTokens.textSecondary)
+        } else {
+          Text(AppLocalization.format("%lld selected", Int64(selected.count)))
+            .monospacedDigit()
+        }
+      }
+      .appFont(.callout)
+      Text("Set usage:")
+        .appFont(.callout)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Button(TradeLogbookText.usage(.production)) {
+        applyUsage(.production, to: selected)
+      }
+      .disabled(isDisabled)
+      .accessibilityIdentifier("trade-logbook.bulk.production")
+      Button(TradeLogbookText.usage(.consumption)) {
+        applyUsage(.consumption, to: selected)
+      }
+      .disabled(isDisabled)
+      .accessibilityIdentifier("trade-logbook.bulk.consumption")
+      Menu(AppLocalization.text("Sale at…")) {
+        ForEach(OpportunityHubRole.allCases, id: \.self) { role in
+          Button(TradeLogbookText.usage(.sale(role))) {
+            applyUsage(.sale(role), to: selected)
+          }
+        }
+      }
+      .fixedSize()
+      .disabled(isDisabled)
+      .accessibilityIdentifier("trade-logbook.bulk.sale")
+      Button("Clear selection") { clearSelection() }
+        .disabled(selected.isEmpty || isApplyingUsage)
+      if isApplyingUsage {
+        ProgressView().controlSize(.small)
+      } else if let usageMessage {
+        Text(verbatim: usageMessage)
+          .appFont(.callout)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    .help(
+      AppLocalization.text(
+        "Sets the usage of every selected entry at once, as in the editor. Production and consumption close the entries."
+      )
+    )
+  }
+
+  private func selectionBinding(_ id: UUID, orderedIDs: [UUID]) -> Binding<Bool> {
+    Binding(
+      get: { selectedEntryIDs.contains(id) },
+      set: { isOn in
+        selectedEntryIDs = TradeLogbookSelection.toggled(
+          id,
+          isOn: isOn,
+          extendingRange: NSEvent.modifierFlags.contains(.shift),
+          anchor: selectionAnchorID,
+          orderedIDs: orderedIDs,
+          selection: selectedEntryIDs
+        )
+        selectionAnchorID = id
+        usageMessage = nil
+      }
+    )
+  }
+
+  /// Header checkbox: selects or clears every visible entry, mixed when only
+  /// some are selected.
+  private func selectAllToggle(_ orderedIDs: [UUID]) -> some View {
+    let sources = orderedIDs.map { id in
+      Binding(
+        get: { selectedEntryIDs.contains(id) },
+        set: { isOn in
+          if isOn {
+            selectedEntryIDs.insert(id)
+          } else {
+            selectedEntryIDs.remove(id)
+          }
+          selectionAnchorID = nil
+          usageMessage = nil
+        }
+      )
+    }
+    return Toggle(sources: sources, isOn: \.self) {
+      Text("Select all visible entries")
+    }
+    .toggleStyle(.checkbox)
+    .labelsHidden()
+    .disabled(orderedIDs.isEmpty || isApplyingUsage)
+    .help(AppLocalization.text("Select all visible entries"))
+    .accessibilityIdentifier("trade-logbook.select-all")
+  }
+
+  private func clearSelection() {
+    selectedEntryIDs = []
+    selectionAnchorID = nil
+    usageMessage = nil
+  }
+
+  private func applyUsage(_ usage: TradeLogbookUsage, to ids: Set<UUID>) {
+    guard !ids.isEmpty, !isApplyingUsage else { return }
+    isApplyingUsage = true
+    Task {
+      defer { isApplyingUsage = false }
+      // On failure the selection stays; the error is shown above.
+      guard let changed = await runtime.setTradeLogbookUsage(usage, forEntryIDs: ids)
+      else { return }
+      clearSelection()
+      usageMessage = AppLocalization.format(
+        "Usage set to %@ · %lld changed",
+        TradeLogbookText.usage(usage),
+        Int64(changed)
+      )
     }
   }
 
@@ -548,8 +717,10 @@ struct TradeLogbookView: View {
 
   // MARK: Table
 
-  private var tableHeader: some View {
+  private func tableHeader(_ orderedIDs: [UUID]) -> some View {
     HStack(spacing: DesignTokens.spacingSM) {
+      selectAllToggle(orderedIDs)
+        .frame(width: selectionWidth)
       Spacer().frame(width: 52)
       header("Purchased", .purchasedAt, width: 104, alignment: .leading)
       SortableTableHeader(title: "Item", column: TradeLogbookSortColumn.item, sort: $sort)
@@ -588,14 +759,28 @@ struct TradeLogbookView: View {
     .frame(width: width ?? numberWidth, alignment: alignment)
   }
 
-  private func row(_ entry: TradeLogbookEntry) -> some View {
+  private func row(_ entry: TradeLogbookEntry, orderedIDs: [UUID]) -> some View {
     let current = currentBestSell(entry)
     let reminder = entry.reminder(currentBestSell: current)
     let highlight: Bool = {
       if case .reached = reminder, entry.openQuantity > 0 { return true }
       return false
     }()
+    let isSelected = selectedEntryIDs.contains(entry.id)
     return HStack(spacing: DesignTokens.spacingSM) {
+      Toggle(isOn: selectionBinding(entry.id, orderedIDs: orderedIDs)) {
+        Text(verbatim: entry.typeName)
+      }
+      .toggleStyle(.checkbox)
+      .labelsHidden()
+      .disabled(isApplyingUsage)
+      .help(
+        AppLocalization.text(
+          "Select this entry; Shift-click selects the range from the last clicked entry."
+        )
+      )
+      .accessibilityIdentifier("trade-logbook.select.\(entry.id.uuidString)")
+      .frame(width: selectionWidth)
       HStack(spacing: DesignTokens.spacingXS) {
         Button {
           editorRequest = TradeLogbookEditorRequest(entry: entry, isNew: false)
@@ -674,7 +859,11 @@ struct TradeLogbookView: View {
         .frame(width: 70, alignment: .leading)
     }
     .padding(.vertical, DesignTokens.spacingXS)
-    .background(highlight ? DesignTokens.positive.opacity(0.1) : Color.clear)
+    .background(
+      isSelected
+        ? DesignTokens.accentSoft
+        : highlight ? DesignTokens.positive.opacity(0.1) : Color.clear
+    )
     .accessibilityIdentifier("trade-logbook.row.\(entry.id.uuidString)")
   }
 
