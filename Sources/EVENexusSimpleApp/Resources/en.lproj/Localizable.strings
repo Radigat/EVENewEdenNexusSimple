@@ -7,13 +7,13 @@
 "Character balances" = "Character balances";
 "Character net worth" = "Character net worth";
 "Valuation details" = "Valuation details";
-"Top 5 by material value" = "Top 5 by material value";
+"Top 5 by product value" = "Top 5 by product value";
 "Some character job data is incomplete; ranking may omit jobs." = "Some character job data is incomplete; ranking may omit jobs.";
 "Product name unavailable" = "Product name unavailable";
 "Running" = "Running";
-"Incomplete ranking · %lld jobs without full material valuation" = "Incomplete ranking · %lld jobs without full material valuation";
+"Incomplete ranking · %lld jobs without product valuation" = "Incomplete ranking · %lld jobs without product valuation";
 "No open production jobs." = "No open production jobs.";
-"Estimated material value · ESI average / adjusted prices" = "Estimated material value · ESI average / adjusted prices";
+"Estimated product value · ESI average / adjusted prices" = "Estimated product value · ESI average / adjusted prices";
 "Reactions with negative value creation" = "Reactions with negative value creation";
 "Open reactions" = "Open reactions";
 "No reactions have negative value creation." = "No reactions have negative value creation.";

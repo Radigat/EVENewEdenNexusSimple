@@ -115,7 +115,7 @@ struct IndustryRulesTests {
   }
 
   @Test
-  func jobMaterialRankingIncludesReadyJobsAndExcludesIncompleteOrClosedJobs() {
+  func jobProductRankingIncludesReadyJobsAndExcludesUnpricedOrClosedJobs() {
     let source = SourceIdentity(provider: "fixture", version: "1")
     func job(_ id: Int64, runs: Int, status: String = "active", product: Int64 = 500, activity: Int = 1) -> ESIIndustryJobDTO {
       ESIIndustryJobDTO(activityID: activity, blueprintID: 700, blueprintTypeID: 701,
@@ -125,31 +125,50 @@ struct IndustryRulesTests {
       job(3, runs: 4), job(4, runs: 3), job(5, runs: 1), job(6, runs: 5),
       job(7, runs: 100, status: "delivered"), job(8, runs: 100, status: "cancelled"),
       job(9, runs: 100, product: 501), job(10, runs: 100, status: "reverted"),
-      job(11, runs: 2, product: 502, activity: 9)]
+      job(11, runs: 2, product: 502, activity: 9), job(12, runs: 50, product: 503)]
     let input = DashboardWealthCharacterInput(
       character: CharacterIdentity(id: 7, name: "Fixture"),
       wallet: Sourced(state: .fresh, value: 0, source: source),
       assets: Sourced(state: .fresh, value: AssetSnapshot(characterID: 7, state: .fresh, items: []), source: source),
       industryJobs: Sourced(state: .fresh, value: jobs, source: source))
-    func definition(_ product: Int64, material: Int64, activity: BlueprintActivityDefinition.Kind = .manufacturing) -> BlueprintDefinition {
+    func definition(_ product: Int64, material: Int64, activity: BlueprintActivityDefinition.Kind = .manufacturing,
+      productQuantity: Int64 = 1) -> BlueprintDefinition {
       BlueprintDefinition(blueprintTypeID: 701, productTypeID: product, maxProductionLimit: 100,
         activity: BlueprintActivityDefinition(kind: activity, durationSeconds: 60,
           materials: [BlueprintMaterial(typeID: material, quantity: 10)],
-          products: [BlueprintProduct(typeID: product, quantity: 1, probability: nil)]), source: source)
+          products: [BlueprintProduct(typeID: product, quantity: productQuantity, probability: nil)]), source: source)
     }
-    let prices = [Int64(34): AdjustedPrice(typeID: 34, adjustedPrice: 2, averagePrice: nil)]
-    let definitions = [Int64(500): definition(500, material: 34), 501: definition(501, material: 35), 502: definition(502, material: 34, activity: .reaction)]
+    // 500 prefers the average price, 502 falls back to the adjusted price,
+    // 503 has no product price although its materials are valued.
+    let prices: [Int64: AdjustedPrice] = [
+      34: AdjustedPrice(typeID: 34, adjustedPrice: 2, averagePrice: nil),
+      500: AdjustedPrice(typeID: 500, adjustedPrice: 3, averagePrice: 7),
+      501: AdjustedPrice(typeID: 501, adjustedPrice: 9, averagePrice: 0.5),
+      502: AdjustedPrice(typeID: 502, adjustedPrice: 0.125, averagePrice: nil),
+    ]
+    let definitions = [Int64(500): definition(500, material: 34), 501: definition(501, material: 35),
+      502: definition(502, material: 34, activity: .reaction, productQuantity: 200),
+      503: definition(503, material: 34)]
     let values = DashboardInProgressIndustryProjector.projectJobs(inputs: [input], prices: prices, definitionsByProductTypeID: definitions)
     let ranked = DashboardInProgressIndustryProjector.rankedJobs(values)
-    #expect(values.count == 8)
-    #expect(ranked.prefix(5).map { $0.ownedJob.job.jobID } == [2, 6, 3, 4, 1])
-    #expect(ranked.first?.materialValue == 200)
-    #expect(values.first { $0.ownedJob.job.jobID == 9 }?.materialValue == nil)
-    #expect(values.first { $0.ownedJob.job.jobID == 11 }?.materialValue == 40)
+    func value(_ jobID: Int64) -> DashboardIndustryJobValue? { values.first { $0.ownedJob.job.jobID == jobID } }
+    #expect(values.count == 9)
+    // Equal product values (11 and 9) keep the job identity order "7:11" < "7:9".
+    #expect(ranked.map { $0.ownedJob.job.jobID } == [2, 11, 9, 6, 3, 4, 1, 5])
+    #expect(ranked.first?.productValue == 70)
+    #expect(value(11)?.productValue == 50)
+    // Missing material prices do not hide a priced product ...
+    #expect(value(9)?.materialValue == nil)
+    #expect(value(9)?.productValue == 50)
+    // ... and valued materials do not stand in for a missing product price.
+    #expect(value(12)?.materialValue == 1_000)
+    #expect(value(12)?.productValue == nil)
+    #expect(value(11)?.materialValue == 40)
     let aggregate = DashboardInProgressIndustryProjector.project(inputs: [input], prices: prices, definitionsByProductTypeID: definitions, jobValues: values)
-    #expect(aggregate[7]?.value == ranked.compactMap(\.materialValue).reduce(0, +))
+    // Net worth keeps the material valuation.
+    #expect(aggregate[7]?.value == values.compactMap(\.materialValue).reduce(0, +))
     #expect(aggregate[7]?.unvaluedMaterialTypeCount == 1)
-    #expect(aggregate[7]?.estimatedJobCount == 8)
+    #expect(aggregate[7]?.estimatedJobCount == 9)
     #expect(aggregate[7]?.isComplete == false)
   }
 

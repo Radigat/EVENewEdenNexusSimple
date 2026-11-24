@@ -683,3 +683,15 @@ Antworten des Eigentümers auf die Rückfragen:
 6. Nachfrage nach Auswertung des aktiven SDE: Produkte ohne Meta-Gruppe und Tech-Level (383 Stück: Bauteile, Capital-Bauteile, Fuel Blocks, R.A.M., Upwell-Strukturen, Container, Booster, POS-Teile) gelten als T1 (10/20). Structure Tech I (54) wie T1, Structure Tech II (53) wie T2, Structure Faction (52) wie Faction. Die Einordnung gilt nur für Hammer und Planer-Suche; `ManufacturingOpportunityProductionClass` und die Hub-Chancen bleiben unverändert.
 
 Von Claude festgelegt: Ohne aktives SDE gibt es keinen Hammer statt eines wirkungslosen Klicks. Der Hammer-Klick geht über die bestehende Warnung für ungesicherte Einstellungen; ein Abbruch verwirft ihn. In Sheets und Popovers schließt der Klick zuerst die Präsentation. Auch der Bestandsverlauf zeigt den Hammer im Kopf, außer er wurde aus dem Planer geöffnet. Die manuelle Suche bleibt auf Fertigungsprodukte beschränkt; Reaktionsprodukte kommen nur über den Hammer ins Feld. Kann das SDE das Item beim Klick nicht mehr liefern, zeigt das Feld eine Meldung statt einer Auswahl.
+
+## 23.11.2026: Dashboard-Kachel „Top 5 nach Produktwert“
+
+Anlass (Eigentümer-Screenshot): Die Kachel „Top 5 nach Rohstoffwert“ zeigte den Wert der eingesetzten Materialien (Ark 8,32 Mrd. ISK), erwartet war der Wert dessen, was die Produktion ergibt (Ark 6,15 Mrd. ISK zum ESI-Durchschnitt). Die Materialbewertung selbst war rechnerisch richtig (ME 4, ESI-Durchschnittspreise, ohne Facility-/Rig-Bonus).
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Preisbasis: ESI Average Price des Produkts, ohne ihn der Adjusted Price; kein Jita-Orderbuch.
+2. Anzeige: nur der Produktwert je Job, Rangfolge danach, Titel „Top 5 nach Produktwert“.
+3. Der Nettowert-Posten **In Produktion** bleibt beim Materialwert.
+
+Von Claude festgelegt: Produktwert = Runs × SDE-Ausstoß je Run × Preis. Ein Produkt ohne Referenzpreis bleibt unbewertet und fällt aus der Rangfolge (Hinweis „Unvollständige Rangfolge“); weder Materialwert noch rekursive Bewertung ersetzen ihn. Fehlende Materialpreise schließen einen Job mit bewertetem Produkt nicht mehr aus.

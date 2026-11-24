@@ -1594,7 +1594,7 @@ private struct DashboardRenderingFixture: View {
       DashboardCardLayout(weights: [1, 1, 1], minimumWidths: [340, 340, 340]) {
         jobs(title: "Ready for delivery")
         jobs(title: "Next 48 hours")
-        jobs(title: "Top 5 by material value")
+        jobs(title: "Top 5 by product value")
       }
       DashboardCardLayout(weights: [1, 2], minimumWidths: [280, 560]) {
         Panel(title: "Wallet") {

@@ -135,6 +135,9 @@ public struct DashboardIndustryJobValue: Identifiable, Sendable {
   public let unvaluedMaterialTypeIDs: Set<Int64>
   public let isResolved: Bool
   public let freshness: DataFreshness
+  /// Runs × SDE output per run × the product's ESI average price (adjusted
+  /// price as fallback); `nil` without a resolved definition or product price.
+  public let productValue: Double?
   public var id: String { ownedJob.id }
   public var materialValue: Double? {
     isResolved && unvaluedMaterialTypeIDs.isEmpty ? knownValue : nil
@@ -176,7 +179,7 @@ public enum DashboardInProgressIndustryProjector {
         else {
           return DashboardIndustryJobValue(
             ownedJob: owned, knownValue: nil, unvaluedMaterialTypeIDs: [],
-            isResolved: false, freshness: source.state
+            isResolved: false, freshness: source.state, productValue: nil
           )
         }
         var total = 0.0
@@ -208,18 +211,45 @@ public enum DashboardInProgressIndustryProjector {
           ownedJob: owned,
           knownValue: hasValue && total.isFinite ? total : nil,
           unvaluedMaterialTypeIDs: missing, isResolved: true,
-          freshness: source.state
+          freshness: source.state,
+          productValue: productValue(
+            runs: job.runs, productTypeID: productID,
+            definition: definition, prices: prices
+          )
         )
       }
     }
   }
 
+  /// Output value of one job: no recursive or material-based fallback, a
+  /// product without an ESI reference price stays unvalued.
+  static func productValue(
+    runs: Int,
+    productTypeID: Int64,
+    definition: BlueprintDefinition,
+    prices: [Int64: AdjustedPrice]
+  ) -> Double? {
+    guard runs > 0,
+      let perRun = definition.activity.products.first(where: {
+        $0.typeID == productTypeID
+      })?.quantity, perRun > 0,
+      let price = prices[productTypeID].flatMap({
+        $0.averagePrice ?? $0.adjustedPrice
+      }),
+      price.isFinite, price >= 0
+    else { return nil }
+    let value = Double(saturatedMultiply(Int64(runs), perRun)) * price
+    return value.isFinite ? value : nil
+  }
+
+  /// Dashboard tile order: highest product value first, jobs without a product
+  /// value are left out, the job identity breaks ties.
   public static func rankedJobs(
     _ values: [DashboardIndustryJobValue]
   ) -> [DashboardIndustryJobValue] {
-    values.filter { $0.materialValue != nil }.sorted {
-      if $0.materialValue != $1.materialValue {
-        return ($0.materialValue ?? 0) > ($1.materialValue ?? 0)
+    values.filter { $0.productValue != nil }.sorted {
+      if $0.productValue != $1.productValue {
+        return ($0.productValue ?? 0) > ($1.productValue ?? 0)
       }
       return $0.id < $1.id
     }

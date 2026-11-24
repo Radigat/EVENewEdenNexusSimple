@@ -5,13 +5,13 @@
 "Character balances" = "Wallets der Charaktere";
 "Character net worth" = "Nettowerte der Charaktere";
 "Valuation details" = "Details zur Bewertung";
-"Top 5 by material value" = "Top 5 nach Rohstoffwert";
+"Top 5 by product value" = "Top 5 nach Produktwert";
 "Some character job data is incomplete; ranking may omit jobs." = "Jobdaten einiger Charaktere sind unvollständig; die Rangfolge kann Jobs auslassen.";
 "Product name unavailable" = "Produktname nicht verfügbar";
 "Running" = "Laufend";
-"Incomplete ranking · %lld jobs without full material valuation" = "Unvollständige Rangfolge · %lld Jobs ohne vollständige Rohstoffbewertung";
+"Incomplete ranking · %lld jobs without product valuation" = "Unvollständige Rangfolge · %lld Jobs ohne Produktbewertung";
 "No open production jobs." = "Keine offenen Produktionsjobs.";
-"Estimated material value · ESI average / adjusted prices" = "Geschätzter Rohstoffwert · ESI-Durchschnitts- / angepasste Preise";
+"Estimated product value · ESI average / adjusted prices" = "Geschätzter Produktwert · ESI-Durchschnitts- / angepasste Preise";
 "Reactions with negative value creation" = "Reaktionen mit negativer Wertschöpfung";
 "Open reactions" = "Reaktionen öffnen";
 "No reactions have negative value creation." = "Keine Reaktionen mit negativer Wertschöpfung.";

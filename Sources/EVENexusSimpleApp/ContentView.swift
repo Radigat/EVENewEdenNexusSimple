@@ -3309,7 +3309,7 @@ struct DashboardView: View {
     let values = runtime.dashboardIndustryJobValues.filter { currentIDs.contains($0.id) }
     let ranked = DashboardInProgressIndustryProjector.rankedJobs(values)
     let missingCount = currentIDs.count - ranked.count
-    return Panel(title: "Top 5 by material value", fillsAvailableHeight: true) {
+    return Panel(title: "Top 5 by product value", fillsAvailableHeight: true) {
       if runtime.isRefreshingDashboardWealth {
         ProgressView().controlSize(.small)
       }
@@ -3327,14 +3327,14 @@ struct DashboardView: View {
             Text((row.ownedJob.job.isReadyForDelivery(at: now) ? "Ready" :
               row.ownedJob.job.isRunning(at: now) ? "Running" : "Paused").localizedUI)
             Spacer()
-            Text(row.materialValue.map(formatISK) ?? AppLocalization.text("Unavailable"))
+            Text(row.productValue.map(formatISK) ?? AppLocalization.text("Unavailable"))
               .monospacedDigit()
           }.appFont(.caption)
           if row.freshness != .fresh { freshnessPill(row.freshness) }
         }
       }
       if missingCount > 0 {
-        Text(AppLocalization.format("Incomplete ranking · %lld jobs without full material valuation", Int64(missingCount)))
+        Text(AppLocalization.format("Incomplete ranking · %lld jobs without product valuation", Int64(missingCount)))
           .appFont(.caption).foregroundStyle(DesignTokens.caution)
       } else if ranked.isEmpty {
         Text(industrySnapshot.hasAnyJobSnapshot
@@ -3347,7 +3347,7 @@ struct DashboardView: View {
           .appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
       if !ranked.isEmpty {
-        Text("Estimated material value · ESI average / adjusted prices")
+        Text("Estimated product value · ESI average / adjusted prices")
           .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
       }
       if let error = runtime.dashboardWealthError {

@@ -403,7 +403,7 @@ stehen die Kennzahlenreihe und der aufklappbare Bereich „Kapazität je
 Aktivität“, darunter ein Raster aus zwei gleich breiten Spalten. Panels
 einer Zeile sind gleich hoch; unter 2 × 360 Punkten stehen sie untereinander.
 Zeilen: „Industriejobs · bereit und bevorstehend“ neben „Wallets“; „Nettowert ·
-Verlauf“ neben „Main-Hub-Chancen · Top 5“; „Top 5 nach Materialwert“ neben „Reaktionen mit
+Verlauf“ neben „Main-Hub-Chancen · Top 5“; „Top 5 nach Produktwert“ neben „Reaktionen mit
 negativer Wertschöpfung“; der Mineralpreis-Ticker über die volle Breite;
 Moon- neben Mineralien-Kaufanalyse. Abschnittsüberschriften gibt es nicht mehr.
 Eckwinkel, Raster, Rauten und Bereichszeile erscheinen nur im HUD.
@@ -424,11 +424,13 @@ nächsten 48 Stunden nach nächstem Abschluss, jeweils mit stabiler Jobidentitä
 bei Gleichstand. Rechts steht „Bereit“ (grün) oder die Restzeit. Die Liste
 beginnt mit fünf Einträgen und Gesamtzahl; „Alle anzeigen“ öffnet sie
 vollständig. Ohne Einträge nennt sie beide Leerzustände. Die
-„Top 5 nach Materialwert“ enthalten offene Manufacturing- und Reaction-Jobs einschließlich
-abholbereiter Jobs. Ihre Bewertung entsteht aus denselben Einzeljobwerten wie
-**In Produktion**. Fehlende Materialpreise schließen den Job aus der Rangfolge
-aus und machen die Abdeckung ausdrücklich unvollständig; die übrigen Werte
-bleiben als Schätzung gekennzeichnet.
+„Top 5 nach Produktwert“ enthalten offene Manufacturing- und Reaction-Jobs einschließlich
+abholbereiter Jobs. Bewertet wird das Ergebnis des Jobs: Runs × SDE-Ausstoß je
+Run × ESI Average Price des Produkts, ohne Average Price der Adjusted Price.
+Rangfolge nach diesem Wert, bei Gleichstand nach Jobidentität. Ein Produkt ohne
+Referenzpreis oder ohne SDE-Definition schließt den Job aus der Rangfolge aus und
+macht sie ausdrücklich unvollständig; Materialwerte ersetzen keinen fehlenden
+Produktpreis. **In Produktion** im Nettowert bleibt beim Materialwert.
 
 Rechts im Seitenkopf steht der ESI-Status: „ESI“ mit dem zusammengefassten
 Zustand von Charakter-Sync, Wallets, Nettowert-Bewertung sowie Moon-,
