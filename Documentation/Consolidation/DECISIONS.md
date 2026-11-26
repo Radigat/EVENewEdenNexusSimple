@@ -696,6 +696,23 @@ Antworten des Eigentümers auf die Rückfragen:
 
 Von Claude festgelegt: Produktwert = Runs × SDE-Ausstoß je Run × Preis. Ein Produkt ohne Referenzpreis bleibt unbewertet und fällt aus der Rangfolge (Hinweis „Unvollständige Rangfolge“); weder Materialwert noch rekursive Bewertung ersetzen ihn. Fehlende Materialpreise schließen einen Job mit bewertetem Produkt nicht mehr aus.
 
+## 25.11.2026: Dashboard-Kachel „Mineralien am Home Hub“
+
+Anlass (Eigentümer-Bild einer fremden Kachel „Minerals at UALX-3“): Mineralpreise eines eigenen Hubs gegen Jita mit Abweichung in Prozent, grün im Hub günstiger, rot teurer, vor Transport.
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Hub: fest der Home Hub.
+2. Vergleichsmarkt: der konfigurierte Main Hub statt fest Jita.
+3. Platz: neben dem Mineralpreis-Ticker in einer gemeinsamen Zeile; Ticker und Mineralien-Kaufanalyse bleiben.
+4. Fehlende oder veraltete Daten: nur frische Märkte wie in der Kaufanalyse; „Kein Angebot“ bzw. der Marktzustand, Abweichung „—“; alle acht Zeilen bleiben stehen.
+5. Bezugspreis: die 10-%-Grenze der Kaufanalyse (1,10 × niedrigster Sell), nicht der niedrigste Sell selbst.
+6. Namen: Rollen in den Köpfen („Home Hub“, „Main Hub“, „Home vs. Main“), Titel „Mineralien am Home Hub“, beide vollen Ortsnamen kopierbar darunter.
+7. Startreihenfolge wie im Bild (Tritanium … Morphite), noch kein Kopf aktiv; Köpfe sortieren danach.
+8. Format wie im Bild: unter 1.000 ISK zwei Nachkommastellen, ab 1.000 ISK ganzzahlig; Abweichung mit einer Nachkommastelle und Vorzeichen, 0,0 % neutral grau.
+
+Von Claude festgelegt: Die Kachel liest die vorhandene Mineralien-Kaufanalyse und lädt nichts zusätzlich. Da beide Preise den Faktor 1,10 tragen, ist die Abweichung dieselbe wie bei den niedrigsten Sell-Preisen; nur die angezeigten Preise liegen 10 % höher. Farbe und „0,0 %“ richten sich nach dem angezeigten, auf eine Nachkommastelle gerundeten Wert. Sind Home und Main Hub derselbe Ort (gleiche Rolle oder gleiche Orts-ID), zeigt die Kachel statt der Tabelle einen Hinweis, wie der Handel bei gleicher Route. Fehlt ein Hub, nennt die Kachel das und öffnet die Markteinstellungen. Ein unbrauchbarer Markt steht zusätzlich als Hinweis unter der Tabelle. Öffnen- und Aktualisieren-Knöpfe wie im Ticker.
+
 ## 25.11.2026: Seite „Doktrin-Bedarf“
 
 Anlass (Eigentümer-Bild der Keelworks-Kachel „Doctrine stock at UALX-3“): eigene

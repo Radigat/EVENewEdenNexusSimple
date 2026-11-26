@@ -405,8 +405,8 @@ Aktivität“, darunter ein Raster aus zwei gleich breiten Spalten. Panels
 einer Zeile sind gleich hoch; unter 2 × 360 Punkten stehen sie untereinander.
 Zeilen: „Industriejobs · bereit und bevorstehend“ neben „Wallets“; „Nettowert ·
 Verlauf“ neben „Main-Hub-Chancen · Top 5“; „Top 5 nach Produktwert“ neben „Reaktionen mit
-negativer Wertschöpfung“; der Mineralpreis-Ticker über die volle Breite;
-Moon- neben Mineralien-Kaufanalyse. Abschnittsüberschriften gibt es nicht mehr.
+negativer Wertschöpfung“; der Mineralpreis-Ticker neben „Mineralien am Home
+Hub“; Moon- neben Mineralien-Kaufanalyse. Abschnittsüberschriften gibt es nicht mehr.
 Eckwinkel, Raster, Rauten und Bereichszeile erscheinen nur im HUD.
 
 Texte, Zeiten und Beträge des Dashboards folgen der App-Sprache, auch in den
@@ -559,6 +559,33 @@ Tagesänderungen gehören nicht mehr zu diesem Ticker. Ansichtenwechsel teilen
 laufende Aktualisierungen und nutzen passende vorhandene Ergebnisse innerhalb
 des fünfminütigen Wiederverwendungsfensters. Aufklappen startet keine Analyse.
 
+„Mineralien am Home Hub“ steht rechts neben dem Ticker und vergleicht nach dem
+Referenzbild des Eigentümers die acht Standardmineralien am Home Hub mit dem
+Main Hub (Eigentümerentscheide 25.11.2026, siehe
+[DECISIONS.md](Documentation/Consolidation/DECISIONS.md)). Beide Preise stammen
+aus derselben Mineralien-Kaufanalyse und sind ihre 10-%-Grenze: genau das
+1,10-Fache des niedrigsten gültigen Sell-Preises am exakt konfigurierten Ort.
+Die Abweichung „Home vs. Main“ ist (Home − Main) / Main in Prozent mit einer
+Nachkommastelle und Vorzeichen; weil beide Preise denselben Faktor tragen,
+entspricht sie der Abweichung der niedrigsten Sell-Preise. Grün heißt am Home
+Hub günstiger, rot teurer, grau „0,0 %“, jeweils ohne Transport, Steuern und
+Gebühren. Preise unter 1.000 ISK stehen mit zwei Nachkommastellen, ab 1.000 ISK
+ganzzahlig. Die Zeilen beginnen in der Reihenfolge Tritanium, Pyerite,
+Mexallon, Isogen, Nocxium, Zydrine, Megacyte, Morphite; die Köpfe „Mineral“,
+„Home Hub“, „Main Hub“ und „Home vs. Main“ sortieren nach Name, Preis bzw.
+Abweichung, fehlende Werte aufsteigend nach den bekannten, Gleichstand nach
+Typ-ID. Die Sortierung gilt bis zum Verlassen des Dashboards. Unter dem Titel
+stehen beide Hubs mit kopierbarem Ortsnamen, die Mineralnamen sind kopierbar
+und tragen den Verlaufslink. Nur frische Märkte zählen: Fehlt am frischen Markt
+ein Angebot, steht „Kein Angebot“; ist ein Markt veraltet, gesperrt, nicht
+erlaubt oder nicht geladen, steht sein Zustand in jeder Zeile und als Hinweis
+unter der Tabelle. Die Abweichung zeigt dann „—“, nie 0 %. Alle acht Zeilen
+bleiben stehen. Fehlt Home oder Main Hub, nennt die Kachel das und öffnet die
+Markteinstellungen; sind beide derselbe Ort, steht „Home Hub und Main Hub sind
+derselbe Ort; es gibt nichts zu vergleichen.“ Ohne Analyse oder nach
+geänderten Einstellungen gelten dieselben Hinweise wie im Kaufpanel. Öffnen und
+Aktualisieren wirken wie im Ticker.
+
 Ressourcenverhalten des Dashboards: Gespeicherte Asset-, Blueprint-, Job-,
 Order-, Vertrags- und Wallet-Snapshots werden für die Vermögensbewertung im
 Hintergrund dekodiert; auch die Bewertungsprojektionen laufen außerhalb des
@@ -707,8 +734,8 @@ Konfiguration. Eine bekannte Region wird nie überschrieben. Ist das System
 unbekannt oder ESI nicht erreichbar, bleibt die Region unbekannt; der Handel
 meldet das und bittet, den Hub erneut zu wählen.
 
-Die Mineralien-Kaufanalyse, ihre Kaufempfehlungen und der Dashboard-Ticker
-umfassen nur die acht Standardmineralien (Typ-IDs 34–40 und 11399). Weitere
+Die Mineralien-Kaufanalyse, ihre Kaufempfehlungen, der Dashboard-Ticker und
+die Kachel „Mineralien am Home Hub“ umfassen nur die acht Standardmineralien (Typ-IDs 34–40 und 11399). Weitere
 veröffentlichte Typen der SDE-Gruppe `Mineral` sind seltene Sondermineralien ohne
 Rolle in der regulären Produktion und werden bewusst nicht angezeigt
 (Eigentümerentscheid 19.10.2026).
@@ -3665,7 +3692,8 @@ mit kurzen, wiederverwendbaren Prompts steht in
   Inhalte, ersetzt aber nicht mehr synchron den gesamten sichtbaren Detailbaum
   während der segmentierten Accessibility-Aktion.
 - Die Mineralienpreise des Dashboards stehen als festes Raster im Panel
-  „Mineralienpreise“: je Mineral Name, Stückpreis und Kaufort. Reicht die
+  „Mineralienpreise“ (seit 25.11.2026 links neben „Mineralien am Home Hub“):
+  je Mineral Name, Stückpreis und Kaufort. Reicht die
   Breite nicht, bricht das Raster in weitere Zeilen um; nichts bewegt sich
   und nichts muss gescrollt werden (Eigentümerentscheid 13.11.2026). Das
   frühere Laufband ist entfernt, weil seine Animation das Scrollen bremste

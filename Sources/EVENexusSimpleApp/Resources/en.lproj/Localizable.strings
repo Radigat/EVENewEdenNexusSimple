@@ -2973,6 +2973,17 @@
 "Sets the usage of every selected entry at once, as in the editor. Production and consumption close the entries." = "Sets the usage of every selected entry at once, as in the editor. Production and consumption close the entries.";
 "Usage set to %@ · %lld changed" = "Usage set to %1$@ · %2$lld changed";
 "The usage could not be changed. Existing entries were not changed." = "The usage could not be changed. Existing entries were not changed.";
+"Minerals at the Home Hub" = "Minerals at the Home Hub";
+"Home Hub against Main Hub" = "Home Hub against Main Hub";
+"Home vs. Main" = "Home vs. Main";
+"No offer" = "No offer";
+"Home Hub market: %@" = "Home Hub market: %@";
+"Main Hub market: %@" = "Main Hub market: %@";
+"No Home Hub and no Main Hub are configured." = "No Home Hub and no Main Hub are configured.";
+"No Home Hub is configured." = "No Home Hub is configured.";
+"No Main Hub is configured." = "No Main Hub is configured.";
+"Home Hub and Main Hub are the same location; there is nothing to compare." = "Home Hub and Main Hub are the same location; there is nothing to compare.";
+"Prices at the 10% limit (1.10 × lowest sell order), ISK per unit. Green: cheaper at the Home Hub than at the Main Hub, before hauling." = "Prices at the 10% limit (1.10 × lowest sell order), ISK per unit. Green: cheaper at the Home Hub than at the Main Hub, before hauling.";
 
 /* Doctrine stock (DOKTRIN_BEDARF_PLAN.md) */
 "Doctrine stock" = "Doctrine stock";

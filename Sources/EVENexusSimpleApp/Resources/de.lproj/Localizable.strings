@@ -3587,6 +3587,17 @@
 "Sets the usage of every selected entry at once, as in the editor. Production and consumption close the entries." = "Setzt die Verwendung aller ausgewählten Einträge auf einmal, wie im Editor. Produktion und Verbrauch schließen die Einträge.";
 "Usage set to %@ · %lld changed" = "Verwendung auf %1$@ gesetzt · %2$lld geändert";
 "The usage could not be changed. Existing entries were not changed." = "Die Verwendung konnte nicht geändert werden. Bestehende Einträge wurden nicht verändert.";
+"Minerals at the Home Hub" = "Mineralien am Home Hub";
+"Home Hub against Main Hub" = "Home Hub gegen Main Hub";
+"Home vs. Main" = "Home vs. Main";
+"No offer" = "Kein Angebot";
+"Home Hub market: %@" = "Markt am Home Hub: %@";
+"Main Hub market: %@" = "Markt am Main Hub: %@";
+"No Home Hub and no Main Hub are configured." = "Weder Home Hub noch Main Hub ist gewählt.";
+"No Home Hub is configured." = "Kein Home Hub gewählt.";
+"No Main Hub is configured." = "Kein Main Hub gewählt.";
+"Home Hub and Main Hub are the same location; there is nothing to compare." = "Home Hub und Main Hub sind derselbe Ort; es gibt nichts zu vergleichen.";
+"Prices at the 10% limit (1.10 × lowest sell order), ISK per unit. Green: cheaper at the Home Hub than at the Main Hub, before hauling." = "Preise an der 10-%-Grenze (1,10 × niedrigster Sell), ISK je Stück. Grün: am Home Hub günstiger als am Main Hub, ohne Transport.";
 
 /* Doctrine stock (DOKTRIN_BEDARF_PLAN.md) */
 "Doctrine stock" = "Doktrin-Bedarf";

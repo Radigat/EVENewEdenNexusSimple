@@ -136,6 +136,8 @@ enum NavigationGroup: String, CaseIterable, Identifiable {
 struct DashboardNavigationRequest {
   let section: NavigationSection
   var negativeReactionsOnly = false
+  /// Page of Data & Settings to show when `section` is `.data`.
+  var dataSettingsSection: DataSettingsSection? = nil
 }
 
 enum DataSettingsSection: String, CaseIterable, Identifiable {
@@ -472,6 +474,9 @@ struct ContentView: View {
           case .dashboard:
             DashboardView { request in
               opensNegativeReactions = request.negativeReactionsOnly
+              if let dataSection = request.dataSettingsSection {
+                guardedDataSettingsSelection.wrappedValue = dataSection
+              }
               guardedSelection.wrappedValue = request.section
             }
           case .planner:
@@ -2081,6 +2086,67 @@ enum DashboardPurchasePanelState: Equatable {
   }
 }
 
+/// Texts and number formats of "Minerals at the Home Hub" in the app language
+/// (owner decisions 25.11.2026): prices with two decimals below 1,000 ISK and
+/// whole ISK from 1,000, the deviation with one decimal and its sign.
+enum DashboardHubMineralText {
+  static func missingHubs(
+    home: Bool,
+    main: Bool,
+    language: AppLanguage = AppLocalization.currentLanguage
+  ) -> String {
+    let key =
+      switch (home, main) {
+      case (true, true): "No Home Hub and no Main Hub are configured."
+      case (true, false): "No Home Hub is configured."
+      default: "No Main Hub is configured."
+      }
+    return language.localized(key)
+  }
+
+  static func marketState(
+    _ state: DataFreshness?,
+    language: AppLanguage = AppLocalization.currentLanguage
+  ) -> String {
+    let key =
+      switch state {
+      case .fresh: "Fresh"
+      case .partial: "Partial"
+      case .stale: "Stale"
+      case .forbidden: "Access forbidden"
+      case .unavailable: "Unavailable"
+      case nil: "Not loaded"
+      }
+    return language.localized(key)
+  }
+
+  static func price(
+    _ value: Double,
+    locale: Locale = AppLocalization.currentLanguage.locale
+  ) -> String {
+    value.formatted(
+      .number
+        .precision(.fractionLength(HubMineralPriceFormat.fractionDigits(for: value)))
+        .locale(locale)
+    )
+  }
+
+  /// `percent` is the displayed value with one decimal, such as −6.7; a
+  /// missing deviation is a dash, never 0 %.
+  static func deviation(
+    _ percent: Double?,
+    locale: Locale = AppLocalization.currentLanguage.locale
+  ) -> String {
+    guard let percent else { return "—" }
+    return (percent / 100).formatted(
+      .percent
+        .precision(.fractionLength(1))
+        .sign(strategy: .always(includingZero: false))
+        .locale(locale)
+    )
+  }
+}
+
 /// Message under a character's wallet after a failed refresh (plan DB7,
 /// finding B4). EVE errors use the same localized texts as the character
 /// sync; anything else is a local failure. Never shows a raw error name.
@@ -2235,6 +2301,12 @@ struct DashboardView: View {
     column: .returnOnInvestment,
     direction: .descending
   )
+  /// Header sort of "Minerals at the Home Hub" for this view lifetime; it
+  /// starts in the owner's reference order, which no header shows.
+  @State private var hubMineralSort = AppTableSortDescriptor<HubMineralComparisonColumn>(
+    column: .standardOrder,
+    direction: .ascending
+  )
   @AppStorage("reactions.analysis-runs", store: AppDefaults.store)
   private var sharedReactionRuns = 100
   @AppStorage("reactions.market-hub-id", store: AppDefaults.store)
@@ -2283,7 +2355,10 @@ struct DashboardView: View {
           }
           reactionOpportunityPanel
         }
-        mineralTickerPanel
+        dashboardRow {
+          mineralTickerPanel
+          hubMineralComparisonPanel
+        }
         dashboardRow {
           purchasePanel(kind: .moonMaterials)
           purchasePanel(kind: .minerals)
@@ -2535,7 +2610,7 @@ struct DashboardView: View {
   }
 
   private var mineralTickerPanel: some View {
-    Panel(title: "Mineral prices") {
+    Panel(title: "Mineral prices", fillsAvailableHeight: true) {
       HStack {
         Text("Purchase prices from the mineral analysis")
         .appFont(.caption)
@@ -2576,6 +2651,236 @@ struct DashboardView: View {
         Text(error.localizedUI).appFont(.caption).foregroundStyle(DesignTokens.caution)
       }
     }
+  }
+
+  // MARK: Minerals at the Home Hub (owner decisions 25.11.2026)
+
+  /// Home Hub against Main Hub from the mineral purchase analysis, after the
+  /// owner's reference tile. Prices are the analysis' 10 % limit.
+  private var hubMineralComparisonPanel: some View {
+    Panel(title: "Minerals at the Home Hub", fillsAvailableHeight: true) {
+      HStack {
+        Text("Home Hub against Main Hub")
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+        Spacer()
+        if runtime.isRefreshingMineralPurchaseAnalysis {
+          ProgressView().controlSize(.small)
+        }
+        Button("Open purchase analysis") {
+          onNavigate(DashboardNavigationRequest(section: .mineralPurchaseAnalysis))
+        }.buttonStyle(.borderless)
+        Button {
+          Task { await runtime.refreshMineralPurchaseAnalysis(
+            authorizations: authorizationSnapshots, clientID: EVEConstants.ssoClientID) }
+        } label: {
+          Image(systemName: "arrow.clockwise")
+        }
+        .buttonStyle(.borderless)
+        .disabled(runtime.isRefreshingMineralPurchaseAnalysis)
+        .help("Refresh mineral prices")
+        .accessibilityLabel("Refresh mineral prices")
+      }
+      switch DashboardPurchasePanelState.state(
+        hasAnalysis: runtime.mineralPurchaseAnalysis != nil,
+        isCurrent: runtime.hasCurrentMineralPurchaseAnalysis
+      ) {
+      case .current:
+        if let comparison = runtime.hubMineralComparison {
+          hubMineralComparisonContent(comparison)
+        }
+      case .noAnalysis:
+        Text("No mineral purchase analysis yet")
+          .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
+      case .settingsChanged:
+        Text("Settings changed. Refresh to update purchase locations.")
+          .appFont(.caption).foregroundStyle(DesignTokens.textSecondary)
+      }
+      if let error = runtime.mineralPurchaseAnalysisError {
+        Text(error.localizedUI).appFont(.caption).foregroundStyle(DesignTokens.caution)
+      }
+    }
+    .accessibilityIdentifier("dashboard.home-hub-minerals")
+  }
+
+  @ViewBuilder
+  private func hubMineralComparisonContent(
+    _ comparison: HubMineralComparison
+  ) -> some View {
+    switch comparison.status {
+    case .missingHubs(let home, let main):
+      Text(verbatim: DashboardHubMineralText.missingHubs(home: home, main: main))
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      Button("Open Market Settings") {
+        onNavigate(
+          DashboardNavigationRequest(section: .data, dataSettingsSection: .marketSettings)
+        )
+      }
+      .buttonStyle(.borderless)
+      .appFont(.caption)
+    case .sameLocation:
+      Text("Home Hub and Main Hub are the same location; there is nothing to compare.")
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      if let home = comparison.homeHub {
+        EVEEntityText(value: home.name, font: .caption, lineLimit: 1)
+      }
+    case .ready:
+      VStack(alignment: .leading, spacing: 2) {
+        hubMineralHubLine("Home Hub", comparison.homeHub)
+        hubMineralHubLine("Main Hub", comparison.mainHub)
+      }
+      hubMineralTable(comparison.rows)
+      if case .unusable(let state) = comparison.homeMarket {
+        Text(
+          AppLocalization.format(
+            "Home Hub market: %@", DashboardHubMineralText.marketState(state)
+          )
+        )
+        .appFont(.caption).foregroundStyle(DesignTokens.caution)
+      }
+      if case .unusable(let state) = comparison.mainMarket {
+        Text(
+          AppLocalization.format(
+            "Main Hub market: %@", DashboardHubMineralText.marketState(state)
+          )
+        )
+        .appFont(.caption).foregroundStyle(DesignTokens.caution)
+      }
+      Text(
+        "Prices at the 10% limit (1.10 × lowest sell order), ISK per unit. Green: cheaper at the Home Hub than at the Main Hub, before hauling."
+      )
+      .appFont(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private func hubMineralHubLine(
+    _ role: LocalizedStringKey,
+    _ location: ProcurementLocation?
+  ) -> some View {
+    HStack(spacing: DesignTokens.spacingXS) {
+      Text(role)
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      if let location {
+        EVEEntityText(value: location.name, font: .caption, lineLimit: 1)
+      }
+    }
+  }
+
+  private func hubMineralTable(_ rows: [HubMineralComparisonRow]) -> some View {
+    let priceWidth: CGFloat = 80
+    let deviationWidth: CGFloat = 88
+    return VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: DesignTokens.spacingSM) {
+        SortableTableHeader(
+          title: "Mineral",
+          column: HubMineralComparisonColumn.mineral,
+          sort: $hubMineralSort
+        )
+        SortableTableHeader(
+          title: "Home Hub",
+          column: .homePrice,
+          sort: $hubMineralSort,
+          alignment: .trailing
+        )
+        .frame(width: priceWidth)
+        SortableTableHeader(
+          title: "Main Hub",
+          column: .mainPrice,
+          sort: $hubMineralSort,
+          alignment: .trailing
+        )
+        .frame(width: priceWidth)
+        SortableTableHeader(
+          title: "Home vs. Main",
+          column: .deviation,
+          sort: $hubMineralSort,
+          alignment: .trailing
+        )
+        .frame(width: deviationWidth)
+      }
+      .appFont(.caption.weight(.semibold))
+      .foregroundStyle(DesignTokens.textSecondary)
+      .lineLimit(1)
+      .padding(.bottom, DesignTokens.spacingXS)
+      .overlay(alignment: .bottom) {
+        Rectangle().fill(DesignTokens.border).frame(height: 1)
+      }
+      ForEach(
+        HubMineralComparisonProjector.sorted(
+          rows,
+          by: hubMineralSort.column,
+          ascending: hubMineralSort.direction == .ascending
+        )
+      ) { row in
+        HStack(spacing: DesignTokens.spacingSM) {
+          EVEItemText(
+            value: row.material.name,
+            typeID: row.material.id,
+            font: .callout.weight(.semibold),
+            lineLimit: 1,
+            iconSize: 20
+          )
+          .frame(maxWidth: .infinity, alignment: .leading)
+          hubMineralPriceCell(row.homePrice)
+            .frame(width: priceWidth, alignment: .trailing)
+          hubMineralPriceCell(row.mainPrice)
+            .frame(width: priceWidth, alignment: .trailing)
+          hubMineralDeviationCell(row)
+            .frame(width: deviationWidth, alignment: .trailing)
+        }
+        .padding(.vertical, 5)
+        .overlay(alignment: .bottom) {
+          Rectangle()
+            .fill(DesignTokens.border.opacity(0.4))
+            .frame(height: 1)
+            .accessibilityHidden(true)
+        }
+      }
+    }
+    .accessibilityIdentifier("dashboard.home-hub-minerals.table")
+  }
+
+  @ViewBuilder
+  private func hubMineralPriceCell(_ price: HubMineralPrice) -> some View {
+    switch price {
+    case .price(let value):
+      Text(verbatim: DashboardHubMineralText.price(value))
+        .appFont(.callout.monospacedDigit())
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    case .noOffer:
+      hubMineralMissingCell("No offer".localizedUI)
+    case .marketUnavailable(let state):
+      hubMineralMissingCell(DashboardHubMineralText.marketState(state))
+    }
+  }
+
+  private func hubMineralMissingCell(_ text: String) -> some View {
+    Text(verbatim: text)
+      .appFont(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      .lineLimit(1)
+      .minimumScaleFactor(0.7)
+      .help(text)
+  }
+
+  private func hubMineralDeviationCell(_ row: HubMineralComparisonRow) -> some View {
+    let color: Color =
+      switch row.deviationTone {
+      case .cheaperAtHome: DesignTokens.positive
+      case .moreExpensiveAtHome: DesignTokens.negative
+      case .even, nil: DesignTokens.textSecondary
+      }
+    return Text(verbatim: DashboardHubMineralText.deviation(row.displayedDeviationPercent))
+      .appFont(.callout.monospacedDigit())
+      .foregroundStyle(color)
+      .lineLimit(1)
+      .minimumScaleFactor(0.8)
   }
 
   private var marketRefreshIdentity: String {

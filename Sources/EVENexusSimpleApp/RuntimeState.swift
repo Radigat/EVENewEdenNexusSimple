@@ -393,9 +393,13 @@ final class RuntimeState {
   private(set) var mineralPurchaseAnalysis: MaterialPurchaseAnalysisSnapshot? {
     didSet {
       mineralPurchaseRecommendations = mineralPurchaseAnalysis.map(MaterialPurchaseRecommendationProjector.project) ?? []
+      hubMineralComparison = mineralPurchaseAnalysis.map(HubMineralComparisonProjector.project)
     }
   }
   private(set) var mineralPurchaseRecommendations: [MaterialPurchaseRecommendation] = []
+  /// Dashboard tile "Minerals at the Home Hub": Home Hub against Main Hub
+  /// from the same analysis (owner decisions 25.11.2026).
+  private(set) var hubMineralComparison: HubMineralComparison?
   private let sharedMoonRefresh = SharedAnalysisRefresh()
   private let sharedMineralRefresh = SharedAnalysisRefresh()
   private let sharedReactionRefresh = SharedAnalysisRefresh()
