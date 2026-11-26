@@ -33,6 +33,9 @@ public struct DoctrineItemDemand: Equatable, Sendable, Identifiable {
   public let requiredQuantity: Int64
   /// The type is the hull of at least one fit.
   public let isHull: Bool
+  /// Doctrines with at least one fit that contains the type, in library
+  /// order.
+  public let doctrineIDs: [String]
 
   public var id: Int64 { typeID }
 
@@ -41,13 +44,15 @@ public struct DoctrineItemDemand: Equatable, Sendable, Identifiable {
     name: String,
     fitCount: Int,
     requiredQuantity: Int64,
-    isHull: Bool
+    isHull: Bool,
+    doctrineIDs: [String] = []
   ) {
     self.typeID = typeID
     self.name = name
     self.fitCount = fitCount
     self.requiredQuantity = requiredQuantity
     self.isHull = isHull
+    self.doctrineIDs = doctrineIDs
   }
 }
 
@@ -85,6 +90,16 @@ public enum DoctrineDemandAggregator {
       let (sum, overflow) = (required[typeID] ?? 0).addingReportingOverflow(quantity)
       required[typeID] = overflow ? maximumQuantity : min(maximumQuantity, sum)
     }
+    var doctrinesByType: [Int64: [String]] = [:]
+    for doctrine in library.doctrines {
+      var types: Set<Int64> = []
+      for fitID in doctrine.fitIDs {
+        guard let fit = fitsByID[fitID] else { continue }
+        if let typeID = fit.hull.typeID { types.insert(typeID) }
+        types.formUnion(fit.items.compactMap(\.typeID))
+      }
+      for typeID in types { doctrinesByType[typeID, default: []].append(doctrine.id) }
+    }
     for doctrine in library.doctrines {
       let target = Int64(DoctrineTargets.clamped(targets[doctrine.id] ?? 0))
       guard target > 0 else { continue }
@@ -103,7 +118,8 @@ public enum DoctrineDemandAggregator {
         name: names[typeID] ?? "",
         fitCount: fitsByType[typeID]?.count ?? 0,
         requiredQuantity: required[typeID] ?? 0,
-        isHull: hullTypes.contains(typeID)
+        isHull: hullTypes.contains(typeID),
+        doctrineIDs: doctrinesByType[typeID] ?? []
       )
     }
   }
@@ -176,6 +192,10 @@ public struct DoctrineStockRowInput: Equatable, Sendable {
   /// Own sell order one step below the best sell, after sales tax and
   /// broker fee.
   public let homeNetSalePerUnit: Double?
+  /// Lowest sell at the Main Hub, for the price ratio Home ÷ Main.
+  public let mainBestSellPrice: Double?
+  /// Allumis figures of the type; nil without an Allumis import.
+  public let allumis: DoctrineAllumisItemFigures?
 
   public init(
     kind: DoctrineItemKind,
@@ -189,7 +209,9 @@ public struct DoctrineStockRowInput: Equatable, Sendable {
     importTransportPerUnit: Double?,
     importHasNoSource: Bool,
     homeBestSellPrice: Double?,
-    homeNetSalePerUnit: Double?
+    homeNetSalePerUnit: Double?,
+    mainBestSellPrice: Double? = nil,
+    allumis: DoctrineAllumisItemFigures? = nil
   ) {
     self.kind = kind
     self.listedQuantity = listedQuantity
@@ -203,6 +225,8 @@ public struct DoctrineStockRowInput: Equatable, Sendable {
     self.importHasNoSource = importHasNoSource
     self.homeBestSellPrice = homeBestSellPrice
     self.homeNetSalePerUnit = homeNetSalePerUnit
+    self.mainBestSellPrice = mainBestSellPrice
+    self.allumis = allumis
   }
 }
 
@@ -224,6 +248,16 @@ public struct DoctrineStockRow: Equatable, Sendable, Identifiable {
   public var typeID: Int64 { demand.typeID }
   public var name: String { demand.name }
   public var kind: DoctrineItemKind { input.kind }
+
+  /// Best Home Hub sell ÷ lowest Main Hub sell (1 = same price); unknown
+  /// while one of them is missing.
+  public var homeToMainPriceRatio: Double? {
+    guard let home = input.homeBestSellPrice, home.isFinite, home > 0,
+      let main = input.mainBestSellPrice, main.isFinite, main > 0
+    else { return nil }
+    let ratio = home / main
+    return ratio.isFinite ? ratio : nil
+  }
 
   public var recommendedCostPerUnit: Double? {
     switch recommendation {
@@ -316,16 +350,22 @@ public enum DoctrineStockCalculator {
 
 public enum DoctrineStockSortColumn: String, CaseIterable, Sendable {
   case name
+  /// Number of doctrines that use the item.
+  case doctrines
   case fitCount
   case requiredQuantity
+  case allumisRequiredQuantity
   case listedQuantity
   case regionUnitsPerDay
   case hubUnitsPerDay
+  case allumisAverageDailyVolume7Days
+  case allumisLostLast10Days
   case coverage
   case shortfall
   case buildCostPerUnit
   case importCostPerUnit
   case homeBestSellPrice
+  case homeToMainPriceRatio
   /// Sorted by the savings of the recommended way.
   case recommendation
   case profitPerUnit
@@ -365,16 +405,21 @@ public enum DoctrineStockRowSorter {
   static func value(_ row: DoctrineStockRow, _ column: DoctrineStockSortColumn) -> Double? {
     switch column {
     case .name: nil
+    case .doctrines: Double(row.demand.doctrineIDs.count)
     case .fitCount: Double(row.demand.fitCount)
     case .requiredQuantity: Double(row.demand.requiredQuantity)
+    case .allumisRequiredQuantity: row.input.allumis.map { Double($0.requiredQuantity) }
     case .listedQuantity: row.input.listedQuantity.map(Double.init)
     case .regionUnitsPerDay: row.input.regionUnitsPerDay
     case .hubUnitsPerDay: row.input.hubUnitsPerDay
+    case .allumisAverageDailyVolume7Days: row.input.allumis?.averageDailyVolume7Days
+    case .allumisLostLast10Days: row.input.allumis?.lostLast10Days.map(Double.init)
     case .coverage: row.coverage.sortValue
     case .shortfall: row.shortfall.map(Double.init)
     case .buildCostPerUnit: row.input.buildCostPerUnit
     case .importCostPerUnit: row.importCostPerUnit
     case .homeBestSellPrice: row.input.homeBestSellPrice
+    case .homeToMainPriceRatio: row.homeToMainPriceRatio
     case .recommendation: row.savingsPerUnit
     case .profitPerUnit: row.profitPerUnit
     }

@@ -752,3 +752,29 @@ bleibt gespeichert“) gilt deshalb nur für den Web-Speicher selbst; nach einem
 Neustart meldet sich der Eigentümer neu an, laut ihm mit einem Klick, weil EVE
 SSO sein Konto kennt. Er hat die angepassten Texte freigegeben. Die App
 speichert Sitzungs-Cookies nicht selbst über das Beenden hinaus.
+
+## 26.11.2026: Doktrin-Bedarf mit Allumis
+
+Anlass: Der Eigentümer möchte die Soll-Vorgaben aus Allumis („Brave Doctrine
+Market Management“, `api.allumis.co.uk/user/doctrines/detailed/`) automatisch
+auslesen, mit seinem Soll je Doktrin abgleichen, sehen, zu welcher Doktrin ein
+Item gehört, und die Tabelle um Allumis-Angaben ergänzen, ohne die
+Allumis-Tabelle nachzubauen. Vertrag: [DOKTRIN_BEDARF_PLAN.md](../DOKTRIN_BEDARF_PLAN.md), Abschnitt G.
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Allumis-Soll: Vergleich in der Doktrin-Liste plus Übernehmen-Knopf (häufigster
+   Wert der Fits); das eigene Soll je Doktrin bleibt maßgeblich.
+2. Doktrin-Zuordnung: Spalte „Doktrinen“ und Filter „Doktrin“.
+3. Spalten: Soll Allumis, Verluste 10 Tage, Preis in % des Main Hubs,
+   Verkauft/Tag Allumis (Ø 7 Tage).
+4. Allumis-Fits ohne Wiki-Gegenstück: eigene Gruppe „Nur bei Allumis“ mit Soll.
+
+Von Claude festgelegt: eigener WebKit-Speicher für Allumis neben dem des Wikis,
+damit „Abmelden“ je Quelle wirkt (Kehrseite: EVE SSO merkt sich das Konto je
+Speicher getrennt); Gleichstand beim häufigsten Wert nimmt den größeren;
+Refit-Items zählen nicht; „Home ÷ Main“ aus eigenen Marktdaten; der
+Doktrin-Filter blendet nur Zeilen aus; Ort fest `staging`, weil der Staging-Markt
+von Allumis der Home Hub des Eigentümers ist (Struktur 1046664001931, geprüft
+26.11.2026). Allumis ist nicht Teil von Brave IT; die App speichert von dort
+nur Fits, Sollwerte, Verkaufs- und Verlustzahlen, keine Sitzungsdaten.

@@ -521,7 +521,15 @@ the build-or-import recommendation with its sorter; `DoctrineWikiImport.swift`
 runs the read with an injected fetch and SDE name resolution. The app's
 `DoctrineWikiSession` keeps the wiki sign-in in its own persistent
 `WKWebsiteDataStore` and sends those cookies only to the wiki host;
-`DoctrineStockView` combines the library with the Home Hub scan
+`DoctrineAllumis.swift` adds Allumis (Brave Doctrine Market Management) as
+second source: it parses the JSON doctrine table, builds the stored snapshot
+(fits with the supply officer's target, item statistics, issues), runs the
+import with an injected fetch, pairs Allumis fits one-to-one with wiki fits
+(`DoctrineAllumisMerger`, whose merged library adds the group “Only at
+Allumis”) and aggregates the Allumis figures per type. The app's
+`DoctrineAllumisSession` keeps the Allumis sign-in in a persistent
+`WKWebsiteDataStore` of its own and sends those cookies only to the Allumis API
+host. `DoctrineStockView` combines the merged library with the Home Hub scan
 (`StockSaleProductionCostProjector`), the Main → Home trade row
 (`TradeCalculator`), the Home Hub stock history and the regional ESI history,
 all read through `RuntimeState`.

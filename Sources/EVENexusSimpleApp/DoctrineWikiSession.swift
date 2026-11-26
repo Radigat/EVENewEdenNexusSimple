@@ -80,9 +80,10 @@ final class DoctrineWikiSession {
   }
 }
 
-/// Follows a redirect only within the wiki host. A refused redirect hands
-/// the 3xx response to the importer, which treats it as an unreadable page.
-private final class DoctrineWikiSameHostRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+/// Follows a redirect only within one host (wiki or Allumis). A refused
+/// redirect hands the 3xx response to the importer, which treats it as an
+/// unreadable page or a missing session.
+final class DoctrineWikiSameHostRedirects: NSObject, URLSessionTaskDelegate, Sendable {
   let host: String
 
   init(host: String) {
@@ -222,6 +223,7 @@ struct DoctrineWikiLoginSheet: View {
       DoctrineWikiWebView(
         url: DoctrineWikiSession.shared.configuration.loginURL,
         dataStore: DoctrineWikiSession.shared.dataStore,
+        signInCheck: .dokuWiki(host: DoctrineWikiSession.shared.configuration.host),
         isSignedIn: $isSignedIn,
         isLoading: $isLoading
       )
@@ -236,16 +238,25 @@ struct DoctrineWikiLoginSheet: View {
   }
 }
 
-/// WKWebView of the session store. Links that open a new window load in the
+/// How the login sheet recognizes a signed-in page.
+enum DoctrineSignInCheck {
+  /// DokuWiki marks a signed-in page with the body class `loggedIn`.
+  case dokuWiki(host: String)
+  /// Allumis shows member pages under `/user` only with a session.
+  case allumis(AllumisConfiguration)
+}
+
+/// WKWebView of a session store. Links that open a new window load in the
 /// same view, so the SSO redirects stay inside the sheet.
 struct DoctrineWikiWebView: NSViewRepresentable {
   let url: URL
   let dataStore: WKWebsiteDataStore
+  let signInCheck: DoctrineSignInCheck
   @Binding var isSignedIn: Bool
   @Binding var isLoading: Bool
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(isSignedIn: $isSignedIn, isLoading: $isLoading)
+    Coordinator(signInCheck: signInCheck, isSignedIn: $isSignedIn, isLoading: $isLoading)
   }
 
   func makeNSView(context: Context) -> WKWebView {
@@ -262,10 +273,12 @@ struct DoctrineWikiWebView: NSViewRepresentable {
 
   @MainActor
   final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    private let signInCheck: DoctrineSignInCheck
     private var isSignedIn: Binding<Bool>
     private var isLoading: Binding<Bool>
 
-    init(isSignedIn: Binding<Bool>, isLoading: Binding<Bool>) {
+    init(signInCheck: DoctrineSignInCheck, isSignedIn: Binding<Bool>, isLoading: Binding<Bool>) {
+      self.signInCheck = signInCheck
       self.isSignedIn = isSignedIn
       self.isLoading = isLoading
     }
@@ -276,8 +289,15 @@ struct DoctrineWikiWebView: NSViewRepresentable {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
       isLoading.wrappedValue = false
+      let host: String
+      switch signInCheck {
+      case .allumis(let configuration):
+        isSignedIn.wrappedValue = configuration.isSignedInPage(webView.url)
+        return
+      case .dokuWiki(let wikiHost):
+        host = wikiHost.lowercased()
+      }
       // DokuWiki marks a signed-in page with the body class `loggedIn`.
-      let host = DoctrineWikiSession.shared.configuration.host
       guard webView.url?.host?.lowercased() == host else { return }
       webView.evaluateJavaScript(
         "document.body ? document.body.classList.contains('loggedIn') : false"

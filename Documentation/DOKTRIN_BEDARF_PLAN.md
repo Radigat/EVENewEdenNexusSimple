@@ -3,6 +3,8 @@
 Stand: 26.11.2026 · Status: **implementiert, automatisch geprüft, Import mit
 echter Wiki-Sitzung in der App geprüft**. Die Tabelle mit Marktdaten eines
 echten Home Hubs und die Eigentümerabnahme sind offen, siehe Abschnitt F.
+Allumis als zweite Quelle (Abschnitt G): implementiert und automatisch
+geprüft; Import mit echter Allumis-Sitzung in der App offen.
 
 Der Eigentümer möchte eine eigene Seite, auf der er sieht, welche Items und
 Schiffe die Allianz-Doktrinen am Home Hub brauchen, wie schnell sie sich
@@ -129,6 +131,11 @@ Fehlmenge, mindestens einen Lauf, mit den ME/TE-Standards der Hub-Chancen.
 - App: `DoctrineWikiSession.swift` (WebKit-Speicher, Login-Sheet, Importer mit
   Cookies), `DoctrineStockView.swift` (Seite), `RuntimeState`
   (`doctrineItemCatalogMetadata`), Navigation `NavigationSection.doctrineStock`.
+- Allumis (Abschnitt G): Kern `DoctrineAllumis.swift` (Parser, Snapshot,
+  Import, Zuordnung, Item-Werte), App `DoctrineAllumisSession.swift`
+  (eigener WebKit-Speicher, Login-Sheet, Import-Steuerung), App-Einstellung
+  `doctrine-stock.allumis.v1`, Tests `DoctrineAllumisTests` (11 Tests mit
+  künstlichen JSON-Zeilen).
 - Tests: `Tests/EVENexusCoreTests/DoctrineStockTests.swift` (17 Tests mit
   künstlichen Wiki-Ausschnitten), Navigationsreihenfolge in
   `HUDNavigationGroupTests` und `RuntimeFeatureStateTests`.
@@ -139,3 +146,89 @@ Fehlmenge, mindestens einen Lauf, mit den ME/TE-Standards der Hub-Chancen.
   abgeschottete Debug-App hatte keinen Home Hub; Bau-, Import- und
   Verkaufswerte sind deshalb nur automatisch geprüft.
 - Eigentümerabnahme der Annahmen in Abschnitt A („von Claude festgelegt“).
+- Allumis: Import mit echter Sitzung in der App, Zuordnungsquote mit echten
+  Daten und Eigentümerabnahme der Annahmen in Abschnitt G.
+
+## G. Allumis (26.11.2026)
+
+Der Eigentümer möchte die Soll-Vorgaben der Allianz automatisch auslesen und
+mit seinem Soll je Doktrin abgleichen, sehen, zu welcher Doktrin ein Item
+gehört, und die Tabelle um Angaben von Allumis ergänzen. Die Allumis-Tabelle
+wird nicht nachgebaut.
+
+### Entscheidungen des Eigentümers (26.11.2026)
+
+| Thema | Entscheidung |
+|---|---|
+| Allumis-Soll | Vergleich in der Doktrin-Liste plus Knopf, der den häufigsten Allumis-Wert der Fits als Doktrin-Soll übernimmt; das eigene Soll bleibt maßgeblich |
+| Doktrin-Zuordnung | Spalte „Doktrinen“ (mit Soll hervorgehoben) und Auswahl „Doktrin“ über der Tabelle |
+| Neue Spalten | Soll Allumis, Verluste 10 Tage, Home ÷ Main (Preis in % des Main Hubs), Verkauft/Tag Allumis (Ø 7 Tage) |
+| Allumis-Fits ohne Wiki | eigene Gruppe „Nur bei Allumis“ mit Soll wie eine Doktrin |
+
+Von Claude festgelegt (zur Abnahme): eigener WebKit-Speicher für Allumis
+(Abmelden trifft nur diese Quelle); Gleichstand beim häufigsten Wert nimmt den
+größeren; Refit-Items zählen weder für Inhalt noch Soll (wie Refits im Wiki);
+„Home ÷ Main“ rechnet mit den eigenen Marktdaten statt mit den
+Allumis-Preisen; der Doktrin-Filter blendet nur Zeilen aus, die Zahlen bleiben
+die über alle Doktrinen; Allumis-Ort fest im Code (`staging`).
+
+### Quelle
+
+- Allumis „Brave Doctrine Market Management“, betrieben von Suffia (Brave
+  Supply Officer), nicht Teil von Brave IT. Login nur für Mitglieder von Brave
+  Collective oder Brave United über EVE SSO.
+- Daten: `https://api.allumis.co.uk/api/?path=/doctrine/ships/detailedtable/&loc=staging`
+  liefert JSON, eine Zeile je Fit: `node_index` (Fitting-ID), `itemName`
+  (Rumpf), `fittingName`, `minStock` (Soll in Fits), `avg7dVol`, `dropped`,
+  `destroyed`, Preise und `_children` mit den Items („Fit Item“ oder
+  „Refit Item“, `quantity`). Zahlen kommen meist als Text.
+- Befund 26.11.2026 (mit Anmeldung des Eigentümers, nur lesend): 232 Fits,
+  3.847 Item-Zeilen, davon 7 Refit-Items; `minStock` der Items ist Fit-Soll ×
+  Menge; `avg7dVol`, `dropped` und `destroyed` sind je Item in allen Fits
+  gleich; die Spalte „Items lost last 10 days“ ist `dropped + destroyed`.
+  `loc` kennt `staging`, `secondary` und `deployment`; der Staging-Markt ist
+  die Struktur 1046664001931 und damit der Home Hub des Eigentümers.
+- Abgleich mit der Wiki-Bibliothek vom 26.11.2026: 205 der 232 Allumis-Fits
+  (EFT der Fit-Liste) hatten exakt den Inhalt eines Wiki-Fits; die übrigen
+  27 sind Ratting-, Fun-Fleet- und PodSaver-Fits außerhalb der Wiki-Doktrinen
+  oder geänderte Fits. 20 Wiki-Fits kennt Allumis nicht.
+
+### Sitzung und Datenschutz
+
+- Login im Web-Fenster der App (`https://api.allumis.co.uk/login` → EVE SSO →
+  `/user/`). Angemeldet gilt eine Seite unter `/user` auf dem API-Host.
+- Eigener persistenter `WKWebsiteDataStore` (feste ID in
+  `DoctrineAllumisSession`), getrennt vom Wiki. „Abmelden“ löscht nur ihn.
+  Allumis setzt das Cookie `session` mit 12 Stunden Laufzeit; die Sitzung
+  übersteht also einen Neustart innerhalb dieser Zeit.
+- Der Import sendet die Cookies nur an `api.allumis.co.uk` (flüchtige
+  `URLSession`, keine Cookie-Übernahme) und folgt keiner Weiterleitung auf
+  einen anderen Host. Weiterleitung, 401, 403 oder eine Antwort ohne
+  `application/json` gelten als „nicht angemeldet“.
+- Gespeichert wird nur das Ergebnis (`doctrine-stock.allumis.v1`): Fits mit
+  Soll und Items, Item-Werte, Hinweise. Keine Preise, keine Sitzungsdaten.
+
+### Regeln
+
+- **Zuordnung:** jedes Allumis-Fit höchstens einem Wiki-Fit und umgekehrt, in
+  drei Durchgängen: (1) gleicher Inhalt und gleicher Name, (2) gleicher
+  Inhalt, (3) gleicher Rumpf und Name, dann als „Inhalt weicht ab“ markiert.
+  Inhalt = Rumpf und Items mit summierten Mengen, nach Typ-ID oder sonst Name,
+  ohne Refits. Name = Fitname ohne führende Kürzel in eckigen Klammern, klein,
+  einfache Leerzeichen. Allumis-Fits gehen nach aufsteigender Fitting-ID und
+  nehmen das erste freie Wiki-Fit in Bibliotheksreihenfolge.
+- **Nur bei Allumis:** nicht zugeordnete Allumis-Fits bilden die Doktrin
+  `allumis:only` (Fit-IDs `allumis:<Fitting-ID>`) mit eigenem Soll. Sie zählen
+  für „Fits“, „Doktrinen“, „Benötigt“ und den Filter wie Wiki-Fits.
+- **Allumis-Spalte der Doktrin-Liste:** die Allumis-Sollwerte der Fits der
+  Doktrin mit Häufigkeit, „x von y Fits“; der übernehmbare Wert ist der
+  häufigste, bei Gleichstand der größere.
+- **Soll Allumis je Item:** Σ über alle Allumis-Fits von Fit-Soll × Menge,
+  Rumpf einmal je Fit, Refits nicht. Ohne Allumis-Soll „–“, ohne Import „—“.
+- **Verkauft/Tag Allumis** = `avg7dVol`; **Verluste 10 Tage** = `dropped +
+  destroyed`, unbekannt, wenn einer fehlt. Stimmen die Werte eines Items in
+  zwei Fits nicht überein, gilt der größere.
+- **Home ÷ Main** = bester Sell am Home Hub ÷ niedrigster Sell am Main Hub,
+  unbekannt, wenn einer fehlt oder 0 ist.
+- **Doktrinen je Item:** jede Doktrin mit mindestens einem Fit, das das Item
+  als Rumpf oder Item enthält; Sortierung nach ihrer Anzahl.

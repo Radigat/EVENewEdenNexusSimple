@@ -35,6 +35,9 @@ enum AppSettingKey {
   /// Required fits per doctrine, JSON-encoded `[doctrine page ID: count]`;
   /// a missing row or doctrine means 0.
   static let doctrineStockTargets = "doctrine-stock.targets.v1"
+  /// Fits, targets and item figures imported from Allumis, JSON-encoded
+  /// `AllumisDoctrineSnapshot`; a missing row means not imported yet.
+  static let doctrineStockAllumis = "doctrine-stock.allumis.v1"
 
   static func industryJobs(characterID: Int64) -> String {
     "\(industryJobsPrefix)\(characterID)"

@@ -729,3 +729,24 @@ Plan und Eigentümerentscheide: [DOKTRIN_BEDARF_PLAN.md](Documentation/DOKTRIN_B
   Seitenwechsel weiter (in der App geprüft).
 - **Offen:** Tabelle mit Markt- und Bestandsdaten eines echten Home Hubs,
   Eigentümerabnahme.
+
+## Doktrin-Bedarf mit Allumis (26.11.2026)
+
+Vertrag: [DOKTRIN_BEDARF_PLAN.md](Documentation/DOKTRIN_BEDARF_PLAN.md), Abschnitt G.
+
+- **Implementiert:** Allumis („Brave Doctrine Market Management“) als zweite
+  Quelle mit eigenem Login und WebKit-Speicher: Soll des Supply Officers je
+  Fit, Zuordnung zu den Wiki-Fits, Gruppe „Nur bei Allumis“, Allumis-Spalte
+  mit Übernehmen-Knopf in der Doktrin-Liste, Spalte und Filter „Doktrinen“,
+  neue Spalten Soll Allumis, Verkauft/Tag Allumis, Verluste 10 Tage und
+  Home ÷ Main.
+- **Automatisch geprüft:** `swift test` (840 Core-, 170 App-Tests, 61
+  XCTest-Fälle), EVEStaticDataKit (13 Tests) und `xcodebuild test` unsigniert
+  `TEST SUCCEEDED`.
+- **Erkundet:** Allumis-Antwort mit Anmeldung des Eigentümers im eingebauten
+  Browser, nur lesend (232 Fits; 205 inhaltsgleich mit Wiki-Fits).
+- **Sichtgeprüft:** isolierte Debug-App mit Wiki-Bibliothek, ohne
+  Allumis-Import: Bereich „Allumis“, Filter „Doktrin“, Spalte „Doktrinen“ und
+  neue Spaltentitel.
+- **Offen:** Import mit echter Allumis-Sitzung in der App und Sichtprüfung mit
+  Allumis-Daten, Eigentümerabnahme.

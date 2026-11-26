@@ -262,7 +262,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Zum Planner hinzufügen** hängt die konkrete Charge an den Planner-Entwurf an |
 | Home Hub Opportunities | dieselbe Chancenansicht für Verkäufe am Home Hub (Material vom Main Hub, ohne Rückweg); eigene Filter, gemeinsamer Scan mit dem Main Hub |
 | Coalition Hub Opportunities | Chancenansicht für Verkäufe am Coalition Hub inklusive sortierbarem Transport Home → Coalition (Jump Freighter oder Kurier); eigene Filter, gemeinsamer Scan |
-| Doctrine stock | Doktrin-Bedarf: Items und Schiffe der Allianz-Doktrinen (Import aus dem Brave-Wiki) am Home Hub mit Bestand, Verkäufen je Tag, Reichweite, Fehlmenge zum Doktrin-Soll und Schnellkalkulation Bauen oder Import vom Main Hub |
+| Doctrine stock | Doktrin-Bedarf: Items und Schiffe der Allianz-Doktrinen (Import aus dem Brave-Wiki, Soll-Vorgaben, Verkäufe und Verluste aus Allumis) am Home Hub mit Bestand, Verkäufen je Tag, Reichweite, Fehlmenge zum Doktrin-Soll, Doktrin-Zuordnung und Schnellkalkulation Bauen oder Import vom Main Hub |
 | Stock sale comparison | Lagerverkauf-Abgleich: aus dem Spiel kopierte Items samt Anzahl je Hub gegen die Neuproduktion bewerten; Mindestpreis für Sell-Order und Direktverkauf, Marktpreise, Gewinn und Empfehlung |
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
 | Reactions | veröffentlichte Reaktionsrezepte, vollständige Batch-Kosten, Logistik und Make-or-Buy-Vergleich |
@@ -1337,38 +1337,80 @@ Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BE
     Fits der Seite.
   - **Hinweise zum Import** nennen tote Abschnitte, fehlende Seiten, Doktrinen
     ohne Fit, unbekannte oder mehrdeutige Item-Namen und nicht lesbare Seiten.
-- **Doktrinen und Sollbestand:** Tabelle mit Doktrin (Link auf die Wiki-Seite),
-  Anzahl Fits und **Soll**. Das Soll ist die Zahl kompletter Fits und gilt für
-  jedes Fit der Doktrin, Varianten eingeschlossen; 0 heißt kein Bedarf. Alle
-  Spalten sortierbar, die Werte bleiben gespeichert.
+- **Allumis:** zweite Quelle ist „Brave Doctrine Market Management“ von
+  Allumis (`api.allumis.co.uk`) mit dem Soll des Supply Officers je Fit für den
+  Staging-Markt, den Verkäufen über 7 Tage und den Verlusten über 10 Tage.
+  - **Bei Allumis anmelden …** öffnet den EVE-SSO-Login von Allumis in einem
+    Web-Fenster der App. Die App sieht kein Passwort; die Sitzung liegt in
+    einem eigenen Web-Speicher, getrennt vom Wiki. Allumis beendet sie nach
+    12 Stunden, auch über einen Neustart der App hinweg. **Abmelden** löscht
+    nach Rückfrage nur den Allumis-Speicher; Allumis-Daten und Sollwerte
+    bleiben.
+  - **Aus Allumis aktualisieren** liest die Doktrintabelle mit einer Anfrage
+    und speichert das Ergebnis; es gibt keinen automatischen Abruf. Ohne
+    gültige Sitzung bittet die Seite um eine neue Anmeldung. Die Cookies gehen
+    nur an `api.allumis.co.uk`; einer Weiterleitung auf einen anderen Host
+    folgt der Import nicht.
+  - Jedes Allumis-Fit wird höchstens einem Wiki-Fit zugeordnet: zuerst gleicher
+    Inhalt (Rumpf, Items und Mengen) und gleicher Name, dann gleicher Inhalt,
+    dann gleicher Rumpf und Name (Name ohne Kürzel wie „[DOC]“, ohne
+    Groß-/Kleinschreibung). Refit-Items zählen nicht. Allumis-Fits ohne
+    Wiki-Gegenstück bilden die Gruppe **Nur bei Allumis**, die wie eine
+    Doktrin ein Soll bekommt.
+  - **Allumis-Hinweise** nennen unbekannte oder mehrdeutige Item-Namen, nicht
+    lesbare Einträge und Fits, die nur über Rumpf und Name zugeordnet sind,
+    weil sich die Items unterscheiden.
+- **Doktrinen und Sollbestand:** Tabelle mit Doktrin (Link auf die Wiki-Seite,
+  bei „Nur bei Allumis“ auf die Fit-Liste von Allumis), Anzahl Fits, nach
+  einem Allumis-Import **Allumis** und **Soll**. Das Soll ist die Zahl
+  kompletter Fits und gilt für jedes Fit der Doktrin, Varianten eingeschlossen;
+  0 heißt kein Bedarf. Die Spalte Allumis nennt die Allumis-Sollwerte der Fits
+  (häufigster zuerst) und „x von y Fits“, ein Warnsymbol, wenn Fits nur über
+  Rumpf und Name zugeordnet sind, „nicht bei Allumis“ ohne Treffer. Der Pfeil
+  übernimmt den häufigsten Wert (bei Gleichstand den größeren) als Soll; dein
+  Soll bleibt maßgeblich. Alle Spalten sortierbar (Allumis nach dem
+  übernehmbaren Wert), die Werte bleiben gespeichert.
 - **Home Hub und Grundlage:** Chips für Home und Main Hub sowie die Gebühren
   des Home Hubs, **Hub-Märkte aktualisieren** (gemeinsamer Hub-Scan), Hinweise
   auf fehlende Hubs, Scans, Markt- und Bestandsdaten, Region und Transport mit
   Sprung in die Markt- bzw. Logistik-Einstellungen, Ladefortschritt der
   Regionshistorie und die Rechenannahmen.
 - **Tabelle „Doktrin-Items am Home Hub“:** alle aufgelösten Items des
-  Imports, filterbar nach Alle, Rümpfe, Module & Sonstiges, Munition &
-  Ladungen und Drohnen (SDE-Kategorie). Spalten:
+  Wiki-Imports und der Gruppe „Nur bei Allumis“, filterbar nach Alle, Rümpfe,
+  Module & Sonstiges, Munition & Ladungen und Drohnen (SDE-Kategorie) und über
+  die Auswahl **Doktrin** nach einer einzelnen Doktrin (zum Einkaufen für
+  sie; die Zahlen bleiben die über alle Doktrinen). Spalten:
   - **Gegenstand** mit Bild, Kopier-Klick, Verlaufssymbol und Hammer,
-  - **Fits** (Fits des ganzen Imports mit diesem Item), **Benötigt** (Σ Soll ×
-    Menge), **Gelistet** (Sell-Stück am Home Hub beim letzten Bestandspunkt),
+  - **Doktrinen**: die Doktrinen, deren Fits das Item nutzen; die mit Soll
+    zuerst in Textfarbe, die übrigen grau oder als „+n“; der Tooltip nennt
+    alle mit ihrem Soll,
+  - **Fits** (Fits des Wikis und der Gruppe „Nur bei Allumis“ mit diesem
+    Item), **Benötigt** (Σ Soll × Menge), **Soll Allumis** (Σ Allumis-Soll ×
+    Menge über alle Allumis-Fits, Rumpf einmal je Fit, ohne Refits; „–“ ohne
+    Allumis-Soll, „—“ ohne Allumis-Import), **Gelistet** (Sell-Stück am Home
+    Hub beim letzten Bestandspunkt),
   - **Verkauft/Tag Region** (Ø 30 Tage ESI-Markthistorie der Region des Home
-    Hubs) und **Verkauft/Tag Hub** (Teilverkäufe der Bestandshistorie,
-    Untergrenze, unvollständig in Warnfarbe),
+    Hubs), **Verkauft/Tag Hub** (Teilverkäufe der Bestandshistorie,
+    Untergrenze, unvollständig in Warnfarbe) und **Verkauft/Tag Allumis**
+    (Ø 7 Tage am Staging-Markt laut Allumis),
+  - **Verluste 10 Tage** (laut Allumis zerstörte plus gedroppte Stück aus
+    Killmails; Tooltip mit beiden Teilen),
   - **Reichweite** (Gelistet ÷ Region/Tag, „ausverkauft“ rot, „keine
     Verkäufe“), **Fehlmenge** (Benötigt − Gelistet, mindestens 0, rot ab 1),
   - **Bau/Stück** (Rechnung der Home-Hub-Chancen für die Fehlmenge, mindestens
     ein Lauf, mit deren Schaltern und ME/TE-Standards; Tooltip mit
     Aufschlüsselung) oder „nicht baubar“,
   - **Import/Stück** (niedrigster Sell am Main Hub plus Transport Main → Home
-    je Stück; Tooltip mit beiden Teilen), **Home Sell**,
+    je Stück; Tooltip mit beiden Teilen), **Home Sell**, **Home ÷ Main**
+    (bester Sell am Home Hub in Prozent des niedrigsten Sells am Main Hub, aus
+    den eigenen Marktdaten; Tooltip mit beiden Preisen),
   - **Empfehlung** Bauen (Hammer) oder Import (Kiste) mit Ersparnis je Stück,
   - **Gewinn/Stück** (eigene Sell-Order einen Preisschritt unter dem besten
     Sell am Home Hub nach Steuer und Makler minus Kosten des empfohlenen Wegs).
-- **Sortierung:** alle Spalten nach dem typisierten Wert; beim Öffnen
-  Reichweite aufsteigend (ausverkauft zuerst). Unbekannte Werte stehen
-  aufsteigend hinten und absteigend vorn, „keine Verkäufe“ zählt als
-  unbegrenzte Reichweite, danach entscheidet die Typ-ID.
+- **Sortierung:** alle Spalten nach dem typisierten Wert, Doktrinen nach ihrer
+  Anzahl; beim Öffnen Reichweite aufsteigend (ausverkauft zuerst). Unbekannte
+  Werte stehen aufsteigend hinten und absteigend vorn, „keine Verkäufe“ zählt
+  als unbegrenzte Reichweite, danach entscheidet die Typ-ID.
 - **Fehlende Daten:** bleiben „—“; ein Info-Symbol nennt den Grund (kein Scan,
   nicht im Scan, unbekannter Kostenanteil, fehlender Preis, Gebühr,
   Packvolumen oder Transport). Eine Empfehlung gibt es nur mit beiden Kosten,
