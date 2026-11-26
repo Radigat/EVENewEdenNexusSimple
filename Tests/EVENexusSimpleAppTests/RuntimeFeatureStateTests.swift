@@ -70,11 +70,13 @@ struct RuntimeFeatureStateTests {
     let sections = NavigationSection.allCases
     let logbook = sections.firstIndex(of: .tradeLogbook)
     // Owner decision 29.10.2026: Market stock sits between the logbook and
-    // the stock sale comparison.
+    // the stock sale comparison; since 25.11.2026 the doctrine stock follows
+    // Market stock directly.
     #expect(
       logbook != nil
         && sections.firstIndex(of: .marketStock) == logbook.map { $0 + 1 }
-        && sections.firstIndex(of: .stockSaleComparison) == logbook.map { $0 + 2 }
+        && sections.firstIndex(of: .doctrineStock) == logbook.map { $0 + 2 }
+        && sections.firstIndex(of: .stockSaleComparison) == logbook.map { $0 + 3 }
     )
     #expect(NavigationSection.establishedCases.contains(.stockSaleComparison))
     #expect(NavigationSection.establishedCases.contains(.marketStock))

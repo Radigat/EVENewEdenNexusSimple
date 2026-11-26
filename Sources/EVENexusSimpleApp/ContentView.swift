@@ -13,6 +13,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
   case trade
   case tradeLogbook
   case marketStock
+  case doctrineStock
   case stockSaleComparison
   case publicContracts
   case reactions
@@ -41,6 +42,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .trade: "Trade"
     case .tradeLogbook: "Trade logbook"
     case .marketStock: "Market stock"
+    case .doctrineStock: "Doctrine stock"
     case .stockSaleComparison: "Stock sale comparison"
     case .publicContracts: "Public Contracts"
     case .reactions: "Reactions"
@@ -65,6 +67,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .trade: "arrow.left.arrow.right"
     case .tradeLogbook: "book.closed.fill"
     case .marketStock: "chart.bar.xaxis"
+    case .doctrineStock: "shield.lefthalf.filled"
     case .stockSaleComparison: "scalemass.fill"
     case .publicContracts: "doc.text.magnifyingglass"
     case .reactions: "atom"
@@ -88,7 +91,7 @@ enum NavigationSection: String, CaseIterable, Identifiable {
     case .manufacturingOpportunities, .homeHubOpportunities,
       .coalitionHubOpportunities:
       .opportunities
-    case .trade, .tradeLogbook, .marketStock, .stockSaleComparison,
+    case .trade, .tradeLogbook, .marketStock, .doctrineStock, .stockSaleComparison,
       .publicContracts, .moonMaterialAnalysis, .mineralPurchaseAnalysis:
       .market
     case .items, .warehouse: .assets
@@ -540,6 +543,17 @@ struct ContentView: View {
             TradeLogbookView()
           case .marketStock:
             MarketStockView()
+          case .doctrineStock:
+            DoctrineStockView(
+              onOpenMarketSettings: {
+                guardedDataSettingsSelection.wrappedValue = .marketSettings
+                guardedSelection.wrappedValue = .data
+              },
+              onOpenLogistics: {
+                guardedDataSettingsSelection.wrappedValue = .logistics
+                guardedSelection.wrappedValue = .data
+              }
+            )
           case .stockSaleComparison:
             StockSaleComparisonView(
               onOpenMarketSettings: {

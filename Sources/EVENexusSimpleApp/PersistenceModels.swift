@@ -29,6 +29,12 @@ enum AppSettingKey {
   /// Item list of the stock sale comparison, JSON-encoded
   /// `[StockSaleEntry]`; a missing row means an empty list.
   static let stockSaleItems = "stock-sale.items.v1"
+  /// Doctrine library imported from the alliance wiki, JSON-encoded
+  /// `DoctrineLibrary`; a missing row means not imported yet.
+  static let doctrineStockLibrary = "doctrine-stock.library.v1"
+  /// Required fits per doctrine, JSON-encoded `[doctrine page ID: count]`;
+  /// a missing row or doctrine means 0.
+  static let doctrineStockTargets = "doctrine-stock.targets.v1"
 
   static func industryJobs(characterID: Int64) -> String {
     "\(industryJobsPrefix)\(characterID)"

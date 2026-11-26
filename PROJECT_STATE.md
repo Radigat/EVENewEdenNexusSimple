@@ -707,3 +707,25 @@ Implementiert und automatisch geprüft, Live- und Eigentümerabnahme offen; am
 erkannt und mit einem Klick einer Produktion zugeordnet; Zuordnungen sind
 rücknehmbar. Handelslogbuch-Schema 4 (additiv). Verhalten in
 [PRODUCT.md](PRODUCT.md), Nachweise im [dev-diary.md](dev-diary.md).
+
+## Doktrin-Bedarf (25./26.11.2026)
+
+Plan und Eigentümerentscheide: [DOKTRIN_BEDARF_PLAN.md](Documentation/DOKTRIN_BEDARF_PLAN.md).
+
+- **Implementiert:** Seite „Doktrin-Bedarf“ unter Marktbestand. Import der
+  Doktrin- und Schiffsseiten aus dem Brave-Wiki per Login in einem eigenen
+  WebKit-Speicher, Soll je Doktrin, Bedarf, Bestand, Verkäufe je Tag
+  (Region und Hub), Reichweite, Fehlmenge und Schnellkalkulation Bauen oder
+  Import vom Main Hub.
+- **Automatisch geprüft:** `swift test` (827 Core-, 170 App-Tests, XCTest-
+  Suiten) und `xcodebuild test` unsigniert `TEST SUCCEEDED`; Abschnittsanker
+  gegen 732 gerenderte Wiki-Überschriften abgeglichen.
+- **Sichtgeprüft:** isolierte Debug-App ohne Hubs: Seite, Hinweise und
+  Login-Fenster mit der Wiki-Anmeldeseite.
+- **Live geprüft (26.11.2026):** Anmeldung des Eigentümers im Fenster der App
+  und Import mit echter Sitzung: 35 Doktrinen, 225 Fits, 34 Hinweise, alle
+  Item-Namen aufgelöst. Die Wiki-Sitzung endet mit der App (nur
+  Sitzungs-Cookies); neu anmelden kostet einen Klick. Ein Import läuft beim
+  Seitenwechsel weiter (in der App geprüft).
+- **Offen:** Tabelle mit Markt- und Bestandsdaten eines echten Home Hubs,
+  Eigentümerabnahme.

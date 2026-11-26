@@ -510,6 +510,22 @@ opportunity cost chain with an empty warehouse for one quantity), the pure
 reads hub prices, fees and scans from `RuntimeState` and shares the Hub
 opportunity cost inputs through `OpportunityCostInputs`.
 
+`Doctrine/` holds the doctrine stock
+([DOKTRIN_BEDARF_PLAN.md](Documentation/DOKTRIN_BEDARF_PLAN.md)):
+`DoctrineWiki.swift` parses DokuWiki raw markup (headings with the wiki's
+`useslash` anchors, code blocks, links, `/* */` comments), index pages and
+EFT fits; `DoctrineLibrary.swift` builds the stored library (doctrines, all
+fits, import issues) and the per-doctrine targets; `DoctrineStock.swift`
+aggregates the required quantity per type and computes reach, shortfall and
+the build-or-import recommendation with its sorter; `DoctrineWikiImport.swift`
+runs the read with an injected fetch and SDE name resolution. The app's
+`DoctrineWikiSession` keeps the wiki sign-in in its own persistent
+`WKWebsiteDataStore` and sends those cookies only to the wiki host;
+`DoctrineStockView` combines the library with the Home Hub scan
+(`StockSaleProductionCostProjector`), the Main → Home trade row
+(`TradeCalculator`), the Home Hub stock history and the regional ESI history,
+all read through `RuntimeState`.
+
 `manufacturingDefinitions()` and `reactionDefinitions()` load all complete
 definitions with three set-based queries. A product offered by more than one
 qualifying blueprint keeps the per-product `productionDefinition` selection.

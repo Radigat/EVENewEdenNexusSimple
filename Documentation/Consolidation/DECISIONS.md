@@ -695,3 +695,43 @@ Antworten des Eigentümers auf die Rückfragen:
 3. Der Nettowert-Posten **In Produktion** bleibt beim Materialwert.
 
 Von Claude festgelegt: Produktwert = Runs × SDE-Ausstoß je Run × Preis. Ein Produkt ohne Referenzpreis bleibt unbewertet und fällt aus der Rangfolge (Hinweis „Unvollständige Rangfolge“); weder Materialwert noch rekursive Bewertung ersetzen ihn. Fehlende Materialpreise schließen einen Job mit bewertetem Produkt nicht mehr aus.
+
+## 25.11.2026: Seite „Doktrin-Bedarf“
+
+Anlass (Eigentümer-Bild der Keelworks-Kachel „Doctrine stock at UALX-3“): eigene
+Seite mit den Doktrin-Items am Home Hub, Verkäufen je Tag, Reichweite, dem, was
+gebaut werden muss, und einer Schnellkalkulation Bauen oder Import aus Jita.
+Vertrag: [DOKTRIN_BEDARF_PLAN.md](../DOKTRIN_BEDARF_PLAN.md).
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Fit-Quelle: Import aus dem Brave-Wiki; da der Doktrin-Bereich nur angemeldet
+   sichtbar ist, per Login in der App. Die Sitzung bleibt gespeichert,
+   aktualisiert wird nur per Knopf.
+2. Bedarf: Soll je Doktrin, streng für jedes Fit der Doktrin (Varianten zählen
+   voll).
+3. Tabellenumfang: alle Fits des Wikis wie im Bild; Bedarf nur aus Doktrinen mit
+   Soll.
+4. Toter Abschnittsanker: alle Fits der Schiffsseite plus Hinweis; optionale
+   Schiffe („Other ships you can use“) zählen wie Kern-Fits.
+5. Verkäufe/Tag: Regionshistorie und Home-Hub-Bestandshistorie als zwei
+   Spalten; Reichweite nach Region.
+6. Importpreis: Sofortkauf (Min-Sell) am Main Hub plus Transport Main → Home.
+7. Nicht baubare Items bleiben mit Import-Kosten in der Tabelle.
+8. Name und Platz: „Doktrin-Bedarf“ direkt unter Marktbestand; der
+   Lagerverkauf-Abgleich rückt damit einen Eintrag nach unten.
+
+Von Claude festgelegt: Filter nach SDE-Kategorie (Rümpfe, Module & Sonstiges,
+Munition & Ladungen, Drohnen); Standardsortierung Reichweite aufsteigend; eine
+geladene Ladung zählt je Modul einmal; Gleichstand Bauen/Import empfiehlt
+Import; Baukosten für die Fehlmenge, mindestens ein Lauf, mit den Schaltern und
+ME/TE-Standards der Hub-Chancen; eine Empfehlung mit nur einer bekannten Seite
+nur, wenn der andere Weg unmöglich ist; der Wiki-Ort ist fest im Code
+hinterlegt.
+
+Nachtrag 26.11.2026 (Live-Import): Wiki und Brave Core setzen nur
+Sitzungs-Cookies, die Wiki-Sitzung endet also mit der App. Entscheid 1 („Sitzung
+bleibt gespeichert“) gilt deshalb nur für den Web-Speicher selbst; nach einem
+Neustart meldet sich der Eigentümer neu an, laut ihm mit einem Klick, weil EVE
+SSO sein Konto kennt. Er hat die angepassten Texte freigegeben. Die App
+speichert Sitzungs-Cookies nicht selbst über das Beenden hinaus.

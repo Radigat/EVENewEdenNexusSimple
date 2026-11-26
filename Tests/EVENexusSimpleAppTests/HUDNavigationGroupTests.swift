@@ -11,8 +11,8 @@ final class HUDNavigationGroupTests: XCTestCase {
       [
         .dashboard, .planner, .manufacturingOpportunities,
         .homeHubOpportunities, .coalitionHubOpportunities, .trade,
-        .tradeLogbook, .marketStock, .stockSaleComparison, .publicContracts,
-        .reactions, .moonMaterialAnalysis, .mineralPurchaseAnalysis, .items,
+        .tradeLogbook, .marketStock, .doctrineStock, .stockSaleComparison,
+        .publicContracts, .reactions, .moonMaterialAnalysis, .mineralPurchaseAnalysis, .items,
         .warehouse, .blueprints, .productionBook, .netWorth, .data,
       ]
     )
@@ -38,8 +38,8 @@ final class HUDNavigationGroupTests: XCTestCase {
     XCTAssertEqual(
       NavigationGroup.market.sections,
       [
-        .trade, .tradeLogbook, .marketStock, .stockSaleComparison,
-        .publicContracts, .moonMaterialAnalysis, .mineralPurchaseAnalysis,
+        .trade, .tradeLogbook, .marketStock, .doctrineStock,
+        .stockSaleComparison, .publicContracts, .moonMaterialAnalysis, .mineralPurchaseAnalysis,
       ]
     )
     XCTAssertEqual(NavigationGroup.assets.sections, [.items, .warehouse])

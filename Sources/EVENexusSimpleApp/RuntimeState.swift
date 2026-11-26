@@ -6871,6 +6871,34 @@ private actor ManufacturingOpportunityDemandStore {
   }
 }
 
+// MARK: Doctrine stock (DOKTRIN_BEDARF_PLAN)
+
+/// SDE category name and packaged volume of doctrine types; a type the
+/// catalog does not know stays absent.
+struct DoctrineItemCatalogMetadata: Equatable, Sendable {
+  var categoryNames: [Int64: String] = [:]
+  var packagedVolumes: [Int64: Double] = [:]
+}
+
+extension RuntimeState {
+  /// `nil` when the active SDE catalog cannot be read.
+  func doctrineItemCatalogMetadata(
+    typeIDs: Set<Int64>
+  ) async -> DoctrineItemCatalogMetadata? {
+    guard !typeIDs.isEmpty else { return DoctrineItemCatalogMetadata() }
+    do {
+      let classifications = try await catalog.industryClassifications(typeIDs: typeIDs)
+      let volumes = try await catalog.packagedVolumes(typeIDs: typeIDs)
+      return DoctrineItemCatalogMetadata(
+        categoryNames: classifications.mapValues(\.categoryName),
+        packagedVolumes: volumes
+      )
+    } catch {
+      return nil
+    }
+  }
+}
+
 // MARK: Trade (HANDEL_PLAN P4)
 
 extension RuntimeState {

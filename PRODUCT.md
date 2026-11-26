@@ -262,6 +262,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Zum Planner hinzufügen** hängt die konkrete Charge an den Planner-Entwurf an |
 | Home Hub Opportunities | dieselbe Chancenansicht für Verkäufe am Home Hub (Material vom Main Hub, ohne Rückweg); eigene Filter, gemeinsamer Scan mit dem Main Hub |
 | Coalition Hub Opportunities | Chancenansicht für Verkäufe am Coalition Hub inklusive sortierbarem Transport Home → Coalition (Jump Freighter oder Kurier); eigene Filter, gemeinsamer Scan |
+| Doctrine stock | Doktrin-Bedarf: Items und Schiffe der Allianz-Doktrinen (Import aus dem Brave-Wiki) am Home Hub mit Bestand, Verkäufen je Tag, Reichweite, Fehlmenge zum Doktrin-Soll und Schnellkalkulation Bauen oder Import vom Main Hub |
 | Stock sale comparison | Lagerverkauf-Abgleich: aus dem Spiel kopierte Items samt Anzahl je Hub gegen die Neuproduktion bewerten; Mindestpreis für Sell-Order und Direktverkauf, Marktpreise, Gewinn und Empfehlung |
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
 | Reactions | veröffentlichte Reaktionsrezepte, vollständige Batch-Kosten, Logistik und Make-or-Buy-Vergleich |
@@ -1275,10 +1276,84 @@ SwiftData-Datenbank bleibt unberührt.
   Transport geschätzt, Steuer belegt. Eigene Änderungen an Kaufart oder
   Transport im Editor setzen die Herkunft auf manuell.
 
+### Doktrin-Bedarf
+
+Der **Doktrin-Bedarf** steht in der Seitenleiste direkt unter dem
+Marktbestand. Er zeigt, welche Items und Schiffe die Allianz-Doktrinen am
+Home Hub brauchen, wie schnell sie sich verkaufen, wie lange der Bestand
+reicht und ob Bauen oder Import vom Main Hub günstiger ist. Verbindliche
+Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BEDARF_PLAN.md).
+
+- **Allianz-Wiki:** Quelle sind die Doktrin- und Schiffsseiten im
+  Mitgliederbereich des Brave-Wikis.
+  - **Im Wiki anmelden …** öffnet die Login-Seite des Wikis in einem
+    Web-Fenster der App (Brave Core, EVE SSO). Die App sieht kein Passwort; die
+    Sitzung liegt in einem eigenen Web-Speicher und gilt bis zum Beenden der
+    App, weil Wiki und Brave Core nur Sitzungs-Cookies setzen. Nach einem
+    Neustart meldest du dich erneut an; merkt sich EVE SSO dein Konto, reicht
+    ein Klick. **Abmelden** löscht den Speicher nach Rückfrage; Doktrinen und
+    Sollwerte bleiben.
+  - **Aus Wiki aktualisieren** liest mit dieser Sitzung alle Doktrin- und
+    Schiffsseiten (rund 150 Seiten, mit kurzen Pausen) und speichert das
+    Ergebnis. Es gibt keinen automatischen Abruf. Ein Fortschritt zählt die
+    Seiten; **Abbrechen** beendet den Lauf ohne Änderung. Verlässt du die
+    Seite, läuft der Import weiter und die Seite zeigt beim Zurückkehren
+    Fortschritt oder Ergebnis. Liefert das Wiki die Seiten nicht, bittet die
+    Seite um eine neue Anmeldung. Die Cookies gehen nur an den Wiki-Host; einer
+    Weiterleitung auf einen anderen Host folgt der Import nicht.
+  - Ein Fit ist ein EFT-Block (`[Rumpf, Fitname]`) in einem Code-Block.
+    Auskommentierte Abschnitte und Refit-Listen ohne Kopf zählen nicht.
+    Item-Namen werden über den SDE-Katalog aufgelöst.
+  - Eine Doktrin umfasst ihre eigenen Fits und alle verlinkten Schiffsseiten,
+    auch optionale Schiffe („Other ships you can use“). Ein Link auf einen
+    Abschnitt nimmt dessen Fits; gibt es den Abschnitt nicht mehr, zählen alle
+    Fits der Seite.
+  - **Hinweise zum Import** nennen tote Abschnitte, fehlende Seiten, Doktrinen
+    ohne Fit, unbekannte oder mehrdeutige Item-Namen und nicht lesbare Seiten.
+- **Doktrinen und Sollbestand:** Tabelle mit Doktrin (Link auf die Wiki-Seite),
+  Anzahl Fits und **Soll**. Das Soll ist die Zahl kompletter Fits und gilt für
+  jedes Fit der Doktrin, Varianten eingeschlossen; 0 heißt kein Bedarf. Alle
+  Spalten sortierbar, die Werte bleiben gespeichert.
+- **Home Hub und Grundlage:** Chips für Home und Main Hub sowie die Gebühren
+  des Home Hubs, **Hub-Märkte aktualisieren** (gemeinsamer Hub-Scan), Hinweise
+  auf fehlende Hubs, Scans, Markt- und Bestandsdaten, Region und Transport mit
+  Sprung in die Markt- bzw. Logistik-Einstellungen, Ladefortschritt der
+  Regionshistorie und die Rechenannahmen.
+- **Tabelle „Doktrin-Items am Home Hub“:** alle aufgelösten Items des
+  Imports, filterbar nach Alle, Rümpfe, Module & Sonstiges, Munition &
+  Ladungen und Drohnen (SDE-Kategorie). Spalten:
+  - **Gegenstand** mit Bild, Kopier-Klick, Verlaufssymbol und Hammer,
+  - **Fits** (Fits des ganzen Imports mit diesem Item), **Benötigt** (Σ Soll ×
+    Menge), **Gelistet** (Sell-Stück am Home Hub beim letzten Bestandspunkt),
+  - **Verkauft/Tag Region** (Ø 30 Tage ESI-Markthistorie der Region des Home
+    Hubs) und **Verkauft/Tag Hub** (Teilverkäufe der Bestandshistorie,
+    Untergrenze, unvollständig in Warnfarbe),
+  - **Reichweite** (Gelistet ÷ Region/Tag, „ausverkauft“ rot, „keine
+    Verkäufe“), **Fehlmenge** (Benötigt − Gelistet, mindestens 0, rot ab 1),
+  - **Bau/Stück** (Rechnung der Home-Hub-Chancen für die Fehlmenge, mindestens
+    ein Lauf, mit deren Schaltern und ME/TE-Standards; Tooltip mit
+    Aufschlüsselung) oder „nicht baubar“,
+  - **Import/Stück** (niedrigster Sell am Main Hub plus Transport Main → Home
+    je Stück; Tooltip mit beiden Teilen), **Home Sell**,
+  - **Empfehlung** Bauen (Hammer) oder Import (Kiste) mit Ersparnis je Stück,
+  - **Gewinn/Stück** (eigene Sell-Order einen Preisschritt unter dem besten
+    Sell am Home Hub nach Steuer und Makler minus Kosten des empfohlenen Wegs).
+- **Sortierung:** alle Spalten nach dem typisierten Wert; beim Öffnen
+  Reichweite aufsteigend (ausverkauft zuerst). Unbekannte Werte stehen
+  aufsteigend hinten und absteigend vorn, „keine Verkäufe“ zählt als
+  unbegrenzte Reichweite, danach entscheidet die Typ-ID.
+- **Fehlende Daten:** bleiben „—“; ein Info-Symbol nennt den Grund (kein Scan,
+  nicht im Scan, unbekannter Kostenanteil, fehlender Preis, Gebühr,
+  Packvolumen oder Transport). Eine Empfehlung gibt es nur mit beiden Kosten,
+  außer ein Weg ist unmöglich (nicht baubar bzw. kein Sell am Main Hub).
+  Orderänderungs- und Relist-Gebühren sind nicht enthalten.
+- Bestandshistorie und Regionshistorie werden nur geladen, solange die Seite
+  angezeigt wird; die Regionshistorie wie im Handel einmal je UTC-Tag.
+
 ### Lagerverkauf-Abgleich
 
 Der **Lagerverkauf-Abgleich** steht in der Seitenleiste unter dem
-Marktbestand, also zwei Einträge unter dem
+Doktrin-Bedarf, also drei Einträge unter dem
 Handelslogbuch. Er beantwortet, zu welchem Preis vorrätige oder schon
 produzierte Items am gewählten Hub mindestens verkauft werden müssen, damit
 der Verkauf Gewinn gegenüber einer Neuproduktion bringt. Verbindliche Regeln

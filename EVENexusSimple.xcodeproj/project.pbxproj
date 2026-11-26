@@ -33,6 +33,10 @@
 		01A0C0010000000000000016 /* TradeLogbook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000006 /* TradeLogbook.swift */; };
 		01A0C0010000000000000017 /* TradeLogbookStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000007 /* TradeLogbookStore.swift */; };
 		01A0C0020000000000000011 /* StockSaleComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0020000000000000001 /* StockSaleComparison.swift */; };
+		01A0E4400000000000000011 /* DoctrineWiki.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0E4400000000000000001 /* DoctrineWiki.swift */; };
+		01A0E4400000000000000012 /* DoctrineLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0E4400000000000000002 /* DoctrineLibrary.swift */; };
+		01A0E4400000000000000013 /* DoctrineStock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0E4400000000000000003 /* DoctrineStock.swift */; };
+		01A0E4400000000000000014 /* DoctrineWikiImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0E4400000000000000004 /* DoctrineWikiImport.swift */; };
 		01A0C001000000000000001A /* TradeWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C001000000000000000A /* TradeWallet.swift */; };
 		01A0C001000000000000001B /* TradeWalletReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C001000000000000000B /* TradeWalletReconciler.swift */; };
 		01A0C0010000000000000018 /* TradeLogbookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000008 /* TradeLogbookView.swift */; };
@@ -41,6 +45,8 @@
 		01A0C0030000000000000019 /* MarketStockItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0030000000000000009 /* MarketStockItemDetailView.swift */; };
 		01A0C003000000000000001A /* MarketStockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C003000000000000000A /* MarketStockView.swift */; };
 		01A0C0020000000000000012 /* StockSaleComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0020000000000000002 /* StockSaleComparisonView.swift */; };
+		01A0E4400000000000000015 /* DoctrineStockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0E4400000000000000005 /* DoctrineStockView.swift */; };
+		01A0E4400000000000000016 /* DoctrineWikiSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0E4400000000000000006 /* DoctrineWikiSession.swift */; };
 		01A0C0010000000000000019 /* TradeLogbookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000009 /* TradeLogbookTests.swift */; };
 		01A0C0010000000000000013 /* TradeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0010000000000000003 /* TradeCalculatorTests.swift */; };
 		01A0D1010000000000000012 /* MarketHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0D1010000000000000002 /* MarketHistoryTests.swift */; };
@@ -105,6 +111,7 @@
 		70F0B9F4FAE35585BD4438A2 /* ProductionOverviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */; };
 		C5D1A0E24F7B4C1E9A3B6D07 /* PlannerProfitabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D1A0E24F7B4C1E9A3B6D08 /* PlannerProfitabilityTests.swift */; };
 		01A0C0020000000000000013 /* StockSaleComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0C0020000000000000003 /* StockSaleComparisonTests.swift */; };
+		01A0E4400000000000000017 /* DoctrineStockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A0E4400000000000000007 /* DoctrineStockTests.swift */; };
 		72A0AE3856DC15D00E66A898 /* EVEMultibuyExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2BC6C4AAF1431FE92F2A7D4 /* EVEMultibuyExportTests.swift */; };
 		73ABADB15A2BD4FA5FEE2E30 /* IndustryPlannerPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D63C6D9737BFB95A38ED859 /* IndustryPlannerPerformanceTests.swift */; };
 		75C7B721D66FEDE97C71A2F8 /* AssetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB7BC1BC4CDE816CB4D47688 /* AssetModels.swift */; };
@@ -290,6 +297,13 @@
 		01A0C0030000000000000009 /* MarketStockItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockItemDetailView.swift; sourceTree = "<group>"; };
 		01A0C003000000000000000A /* MarketStockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStockView.swift; sourceTree = "<group>"; };
 		01A0C0020000000000000002 /* StockSaleComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockSaleComparisonView.swift; sourceTree = "<group>"; };
+		01A0E4400000000000000001 /* DoctrineWiki.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctrineWiki.swift; sourceTree = "<group>"; };
+		01A0E4400000000000000002 /* DoctrineLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctrineLibrary.swift; sourceTree = "<group>"; };
+		01A0E4400000000000000003 /* DoctrineStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctrineStock.swift; sourceTree = "<group>"; };
+		01A0E4400000000000000004 /* DoctrineWikiImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctrineWikiImport.swift; sourceTree = "<group>"; };
+		01A0E4400000000000000005 /* DoctrineStockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctrineStockView.swift; sourceTree = "<group>"; };
+		01A0E4400000000000000006 /* DoctrineWikiSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctrineWikiSession.swift; sourceTree = "<group>"; };
+		01A0E4400000000000000007 /* DoctrineStockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctrineStockTests.swift; sourceTree = "<group>"; };
 		01A0C0010000000000000009 /* TradeLogbookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeLogbookTests.swift; sourceTree = "<group>"; };
 		01A0C0010000000000000003 /* TradeCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradeCalculatorTests.swift; sourceTree = "<group>"; };
 		01A0D1010000000000000002 /* MarketHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketHistoryTests.swift; sourceTree = "<group>"; };
@@ -533,6 +547,17 @@
 			path = Reactions;
 			sourceTree = "<group>";
 		};
+		01A0E4400000000000000020 /* Doctrine */ = {
+			isa = PBXGroup;
+			children = (
+				01A0E4400000000000000001 /* DoctrineWiki.swift */,
+				01A0E4400000000000000002 /* DoctrineLibrary.swift */,
+				01A0E4400000000000000003 /* DoctrineStock.swift */,
+				01A0E4400000000000000004 /* DoctrineWikiImport.swift */,
+			);
+			path = Doctrine;
+			sourceTree = "<group>";
+		};
 		01A0C0010000000000000020 /* Trade */ = {
 			isa = PBXGroup;
 			children = (
@@ -665,6 +690,7 @@
 				0E446FA62B66D55C59FDD5AE /* Blueprints */,
 				66B7E260E5A46303770C12B6 /* Character */,
 				019FC10B0000000000000020 /* Contracts */,
+				01A0E4400000000000000020 /* Doctrine */,
 				1F1275542BEBC2EE087BAA8C /* ESI */,
 				FBF2B685850EFE36CED5E79E /* Foundation */,
 				65E245F83F78D7C05B730807 /* Industry */,
@@ -723,6 +749,8 @@
 				01A0C0030000000000000009 /* MarketStockItemDetailView.swift */,
 				01A0C003000000000000000A /* MarketStockView.swift */,
 				01A0C0020000000000000002 /* StockSaleComparisonView.swift */,
+				01A0E4400000000000000005 /* DoctrineStockView.swift */,
+				01A0E4400000000000000006 /* DoctrineWikiSession.swift */,
 				312D142B1E16A8C378F71587 /* RuntimeState.swift */,
 				B95C5D772248BAA6E187FCEE /* StoredAssetWarehouseProjection.swift */,
 				83ADF6F74477FE61397D3AEE /* Resources */,
@@ -762,6 +790,7 @@
 				EBAE14CE6909584A23E84729 /* ProductionOverviewTests.swift */,
 				C5D1A0E24F7B4C1E9A3B6D08 /* PlannerProfitabilityTests.swift */,
 				01A0C0020000000000000003 /* StockSaleComparisonTests.swift */,
+				01A0E4400000000000000007 /* DoctrineStockTests.swift */,
 				019FC10B0000000000000005 /* PublicContractTests.swift */,
 				C1233C3766AB1FEB93205C11 /* ReactionContractTests.swift */,
 				ACD312BC0907951CA9F6F4CC /* SDEUpdatePreviewTests.swift */,
@@ -995,6 +1024,7 @@
 				70F0B9F4FAE35585BD4438A2 /* ProductionOverviewTests.swift in Sources */,
 				C5D1A0E24F7B4C1E9A3B6D07 /* PlannerProfitabilityTests.swift in Sources */,
 				01A0C0020000000000000013 /* StockSaleComparisonTests.swift in Sources */,
+				01A0E4400000000000000017 /* DoctrineStockTests.swift in Sources */,
 				019FC10B0000000000000015 /* PublicContractTests.swift in Sources */,
 				83ACBCF3A448CEFBA0AA0E3F /* ReactionContractTests.swift in Sources */,
 				0AEA6598BBA14AD209EAADCE /* SDEUpdatePreviewTests.swift in Sources */,
@@ -1061,6 +1091,8 @@
 				01A0C0030000000000000019 /* MarketStockItemDetailView.swift in Sources */,
 				01A0C003000000000000001A /* MarketStockView.swift in Sources */,
 				01A0C0020000000000000012 /* StockSaleComparisonView.swift in Sources */,
+				01A0E4400000000000000015 /* DoctrineStockView.swift in Sources */,
+				01A0E4400000000000000016 /* DoctrineWikiSession.swift in Sources */,
 				42BA88660D950E4031482CB1 /* RuntimeState.swift in Sources */,
 				D62B077B861F9F4B2F8E9A9E /* StoredAssetWarehouseProjection.swift in Sources */,
 			);
@@ -1114,6 +1146,10 @@
 				01A0C0010000000000000016 /* TradeLogbook.swift in Sources */,
 				01A0C0010000000000000017 /* TradeLogbookStore.swift in Sources */,
 				01A0C0020000000000000011 /* StockSaleComparison.swift in Sources */,
+				01A0E4400000000000000011 /* DoctrineWiki.swift in Sources */,
+				01A0E4400000000000000012 /* DoctrineLibrary.swift in Sources */,
+				01A0E4400000000000000013 /* DoctrineStock.swift in Sources */,
+				01A0E4400000000000000014 /* DoctrineWikiImport.swift in Sources */,
 				01A0C001000000000000001A /* TradeWallet.swift in Sources */,
 				01A0C001000000000000001B /* TradeWalletReconciler.swift in Sources */,
 				E5380BF0913F7CD882038A4E /* JitaMarketService.swift in Sources */,
