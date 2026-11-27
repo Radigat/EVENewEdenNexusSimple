@@ -42,7 +42,16 @@ struct DashboardStartupLoadTests {
     #expect(log.widths.allSatisfy { ($0 ?? 0) > 0 })
     // The fixed 500 pt element plus the 24 pt padding on both sides decide
     // the detail's minimum width, as before: card rows report width 0.
+    // The window takes the minimum size over from its content
+    // asynchronously; while the other main-actor tests run in parallel on a
+    // busy CI runner that can take longer than the pumps above (CI run
+    // 46040711150, 27.11.2026), so wait for it, at most five seconds.
+    let deadline = Date(timeIntervalSinceNow: 5)
+    while window.contentMinSize.width < 548, Date() < deadline {
+      pump(window)
+    }
     #expect(window.contentMinSize.width >= 548)
+    #expect(log.widths.allSatisfy { ($0 ?? 0) > 0 })
   }
 
   @Test
