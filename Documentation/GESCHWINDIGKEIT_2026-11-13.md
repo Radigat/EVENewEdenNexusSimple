@@ -1577,8 +1577,11 @@ fehlendes Wallet bleibt unverfügbar, Änderungen werden übernommen). Ohne die
 Abkürzung bei Breite 0 schlägt der erste Test fehl. `swift test` (841 Core-,
 172 App-Tests, 61 XCTest-Fälle), `EVEStaticDataKit` 13 Tests,
 `xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`. Nachtrag 27.11.2026:
-Im CI-Lauf 46040711150 (macos-15) war die Mindestbreite des Fensters nach den
-festen Pumpschritten noch 0; der Test wartet seitdem bis zu 5 s auf sie.
+Unter macOS 15 (CI) behielt das nie gezeigte Testfenster in den Läufen
+46040711150 und 46045344012 die Mindestbreite 0, auch nach 10 s Warten
+(einmal vorher grün). Nach Wahl des Eigentümers prüft der Test die
+Mindestbreite deshalb erst ab macOS 26; die Prüfung, dass Karten nicht bei
+Breite 0 vermessen werden, läuft überall.
 
 **Nachmessung:** siehe den folgenden Abschnitt.
 

@@ -42,16 +42,13 @@ struct DashboardStartupLoadTests {
     #expect(log.widths.allSatisfy { ($0 ?? 0) > 0 })
     // The fixed 500 pt element plus the 24 pt padding on both sides decide
     // the detail's minimum width, as before: card rows report width 0.
-    // The window takes the minimum size over from its content
-    // asynchronously; while the other main-actor tests run in parallel on a
-    // busy CI runner that can take longer than the pumps above (CI run
-    // 46040711150, 27.11.2026), so wait for it, at most five seconds.
-    let deadline = Date(timeIntervalSinceNow: 5)
-    while window.contentMinSize.width < 548, Date() < deadline {
-      pump(window)
+    // Checked from macOS 26 on only: under macOS 15 (CI) this never shown
+    // window sometimes keeps a minimum width of 0, even after waiting 10 s
+    // (CI runs 46040711150 and 46045344012, 27.11.2026); macOS 27 always
+    // takes it over (owner decision 27.11.2026).
+    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 {
+      #expect(window.contentMinSize.width >= 548)
     }
-    #expect(window.contentMinSize.width >= 548)
-    #expect(log.widths.allSatisfy { ($0 ?? 0) > 0 })
   }
 
   @Test
