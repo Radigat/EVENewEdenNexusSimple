@@ -354,34 +354,65 @@ struct DoctrineStockTests {
 
   // MARK: Demand
 
+  private static func allumisSnapshot(feroxT2Target target: Int) -> AllumisDoctrineSnapshot {
+    AllumisDoctrineSnapshot(
+      importedAt: Date(timeIntervalSince1970: 1_800_000_100),
+      source: "allumis",
+      location: "staging",
+      fits: [
+        AllumisFitRecord(
+          id: 1,
+          fitName: "[DOC] Ferox T2",
+          hull: DoctrineFitItem(name: "Ferox", typeID: 16227, quantity: 1),
+          target: target,
+          items: [
+            DoctrineFitItem(name: "Damage Control II", typeID: 2048, quantity: 1),
+            DoctrineFitItem(name: "Spike M", typeID: 12814, quantity: 100),
+          ],
+          refitItems: []
+        )
+      ],
+      itemStatistics: [],
+      issues: []
+    )
+  }
+
   @Test
-  func demandCountsFitsOverTheLibraryAndTargetsPerDoctrine() throws {
+  func demandCountsFitsOverTheLibraryAndTakesTheTargetFromAllumis() throws {
     let library = Self.library()
     let fleetID = "\(Self.doctrineNamespace):ferox_fleet"
-    let none = DoctrineDemandAggregator.demands(library: library, targets: [:])
-    #expect(none.allSatisfy { $0.requiredQuantity == 0 })
+    let wikiOnly = try #require(DoctrineAllumisMerger.merge(library: library, snapshot: nil))
+    let none = DoctrineDemandAggregator.demands(sources: wikiOnly)
+    // Without an Allumis import the target is unknown, not 0.
+    #expect(none.allSatisfy { $0.requiredQuantity == nil })
+    #expect(none.allSatisfy { $0.requiredQuantityByDoctrineID.isEmpty })
     let damageControl = try #require(none.first { $0.typeID == 2048 })
     // Ferox T2, Ferox Meta and the unlinked Rifter.
     #expect(damageControl.fitCount == 3)
     #expect(!damageControl.isHull)
+    #expect(damageControl.doctrineIDs == [fleetID])
     #expect(none.first { $0.typeID == 16227 }?.isHull == true)
     // Unresolved names never become rows.
     #expect(none.map(\.typeID) == none.map(\.typeID).sorted())
     #expect(!none.contains { $0.name == "Unknown Widget" || $0.name == "Twin Name" })
 
-    let demands = DoctrineDemandAggregator.demands(library: library, targets: [fleetID: 3])
+    let merged = try #require(
+      DoctrineAllumisMerger.merge(library: library, snapshot: Self.allumisSnapshot(feroxT2Target: 3)))
+    let demands = DoctrineDemandAggregator.demands(sources: merged)
     func required(_ typeID: Int64) -> Int64? {
       demands.first { $0.typeID == typeID }?.requiredQuantity
     }
-    #expect(required(16227) == 6)  // two Ferox fits × 3
-    #expect(required(11387) == 6)  // two Hyena fits × 3
-    #expect(required(620) == 3)  // inline Osprey
-    #expect(required(2048) == 6)  // Damage Control in both Ferox fits
+    #expect(required(16227) == 3)  // only Ferox T2 is at Allumis
+    #expect(required(2048) == 3)
     #expect(required(12814) == 300)  // Spike M x100 × 3
+    #expect(required(11387) == 0)  // Hyena fits have no Allumis target
+    #expect(required(620) == 0)
     #expect(required(587) == 0)  // Rifter is in no doctrine
+    #expect(demands.first { $0.typeID == 12814 }?.requiredQuantityByDoctrineID == [fleetID: 300])
 
     let huge = DoctrineDemandAggregator.demands(
-      library: library, targets: [fleetID: Int.max])
+      sources: try #require(
+        DoctrineAllumisMerger.merge(library: library, snapshot: Self.allumisSnapshot(feroxT2Target: .max))))
     #expect(huge.first { $0.typeID == 12814 }?.requiredQuantity == 1_000_000)
   }
 
@@ -389,7 +420,7 @@ struct DoctrineStockTests {
 
   private static func demand(
     _ typeID: Int64 = 1,
-    required: Int64 = 0,
+    required: Int64? = 0,
     name: String = "Item"
   ) -> DoctrineItemDemand {
     DoctrineItemDemand(
@@ -460,6 +491,13 @@ struct DoctrineStockTests {
     let unknownStock = DoctrineStockCalculator.row(
       demand: Self.demand(required: 4), input: Self.input(listed: nil))
     #expect(unknownStock.shortfall == nil)
+    // Without an Allumis import the target and so the shortfall are unknown.
+    let unknownTarget = DoctrineStockCalculator.row(
+      demand: Self.demand(required: nil), input: Self.input(listed: 0))
+    #expect(unknownTarget.shortfall == nil)
+    let overstocked = DoctrineStockCalculator.row(
+      demand: Self.demand(required: 4), input: Self.input(listed: 9))
+    #expect(overstocked.shortfall == 0)
 
     let unknownTransport = DoctrineStockCalculator.row(
       demand: Self.demand(), input: Self.input(transport: nil))

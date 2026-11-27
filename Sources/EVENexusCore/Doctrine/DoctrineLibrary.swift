@@ -199,9 +199,11 @@ public enum DoctrineLibraryError: Error, Equatable, Sendable {
   case unsupportedFormat(Int)
 }
 
-/// The owner's required number of fits per doctrine (doctrine page ID →
-/// count). Every fit of a doctrine needs that many (owner decision
-/// 25.11.2026); a missing doctrine means 0.
+/// Target counts of fits. Until 27.11.2026 the owner kept a target per
+/// doctrine (doctrine page ID → count, setting `doctrine-stock.targets.v1`);
+/// since then the target comes only from Allumis and the page no longer
+/// reads that setting, which stays untouched. `clamped` bounds every
+/// Allumis fit target.
 public enum DoctrineTargets {
   public static let maximumTarget = 10_000
 

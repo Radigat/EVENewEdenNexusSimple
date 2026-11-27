@@ -15,13 +15,35 @@ struct DoctrineAllumisTests {
     #expect(
       configuration.detailedTableURL.absoluteString
         == "https://api.allumis.co.uk/api/?path=/doctrine/ships/detailedtable/&loc=staging")
-    #expect(configuration.loginURL.absoluteString == "https://api.allumis.co.uk/login")
+    // Without the trailing slash Allumis redirects to plain http.
+    #expect(configuration.loginURL.absoluteString == "https://api.allumis.co.uk/login/")
     #expect(configuration.isSignedInPage(URL(string: "https://api.allumis.co.uk/user/")))
     #expect(configuration.isSignedInPage(URL(string: "https://api.allumis.co.uk/user/doctrines/list/")))
     #expect(!configuration.isSignedInPage(URL(string: "https://allumis.co.uk/")))
     #expect(!configuration.isSignedInPage(URL(string: "https://api.allumis.co.uk/login")))
     #expect(!configuration.isSignedInPage(URL(string: "https://login.eveonline.com/user/")))
     #expect(!configuration.isSignedInPage(nil))
+  }
+
+  @Test
+  func plainHTTPAllumisAddressesBecomeHTTPS() {
+    let configuration = AllumisConfiguration.braveDoctrineMarket
+    #expect(configuration.webHosts == ["api.allumis.co.uk", "allumis.co.uk"])
+    #expect(
+      configuration.secureReplacement(for: URL(string: "http://api.allumis.co.uk/login/"))?.absoluteString
+        == "https://api.allumis.co.uk/login/")
+    #expect(
+      configuration.secureReplacement(
+        for: URL(string: "http://api.allumis.co.uk:80/api/?path=/doctrine/ships/detailedtable/&loc=staging")
+      )?.absoluteString
+        == "https://api.allumis.co.uk/api/?path=/doctrine/ships/detailedtable/&loc=staging")
+    #expect(
+      configuration.secureReplacement(for: URL(string: "http://allumis.co.uk/"))?.absoluteString
+        == "https://allumis.co.uk/")
+    #expect(configuration.secureReplacement(for: URL(string: "https://api.allumis.co.uk/user/")) == nil)
+    #expect(configuration.secureReplacement(for: URL(string: "http://login.eveonline.com/")) == nil)
+    #expect(configuration.secureReplacement(for: URL(string: "http://evil-allumis.co.uk/")) == nil)
+    #expect(configuration.secureReplacement(for: nil) == nil)
   }
 
   // MARK: Parsing
@@ -254,7 +276,9 @@ struct DoctrineAllumisTests {
       Self.allumisFit(4, hull: Self.item("Talwar", 32_878), name: "[DOC] Talwar", target: 7, items: []),
     ])
     let merge = try #require(DoctrineAllumisMerger.merge(library: Self.library, snapshot: allumis))
+    #expect(merge.hasAllumisImport)
     #expect(merge.allumisTargetByFitID == ["A": 5, "B": 20, "C": 10, "allumis:4": 7])
+    #expect(merge.allumisFitByFitID.mapValues(\.id) == ["A": 2, "B": 1, "C": 3, "allumis:4": 4])
     #expect(merge.contentDiffersFitIDs == ["C"])
     #expect(merge.matchedWikiFitCount == 3)
     #expect(merge.onlyAtAllumisFitCount == 1)
@@ -266,15 +290,15 @@ struct DoctrineAllumisTests {
     let ferox = merge.allumisTargets(for: merge.library.doctrines[0])
     #expect(ferox.matchedFitCount == 2)
     #expect(ferox.targetCounts.map(\.target) == [20, 5])
-    // Equal frequency: the larger target is suggested.
-    #expect(ferox.suggestedTarget == 20)
+    // Equal frequency: the larger target comes first.
+    #expect(ferox.mostFrequentTarget == 20)
     let caracal = merge.allumisTargets(for: merge.library.doctrines[1])
     #expect(caracal.fitCount == 2)
     #expect(caracal.matchedFitCount == 1)
     #expect(caracal.contentDiffersFitCount == 1)
-    #expect(caracal.suggestedTarget == 10)
+    #expect(caracal.mostFrequentTarget == 10)
     let unknown = merge.allumisTargets(for: DoctrineRecord(id: "x", title: "x", fitIDs: ["D"]))
-    #expect(unknown.suggestedTarget == nil)
+    #expect(unknown.mostFrequentTarget == nil)
     #expect(unknown.matchedFitCount == 0)
   }
 
@@ -292,7 +316,7 @@ struct DoctrineAllumisTests {
     #expect(merge.library.doctrines.last?.fitIDs == ["allumis:5"])
     let ferox = merge.allumisTargets(for: merge.library.doctrines[0])
     #expect(ferox.targetCounts == [.init(target: 3, fitCount: 2)])
-    #expect(ferox.suggestedTarget == 3)
+    #expect(ferox.mostFrequentTarget == 3)
   }
 
   @Test
@@ -300,7 +324,10 @@ struct DoctrineAllumisTests {
     #expect(DoctrineAllumisMerger.merge(library: nil, snapshot: nil) == nil)
     let wikiOnly = try #require(DoctrineAllumisMerger.merge(library: Self.library, snapshot: nil))
     #expect(wikiOnly.library == Self.library)
+    #expect(!wikiOnly.hasAllumisImport)
     #expect(wikiOnly.allumisTargetByFitID.isEmpty)
+    #expect(wikiOnly.allumisFitByFitID.isEmpty)
+    #expect(wikiOnly.allTypeIDs == [37, 2048, 12_612, 621, 24_698])
     let allumisOnly = try #require(
       DoctrineAllumisMerger.merge(
         library: nil,
@@ -309,6 +336,7 @@ struct DoctrineAllumisTests {
         ])
       ))
     #expect(allumisOnly.library.doctrines.map(\.id) == ["allumis:only"])
+    #expect(allumisOnly.hasAllumisImport)
     #expect(allumisOnly.allumisTargetByFitID == ["allumis:8": 4])
   }
 
@@ -322,59 +350,105 @@ struct DoctrineAllumisTests {
   // MARK: Item figures
 
   @Test
-  func itemFiguresSumTargetTimesQuantityAndKeepStatistics() {
+  func itemFiguresKeepTheStatisticsOfListedTypes() {
     let allumis = Self.snapshot(
-      [
-        Self.allumisFit(
-          1, hull: Self.item("Ferox", 37), name: "a", target: 20, items: Self.feroxContent,
-          refits: [Self.item("Warp Scrambler II", 448)]),
-        Self.allumisFit(2, hull: Self.item("Caracal", 621), name: "b", target: 5, items: [Self.item("Damage Control II", 2048)]),
-        Self.allumisFit(3, hull: Self.item("Drake", 24_698), name: "c", target: 0, items: [Self.item("Damage Control II", 2048)]),
-        Self.allumisFit(4, hull: Self.item("Unknown hull", nil), name: "d", target: 9, items: []),
-      ],
+      [Self.allumisFit(1, hull: Self.item("Ferox", 37), name: "a", target: 20, items: Self.feroxContent)],
       statistics: [
         AllumisItemStatistic(name: "Damage Control II", typeID: 2048, averageDailyVolume7Days: 140.5, dropped: 3, destroyed: 9),
         AllumisItemStatistic(name: "Spike M", typeID: 12_612, averageDailyVolume7Days: nil, dropped: 0, destroyed: nil),
         AllumisItemStatistic(name: "Rifter", typeID: 587, averageDailyVolume7Days: 2, dropped: 1, destroyed: 1),
+        AllumisItemStatistic(name: "Unknown", typeID: nil, averageDailyVolume7Days: 9, dropped: 9, destroyed: 9),
       ]
     )
     let figures = DoctrineAllumisItemAggregator.figures(snapshot: allumis)
-    #expect(figures[37]?.requiredQuantity == 20)
-    #expect(figures[2048]?.requiredQuantity == 25)
+    #expect(figures.count == 3)
     #expect(figures[2048]?.lostLast10Days == 12)
     #expect(figures[2048]?.averageDailyVolume7Days == 140.5)
-    #expect(figures[12_612]?.requiredQuantity == 30_000)
+    #expect(figures[12_612] != nil)
     #expect(figures[12_612]?.lostLast10Days == nil)
-    #expect(figures[448] == nil)
-    #expect(figures[24_698]?.requiredQuantity == nil)
-    #expect(figures[587]?.requiredQuantity == 0)
     #expect(figures[587]?.lostLast10Days == 2)
-    #expect(DoctrineAllumisItemFigures.notListed.requiredQuantity == 0)
+    // The hull has a target but no statistic.
+    #expect(figures[37] == nil)
     #expect(DoctrineAllumisItemFigures.notListed.lostLast10Days == nil)
+    #expect(DoctrineAllumisItemFigures.notListed.averageDailyVolume7Days == nil)
   }
 
   // MARK: Doctrine table
 
   @Test
-  func demandsNameTheDoctrinesOfEveryItem() {
-    let demands = DoctrineDemandAggregator.demands(library: Self.library, targets: ["ferox_fleet": 2])
+  func targetSumsTheAllumisContentOncePerFitAndSplitsItOntoDoctrines() throws {
+    // “mixed” shares fit A with the Ferox fleet and fit C with the Caracal
+    // fleet.
+    let library = DoctrineLibrary(
+      importedAt: Self.library.importedAt,
+      source: Self.library.source,
+      doctrines: Self.library.doctrines + [DoctrineRecord(id: "mixed", title: "Mixed", fitIDs: ["A", "C"])],
+      fits: Self.library.fits,
+      issues: []
+    )
+    let allumis = Self.snapshot([
+      // Pairs with B; the refit does not count.
+      Self.allumisFit(
+        1, hull: Self.item("Ferox", 37), name: "Ferox AB", target: 20, items: Self.feroxContent,
+        refits: [Self.item("Warp Scrambler II", 448)]),
+      // Pairs with A, which two doctrines use.
+      Self.allumisFit(2, hull: Self.item("Ferox", 37), name: "Ferox Brawl", target: 5, items: Self.feroxContent),
+      // Pairs with C by hull and name; its own content counts, also the
+      // Ballistic Control System the wiki fit does not have.
+      Self.allumisFit(
+        3, hull: Self.item("Caracal", 621), name: "[DOC] tripod rlml", target: 10,
+        items: [Self.item("Damage Control II", 2048, 2), Self.item("Ballistic Control System II", 22_291)]),
+      Self.allumisFit(4, hull: Self.item("Talwar", 32_878), name: "[DOC] Talwar", target: 7, items: []),
+      // Pairs with D, but without a target.
+      Self.allumisFit(5, hull: Self.item("Drake", 24_698), name: "Drake", target: 0, items: []),
+      Self.allumisFit(6, hull: Self.item("Unknown hull", nil), name: "Unknown", target: 9, items: []),
+    ])
+    let merge = try #require(DoctrineAllumisMerger.merge(library: library, snapshot: allumis))
+    #expect(merge.allTypeIDs == [37, 2048, 12_612, 621, 24_698, 22_291, 32_878])
+    let demands = DoctrineDemandAggregator.demands(sources: merge)
     let byType = Dictionary(uniqueKeysWithValues: demands.map { ($0.typeID, $0) })
-    #expect(byType[2048]?.doctrineIDs == ["ferox_fleet", "caracal_fleet"])
-    #expect(byType[37]?.doctrineIDs == ["ferox_fleet"])
+
+    #expect(byType[37]?.requiredQuantity == 25)
+    #expect(byType[2048]?.requiredQuantity == 45)  // 20 + 5 + 10 × 2
+    #expect(byType[12_612]?.requiredQuantity == 37_500)  // (20 + 5) × 1500
+    #expect(byType[621]?.requiredQuantity == 10)
+    #expect(byType[22_291]?.requiredQuantity == 10)
+    #expect(byType[32_878]?.requiredQuantity == 7)
+    #expect(byType[24_698]?.requiredQuantity == 0)
+    #expect(byType[448] == nil)
+    #expect(demands.count == 7)
+
+    // Parts per doctrine; a shared fit counts for each of its doctrines.
+    #expect(byType[37]?.requiredQuantityByDoctrineID == ["ferox_fleet": 25, "mixed": 5])
+    #expect(
+      byType[2048]?.requiredQuantityByDoctrineID == ["ferox_fleet": 25, "caracal_fleet": 20, "mixed": 25])
+    #expect(byType[22_291]?.requiredQuantityByDoctrineID == ["caracal_fleet": 10, "mixed": 10])
+    #expect(byType[32_878]?.requiredQuantityByDoctrineID == ["allumis:only": 7])
+    #expect(byType[24_698]?.requiredQuantityByDoctrineID == [:])
+
+    // Doctrines and fits count the wiki and the Allumis content.
+    #expect(byType[2048]?.doctrineIDs == ["ferox_fleet", "caracal_fleet", "mixed"])
+    #expect(byType[2048]?.fitCount == 3)
+    #expect(byType[22_291]?.doctrineIDs == ["caracal_fleet", "mixed"])
+    #expect(byType[22_291]?.fitCount == 1)
+    #expect(byType[22_291]?.name == "Ballistic Control System II")
+    #expect(byType[32_878]?.doctrineIDs == ["allumis:only"])
+    #expect(byType[32_878]?.isHull == true)
     #expect(byType[24_698]?.doctrineIDs == ["caracal_fleet"])
-    #expect(byType[2048]?.requiredQuantity == 4)
   }
 
   private static func row(
     _ typeID: Int64,
     doctrines: [String] = [],
+    required: Int64? = 0,
     home: Double? = nil,
     main: Double? = nil,
     allumis: DoctrineAllumisItemFigures? = nil
   ) -> DoctrineStockRow {
     DoctrineStockCalculator.row(
       demand: DoctrineItemDemand(
-        typeID: typeID, name: "Item", fitCount: 1, requiredQuantity: 0, isHull: false, doctrineIDs: doctrines),
+        typeID: typeID, name: "Item", fitCount: 1, requiredQuantity: required, isHull: false,
+        doctrineIDs: doctrines),
       input: DoctrineStockRowInput(
         kind: .module,
         listedQuantity: nil,
@@ -404,22 +478,22 @@ struct DoctrineAllumisTests {
 
   @Test
   func newColumnsSortByTypedValueWithUnknownLast() {
-    func figures(_ required: Int64, _ volume: Double?, lost: Int64?) -> DoctrineAllumisItemFigures {
-      DoctrineAllumisItemFigures(
-        requiredQuantity: required, averageDailyVolume7Days: volume, dropped: lost, destroyed: lost.map { _ in 0 })
+    func figures(_ volume: Double?, lost: Int64?) -> DoctrineAllumisItemFigures {
+      DoctrineAllumisItemFigures(averageDailyVolume7Days: volume, dropped: lost, destroyed: lost.map { _ in 0 })
     }
     let rows = [
-      Self.row(1, doctrines: ["a"], home: 150, main: 100, allumis: figures(40, 2, lost: 5)),
-      Self.row(2, doctrines: ["a", "b", "c"], home: 90, main: 100, allumis: nil),
-      Self.row(3, doctrines: [], home: nil, main: 100, allumis: figures(0, nil, lost: nil)),
-      Self.row(4, doctrines: ["a", "b"], home: 100, main: 100, allumis: figures(40, 7, lost: 1)),
+      Self.row(1, doctrines: ["a"], required: 40, home: 150, main: 100, allumis: figures(2, lost: 5)),
+      Self.row(2, doctrines: ["a", "b", "c"], required: nil, home: 90, main: 100, allumis: nil),
+      Self.row(3, doctrines: [], required: 0, home: nil, main: 100, allumis: figures(nil, lost: nil)),
+      Self.row(4, doctrines: ["a", "b"], required: 40, home: 100, main: 100, allumis: figures(7, lost: 1)),
     ]
     func order(_ column: DoctrineStockSortColumn, ascending: Bool) -> [Int64] {
       DoctrineStockRowSorter.sorted(rows, by: column, ascending: ascending).map(\.typeID)
     }
     #expect(order(.doctrines, ascending: false) == [2, 4, 1, 3])
-    #expect(order(.allumisRequiredQuantity, ascending: true) == [3, 1, 4, 2])
-    #expect(order(.allumisRequiredQuantity, ascending: false) == [2, 1, 4, 3])
+    // An unknown target (no Allumis import) is not 0.
+    #expect(order(.requiredQuantity, ascending: true) == [3, 1, 4, 2])
+    #expect(order(.requiredQuantity, ascending: false) == [2, 1, 4, 3])
     #expect(order(.allumisAverageDailyVolume7Days, ascending: true) == [1, 4, 2, 3])
     #expect(order(.allumisLostLast10Days, ascending: false) == [2, 3, 1, 4])
     #expect(order(.homeToMainPriceRatio, ascending: true) == [2, 4, 1, 3])

@@ -778,3 +778,27 @@ Doktrin-Filter blendet nur Zeilen aus; Ort fest `staging`, weil der Staging-Mark
 von Allumis der Home Hub des Eigentümers ist (Struktur 1046664001931, geprüft
 26.11.2026). Allumis ist nicht Teil von Brave IT; die App speichert von dort
 nur Fits, Sollwerte, Verkaufs- und Verlustzahlen, keine Sitzungsdaten.
+
+## 27.11.2026: Doktrin-Bedarf – Soll allein aus Allumis
+
+Anlass: Der Import funktioniert, aber die Seite trennt Soll, Ist und
+Nachproduktion nicht; die eigene Soll-Spalte je Doktrin war überall 0. Der
+Eigentümer möchte die Allumis-Vorgaben auf die Items verteilen und mit dem
+Bestand abgleichen, ohne eine eigene Tabelle zu führen. Vertrag:
+[DOKTRIN_BEDARF_PLAN.md](../DOKTRIN_BEDARF_PLAN.md), Abschnitt H. Ersetzt Punkt
+2 vom 25.11.2026 und Punkt 1 vom 26.11.2026.
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Soll-Quelle: nur Allumis (Soll je Fit × Menge im Fit). Eigenes Soll je
+   Doktrin und Übernehmen-Pfeil entfallen; der gespeicherte Wert
+   `doctrine-stock.targets.v1` bleibt unangetastet und wird nicht mehr gelesen.
+2. Ist: alle Sell-Orders am Home Hub, keine eigenen Assets, keine Jobs.
+3. Item in mehreren Fits: Summe über alle Fits.
+4. Darstellung: „Soll · Ist · Fehlmenge“ nebeneinander, Standardsortierung
+   Fehlmenge absteigend.
+
+Von Claude festgelegt: Bei einem zugeordneten Wiki-Fit zählt der Inhalt des
+Allumis-Fits; „Fits“ und „Doktrinen“ zählen Wiki- und Allumis-Inhalt; der
+Tooltip „Doktrinen“ nennt den Anteil je Doktrin (ein geteiltes Fit zählt dort
+bei jeder Doktrin); die Zählerzeile nennt die Allumis-Fits mit Soll.

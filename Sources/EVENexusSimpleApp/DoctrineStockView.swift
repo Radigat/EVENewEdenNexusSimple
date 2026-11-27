@@ -34,17 +34,19 @@ struct DoctrineStockView: View {
   @State private var allumis: AllumisDoctrineSnapshot?
   /// Wiki library joined with Allumis; rebuilt whenever one of them changes.
   @State private var sources: DoctrineAllumisMerge?
-  @State private var targets: [String: Int] = [:]
   @State private var hasLoadedStoredData = false
   @State private var persistenceError: String?
   @State private var loginSheet: DoctrineLoginSource?
   @State private var hasStoredSession: Bool?
+  /// Whether the Allumis store holds an unexpired cookie.
   @State private var hasAllumisSession: Bool?
+  /// `DoctrineAllumisSession.signInConfirmed` at the last refresh.
+  @State private var allumisSignInConfirmed: Bool?
   @State private var confirmsSignOut = false
   @State private var confirmsAllumisSignOut = false
   @State private var sort = AppTableSortDescriptor(
-    column: DoctrineStockSortColumn.coverage,
-    direction: .ascending
+    column: DoctrineStockSortColumn.shortfall,
+    direction: .descending
   )
   @State private var doctrineSort = AppTableSortDescriptor(
     column: DoctrineListSortColumn.title,
@@ -55,17 +57,29 @@ struct DoctrineStockView: View {
   @State private var loyaltyStoreBlueprintOffers: [Int64: [LoyaltyStoreBlueprintOffer]] = [:]
   @State private var metadata: DoctrineItemCatalogMetadata?
   @State private var displayRows: [DoctrineStockDisplayRow] = []
+  /// Counts the row computations; part of each row's identity for redraws.
+  @State private var rowsRevision = 0
+  /// Doctrine list with its texts, rebuilt with the sources or the language.
+  @State private var doctrineRows: [DoctrineListRowModel] = []
+  /// Resolved SDE types of the merged library, rebuilt with the sources.
+  @State private var libraryTypeIDs: Set<Int64> = []
+  /// App language locale, read once instead of for every number; follows
+  /// the environment locale, which changes with the app language.
+  @State private var locale: Locale = AppLocalization.currentLanguage.locale
+  @Environment(\.locale) private var environmentLocale
   @State private var availableTableWidth: CGFloat = 0
+  /// Visible height of the page's scroll view, for the table's row area.
+  @State private var pageViewportHeight: CGFloat = 0
 
   private let consumer = "doctrine-stock"
-  private let nameMinimumWidth: CGFloat = 220
-  private let numberWidth: CGFloat = 92
-  private let recommendationWidth: CGFloat = 150
-  private let doctrineColumnWidth: CGFloat = 200
+  private let nameMinimumWidth = DoctrineStockTableLayout.nameMinimumWidth
+  private let numberWidth = DoctrineStockTableLayout.numberWidth
+  private let recommendationWidth = DoctrineStockTableLayout.recommendationWidth
+  private let doctrineColumnWidth = DoctrineStockTableLayout.doctrineColumnWidth
   private let allumisColumnWidth: CGFloat = 170
-  /// Fits, required, Allumis target, listed, three sales rates, losses,
-  /// reach, shortfall, build, import, Home sell, Home ÷ Main and profit.
-  private let numberColumnCount = 15
+  /// Fits, target, in stock, shortfall, three sales rates, losses, reach,
+  /// build, import, Home sell, Home ÷ Main and profit.
+  private let numberColumnCount = 14
 
   private var importController: DoctrineWikiImportController { .shared }
   private var importStatus: DoctrineImportStatus { importController.status }
@@ -88,6 +102,9 @@ struct DoctrineStockView: View {
       }
       .padding(DesignTokens.spacingLG)
       .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+      pageViewportHeight = $0
     }
     .navigationTitle(AppLocalization.text("Doctrine stock"))
     .task {
@@ -154,7 +171,16 @@ struct DoctrineStockView: View {
       loyaltyStoreBlueprintOffers = offers
     }
     .task(id: rowsKey) {
-      displayRows = computeRows()
+      // Data of the page arrives in bursts while it opens; a short pause
+      // lets a burst end before the whole table is computed again.
+      try? await Task.sleep(for: .milliseconds(150))
+      guard !Task.isCancelled else { return }
+      rowsRevision += 1
+      displayRows = computeRows(revision: rowsRevision)
+    }
+    .onChange(of: environmentLocale) {
+      locale = AppLocalization.currentLanguage.locale
+      rebuildDoctrineRows()
     }
     .sheet(item: $loginSheet) { source in
       switch source {
@@ -177,7 +203,7 @@ struct DoctrineStockView: View {
         }
       }
     } message: {
-      Text("The wiki session stored in the app is removed. The imported doctrines and your targets stay.")
+      Text("The wiki session stored in the app is removed. The imported doctrines stay.")
     }
     .confirmationDialog("Sign out of Allumis?", isPresented: $confirmsAllumisSignOut) {
       Button("Sign out", role: .destructive) {
@@ -187,7 +213,7 @@ struct DoctrineStockView: View {
         }
       }
     } message: {
-      Text("The Allumis session stored in the app is removed. The imported Allumis data and your targets stay.")
+      Text("The Allumis session stored in the app is removed. The imported Allumis data stays.")
     }
     .onChange(of: importController.finishedRuns) {
       // The import runs on when the page is left; a page shown again
@@ -216,7 +242,7 @@ struct DoctrineStockView: View {
         .foregroundStyle(DesignTokens.textPrimary)
         .nexusPageTitle()
       Text(
-        "Doctrine items for the Home Hub: what is listed, how fast it sells, how much your doctrine targets still need, and whether building or importing from the Main Hub is cheaper."
+        "Doctrine items for the Home Hub: the Allumis target, what is listed, what is still missing, how fast it sells, and whether building or importing from the Main Hub is cheaper."
       )
       .foregroundStyle(DesignTokens.textSecondary)
     }
@@ -441,15 +467,22 @@ struct DoctrineStockView: View {
   }
 
   private var allumisSessionChip: some View {
-    let (text, tint): (String, Color) =
-      switch hasAllumisSession {
-      case true?: (AppLocalization.text("Allumis session active"), DesignTokens.positive)
-      case false?: (AppLocalization.text("Not signed in to Allumis"), DesignTokens.caution)
-      case nil: (AppLocalization.text("Checking Allumis session…"), DesignTokens.textSecondary)
+    // A stored cookie alone is no sign-in: Allumis also sets one for
+    // visitors, so “active” needs a confirmation in this app run.
+    let (text, tint, isActive): (String, Color, Bool) =
+      switch (hasAllumisSession, allumisSignInConfirmed) {
+      case (nil, _):
+        (AppLocalization.text("Checking Allumis session…"), DesignTokens.textSecondary, false)
+      case (false?, _), (true?, false?):
+        (AppLocalization.text("Not signed in to Allumis"), DesignTokens.caution, false)
+      case (true?, true?):
+        (AppLocalization.text("Allumis session active"), DesignTokens.positive, true)
+      case (true?, nil):
+        (AppLocalization.text("Allumis session stored, not checked"), DesignTokens.textSecondary, false)
       }
     return Label(
       text,
-      systemImage: hasAllumisSession == true ? "person.fill.checkmark" : "person.fill.questionmark"
+      systemImage: isActive ? "person.fill.checkmark" : "person.fill.questionmark"
     )
     .appFont(.caption)
     .foregroundStyle(tint)
@@ -517,20 +550,22 @@ struct DoctrineStockView: View {
   private var doctrinePanel: some View {
     Panel(title: "Doctrines and targets") {
       VStack(alignment: .leading, spacing: DesignTokens.spacingSM) {
-        Text(
-          "Target = number of complete fits per doctrine. It applies to every fit of the doctrine, variants included; 0 means the doctrine adds nothing to the required quantity."
-        )
-        .appFont(.caption)
-        .foregroundStyle(DesignTokens.textSecondary)
         if allumis != nil {
           Text(
-            "Allumis = the supply officer's target per fit, most frequent value first; the arrow adopts the most frequent value (the larger one on a tie) as target of the doctrine. Allumis fits without a wiki fit form the group “Only at Allumis”."
+            "Target per fit = complete fits the supply officer wants at the Home Hub, according to Allumis; most frequent value first. The item table splits it onto the items: target × quantity in the fit, summed over every fit. Fits that Allumis does not know add no target; Allumis fits without a wiki fit form the group “Only at Allumis”."
           )
           .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
+        } else {
+          Label(
+            "The target comes from Allumis. Without an Allumis import there is no target and no shortfall.",
+            systemImage: "exclamationmark.triangle.fill"
+          )
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.caution)
         }
-        if let sources, !sources.library.doctrines.isEmpty {
-          let doctrines = sortedDoctrines(sources.library.doctrines)
+        if !doctrineRows.isEmpty {
+          let rows = sortedDoctrineRows(doctrineRows)
           VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DesignTokens.spacingXS) {
               SortableTableHeader(
@@ -549,7 +584,7 @@ struct DoctrineStockView: View {
               .frame(width: 70, alignment: .trailing)
               if allumis != nil {
                 SortableTableHeader(
-                  title: "Allumis",
+                  title: "Target per fit",
                   column: DoctrineListSortColumn.allumis,
                   sort: $doctrineSort,
                   defaultDirection: .descending,
@@ -557,48 +592,20 @@ struct DoctrineStockView: View {
                 )
                 .frame(width: allumisColumnWidth, alignment: .trailing)
               }
-              SortableTableHeader(
-                title: "Target count",
-                column: DoctrineListSortColumn.target,
-                sort: $doctrineSort,
-                defaultDirection: .descending,
-                alignment: .trailing
-              )
-              .frame(width: 90, alignment: .trailing)
             }
             .appFont(.caption.weight(.semibold))
             .padding(.vertical, DesignTokens.spacingXS)
             Divider()
-            ForEach(doctrines) { doctrine in
-              HStack(spacing: DesignTokens.spacingXS) {
-                doctrineLink(doctrine)
-                  .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
-                Text(verbatim: formatInteger(Int64(doctrine.fitIDs.count)))
-                  .appFont(.callout.monospacedDigit())
-                  .frame(width: 70, alignment: .trailing)
-                if allumis != nil {
-                  allumisTargetCell(doctrine)
-                    .frame(width: allumisColumnWidth, alignment: .trailing)
-                }
-                TextField(
-                  "Target count",
-                  value: Binding(
-                    get: { targets[doctrine.id] ?? 0 },
-                    set: { setTarget($0, for: doctrine.id) }
-                  ),
-                  format: .number
-                )
-                .textFieldStyle(.roundedBorder)
-                .multilineTextAlignment(.trailing)
-                .appFont(.callout.monospacedDigit())
-                .frame(width: 90)
-                .accessibilityIdentifier("doctrine-stock.target.\(doctrine.id)")
-              }
-              .padding(.vertical, 2)
+            ForEach(rows) { model in
+              DoctrineListRowView(
+                model: model,
+                allumisColumnWidth: allumisColumnWidth
+              )
+              .equatable()
               Divider().opacity(0.4)
             }
           }
-          .frame(maxWidth: allumis == nil ? 520 : 520 + allumisColumnWidth, alignment: .leading)
+          .frame(maxWidth: allumis == nil ? 430 : 430 + allumisColumnWidth, alignment: .leading)
         } else {
           Text("No doctrines imported yet. Use “Update from wiki” or “Update from Allumis”.")
             .foregroundStyle(DesignTokens.textSecondary)
@@ -607,115 +614,23 @@ struct DoctrineStockView: View {
     }
   }
 
-  /// Wiki doctrines open their wiki page, the group “Only at Allumis” the
-  /// fit list of Allumis.
-  @ViewBuilder
-  private func doctrineLink(_ doctrine: DoctrineRecord) -> some View {
-    if doctrine.id == DoctrineAllumisMerge.onlyAtAllumisDoctrineID {
-      Link(destination: DoctrineAllumisSession.shared.configuration.fitListURL) {
-        Text(verbatim: doctrineTitle(doctrine)).lineLimit(1)
-      }
-      .help(AppLocalization.text("Opens the fit list of Allumis in the browser."))
-    } else {
-      Link(destination: DoctrineWikiSession.shared.configuration.pageURL(pageID: doctrine.id)) {
-        Text(verbatim: doctrine.title).lineLimit(1)
-      }
-      .help(AppLocalization.text("Opens the doctrine page in the browser."))
-    }
-  }
-
   private func doctrineTitle(_ doctrine: DoctrineRecord) -> String {
     doctrine.id == DoctrineAllumisMerge.onlyAtAllumisDoctrineID
       ? AppLocalization.text("Only at Allumis") : doctrine.title
   }
 
-  private func allumisTargetCell(_ doctrine: DoctrineRecord) -> some View {
-    let figures = sources?.allumisTargets(for: doctrine)
-    let suggested = figures?.suggestedTarget
-    let current = targets[doctrine.id] ?? 0
-    let values = figures?.targetCounts.map { formatInteger(Int64($0.target)) } ?? []
-    return HStack(spacing: DesignTokens.spacingXS) {
-      VStack(alignment: .trailing, spacing: 0) {
-        Text(
-          verbatim: values.isEmpty
-            ? AppLocalization.text("not at Allumis") : values.joined(separator: " · ")
-        )
-        .appFont(values.isEmpty ? .caption : .callout.monospacedDigit())
-        .foregroundStyle(values.isEmpty ? DesignTokens.textSecondary : DesignTokens.textPrimary)
-        .lineLimit(1)
-        if let figures, figures.matchedFitCount > 0 {
-          HStack(spacing: 2) {
-            if figures.contentDiffersFitCount > 0 {
-              Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(DesignTokens.caution)
-            }
-            Text(
-              verbatim: AppLocalization.format(
-                "%lld of %lld fits",
-                Int64(figures.matchedFitCount),
-                Int64(figures.fitCount)
-              )
-            )
-          }
-          .appFont(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-        }
-      }
-      Button {
-        if let suggested { setTarget(suggested, for: doctrine.id) }
-      } label: {
-        Image(systemName: "arrow.right.circle")
-      }
-      .buttonStyle(.borderless)
-      .disabled(suggested == nil || suggested == current)
-      .help(
-        suggested.map {
-          AppLocalization.format("Adopt the Allumis target %lld as target of this doctrine.", Int64($0))
-        } ?? AppLocalization.text("No fit of this doctrine is at Allumis.")
-      )
-      .accessibilityIdentifier("doctrine-stock.adopt.\(doctrine.id)")
-    }
-    .help(figures.map(allumisTargetHelp) ?? "")
-  }
-
-  private func allumisTargetHelp(_ figures: DoctrineAllumisTargets) -> String {
-    var lines = figures.targetCounts.map {
-      AppLocalization.format(
-        "Allumis target %lld for %lld fits",
-        Int64($0.target),
-        Int64($0.fitCount)
-      )
-    }
-    let missing = figures.fitCount - figures.matchedFitCount
-    if missing > 0 {
-      lines.append(AppLocalization.format("%lld fits are not at Allumis.", Int64(missing)))
-    }
-    if figures.contentDiffersFitCount > 0 {
-      lines.append(
-        AppLocalization.format(
-          "%lld fits paired by hull and name; their items differ from Allumis.",
-          Int64(figures.contentDiffersFitCount)
-        )
-      )
-    }
-    return lines.joined(separator: "\n")
-  }
-
-  private func sortedDoctrines(_ doctrines: [DoctrineRecord]) -> [DoctrineRecord] {
+  private func sortedDoctrineRows(_ rows: [DoctrineListRowModel]) -> [DoctrineListRowModel] {
     let ascending = doctrineSort.direction == .ascending
-    return doctrines.sorted { lhs, rhs in
+    return rows.sorted { lhs, rhs in
       switch doctrineSort.column {
       case .title:
-        let order = doctrineTitle(lhs).localizedCaseInsensitiveCompare(doctrineTitle(rhs))
+        let order = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
         if order != .orderedSame {
           return ascending ? order == .orderedAscending : order == .orderedDescending
         }
       case .allumis:
         // Unknown after known values ascending, before them descending.
-        switch (
-          sources?.allumisTargets(for: lhs).suggestedTarget,
-          sources?.allumisTargets(for: rhs).suggestedTarget
-        ) {
+        switch (lhs.allumis?.mostFrequentTarget, rhs.allumis?.mostFrequentTarget) {
         case (let left?, let right?):
           if left != right { return ascending ? left < right : left > right }
         case (.some, nil):
@@ -726,14 +641,9 @@ struct DoctrineStockView: View {
           break
         }
       case .fitCount:
-        if lhs.fitIDs.count != rhs.fitIDs.count {
-          return ascending
-            ? lhs.fitIDs.count < rhs.fitIDs.count : lhs.fitIDs.count > rhs.fitIDs.count
+        if lhs.fitCount != rhs.fitCount {
+          return ascending ? lhs.fitCount < rhs.fitCount : lhs.fitCount > rhs.fitCount
         }
-      case .target:
-        let left = targets[lhs.id] ?? 0
-        let right = targets[rhs.id] ?? 0
-        if left != right { return ascending ? left < right : left > right }
       }
       return lhs.id < rhs.id
     }
@@ -769,17 +679,7 @@ struct DoctrineStockView: View {
           Label(message, systemImage: "shippingbox")
             .foregroundStyle(DesignTokens.caution)
         }
-        if let progress = historyProgress {
-          Text(
-            AppLocalization.format(
-              "Loading the region's market history: %lld of %lld items",
-              Int64(progress.completed),
-              Int64(progress.total)
-            )
-          )
-          .appFont(.caption)
-          .foregroundStyle(DesignTokens.textSecondary)
-        }
+        DoctrineHistoryProgressLine()
         VStack(alignment: .leading, spacing: 2) {
           Text(
             "Build/unit: the Hub opportunity calculation of the Home Hub for the shortfall (at least one run) with its ME/TE defaults; materials bought at the Main Hub, including installation, Blueprint share and logistics to the Home Hub."
@@ -957,10 +857,6 @@ struct DoctrineStockView: View {
     return Array(Set(messages)).sorted()
   }
 
-  private var historyProgress: TradeVolumeHistoryProgress? {
-    runtime.tradeRegionID(for: .home).flatMap { runtime.tradeVolumeHistoryProgress[$0] }
-  }
-
   // MARK: Table
 
   @ViewBuilder
@@ -978,16 +874,16 @@ struct DoctrineStockView: View {
           .labelsHidden()
           .fixedSize()
           .accessibilityIdentifier("doctrine-stock.kind")
-          if let sources, !sources.library.doctrines.isEmpty {
+          if !doctrineRows.isEmpty {
             Picker("Doctrine", selection: doctrineFilterBinding) {
               Text("All doctrines").tag("")
               Divider()
               ForEach(
-                sources.library.doctrines.sorted {
-                  doctrineTitle($0).localizedCaseInsensitiveCompare(doctrineTitle($1)) == .orderedAscending
+                doctrineRows.sorted {
+                  $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
                 }
               ) { doctrine in
-                Text(verbatim: doctrineTitle(doctrine)).tag(doctrine.id)
+                Text(verbatim: doctrine.title).tag(doctrine.id)
               }
             }
             .fixedSize()
@@ -1006,30 +902,48 @@ struct DoctrineStockView: View {
           Text("No doctrine item of this kind.")
             .foregroundStyle(DesignTokens.textSecondary)
         } else {
+          // The rows get a vertical scroll view of their own with a fixed
+          // height, like the Hub opportunity table: inside the horizontal
+          // scroll view a LazyVStack sees no vertical viewport and builds
+          // every row, which made the whole page slow (26.11.2026).
           ScrollView(.horizontal) {
             VStack(alignment: .leading, spacing: 0) {
               tableHeader
               Divider()
-              LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(rows) { row in
-                  tableRow(row)
-                  Divider().opacity(0.4)
+              ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                  ForEach(rows) { row in
+                    DoctrineStockRowView(display: row, format: numberFormat)
+                      .equatable()
+                    Divider().opacity(0.4)
+                  }
                 }
               }
+              .defaultScrollAnchor(.top)
+              .frame(height: tableRowsHeight(rowCount: rows.count))
             }
             .frame(width: max(availableTableWidth, minimumTableWidth), alignment: .leading)
           }
+          .defaultScrollAnchor(.leading)
           .onGeometryChange(for: CGFloat.self) { $0.size.width } action: {
             availableTableWidth = $0
           }
         }
         Text(
-          "Shortest reach first. Doctrines lists the doctrines that use the item, those with a target first. Fits counts every fit of the wiki and of the group “Only at Allumis” that uses the item; required counts only doctrines with a target. A loaded charge (Module, Charge) counts once per module, because EFT does not state the loaded amount."
+          "Largest shortfall first. Target comes from Allumis: target per fit × quantity in the fit, summed over every Allumis fit, hull once per fit, refits not counted; a fit used by several doctrines counts once. In stock = listed at the Home Hub; shortfall = target minus in stock, what still has to be built or imported. Doctrines lists the doctrines that use the item, those with a target first. Fits counts every fit of the wiki and of the group “Only at Allumis” that uses the item. A loaded charge (Module, Charge) counts once per module, because EFT does not state the loaded amount."
         )
         .appFont(.caption)
         .foregroundStyle(DesignTokens.textSecondary)
       }
     }
+  }
+
+  /// Height of the scrolling row area: the page viewport minus room for the
+  /// panel title, filters and table header, at least 240 pt; shorter when
+  /// fewer rows need less (estimated row height 44 pt).
+  private func tableRowsHeight(rowCount: Int) -> CGFloat {
+    let viewport = max(240, pageViewportHeight - 150)
+    return min(viewport, CGFloat(rowCount) * 44 + 4)
   }
 
   private var minimumTableWidth: CGFloat {
@@ -1041,7 +955,7 @@ struct DoctrineStockView: View {
   /// The stored doctrine filter, or every doctrine when it no longer exists.
   private var effectiveDoctrineFilterID: String {
     guard !doctrineFilterID.isEmpty,
-      sources?.library.doctrines.contains(where: { $0.id == doctrineFilterID }) == true
+      doctrineRows.contains(where: { $0.id == doctrineFilterID })
     else { return "" }
     return doctrineFilterID
   }
@@ -1067,15 +981,15 @@ struct DoctrineStockView: View {
       .help(AppLocalization.text("Doctrines whose fits use the item; sorted by their number."))
       numberHeader("Fits", .fitCount)
         .help(AppLocalization.text("How many fits of the wiki and of the group “Only at Allumis” use the item."))
-      numberHeader("Required", .requiredQuantity)
-        .help(AppLocalization.text("Σ target × quantity over the fits of every doctrine with a target."))
-      numberHeader("Allumis target", .allumisRequiredQuantity)
+      numberHeader("Target units", .requiredQuantity)
         .help(
           AppLocalization.text(
-            "Σ Allumis target × quantity over every Allumis fit, hull once per fit, refits not counted."
+            "Σ Allumis target per fit × quantity in the fit over every Allumis fit, hull once per fit, refits not counted."
           ))
-      numberHeader("Listed", .listedQuantity)
-        .help(AppLocalization.text("Sell units at the Home Hub at the latest stock point."))
+      numberHeader("Current stock", .listedQuantity)
+        .help(AppLocalization.text("Sell units of every seller at the Home Hub at the latest stock point."))
+      numberHeader("Shortfall", .shortfall)
+        .help(AppLocalization.text("Target minus current stock, at least 0: what still has to be built or imported."))
       numberHeader("Sold/day region", .regionUnitsPerDay)
       numberHeader("Sold/day hub", .hubUnitsPerDay)
       numberHeader("Sold/day Allumis", .allumisAverageDailyVolume7Days)
@@ -1084,8 +998,6 @@ struct DoctrineStockView: View {
         .help(
           AppLocalization.text("Units destroyed and dropped in the last 10 days according to Allumis (killmails)."))
       numberHeader("Stock lasts", .coverage, defaultDirection: .ascending)
-      numberHeader("Shortfall", .shortfall)
-        .help(AppLocalization.text("Required minus listed, at least 0."))
       numberHeader("Build/unit", .buildCostPerUnit, defaultDirection: .ascending)
       numberHeader("Import/unit", .importCostPerUnit, defaultDirection: .ascending)
       numberHeader("Home sell", .homeBestSellPrice)
@@ -1119,182 +1031,6 @@ struct DoctrineStockView: View {
     )
   }
 
-  private func tableRow(_ display: DoctrineStockDisplayRow) -> some View {
-    let row = display.row
-    return HStack(spacing: DesignTokens.spacingXS) {
-      HStack(spacing: DesignTokens.spacingXS) {
-        EVEItemText(
-          value: row.name,
-          typeID: row.typeID,
-          font: .callout,
-          lineLimit: 1,
-          iconSize: 18
-        )
-        if !display.issues.isEmpty {
-          Image(systemName: "info.circle")
-            .foregroundStyle(DesignTokens.caution)
-            .help(display.issues.joined(separator: "\n"))
-        }
-      }
-      .frame(minWidth: nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
-      doctrinesCell(display)
-      numberCell(formatInteger(Int64(row.demand.fitCount)))
-      numberCell(
-        row.demand.requiredQuantity > 0 ? formatInteger(row.demand.requiredQuantity) : "–",
-        tint: row.demand.requiredQuantity > 0 ? DesignTokens.textPrimary : DesignTokens.textSecondary
-      )
-      allumisRequiredCell(row.input.allumis)
-      numberCell(formatInteger(row.input.listedQuantity))
-      numberCell(formatRate(row.input.regionUnitsPerDay))
-      numberCell(
-        formatRate(row.input.hubUnitsPerDay),
-        tint: row.input.hubVolumeIsComplete == false ? DesignTokens.caution : DesignTokens.textPrimary
-      )
-      .help(
-        row.input.hubVolumeIsComplete == false
-          ? AppLocalization.text("Not every day of the 30 days is fully recorded in the stock history.")
-          : ""
-      )
-      numberCell(formatRate(row.input.allumis?.averageDailyVolume7Days))
-      numberCell(formatInteger(row.input.allumis?.lostLast10Days))
-        .help(
-          row.input.allumis.map {
-            AppLocalization.format(
-              "Destroyed %@ · dropped %@",
-              formatInteger($0.destroyed),
-              formatInteger($0.dropped)
-            )
-          } ?? ""
-        )
-      coverageCell(row.coverage)
-      numberCell(
-        formatInteger(row.shortfall),
-        tint: (row.shortfall ?? 0) > 0 ? DesignTokens.negative : DesignTokens.textPrimary
-      )
-      numberCell(
-        row.input.buildability == .notBuildable
-          ? AppLocalization.text("not buildable") : formatNumber(row.input.buildCostPerUnit),
-        tint: row.recommendation == .build ? DesignTokens.positive : DesignTokens.textPrimary
-      )
-      .help(display.buildHelp)
-      numberCell(
-        formatNumber(row.importCostPerUnit),
-        tint: row.recommendation == .importFromMainHub
-          ? DesignTokens.positive : DesignTokens.textPrimary
-      )
-      .help(display.importHelp)
-      numberCell(formatNumber(row.input.homeBestSellPrice))
-      numberCell(formatRatio(row.homeToMainPriceRatio))
-        .help(
-          AppLocalization.format(
-            "Home Hub %@ · Main Hub %@",
-            formatNumber(row.input.homeBestSellPrice),
-            formatNumber(row.input.mainBestSellPrice)
-          )
-        )
-      recommendationCell(row)
-      numberCell(formatNumber(row.profitPerUnit), tint: signTint(row.profitPerUnit))
-    }
-    .padding(.vertical, DesignTokens.spacingXS)
-  }
-
-  private func doctrinesCell(_ display: DoctrineStockDisplayRow) -> some View {
-    HStack(spacing: DesignTokens.spacingXS) {
-      if !display.doctrinesWithTarget.isEmpty {
-        Text(verbatim: display.doctrinesWithTarget.joined(separator: ", "))
-          .foregroundStyle(DesignTokens.textPrimary)
-          .lineLimit(1)
-          .layoutPriority(1)
-      }
-      if !display.otherDoctrines.isEmpty {
-        Text(
-          verbatim: display.doctrinesWithTarget.isEmpty
-            ? display.otherDoctrines.joined(separator: ", ")
-            : "+\(display.otherDoctrines.count)"
-        )
-        .foregroundStyle(DesignTokens.textSecondary)
-        .lineLimit(1)
-      }
-    }
-    .appFont(.caption)
-    .frame(width: doctrineColumnWidth, alignment: .leading)
-    .help(display.doctrinesHelp)
-  }
-
-  private func allumisRequiredCell(_ figures: DoctrineAllumisItemFigures?) -> some View {
-    guard let figures else { return numberCell("—", tint: DesignTokens.textSecondary) }
-    return figures.requiredQuantity > 0
-      ? numberCell(formatInteger(figures.requiredQuantity))
-      : numberCell("–", tint: DesignTokens.textSecondary)
-  }
-
-  private func coverageCell(_ coverage: DoctrineStockCoverage) -> some View {
-    let (text, tint): (String, Color) =
-      switch coverage {
-      case .outOfStock: (AppLocalization.text("out of stock"), DesignTokens.negative)
-      case .noSales: (AppLocalization.text("no sales"), DesignTokens.textSecondary)
-      case .unknown: ("—", DesignTokens.textSecondary)
-      case .days(let days):
-        (
-          AppLocalization.format(
-            "%@ days",
-            days < 10
-              ? days.formatted(.number.precision(.fractionLength(1)).locale(locale))
-              : days.formatted(.number.precision(.fractionLength(0)).locale(locale))
-          ),
-          days < 3 ? DesignTokens.caution : DesignTokens.textPrimary
-        )
-      }
-    return numberCell(text, tint: tint)
-  }
-
-  private func recommendationCell(_ row: DoctrineStockRow) -> some View {
-    let (text, symbol, tint): (String, String, Color) =
-      switch row.recommendation {
-      case .build?: (AppLocalization.text("Build"), "hammer.fill", DesignTokens.positive)
-      case .importFromMainHub?:
-        (AppLocalization.text("Import"), "shippingbox.fill", DesignTokens.highlight)
-      case nil: ("—", "questionmark", DesignTokens.textSecondary)
-      }
-    return VStack(alignment: .trailing, spacing: 0) {
-      HStack(spacing: 4) {
-        if row.recommendation != nil {
-          Image(systemName: symbol)
-        }
-        Text(verbatim: text)
-      }
-      .appFont(.callout.weight(.semibold))
-      .foregroundStyle(tint)
-      if let savings = row.savingsPerUnit {
-        Text(
-          verbatim: AppLocalization.format(
-            "saves %@/unit",
-            formatNumber(savings)
-          )
-        )
-        .appFont(.caption.monospacedDigit())
-        .foregroundStyle(DesignTokens.textSecondary)
-      }
-    }
-    .frame(width: recommendationWidth, alignment: .trailing)
-  }
-
-  private func numberCell(
-    _ text: String,
-    tint: Color = DesignTokens.textPrimary
-  ) -> some View {
-    Text(verbatim: text)
-      .appFont(.callout.monospacedDigit())
-      .foregroundStyle(tint)
-      .lineLimit(1)
-      .frame(minWidth: numberWidth, maxWidth: .infinity, alignment: .trailing)
-  }
-
-  private func signTint(_ value: Double?) -> Color {
-    guard let value else { return DesignTokens.textPrimary }
-    return value < 0 ? DesignTokens.negative : DesignTokens.positive
-  }
-
   private var filteredRows: [DoctrineStockDisplayRow] {
     let filter = kindFilter
     let doctrineID = effectiveDoctrineFilterID
@@ -1315,15 +1051,22 @@ struct DoctrineStockView: View {
   }
 
   private func summaryText(_ rows: [DoctrineStockDisplayRow]) -> String {
-    let short = rows.filter { ($0.row.shortfall ?? 0) > 0 }.count
     let out = rows.filter { $0.row.coverage == .outOfStock }.count
-    let withTarget = targets.values.filter { $0 > 0 }.count
+    guard let allumis else {
+      return AppLocalization.format(
+        "%lld items · %lld out of stock · no target without an Allumis import",
+        Int64(rows.count),
+        Int64(out)
+      )
+    }
+    let short = rows.filter { ($0.row.shortfall ?? 0) > 0 }.count
+    let fitsWithTarget = allumis.fits.filter { $0.target > 0 }.count
     return AppLocalization.format(
-      "%lld items · %lld out of stock · %lld with shortfall · %lld doctrines with a target",
+      "%lld items · %lld out of stock · %lld with shortfall · target from %lld Allumis fits",
       Int64(rows.count),
       Int64(out),
       Int64(short),
-      Int64(withTarget)
+      Int64(fitsWithTarget)
     )
   }
 
@@ -1358,18 +1101,6 @@ struct DoctrineStockView: View {
       inventionEstimates: runtime.opportunityInventionEstimates,
       usesOwnBlueprintRights: usesOwnBlueprintRights
     )
-  }
-
-  private var libraryTypeIDs: Set<Int64> {
-    guard let library = sources?.library else { return [] }
-    var result: Set<Int64> = []
-    for fit in library.fits {
-      if let typeID = fit.hull.typeID { result.insert(typeID) }
-      for item in fit.items {
-        if let typeID = item.typeID { result.insert(typeID) }
-      }
-    }
-    return result
   }
 
   private var loyaltyOfferTrigger: DoctrineLoyaltyOfferTrigger {
@@ -1434,7 +1165,6 @@ struct DoctrineStockView: View {
     let libraryFitCount: Int
     let allumisImportedAt: Date?
     let language: String
-    let targets: [String: Int]
     let analysisID: UUID?
     let scanRowsAnalysisID: UUID?
     let homeMarketCapturedAt: Date?
@@ -1463,8 +1193,7 @@ struct DoctrineStockView: View {
       libraryImportedAt: library?.importedAt,
       libraryFitCount: sources?.library.fits.count ?? 0,
       allumisImportedAt: allumis?.importedAt,
-      language: AppLocalization.currentLanguage.locale.identifier,
-      targets: targets,
+      language: locale.identifier,
       analysisID: analysis?.id,
       scanRowsAnalysisID: scanRowsAnalysisID,
       homeMarketCapturedAt: runtime.tradeMarketState(for: .home)?.value?.capturedAt,
@@ -1489,9 +1218,10 @@ struct DoctrineStockView: View {
     )
   }
 
-  private func computeRows() -> [DoctrineStockDisplayRow] {
-    guard let library = sources?.library else { return [] }
-    let demands = DoctrineDemandAggregator.demands(library: library, targets: targets)
+  private func computeRows(revision: Int) -> [DoctrineStockDisplayRow] {
+    guard let sources else { return [] }
+    let library = sources.library
+    let demands = DoctrineDemandAggregator.demands(sources: sources)
     let allumisFigures = allumis.map(DoctrineAllumisItemAggregator.figures(snapshot:))
     let doctrinesByID = Dictionary(
       library.doctrines.map { ($0.id, $0) },
@@ -1536,7 +1266,7 @@ struct DoctrineStockView: View {
             loyaltyStoreBlueprintTypeIDs: loyaltyStoreBlueprints
           )
           let supports = scanRow.supportsBlueprintEfficiency
-          let quantity = max(1, demand.requiredQuantity - max(0, listed ?? 0))
+          let quantity = max(1, (demand.requiredQuantity ?? 0) - max(0, listed ?? 0))
           cost = StockSaleProductionCostProjector.project(
             row: scanRow,
             quantity: min(quantity, StockSalePasteParser.maximumQuantity),
@@ -1612,9 +1342,11 @@ struct DoctrineStockView: View {
       )
       let row = DoctrineStockCalculator.row(demand: demand, input: input)
       let doctrines = demand.doctrineIDs.compactMap { doctrinesByID[$0] }
-      let withTarget = doctrines.filter { (targets[$0.id] ?? 0) > 0 }
-      let others = doctrines.filter { (targets[$0.id] ?? 0) <= 0 }
+      let parts = demand.requiredQuantityByDoctrineID
+      let withTarget = doctrines.filter { (parts[$0.id] ?? 0) > 0 }
+      let others = doctrines.filter { (parts[$0.id] ?? 0) <= 0 }
       return DoctrineStockDisplayRow(
+        revision: revision,
         row: row,
         issues: issues,
         buildHelp: buildHelp(cost),
@@ -1622,9 +1354,9 @@ struct DoctrineStockView: View {
         doctrinesWithTarget: withTarget.map(doctrineTitle),
         otherDoctrines: others.map(doctrineTitle),
         doctrinesHelp: (withTarget + others).map { doctrine in
-          let target = targets[doctrine.id] ?? 0
-          return target > 0
-            ? AppLocalization.format("%@ (target %lld)", doctrineTitle(doctrine), Int64(target))
+          let part = parts[doctrine.id] ?? 0
+          return part > 0
+            ? AppLocalization.format("%@ (target %lld)", doctrineTitle(doctrine), part)
             : doctrineTitle(doctrine)
         }.joined(separator: "\n")
       )
@@ -1694,10 +1426,79 @@ struct DoctrineStockView: View {
   private func refreshSessionState() async {
     hasStoredSession = await DoctrineWikiSession.shared.hasStoredSession()
     hasAllumisSession = await DoctrineAllumisSession.shared.hasStoredSession()
+    allumisSignInConfirmed = DoctrineAllumisSession.shared.signInConfirmed
   }
 
   private func rebuildSources() {
     sources = DoctrineAllumisMerger.merge(library: library, snapshot: allumis)
+    libraryTypeIDs = sources?.allTypeIDs ?? []
+    rebuildDoctrineRows()
+  }
+
+  /// Texts of the doctrine list for the current sources and language.
+  private func rebuildDoctrineRows() {
+    guard let sources else {
+      doctrineRows = []
+      return
+    }
+    let format = numberFormat
+    let wikiHelp = AppLocalization.text("Opens the doctrine page in the browser.")
+    let allumisHelp = AppLocalization.text("Opens the fit list of Allumis in the browser.")
+    doctrineRows = sources.library.doctrines.map { doctrine in
+      let isOnlyAtAllumis = doctrine.id == DoctrineAllumisMerge.onlyAtAllumisDoctrineID
+      return DoctrineListRowModel(
+        id: doctrine.id,
+        title: doctrineTitle(doctrine),
+        linkURL: isOnlyAtAllumis
+          ? DoctrineAllumisSession.shared.configuration.fitListURL
+          : DoctrineWikiSession.shared.configuration.pageURL(pageID: doctrine.id),
+        linkHelp: isOnlyAtAllumis ? allumisHelp : wikiHelp,
+        fitCount: doctrine.fitIDs.count,
+        fitCountText: format.integer(Int64(doctrine.fitIDs.count)),
+        allumis: allumis == nil
+          ? nil : allumisCellModel(sources.allumisTargets(for: doctrine), format: format)
+      )
+    }
+  }
+
+  private func allumisCellModel(
+    _ figures: DoctrineAllumisTargets,
+    format: DoctrineNumberFormat
+  ) -> DoctrineAllumisCellModel {
+    let values = figures.targetCounts.map { format.integer(Int64($0.target)) }
+    var lines = figures.targetCounts.map {
+      AppLocalization.format(
+        "Allumis target %lld for %lld fits",
+        Int64($0.target),
+        Int64($0.fitCount)
+      )
+    }
+    let missing = figures.fitCount - figures.matchedFitCount
+    if missing > 0 {
+      lines.append(AppLocalization.format("%lld fits are not at Allumis.", Int64(missing)))
+    }
+    if figures.contentDiffersFitCount > 0 {
+      lines.append(
+        AppLocalization.format(
+          "%lld fits paired by hull and name; their items differ from Allumis.",
+          Int64(figures.contentDiffersFitCount)
+        )
+      )
+    }
+    return DoctrineAllumisCellModel(
+      valuesText: values.isEmpty
+        ? AppLocalization.text("not at Allumis") : values.joined(separator: " · "),
+      hasValues: !values.isEmpty,
+      caption: figures.matchedFitCount > 0
+        ? AppLocalization.format(
+          "%lld of %lld fits",
+          Int64(figures.matchedFitCount),
+          Int64(figures.fitCount)
+        ) : nil,
+      showsWarning: figures.contentDiffersFitCount > 0,
+      mostFrequentTarget: figures.mostFrequentTarget,
+      help: lines.joined(separator: "\n")
+    )
   }
 
   private func startAllumisImport() {
@@ -1715,33 +1516,6 @@ struct DoctrineStockView: View {
     }
     importController.start(resolve: resolve) { [modelContext] library in
       try Self.saveLibrary(library, in: modelContext)
-    }
-  }
-
-  private func setTarget(_ value: Int, for doctrineID: String) {
-    var updated = targets
-    let clamped = DoctrineTargets.clamped(value)
-    updated[doctrineID] = clamped > 0 ? clamped : nil
-    guard updated != targets else { return }
-    targets = updated
-    do {
-      if updated.isEmpty {
-        try modelContext.deleteAppSetting(key: AppSettingKey.doctrineStockTargets)
-      } else {
-        let data = try DoctrineTargets.encode(updated)
-        try modelContext.upsertAppSetting(
-          key: AppSettingKey.doctrineStockTargets,
-          value: String(decoding: data, as: UTF8.self)
-        )
-      }
-      try modelContext.save()
-      persistenceError = nil
-    } catch {
-      modelContext.rollback()
-      persistenceError = AppLocalization.format(
-        "The doctrine targets could not be saved: %@",
-        error.localizedDescription
-      )
     }
   }
 
@@ -1810,53 +1584,21 @@ struct DoctrineStockView: View {
         error.localizedDescription
       )
     }
-    do {
-      if let stored = try modelContext.appSettingValue(for: AppSettingKey.doctrineStockTargets),
-        let data = stored.data(using: .utf8)
-      {
-        targets = try DoctrineTargets.decode(data)
-      }
-    } catch {
-      persistenceError = AppLocalization.format(
-        "The saved doctrines could not be read: %@",
-        error.localizedDescription
-      )
-    }
+    // The former targets per doctrine (`AppSettingKey.doctrineStockTargets`)
+    // are no longer read since 27.11.2026; the target comes from Allumis.
   }
 
   // MARK: Formatting
 
-  private var locale: Locale { AppLocalization.currentLanguage.locale }
+  private var numberFormat: DoctrineNumberFormat { DoctrineNumberFormat(locale: locale) }
 
-  private func formatNumber(_ value: Double?) -> String {
-    value.map {
-      $0.formatted(.number.precision(.fractionLength(0...2)).locale(locale))
-    } ?? "—"
-  }
+  private func formatNumber(_ value: Double?) -> String { numberFormat.number(value) }
 
-  private func formatRate(_ value: Double?) -> String {
-    value.map {
-      $0.formatted(
-        .number.precision(.fractionLength($0 < 10 ? 1 : 0)).locale(locale)
-      )
-    } ?? "—"
-  }
+  private func formatRate(_ value: Double?) -> String { numberFormat.rate(value) }
 
-  private func formatInteger(_ value: Int64?) -> String {
-    value.map { $0.formatted(.number.locale(locale)) } ?? "—"
-  }
+  private func formatInteger(_ value: Int64?) -> String { numberFormat.integer(value) }
 
-  private func formatRatio(_ ratio: Double?) -> String {
-    ratio.map {
-      $0.formatted(.percent.precision(.fractionLength(0)).locale(locale))
-    } ?? "—"
-  }
-
-  private func formatPercent(_ fraction: Double?) -> String {
-    fraction.map {
-      $0.formatted(.percent.precision(.fractionLength(2)).locale(locale))
-    } ?? "—"
-  }
+  private func formatPercent(_ fraction: Double?) -> String { numberFormat.percent(fraction) }
 }
 
 // MARK: Supporting types
@@ -1894,7 +1636,6 @@ enum DoctrineListSortColumn: Hashable {
   case fitCount
   /// Most frequent Allumis target of the doctrine's fits.
   case allumis
-  case target
 }
 
 enum DoctrineLoginSource: String, Identifiable {
@@ -1917,6 +1658,8 @@ enum DoctrineImportStatus: Equatable {
 }
 
 struct DoctrineStockDisplayRow: Identifiable {
+  /// The row computation that produced this row.
+  let revision: Int
   let row: DoctrineStockRow
   let issues: [String]
   let buildHelp: String
@@ -1935,4 +1678,336 @@ private struct DoctrineLoyaltyOfferTrigger: Equatable {
   let catalogID: UUID?
   let loyaltyPoints: CharacterLoyaltyPointsSnapshot?
   let wallets: [String: Double]
+}
+
+/// One row of the doctrine item table. Equatable on the row's identity, the
+/// revision of the computation that produced it and the locale, so a page
+/// update that leaves the row unchanged does not build it again
+/// (Geschwindigkeit 26.11.2026).
+struct DoctrineStockRowView: View, Equatable {
+  let display: DoctrineStockDisplayRow
+  let format: DoctrineNumberFormat
+
+  private var nameMinimumWidth: CGFloat { DoctrineStockTableLayout.nameMinimumWidth }
+  private var numberWidth: CGFloat { DoctrineStockTableLayout.numberWidth }
+  private var recommendationWidth: CGFloat { DoctrineStockTableLayout.recommendationWidth }
+  private var doctrineColumnWidth: CGFloat { DoctrineStockTableLayout.doctrineColumnWidth }
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.display.id == rhs.display.id && lhs.display.revision == rhs.display.revision
+      && lhs.format == rhs.format
+  }
+
+  var body: some View {
+    let row = display.row
+    return HStack(spacing: DesignTokens.spacingXS) {
+      HStack(spacing: DesignTokens.spacingXS) {
+        EVEItemText(
+          value: row.name,
+          typeID: row.typeID,
+          font: .callout,
+          lineLimit: 1,
+          iconSize: 18
+        )
+        if !display.issues.isEmpty {
+          Image(systemName: "info.circle")
+            .foregroundStyle(DesignTokens.caution)
+            .help(display.issues.joined(separator: "\n"))
+        }
+      }
+      .frame(minWidth: nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
+      doctrinesCell
+      numberCell(format.integer(Int64(row.demand.fitCount)))
+      targetCell(row.demand.requiredQuantity)
+      numberCell(format.integer(row.input.listedQuantity))
+      numberCell(
+        format.integer(row.shortfall),
+        tint: (row.shortfall ?? 0) > 0 ? DesignTokens.negative : DesignTokens.textPrimary
+      )
+      numberCell(format.rate(row.input.regionUnitsPerDay))
+      numberCell(
+        format.rate(row.input.hubUnitsPerDay),
+        tint: row.input.hubVolumeIsComplete == false ? DesignTokens.caution : DesignTokens.textPrimary
+      )
+      .help(
+        row.input.hubVolumeIsComplete == false
+          ? AppLocalization.text("Not every day of the 30 days is fully recorded in the stock history.")
+          : ""
+      )
+      numberCell(format.rate(row.input.allumis?.averageDailyVolume7Days))
+      numberCell(format.integer(row.input.allumis?.lostLast10Days))
+        .help(
+          row.input.allumis.map {
+            AppLocalization.format(
+              "Destroyed %@ · dropped %@",
+              format.integer($0.destroyed),
+              format.integer($0.dropped)
+            )
+          } ?? ""
+        )
+      coverageCell(row.coverage)
+      numberCell(
+        row.input.buildability == .notBuildable
+          ? AppLocalization.text("not buildable") : format.number(row.input.buildCostPerUnit),
+        tint: row.recommendation == .build ? DesignTokens.positive : DesignTokens.textPrimary
+      )
+      .help(display.buildHelp)
+      numberCell(
+        format.number(row.importCostPerUnit),
+        tint: row.recommendation == .importFromMainHub
+          ? DesignTokens.positive : DesignTokens.textPrimary
+      )
+      .help(display.importHelp)
+      numberCell(format.number(row.input.homeBestSellPrice))
+      numberCell(format.ratio(row.homeToMainPriceRatio))
+        .help(
+          AppLocalization.format(
+            "Home Hub %@ · Main Hub %@",
+            format.number(row.input.homeBestSellPrice),
+            format.number(row.input.mainBestSellPrice)
+          )
+        )
+      recommendationCell(row)
+      numberCell(format.number(row.profitPerUnit), tint: signTint(row.profitPerUnit))
+    }
+    .padding(.vertical, DesignTokens.spacingXS)
+  }
+
+  private var doctrinesCell: some View {
+    HStack(spacing: DesignTokens.spacingXS) {
+      if !display.doctrinesWithTarget.isEmpty {
+        Text(verbatim: display.doctrinesWithTarget.joined(separator: ", "))
+          .foregroundStyle(DesignTokens.textPrimary)
+          .lineLimit(1)
+          .layoutPriority(1)
+      }
+      if !display.otherDoctrines.isEmpty {
+        Text(
+          verbatim: display.doctrinesWithTarget.isEmpty
+            ? display.otherDoctrines.joined(separator: ", ")
+            : "+\(display.otherDoctrines.count)"
+        )
+        .foregroundStyle(DesignTokens.textSecondary)
+        .lineLimit(1)
+      }
+    }
+    .appFont(.caption)
+    .frame(width: doctrineColumnWidth, alignment: .leading)
+    .help(display.doctrinesHelp)
+  }
+
+  /// “—” without an Allumis import (target unknown), “–” when no Allumis
+  /// fit with a target uses the item.
+  private func targetCell(_ target: Int64?) -> some View {
+    guard let target else { return numberCell("—", tint: DesignTokens.textSecondary) }
+    return target > 0
+      ? numberCell(format.integer(target))
+      : numberCell("–", tint: DesignTokens.textSecondary)
+  }
+
+  private func coverageCell(_ coverage: DoctrineStockCoverage) -> some View {
+    let (text, tint): (String, Color) =
+      switch coverage {
+      case .outOfStock: (AppLocalization.text("out of stock"), DesignTokens.negative)
+      case .noSales: (AppLocalization.text("no sales"), DesignTokens.textSecondary)
+      case .unknown: ("—", DesignTokens.textSecondary)
+      case .days(let days):
+        (
+          AppLocalization.format(
+            "%@ days",
+            days < 10
+              ? days.formatted(.number.precision(.fractionLength(1)).locale(format.locale))
+              : days.formatted(.number.precision(.fractionLength(0)).locale(format.locale))
+          ),
+          days < 3 ? DesignTokens.caution : DesignTokens.textPrimary
+        )
+      }
+    return numberCell(text, tint: tint)
+  }
+
+  private func recommendationCell(_ row: DoctrineStockRow) -> some View {
+    let (text, symbol, tint): (String, String, Color) =
+      switch row.recommendation {
+      case .build?: (AppLocalization.text("Build"), "hammer.fill", DesignTokens.positive)
+      case .importFromMainHub?:
+        (AppLocalization.text("Import"), "shippingbox.fill", DesignTokens.highlight)
+      case nil: ("—", "questionmark", DesignTokens.textSecondary)
+      }
+    return VStack(alignment: .trailing, spacing: 0) {
+      HStack(spacing: 4) {
+        if row.recommendation != nil {
+          Image(systemName: symbol)
+        }
+        Text(verbatim: text)
+      }
+      .appFont(.callout.weight(.semibold))
+      .foregroundStyle(tint)
+      if let savings = row.savingsPerUnit {
+        Text(
+          verbatim: AppLocalization.format(
+            "saves %@/unit",
+            format.number(savings)
+          )
+        )
+        .appFont(.caption.monospacedDigit())
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    .frame(width: recommendationWidth, alignment: .trailing)
+  }
+
+  private func numberCell(
+    _ text: String,
+    tint: Color = DesignTokens.textPrimary
+  ) -> some View {
+    Text(verbatim: text)
+      .appFont(.callout.monospacedDigit())
+      .foregroundStyle(tint)
+      .lineLimit(1)
+      .frame(minWidth: numberWidth, maxWidth: .infinity, alignment: .trailing)
+  }
+
+  private func signTint(_ value: Double?) -> Color {
+    guard let value else { return DesignTokens.textPrimary }
+    return value < 0 ? DesignTokens.negative : DesignTokens.positive
+  }
+}
+
+/// Column widths shared by the table header and its rows.
+enum DoctrineStockTableLayout {
+  static let nameMinimumWidth: CGFloat = 220
+  static let numberWidth: CGFloat = 92
+  static let recommendationWidth: CGFloat = 150
+  static let doctrineColumnWidth: CGFloat = 200
+}
+
+/// Number formatting of the page with a locale read once, instead of the
+/// app language from the user defaults for every number.
+struct DoctrineNumberFormat: Equatable {
+  let locale: Locale
+
+  func number(_ value: Double?) -> String {
+    value.map {
+      $0.formatted(.number.precision(.fractionLength(0...2)).locale(locale))
+    } ?? "—"
+  }
+
+  func rate(_ value: Double?) -> String {
+    value.map {
+      $0.formatted(
+        .number.precision(.fractionLength($0 < 10 ? 1 : 0)).locale(locale)
+      )
+    } ?? "—"
+  }
+
+  func integer(_ value: Int64?) -> String {
+    value.map { $0.formatted(.number.locale(locale)) } ?? "—"
+  }
+
+  func ratio(_ ratio: Double?) -> String {
+    ratio.map {
+      $0.formatted(.percent.precision(.fractionLength(0)).locale(locale))
+    } ?? "—"
+  }
+
+  func percent(_ fraction: Double?) -> String {
+    fraction.map {
+      $0.formatted(.percent.precision(.fractionLength(2)).locale(locale))
+    } ?? "—"
+  }
+}
+
+/// A doctrine of the list with every text computed once per import or
+/// language, not on every page update.
+struct DoctrineListRowModel: Equatable, Identifiable {
+  let id: String
+  let title: String
+  let linkURL: URL
+  let linkHelp: String
+  let fitCount: Int
+  let fitCountText: String
+  /// Nil without an Allumis import.
+  let allumis: DoctrineAllumisCellModel?
+}
+
+struct DoctrineAllumisCellModel: Equatable {
+  /// Allumis targets, most frequent first, or “not at Allumis”.
+  let valuesText: String
+  let hasValues: Bool
+  /// “x of y fits”, nil when no fit is at Allumis.
+  let caption: String?
+  let showsWarning: Bool
+  /// Sort value of the column; nil when no fit is at Allumis.
+  let mostFrequentTarget: Int?
+  let help: String
+}
+
+/// One doctrine of the list; rebuilt only when its texts change.
+struct DoctrineListRowView: View, Equatable {
+  let model: DoctrineListRowModel
+  let allumisColumnWidth: CGFloat
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.model == rhs.model && lhs.allumisColumnWidth == rhs.allumisColumnWidth
+  }
+
+  var body: some View {
+    HStack(spacing: DesignTokens.spacingXS) {
+      Link(destination: model.linkURL) {
+        Text(verbatim: model.title).lineLimit(1)
+      }
+      .help(model.linkHelp)
+      .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+      Text(verbatim: model.fitCountText)
+        .appFont(.callout.monospacedDigit())
+        .frame(width: 70, alignment: .trailing)
+      if let allumis = model.allumis {
+        allumisCell(allumis)
+          .frame(width: allumisColumnWidth, alignment: .trailing)
+      }
+    }
+    .padding(.vertical, 2)
+  }
+
+  private func allumisCell(_ allumis: DoctrineAllumisCellModel) -> some View {
+    VStack(alignment: .trailing, spacing: 0) {
+      Text(verbatim: allumis.valuesText)
+        .appFont(allumis.hasValues ? .callout.monospacedDigit() : .caption)
+        .foregroundStyle(allumis.hasValues ? DesignTokens.textPrimary : DesignTokens.textSecondary)
+        .lineLimit(1)
+      if let caption = allumis.caption {
+        HStack(spacing: 2) {
+          if allumis.showsWarning {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(DesignTokens.caution)
+          }
+          Text(verbatim: caption)
+        }
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+    .help(allumis.help)
+  }
+}
+
+/// Progress of the regional history load. A view of its own, so the many
+/// progress steps update only this line and not the whole page
+/// (Geschwindigkeit 26.11.2026).
+struct DoctrineHistoryProgressLine: View {
+  @Environment(RuntimeState.self) private var runtime
+
+  var body: some View {
+    if let progress = runtime.tradeRegionID(for: .home).flatMap({ runtime.tradeVolumeHistoryProgress[$0] }) {
+      Text(
+        AppLocalization.format(
+          "Loading the region's market history: %lld of %lld items",
+          Int64(progress.completed),
+          Int64(progress.total)
+        )
+      )
+      .appFont(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+    }
+  }
 }

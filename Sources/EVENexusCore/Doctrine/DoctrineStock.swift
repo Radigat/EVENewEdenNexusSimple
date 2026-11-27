@@ -26,16 +26,23 @@ public enum DoctrineItemKind: String, CaseIterable, Codable, Sendable {
 public struct DoctrineItemDemand: Equatable, Sendable, Identifiable {
   public let typeID: Int64
   public let name: String
-  /// Distinct fits of the whole library that contain the type, as hull or
-  /// item.
+  /// Distinct fits of the merged library that contain the type as hull or
+  /// item, in the wiki content or in the content of the paired Allumis fit.
   public let fitCount: Int
-  /// Σ over doctrines of target × quantity in each of its fits.
-  public let requiredQuantity: Int64
+  /// Target (Soll) at the Home Hub: Σ over every Allumis fit of its target
+  /// × quantity in the fit, hull once per fit, refits not counted (owner
+  /// decision 27.11.2026). 0 when no Allumis fit with a target uses the
+  /// type; nil without an Allumis import.
+  public let requiredQuantity: Int64?
   /// The type is the hull of at least one fit.
   public let isHull: Bool
   /// Doctrines with at least one fit that contains the type, in library
   /// order.
   public let doctrineIDs: [String]
+  /// Part of the target that comes from the fits of each doctrine; only
+  /// doctrines with a part above 0. A fit used by two doctrines counts for
+  /// both, so the parts can add up to more than the target.
+  public let requiredQuantityByDoctrineID: [String: Int64]
 
   public var id: Int64 { typeID }
 
@@ -43,9 +50,10 @@ public struct DoctrineItemDemand: Equatable, Sendable, Identifiable {
     typeID: Int64,
     name: String,
     fitCount: Int,
-    requiredQuantity: Int64,
+    requiredQuantity: Int64?,
     isHull: Bool,
-    doctrineIDs: [String] = []
+    doctrineIDs: [String] = [],
+    requiredQuantityByDoctrineID: [String: Int64] = [:]
   ) {
     self.typeID = typeID
     self.name = name
@@ -53,75 +61,99 @@ public struct DoctrineItemDemand: Equatable, Sendable, Identifiable {
     self.requiredQuantity = requiredQuantity
     self.isHull = isHull
     self.doctrineIDs = doctrineIDs
+    self.requiredQuantityByDoctrineID = requiredQuantityByDoctrineID
   }
 }
 
 public enum DoctrineDemandAggregator {
   public static let maximumQuantity: Int64 = 1_000_000_000_000
 
-  /// Every resolved type of the library. Unresolved names are left out;
-  /// the import issues list them.
-  public static func demands(
-    library: DoctrineLibrary,
-    targets: [String: Int]
-  ) -> [DoctrineItemDemand] {
+  /// Every resolved type of the merged library and of the paired Allumis
+  /// fits. Unresolved names are left out; the import issues list them.
+  /// - The target comes only from Allumis: each Allumis fit adds its
+  ///   target × quantity of its own content once, also when several
+  ///   doctrines use the fit. A paired wiki fit with other content does not
+  ///   change the target.
+  /// - Without an Allumis import every target is unknown.
+  public static func demands(sources: DoctrineAllumisMerge) -> [DoctrineItemDemand] {
+    let library = sources.library
+    let allumisFits = sources.allumisFitByFitID
     var names: [Int64: String] = [:]
     var fitsByType: [Int64: Set<String>] = [:]
+    var typesByFit: [String: Set<Int64>] = [:]
     var hullTypes: Set<Int64> = []
+    func note(_ item: DoctrineFitItem, fitID: String, isHull: Bool) {
+      guard let typeID = item.typeID else { return }
+      if names[typeID] == nil { names[typeID] = item.name }
+      fitsByType[typeID, default: []].insert(fitID)
+      typesByFit[fitID, default: []].insert(typeID)
+      if isHull { hullTypes.insert(typeID) }
+    }
     for fit in library.fits {
-      if let typeID = fit.hull.typeID {
-        names[typeID] = names[typeID] ?? fit.hull.name
-        fitsByType[typeID, default: []].insert(fit.id)
-        hullTypes.insert(typeID)
-      }
-      for item in fit.items {
-        guard let typeID = item.typeID else { continue }
-        names[typeID] = names[typeID] ?? item.name
-        fitsByType[typeID, default: []].insert(fit.id)
+      note(fit.hull, fitID: fit.id, isHull: true)
+      for item in fit.items { note(item, fitID: fit.id, isHull: false) }
+      if let allumisFit = allumisFits[fit.id] {
+        note(allumisFit.hull, fitID: fit.id, isHull: true)
+        for item in allumisFit.items { note(item, fitID: fit.id, isHull: false) }
       }
     }
-    let fitsByID = Dictionary(
-      library.fits.map { ($0.id, $0) },
-      uniquingKeysWith: { first, _ in first }
-    )
+
+    // Target per fit from the Allumis content.
+    var requiredByFit: [String: [Int64: Int64]] = [:]
+    for (fitID, fit) in allumisFits {
+      let target = Int64(DoctrineTargets.clamped(fit.target))
+      guard target > 0 else { continue }
+      var quantities: [Int64: Int64] = [:]
+      func add(_ typeID: Int64?, _ quantity: Int64) {
+        guard let typeID, quantity > 0 else { return }
+        let (product, productOverflow) = quantity.multipliedReportingOverflow(by: target)
+        quantities[typeID] = saturatedAdd(
+          quantities[typeID] ?? 0, productOverflow ? maximumQuantity : product)
+      }
+      add(fit.hull.typeID, 1)
+      for item in fit.items { add(item.typeID, item.quantity) }
+      requiredByFit[fitID] = quantities
+    }
     var required: [Int64: Int64] = [:]
-    func add(_ typeID: Int64?, _ quantity: Int64) {
-      guard let typeID, quantity > 0 else { return }
-      let (sum, overflow) = (required[typeID] ?? 0).addingReportingOverflow(quantity)
-      required[typeID] = overflow ? maximumQuantity : min(maximumQuantity, sum)
+    for quantities in requiredByFit.values {
+      for (typeID, quantity) in quantities {
+        required[typeID] = saturatedAdd(required[typeID] ?? 0, quantity)
+      }
     }
+
     var doctrinesByType: [Int64: [String]] = [:]
+    var partsByType: [Int64: [String: Int64]] = [:]
     for doctrine in library.doctrines {
       var types: Set<Int64> = []
+      var parts: [Int64: Int64] = [:]
       for fitID in doctrine.fitIDs {
-        guard let fit = fitsByID[fitID] else { continue }
-        if let typeID = fit.hull.typeID { types.insert(typeID) }
-        types.formUnion(fit.items.compactMap(\.typeID))
-      }
-      for typeID in types { doctrinesByType[typeID, default: []].append(doctrine.id) }
-    }
-    for doctrine in library.doctrines {
-      let target = Int64(DoctrineTargets.clamped(targets[doctrine.id] ?? 0))
-      guard target > 0 else { continue }
-      for fitID in doctrine.fitIDs {
-        guard let fit = fitsByID[fitID] else { continue }
-        add(fit.hull.typeID, target)
-        for item in fit.items {
-          let (product, overflow) = item.quantity.multipliedReportingOverflow(by: target)
-          add(item.typeID, overflow ? maximumQuantity : product)
+        types.formUnion(typesByFit[fitID] ?? [])
+        for (typeID, quantity) in requiredByFit[fitID] ?? [:] {
+          parts[typeID] = saturatedAdd(parts[typeID] ?? 0, quantity)
         }
       }
+      for typeID in types { doctrinesByType[typeID, default: []].append(doctrine.id) }
+      for (typeID, quantity) in parts where quantity > 0 {
+        partsByType[typeID, default: [:]][doctrine.id] = quantity
+      }
     }
+
     return names.keys.sorted().map { typeID in
       DoctrineItemDemand(
         typeID: typeID,
         name: names[typeID] ?? "",
         fitCount: fitsByType[typeID]?.count ?? 0,
-        requiredQuantity: required[typeID] ?? 0,
+        requiredQuantity: sources.hasAllumisImport ? required[typeID] ?? 0 : nil,
         isHull: hullTypes.contains(typeID),
-        doctrineIDs: doctrinesByType[typeID] ?? []
+        doctrineIDs: doctrinesByType[typeID] ?? [],
+        requiredQuantityByDoctrineID: partsByType[typeID] ?? [:]
       )
     }
+  }
+
+  private static func saturatedAdd(_ left: Int64, _ right: Int64) -> Int64 {
+    let (sum, overflow) = left.addingReportingOverflow(right)
+    return overflow ? maximumQuantity : min(maximumQuantity, sum)
   }
 }
 
@@ -234,7 +266,9 @@ public struct DoctrineStockRow: Equatable, Sendable, Identifiable {
   public let demand: DoctrineItemDemand
   public let input: DoctrineStockRowInput
   public let coverage: DoctrineStockCoverage
-  /// Required minus listed, at least 0; unknown while the listed stock is.
+  /// Target minus listed, at least 0: what still has to be built or
+  /// imported. 0 without a target; unknown while the target or the listed
+  /// stock is.
   public let shortfall: Int64?
   public let importCostPerUnit: Double?
   public let recommendation: DoctrineSourcing?
@@ -277,10 +311,9 @@ public enum DoctrineStockCalculator {
       listed: input.listedQuantity,
       unitsPerDay: input.regionUnitsPerDay
     )
-    let shortfall: Int64? =
-      demand.requiredQuantity <= 0
-      ? 0
-      : input.listedQuantity.map { max(0, demand.requiredQuantity - max(0, $0)) }
+    let shortfall: Int64? = demand.requiredQuantity.flatMap { required in
+      required <= 0 ? 0 : input.listedQuantity.map { max(0, required - max(0, $0)) }
+    }
     let build = valid(input.buildCostPerUnit)
     let importCost = valid(input.importPurchasePerUnit).flatMap { purchase in
       valid(input.importTransportPerUnit).flatMap { finite(purchase + $0) }
@@ -353,8 +386,9 @@ public enum DoctrineStockSortColumn: String, CaseIterable, Sendable {
   /// Number of doctrines that use the item.
   case doctrines
   case fitCount
+  /// Target (Soll) from Allumis.
   case requiredQuantity
-  case allumisRequiredQuantity
+  /// Listed at the Home Hub (Ist).
   case listedQuantity
   case regionUnitsPerDay
   case hubUnitsPerDay
@@ -407,8 +441,7 @@ public enum DoctrineStockRowSorter {
     case .name: nil
     case .doctrines: Double(row.demand.doctrineIDs.count)
     case .fitCount: Double(row.demand.fitCount)
-    case .requiredQuantity: Double(row.demand.requiredQuantity)
-    case .allumisRequiredQuantity: row.input.allumis.map { Double($0.requiredQuantity) }
+    case .requiredQuantity: row.demand.requiredQuantity.map(Double.init)
     case .listedQuantity: row.input.listedQuantity.map(Double.init)
     case .regionUnitsPerDay: row.input.regionUnitsPerDay
     case .hubUnitsPerDay: row.input.hubUnitsPerDay

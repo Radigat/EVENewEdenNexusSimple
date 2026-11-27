@@ -32,8 +32,9 @@ enum AppSettingKey {
   /// Doctrine library imported from the alliance wiki, JSON-encoded
   /// `DoctrineLibrary`; a missing row means not imported yet.
   static let doctrineStockLibrary = "doctrine-stock.library.v1"
-  /// Required fits per doctrine, JSON-encoded `[doctrine page ID: count]`;
-  /// a missing row or doctrine means 0.
+  /// Former required fits per doctrine, JSON-encoded `[doctrine page ID:
+  /// count]`. Not read since 27.11.2026 (the target comes from Allumis);
+  /// an existing row stays untouched.
   static let doctrineStockTargets = "doctrine-stock.targets.v1"
   /// Fits, targets and item figures imported from Allumis, JSON-encoded
   /// `AllumisDoctrineSnapshot`; a missing row means not imported yet.

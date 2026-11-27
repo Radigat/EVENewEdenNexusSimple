@@ -262,7 +262,7 @@ Die Navigation bildet die folgenden Arbeitsbereiche ab:
 | Main Hub Opportunities | Fertigungskandidaten und sortierbare Chancenkennzahlen für den exakt konfigurierten Main Hub; **Zum Planner hinzufügen** hängt die konkrete Charge an den Planner-Entwurf an |
 | Home Hub Opportunities | dieselbe Chancenansicht für Verkäufe am Home Hub (Material vom Main Hub, ohne Rückweg); eigene Filter, gemeinsamer Scan mit dem Main Hub |
 | Coalition Hub Opportunities | Chancenansicht für Verkäufe am Coalition Hub inklusive sortierbarem Transport Home → Coalition (Jump Freighter oder Kurier); eigene Filter, gemeinsamer Scan |
-| Doctrine stock | Doktrin-Bedarf: Items und Schiffe der Allianz-Doktrinen (Import aus dem Brave-Wiki, Soll-Vorgaben, Verkäufe und Verluste aus Allumis) am Home Hub mit Bestand, Verkäufen je Tag, Reichweite, Fehlmenge zum Doktrin-Soll, Doktrin-Zuordnung und Schnellkalkulation Bauen oder Import vom Main Hub |
+| Doctrine stock | Doktrin-Bedarf: Items und Schiffe der Allianz-Doktrinen (Import aus dem Brave-Wiki, Soll-Vorgaben, Verkäufe und Verluste aus Allumis) am Home Hub mit Soll aus Allumis, Ist (gelistet), Fehlmenge, Verkäufen je Tag, Reichweite, Doktrin-Zuordnung und Schnellkalkulation Bauen oder Import vom Main Hub |
 | Stock sale comparison | Lagerverkauf-Abgleich: aus dem Spiel kopierte Items samt Anzahl je Hub gegen die Neuproduktion bewerten; Mindestpreis für Sell-Order und Direktverkauf, Marktpreise, Gewinn und Empfehlung |
 | Public Contracts | lokaler, resumierbarer Index öffentlicher ESI-Contracts mit sicherem Stopp und Teilstatus |
 | Reactions | veröffentlichte Reaktionsrezepte, vollständige Batch-Kosten, Logistik und Make-or-Buy-Vergleich |
@@ -1307,8 +1307,9 @@ SwiftData-Datenbank bleibt unberührt.
 
 Der **Doktrin-Bedarf** steht in der Seitenleiste direkt unter dem
 Marktbestand. Er zeigt, welche Items und Schiffe die Allianz-Doktrinen am
-Home Hub brauchen, wie schnell sie sich verkaufen, wie lange der Bestand
-reicht und ob Bauen oder Import vom Main Hub günstiger ist. Verbindliche
+Home Hub brauchen (Soll aus Allumis), was gelistet ist (Ist), was noch fehlt,
+wie schnell es sich verkauft, wie lange der Bestand reicht und ob Bauen oder
+Import vom Main Hub günstiger ist. Verbindliche
 Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BEDARF_PLAN.md).
 
 - **Allianz-Wiki:** Quelle sind die Doktrin- und Schiffsseiten im
@@ -1318,8 +1319,8 @@ Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BE
     Sitzung liegt in einem eigenen Web-Speicher und gilt bis zum Beenden der
     App, weil Wiki und Brave Core nur Sitzungs-Cookies setzen. Nach einem
     Neustart meldest du dich erneut an; merkt sich EVE SSO dein Konto, reicht
-    ein Klick. **Abmelden** löscht den Speicher nach Rückfrage; Doktrinen und
-    Sollwerte bleiben.
+    ein Klick. **Abmelden** löscht den Speicher nach Rückfrage; die Doktrinen
+    bleiben.
   - **Aus Wiki aktualisieren** liest mit dieser Sitzung alle Doktrin- und
     Schiffsseiten (rund 150 Seiten, mit kurzen Pausen) und speichert das
     Ergebnis. Es gibt keinen automatischen Abruf. Ein Fortschritt zählt die
@@ -1343,9 +1344,14 @@ Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BE
   - **Bei Allumis anmelden …** öffnet den EVE-SSO-Login von Allumis in einem
     Web-Fenster der App. Die App sieht kein Passwort; die Sitzung liegt in
     einem eigenen Web-Speicher, getrennt vom Wiki. Allumis beendet sie nach
-    12 Stunden, auch über einen Neustart der App hinweg. **Abmelden** löscht
-    nach Rückfrage nur den Allumis-Speicher; Allumis-Daten und Sollwerte
-    bleiben.
+    12 Stunden, auch über einen Neustart der App hinweg. Leitet Allumis auf
+    eine unverschlüsselte `http`-Adresse um, lädt das Fenster ihre
+    `https`-Form. Der Chip zeigt „Allumis-Sitzung aktiv“ erst nach einer
+    bestätigten Anmeldung oder einem erfolgreichen Import in diesem App-Lauf,
+    sonst „Allumis-Sitzung gespeichert, nicht geprüft“ oder „Nicht bei Allumis
+    angemeldet“, weil Allumis auch ohne Anmeldung ein Cookie setzt.
+    **Abmelden** löscht nach Rückfrage nur den Allumis-Speicher; die
+    Allumis-Daten bleiben.
   - **Aus Allumis aktualisieren** liest die Doktrintabelle mit einer Anfrage
     und speichert das Ergebnis; es gibt keinen automatischen Abruf. Ohne
     gültige Sitzung bittet die Seite um eine neue Anmeldung. Die Cookies gehen
@@ -1356,47 +1362,56 @@ Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BE
     dann gleicher Rumpf und Name (Name ohne Kürzel wie „[DOC]“, ohne
     Groß-/Kleinschreibung). Refit-Items zählen nicht. Allumis-Fits ohne
     Wiki-Gegenstück bilden die Gruppe **Nur bei Allumis**, die wie eine
-    Doktrin ein Soll bekommt.
+    Doktrin zählt.
   - **Allumis-Hinweise** nennen unbekannte oder mehrdeutige Item-Namen, nicht
     lesbare Einträge und Fits, die nur über Rumpf und Name zugeordnet sind,
     weil sich die Items unterscheiden.
+- **Soll:** kommt allein aus Allumis, es gibt kein eigenes Soll mehr. Jedes
+  Allumis-Fit trägt sein Soll (Anzahl kompletter Fits) × Menge im Fit zum
+  Soll jedes seiner Items bei, Rumpf einmal je Fit, Refits nicht. Ein Item in
+  mehreren Fits bekommt die Summe; ein Fit, das mehrere Doktrinen nutzen,
+  zählt einmal. Bei einem zugeordneten Wiki-Fit zählt der Inhalt des
+  Allumis-Fits. Fits, die Allumis nicht kennt, tragen nichts bei. Ohne
+  Allumis-Import gibt es kein Soll und keine Fehlmenge; die Seite weist darauf
+  hin.
 - **Doktrinen und Sollbestand:** Tabelle mit Doktrin (Link auf die Wiki-Seite,
-  bei „Nur bei Allumis“ auf die Fit-Liste von Allumis), Anzahl Fits, nach
-  einem Allumis-Import **Allumis** und **Soll**. Das Soll ist die Zahl
-  kompletter Fits und gilt für jedes Fit der Doktrin, Varianten eingeschlossen;
-  0 heißt kein Bedarf. Die Spalte Allumis nennt die Allumis-Sollwerte der Fits
+  bei „Nur bei Allumis“ auf die Fit-Liste von Allumis), Anzahl Fits und nach
+  einem Allumis-Import **Soll je Fit**: die Allumis-Sollwerte der Fits
   (häufigster zuerst) und „x von y Fits“, ein Warnsymbol, wenn Fits nur über
-  Rumpf und Name zugeordnet sind, „nicht bei Allumis“ ohne Treffer. Der Pfeil
-  übernimmt den häufigsten Wert (bei Gleichstand den größeren) als Soll; dein
-  Soll bleibt maßgeblich. Alle Spalten sortierbar (Allumis nach dem
-  übernehmbaren Wert), die Werte bleiben gespeichert.
+  Rumpf und Name zugeordnet sind, „nicht bei Allumis“ ohne Treffer. Alle
+  Spalten sortierbar (Soll je Fit nach dem häufigsten Wert, bei Gleichstand
+  dem größeren).
 - **Home Hub und Grundlage:** Chips für Home und Main Hub sowie die Gebühren
   des Home Hubs, **Hub-Märkte aktualisieren** (gemeinsamer Hub-Scan), Hinweise
   auf fehlende Hubs, Scans, Markt- und Bestandsdaten, Region und Transport mit
   Sprung in die Markt- bzw. Logistik-Einstellungen, Ladefortschritt der
   Regionshistorie und die Rechenannahmen.
 - **Tabelle „Doktrin-Items am Home Hub“:** alle aufgelösten Items des
-  Wiki-Imports und der Gruppe „Nur bei Allumis“, filterbar nach Alle, Rümpfe,
+  Wiki-Imports, der zugeordneten Allumis-Fits und der Gruppe „Nur bei
+  Allumis“, filterbar nach Alle, Rümpfe,
   Module & Sonstiges, Munition & Ladungen und Drohnen (SDE-Kategorie) und über
   die Auswahl **Doktrin** nach einer einzelnen Doktrin (zum Einkaufen für
-  sie; die Zahlen bleiben die über alle Doktrinen). Spalten:
+  sie; die Zahlen bleiben die über alle Doktrinen). Die Zählerzeile nennt
+  Items, ausverkaufte Items, Items mit Fehlmenge und die Zahl der Allumis-Fits
+  mit Soll. Spalten:
   - **Gegenstand** mit Bild, Kopier-Klick, Verlaufssymbol und Hammer,
   - **Doktrinen**: die Doktrinen, deren Fits das Item nutzen; die mit Soll
-    zuerst in Textfarbe, die übrigen grau oder als „+n“; der Tooltip nennt
-    alle mit ihrem Soll,
-  - **Fits** (Fits des Wikis und der Gruppe „Nur bei Allumis“ mit diesem
-    Item), **Benötigt** (Σ Soll × Menge), **Soll Allumis** (Σ Allumis-Soll ×
-    Menge über alle Allumis-Fits, Rumpf einmal je Fit, ohne Refits; „–“ ohne
-    Allumis-Soll, „—“ ohne Allumis-Import), **Gelistet** (Sell-Stück am Home
-    Hub beim letzten Bestandspunkt),
+    für dieses Item zuerst in Textfarbe, die übrigen grau oder als „+n“; der
+    Tooltip nennt alle, die mit Soll mit ihrem Anteil (ein Fit mehrerer
+    Doktrinen zählt dort bei jeder),
+  - **Fits** (Fits des Wikis und der Gruppe „Nur bei Allumis“, die das Item
+    im Wiki- oder im Allumis-Inhalt enthalten), **Soll** (siehe oben; „–“ ohne
+    Allumis-Soll, „—“ ohne Allumis-Import), **Ist** (Sell-Stück aller
+    Verkäufer am Home Hub beim letzten Bestandspunkt), **Fehlmenge** (Soll −
+    Ist, mindestens 0, rot ab 1: was noch gebaut oder importiert werden muss),
   - **Verkauft/Tag Region** (Ø 30 Tage ESI-Markthistorie der Region des Home
     Hubs), **Verkauft/Tag Hub** (Teilverkäufe der Bestandshistorie,
     Untergrenze, unvollständig in Warnfarbe) und **Verkauft/Tag Allumis**
     (Ø 7 Tage am Staging-Markt laut Allumis),
   - **Verluste 10 Tage** (laut Allumis zerstörte plus gedroppte Stück aus
     Killmails; Tooltip mit beiden Teilen),
-  - **Reichweite** (Gelistet ÷ Region/Tag, „ausverkauft“ rot, „keine
-    Verkäufe“), **Fehlmenge** (Benötigt − Gelistet, mindestens 0, rot ab 1),
+  - **Reichweite** (Ist ÷ Region/Tag, „ausverkauft“ rot, „keine
+    Verkäufe“),
   - **Bau/Stück** (Rechnung der Home-Hub-Chancen für die Fehlmenge, mindestens
     ein Lauf, mit deren Schaltern und ME/TE-Standards; Tooltip mit
     Aufschlüsselung) oder „nicht baubar“,
@@ -1407,8 +1422,12 @@ Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BE
   - **Empfehlung** Bauen (Hammer) oder Import (Kiste) mit Ersparnis je Stück,
   - **Gewinn/Stück** (eigene Sell-Order einen Preisschritt unter dem besten
     Sell am Home Hub nach Steuer und Makler minus Kosten des empfohlenen Wegs).
+- **Scrollen:** Die Zeilen haben einen eigenen Scrollbereich in Höhe des
+  Fensters (abzüglich Titel, Filter und Kopfzeile), die Kopfzeile bleibt
+  stehen; waagerecht scrollt die Tabelle als Ganzes. Aufgebaut werden nur die
+  sichtbaren Zeilen.
 - **Sortierung:** alle Spalten nach dem typisierten Wert, Doktrinen nach ihrer
-  Anzahl; beim Öffnen Reichweite aufsteigend (ausverkauft zuerst). Unbekannte
+  Anzahl; beim Öffnen Fehlmenge absteigend (größte zuerst). Unbekannte
   Werte stehen aufsteigend hinten und absteigend vorn, „keine Verkäufe“ zählt
   als unbegrenzte Reichweite, danach entscheidet die Typ-ID.
 - **Fehlende Daten:** bleiben „—“; ein Info-Symbol nennt den Grund (kein Scan,

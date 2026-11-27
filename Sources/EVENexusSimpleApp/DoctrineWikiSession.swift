@@ -287,6 +287,25 @@ struct DoctrineWikiWebView: NSViewRepresentable {
       isLoading.wrappedValue = true
     }
 
+    /// Allumis answers paths without trailing slash with a redirect to
+    /// plain `http://`, which never loads here; such a navigation, also a
+    /// server redirect, is replaced by its `https` form.
+    func webView(
+      _ webView: WKWebView,
+      decidePolicyFor navigationAction: WKNavigationAction,
+      decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+    ) {
+      guard case .allumis(let configuration) = signInCheck,
+        navigationAction.targetFrame?.isMainFrame != false,
+        let secure = configuration.secureReplacement(for: navigationAction.request.url)
+      else {
+        decisionHandler(.allow)
+        return
+      }
+      decisionHandler(.cancel)
+      webView.load(URLRequest(url: secure))
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
       isLoading.wrappedValue = false
       let host: String

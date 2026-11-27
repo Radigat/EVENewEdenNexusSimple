@@ -2987,14 +2987,12 @@
 
 /* Doctrine stock (DOKTRIN_BEDARF_PLAN.md) */
 "Doctrine stock" = "Doctrine stock";
-"Doctrine items for the Home Hub: what is listed, how fast it sells, how much your doctrine targets still need, and whether building or importing from the Main Hub is cheaper." = "Doctrine items for the Home Hub: what is listed, how fast it sells, how much your doctrine targets still need, and whether building or importing from the Main Hub is cheaper.";
 "Alliance wiki" = "Alliance wiki";
 "Sign in to wiki…" = "Sign in to wiki…";
 "Update from wiki" = "Update from wiki";
 "Reads every doctrine and ship page of the wiki with your session (about 150 pages, with short pauses) and saves the result." = "Reads every doctrine and ship page of the wiki with your session (about 150 pages, with short pauses) and saves the result.";
 "Sign out" = "Sign out";
 "Sign out of the alliance wiki?" = "Sign out of the alliance wiki?";
-"The wiki session stored in the app is removed. The imported doctrines and your targets stay." = "The wiki session stored in the app is removed. The imported doctrines and your targets stay.";
 "Source: %@ (doctrine pages and their ship pages). The import only runs on request." = "Source: %@ (doctrine pages and their ship pages). The import only runs on request.";
 "Imported %@ · %lld doctrines · %lld fits" = "Imported %@ · %lld doctrines · %lld fits";
 "Import notes (%lld)" = "Import notes (%lld)";
@@ -3006,10 +3004,8 @@
 "Reading the doctrine index…" = "Reading the doctrine index…";
 "Doctrines updated from the wiki." = "Doctrines updated from the wiki.";
 "Doctrines and targets" = "Doctrines and targets";
-"Target = number of complete fits per doctrine. It applies to every fit of the doctrine, variants included; 0 means the doctrine adds nothing to the required quantity." = "Target = number of complete fits per doctrine. It applies to every fit of the doctrine, variants included; 0 means the doctrine adds nothing to the required quantity.";
 "Doctrine" = "Doctrine";
 "Fits" = "Fits";
-"Target count" = "Target count";
 "Opens the doctrine page in the browser." = "Opens the doctrine page in the browser.";
 "No doctrines imported yet. Use “Update from wiki” or “Update from Allumis”." = "No doctrines imported yet. Use “Update from wiki” or “Update from Allumis”.";
 "Home Hub and basis" = "Home Hub and basis";
@@ -3024,15 +3020,11 @@
 "Doctrine items at the Home Hub" = "Doctrine items at the Home Hub";
 "Kind" = "Kind";
 "No doctrine item of this kind." = "No doctrine item of this kind.";
-"Shortest reach first. Doctrines lists the doctrines that use the item, those with a target first. Fits counts every fit of the wiki and of the group “Only at Allumis” that uses the item; required counts only doctrines with a target. A loaded charge (Module, Charge) counts once per module, because EFT does not state the loaded amount." = "Shortest reach first. Doctrines lists the doctrines that use the item, those with a target first. Fits counts every fit of the wiki and of the group “Only at Allumis” that uses the item; required counts only doctrines with a target. A loaded charge (Module, Charge) counts once per module, because EFT does not state the loaded amount.";
 "How many fits of the wiki and of the group “Only at Allumis” use the item." = "How many fits of the wiki and of the group “Only at Allumis” use the item.";
-"Σ target × quantity over the fits of every doctrine with a target." = "Σ target × quantity over the fits of every doctrine with a target.";
-"Sell units at the Home Hub at the latest stock point." = "Sell units at the Home Hub at the latest stock point.";
 "Sold/day region" = "Sold/day region";
 "Sold/day hub" = "Sold/day hub";
 "Stock lasts" = "Stock lasts";
 "Shortfall" = "Shortfall";
-"Required minus listed, at least 0." = "Required minus listed, at least 0.";
 "Build/unit" = "Build/unit";
 "Import/unit" = "Import/unit";
 "Home sell" = "Home sell";
@@ -3044,7 +3036,6 @@
 "no sales" = "no sales";
 "Import" = "Import";
 "saves %@/unit" = "saves %@/unit";
-"%lld items · %lld out of stock · %lld with shortfall · %lld doctrines with a target" = "%1$lld items · %2$lld out of stock · %3$lld with shortfall · doctrines with a target: %4$lld";
 "%@ units in %@ runs, ME %@ / TE %@. Per unit: material %@ · installation %@ · Blueprint %@ · logistics %@." = "%@ units in %@ runs, ME %@ / TE %@. Per unit: material %@ · installation %@ · Blueprint %@ · logistics %@.";
 "Main Hub purchase %@ + transport %@ per unit." = "Main Hub purchase %@ + transport %@ per unit.";
 "%@: linked ship page %@ does not exist." = "%@: linked ship page %@ does not exist.";
@@ -3056,7 +3047,6 @@
 "The wiki did not deliver the doctrine pages. Sign in to the wiki again; the session may have expired." = "The wiki did not deliver the doctrine pages. Sign in to the wiki again; the session may have expired.";
 "The wiki answered with HTTP status %lld." = "The wiki answered with HTTP status %lld.";
 "The doctrines could not be imported: %@" = "The doctrines could not be imported: %@";
-"The doctrine targets could not be saved: %@" = "The doctrine targets could not be saved: %@";
 "The imported doctrines could not be saved: %@" = "The imported doctrines could not be saved: %@";
 "The saved doctrines could not be read: %@" = "The saved doctrines could not be read: %@";
 "Hulls" = "Hulls";
@@ -3073,14 +3063,11 @@
 "%lld fits are not at Allumis." = "%lld fits are not at Allumis.";
 "%lld fits paired by hull and name; their items differ from Allumis." = "%lld fits paired by hull and name; their items differ from Allumis.";
 "%lld of %lld fits" = "%lld of %lld fits";
-"Adopt the Allumis target %lld as target of this doctrine." = "Adopt the Allumis target %lld as target of this doctrine.";
 "All doctrines" = "All doctrines";
 "Allumis" = "Allumis";
-"Allumis = the supply officer's target per fit, most frequent value first; the arrow adopts the most frequent value (the larger one on a tie) as target of the doctrine. Allumis fits without a wiki fit form the group “Only at Allumis”." = "Allumis = the supply officer's target per fit, most frequent value first; the arrow adopts the most frequent value (the larger one on a tie) as target of the doctrine. Allumis fits without a wiki fit form the group “Only at Allumis”.";
 "Allumis ends its session after 12 hours, also across app restarts; then sign in again. The next import tells whether the session is still valid." = "Allumis ends its session after 12 hours, also across app restarts; then sign in again. The next import tells whether the session is still valid.";
 "Allumis notes (%lld)" = "Allumis notes (%lld)";
 "Allumis session active" = "Allumis session active";
-"Allumis target" = "Allumis target";
 "Allumis target %lld for %lld fits" = "Allumis target %lld for %lld fits";
 "Best Home Hub sell as a percentage of the lowest Main Hub sell." = "Best Home Hub sell as a percentage of the lowest Main Hub sell.";
 "Checking Allumis session…" = "Checking Allumis session…";
@@ -3091,7 +3078,6 @@
 "Home ÷ Main" = "Home ÷ Main";
 "Imported %@ · %lld fits · %lld paired with a wiki fit · %lld only at Allumis" = "Imported %@ · %lld fits · %lld paired with a wiki fit · %lld only at Allumis";
 "Lost 10 days" = "Lost 10 days";
-"No fit of this doctrine is at Allumis." = "No fit of this doctrine is at Allumis.";
 "Not signed in to Allumis" = "Not signed in to Allumis";
 "Only at Allumis" = "Only at Allumis";
 "Opens the fit list of Allumis in the browser." = "Opens the fit list of Allumis in the browser.";
@@ -3103,13 +3089,11 @@
 "Sold/day Allumis" = "Sold/day Allumis";
 "Source: %@ (Brave Doctrine Market Management): the supply officer's target per fit for the staging market, sales over 7 days and losses over 10 days. The import only runs on request." = "Source: %@ (Brave Doctrine Market Management): the supply officer's target per fit for the staging market, sales over 7 days and losses over 10 days. The import only runs on request.";
 "Targets updated from Allumis." = "Targets updated from Allumis.";
-"The Allumis session stored in the app is removed. The imported Allumis data and your targets stay." = "The Allumis session stored in the app is removed. The imported Allumis data and your targets stay.";
 "The saved Allumis data could not be read: %@" = "The saved Allumis data could not be read: %@";
 "Units destroyed and dropped in the last 10 days according to Allumis (killmails)." = "Units destroyed and dropped in the last 10 days according to Allumis (killmails).";
 "Update from Allumis" = "Update from Allumis";
 "not at Allumis" = "not at Allumis";
 "Ø units sold per day over 7 days at the staging market, according to Allumis." = "Ø units sold per day over 7 days at the staging market, according to Allumis.";
-"Σ Allumis target × quantity over every Allumis fit, hull once per fit, refits not counted." = "Σ Allumis target × quantity over every Allumis fit, hull once per fit, refits not counted.";
 "Allumis answered with HTTP status %lld." = "Allumis answered with HTTP status %lld.";
 "Allumis delivered no fit." = "Allumis delivered no fit.";
 "Allumis delivered the doctrine table in an unknown format." = "Allumis delivered the doctrine table in an unknown format.";
@@ -3118,3 +3102,20 @@
 "Sign in with EVE SSO as a member of Brave Collective or Brave United. The app does not see your password; it keeps the Allumis session in its own web storage, Allumis ends it after 12 hours. If EVE SSO remembers your account, signing in again takes one click." = "Sign in with EVE SSO as a member of Brave Collective or Brave United. The app does not see your password; it keeps the Allumis session in its own web storage, Allumis ends it after 12 hours. If EVE SSO remembers your account, signing in again takes one click.";
 "The Allumis data could not be imported: %@" = "The Allumis data could not be imported: %@";
 "The Allumis data could not be saved: %@" = "The Allumis data could not be saved: %@";
+"Allumis session stored, not checked" = "Allumis session stored, not checked";
+
+/* Doctrine stock: target from Allumis (27.11.2026) */
+"The wiki session stored in the app is removed. The imported doctrines stay." = "The wiki session stored in the app is removed. The imported doctrines stay.";
+"The Allumis session stored in the app is removed. The imported Allumis data stays." = "The Allumis session stored in the app is removed. The imported Allumis data stays.";
+"Doctrine items for the Home Hub: the Allumis target, what is listed, what is still missing, how fast it sells, and whether building or importing from the Main Hub is cheaper." = "Doctrine items for the Home Hub: the Allumis target, what is listed, what is still missing, how fast it sells, and whether building or importing from the Main Hub is cheaper.";
+"Target per fit = complete fits the supply officer wants at the Home Hub, according to Allumis; most frequent value first. The item table splits it onto the items: target × quantity in the fit, summed over every fit. Fits that Allumis does not know add no target; Allumis fits without a wiki fit form the group “Only at Allumis”." = "Target per fit = complete fits the supply officer wants at the Home Hub, according to Allumis; most frequent value first. The item table splits it onto the items: target × quantity in the fit, summed over every fit. Fits that Allumis does not know add no target; Allumis fits without a wiki fit form the group “Only at Allumis”.";
+"The target comes from Allumis. Without an Allumis import there is no target and no shortfall." = "The target comes from Allumis. Without an Allumis import there is no target and no shortfall.";
+"Target per fit" = "Target per fit";
+"Largest shortfall first. Target comes from Allumis: target per fit × quantity in the fit, summed over every Allumis fit, hull once per fit, refits not counted; a fit used by several doctrines counts once. In stock = listed at the Home Hub; shortfall = target minus in stock, what still has to be built or imported. Doctrines lists the doctrines that use the item, those with a target first. Fits counts every fit of the wiki and of the group “Only at Allumis” that uses the item. A loaded charge (Module, Charge) counts once per module, because EFT does not state the loaded amount." = "Largest shortfall first. Target comes from Allumis: target per fit × quantity in the fit, summed over every Allumis fit, hull once per fit, refits not counted; a fit used by several doctrines counts once. In stock = listed at the Home Hub; shortfall = target minus in stock, what still has to be built or imported. Doctrines lists the doctrines that use the item, those with a target first. Fits counts every fit of the wiki and of the group “Only at Allumis” that uses the item. A loaded charge (Module, Charge) counts once per module, because EFT does not state the loaded amount.";
+"Target units" = "Target units";
+"Σ Allumis target per fit × quantity in the fit over every Allumis fit, hull once per fit, refits not counted." = "Σ Allumis target per fit × quantity in the fit over every Allumis fit, hull once per fit, refits not counted.";
+"Current stock" = "Current stock";
+"Sell units of every seller at the Home Hub at the latest stock point." = "Sell units of every seller at the Home Hub at the latest stock point.";
+"Target minus current stock, at least 0: what still has to be built or imported." = "Target minus current stock, at least 0: what still has to be built or imported.";
+"%lld items · %lld out of stock · no target without an Allumis import" = "%lld items · %lld out of stock · no target without an Allumis import";
+"%lld items · %lld out of stock · %lld with shortfall · target from %lld Allumis fits" = "%lld items · %lld out of stock · %lld with shortfall · target from %lld Allumis fits";

@@ -748,5 +748,37 @@ Vertrag: [DOKTRIN_BEDARF_PLAN.md](Documentation/DOKTRIN_BEDARF_PLAN.md), Abschni
 - **Sichtgeprüft:** isolierte Debug-App mit Wiki-Bibliothek, ohne
   Allumis-Import: Bereich „Allumis“, Filter „Doktrin“, Spalte „Doktrinen“ und
   neue Spaltentitel.
-- **Offen:** Import mit echter Allumis-Sitzung in der App und Sichtprüfung mit
-  Allumis-Daten, Eigentümerabnahme.
+- **Korrigiert (26.11.2026):** Allumis-Login blieb weiß, weil Allumis Pfade
+  ohne Schrägstrich auf `http` umleitet; Login-Adresse mit `/`, `http`-Umleitungen
+  werden im Fenster zu `https`, Sitzungs-Chip zeigt „aktiv“ nur nach
+  bestätigter Anmeldung. Tests grün; in der isolierten Debug-App lädt das
+  Fenster sofort die EVE-SSO-Anmeldung.
+- **Live geprüft (Eigentümer, 26.11.2026):** Allumis-Login und Import laufen.
+- **Geschwindigkeit (26.11.2026):** Alle 759 Tabellenzeilen waren gleichzeitig
+  aufgebaut (Seite träge, Login-Fenster 1,7 s). Die Zeilen haben jetzt einen
+  eigenen Scrollbereich, aufgebaut werden nur die sichtbaren (16.300 → 1.938
+  Bedienungshilfen-Elemente in der isolierten Debug-App).
+- **Seitenstart (26.11.2026):** Fortschritt der Regionshistorie, Doktrin-Liste
+  und Tabellenzeilen lösen keinen Neuaufbau der ganzen Seite mehr aus; in der
+  Messung beim Eigentümer sank der Anteil der Seite am Hauptthread von rund
+  10.800 auf rund 370 Proben. Restlast beim App-Start liegt beim Dashboard.
+- **Offen:** Eindruck des Eigentümers, Eigentümerabnahme.
+
+## Doktrin-Bedarf: Soll allein aus Allumis (27.11.2026)
+
+Vertrag: [DOKTRIN_BEDARF_PLAN.md](Documentation/DOKTRIN_BEDARF_PLAN.md), Abschnitt H.
+
+- **Eigentümerentscheide (27.11.2026):** Soll nur aus Allumis (eigenes Soll je
+  Doktrin und Übernehmen-Pfeil entfallen), Ist = alle Sell-Orders am Home Hub,
+  Item in mehreren Fits = Summe, Spalten „Soll · Ist · Fehlmenge“ mit
+  Standardsortierung Fehlmenge absteigend.
+- **Implementiert:** Soll je Item = Σ Allumis-Fit-Soll × Menge (Allumis-Inhalt,
+  jedes Fit einmal), Fehlmenge = Soll − Ist; ohne Allumis-Import Soll und
+  Fehlmenge unbekannt mit Hinweis; Doktrin-Liste mit Spalte „Soll je Fit“;
+  Tooltip „Doktrinen“ mit Anteil je Doktrin. Gespeicherte Sollwerte je Doktrin
+  bleiben unangetastet, werden aber nicht mehr gelesen.
+- **Automatisch geprüft:** `swift test` (841 Core-, 170 App-Tests),
+  EVEStaticDataKit (13 Tests), `xcodebuild test` (Debug, arm64, unsigniert)
+  `TEST SUCCEEDED`.
+- **Offen:** Sichtprüfung mit den Allumis- und Marktdaten des Eigentümers,
+  Eigentümerabnahme der von Claude festgelegten Punkte (Abschnitt H).

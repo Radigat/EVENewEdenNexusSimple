@@ -25,8 +25,29 @@ public struct AllumisConfiguration: Equatable, Sendable {
 
   public var host: String { baseURL.host ?? "" }
 
-  /// Starts the EVE SSO login of Allumis.
-  public var loginURL: URL { baseURL.appendingPathComponent("login") }
+  /// Starts the EVE SSO login of Allumis. Allumis redirects a path without
+  /// trailing slash to plain `http://` (checked 26.11.2026), which never
+  /// loads in the app's web view, so the path ends with one.
+  public var loginURL: URL { URL(string: baseURL.absoluteString + "/login/")! }
+
+  /// Hosts of Allumis: the API host and the start page without `api.`.
+  public var webHosts: Set<String> {
+    let apiHost = host.lowercased()
+    return apiHost.hasPrefix("api.") ? [apiHost, String(apiHost.dropFirst(4))] : [apiHost]
+  }
+
+  /// The `https` form of a plain-`http` Allumis address, so a redirect to
+  /// `http://` (paths without trailing slash) still loads; nil for every
+  /// other address.
+  public func secureReplacement(for url: URL?) -> URL? {
+    guard let url, url.scheme?.lowercased() == "http",
+      let urlHost = url.host?.lowercased(), webHosts.contains(urlHost),
+      var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    else { return nil }
+    components.scheme = "https"
+    if components.port == 80 { components.port = nil }
+    return components.url
+  }
 
   /// Fit list of Allumis, for links.
   public var fitListURL: URL {
@@ -545,6 +566,13 @@ public struct DoctrineAllumisMerge: Equatable, Sendable {
   public static func fitID(allumisFitID: Int64) -> String { "allumis:\(allumisFitID)" }
 
   public let library: DoctrineLibrary
+  /// Whether an Allumis import exists. Without one there is no target at
+  /// all, which is not the same as a target of 0.
+  public let hasAllumisImport: Bool
+  /// The Allumis fit behind each fit ID of `library`: the paired one of a
+  /// wiki fit and the fit itself in the group “Only at Allumis”. Every
+  /// Allumis fit appears exactly once.
+  public let allumisFitByFitID: [String: AllumisFitRecord]
   /// Allumis target per fit ID of `library`.
   public let allumisTargetByFitID: [String: Int]
   /// Wiki fits paired by hull and name although their content differs.
@@ -553,6 +581,21 @@ public struct DoctrineAllumisMerge: Equatable, Sendable {
   public let matchedWikiFitCount: Int
   /// Allumis fits in the group “Only at Allumis”.
   public let onlyAtAllumisFitCount: Int
+
+  /// Resolved types of every fit, from the wiki content and from the
+  /// content of the paired Allumis fit (refits not counted).
+  public var allTypeIDs: Set<Int64> {
+    var typeIDs: Set<Int64> = []
+    func insert(_ hull: DoctrineFitItem, _ items: [DoctrineFitItem]) {
+      if let typeID = hull.typeID { typeIDs.insert(typeID) }
+      for item in items {
+        if let typeID = item.typeID { typeIDs.insert(typeID) }
+      }
+    }
+    for fit in library.fits { insert(fit.hull, fit.items) }
+    for fit in allumisFitByFitID.values { insert(fit.hull, fit.items) }
+    return typeIDs
+  }
 
   /// Allumis targets of the fits of `doctrine`.
   public func allumisTargets(for doctrine: DoctrineRecord) -> DoctrineAllumisTargets {
@@ -591,10 +634,10 @@ public struct DoctrineAllumisTargets: Equatable, Sendable {
   /// first.
   public let targetCounts: [TargetCount]
 
-  /// The value “Adopt” sets as doctrine target: the most frequent Allumis
-  /// target of the doctrine's fits, the larger one on a tie; nil when no
-  /// fit of the doctrine is at Allumis.
-  public var suggestedTarget: Int? { targetCounts.first?.target }
+  /// The most frequent Allumis target of the doctrine's fits, the larger
+  /// one on a tie; nil when no fit of the doctrine is at Allumis. Sorts the
+  /// doctrine list.
+  public var mostFrequentTarget: Int? { targetCounts.first?.target }
 }
 
 public enum DoctrineAllumisMerger {
@@ -623,6 +666,8 @@ public enum DoctrineAllumisMerger {
     guard let snapshot else {
       return DoctrineAllumisMerge(
         library: wiki,
+        hasAllumisImport: false,
+        allumisFitByFitID: [:],
         allumisTargetByFitID: [:],
         contentDiffersFitIDs: [],
         matchedWikiFitCount: 0,
@@ -662,13 +707,16 @@ public enum DoctrineAllumisMerger {
     pass({ $0.name == $1.name }, markDiffering: true)
 
     var targets: [String: Int] = [:]
+    var fitsByFitID: [String: AllumisFitRecord] = [:]
     var onlyAtAllumis: [DoctrineFitRecord] = []
     for (allumisIndex, fit) in allumisFits.enumerated() {
       if let wikiIndex = pairedWikiIndex[allumisIndex] {
         targets[wiki.fits[wikiIndex].id] = fit.target
+        fitsByFitID[wiki.fits[wikiIndex].id] = fit
       } else {
         let fitID = DoctrineAllumisMerge.fitID(allumisFitID: fit.id)
         targets[fitID] = fit.target
+        fitsByFitID[fitID] = fit
         onlyAtAllumis.append(
           DoctrineFitRecord(
             id: fitID,
@@ -699,6 +747,8 @@ public enum DoctrineAllumisMerger {
         fits: wiki.fits + onlyAtAllumis,
         issues: wiki.issues
       ),
+      hasAllumisImport: true,
+      allumisFitByFitID: fitsByFitID,
       allumisTargetByFitID: targets,
       contentDiffersFitIDs: differs,
       matchedWikiFitCount: pairedWikiIndex.compactMap { $0 }.count,
@@ -738,30 +788,25 @@ public enum DoctrineAllumisMerger {
   }
 }
 
-/// Allumis figures per item for the doctrine table.
+/// Allumis market and loss figures per item for the doctrine table. The
+/// target of the item is `DoctrineItemDemand.requiredQuantity`.
 public struct DoctrineAllumisItemFigures: Equatable, Sendable {
-  /// Σ over every Allumis fit of target × quantity (hull once per fit,
-  /// refits not counted).
-  public let requiredQuantity: Int64
   public let averageDailyVolume7Days: Double?
   public let dropped: Int64?
   public let destroyed: Int64?
 
   public init(
-    requiredQuantity: Int64,
     averageDailyVolume7Days: Double?,
     dropped: Int64?,
     destroyed: Int64?
   ) {
-    self.requiredQuantity = requiredQuantity
     self.averageDailyVolume7Days = averageDailyVolume7Days
     self.dropped = dropped
     self.destroyed = destroyed
   }
 
-  /// A type Allumis does not list: no target, statistics unknown.
+  /// A type Allumis does not list: statistics unknown.
   public static let notListed = DoctrineAllumisItemFigures(
-    requiredQuantity: 0,
     averageDailyVolume7Days: nil,
     dropped: nil,
     destroyed: nil
@@ -775,36 +820,18 @@ public struct DoctrineAllumisItemFigures: Equatable, Sendable {
 }
 
 public enum DoctrineAllumisItemAggregator {
-  /// Figures per resolved type. A type in no Allumis fit has a required
-  /// quantity of 0; its statistics stay unknown unless Allumis lists them.
+  /// Figures per resolved type that Allumis lists; the first statistic of a
+  /// type counts.
   public static func figures(
     snapshot: AllumisDoctrineSnapshot
   ) -> [Int64: DoctrineAllumisItemFigures] {
-    var required: [Int64: Int64] = [:]
-    func add(_ typeID: Int64?, _ quantity: Int64, target: Int) {
-      guard let typeID, target > 0, quantity > 0 else { return }
-      let (product, productOverflow) = quantity.multipliedReportingOverflow(by: Int64(target))
-      let amount = productOverflow ? DoctrineDemandAggregator.maximumQuantity : product
-      let (sum, overflow) = (required[typeID] ?? 0).addingReportingOverflow(amount)
-      required[typeID] = overflow ? DoctrineDemandAggregator.maximumQuantity : min(DoctrineDemandAggregator.maximumQuantity, sum)
-    }
-    for fit in snapshot.fits {
-      add(fit.hull.typeID, 1, target: fit.target)
-      for item in fit.items { add(item.typeID, item.quantity, target: fit.target) }
-    }
-    var statistics: [Int64: AllumisItemStatistic] = [:]
-    for statistic in snapshot.itemStatistics {
-      guard let typeID = statistic.typeID, statistics[typeID] == nil else { continue }
-      statistics[typeID] = statistic
-    }
     var result: [Int64: DoctrineAllumisItemFigures] = [:]
-    for typeID in Set(required.keys).union(statistics.keys) {
-      let statistic = statistics[typeID]
+    for statistic in snapshot.itemStatistics {
+      guard let typeID = statistic.typeID, result[typeID] == nil else { continue }
       result[typeID] = DoctrineAllumisItemFigures(
-        requiredQuantity: required[typeID] ?? 0,
-        averageDailyVolume7Days: statistic?.averageDailyVolume7Days,
-        dropped: statistic?.dropped,
-        destroyed: statistic?.destroyed
+        averageDailyVolume7Days: statistic.averageDailyVolume7Days,
+        dropped: statistic.dropped,
+        destroyed: statistic.destroyed
       )
     }
     return result

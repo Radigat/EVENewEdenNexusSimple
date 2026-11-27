@@ -22,6 +22,13 @@ final class DoctrineAllumisSession {
     forIdentifier: Self.dataStoreIdentifier
   )
 
+  /// What this app run has seen of the session: true after a signed-in
+  /// page in the login sheet or a successful import, false after a refused
+  /// import or signing out, nil while unknown. Allumis also gives visitors
+  /// who are not signed in a session cookie (checked 26.11.2026), so a
+  /// stored cookie alone proves nothing.
+  var signInConfirmed: Bool?
+
   /// Unexpired cookies of the Allumis API host in the session store.
   func allumisCookies() async -> [HTTPCookie] {
     let host = configuration.host.lowercased()
@@ -42,6 +49,7 @@ final class DoctrineAllumisSession {
 
   /// Removes every cookie and website data of the Allumis store.
   func signOut() async {
+    signInConfirmed = false
     await dataStore.removeData(
       ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
       modifiedSince: .distantPast
@@ -126,6 +134,7 @@ final class DoctrineAllumisImportController {
     } catch let error as AllumisImportError {
       switch error {
       case .notSignedIn:
+        DoctrineAllumisSession.shared.signInConfirmed = false
         return .failed(
           AppLocalization.text(
             "Allumis did not deliver the doctrine table. Sign in to Allumis again; the session may have expired."
@@ -162,6 +171,7 @@ final class DoctrineAllumisImportController {
         )
       )
     }
+    DoctrineAllumisSession.shared.signInConfirmed = true
     onSuccess(snapshot)
     return .succeeded
   }
@@ -210,5 +220,8 @@ struct DoctrineAllumisLoginSheet: View {
       )
     }
     .padding(DesignTokens.spacingMD)
+    .onChange(of: isSignedIn) { _, signedIn in
+      if signedIn { DoctrineAllumisSession.shared.signInConfirmed = true }
+    }
   }
 }
