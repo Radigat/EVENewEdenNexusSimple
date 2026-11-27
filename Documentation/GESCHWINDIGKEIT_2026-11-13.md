@@ -260,7 +260,7 @@ Abschnitt 9. Nach O1 kann sich die Reihenfolge ändern.
 |---|---|---|
 | O1 | T0 Messung mit dem Eigentümer | erledigt (Abschnitt 10); A/B-Lauf `tooltips` nicht gemacht |
 | O2 | T1–T5 Dashboard-Darstellung | erledigt: T1, T8, statisches Raster statt Laufband; vom Eigentümer am 14.11.2026 als passend bestätigt (Abschnitt 10). T2, T3, T5 nicht begonnen |
-| O3 | T6–T8 Dashboard-Hauptthread | offen |
+| O3 | T6–T8 Dashboard-Hauptthread | teilweise: Start-Last (Mindestgrößen-Abfrage im Kartenlayout, Slot-Kennzahlen, Wallet-Übersicht) implementiert, automatisch geprüft und nachgemessen (27.11.2026, Abschnitt 10); Einstellungsabfrage aus dem Dashboard lösen nicht bestätigt und zurückgenommen; T6 und übrige Teile von T7 offen |
 | O4 | T9–T12 gemeinsame Bausteine | T9 implementiert (Wirkung nicht belegt), T29 Umgebungs-Locale implementiert, Nachmessung offen (Abschnitt 10); T28 nur noch für abweichende App-Sprache; T10–T12 offen |
 | O5 | T13–T16, T18, T20 Hub-Chancen öffnen | offen |
 | O6 | T17, T19 Hub-Tabelle und Invention | T19 teilweise: Messschalter, A/B-Läufe, Eingabefelder erst beim Klick und leichtere Links am Namen (14.11.2026), T17 implementiert (15.11.2026, nicht nachgemessen); erklärte Zellen offen |
@@ -1509,3 +1509,166 @@ programmatisches Scrollen in 400 Schritten.
 **Offen:** Umsetzung in der App (das Fenster gehört `WindowGroup`; nötig
 wäre eine Laufzeit-Unterklasse des SwiftUI-Fensters); danach
 `withoutAccessibility()` prüfen und gegebenenfalls zurücknehmen.
+
+### O3, Dashboard beim App-Start (27.11.2026), Nachmessung offen
+
+**Anlass:** Die Nachmessung zum Doktrin-Bedarf vom 26.11.2026 (Start
+23:31 Uhr, Xcode-Debug-Instanz PID 82081, `sample` 90 s) zeigte rund
+12.000 Dashboard-Proben beim App-Start.
+
+**Befund (Probe und Messprotokoll derselben PID; Proben zählen, wenn die
+Funktion im Aufrufstapel steht):**
+
+| Posten | Proben von 36.485 |
+|---|---|
+| Dashboard insgesamt | 12.865 |
+| `NSHostingView.minSize()` der Detailspalte | 10.976 |
+| davon im `DashboardCardLayout` | 6.595 |
+| `DashboardCardLayout` im normalen Layout | rund 800 |
+| `DashboardView.body` | 3.445 |
+| `DashboardSlotFigure.figure` | 1.023 |
+
+- Nach jeder Aktualisierung fragt AppKit über
+  `updateConstraintsIfNeeded` die Mindestgröße der Detailspalte ab.
+  SwiftUI vermisst dafür den ganzen Scroll-Inhalt des Dashboards bei
+  Breite 0: alle `ViewThatFits`-Varianten, Texte bei Breite 0. Im
+  Kartenlayout kam die Standard-`explicitAlignment` des
+  `Layout`-Protokolls hinzu, die `placeSubviews` aufruft und jede Karte
+  erneut vermisst.
+- **Korrektur zu T27:** Dort hieß es, das Vermessen über `minSize()` trete
+  nur beim Scrollen der Core-Animation-Fassung auf. Beim Start ist es der
+  größte Einzelposten; Auslöser sind die Neuauswertungen, nicht eine
+  Animation.
+- `dashboard.body` lief bis zum Ende des Charakter-Syncs (+61 s) 9–14-mal
+  je 5 s. Je Auswertung wurde `walletPortfolio` rund viermal gebaut (jedes
+  Mal alle Wallets dekodiert), `DashboardSlotFigure.figure` sechsmal mit
+  je drei Filtern über alle Jobs.
+
+**Versuch (Mini-Paket, nicht im Repository):** Fenster mit
+`NavigationSplitView`, ScrollView und zählendem Layout. Je Aktualisierung
+eine Messung mit echter Breite und eine mit Breite 0. Ein `.frame(min/max)`
+oder eine Hülle um die ScrollView verhindert die Messung bei Breite 0
+nicht.
+
+**Implementiert (`ContentView.swift`):**
+
+- `DashboardCardLayout` antwortet bei Breite 0 sofort mit `.zero` und gibt
+  bei Breite 0 keine horizontale Ausrichtung an. Bei echter Breite gilt die
+  Standardantwort unverändert. Im Versuch fielen alle Nullbreiten-Messungen
+  weg; die Messungen bei echter Breite, die Mindestgröße des Fensters und
+  die Grenze beim Ziehen der Seitenleiste blieben gleich.
+- `DashboardSlotFigure.figure` zählt in einem Durchlauf; Regel unverändert.
+- `DashboardWalletPortfolioCache` baut die Wallet-Übersicht nur bei
+  geänderten gespeicherten Wallet-Werten neu.
+- Nur im Debug-Build: `_logChanges()` im Dashboard schreibt die Auslöser
+  jeder Neuauswertung ins Systemprotokoll (Subsystem `com.apple.SwiftUI`,
+  Kategorie `Changed Body Properties`).
+
+**Nicht abgefangen:** Rund 4.000 Proben der Mindestgrößen-Abfrage liegen
+außerhalb des Kartenlayouts (Kopf mit `ViewThatFits`, Kapazitätspanel,
+Kennzahlen). Ein fester Mindestwert für die Seite würde die Mindestgröße des
+Fensters ändern und wäre eine Eigentümerentscheidung. Ebenfalls offen:
+`wealthHistory` und die Kennungen der `.task(id:)` je Auswertung, T6.
+
+**Automatisch geprüft:** neue Suite `DashboardStartupLoadTests`
+(Nullbreiten-Messung des Kartenlayouts im Fenster mit `NavigationSplitView`,
+unveränderte Mindestbreite; Wallet-Cache gleich dem direkten Aufbau,
+fehlendes Wallet bleibt unverfügbar, Änderungen werden übernommen). Ohne die
+Abkürzung bei Breite 0 schlägt der erste Test fehl. `swift test` (841 Core-,
+172 App-Tests, 61 XCTest-Fälle), `EVEStaticDataKit` 13 Tests,
+`xcodebuild test` (Debug, unsigniert) `TEST SUCCEEDED`.
+
+**Nachmessung:** siehe den folgenden Abschnitt.
+
+### O3, Nachmessung (27.11.2026, 05:48–05:50 Uhr)
+
+> Xcode-Debug-Build von 05:45 Uhr mit den Änderungen (PID 27423, Start
+> 05:48:38 Uhr), Dashboard die ganzen 90 s offen, `sample` 90 s per PID,
+> nur lesend. Eine erste Probe um 05:45 Uhr (PID 27163) ist nicht
+> vergleichbar: Nach rund 10 s war dort der Doktrin-Bedarf offen. Der
+> Eindruck des Eigentümers liegt nicht vor.
+
+| Hauptthread, 90 s ab Start | vorher (26.11., 23:31 Uhr) | nachher (27.11., 05:48 Uhr) |
+|---|---|---|
+| Proben insgesamt | 36.485 | 42.033 |
+| untätig | 5.860 (16 %) | 28.017 (67 %) |
+| Dashboard | 12.865 | 6.235 |
+| `NSHostingView.minSize()` | 10.976 | 4.111 |
+| davon Dashboard | 6.789 | 1.632 |
+| `DashboardCardLayout` | 8.048 | 2.453 |
+| `DashboardView.body` | 3.445 | 2.781 |
+| `DashboardSlotFigure.figure` | 1.023 | 712 |
+| Auswertungen `dashboard.body` | rund 100 | 110 |
+| Charakter-Sync fertig | +61,0 s | +25,5 s |
+| Wallet-Übersicht je Aufruf | 1,59 ms | 0,47 ms |
+
+- **Je Auswertung:** Dashboard von rund 129 auf rund 57 Proben,
+  Kartenlayout von rund 80 auf 22. Dieser Wert ist belastbarer als die
+  Summen, weil der Sync diesmal schneller fertig war.
+- **Nur eingeschränkt vergleichbar:** Der Start verlief insgesamt schneller
+  (Konfiguration bereit nach 2,4 statt 14,5 s, Sync nach 25,5 statt 61 s);
+  die App lief drei Minuten vorher schon einmal. Der höhere Anteil
+  „untätig“ ist deshalb nicht allein der Änderung zuzurechnen. Die Probe von
+  vorher enthält 1.176 Doktrin-Proben, die von nachher keine.
+- **Rest im Kartenlayout bei der Mindestgröße (1.484):** Die Kennzahlenreihe
+  ist ein `ViewThatFits` mit zwei Kartenreihen-Varianten. `ViewThatFits`
+  fragt jede Variante ohne Breitenvorschlag nach ihrer Idealgröße, und dafür
+  vermisst das Kartenlayout seine Karten. Eine Abkürzung dort würde die Höhe
+  der Idealgröße ändern; nicht umgesetzt.
+- **Auslöser der 111 Auswertungen** (`Changed Body Properties`, mehrere je
+  Auswertung möglich): 46-mal Einstellungen (`@Query` über `AppSetting` und
+  `AppSetting.value`), 31-mal nur der Neuaufbau aus `ContentView`
+  (`@self`), 18-mal `industrySnapshot`, 4-mal `mainHubTopFive`. 89 der 111
+  Auswertungen fielen in die erste Minute.
+- `wealthHistory` (rund 4) und die Kennungen der `.task(id:)` (rund 7) werden
+  je Auswertung weiter mehrfach bestimmt; nicht Teil dieses Schritts.
+
+**Offen:** Eindruck des Eigentümers; die Kennzahlenreihe ohne
+`ViewThatFits`; weniger Auswertungen durch Einstellungsänderungen und durch
+den Neuaufbau aus `ContentView` (T6); `wealthHistory` und Kennungen (T7).
+
+### O3, Versuch: Einstellungsabfrage aus dem Dashboard lösen (27.11.2026, 06:16–06:18 Uhr): nicht bestätigt
+
+**Anlass:** In der Nachmessung von 05:48 Uhr lösten Einstellungen 46 von 111
+Dashboard-Auswertungen aus (`_QueryController<AppSetting, String>`,
+`AppSetting.value`). Auftrag des Eigentümers: diese Auswertungen senken.
+
+**Versuch im Scratchpad** (SwiftData im Arbeitsspeicher, Fenster mit
+`NSHostingView`, nicht im Repository):
+
+- Jedes Speichern wertet jede Ansicht mit einer `@Query` des gespeicherten
+  Modelltyps dreimal neu aus, unabhängig vom Filter. Das gilt auch für einen
+  exakten Schlüssel und für ein Speichern aus einem anderen `ModelContext`.
+  Der Filter `dashboard.*` begrenzt nur die gelesenen Zeilen.
+- Eine Ansicht ohne eigene Abfrage bleibt unberührt, solange ihre
+  Elternansicht sie nicht neu aufbaut.
+- Baut die Elternansicht sie neu auf (`@self`; so wie `ContentView` mit
+  seiner Charakterabfrage), ordnet SwiftUI die Abfragen ihrer Kinder dieser
+  Ansicht zu. In allen geprüften Platzierungen (Hintergrund, Overlay, im
+  Stapel, mit und ohne `.equatable()`) blieb die Zahl der Auswertungen gleich
+  oder stieg um eine.
+
+**Implementiert und wieder zurückgenommen:** Eine kleine Leseansicht
+`DashboardSettingsReader` hielt die Einstellungsabfrage und übergab dem
+Dashboard die Zeilen nur bei geändertem Wert. Ein Test im Fenster mit
+SwiftData war grün, ebenso alle Suiten.
+
+**Live gemessen** (Xcode-Instanz PID 31014, Start 06:16:35 Uhr, Dashboard
+90 s offen):
+
+- 120 Auswertungen statt 110. Die Abfrage-Auslöser blieben beim Dashboard,
+  die Übergabe kam je Charakter hinzu.
+- Das günstigere Lesen der Zeilen sparte rund 54 Proben
+  (`jobSettingsByCharacterID` und `AppSetting.value` 13 statt 67); die
+  Leseansicht selbst kostete rund 79.
+- Die Summen sind nicht vergleichbar: Das Laden begann erst bei +21 s statt
+  bei +1 bis +4 s, und auch unberührte Posten (Kopf, Kennzahlen,
+  Bildaufbau) lagen um den Faktor 2,5 bis 3 niedriger.
+
+**Folgerung:** Wie oft das Dashboard beim Start ausgewertet wird, hängt an
+der Zahl der Speichervorgänge im Charakter-Sync und am Neuaufbau aus
+`ContentView`, nicht an der Einstellungsabfrage. Wirksamer wären günstigere
+Auswertungen (T6: Panels als eigene Ansichten mit schmalen Eingaben) oder
+weniger Speichervorgänge je Charakter im Sync; Letzteres betrifft alle
+Bereiche und ist eine Eigentümerentscheidung. Der Kommentar an der Abfrage
+im Code beschreibt jetzt das gemessene Verhalten.

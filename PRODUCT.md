@@ -3677,8 +3677,11 @@ mit kurzen, wiederverwendbaren Prompts steht in
 - Abgeleitete Werte werden einmal je Quelländerung statt bei jedem Zeichnen
   berechnet: Die Markt-Kontextkennung (sortiertes JSON der Produktionsbasis)
   nur nach einer Basisänderung, die LP-Store-Typmenge einmal je geladenem
-  Katalog statt für jede Chancenzeile, und der gespeicherte Vermögensverlauf
-  im Dashboard und in **Net Worth** einmal je gespeichertem Stand.
+  Katalog statt für jede Chancenzeile, der gespeicherte Vermögensverlauf
+  im Dashboard und in **Net Worth** einmal je gespeichertem Stand und die
+  Wallet-Übersicht des Dashboards einmal je gespeichertem Wallet-Stand der
+  Charaktere. Die Slot-Kennzahlen zählen laufende und fertige Jobs in einem
+  Durchlauf.
 - Die Hub-Chancen lesen Filtereinstellungen und Budgetgrenze einmal je
   Filterdurchlauf und projizieren angepasste Runs, ME und TE vor dem Sortieren
   einmal je Zeile statt in jedem Sortiervergleich. Ergebnis und Reihenfolge
@@ -3794,7 +3797,9 @@ mit kurzen, wiederverwendbaren Prompts steht in
   - im Dashboard höchstens alle fünf Sekunden je eine Zeile `dashboard.body`
     (Zahl der Auswertungen der Ansicht), `dashboard.identities` (Aufrufe und
     Dauer der Auslöser-Kennungen), `dashboard.wallet-portfolio` und
-    `dashboard.wealth-history`;
+    `dashboard.wealth-history`; nur im Debug-Build schreibt SwiftUI zusätzlich
+    je Auswertung des Dashboards die auslösende Eigenschaft ins Systemprotokoll
+    (Subsystem `com.apple.SwiftUI`, Kategorie `Changed Body Properties`);
   - in den Hub-Chancen je Besuch (`hub.open`, mit Rolle) die Zeit seit dem
     Öffnen für die Phasen `analysis-demand`, `warehouse`, `reservations`,
     jede `projection` (laufende Nummer, Zeilen, Dauer im Hintergrund und auf
@@ -3808,7 +3813,11 @@ mit kurzen, wiederverwendbaren Prompts steht in
 - Der Schatten der gemeinsamen Panel-Fläche gehört zur Hintergrundform des
   Panels; Texte und andere Inhalte im Panel werfen keinen eigenen Schatten
   (Eigentümerentscheid 13.11.2026). Die Kartenreihen des Dashboards messen
-  ihre Karten je Layout-Durchlauf und Breite einmal.
+  ihre Karten je Layout-Durchlauf und Breite einmal. Nach jeder
+  Aktualisierung fragt das Fenster den Seiteninhalt nach seiner Mindestgröße
+  bei Breite 0; dafür vermessen und platzieren die Kartenreihen ihre Karten
+  nicht mehr. Inhalt, Anordnung und Mindestgröße des Fensters sind
+  unverändert.
 - Die Inventionsschätzung der Hub-Chancen und der BPC-Bewertung rechnet
   abseits des Hauptthreads; nur das Ergebnis wird im Hauptthread
   übernommen. Regel und Werte sind unverändert: (T1-Kopierjob +

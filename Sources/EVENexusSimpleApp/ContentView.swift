@@ -1701,6 +1701,12 @@ struct DashboardCardLayout: Layout {
   }
 
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+    // After every update the window asks the scroll content for its minimum
+    // size with width 0 (`NSHostingView.minSize`). A card row is 0 wide at
+    // width 0 either way, and a vertical scroll view does not use the
+    // content height for it, so the cards are not measured for that
+    // question (Geschwindigkeit 27.11.2026).
+    if proposal.width == 0 { return .zero }
     let width = max(0, proposal.width ?? minimumWidths.reduce(0, +) + spacing * CGFloat(max(0, weights.count - 1)))
     let sizes = measured(width: width, subviews: subviews, cache: &cache)
     let stacked = widths(for: width).first == width
@@ -1725,6 +1731,27 @@ struct DashboardCardLayout: Layout {
     }
   }
 
+  /// SwiftUI's default answer places every card. For the minimum-size
+  /// question at width 0 that measured the whole page again after every
+  /// update; at width 0 no card sets a guide, at any real width the default
+  /// answer stays unchanged.
+  func explicitAlignment(
+    of guide: HorizontalAlignment,
+    in bounds: CGRect,
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout Cache
+  ) -> CGFloat? {
+    guard bounds.width > 0 else { return nil }
+    return DefaultAlignment(layout: self).explicitAlignment(
+      of: guide,
+      in: bounds,
+      proposal: proposal,
+      subviews: subviews,
+      cache: &cache
+    )
+  }
+
   private func measured(
     width: CGFloat,
     subviews: Subviews,
@@ -1739,6 +1766,22 @@ struct DashboardCardLayout: Layout {
     }
     cache.sizesByWidth[width] = sizes
     return sizes
+  }
+
+  /// The same layout without its own alignment answer, to reach SwiftUI's
+  /// default implementation.
+  private struct DefaultAlignment: Layout {
+    let layout: DashboardCardLayout
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+      layout.sizeThatFits(proposal: proposal, subviews: subviews, cache: &cache)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+      layout.placeSubviews(in: bounds, proposal: proposal, subviews: subviews, cache: &cache)
+    }
   }
 }
 
@@ -1852,20 +1895,25 @@ struct DashboardSlotFigure: Equatable {
     return min(1, Double(occupied) / Double(value))
   }
 
+  /// One pass over the jobs without copying them into a pool first; the key
+  /// figures evaluate this for every card variant (Geschwindigkeit
+  /// 27.11.2026).
   static func figure(
     jobs: [DashboardIndustryOwnedJob],
     activities: Set<DashboardIndustryActivity>,
     capacity: DashboardIndustryCapacitySummary,
     now: Date
   ) -> Self {
-    let pool = jobs.filter {
-      $0.job.dashboardActivity.map(activities.contains) == true
+    var running = 0
+    var ready = 0
+    for owned in jobs {
+      guard let activity = owned.job.dashboardActivity,
+        activities.contains(activity)
+      else { continue }
+      if owned.job.isRunning(at: now) { running += 1 }
+      if owned.job.isReadyForDelivery(at: now) { ready += 1 }
     }
-    return Self(
-      running: pool.filter { $0.job.isRunning(at: now) }.count,
-      ready: pool.filter { $0.job.isReadyForDelivery(at: now) }.count,
-      capacity: capacity
-    )
+    return Self(running: running, ready: ready, capacity: capacity)
   }
 }
 
@@ -2266,7 +2314,9 @@ struct DashboardView: View {
   @Query(sort: \StoredCharacter.characterName)
   private var characters: [StoredCharacter]
   // Only the Dashboard's own rows (industry jobs, wealth history): unrelated
-  // settings writes neither reload their values nor re-render the view.
+  // settings writes do not reload their values. Every save of an
+  // `AppSetting` still re-evaluates the view, whatever the filter
+  // (Geschwindigkeit 27.11.2026).
   @Query(
     filter: #Predicate<AppSetting> { $0.key.starts(with: "dashboard.") },
     sort: \AppSetting.key
@@ -2291,6 +2341,7 @@ struct DashboardView: View {
   @AppStorage("dashboard.capacity-by-activity-expanded", store: AppDefaults.store)
   private var capacityByActivityExpanded = false
   @State private var authorizationCache = DashboardAuthorizationCache()
+  @State private var walletPortfolioCache = DashboardWalletPortfolioCache()
   // Inputs and result of "Main Hub opportunities · Top 5" (plan DB2).
   @Query(sort: \StoredStockTarget.typeName)
   private var stockTargets: [StoredStockTarget]
@@ -2327,6 +2378,12 @@ struct DashboardView: View {
 
   var body: some View {
     let _ = Self.bodyMetrics.record(units: 1, since: ContinuousClock.now)
+    #if DEBUG
+      // Measurement aid (Geschwindigkeit 27.11.2026): SwiftUI logs which
+      // property caused each evaluation (subsystem `com.apple.SwiftUI`,
+      // category `Changed Body Properties`).
+      let _ = { if #available(macOS 14.1, *) { Self._logChanges() } }()
+    #endif
     ScrollView {
       // Arrangement of the Dashboard board `Main.dc.html` (plan DB1,
       // `Documentation/DASHBOARD_BOARD_2026-11-07.md`, section 4).
@@ -4189,14 +4246,13 @@ struct DashboardView: View {
   private var walletPortfolio: WalletPortfolioSnapshot {
     let started = ContinuousClock.now
     defer { Self.walletMetrics.record(units: characters.count, since: started) }
-    return WalletPortfolioSnapshot(
-      balances: characters.map { character in
-        CharacterWalletBalance(
-          character: CharacterIdentity(
-            id: character.characterID,
-            name: character.characterName
-          ),
-          balance: storedWalletBalance(character)
+    return walletPortfolioCache.portfolio(
+      characters.map {
+        DashboardWalletPortfolioCache.Input(
+          characterID: $0.characterID,
+          characterName: $0.characterName,
+          wallet: $0.walletBalanceSnapshot,
+          walletLastSyncAt: $0.walletLastSyncAt
         )
       }
     )
@@ -4441,13 +4497,6 @@ struct DashboardView: View {
     }
   }
 
-  private func storedWalletBalance(_ character: StoredCharacter) -> Sourced<Double> {
-    DashboardWealthRawInput.walletBalance(
-      character.walletBalanceSnapshot,
-      walletLastSyncAt: character.walletLastSyncAt
-    )
-  }
-
   private func storedSettingValue(key: String) -> String? {
     (try? modelContext.appSettingValue(for: key))
       ?? settings.first(where: { $0.key == key })?.value
@@ -4667,6 +4716,41 @@ final class DashboardAuthorizationCache {
       return snapshot
     }
     decoded = next
+    return result
+  }
+}
+
+/// Builds the wallet overview of the Dashboard once per stored wallet values
+/// instead of decoding and sorting every balance on each of the several reads
+/// of one evaluation (Geschwindigkeit 27.11.2026). Not observed, like
+/// `DashboardAuthorizationCache`; the view stays driven by its character query.
+@MainActor
+final class DashboardWalletPortfolioCache {
+  struct Input: Equatable {
+    let characterID: Int64
+    let characterName: String
+    let wallet: Data?
+    let walletLastSyncAt: Date?
+  }
+
+  private var inputs: [Input]?
+  private var portfolio: WalletPortfolioSnapshot?
+
+  func portfolio(_ inputs: [Input]) -> WalletPortfolioSnapshot {
+    if let portfolio, inputs == self.inputs { return portfolio }
+    let result = WalletPortfolioSnapshot(
+      balances: inputs.map {
+        CharacterWalletBalance(
+          character: CharacterIdentity(id: $0.characterID, name: $0.characterName),
+          balance: DashboardWealthRawInput.walletBalance(
+            $0.wallet,
+            walletLastSyncAt: $0.walletLastSyncAt
+          )
+        )
+      }
+    )
+    self.inputs = inputs
+    portfolio = result
     return result
   }
 }
