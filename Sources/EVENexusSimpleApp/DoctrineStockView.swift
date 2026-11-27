@@ -68,6 +68,8 @@ struct DoctrineStockView: View {
   @State private var locale: Locale = AppLocalization.currentLanguage.locale
   @Environment(\.locale) private var environmentLocale
   @State private var availableTableWidth: CGFloat = 0
+  /// Width of the doctrine list, for its number of columns.
+  @State private var doctrineListWidth: CGFloat = 0
   /// Visible height of the page's scroll view, for the table's row area.
   @State private var pageViewportHeight: CGFloat = 0
 
@@ -76,7 +78,6 @@ struct DoctrineStockView: View {
   private let numberWidth = DoctrineStockTableLayout.numberWidth
   private let recommendationWidth = DoctrineStockTableLayout.recommendationWidth
   private let doctrineColumnWidth = DoctrineStockTableLayout.doctrineColumnWidth
-  private let allumisColumnWidth: CGFloat = 170
   /// Fits, target, in stock, shortfall, three sales rates, losses, reach,
   /// build, import, Home sell, Home ÷ Main and profit.
   private let numberColumnCount = 14
@@ -565,51 +566,71 @@ struct DoctrineStockView: View {
           .foregroundStyle(DesignTokens.caution)
         }
         if !doctrineRows.isEmpty {
+          // As many columns as the width allows, filled top to bottom
+          // (owner request 27.11.2026); each column has the sortable header.
           let rows = sortedDoctrineRows(doctrineRows)
-          VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: DesignTokens.spacingXS) {
-              SortableTableHeader(
-                title: "Doctrine",
-                column: DoctrineListSortColumn.title,
-                sort: $doctrineSort
-              )
-              .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
-              SortableTableHeader(
-                title: "Fits",
-                column: DoctrineListSortColumn.fitCount,
-                sort: $doctrineSort,
-                defaultDirection: .descending,
-                alignment: .trailing
-              )
-              .frame(width: 70, alignment: .trailing)
-              if allumis != nil {
-                SortableTableHeader(
-                  title: "Target per fit",
-                  column: DoctrineListSortColumn.allumis,
-                  sort: $doctrineSort,
-                  defaultDirection: .descending,
-                  alignment: .trailing
-                )
-                .frame(width: allumisColumnWidth, alignment: .trailing)
-              }
-            }
-            .appFont(.caption.weight(.semibold))
-            .padding(.vertical, DesignTokens.spacingXS)
-            Divider()
-            ForEach(rows) { model in
-              DoctrineListRowView(
-                model: model,
-                allumisColumnWidth: allumisColumnWidth
-              )
-              .equatable()
-              Divider().opacity(0.4)
+          let minimumWidth = DoctrineListLayout.columnMinimumWidth(showsAllumis: allumis != nil)
+          let columns = DoctrineListLayout.columns(
+            rows,
+            count: DoctrineListLayout.columnCount(
+              width: doctrineListWidth,
+              columnMinimumWidth: minimumWidth
+            )
+          )
+          HStack(alignment: .top, spacing: DoctrineListLayout.columnGap) {
+            ForEach(columns.indices, id: \.self) { index in
+              if index > 0 { Divider() }
+              doctrineListColumn(columns[index])
+                .frame(minWidth: minimumWidth, maxWidth: .infinity, alignment: .topLeading)
             }
           }
-          .frame(maxWidth: allumis == nil ? 430 : 430 + allumisColumnWidth, alignment: .leading)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .onGeometryChange(for: CGFloat.self) { $0.size.width } action: {
+            doctrineListWidth = $0
+          }
         } else {
           Text("No doctrines imported yet. Use “Update from wiki” or “Update from Allumis”.")
             .foregroundStyle(DesignTokens.textSecondary)
         }
+      }
+    }
+  }
+
+  private func doctrineListColumn(_ rows: [DoctrineListRowModel]) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: DesignTokens.spacingXS) {
+        SortableTableHeader(
+          title: "Doctrine",
+          column: DoctrineListSortColumn.title,
+          sort: $doctrineSort
+        )
+        .frame(minWidth: DoctrineListLayout.nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
+        SortableTableHeader(
+          title: "Fits",
+          column: DoctrineListSortColumn.fitCount,
+          sort: $doctrineSort,
+          defaultDirection: .descending,
+          alignment: .trailing
+        )
+        .frame(width: DoctrineListLayout.fitCountWidth, alignment: .trailing)
+        if allumis != nil {
+          SortableTableHeader(
+            title: "Target per fit",
+            column: DoctrineListSortColumn.allumis,
+            sort: $doctrineSort,
+            defaultDirection: .descending,
+            alignment: .trailing
+          )
+          .frame(width: DoctrineListLayout.allumisColumnWidth, alignment: .trailing)
+        }
+      }
+      .appFont(.caption.weight(.semibold))
+      .padding(.vertical, DesignTokens.spacingXS)
+      Divider()
+      ForEach(rows) { model in
+        DoctrineListRowView(model: model)
+          .equatable()
+        Divider().opacity(0.4)
       }
     }
   }
@@ -1942,13 +1963,52 @@ struct DoctrineAllumisCellModel: Equatable {
   let help: String
 }
 
+/// Columns of the doctrine list (owner request 27.11.2026): as many as the
+/// width allows, at most four, filled top to bottom and then the next one.
+enum DoctrineListLayout {
+  static let nameMinimumWidth: CGFloat = 180
+  static let fitCountWidth: CGFloat = 50
+  static let allumisColumnWidth: CGFloat = 170
+  /// Space on each side of the line between two columns.
+  static let columnGap: CGFloat = 16
+  static let maximumColumnCount = 4
+
+  /// Name, fits and, after an Allumis import, the target column with the
+  /// spacing of the row.
+  static func columnMinimumWidth(showsAllumis: Bool) -> CGFloat {
+    let cellSpacing: CGFloat = 4
+    return nameMinimumWidth + cellSpacing + fitCountWidth
+      + (showsAllumis ? cellSpacing + allumisColumnWidth : 0)
+  }
+
+  /// The most columns of at least `columnMinimumWidth` that fit into
+  /// `width` with the gaps and lines between them; one while the width is
+  /// unknown.
+  static func columnCount(width: CGFloat, columnMinimumWidth: CGFloat) -> Int {
+    guard width.isFinite, width > 0, columnMinimumWidth > 0 else { return 1 }
+    let separator = 2 * columnGap + 1
+    let fitting = ((width + separator) / (columnMinimumWidth + separator)).rounded(.down)
+    return max(1, min(maximumColumnCount, Int(fitting)))
+  }
+
+  /// `rows` in their order, top to bottom: every column holds the same
+  /// number of rows, only the last one may hold fewer. Fewer rows than
+  /// columns give fewer columns.
+  static func columns<Row>(_ rows: [Row], count: Int) -> [[Row]] {
+    guard !rows.isEmpty else { return [] }
+    let perColumn = (rows.count + max(1, count) - 1) / max(1, count)
+    return stride(from: 0, to: rows.count, by: perColumn).map {
+      Array(rows[$0..<min($0 + perColumn, rows.count)])
+    }
+  }
+}
+
 /// One doctrine of the list; rebuilt only when its texts change.
 struct DoctrineListRowView: View, Equatable {
   let model: DoctrineListRowModel
-  let allumisColumnWidth: CGFloat
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-    lhs.model == rhs.model && lhs.allumisColumnWidth == rhs.allumisColumnWidth
+    lhs.model == rhs.model
   }
 
   var body: some View {
@@ -1957,13 +2017,13 @@ struct DoctrineListRowView: View, Equatable {
         Text(verbatim: model.title).lineLimit(1)
       }
       .help(model.linkHelp)
-      .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+      .frame(minWidth: DoctrineListLayout.nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
       Text(verbatim: model.fitCountText)
         .appFont(.callout.monospacedDigit())
-        .frame(width: 70, alignment: .trailing)
+        .frame(width: DoctrineListLayout.fitCountWidth, alignment: .trailing)
       if let allumis = model.allumis {
         allumisCell(allumis)
-          .frame(width: allumisColumnWidth, alignment: .trailing)
+          .frame(width: DoctrineListLayout.allumisColumnWidth, alignment: .trailing)
       }
     }
     .padding(.vertical, 2)

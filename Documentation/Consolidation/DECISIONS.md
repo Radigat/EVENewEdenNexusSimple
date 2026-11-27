@@ -797,6 +797,8 @@ Antworten des Eigentümers auf die Rückfragen:
 3. Item in mehreren Fits: Summe über alle Fits.
 4. Darstellung: „Soll · Ist · Fehlmenge“ nebeneinander, Standardsortierung
    Fehlmenge absteigend.
+5. Doktrin-Liste (Nachtrag am selben Tag): mehrere Spalten nebeneinander,
+   Zeilen bleiben zweizeilig.
 
 Von Claude festgelegt: Bei einem zugeordneten Wiki-Fit zählt der Inhalt des
 Allumis-Fits; „Fits“ und „Doktrinen“ zählen Wiki- und Allumis-Inhalt; der

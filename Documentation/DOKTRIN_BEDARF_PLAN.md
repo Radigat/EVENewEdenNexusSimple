@@ -317,6 +317,7 @@ werden, damit er keine eigene Tabelle mehr führen muss.
 | Ist-Bestand | alle Sell-Orders am Home Hub (alle Verkäufer), wie Allumis den Staging-Markt misst; keine eigenen Assets, keine laufenden Jobs |
 | Item in mehreren Fits | Summe über alle Fits (alle Fits gleichzeitig komplett kaufbar) |
 | Darstellung | Spalten „Soll · Ist · Fehlmenge“ nebeneinander, „Benötigt“ und „Soll Allumis“ zu „Soll“ zusammengelegt; Standardsortierung Fehlmenge absteigend; Zählerzeile mit Items mit Fehlmenge |
+| Doktrin-Liste | braucht weniger Platz: mehrere Spalten nebeneinander, Zeilen bleiben zweizeilig (Sollwerte, darunter „x von y Fits“) |
 
 Von Claude festgelegt (zur Abnahme): Bei einem zugeordneten Wiki-Fit zählt
 für das Soll der Inhalt des Allumis-Fits, auch wenn er abweicht; Items, die
@@ -325,7 +326,10 @@ zählen ein Fit, wenn das Item im Wiki- oder im Allumis-Inhalt steht. Der
 Tooltip der Spalte „Doktrinen“ nennt je Doktrin ihren Anteil am Soll; ein Fit
 mehrerer Doktrinen zählt dort bei jeder, die Anteile können sich deshalb zu
 mehr als dem Soll addieren. Die Zählerzeile nennt die Zahl der Allumis-Fits
-mit Soll.
+mit Soll. Doktrin-Liste: so viele Spalten, wie die Breite erlaubt, höchstens
+vier, jede mindestens 408 pt (mit Allumis-Spalte) bzw. 234 pt breit;
+Reihenfolge von oben nach unten, dann nächste Spalte; Kopf mit Sortierung in
+jeder Spalte (`DoctrineListLayout`).
 
 ### Regeln
 
@@ -355,4 +359,6 @@ mit Soll.
   und Pfeil, Spalte „Soll je Fit“, Item-Tabelle mit „Soll · Ist · Fehlmenge“.
 - Tests: `DoctrineStockTests` (Soll aus Allumis, unbekanntes Soll, Fehlmenge),
   `DoctrineAllumisTests` (Summe je Fit, geteiltes Fit, abweichender Inhalt,
-  Refits, Anteile je Doktrin, Sortierung mit unbekanntem Soll).
+  Refits, Anteile je Doktrin, Sortierung mit unbekanntem Soll),
+  `DoctrineListLayoutTests` (Spaltenzahl nach Breite, Aufteilung von oben
+  nach unten).

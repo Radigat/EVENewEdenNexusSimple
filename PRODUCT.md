@@ -1380,7 +1380,10 @@ Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BE
   (häufigster zuerst) und „x von y Fits“, ein Warnsymbol, wenn Fits nur über
   Rumpf und Name zugeordnet sind, „nicht bei Allumis“ ohne Treffer. Alle
   Spalten sortierbar (Soll je Fit nach dem häufigsten Wert, bei Gleichstand
-  dem größeren).
+  dem größeren). Die Liste steht in so vielen Spalten nebeneinander, wie die
+  Breite erlaubt (höchstens vier, jede mindestens so breit wie Name, Fits und
+  Soll je Fit); sie füllt jede Spalte von oben nach unten, dann die nächste,
+  und jede Spalte hat den sortierbaren Kopf.
 - **Home Hub und Grundlage:** Chips für Home und Main Hub sowie die Gebühren
   des Home Hubs, **Hub-Märkte aktualisieren** (gemeinsamer Hub-Scan), Hinweise
   auf fehlende Hubs, Scans, Markt- und Bestandsdaten, Region und Transport mit

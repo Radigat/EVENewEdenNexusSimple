@@ -780,5 +780,8 @@ Vertrag: [DOKTRIN_BEDARF_PLAN.md](Documentation/DOKTRIN_BEDARF_PLAN.md), Abschni
 - **Automatisch geprüft:** `swift test` (841 Core-, 170 App-Tests),
   EVEStaticDataKit (13 Tests), `xcodebuild test` (Debug, arm64, unsigniert)
   `TEST SUCCEEDED`.
+- **Doktrin-Liste (27.11.2026):** mehrere Spalten nebeneinander (höchstens
+  vier, je nach Breite), Zeilen zweizeilig; automatisch geprüft und in einer
+  abgeschotteten Prüf-Kopie mit künstlichen Sollwerten sichtgeprüft.
 - **Offen:** Sichtprüfung mit den Allumis- und Marktdaten des Eigentümers,
   Eigentümerabnahme der von Claude festgelegten Punkte (Abschnitt H).
