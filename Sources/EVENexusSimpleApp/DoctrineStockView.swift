@@ -61,6 +61,8 @@ struct DoctrineStockView: View {
   @State private var rowsRevision = 0
   /// Doctrine list with its texts, rebuilt with the sources or the language.
   @State private var doctrineRows: [DoctrineListRowModel] = []
+  /// Both top lists, rebuilt with every row computation.
+  @State private var topLists = DoctrineTopListsModel.empty
   /// Resolved SDE types of the merged library, rebuilt with the sources.
   @State private var libraryTypeIDs: Set<Int64> = []
   /// App language locale, read once instead of for every number; follows
@@ -98,6 +100,7 @@ struct DoctrineStockView: View {
         wikiPanel
         allumisPanel
         doctrinePanel
+        topListsPanel
         hubPanel
         tablePanel
       }
@@ -178,6 +181,7 @@ struct DoctrineStockView: View {
       guard !Task.isCancelled else { return }
       rowsRevision += 1
       displayRows = computeRows(revision: rowsRevision)
+      topLists = DoctrineTopListsModel(revision: rowsRevision, rows: displayRows)
     }
     .onChange(of: environmentLocale) {
       locale = AppLocalization.currentLanguage.locale
@@ -667,6 +671,25 @@ struct DoctrineStockView: View {
         }
       }
       return lhs.id < rhs.id
+    }
+  }
+
+  // MARK: Top lists
+
+  /// The items used in the most fits and the largest profit opportunities
+  /// (owner request 27.11.2026), over every item regardless of the table
+  /// filters.
+  @ViewBuilder
+  private var topListsPanel: some View {
+    if sources != nil {
+      Panel(title: "Statistics") {
+        DoctrineTopListsView(
+          model: topLists,
+          format: numberFormat,
+          hasAllumisImport: allumis != nil
+        )
+        .equatable()
+      }
     }
   }
 
@@ -1913,6 +1936,13 @@ struct DoctrineNumberFormat: Equatable {
     } ?? "—"
   }
 
+  /// ISK without decimals, for large totals.
+  func wholeNumber(_ value: Double?) -> String {
+    value.map {
+      $0.formatted(.number.precision(.fractionLength(0)).locale(locale))
+    } ?? "—"
+  }
+
   func rate(_ value: Double?) -> String {
     value.map {
       $0.formatted(
@@ -1923,6 +1953,13 @@ struct DoctrineNumberFormat: Equatable {
 
   func integer(_ value: Int64?) -> String {
     value.map { $0.formatted(.number.locale(locale)) } ?? "—"
+  }
+
+  /// With a plus sign above 0 and a minus sign below, 0 without a sign.
+  func signedInteger(_ value: Int64?) -> String {
+    value.map {
+      $0.formatted(.number.sign(strategy: .always(includingZero: false)).locale(locale))
+    } ?? "—"
   }
 
   func ratio(_ ratio: Double?) -> String {
@@ -2069,5 +2106,403 @@ struct DoctrineHistoryProgressLine: View {
       .appFont(.caption)
       .foregroundStyle(DesignTokens.textSecondary)
     }
+  }
+}
+
+// MARK: Top lists
+
+/// Both top lists of the page with the tooltip texts of their rows. Built
+/// once per row computation over every item, independent of the table
+/// filters (owner decision 27.11.2026).
+struct DoctrineTopListsModel {
+  /// The row computation that produced the lists.
+  let revision: Int
+  let mostUsed: DoctrineTopRankingResult
+  let profitOpportunities: DoctrineTopRankingResult
+  /// Doctrines of each most used item, for the tooltip of the doctrine count.
+  let doctrinesHelpByType: [Int64: String]
+  /// How the cost of the recommended way was computed, per item of the
+  /// profit list.
+  let wayHelpByType: [Int64: String]
+
+  static let empty = DoctrineTopListsModel(revision: 0, rows: [])
+
+  init(revision: Int, rows: [DoctrineStockDisplayRow]) {
+    self.revision = revision
+    let stockRows = rows.map(\.row)
+    let mostUsed = DoctrineTopRanking.ranked(stockRows, by: .mostUsed)
+    let profitOpportunities = DoctrineTopRanking.ranked(stockRows, by: .profitOpportunity)
+    let mostUsedIDs = Set(mostUsed.entries.map(\.id))
+    let profitIDs = Set(profitOpportunities.entries.map(\.id))
+    var doctrinesHelp: [Int64: String] = [:]
+    var wayHelp: [Int64: String] = [:]
+    for display in rows {
+      if mostUsedIDs.contains(display.id) {
+        doctrinesHelp[display.id] = display.doctrinesHelp
+      }
+      guard profitIDs.contains(display.id) else { continue }
+      switch display.row.recommendation {
+      case .build?: wayHelp[display.id] = display.buildHelp
+      case .importFromMainHub?: wayHelp[display.id] = display.importHelp
+      case nil: break
+      }
+    }
+    self.mostUsed = mostUsed
+    self.profitOpportunities = profitOpportunities
+    doctrinesHelpByType = doctrinesHelp
+    wayHelpByType = wayHelp
+  }
+}
+
+/// Column widths of the top lists; side by side when both fit with the line
+/// between them, otherwise one below the other.
+enum DoctrineTopListLayout {
+  static let rankWidth: CGFloat = 28
+  static let nameMinimumWidth: CGFloat = 180
+  static let countWidth: CGFloat = 70
+  /// Room for a sign and seven digits with separators.
+  static let differenceWidth: CGFloat = 90
+  static let iskWidth: CGFloat = 110
+  static let wayWidth: CGFloat = 80
+  static let cellSpacing: CGFloat = 4
+
+  /// Rank, name, fits, doctrines, target, current stock and difference.
+  static var mostUsedMinimumWidth: CGFloat {
+    rankWidth + nameMinimumWidth + 4 * countWidth + differenceWidth + 6 * cellSpacing
+  }
+
+  /// Rank, name, total profit, profit per unit, shortfall and way.
+  static var profitMinimumWidth: CGFloat {
+    rankWidth + nameMinimumWidth + 2 * iskWidth + countWidth + wayWidth + 5 * cellSpacing
+  }
+
+  static func isSideBySide(width: CGFloat) -> Bool {
+    guard width.isFinite, width > 0 else { return false }
+    return width >= mostUsedMinimumWidth + profitMinimumWidth + 2 * DoctrineListLayout.columnGap + 1
+  }
+}
+
+/// The two top lists. Equatable on the row computation, the locale and the
+/// Allumis import, like the table rows, so a page update that leaves the
+/// rows unchanged does not build the lists again.
+struct DoctrineTopListsView: View, Equatable {
+  let model: DoctrineTopListsModel
+  let format: DoctrineNumberFormat
+  let hasAllumisImport: Bool
+
+  @State private var width: CGFloat = 0
+  @State private var mostUsedSort = AppTableSortDescriptor(
+    column: DoctrineTopSortColumn.rank,
+    direction: .ascending
+  )
+  @State private var profitSort = AppTableSortDescriptor(
+    column: DoctrineTopSortColumn.rank,
+    direction: .ascending
+  )
+
+  private typealias Layout = DoctrineTopListLayout
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.model.revision == rhs.model.revision && lhs.format == rhs.format
+      && lhs.hasAllumisImport == rhs.hasAllumisImport
+  }
+
+  var body: some View {
+    let sideBySide = Layout.isSideBySide(width: width)
+    let layout =
+      sideBySide
+      ? AnyLayout(HStackLayout(alignment: .top, spacing: DoctrineListLayout.columnGap))
+      : AnyLayout(VStackLayout(alignment: .leading, spacing: DesignTokens.spacingLG))
+    layout {
+      mostUsedList
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+      if sideBySide { Divider() }
+      profitList
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+    // The line between the lists takes the height of the taller list
+    // instead of every height offered.
+    .fixedSize(horizontal: false, vertical: true)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: {
+      width = $0
+    }
+  }
+
+  // MARK: Most used
+
+  private var mostUsedList: some View {
+    let entries = DoctrineTopEntrySorter.sorted(
+      model.mostUsed.entries,
+      by: mostUsedSort.column,
+      ascending: mostUsedSort.direction == .ascending
+    )
+    return VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      listTitle(AppLocalization.format("Most used · Top %lld", Int64(DoctrineTopRanking.limit)))
+      Text("Items in the most fits of the wiki and of the group “Only at Allumis”; a tie goes to the larger target.")
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.textSecondary)
+      if entries.isEmpty {
+        Text("No doctrine item yet.")
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        VStack(alignment: .leading, spacing: 0) {
+          HStack(spacing: Layout.cellSpacing) {
+            rankHeader(sort: $mostUsedSort)
+            nameHeader(sort: $mostUsedSort)
+            numberHeader("Fits", .fitCount, sort: $mostUsedSort, width: Layout.countWidth)
+            numberHeader("Doctrines", .doctrines, sort: $mostUsedSort, width: Layout.countWidth)
+            numberHeader("Target units", .requiredQuantity, sort: $mostUsedSort, width: Layout.countWidth)
+              .help(
+                AppLocalization.text(
+                  "Σ Allumis target per fit × quantity in the fit over every Allumis fit, hull once per fit, refits not counted."
+                ))
+            numberHeader("Current stock", .listedQuantity, sort: $mostUsedSort, width: Layout.countWidth)
+              .help(
+                AppLocalization.text(
+                  "Sell units of every seller at the Home Hub at the latest stock point."))
+            // Ascending first: the largest gap on top.
+            numberHeader(
+              "Difference", .stockDifference, sort: $mostUsedSort, width: Layout.differenceWidth,
+              defaultDirection: .ascending
+            )
+            .help(
+              AppLocalization.text(
+                "Current stock minus target: below 0 (red) too few, 0 or more (green) enough. “–” without a target."
+              ))
+          }
+          .appFont(.caption.weight(.semibold))
+          .padding(.vertical, DesignTokens.spacingXS)
+          Divider()
+          ForEach(entries) { entry in
+            let row = entry.row
+            let demand = row.demand
+            HStack(spacing: Layout.cellSpacing) {
+              rankCell(entry.rank)
+              nameCell(entry)
+              numberCell(format.integer(Int64(demand.fitCount)), width: Layout.countWidth)
+              numberCell(format.integer(Int64(demand.doctrineIDs.count)), width: Layout.countWidth)
+                .help(model.doctrinesHelpByType[entry.id] ?? "")
+              targetCell(demand.requiredQuantity)
+              numberCell(
+                format.integer(row.input.listedQuantity),
+                width: Layout.countWidth,
+                tint: row.input.listedQuantity == nil
+                  ? DesignTokens.textSecondary : DesignTokens.textPrimary
+              )
+              differenceCell(row)
+            }
+            .padding(.vertical, DesignTokens.spacingXS)
+            Divider().opacity(0.4)
+          }
+        }
+      }
+    }
+  }
+
+  /// “—” without an Allumis import (target unknown), “–” when no Allumis
+  /// fit with a target uses the item; as in the item table.
+  private func targetCell(_ target: Int64?) -> some View {
+    guard let target else {
+      return numberCell("—", width: Layout.countWidth, tint: DesignTokens.textSecondary)
+    }
+    return target > 0
+      ? numberCell(format.integer(target), width: Layout.countWidth)
+      : numberCell("–", width: Layout.countWidth, tint: DesignTokens.textSecondary)
+  }
+
+  /// Current stock minus target with its sign (owner decision 28.11.2026):
+  /// red when too few, green when enough. “–” without a target, “—” while
+  /// the target or the stock is unknown.
+  private func differenceCell(_ row: DoctrineStockRow) -> some View {
+    if row.demand.requiredQuantity == 0 {
+      return numberCell("–", width: Layout.differenceWidth, tint: DesignTokens.textSecondary)
+    }
+    guard let difference = row.stockDifference else {
+      return numberCell("—", width: Layout.differenceWidth, tint: DesignTokens.textSecondary)
+    }
+    return numberCell(
+      format.signedInteger(difference),
+      width: Layout.differenceWidth,
+      tint: difference < 0 ? DesignTokens.negative : DesignTokens.positive
+    )
+  }
+
+  // MARK: Profit opportunities
+
+  private var profitList: some View {
+    let result = model.profitOpportunities
+    let entries = DoctrineTopEntrySorter.sorted(
+      result.entries,
+      by: profitSort.column,
+      ascending: profitSort.direction == .ascending
+    )
+    return VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+      listTitle(
+        AppLocalization.format("Profit opportunities · Top %lld", Int64(DoctrineTopRanking.limit)))
+      Text(
+        "Profit/unit × shortfall: what filling the target earns with an own sell order at the Home Hub. Only items with a shortfall and a positive profit are ranked."
+      )
+      .appFont(.caption)
+      .foregroundStyle(DesignTokens.textSecondary)
+      if !hasAllumisImport {
+        Label(
+          "Without an Allumis import there is no shortfall and so no profit opportunity.",
+          systemImage: "exclamationmark.triangle.fill"
+        )
+        .appFont(.caption)
+        .foregroundStyle(DesignTokens.caution)
+      } else if entries.isEmpty {
+        Text("No item has a shortfall and a positive profit yet.")
+          .foregroundStyle(DesignTokens.textSecondary)
+      } else {
+        VStack(alignment: .leading, spacing: 0) {
+          HStack(spacing: Layout.cellSpacing) {
+            rankHeader(sort: $profitSort)
+            nameHeader(sort: $profitSort)
+            numberHeader("Total profit", .shortfallProfit, sort: $profitSort, width: Layout.iskWidth)
+              .help(AppLocalization.text("Profit/unit × shortfall."))
+            numberHeader("Profit/unit", .profitPerUnit, sort: $profitSort, width: Layout.iskWidth)
+            numberHeader("Shortfall", .shortfall, sort: $profitSort, width: Layout.countWidth)
+              .help(AppLocalization.text("Target minus current stock, at least 0: what still has to be built or imported."))
+            numberHeader(
+              "Way", .recommendation, sort: $profitSort, width: Layout.wayWidth,
+              defaultDirection: .ascending
+            )
+            .help(AppLocalization.text("The cheaper way per unit: build, or import from the Main Hub."))
+          }
+          .appFont(.caption.weight(.semibold))
+          .padding(.vertical, DesignTokens.spacingXS)
+          Divider()
+          ForEach(entries) { entry in
+            let row = entry.row
+            HStack(spacing: Layout.cellSpacing) {
+              rankCell(entry.rank)
+              nameCell(entry)
+              numberCell(
+                format.wholeNumber(row.shortfallProfit),
+                width: Layout.iskWidth,
+                tint: DesignTokens.positive
+              )
+              numberCell(format.number(row.profitPerUnit), width: Layout.iskWidth)
+              numberCell(format.integer(row.shortfall), width: Layout.countWidth)
+              wayCell(row.recommendation)
+                .help(model.wayHelpByType[entry.id] ?? "")
+            }
+            .padding(.vertical, DesignTokens.spacingXS)
+            Divider().opacity(0.4)
+          }
+        }
+      }
+      if hasAllumisImport, let notRanked = notRankedText(result) {
+        Text(verbatim: notRanked)
+          .appFont(.caption)
+          .foregroundStyle(DesignTokens.textSecondary)
+      }
+    }
+  }
+
+  private func notRankedText(_ result: DoctrineTopRankingResult) -> String? {
+    var parts: [String] = []
+    if result.unknownCount > 0 {
+      parts.append(
+        AppLocalization.format(
+          "%lld items without a known profit or shortfall",
+          Int64(result.unknownCount)
+        ))
+    }
+    if result.nonPositiveCount > 0 {
+      parts.append(
+        AppLocalization.format(
+          "%lld items without a shortfall or a positive profit",
+          Int64(result.nonPositiveCount)
+        ))
+    }
+    guard !parts.isEmpty else { return nil }
+    return AppLocalization.format("Not ranked: %@", parts.joined(separator: " · "))
+  }
+
+  private func wayCell(_ recommendation: DoctrineSourcing?) -> some View {
+    let (text, symbol, tint): (String, String?, Color) =
+      switch recommendation {
+      case .build?: (AppLocalization.text("Build"), "hammer.fill", DesignTokens.positive)
+      case .importFromMainHub?:
+        (AppLocalization.text("Import"), "shippingbox.fill", DesignTokens.highlight)
+      case nil: ("—", nil, DesignTokens.textSecondary)
+      }
+    return HStack(spacing: 4) {
+      if let symbol { Image(systemName: symbol) }
+      Text(verbatim: text)
+    }
+    .appFont(.callout.weight(.semibold))
+    .foregroundStyle(tint)
+    .lineLimit(1)
+    .frame(width: Layout.wayWidth, alignment: .trailing)
+  }
+
+  // MARK: Shared cells
+
+  private func listTitle(_ text: String) -> some View {
+    Text(verbatim: text)
+      .appFont(.headline)
+      .foregroundStyle(DesignTokens.textPrimary)
+  }
+
+  private func rankHeader(sort: Binding<AppTableSortDescriptor<DoctrineTopSortColumn>>) -> some View {
+    SortableTableHeader(title: "#", column: DoctrineTopSortColumn.rank, sort: sort, alignment: .trailing)
+      .frame(width: Layout.rankWidth, alignment: .trailing)
+      .help(AppLocalization.text("Place in the ranking."))
+  }
+
+  private func nameHeader(sort: Binding<AppTableSortDescriptor<DoctrineTopSortColumn>>) -> some View {
+    SortableTableHeader(title: "Item", column: DoctrineTopSortColumn.name, sort: sort)
+      .frame(minWidth: Layout.nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func numberHeader(
+    _ title: LocalizedStringKey,
+    _ column: DoctrineTopSortColumn,
+    sort: Binding<AppTableSortDescriptor<DoctrineTopSortColumn>>,
+    width: CGFloat,
+    defaultDirection: AppTableSortDirection = .descending
+  ) -> some View {
+    SortableTableHeader(
+      title: title,
+      column: column,
+      sort: sort,
+      defaultDirection: defaultDirection,
+      alignment: .trailing
+    )
+    .frame(width: width, alignment: .trailing)
+  }
+
+  private func rankCell(_ rank: Int) -> some View {
+    Text(verbatim: format.integer(Int64(rank)))
+      .appFont(.callout.monospacedDigit())
+      .foregroundStyle(DesignTokens.textSecondary)
+      .frame(width: Layout.rankWidth, alignment: .trailing)
+  }
+
+  private func nameCell(_ entry: DoctrineTopEntry) -> some View {
+    EVEItemText(
+      value: entry.row.name,
+      typeID: entry.row.typeID,
+      font: .callout,
+      lineLimit: 1,
+      iconSize: 18
+    )
+    .frame(minWidth: Layout.nameMinimumWidth, maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func numberCell(
+    _ text: String,
+    width: CGFloat,
+    tint: Color = DesignTokens.textPrimary
+  ) -> some View {
+    Text(verbatim: text)
+      .appFont(.callout.monospacedDigit())
+      .foregroundStyle(tint)
+      .lineLimit(1)
+      .frame(width: width, alignment: .trailing)
   }
 }

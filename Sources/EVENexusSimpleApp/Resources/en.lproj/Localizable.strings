@@ -3119,3 +3119,24 @@
 "Target minus current stock, at least 0: what still has to be built or imported." = "Target minus current stock, at least 0: what still has to be built or imported.";
 "%lld items · %lld out of stock · no target without an Allumis import" = "%lld items · %lld out of stock · no target without an Allumis import";
 "%lld items · %lld out of stock · %lld with shortfall · target from %lld Allumis fits" = "%lld items · %lld out of stock · %lld with shortfall · target from %lld Allumis fits";
+
+/* Doctrine stock: top lists (27.11.2026) */
+"Statistics" = "Statistics";
+"Most used · Top %lld" = "Most used · Top %lld";
+"Items in the most fits of the wiki and of the group “Only at Allumis”; a tie goes to the larger target." = "Items in the most fits of the wiki and of the group “Only at Allumis”; a tie goes to the larger target.";
+"No doctrine item yet." = "No doctrine item yet.";
+"Profit opportunities · Top %lld" = "Profit opportunities · Top %lld";
+"Profit/unit × shortfall: what filling the target earns with an own sell order at the Home Hub. Only items with a shortfall and a positive profit are ranked." = "Profit/unit × shortfall: what filling the target earns with an own sell order at the Home Hub. Only items with a shortfall and a positive profit are ranked.";
+"Without an Allumis import there is no shortfall and so no profit opportunity." = "Without an Allumis import there is no shortfall and so no profit opportunity.";
+"No item has a shortfall and a positive profit yet." = "No item has a shortfall and a positive profit yet.";
+"Total profit" = "Total profit";
+"Profit/unit × shortfall." = "Profit/unit × shortfall.";
+"Way" = "Way";
+"The cheaper way per unit: build, or import from the Main Hub." = "The cheaper way per unit: build, or import from the Main Hub.";
+"Place in the ranking." = "Place in the ranking.";
+"%lld items without a known profit or shortfall" = "%lld items without a known profit or shortfall";
+"%lld items without a shortfall or a positive profit" = "%lld items without a shortfall or a positive profit";
+
+/* Doctrine stock: top list current stock and difference (28.11.2026) */
+"Difference" = "Difference";
+"Current stock minus target: below 0 (red) too few, 0 or more (green) enough. “–” without a target." = "Current stock minus target: below 0 (red) too few, 0 or more (green) enough. “–” without a target.";

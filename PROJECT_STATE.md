@@ -783,5 +783,11 @@ Vertrag: [DOKTRIN_BEDARF_PLAN.md](Documentation/DOKTRIN_BEDARF_PLAN.md), Abschni
 - **Doktrin-Liste (27.11.2026):** mehrere Spalten nebeneinander (höchstens
   vier, je nach Breite), Zeilen zweizeilig; automatisch geprüft und in einer
   abgeschotteten Prüf-Kopie mit künstlichen Sollwerten sichtgeprüft.
+- **Statistik (27.11.2026):** Panel unter der Doktrin-Liste mit den Top 10
+  „am häufigsten verwendet“ (meiste Fits, Gleichstand nach Soll) und „größte
+  Gewinnmöglichkeiten“ (Gewinn/Stück × Fehlmenge), immer über alle Items;
+  seit 28.11.2026 in der ersten Liste auch Ist und Differenz (Ist − Soll,
+  rot zu wenig, grün genug); implementiert und automatisch geprüft (Vertrag
+  Abschnitt I).
 - **Offen:** Sichtprüfung mit den Allumis- und Marktdaten des Eigentümers,
-  Eigentümerabnahme der von Claude festgelegten Punkte (Abschnitt H).
+  Eigentümerabnahme der von Claude festgelegten Punkte (Abschnitte H und I).

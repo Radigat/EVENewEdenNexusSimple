@@ -300,6 +300,31 @@ public struct DoctrineStockRow: Equatable, Sendable, Identifiable {
     case nil: nil
     }
   }
+
+  /// What filling the shortfall earns: shortfall × profit per unit (owner
+  /// decision 27.11.2026). 0 without a shortfall, also while the profit is
+  /// unknown; unknown while the shortfall is, or with a shortfall while the
+  /// profit is.
+  public var shortfallProfit: Double? {
+    guard let shortfall else { return nil }
+    guard shortfall > 0 else { return 0 }
+    guard let profitPerUnit else { return nil }
+    let total = profitPerUnit * Double(shortfall)
+    return total.isFinite ? total : nil
+  }
+
+  /// Current stock minus target, with its sign (owner decision 28.11.2026):
+  /// below 0 too few, 0 or more enough. Unknown while the target or the
+  /// listed stock is, and nil without a target (target 0), because then
+  /// nothing has to be met. A negative listed stock counts as 0, as in the
+  /// shortfall.
+  public var stockDifference: Int64? {
+    guard let required = demand.requiredQuantity, required > 0,
+      let listed = input.listedQuantity
+    else { return nil }
+    let (difference, overflow) = max(0, listed).subtractingReportingOverflow(required)
+    return overflow ? nil : difference
+  }
 }
 
 public enum DoctrineStockCalculator {
@@ -455,6 +480,196 @@ public enum DoctrineStockRowSorter {
     case .homeToMainPriceRatio: row.homeToMainPriceRatio
     case .recommendation: row.savingsPerUnit
     case .profitPerUnit: row.profitPerUnit
+    }
+  }
+}
+
+// MARK: Top lists
+
+/// The two top lists of the page (owner request 27.11.2026,
+/// DOKTRIN_BEDARF_PLAN.md section I). Both rank every item of the table,
+/// independent of its filters.
+public enum DoctrineTopListKind: String, CaseIterable, Sendable {
+  /// Fits that use the item; a tie goes to the larger target.
+  case mostUsed
+  /// Profit per unit × shortfall.
+  case profitOpportunity
+}
+
+/// One item of a top list with its place.
+public struct DoctrineTopEntry: Equatable, Sendable, Identifiable {
+  /// Place in the ranking, from 1.
+  public let rank: Int
+  public let row: DoctrineStockRow
+
+  public var id: Int64 { row.typeID }
+
+  public init(rank: Int, row: DoctrineStockRow) {
+    self.rank = rank
+    self.row = row
+  }
+}
+
+public struct DoctrineTopRankingResult: Equatable, Sendable {
+  /// At most the limit, place 1 first.
+  public let entries: [DoctrineTopEntry]
+  /// Every row handed to the ranking.
+  public let candidateCount: Int
+  /// Rows whose value is unknown; never ranked, never counted as 0.
+  public let unknownCount: Int
+  /// Rows with a known value of 0 or less; never ranked.
+  public let nonPositiveCount: Int
+
+  public init(
+    entries: [DoctrineTopEntry],
+    candidateCount: Int,
+    unknownCount: Int,
+    nonPositiveCount: Int
+  ) {
+    self.entries = entries
+    self.candidateCount = candidateCount
+    self.unknownCount = unknownCount
+    self.nonPositiveCount = nonPositiveCount
+  }
+
+  public static let empty = DoctrineTopRankingResult(
+    entries: [], candidateCount: 0, unknownCount: 0, nonPositiveCount: 0)
+}
+
+/// Only rows with a known value above 0 rank, highest first.
+/// - Most used: number of fits; a tie goes to the larger target, an unknown
+///   target after a known one.
+/// - Profit opportunity: `shortfallProfit`, so only items with a shortfall
+///   and a positive profit per unit.
+/// The type ID is the final tie-breaker.
+public enum DoctrineTopRanking {
+  public static let limit = 10
+
+  public static func ranked(
+    _ rows: [DoctrineStockRow],
+    by kind: DoctrineTopListKind,
+    limit: Int = DoctrineTopRanking.limit
+  ) -> DoctrineTopRankingResult {
+    var ranked: [(row: DoctrineStockRow, value: Double)] = []
+    var unknownCount = 0
+    var nonPositiveCount = 0
+    for row in rows {
+      guard let value = value(row, kind), value.isFinite else {
+        unknownCount += 1
+        continue
+      }
+      if value > 0 {
+        ranked.append((row, value))
+      } else {
+        nonPositiveCount += 1
+      }
+    }
+    ranked.sort { lhs, rhs in
+      if lhs.value != rhs.value { return lhs.value > rhs.value }
+      if kind == .mostUsed {
+        switch (lhs.row.demand.requiredQuantity, rhs.row.demand.requiredQuantity) {
+        case (let left?, let right?):
+          if left != right { return left > right }
+        case (.some, nil):
+          return true
+        case (nil, .some):
+          return false
+        case (nil, nil):
+          break
+        }
+      }
+      return lhs.row.typeID < rhs.row.typeID
+    }
+    let entries = ranked.prefix(max(0, limit)).enumerated().map { offset, item in
+      DoctrineTopEntry(rank: offset + 1, row: item.row)
+    }
+    return DoctrineTopRankingResult(
+      entries: entries,
+      candidateCount: rows.count,
+      unknownCount: unknownCount,
+      nonPositiveCount: nonPositiveCount
+    )
+  }
+
+  static func value(_ row: DoctrineStockRow, _ kind: DoctrineTopListKind) -> Double? {
+    switch kind {
+    case .mostUsed: Double(row.demand.fitCount)
+    case .profitOpportunity: row.shortfallProfit
+    }
+  }
+}
+
+public enum DoctrineTopSortColumn: String, CaseIterable, Sendable {
+  /// Place in the ranking.
+  case rank
+  case name
+  case fitCount
+  /// Number of doctrines that use the item.
+  case doctrines
+  /// Target (Soll) from Allumis.
+  case requiredQuantity
+  /// Current stock (Ist) at the Home Hub.
+  case listedQuantity
+  /// Current stock minus target; without a target it has no value.
+  case stockDifference
+  case shortfallProfit
+  case profitPerUnit
+  case shortfall
+  /// Documented rank: build before import.
+  case recommendation
+}
+
+/// Sorts the entries of a top list by the typed value of a column. Unknown
+/// values stay after known values ascending and before them descending
+/// (AGENTS.md); the place in the ranking is the final tie-breaker, so equal
+/// values keep the order of the ranking.
+public enum DoctrineTopEntrySorter {
+  public static func sorted(
+    _ entries: [DoctrineTopEntry],
+    by column: DoctrineTopSortColumn,
+    ascending: Bool
+  ) -> [DoctrineTopEntry] {
+    entries.sorted { lhs, rhs in
+      if column == .name {
+        let order = lhs.row.name.localizedCaseInsensitiveCompare(rhs.row.name)
+        if order != .orderedSame {
+          return ascending ? order == .orderedAscending : order == .orderedDescending
+        }
+        return lhs.rank < rhs.rank
+      }
+      switch (value(lhs, column), value(rhs, column)) {
+      case (let left?, let right?):
+        if left != right { return ascending ? left < right : left > right }
+      case (.some, nil):
+        return ascending
+      case (nil, .some):
+        return !ascending
+      case (nil, nil):
+        break
+      }
+      return lhs.rank < rhs.rank
+    }
+  }
+
+  static func value(_ entry: DoctrineTopEntry, _ column: DoctrineTopSortColumn) -> Double? {
+    let row = entry.row
+    switch column {
+    case .rank: return Double(entry.rank)
+    case .name: return nil
+    case .fitCount: return Double(row.demand.fitCount)
+    case .doctrines: return Double(row.demand.doctrineIDs.count)
+    case .requiredQuantity: return row.demand.requiredQuantity.map(Double.init)
+    case .listedQuantity: return row.input.listedQuantity.map(Double.init)
+    case .stockDifference: return row.stockDifference.map(Double.init)
+    case .shortfallProfit: return row.shortfallProfit
+    case .profitPerUnit: return row.profitPerUnit
+    case .shortfall: return row.shortfall.map(Double.init)
+    case .recommendation:
+      switch row.recommendation {
+      case .build?: return 0
+      case .importFromMainHub?: return 1
+      case nil: return nil
+      }
     }
   }
 }

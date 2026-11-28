@@ -1384,6 +1384,26 @@ Regeln und Eigentümerentscheide: [Doktrin-Bedarf-Plan](Documentation/DOKTRIN_BE
   Breite erlaubt (höchstens vier, jede mindestens so breit wie Name, Fits und
   Soll je Fit); sie füllt jede Spalte von oben nach unten, dann die nächste,
   und jede Spalte hat den sortierbaren Kopf.
+- **Statistik:** zwei Top-10-Listen über alle Items der Tabelle, unabhängig
+  von deren Filtern; nebeneinander, wenn die Breite für beide reicht, sonst
+  untereinander. Beide sind nach jeder Spalte sortierbar, beim Öffnen nach
+  Platz; bei Gleichstand bleibt die Rangfolge.
+  - **Am häufigsten verwendet:** die Items in den meisten Fits (Wiki und „Nur
+    bei Allumis“); bei Gleichstand das größere Soll zuerst (unbekanntes Soll
+    danach), dann die Typ-ID. Spalten Platz, Gegenstand (mit Kopier-Klick,
+    Verlaufssymbol und Hammer), Fits, Doktrinen (Anzahl; Tooltip mit den
+    Doktrinen und ihrem Anteil am Soll), Soll, Ist (gelistet am Home Hub) und
+    Differenz = Ist − Soll mit Vorzeichen: unter 0 rot (zu wenig), ab 0 grün
+    (genug); ohne Soll „–“, bei unbekanntem Soll oder Ist „—“. Der erste
+    Klick auf „Differenz“ stellt die größte Lücke nach oben.
+  - **Größte Gewinnmöglichkeiten:** Gewinn/Stück × Fehlmenge, also was das
+    Auffüllen des Solls mit einer eigenen Sell-Order am Home Hub einbringt,
+    ohne Preisrückgang durch die Menge. Gerankt werden nur Items mit
+    Fehlmenge und positivem Gewinn. Spalten Platz, Gegenstand, Gewinn gesamt,
+    Gewinn/Stück, Fehlmenge und Weg (Bauen oder Import; Tooltip mit der
+    Kostenaufschlüsselung). Darunter die Zahl der nicht gerankten Items ohne
+    bekannten Gewinn oder bekannte Fehlmenge bzw. ohne Fehlmenge oder
+    positiven Gewinn. Ohne Allumis-Import steht dort ein Hinweis.
 - **Home Hub und Grundlage:** Chips für Home und Main Hub sowie die Gebühren
   des Home Hubs, **Hub-Märkte aktualisieren** (gemeinsamer Hub-Scan), Hinweise
   auf fehlende Hubs, Scans, Markt- und Bestandsdaten, Region und Transport mit

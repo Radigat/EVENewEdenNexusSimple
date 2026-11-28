@@ -6,7 +6,10 @@ echten Home Hubs und die Eigentümerabnahme sind offen, siehe Abschnitt F.
 Allumis als zweite Quelle (Abschnitt G): implementiert, automatisch geprüft,
 Login und Import vom Eigentümer live geprüft. Soll allein aus Allumis
 (Abschnitt H, 27.11.2026): implementiert und automatisch geprüft; Sichtprüfung
-mit echten Daten und Eigentümerabnahme offen.
+mit echten Daten und Eigentümerabnahme offen. Statistik mit zwei Top-10-Listen
+(Abschnitt I, 27.11.2026; Spalten Ist und Differenz 28.11.2026): implementiert
+und automatisch geprüft; Sichtprüfung mit echten Daten und Eigentümerabnahme
+offen.
 
 Der Eigentümer möchte eine eigene Seite, auf der er sieht, welche Items und
 Schiffe die Allianz-Doktrinen am Home Hub brauchen, wie schnell sie sich
@@ -154,6 +157,8 @@ Fehlmenge, mindestens einen Lauf, mit den ME/TE-Standards der Hub-Chancen.
   Annahmen in Abschnitt G.
 - Soll aus Allumis (Abschnitt H): Sichtprüfung mit den Allumis-Daten des
   Eigentümers und Eigentümerabnahme.
+- Statistik (Abschnitt I): Sichtprüfung mit den Daten des Eigentümers und
+  Eigentümerabnahme der von Claude festgelegten Punkte.
 
 ## G. Allumis (26.11.2026)
 
@@ -362,3 +367,91 @@ jeder Spalte (`DoctrineListLayout`).
   Refits, Anteile je Doktrin, Sortierung mit unbekanntem Soll),
   `DoctrineListLayoutTests` (Spaltenzahl nach Breite, Aufteilung von oben
   nach unten).
+
+## I. Statistik: Top 10 (27.11.2026)
+
+Eigentümer: Bei den Doktrinen eine Statistik, welches Item am meisten verwendet
+wird, als Top 10, daneben eine Top 10 mit den meisten Gewinnmöglichkeiten.
+
+### Entscheidungen des Eigentümers (27.11.2026)
+
+| Thema | Entscheidung |
+|---|---|
+| „Am meisten verwendet“ | in den meisten Fits (Wiki und „Nur bei Allumis“), bei Gleichstand nach Soll-Stück |
+| „Gewinnmöglichkeiten“ | Gewinn/Stück × Fehlmenge; nur Items mit Fehlmenge und positivem Gewinn |
+| Platz | eigenes Panel „Statistik“ unter „Doktrinen und Sollbestand“, beide Listen nebeneinander, bei schmalem Fenster untereinander |
+| Filter | keine: immer alle Items; „Art“ und „Doktrin“ wirken nur auf die Tabelle |
+
+Von Claude festgelegt (zur Abnahme): Gleichstand nach Fits und Soll entscheidet
+die Typ-ID, ein unbekanntes Soll steht nach einem bekannten. Ohne Fehlmenge ist
+die Gewinnmöglichkeit 0, auch bei unbekanntem Gewinn; mit Fehlmenge und
+unbekanntem Gewinn ist sie unbekannt. Nicht gerankte Items werden gezählt
+(Vorbild Top-20-Kachel im Handel). Spalten: Platz, Gegenstand, Fits,
+Doktrinen (Anzahl, Tooltip mit Anteilen), Soll, seit 28.11.2026 auch Ist
+und Differenz, bzw. Platz, Gegenstand, Gewinn
+gesamt, Gewinn/Stück, Fehlmenge, Weg (Tooltip mit der Kostenaufschlüsselung).
+Die zehn Zeilen lassen sich nach jeder Spalte sortieren, beim Öffnen nach
+Platz; Gleichstand nach Platz; „Weg“ in der Reihenfolge Bauen vor Import.
+Nebeneinander ab 1.233 pt Panelbreite (`DoctrineTopListLayout`; bis zur
+Ergänzung vom 28.11.2026 ab 1.065 pt).
+
+### Regeln
+
+- **Am häufigsten verwendet:** Wert = Fits (wie die Spalte „Fits“ der
+  Tabelle), gerankt nur Werte über 0. Reihenfolge: Fits absteigend, Soll
+  absteigend (unbekannt danach), Typ-ID aufsteigend.
+- **Gewinnmöglichkeit** (`DoctrineStockRow.shortfallProfit`) = Fehlmenge ×
+  Gewinn/Stück. Fehlmenge 0 → 0; Fehlmenge unbekannt, oder Fehlmenge über 0
+  bei unbekanntem Gewinn → unbekannt. Gerankt nur Werte über 0, absteigend,
+  Gleichstand nach Typ-ID.
+- Gewinn/Stück wie in der Tabelle: eigene Sell-Order einen Preisschritt unter
+  dem besten Sell am Home Hub nach Steuer und Makler minus Kosten des
+  empfohlenen Wegs (Baukosten für die Fehlmenge). Annahme: die ganze
+  Fehlmenge verkauft sich zu diesem Preis; ein Preisrückgang durch die Menge
+  ist nicht berücksichtigt.
+- **Ist und Differenz** (nur „Am häufigsten verwendet“, 28.11.2026): Ist =
+  gelistet am Home Hub wie die Spalte „Ist“ der Tabelle; Differenz
+  (`DoctrineStockRow.stockDifference`) = Ist − Soll mit Vorzeichen, ein
+  negatives Ist zählt wie bei der Fehlmenge als 0. Unter 0 rot (zu wenig),
+  ab 0 grün (genug). Soll 0 → „–“ ohne Farbe; Soll oder Ist unbekannt → „—“.
+- Höchstens zehn Items je Liste (`DoctrineTopRanking.limit`). Ohne
+  Allumis-Import gibt es keine Fehlmenge; die Gewinnliste zeigt dann einen
+  Hinweis.
+
+### Umsetzung
+
+- Kern (`DoctrineStock.swift`): `DoctrineStockRow.shortfallProfit`,
+  `DoctrineTopRanking` (Rangfolge mit Zählung unbekannter und nicht positiver
+  Werte), `DoctrineTopEntrySorter` (Sortierung der Einträge).
+- App (`DoctrineStockView.swift`): `DoctrineTopListsModel` (einmal je
+  Tabellenberechnung), `DoctrineTopListLayout`, `DoctrineTopListsView`
+  (vergleichbar wie die Tabellenzeilen).
+- Tests: `DoctrineStockTests` (Gewinnmöglichkeit, beide Rangfolgen,
+  Sortierung), `DoctrineTopListsTests` in `DoctrineListLayoutTests.swift`
+  (Nebeneinander-Grenze, Modell, Übersetzungen).
+
+### Ergänzung Ist und Differenz (28.11.2026)
+
+Eigentümer (mit Bild der Liste „Am häufigsten verwendet“): die Spalten
+Ist-Wert und Differenz ergänzen, rot für zu wenige, grün für ausreichend viel.
+
+| Thema | Entscheidung des Eigentümers |
+|---|---|
+| Differenz | Ist − Soll mit Vorzeichen: −1.192 rot, +64 oder 0 grün; sortiert nach dem Wert mit Vorzeichen |
+| Ohne Soll (Soll 0) | „–“ ohne Farbe |
+| Gewinnliste | keine neuen Spalten; sie hat schon die Fehlmenge |
+
+Von Claude festgelegt (zur Abnahme): Die Spalten stehen hinter „Soll“. Der
+erste Klick auf „Differenz“ sortiert aufsteigend, die größte Lücke steht
+oben; die übrigen Zahlenspalten beginnen absteigend. Ohne Soll und mit
+unbekanntem Wert hat die Differenz keinen Zahlenwert und steht aufsteigend
+hinter, absteigend vor den bekannten Werten, untereinander nach Platz. Die
+Differenz-Spalte ist 90 pt breit (Vorzeichen und sieben Ziffern), dadurch
+stehen die Listen erst ab 1.233 pt nebeneinander. Das Vorzeichen kommt vom
+Zahlenformat der Sprache (in Deutsch und Englisch „+“ und „-“).
+
+Umsetzung: Kern `DoctrineStockRow.stockDifference`, Sortierspalten
+`listedQuantity` und `stockDifference` in `DoctrineTopSortColumn`; App
+`differenceCell` und `DoctrineNumberFormat.signedInteger`. Tests:
+`DoctrineStockTests` (Differenz, Sortierung von Ist und Differenz),
+`DoctrineTopListsTests` (Breiten, Vorzeichen, Übersetzungen).

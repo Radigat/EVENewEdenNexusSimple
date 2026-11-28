@@ -557,6 +557,148 @@ struct DoctrineStockTests {
       DoctrineStockRowSorter.sorted(named, by: .name, ascending: true).map(\.typeID) == [1, 3, 2])
   }
 
+  // MARK: Top lists
+
+  private static func topRow(
+    _ typeID: Int64,
+    fits: Int = 1,
+    required: Int64? = 0,
+    listed: Int64? = 0,
+    name: String = "Item",
+    build: Double? = 100,
+    netSale: Double? = 120,
+    doctrines: [String] = []
+  ) -> DoctrineStockRow {
+    DoctrineStockCalculator.row(
+      demand: DoctrineItemDemand(
+        typeID: typeID, name: name, fitCount: fits, requiredQuantity: required, isHull: false,
+        doctrineIDs: doctrines),
+      input: Self.input(listed: listed, build: build, netSale: netSale)
+    )
+  }
+
+  @Test
+  func shortfallProfitIsShortfallTimesProfitAndZeroWithoutShortfall() {
+    // Shortfall 15, import 95, net sale 120 → 25 per unit.
+    #expect(Self.topRow(1, required: 25, listed: 10).shortfallProfit == 375)
+    // No shortfall: nothing to earn, also while the profit is unknown.
+    #expect(Self.topRow(2, required: 5, listed: 10).shortfallProfit == 0)
+    #expect(Self.topRow(3, required: 5, listed: 10, netSale: nil).shortfallProfit == 0)
+    // A shortfall with an unknown profit, or an unknown shortfall, is unknown.
+    #expect(Self.topRow(4, required: 25, listed: 10, netSale: nil).shortfallProfit == nil)
+    #expect(Self.topRow(5, required: nil, listed: 10).shortfallProfit == nil)
+    #expect(Self.topRow(6, required: 25, listed: nil).shortfallProfit == nil)
+    // A loss stays negative.
+    #expect(Self.topRow(7, required: 12, listed: 10, netSale: 90).shortfallProfit == -10)
+  }
+
+  @Test
+  func mostUsedRanksByFitsThenTargetThenTypeID() {
+    let rows = [
+      Self.topRow(1, fits: 3, required: 10),
+      Self.topRow(2, fits: 9, required: 0),
+      Self.topRow(3, fits: 3, required: nil),
+      Self.topRow(4, fits: 3, required: 40),
+      Self.topRow(5, fits: 3, required: 10),
+      Self.topRow(6, fits: 0, required: 99),
+    ]
+    let result = DoctrineTopRanking.ranked(rows, by: .mostUsed)
+    #expect(result.entries.map(\.id) == [2, 4, 1, 5, 3])
+    #expect(result.entries.map(\.rank) == [1, 2, 3, 4, 5])
+    #expect(result.candidateCount == 6)
+    #expect(result.unknownCount == 0)
+    #expect(result.nonPositiveCount == 1)
+    let limited = DoctrineTopRanking.ranked(rows, by: .mostUsed, limit: 2)
+    #expect(limited.entries.map(\.id) == [2, 4])
+    #expect(DoctrineTopRanking.limit == 10)
+  }
+
+  @Test
+  func profitOpportunitiesRankOnlyAShortfallWithAPositiveProfit() {
+    let rows = [
+      Self.topRow(1, required: 25, listed: 10),  // 15 × 25 = 375
+      Self.topRow(2, required: 50, listed: 10),  // 40 × 25 = 1,000
+      Self.topRow(3, required: 5, listed: 10),  // no shortfall → 0
+      Self.topRow(4, required: 25, listed: 10, netSale: 90),  // loss
+      Self.topRow(5, required: 25, listed: 10, netSale: nil),  // profit unknown
+      Self.topRow(6, required: nil, listed: 10),  // no Allumis import
+      Self.topRow(7, required: 25, listed: 10, build: 70),  // build: 15 × 50 = 750
+      Self.topRow(8, required: 25, listed: 10),  // tie with 1, later type ID
+    ]
+    let result = DoctrineTopRanking.ranked(rows, by: .profitOpportunity)
+    #expect(result.entries.map(\.id) == [2, 7, 1, 8])
+    #expect(result.entries.first?.row.shortfallProfit == 1_000)
+    #expect(result.candidateCount == 8)
+    #expect(result.unknownCount == 2)
+    #expect(result.nonPositiveCount == 2)
+    #expect(DoctrineTopRanking.ranked([], by: .profitOpportunity) == .empty)
+  }
+
+  @Test
+  func topEntrySorterKeepsUnknownAfterKnownAndTheRankAsTieBreaker() {
+    let entries = [
+      DoctrineTopEntry(
+        rank: 1, row: Self.topRow(11, required: 30, listed: 10, name: "beta", build: 70)),
+      DoctrineTopEntry(rank: 2, row: Self.topRow(12, required: nil, listed: 10, name: "Alpha")),
+      DoctrineTopEntry(
+        rank: 3, row: Self.topRow(13, required: 30, listed: 10, name: "alpha", doctrines: ["a", "b"])),
+    ]
+    func sorted(_ column: DoctrineTopSortColumn, _ ascending: Bool) -> [Int] {
+      DoctrineTopEntrySorter.sorted(entries, by: column, ascending: ascending).map(\.rank)
+    }
+    #expect(sorted(.rank, true) == [1, 2, 3])
+    #expect(sorted(.rank, false) == [3, 2, 1])
+    #expect(sorted(.name, true) == [2, 3, 1])
+    #expect(sorted(.name, false) == [1, 2, 3])
+    // Unknown target after known ascending, before them descending; equal
+    // values keep the ranking.
+    #expect(sorted(.requiredQuantity, true) == [1, 3, 2])
+    #expect(sorted(.requiredQuantity, false) == [2, 1, 3])
+    #expect(sorted(.shortfall, true) == [1, 3, 2])
+    #expect(sorted(.doctrines, false) == [3, 1, 2])
+    // Build before import; no recommendation would come last ascending.
+    #expect(sorted(.recommendation, true) == [1, 2, 3])
+    #expect(sorted(.recommendation, false) == [2, 3, 1])
+    #expect(sorted(.shortfallProfit, true) == [3, 1, 2])
+    #expect(sorted(.shortfallProfit, false) == [2, 1, 3])
+  }
+
+  @Test
+  func stockDifferenceIsCurrentStockMinusTargetWithItsSign() {
+    #expect(Self.topRow(1, required: 30, listed: 10).stockDifference == -20)
+    #expect(Self.topRow(2, required: 30, listed: 45).stockDifference == 15)
+    #expect(Self.topRow(3, required: 30, listed: 30).stockDifference == 0)
+    // A negative listed stock counts as 0, as in the shortfall.
+    #expect(Self.topRow(4, required: 30, listed: -5).stockDifference == -30)
+    #expect(Self.topRow(4, required: 30, listed: -5).shortfall == 30)
+    // Without a target there is nothing to meet; unknown stays unknown.
+    #expect(Self.topRow(5, required: 0, listed: 10).stockDifference == nil)
+    #expect(Self.topRow(6, required: nil, listed: 10).stockDifference == nil)
+    #expect(Self.topRow(7, required: 30, listed: nil).stockDifference == nil)
+    // Never a wrapped value.
+    #expect(Self.topRow(8, required: .max, listed: 0).stockDifference == -.max)
+  }
+
+  @Test
+  func topEntrySorterSortsCurrentStockAndDifference() {
+    let entries = [
+      DoctrineTopEntry(rank: 1, row: Self.topRow(21, required: 30, listed: 45)),  // +15
+      DoctrineTopEntry(rank: 2, row: Self.topRow(22, required: 0, listed: 80)),  // no target
+      DoctrineTopEntry(rank: 3, row: Self.topRow(23, required: 30, listed: 10)),  // −20
+      DoctrineTopEntry(rank: 4, row: Self.topRow(24, required: 30, listed: nil)),  // unknown
+      DoctrineTopEntry(rank: 5, row: Self.topRow(25, required: 10, listed: 10)),  // 0
+    ]
+    func sorted(_ column: DoctrineTopSortColumn, _ ascending: Bool) -> [Int] {
+      DoctrineTopEntrySorter.sorted(entries, by: column, ascending: ascending).map(\.rank)
+    }
+    // Largest gap first ascending; without a target and unknown after the
+    // known values, in the order of the ranking.
+    #expect(sorted(.stockDifference, true) == [3, 5, 1, 2, 4])
+    #expect(sorted(.stockDifference, false) == [2, 4, 1, 5, 3])
+    #expect(sorted(.listedQuantity, true) == [3, 5, 1, 2, 4])
+    #expect(sorted(.listedQuantity, false) == [4, 2, 1, 3, 5])
+  }
+
   @Test
   func itemKindsFollowTheSDECategory() {
     #expect(DoctrineItemKind.kind(categoryName: "Ship") == .hull)

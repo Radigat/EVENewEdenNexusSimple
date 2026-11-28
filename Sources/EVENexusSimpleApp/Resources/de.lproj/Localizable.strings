@@ -3733,3 +3733,24 @@
 "Target minus current stock, at least 0: what still has to be built or imported." = "Soll minus Ist, mindestens 0: was noch gebaut oder importiert werden muss.";
 "%lld items · %lld out of stock · no target without an Allumis import" = "%1$lld Items · %2$lld ausverkauft · ohne Allumis-Import kein Soll";
 "%lld items · %lld out of stock · %lld with shortfall · target from %lld Allumis fits" = "%1$lld Items · %2$lld ausverkauft · %3$lld mit Fehlmenge · Soll aus %4$lld Allumis-Fits";
+
+/* Doctrine stock: top lists (27.11.2026) */
+"Statistics" = "Statistik";
+"Most used · Top %lld" = "Am häufigsten verwendet · Top %lld";
+"Items in the most fits of the wiki and of the group “Only at Allumis”; a tie goes to the larger target." = "Items in den meisten Fits des Wikis und der Gruppe „Nur bei Allumis“; bei Gleichstand das größere Soll zuerst.";
+"No doctrine item yet." = "Noch kein Doktrin-Item.";
+"Profit opportunities · Top %lld" = "Größte Gewinnmöglichkeiten · Top %lld";
+"Profit/unit × shortfall: what filling the target earns with an own sell order at the Home Hub. Only items with a shortfall and a positive profit are ranked." = "Gewinn/Stück × Fehlmenge: was das Auffüllen des Solls mit einer eigenen Sell-Order am Home Hub einbringt. Gerankt werden nur Items mit Fehlmenge und positivem Gewinn.";
+"Without an Allumis import there is no shortfall and so no profit opportunity." = "Ohne Allumis-Import gibt es keine Fehlmenge und damit keine Gewinnmöglichkeit.";
+"No item has a shortfall and a positive profit yet." = "Noch kein Item hat eine Fehlmenge und einen positiven Gewinn.";
+"Total profit" = "Gewinn gesamt";
+"Profit/unit × shortfall." = "Gewinn/Stück × Fehlmenge.";
+"Way" = "Weg";
+"The cheaper way per unit: build, or import from the Main Hub." = "Der günstigere Weg je Stück: bauen oder vom Main Hub importieren.";
+"Place in the ranking." = "Platz in der Rangfolge.";
+"%lld items without a known profit or shortfall" = "%lld Items ohne bekannten Gewinn oder bekannte Fehlmenge";
+"%lld items without a shortfall or a positive profit" = "%lld Items ohne Fehlmenge oder ohne positiven Gewinn";
+
+/* Doctrine stock: top list current stock and difference (28.11.2026) */
+"Difference" = "Differenz";
+"Current stock minus target: below 0 (red) too few, 0 or more (green) enough. “–” without a target." = "Ist minus Soll: unter 0 (rot) zu wenig, ab 0 (grün) genug. „–“ ohne Soll.";

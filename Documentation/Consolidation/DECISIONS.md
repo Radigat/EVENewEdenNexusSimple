@@ -804,3 +804,41 @@ Von Claude festgelegt: Bei einem zugeordneten Wiki-Fit zählt der Inhalt des
 Allumis-Fits; „Fits“ und „Doktrinen“ zählen Wiki- und Allumis-Inhalt; der
 Tooltip „Doktrinen“ nennt den Anteil je Doktrin (ein geteiltes Fit zählt dort
 bei jeder Doktrin); die Zählerzeile nennt die Allumis-Fits mit Soll.
+
+## 27.11.2026: Doktrin-Bedarf – Statistik mit zwei Top-10-Listen
+
+Anlass: Der Eigentümer möchte bei den Doktrinen sehen, welche Items am meisten
+verwendet werden (Top 10), und daneben die Top 10 mit den meisten
+Gewinnmöglichkeiten. Vertrag:
+[DOKTRIN_BEDARF_PLAN.md](../DOKTRIN_BEDARF_PLAN.md), Abschnitt I.
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. „Am meisten verwendet“ = in den meisten Fits, bei Gleichstand nach Soll.
+2. „Gewinnmöglichkeiten“ = Gewinn/Stück × Fehlmenge, nur Items mit Fehlmenge
+   und positivem Gewinn.
+3. Platz: eigenes Panel „Statistik“ unter der Doktrin-Liste, beide Listen
+   nebeneinander, bei schmalem Fenster untereinander.
+4. Filter: keine; die Listen gelten immer über alle Items.
+
+Von Claude festgelegt: Gleichstand danach nach Typ-ID; ohne Fehlmenge ist die
+Gewinnmöglichkeit 0, mit Fehlmenge und unbekanntem Gewinn unbekannt;
+nicht gerankte Items werden gezählt; Spaltenauswahl und Sortierung der zehn
+Zeilen wie im Vertrag; nebeneinander ab 1.065 pt Panelbreite.
+
+## 28.11.2026: Doktrin-Bedarf – Ist und Differenz in der Top-10-Liste „Am häufigsten verwendet“
+
+Anlass: Der Eigentümer möchte in der Liste „Am häufigsten verwendet“ zusätzlich
+den Ist-Wert und die Differenz sehen, rot für zu wenige, grün für ausreichend
+viel. Vertrag: [DOKTRIN_BEDARF_PLAN.md](../DOKTRIN_BEDARF_PLAN.md),
+Abschnitt I, „Ergänzung Ist und Differenz“.
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Differenz = Ist − Soll mit Vorzeichen; unter 0 rot, ab 0 grün.
+2. Ohne Soll (Soll 0) zeigt die Differenz „–“ ohne Farbe.
+3. Die Gewinnliste bekommt keine neuen Spalten.
+
+Von Claude festgelegt: Spalten hinter „Soll“; erster Klick auf „Differenz“
+aufsteigend (größte Lücke oben); ohne Soll und unbekannt aufsteigend hinter
+den bekannten Werten; nebeneinander jetzt ab 1.233 statt 1.065 pt Panelbreite.
