@@ -364,6 +364,26 @@ public enum ProductionInputParser {
   }
 }
 
+/// Product lines taken out of the planner input. Lines below them move up, so
+/// everything keyed by line number has to follow.
+public struct ProductionInputLineRemoval: Equatable, Sendable {
+  /// The input without the removed lines.
+  public let input: String
+  /// 1-based numbers of the removed lines in the input before the removal.
+  public let removedLineNumbers: Set<Int>
+
+  public init(input: String, removedLineNumbers: Set<Int>) {
+    self.input = input
+    self.removedLineNumbers = removedLineNumbers
+  }
+
+  /// Where a line of the old input stands now; `nil` for a removed line.
+  public func lineNumber(after oldLineNumber: Int) -> Int? {
+    guard !removedLineNumbers.contains(oldLineNumber) else { return nil }
+    return oldLineNumber - removedLineNumbers.filter { $0 < oldLineNumber }.count
+  }
+}
+
 public enum ProductionInputFormatter {
   public static func format(_ requests: [ProductionRequestLine]) -> String {
     requests.map(format).joined(separator: "\n")
@@ -375,7 +395,17 @@ public enum ProductionInputFormatter {
     _ request: ProductionRequestLine,
     from input: String
   ) -> String? {
-    let match = ProductionInputParser.parse(input).requests.first {
+    requestRemoval(request, from: input)?.input
+  }
+
+  /// Removes the line that describes the same job: its own line if it still
+  /// stands there, otherwise the first one. `nil` when no line does, for
+  /// example because the input changed since the calculation.
+  public static func requestRemoval(
+    _ request: ProductionRequestLine,
+    from input: String
+  ) -> ProductionInputLineRemoval? {
+    let matches = ProductionInputParser.parse(input).requests.filter {
       $0.productName.caseInsensitiveCompare(request.productName) == .orderedSame
         && $0.wantedQuantity == request.wantedQuantity
         && $0.materialEfficiency == request.materialEfficiency
@@ -383,11 +413,43 @@ public enum ProductionInputFormatter {
         && $0.blueprintKind == request.blueprintKind
         && $0.blueprintCostISK == request.blueprintCostISK
     }
+    let match =
+      matches.first { $0.lineNumber == request.lineNumber } ?? matches.first
     guard let match else { return nil }
+    return removingLines([match.lineNumber], from: input)
+  }
+
+  /// Removes every line that orders the product under exactly this name, as
+  /// the stock step shows one row per name. `nil` when no line does; invalid
+  /// lines stay untouched.
+  public static func productRemoval(
+    named productName: String,
+    from input: String
+  ) -> ProductionInputLineRemoval? {
+    let lineNumbers = Set(
+      ProductionInputParser.parse(input).requests
+        .filter { $0.productName == productName }
+        .map(\.lineNumber)
+    )
+    guard !lineNumbers.isEmpty else { return nil }
+    return removingLines(lineNumbers, from: input)
+  }
+
+  private static func removingLines(
+    _ lineNumbers: Set<Int>,
+    from input: String
+  ) -> ProductionInputLineRemoval? {
     var lines = input.components(separatedBy: .newlines)
-    guard lines.indices.contains(match.lineNumber - 1) else { return nil }
-    lines.remove(at: match.lineNumber - 1)
-    return lines.joined(separator: "\n")
+    guard lineNumbers.allSatisfy({ lines.indices.contains($0 - 1) }) else {
+      return nil
+    }
+    for lineNumber in lineNumbers.sorted(by: >) {
+      lines.remove(at: lineNumber - 1)
+    }
+    return ProductionInputLineRemoval(
+      input: lines.joined(separator: "\n"),
+      removedLineNumbers: lineNumbers
+    )
   }
 
   public static func appending(_ line: String, to input: String) -> String {

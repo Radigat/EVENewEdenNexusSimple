@@ -3304,7 +3304,7 @@
 "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock." = "Ja oder Nein. Bei Ja gilt das kombinierte Lager oder ein Bestand von Hand; der ersetzt das Lager. Bei Nein rechnet der Plan ohne Bestand.";
 "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up." = "Bei Ja wird zuerst der Bestand verbraucht. Eine manuelle Liste ersetzt das Lager in jedem Rechengang, auch für die Blueprint-Runs. Schritt 4 zeigt, was der Markt ergänzt.";
 "Manual stock is in use. It replaces the combined warehouse in this calculation." = "Manueller Bestand ist aktiv. Er ersetzt in dieser Berechnung das kombinierte Lager.";
-"In step 3 this button or ⌘↩ starts the calculation. After a change later steps show the plan as outdated and offer Recalculate." = "In Schritt 3 startet dieser Button oder ⌘↩ die Berechnung. Nach einer Änderung zeigen spätere Schritte den Plan als veraltet und bieten Neu berechnen an.";
+"In step 3 this button or ⌘↩ starts the calculation. Removing a product in step 3 or 4 recalculates at once. Later steps show a changed plan as outdated." = "In Schritt 3 startet dieser Button oder ⌘↩ die Berechnung. Entfernst du in Schritt 3 oder 4 ein Produkt, rechnet der Planer sofort neu. Spätere Schritte zeigen einen geänderten Plan als veraltet.";
 "Profitable?" = "Rentabel?";
 "In step 4 a menu and the alliance table record your sale per product. They do not change the plan. Recording needs a current plan and a target market." = "In Schritt 4 halten ein Menü und die Allianztabelle deinen Verkauf je Produkt fest. Sie ändern den Plan nicht. Das Erfassen braucht einen aktuellen Plan und einen Zielmarkt.";
 "Produce anyway" = "Trotzdem produzieren";
@@ -3338,6 +3338,11 @@
 "Not checkable. Prices are missing or costs are still provisional." = "Nicht prüfbar. Preise fehlen oder Kosten sind noch vorläufig.";
 "Remove" = "Entfernen";
 "Remove %@" = "%@ entfernen";
+"The last product stays. Reset the Planner or edit step 2 to empty the plan." = "Das letzte Produkt bleibt. Zum Leeren des Plans den Planer zurücksetzen oder Schritt 2 bearbeiten.";
+"Available again when the running calculation ends." = "Wieder verfügbar, sobald die laufende Berechnung endet.";
+"Removes every line of this product and calculates the plan again." = "Entfernt alle Zeilen dieses Produkts und berechnet den Plan neu.";
+"Removes this product line and calculates the plan again." = "Entfernt diese Produktzeile und berechnet den Plan neu.";
+"The input changed since the calculation. Recalculate first." = "Die Eingabe hat sich seit der Berechnung geändert. Erst neu berechnen.";
 "You chose to produce anyway." = "Du hast dich entschieden, trotzdem zu produzieren.";
 "Profitable" = "Rentabel";
 "Not profitable" = "Nicht rentabel";
@@ -3364,7 +3369,7 @@
 "Chosen sale" = "Gewählter Verkauf";
 "Step 4 shows one row per product with costs and selected sale. The best final sale is preselected and changeable. A selected sale without a final profit triggers a warning." = "Schritt 4 zeigt je Produkt eine Zeile mit Kosten und gewähltem Verkauf. Der beste endgültige Verkauf ist vorausgewählt und änderbar. Ein gewählter Verkauf ohne endgültigen Gewinn löst eine Warnung aus.";
 "Step 8 only summarizes the choice from step 4 and records it. Production rows take the chosen market and scenario." = "Schritt 8 fasst die Wahl aus Schritt 4 nur zusammen und erfasst sie. Produktionszeilen übernehmen den gewählten Markt und das Szenario.";
-"Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove a product instead." = "Öffnet die späteren Schritte trotz Warnung, nur für diese Berechnung und diese Verkäufe. Bei mehreren Produkten kannst du stattdessen ein Produkt entfernen.";
+"Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove one instead; the plan recalculates." = "Öffnet die späteren Schritte trotz Warnung, nur für diese Berechnung und diese Verkäufe. Bei mehreren Produkten kannst du stattdessen eines entfernen; der Planer rechnet dann neu.";
 "If the built materials or the needed Blueprint runs changed, the Blueprints are resolved again without automation. A reaction without a formula is bought instead." = "Haben sich gebaute Materialien oder nötige Blueprint-Runs geändert, werden die Blueprints ohne Automatik neu aufgelöst. Eine Reaktion ohne Formel wird gekauft.";
 
 /* Planner warnings */

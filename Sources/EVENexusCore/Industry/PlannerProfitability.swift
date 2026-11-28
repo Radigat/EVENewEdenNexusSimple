@@ -451,9 +451,14 @@ public struct PlannerStepAccess: Equatable, Sendable {
   }
 
   /// A calculation leads to the costs unless it started after them and needs
-  /// no new decision.
-  public func step(afterCalculationFrom step: PlannerStep) -> PlannerStep {
-    step > .costs && isReachable(step) ? step : .costs
+  /// no new decision. With `keepsStep`, for example after removing a product
+  /// in the stock step, it stays in a step that can still be opened.
+  public func step(
+    afterCalculationFrom step: PlannerStep,
+    keepsStep: Bool = false
+  ) -> PlannerStep {
+    if keepsStep, isReachable(step) { return step }
+    return step > .costs && isReachable(step) ? step : .costs
   }
 }
 

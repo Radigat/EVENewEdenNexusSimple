@@ -162,7 +162,7 @@ enum PlannerFlowGuide {
       id: .calculate, role: .input, column: .inputs,
       title: "Calculate",
       explanation:
-        "In step 3 this button or ⌘↩ starts the calculation. After a change later steps show the plan as outdated and offer Recalculate."
+        "In step 3 this button or ⌘↩ starts the calculation. Removing a product in step 3 or 4 recalculates at once. Later steps show a changed plan as outdated."
     ),
 
     PlannerFlowNode(
@@ -300,7 +300,7 @@ enum PlannerFlowGuide {
     PlannerFlowNode(
       id: .profitabilityDecision, role: .intervention, column: .interventions,
       title: "Produce anyway",
-      explanation: "Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove a product instead."
+      explanation: "Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove one instead; the plan recalculates."
     ),
   ]
 

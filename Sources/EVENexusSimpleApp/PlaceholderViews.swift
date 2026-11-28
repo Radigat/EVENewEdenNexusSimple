@@ -1316,7 +1316,12 @@ struct PlannerView: View {
           .appFont(.caption)
           .foregroundStyle(DesignTokens.textSecondary)
       } else {
-        PlannerProductCharacterTable(rows: rows, onChoose: saveProductCharacter)
+        PlannerProductCharacterTable(
+          rows: rows,
+          isRemovalPaused: isPlannerCalculationActive,
+          onChoose: saveProductCharacter,
+          onRemove: removeProductInStockStep
+        )
       }
       Text(
         "The skills of the character and the implants planned for that location set the job durations. Intermediates follow their end product if that character works at their location, otherwise the first character set there. Set characters and implants per location in the industry settings."
@@ -1409,12 +1414,8 @@ struct PlannerView: View {
       PlannerProfitabilityPanel(
         plan: plan,
         confirmedKey: confirmedProfitabilityKey,
-        removableRequestIDs: Set(
-          plan.requests.filter {
-            ProductionInputFormatter.removing($0, from: input) != nil
-          }
-          .map(\.id)
-        ),
+        removableRequestIDs: removablePlanRequestIDs(plan),
+        isRemovalPaused: isPlannerCalculationActive,
         onConfirm: { confirmedProfitabilityKey = $0 },
         onRemove: removeProductFromInput,
         onChoose: chooseSale,
@@ -1462,12 +1463,24 @@ struct PlannerView: View {
     }
   }
 
+  /// Plan lines still in the input whose removal leaves another product.
+  private func removablePlanRequestIDs(_ plan: IndustryPlanSnapshot) -> Set<UUID> {
+    Set(
+      plan.requests.filter { request in
+        guard
+          let removal = ProductionInputFormatter.requestRemoval(request, from: input)
+        else { return false }
+        return !ProductionInputParser.parse(removal.input).requests.isEmpty
+      }
+      .map(\.id)
+    )
+  }
+
+  /// Step 4: takes the product's line out of the input and calculates again.
   private func removeProductFromInput(_ request: ProductionRequestLine) {
-    guard let remaining = ProductionInputFormatter.removing(request, from: input) else {
-      return
-    }
-    input = remaining
-    persistDraft()
+    guard let removal = ProductionInputFormatter.requestRemoval(request, from: input)
+    else { return }
+    applyInputRemoval(removal)
   }
 
   @ViewBuilder
@@ -6796,9 +6809,67 @@ struct PlannerView: View {
     )
   }
 
-  private func calculatePlan() {
+  /// `keepsStep` stays in the current step after the calculation instead of
+  /// leading to the costs.
+  private func calculatePlan(keepsStep: Bool = false) {
     calculationScheduler.request {
-      await performPlanCalculation()
+      await performPlanCalculation(keepsStep: keepsStep)
+    }
+  }
+
+  /// Step 3: takes every line of the product out of the input and calculates
+  /// again.
+  private func removeProductInStockStep(_ productName: String) {
+    guard
+      let removal = ProductionInputFormatter.productRemoval(
+        named: productName,
+        from: input
+      )
+    else { return }
+    applyInputRemoval(removal)
+  }
+
+  /// Takes product lines out of the input, moves the saved sale choices of the
+  /// lines below and calculates the plan again without leaving the step. The
+  /// last product stays, and nothing changes while a calculation runs.
+  private func applyInputRemoval(_ removal: ProductionInputLineRemoval) {
+    let remaining = ProductionInputParser.parse(removal.input)
+    guard !isPlannerCalculationActive, !remaining.requests.isEmpty else { return }
+    input = removal.input
+    // `canCalculatePlan` reads the parse result, which `onChange(of: input)`
+    // would only refresh after this action.
+    parseResult = remaining
+    persistDraft()
+    moveProductDecisionDrafts(after: removal)
+    if canCalculatePlan {
+      calculatePlan(keepsStep: true)
+    }
+  }
+
+  /// Sale choices are saved per input line; the lines below a removed one move
+  /// up, and their choices move with them.
+  private func moveProductDecisionDrafts(after removal: ProductionInputLineRemoval) {
+    guard
+      let stored = try? modelContext.appSettingValue(
+        for: AppSettingKey.plannerProductDecisionsDraft
+      ),
+      let drafts = try? JSONDecoder().decode(
+        [String: PlannerProductDecisionDraft].self,
+        from: Data(stored.utf8)
+      )
+    else { return }
+    let moved = PlannerProductDecisionDraft.moving(drafts, after: removal)
+    guard moved != drafts else { return }
+    do {
+      let data = try JSONEncoder().encode(moved)
+      try modelContext.upsertAppSetting(
+        key: AppSettingKey.plannerProductDecisionsDraft,
+        value: String(decoding: data, as: UTF8.self)
+      )
+      try modelContext.save()
+    } catch {
+      modelContext.rollback()
+      persistenceError = error.localizedDescription
     }
   }
 
@@ -6950,12 +7021,12 @@ struct PlannerView: View {
 
   /// Measures one click: phase times, plan passes, market loads and ESI
   /// requests go to the performance log; the calculation itself is unchanged.
-  private func performPlanCalculation() async {
+  private func performPlanCalculation(keepsStep: Bool) async {
     let metrics = PlannerCalculationMetrics()
     let stopwatch = PerformanceStopwatch("planner.click")
     let esiBefore = runtime.esiRequestSnapshot()
     await PlannerCalculationMetrics.$current.withValue(metrics) {
-      await measuredPlanCalculation()
+      await measuredPlanCalculation(keepsStep: keepsStep)
     }
     await runtime.finishPlannerClick()
     stopwatch.finish(
@@ -6964,7 +7035,7 @@ struct PlannerView: View {
     )
   }
 
-  private func measuredPlanCalculation() async {
+  private func measuredPlanCalculation(keepsStep: Bool) async {
     let requestedKey = automaticCalculationKey
     calculatedAutomaticKey = requestedKey
     calculationStartedThisSession = true
@@ -7123,14 +7194,16 @@ struct PlannerView: View {
     await finishPlanCalculation(
       requestedKey: requestedKey,
       workspaceRevision: workspaceRevision,
-      previousPlan: previousPlan
+      previousPlan: previousPlan,
+      keepsStep: keepsStep
     )
   }
 
   private func finishPlanCalculation(
     requestedKey: PlannerAutomaticCalculationKey,
     workspaceRevision: Int64,
-    previousPlan: IndustryPlanSnapshot?
+    previousPlan: IndustryPlanSnapshot?,
+    keepsStep: Bool
   ) async {
     guard workspaceRevision == consolidation.workspace.revision else {
       persistenceError = "Wissenschaftsaufträge oder Ausgangsdaten wurden während der Berechnung geändert. Bitte erneut berechnen."
@@ -7147,7 +7220,10 @@ struct PlannerView: View {
     if await saveActivePlan(plan) {
       completedAutomaticKey = requestedKey
     }
-    plannerStep = plannerStepAccess.step(afterCalculationFrom: plannerStep)
+    plannerStep = plannerStepAccess.step(
+      afterCalculationFrom: plannerStep,
+      keepsStep: keepsStep
+    )
   }
 
   private func persistDraft(reportErrors: Bool = true) {

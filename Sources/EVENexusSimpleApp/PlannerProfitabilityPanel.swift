@@ -64,8 +64,11 @@ extension IndustryPlanSnapshot {
 struct PlannerProfitabilityPanel: View {
   let plan: IndustryPlanSnapshot
   let confirmedKey: String?
-  /// Products whose line is still in the input and can be taken out.
+  /// Products whose line is still in the input and can be taken out without
+  /// leaving the input empty. Removing calculates the plan again.
   let removableRequestIDs: Set<UUID>
+  /// True while a calculation runs; removing waits for it.
+  let isRemovalPaused: Bool
   let onConfirm: (String) -> Void
   let onRemove: (ProductionRequestLine) -> Void
   let onChoose: (ProductionRequestLine, PlannerProfitabilityScenario) -> Void
@@ -84,7 +87,13 @@ struct PlannerProfitabilityPanel: View {
   var body: some View {
     Panel(title: "Profitable?") {
       verdictLabel
-      PlannerSaleChoiceTable(plan: plan, onChoose: onChoose)
+      PlannerSaleChoiceTable(
+        plan: plan,
+        removableRequestIDs: removableRequestIDs,
+        isRemovalPaused: isRemovalPaused,
+        onChoose: onChoose,
+        onRemove: onRemove
+      )
       if isCollective, usesStock {
         Text(
           "Stock goes to the upper product line first. The total stays the same, but the split between products depends on the order."
@@ -129,6 +138,12 @@ struct PlannerProfitabilityPanel: View {
     }
   }
 
+  private var removeHelp: LocalizedStringKey {
+    isRemovalPaused
+      ? "Available again when the running calculation ends."
+      : "Removes this product line and calculates the plan again."
+  }
+
   @ViewBuilder
   private var decisionBlock: some View {
     let key = profitability.confirmationKey(planID: plan.id)
@@ -148,6 +163,8 @@ struct PlannerProfitabilityPanel: View {
           Spacer()
           if removableRequestIDs.contains(product.id) {
             Button("Remove") { onRemove(product.request) }
+              .disabled(isRemovalPaused)
+              .help(Text(removeHelp))
               .accessibilityLabel(
                 Text(
                   AppLocalization.format("Remove %@", product.request.productName)
@@ -178,7 +195,11 @@ struct PlannerProfitabilityPanel: View {
 /// Revenue minus the cost column is the profit of the same row.
 struct PlannerSaleChoiceTable: View {
   let plan: IndustryPlanSnapshot
+  /// Rows whose input line can be taken out; see `PlannerProfitabilityPanel`.
+  let removableRequestIDs: Set<UUID>
+  let isRemovalPaused: Bool
   let onChoose: (ProductionRequestLine, PlannerProfitabilityScenario) -> Void
+  let onRemove: (ProductionRequestLine) -> Void
 
   @State private var sort = AppTableSortDescriptor(
     column: PlannerSaleChoiceSortColumn.product,
@@ -299,6 +320,8 @@ struct PlannerSaleChoiceTable: View {
           header("Profit", .profit)
           header("ROI", .roi)
           header("Status", .status, alignment: .leading)
+          // Action column without data: nothing to sort.
+          Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
         }
         .appFont(.caption.weight(.semibold))
         Divider()
@@ -326,6 +349,8 @@ struct PlannerSaleChoiceTable: View {
                   ? DesignTokens.positive : DesignTokens.caution
               )
               .gridColumnAlignment(.leading)
+            removeButton(row)
+              .gridColumnAlignment(.leading)
           }
           .appFont(.body.monospacedDigit())
         }
@@ -344,6 +369,7 @@ struct PlannerSaleChoiceTable: View {
               .foregroundStyle(plannerProfitColor(profitability.totalProfit))
             Text("")
             Text("")
+            Text("")
           }
           .appFont(.body.monospacedDigit().weight(.semibold))
         }
@@ -351,6 +377,29 @@ struct PlannerSaleChoiceTable: View {
       .padding(.bottom, DesignTokens.spacingXS)
     }
     .accessibilityIdentifier("planner.sale-choice.table")
+  }
+
+  private func removeHelp(_ row: Row) -> LocalizedStringKey {
+    if rows.count <= 1 {
+      return "The last product stays. Reset the Planner or edit step 2 to empty the plan."
+    }
+    if !removableRequestIDs.contains(row.id) {
+      return "The input changed since the calculation. Recalculate first."
+    }
+    if isRemovalPaused {
+      return "Available again when the running calculation ends."
+    }
+    return "Removes this product line and calculates the plan again."
+  }
+
+  private func removeButton(_ row: Row) -> some View {
+    Button("Remove") { onRemove(row.product.request) }
+      .disabled(!removableRequestIDs.contains(row.id) || isRemovalPaused)
+      .help(Text(removeHelp(row)))
+      .accessibilityLabel(
+        Text(AppLocalization.format("Remove %@", row.product.request.productName))
+      )
+      .accessibilityIdentifier("planner.sale-choice.remove.\(row.product.request.lineNumber)")
   }
 
   /// Closed it names the sale only; open it shows each option's profit.
@@ -675,9 +724,14 @@ struct PlannerProductCharacterRow: Identifiable {
 }
 
 /// Step 3: the products to build, each with the character who builds it.
+/// A product can be removed here as long as another one stays; the plan is
+/// then calculated again.
 struct PlannerProductCharacterTable: View {
   let rows: [PlannerProductCharacterRow]
+  /// True while a calculation runs; removing waits for it.
+  let isRemovalPaused: Bool
   let onChoose: (Int64, String) -> Void
+  let onRemove: (String) -> Void
 
   @State private var sort = AppTableSortDescriptor(
     column: PlannerProductCharacterSortColumn.product,
@@ -705,6 +759,8 @@ struct PlannerProductCharacterTable: View {
         header("Units", .units)
         header("Production location", .location)
         header("Character", .character)
+        // Action column without data: nothing to sort.
+        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
       }
       .appFont(.caption.weight(.semibold))
       Divider()
@@ -720,12 +776,33 @@ struct PlannerProductCharacterTable: View {
               .foregroundStyle(DesignTokens.textSecondary)
           }
           characterControl(row)
+          removeButton(row)
         }
       }
     }
     .fixedSize(horizontal: true, vertical: false)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("planner.product-characters.table")
+  }
+
+  private var isLastProduct: Bool { rows.count <= 1 }
+
+  private var removeHelp: LocalizedStringKey {
+    if isLastProduct {
+      return "The last product stays. Reset the Planner or edit step 2 to empty the plan."
+    }
+    if isRemovalPaused {
+      return "Available again when the running calculation ends."
+    }
+    return "Removes every line of this product and calculates the plan again."
+  }
+
+  private func removeButton(_ row: PlannerProductCharacterRow) -> some View {
+    Button("Remove") { onRemove(row.productName) }
+      .disabled(isLastProduct || isRemovalPaused)
+      .help(Text(removeHelp))
+      .accessibilityLabel(Text(AppLocalization.format("Remove %@", row.productName)))
+      .accessibilityIdentifier("planner.product-remove.\(row.lineNumber)")
   }
 
   @ViewBuilder

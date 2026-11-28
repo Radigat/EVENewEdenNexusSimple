@@ -579,6 +579,21 @@ struct PlannerProfitabilityTests {
   }
 
   @Test
+  func removalInTheStockStepKeepsTheStepAfterTheCalculation() {
+    let uncleared = PlannerStepAccess(
+      isInputReady: true, hasPlan: true, isProfitabilityCleared: false
+    )
+    #expect(uncleared.step(afterCalculationFrom: .stock, keepsStep: true) == .stock)
+    #expect(uncleared.step(afterCalculationFrom: .stock, keepsStep: false) == .costs)
+    // A step that can no longer be opened falls back to the usual rule.
+    #expect(uncleared.step(afterCalculationFrom: .jobs, keepsStep: true) == .costs)
+    let notReady = PlannerStepAccess(
+      isInputReady: false, hasPlan: true, isProfitabilityCleared: true
+    )
+    #expect(notReady.step(afterCalculationFrom: .stock, keepsStep: true) == .costs)
+  }
+
+  @Test
   func stockNoIgnoresTheManualListWithoutDeletingIt() {
     #expect(PlannerStockUse.manualStockInput("Tritanium | 5", usesStock: true) == "Tritanium | 5")
     #expect(PlannerStockUse.manualStockInput("Tritanium | 5", usesStock: false) == "")
@@ -748,5 +763,50 @@ struct PlannerProfitabilityTests {
     #expect(ProductionInputFormatter.removing(nomad, from: remaining) == "Ark 1 0 0\n\nRhea 2 10 20")
     // Already gone: nothing to remove, the input stays untouched.
     #expect(ProductionInputFormatter.removing(rhea, from: remaining) == nil)
+  }
+
+  @Test
+  func removingAProductTakesOutEveryLineOfIt() throws {
+    let input = "Ark 1 0 0\nRhea 2 10 20\n\nnot a job\nRhea 1 0 0\nrhea 3 0 0\nNomad 1 0 0"
+    // Every Rhea line goes; blank and invalid lines stay. "rhea" is a row of
+    // its own in the stock step and stays too.
+    let removal = try #require(
+      ProductionInputFormatter.productRemoval(named: "Rhea", from: input)
+    )
+    #expect(removal.input == "Ark 1 0 0\n\nnot a job\nrhea 3 0 0\nNomad 1 0 0")
+    #expect(removal.removedLineNumbers == [2, 5])
+    #expect(
+      ProductionInputParser.parse(removal.input).requests.map(\.productName)
+        == ["Ark", "rhea", "Nomad"]
+    )
+    // Already gone: nothing to remove.
+    #expect(ProductionInputFormatter.productRemoval(named: "Rhea", from: removal.input) == nil)
+    #expect(
+      ProductionInputFormatter.productRemoval(named: "Nomad", from: "Nomad 1 0 0")?.input == ""
+    )
+  }
+
+  @Test
+  func removedLinesMoveTheLinesBelowThemUp() {
+    let removal = ProductionInputLineRemoval(input: "", removedLineNumbers: [2, 5])
+    #expect(removal.lineNumber(after: 1) == 1)
+    #expect(removal.lineNumber(after: 2) == nil)
+    #expect(removal.lineNumber(after: 3) == 2)
+    #expect(removal.lineNumber(after: 5) == nil)
+    #expect(removal.lineNumber(after: 7) == 5)
+  }
+
+  @Test
+  func removingARequestPrefersItsOwnLineAmongEqualJobs() throws {
+    let input = "Rhea 1 0 0\nArk 1 0 0\nRhea 1 0 0"
+    let second = try #require(ProductionInputParser.parse(input).requests.last)
+    let removal = try #require(ProductionInputFormatter.requestRemoval(second, from: input))
+    #expect(removal.removedLineNumbers == [3])
+    #expect(removal.input == "Rhea 1 0 0\nArk 1 0 0")
+    // Its line no longer holds the job: the first equal line goes instead.
+    let moved = try #require(
+      ProductionInputFormatter.requestRemoval(second, from: "Ark 1 0 0\nRhea 1 0 0")
+    )
+    #expect(moved.removedLineNumbers == [2])
   }
 }

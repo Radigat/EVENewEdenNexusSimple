@@ -842,3 +842,44 @@ Antworten des Eigentümers auf die Rückfragen:
 Von Claude festgelegt: Spalten hinter „Soll“; erster Klick auf „Differenz“
 aufsteigend (größte Lücke oben); ohne Soll und unbekannt aufsteigend hinter
 den bekannten Werten; nebeneinander jetzt ab 1.233 statt 1.065 pt Panelbreite.
+
+## 28.11.2026: Planer – Produkt in Schritt 3 entfernen und neu berechnen
+
+Anlass: Der Eigentümer möchte im Planer-Schritt 3 (Lager) einen
+Produktionsauftrag wieder entfernen können, mit anschließender Neuberechnung
+des Plans. Beschreibung: [PRODUCT.md](../../PRODUCT.md), Abschnitt
+„Produkt in Schritt 3 oder 4 entfernen“.
+
+Antworten des Eigentümers auf die Rückfragen:
+
+1. Nach der Neuberechnung bleibt der Planer in Schritt 3 (bisher führte jede
+   Berechnung aus Schritt 3 zu Schritt 4).
+2. Entfernen ohne Bestätigungsdialog, wie das vorhandene Entfernen in Schritt 4.
+3. Das letzte Produkt ist nicht entfernbar; Leeren weiter über „Planer
+   zurücksetzen“ oder Schritt 2.
+4. Der Button entfernt alle Eingabezeilen des Produkts, weil die Tabelle sie
+   zu einer Zeile zusammenfasst.
+
+Von Claude festgelegt: Button „Entfernen“ in einer eigenen Spalte ohne
+Sortierkopf am Zeilenende; während einer Berechnung gesperrt; verhindert ein
+anderer Grund die Berechnung (etwa fehlende Einkaufsorte), bleibt das Produkt
+entfernt und der Plan als veraltet markiert; auch ohne bisherigen Plan wird nach
+dem Entfernen gerechnet.
+
+Ergänzung am selben Tag: Der Eigentümer möchte dasselbe in Schritt 4 (Kosten)
+in der Tabelle „Rentabel?“. Antworten auf die Rückfragen:
+
+1. Auch das vorhandene „Entfernen“ im Warnblock bei unrentablen Produkten
+   rechnet jetzt sofort neu (bisher blieb der Plan veraltet).
+2. Der neue Button steht in einer eigenen Spalte am Ende der Tabelle, hinter
+   „Status“.
+
+Übernommen aus Schritt 3: ohne Rückfrage, letztes Produkt gesperrt, gesperrt
+während einer Berechnung. Von Claude festgelegt: In Schritt 4 entfernt der
+Button genau die Eingabezeile der Tabellenzeile (die Tabelle zeigt eine Zeile
+je Eingabezeile), bevorzugt die eigene Zeilennummer, wenn dort derselbe Auftrag
+steht; eine Zeile, die seit der Berechnung nicht mehr so in der Eingabe steht,
+ist mit Hinweis gesperrt. Die je Eingabezeile gemerkte Verkaufswahl
+(`PlannerProductDecisionDraft`, Schlüssel „Zeile:Produkt“) rückt bei jedem
+Entfernen in Schritt 3 und 4 mit; ohne das verloren die Produkte unter der
+entfernten Zeile nach der Neuberechnung ihre Verkaufswahl und Allianzeingabe.

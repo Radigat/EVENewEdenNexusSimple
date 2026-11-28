@@ -2683,7 +2683,7 @@
 "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock." = "Yes or no. With yes, use the combined warehouse or enter stock by hand; manual stock replaces the warehouse. With no, the plan uses no stock.";
 "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up." = "With yes, stock is used first. A manual list replaces the warehouse in every calculation pass, including Blueprint runs. Step 4 shows what the market tops up.";
 "Manual stock is in use. It replaces the combined warehouse in this calculation." = "Manual stock is in use. It replaces the combined warehouse in this calculation.";
-"In step 3 this button or ⌘↩ starts the calculation. After a change later steps show the plan as outdated and offer Recalculate." = "In step 3 this button or ⌘↩ starts the calculation. After a change later steps show the plan as outdated and offer Recalculate.";
+"In step 3 this button or ⌘↩ starts the calculation. Removing a product in step 3 or 4 recalculates at once. Later steps show a changed plan as outdated." = "In step 3 this button or ⌘↩ starts the calculation. Removing a product in step 3 or 4 recalculates at once. Later steps show a changed plan as outdated.";
 "Profitable?" = "Profitable?";
 "In step 4 a menu and the alliance table record your sale per product. They do not change the plan. Recording needs a current plan and a target market." = "In step 4 a menu and the alliance table record your sale per product. They do not change the plan. Recording needs a current plan and a target market.";
 "Produce anyway" = "Produce anyway";
@@ -2717,6 +2717,11 @@
 "Not checkable. Prices are missing or costs are still provisional." = "Not checkable. Prices are missing or costs are still provisional.";
 "Remove" = "Remove";
 "Remove %@" = "Remove %@";
+"The last product stays. Reset the Planner or edit step 2 to empty the plan." = "The last product stays. Reset the Planner or edit step 2 to empty the plan.";
+"Available again when the running calculation ends." = "Available again when the running calculation ends.";
+"Removes every line of this product and calculates the plan again." = "Removes every line of this product and calculates the plan again.";
+"Removes this product line and calculates the plan again." = "Removes this product line and calculates the plan again.";
+"The input changed since the calculation. Recalculate first." = "The input changed since the calculation. Recalculate first.";
 "You chose to produce anyway." = "You chose to produce anyway.";
 "Profitable" = "Profitable";
 "Not profitable" = "Not profitable";
@@ -2743,7 +2748,7 @@
 "Chosen sale" = "Chosen sale";
 "Step 4 shows one row per product with costs and selected sale. The best final sale is preselected and changeable. A selected sale without a final profit triggers a warning." = "Step 4 shows one row per product with costs and selected sale. The best final sale is preselected and changeable. A selected sale without a final profit triggers a warning.";
 "Step 8 only summarizes the choice from step 4 and records it. Production rows take the chosen market and scenario." = "Step 8 only summarizes the choice from step 4 and records it. Production rows take the chosen market and scenario.";
-"Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove a product instead." = "Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove a product instead.";
+"Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove one instead; the plan recalculates." = "Opens the later steps despite the warning, for this calculation and these sales only. With several products you can remove one instead; the plan recalculates.";
 "If the built materials or the needed Blueprint runs changed, the Blueprints are resolved again without automation. A reaction without a formula is bought instead." = "If the built materials or the needed Blueprint runs changed, the Blueprints are resolved again without automation. A reaction without a formula is bought instead.";
 
 /* Planner warnings */

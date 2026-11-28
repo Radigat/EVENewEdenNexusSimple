@@ -1572,8 +1572,8 @@ Informationshinweis.
 | --- | --- |
 | 1 Einstellungen | Fehlender SDE-Katalog oder Main Hub mit direktem Weg in den Datenbereich, Einkaufsorte, Weg zu den Industrieeinstellungen, letzte Produktionen |
 | 2 Produkte | Produkt hinzufügen, Eingabezeilen für ein oder mehrere Produkte, Eingabefehler samt unbekannter Produktnamen |
-| 3 Lager | **Lager verwenden?** Bei Ja kombiniertes Lager oder manueller Bestand, Tabelle der Produkte mit Produktionsort und Charakter für die Jobdauer, dazu Berechnen mit Statuszeile (rechnet, aktuell, veraltet, gespeichert oder gestoppt samt Preisdatum) |
-| 4 Kosten | Immer, also auch bei Lager = Nein und vollständigem Kauf: Finanzen, **Rentabel?** mit der Tabelle je Produkt, der Verkaufswahl und der Allianztabelle, dazu zugeklappt die Kostenaufschlüsselung und alle Verkaufswege. Nur bei Lager = Ja zusätzlich die Materialprüfung (aus Lager, Nachkauf vom Markt) |
+| 3 Lager | **Lager verwenden?** Bei Ja kombiniertes Lager oder manueller Bestand, Tabelle der Produkte mit Produktionsort, Charakter für die Jobdauer und **Entfernen**, dazu Berechnen mit Statuszeile (rechnet, aktuell, veraltet, gespeichert oder gestoppt samt Preisdatum) |
+| 4 Kosten | Immer, also auch bei Lager = Nein und vollständigem Kauf: Finanzen, **Rentabel?** mit der Tabelle je Produkt, der Verkaufswahl, **Entfernen** je Zeile und der Allianztabelle, dazu zugeklappt die Kostenaufschlüsselung und alle Verkaufswege. Nur bei Lager = Ja zusätzlich die Materialprüfung (aus Lager, Nachkauf vom Markt) |
 | 5 Anpassen | Blueprints (BPO/BPC), gewählter Produktionsweg, Materialien mit Bauen, Kaufen oder Lager |
 | 6 Einkauf | Einkaufsliste je Ort, **Gesamtliste nachkaufen** mit einem Multibuy je Hub, Wiederauffüllliste des Lagers |
 | 7 Bauaufträge | Auftragsliste, Dauer und Zeitplan |
@@ -1584,6 +1584,8 @@ Informationshinweis.
 **Erreichbarkeit:** Schritt 3 braucht eine gültige Eingabe ohne unbekannte Produkte, Schritt 4 einen Plan, die Schritte 5 bis 8 zusätzlich eine bestandene oder bestätigte Rentabilität. Der Planer öffnet ohne Plan bei Schritt 1, mit gespeichertem Plan bei Schritt 4; ein Absprung aus einem anderen Bereich öffnet Schritt 2. Warnungen stehen in den Schritten 4 bis 8 unter der Leiste. Jede Blueprint-Zeile nennt die automatische Stufe mit Grund. Eine Wahl von Hand zeigt „Zurück zur Automatik“; Übergaben sind als fest markiert.
 
 **Berechnen:** Gerechnet wird nur auf Klick. Nach einer Änderung zeigen die Schritte 4 bis 8 den Plan als veraltet und bieten **Neu berechnen** an. Nach der Rechnung geht es zu Schritt 4, außer sie wurde später gestartet und verlangt keine neue Entscheidung. Auch Lagerwahl und manueller Bestand zählen nun als Änderung.
+
+**Produkt in Schritt 3 oder 4 entfernen:** In Schritt 3 nimmt **Entfernen** in der Tabelle „Produkte und Charaktere“ alle Eingabezeilen dieses Produkts heraus, denn die Tabelle fasst sie zu einer Zeile zusammen. In Schritt 4 steht **Entfernen** in der letzten Spalte der Tabelle **Rentabel?** und nimmt genau die Eingabezeile dieser Zeile heraus; ebenso das **Entfernen** in der Warnung bei unrentablen Produkten. Beides geschieht ohne Rückfrage; danach rechnet der Planer sofort neu und bleibt im selben Schritt, aus Schritt 3 geht es mit **Weiter** zu den Kosten. Die gewählten Verkäufe und Allianzeingaben der übrigen Produkte bleiben erhalten, auch wenn ihre Eingabezeile dadurch nach oben rückt. Das letzte Produkt lässt sich nicht entfernen (leeren über **Planer zurücksetzen** oder Schritt 2), während einer Berechnung sind die Buttons gesperrt. In Schritt 4 ist eine Zeile auch gesperrt, wenn sie seit der Berechnung nicht mehr so in der Eingabe steht; dann zuerst neu berechnen. Verhindert etwas die Berechnung, etwa fehlende Einkaufsorte, bleibt das Produkt entfernt und der Plan gilt als veraltet.
 
 **Lager = Nein** rechnet ohne jeden Bestand. Eine manuelle Liste bleibt gespeichert, wird aber nicht verwendet.
 
@@ -1609,7 +1611,7 @@ Bei mehreren Produkten entfallen die zusammengefassten Karten Produktionszwische
 | Nicht rentabel | Endgültiger Gewinn von höchstens 0 | Warnung, Entscheidung nötig |
 | Nicht prüfbar | Kein endgültiger Wert: Preis fehlt oder Kosten sind nur vorläufig | Warnung, Entscheidung nötig |
 
-**Trotzdem produzieren** gilt nur für diese Berechnung und die gesehenen Verkäufe und wird nicht gespeichert. Bei mehreren Produkten steht jedes betroffene Produkt mit **Entfernen** in der Warnung, die Entscheidung gilt für alle verbleibenden Produkte zusammen. Entfernen nimmt die Eingabezeile heraus, danach muss neu berechnet werden.
+**Trotzdem produzieren** gilt nur für diese Berechnung und die gesehenen Verkäufe und wird nicht gespeichert. Bei mehreren Produkten steht jedes betroffene Produkt mit **Entfernen** in der Warnung, die Entscheidung gilt für alle verbleibenden Produkte zusammen. Entfernen nimmt die Eingabezeile heraus und rechnet sofort neu (siehe „Produkt in Schritt 3 oder 4 entfernen“).
 
 **Vermerken** ist gesperrt, solange der Plan nicht aktuell ist oder ein Produkt weder Wahl noch Vorschlag hat. Beim Vermerken wird ein Vorschlag als Wahl festgehalten. Bereits erfasste Zeilen der Produktionsübersicht bleiben unverändert.
 

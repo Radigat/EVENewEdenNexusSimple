@@ -394,6 +394,32 @@ struct PlannerProductDecisionDraft: Codable, Equatable {
   var saleScenario: PriceScenario?
 
   static func key(for request: ProductionRequestLine) -> String {
-    "\(request.lineNumber):\(request.productName)"
+    key(lineNumber: request.lineNumber, productName: request.productName)
+  }
+
+  private static func key(lineNumber: Int, productName: String) -> String {
+    "\(lineNumber):\(productName)"
+  }
+
+  /// The drafts after input lines were removed: the drafts of removed lines
+  /// go, the lines below keep theirs under their new line number. Keys of
+  /// another shape stay as they are.
+  static func moving(
+    _ drafts: [String: Self],
+    after removal: ProductionInputLineRemoval
+  ) -> [String: Self] {
+    var moved: [String: Self] = [:]
+    for (key, draft) in drafts {
+      let parts = key.split(separator: ":", maxSplits: 1)
+      guard parts.count == 2, let oldLineNumber = Int(parts[0]) else {
+        moved[key] = draft
+        continue
+      }
+      guard let lineNumber = removal.lineNumber(after: oldLineNumber) else {
+        continue
+      }
+      moved[Self.key(lineNumber: lineNumber, productName: String(parts[1]))] = draft
+    }
+    return moved
   }
 }
